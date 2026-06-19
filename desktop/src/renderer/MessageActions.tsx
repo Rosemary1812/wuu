@@ -17,7 +17,7 @@ export function AgentMessageActions({ getText, onFork }: { getText: () => string
         title="赞"
         onClick={() => setFeedback((current) => (current === "liked" ? null : "liked"))}
       >
-        <ThumbsUp size={15} />
+        <ThumbsUp className="icon" />
       </button>
       <button
         className="message-action-button"
@@ -27,10 +27,10 @@ export function AgentMessageActions({ getText, onFork }: { getText: () => string
         title="踩"
         onClick={() => setFeedback((current) => (current === "disliked" ? null : "disliked"))}
       >
-        <ThumbsDown size={15} />
+        <ThumbsDown className="icon" />
       </button>
       <button className="message-action-button" type="button" aria-label="分叉" title="分叉" disabled={!onFork} onClick={onFork}>
-        <GitFork size={15} />
+        <GitFork className="icon" />
       </button>
     </div>
   );
@@ -142,7 +142,7 @@ export function MessageFileList({ files }: { files: InputFile[] }): JSX.Element 
     <div className="message-files">
       {files.map((file, index) => (
         <div className="message-file" key={`${file.media_type}-${file.filename ?? index}-${index}`}>
-          <FileText size={16} aria-hidden="true" />
+          <FileText className="icon" aria-hidden="true" />
           <span>{file.filename?.trim() || `File ${index + 1}`}</span>
         </div>
       ))}

@@ -98,10 +98,10 @@ export function TurnProgressPreviewOverlay({ onClose }: { onClose: () => void })
           </div>
           <div className="turn-progress-preview-actions">
             <button className="icon-button" type="button" aria-label="重播" title="重播" onClick={restart}>
-              <RefreshCw size={16} />
+              <RefreshCw className="icon" />
             </button>
             <button className="icon-button" type="button" aria-label="关闭" title="关闭" onClick={onClose}>
-              <X size={17} />
+              <X className="icon" />
             </button>
           </div>
         </div>

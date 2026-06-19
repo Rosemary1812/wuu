@@ -2222,7 +2222,7 @@ export function App(): JSX.Element {
       <>
         {workspaceMode ? (
           <span className="workspace-title-icon" aria-hidden="true">
-            <WorkspaceToolIcon view={workspaceMode} size={18} />
+            <WorkspaceToolIcon view={workspaceMode} className="icon-lg" />
           </span>
         ) : null}
         <h1>{activeTitle}</h1>
@@ -5037,7 +5037,7 @@ export function App(): JSX.Element {
                 disabled={previewingLaunch}
                 onClick={() => setLaunchPreviewPinned(true)}
               >
-                <Terminal size={15} />
+                <Terminal className="icon" />
                 <span>启动动画</span>
               </button>
             ) : null}
@@ -5048,7 +5048,7 @@ export function App(): JSX.Element {
                 aria-pressed={turnProgressPreviewOpen}
                 onClick={() => setTurnProgressPreviewOpen(true)}
               >
-                <Film size={15} />
+                <Film className="icon" />
                 <span>完整预览</span>
               </button>
             ) : null}
@@ -5059,7 +5059,7 @@ export function App(): JSX.Element {
                 disabled={!state.activeContext || !state.initialized}
                 onClick={seedPlanPanelDebug}
               >
-                <ListChecks size={15} />
+                <ListChecks className="icon" />
                 <span>计划面板</span>
               </button>
             ) : null}
@@ -5072,7 +5072,7 @@ export function App(): JSX.Element {
                 title="按 G 切换对话网格"
                 onClick={() => setConversationGridVisible((visible) => !visible)}
               >
-                <Grid3X3 size={15} />
+                <Grid3X3 className="icon" />
                 <span>网格</span>
               </button>
             ) : null}
@@ -5088,7 +5088,7 @@ export function App(): JSX.Element {
                     setRunDebugOpen((open) => !open);
                   }}
                 >
-                  <Bug size={15} />
+                  <Bug className="icon" />
                   <span>调试</span>
                 </button>
                 {runDebugOpen ? (
@@ -5126,9 +5126,9 @@ export function App(): JSX.Element {
                 onClick={openBackgroundProcessPanel}
               >
                 {backgroundProcessCapsuleTone === "failed" ? (
-                  <AlertCircle size={14} />
+                  <AlertCircle className="icon-sm" />
                 ) : (
-                  <Terminal size={14} />
+                  <Terminal className="icon-sm" />
                 )}
                 <span>{backgroundProcessCapsuleLabel}</span>
               </button>
@@ -5143,7 +5143,7 @@ export function App(): JSX.Element {
               aria-pressed={environmentPanelVisible}
               onClick={toggleEnvironmentPanel}
             >
-              <Info size={18} />
+              <Info className="icon-lg" />
             </button>
             <button
               className="icon-button side-panel-toggle-button"
@@ -5441,7 +5441,7 @@ function ToolApprovalDialog({
       <section className="environment-dialog" role="dialog" aria-modal="true" aria-label="工具审批">
         <div className="environment-dialog-header">
           <span className="environment-dialog-icon">
-            <AlertCircle size={18} />
+            <AlertCircle className="icon-lg" />
           </span>
           <div>
             <h2>审批工具调用</h2>

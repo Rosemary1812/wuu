@@ -39,7 +39,7 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 56px minmax(0, 1fr);
   overflow: hidden;
-  background: #fff;
+  background: var(--paper);
   margin-right: 0;
 }
 
@@ -54,7 +54,7 @@
   justify-content: space-between;
   gap: 16px;
   overflow: hidden;
-  border-bottom: 1px solid #ececea;
+  border-bottom: 1px solid var(--surface-3);
   padding: 0 24px;
   transition: padding-left var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
   -webkit-app-region: drag;
@@ -120,10 +120,10 @@
   height: 30px;
   flex: 0 1 auto;
   align-items: center;
-  border: 1px solid rgba(31, 35, 40, 0.08);
-  border-radius: 999px;
-  background: #f6f6f3;
-  color: #666d72;
+  border: 1px solid var(--ink-overlay-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-tertiary);
   overflow: hidden;
   transition:
     background-color 140ms ease,
@@ -156,7 +156,7 @@
   transform: scale(1.025);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
-    0 9px 24px rgba(31, 35, 40, 0.14);
+    0 9px 24px var(--ink-overlay-12);
 }
 
 .session-tab-drag-overlay .session-tab-close {
@@ -166,21 +166,21 @@
 .session-tab:hover,
 .session-tab:focus-within {
   border-color: rgba(17, 19, 21, 0.14);
-  background: #f1f2ee;
-  color: #24282c;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .session-tab.active {
   border-color: rgba(17, 19, 21, 0.18);
-  background: #ececea;
-  color: #202427;
+  background: var(--surface-3);
+  color: var(--ink);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
-    0 2px 7px rgba(31, 35, 40, 0.045);
+    0 2px 7px var(--ink-overlay-4);
 }
 
 .session-tab.pending-switch {
-  color: #202427;
+  color: var(--ink);
 }
 
 .session-tab-main {
@@ -209,14 +209,14 @@
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(17, 19, 21, 0.22);
 }
 
-/* Running session tab: render a small spinner so the active conversation
-   reads as "in progress" at a glance. Grow to 10×10 with a 2px ring so the
-   rotation stays legible inside the 30px-tall tab; the extra width is
-   local to the running tab and does not shift neighboring tabs. */
+                                                                         
+                                                                           
+                                                                      
+                                                                   
 .session-tab.running .session-tab-status {
   width: 10px;
   height: 10px;
@@ -239,7 +239,7 @@
 }
 
 .session-tab.has-unread .session-tab-title {
-  color: #202427;
+  color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
@@ -259,9 +259,9 @@
   height: 17px;
   flex: 0 0 auto;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(17, 19, 21, 0.1);
-  color: #303438;
+  color: var(--ink);
   font-size: 10px;
   font-weight: var(--weight-semibold);
   line-height: 17px;
@@ -278,9 +278,9 @@
   height: 24px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: #8a8f93;
+  color: var(--ink-muted);
   cursor: pointer;
   margin-right: 4px;
   opacity: 0;
@@ -297,8 +297,8 @@
 }
 
 .session-tab-close:hover {
-  background: rgba(31, 35, 40, 0.08);
-  color: #303438;
+  background: var(--ink-overlay-8);
+  color: var(--ink);
 }
 
 .icon-button {
@@ -306,30 +306,30 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #6f7478;
+  color: var(--ink-tertiary);
   -webkit-app-region: no-drag;
 }
 
 .icon-button:hover {
-  background: #eeeeec;
-  color: #25282b;
+  background: var(--surface-3);
+  color: var(--ink);
 }
 
 .icon-button.active,
 .workspace-toggle-button[aria-pressed="true"] {
-  background: #e8e8e5;
-  color: #202427;
+  background: var(--surface-3);
+  color: var(--ink);
 }
 
 .side-panel-toggle-button[aria-pressed="true"] {
   background: transparent;
-  color: #202427;
+  color: var(--ink);
 }
 
 .side-panel-toggle-button[aria-pressed="true"]:hover {
-  background: #eeeeec;
+  background: var(--surface-3);
 }
 
 .side-panel-toggle-icon {
@@ -368,9 +368,9 @@
   height: 32px;
   align-items: center;
   gap: 7px;
-  border-radius: 8px;
-  background: #eeeeeb;
-  color: #5d6368;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 0 10px;
@@ -379,14 +379,14 @@
 
 .launch-preview-button:hover:not(:disabled) {
   background: #e3e4e0;
-  color: #22262a;
+  color: var(--ink);
 }
 
 .launch-preview-button.active,
 .turn-progress-preview-button[aria-pressed="true"],
 .conversation-grid-button[aria-pressed="true"] {
-  background: #dedfdb;
-  color: #202427;
+  background: var(--surface-4);
+  color: var(--ink);
 }
 
 .launch-preview-button span {
@@ -400,9 +400,9 @@
   height: 30px;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
-  background: #eef3ef;
-  color: #326245;
+  border-radius: var(--radius-pill);
+  background: var(--success-soft);
+  color: var(--success);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   padding: 0 10px;
@@ -411,19 +411,19 @@
 
 .background-process-capsule:hover,
 .background-process-capsule.active {
-  background: #e2ece4;
+  background: var(--success-soft);
   color: #1f5535;
 }
 
 .background-process-capsule.failed {
-  background: #fff0ef;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .background-process-capsule.failed:hover,
 .background-process-capsule.failed.active {
-  background: #ffe3e1;
-  color: #971b12;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .background-process-capsule svg {
@@ -445,8 +445,8 @@
 
 .run-debug-button.active,
 .run-debug-button[aria-expanded="true"] {
-  background: #dedfdb;
-  color: #202427;
+  background: var(--surface-4);
+  color: var(--ink);
 }
 
 .run-debug-panel {
@@ -459,13 +459,13 @@
   max-height: min(680px, calc(100vh - 88px));
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid rgba(31, 35, 40, 0.11);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-md);
+  background: var(--menu-bg);
   box-shadow:
     0 24px 60px rgba(20, 24, 28, 0.16),
     0 2px 10px rgba(20, 24, 28, 0.08);
-  color: #202427;
+  color: var(--ink);
   text-align: left;
   backdrop-filter: blur(18px);
   transform-origin: top right;
@@ -477,7 +477,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  border-bottom: 1px solid #ececea;
+  border-bottom: 1px solid var(--surface-3);
   padding: 14px;
 }
 
@@ -490,7 +490,7 @@
 .run-debug-header strong {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   line-height: 1.35;
@@ -506,14 +506,14 @@
 .run-debug-actions .icon-button {
   width: 28px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .run-debug-phase {
   width: fit-content;
-  border-radius: 999px;
-  background: #eeeeeb;
-  color: #5f656a;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--ink-tertiary);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   line-height: 1.2;
@@ -521,23 +521,23 @@
 }
 
 .run-debug-phase.running {
-  background: #e9f1ee;
+  background: var(--success-soft);
   color: #486f61;
 }
 
 .run-debug-phase.success {
-  background: #eaf4e8;
-  color: #376c3e;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .run-debug-phase.warning {
-  background: #fff3dc;
-  color: #8a5b10;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .run-debug-phase.error {
-  background: #fff0ef;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .run-debug-scroll {
@@ -549,9 +549,9 @@
 }
 
 .run-debug-copied {
-  border-radius: 8px;
-  background: #eef6ed;
-  color: #2f7339;
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   padding: 8px 10px;
@@ -565,7 +565,7 @@
 
 .run-debug-section h3 {
   margin: 0;
-  color: #8a8f92;
+  color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
@@ -575,9 +575,9 @@
 .run-debug-item,
 .run-debug-event {
   min-width: 0;
-  border: 1px solid #eeeeeb;
-  border-radius: 8px;
-  background: #fbfbfa;
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
 }
 
 .run-debug-row {
@@ -591,7 +591,7 @@
 .run-debug-event span,
 .run-debug-event small,
 .run-debug-item span {
-  color: #73787d;
+  color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
 }
@@ -599,7 +599,7 @@
 .run-debug-row strong {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
 }
@@ -617,13 +617,13 @@
 }
 
 .run-debug-item.in_progress {
-  border-color: #d9e6df;
-  background: #f7fbf8;
+  border-color: var(--success-soft);
+  background: var(--success-soft);
 }
 
 .run-debug-item.failed {
-  border-color: #f1c2bf;
-  background: #fff7f6;
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
 }
 
 .run-debug-item > div:first-child {
@@ -637,7 +637,7 @@
 .run-debug-item strong {
   min-width: 0;
   overflow: hidden;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
@@ -652,14 +652,14 @@
 }
 
 .run-debug-item-meta span {
-  border-radius: 999px;
-  background: #eeeeeb;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
   padding: 3px 7px;
 }
 
 .run-debug-item-meta .error {
-  background: #fff0ef;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .run-debug-event {
@@ -672,7 +672,7 @@
 
 .run-debug-event strong {
   overflow: hidden;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
@@ -686,34 +686,34 @@
 }
 
 .run-debug-event.running {
-  border-color: #d9e6df;
+  border-color: var(--success-soft);
 }
 
 .run-debug-event.success {
-  border-color: #d9e8d7;
+  border-color: var(--success-soft);
 }
 
 .run-debug-event.warning {
-  border-color: #f3dfb7;
+  border-color: var(--warning-border);
 }
 
 .run-debug-event.error {
-  border-color: #f1c2bf;
+  border-color: var(--danger-border);
 }
 
 .run-debug-empty {
   border: 1px dashed #e0e1dc;
-  border-radius: 8px;
-  color: #80858a;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 10px;
 }
 
-/* Floating "Jump to latest" pill, anchored to the bottom of the
- * conversation pane just above the dock composer. Visibility is driven by
- * userScrolledAway in App.tsx; the fade-in animation only runs on mount
- * and the element is unmounted when the user returns to the bottom. */
+                                                                
+                                                                          
+                                                                        
+                                                                       
 .jump-to-latest-pill {
   position: absolute;
   bottom: calc(var(--dock-composer-height, 0px) + 12px);
@@ -726,13 +726,13 @@
   gap: 6px;
 
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid rgba(17, 19, 21, 0.10);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 4px 14px rgba(20, 24, 28, 0.08);
   backdrop-filter: blur(8px);
 
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   line-height: 1;

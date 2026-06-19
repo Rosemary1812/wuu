@@ -87,13 +87,13 @@ export function SkillsCatalog({
     <section className="skills-catalog" aria-label="Skills">
       <header className="skills-catalog-header">
         <div className="skills-catalog-title">
-          <Wrench size={18} />
+          <Wrench className="icon-lg" />
           <strong>Skills</strong>
           <span>{state.loading ? "加载中" : `${state.skills.length} 项`}</span>
         </div>
         <div className="skills-catalog-controls">
           <label className="skills-search">
-            <Search size={15} />
+            <Search className="icon" />
             <input
               type="search"
               value={filter}
@@ -102,7 +102,7 @@ export function SkillsCatalog({
             />
           </label>
           <button className="icon-button skills-refresh" type="button" aria-label="刷新 Skills" onClick={() => void refreshSkills()}>
-            <RefreshCw size={16} />
+            <RefreshCw className="icon" />
           </button>
         </div>
       </header>
@@ -137,7 +137,7 @@ export function SkillsCatalog({
 
       {!state.loading && visibleSkills.length === 0 ? (
         <div className="skills-empty">
-          <Wrench size={22} />
+          <Wrench className="icon-xl" />
           <strong>暂无 Skills</strong>
           <span>{filter.trim() ? "没有匹配项" : "当前运行时未发现 Skills"}</span>
         </div>

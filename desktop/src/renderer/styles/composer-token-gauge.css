@@ -1,16 +1,16 @@
-/* Live token-speed gauge shown next to the model picker in the composer.
-   It stays in the same 32px line-icon cell as the composer tools.
-   The exact tok/s number is portaled above the gauge on hover so the
-   readout never overlaps the 32px cell. */
+                                                                         
+                                                                  
+                                                                     
+                                           
 
 :root {
-  --token-gauge-idle: #8a8e91;
+  --token-gauge-idle: var(--ink-muted);
   --token-gauge-mid: #d48345;
-  --token-gauge-high: #ef5b18;
+  --token-gauge-high: var(--accent-warm);
   --token-gauge-track: rgba(138, 142, 145, 0.24);
   --token-gauge-tooltip-bg: rgba(255, 255, 255, 0.98);
-  --token-gauge-tooltip-text: #1f2328;
-  --token-gauge-tooltip-border: rgba(31, 35, 40, 0.12);
+  --token-gauge-tooltip-text: var(--ink);
+  --token-gauge-tooltip-border: var(--ink-overlay-12);
 }
 
 .composer-token-gauge {
@@ -20,7 +20,7 @@
   height: 32px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   user-select: none;
   line-height: 1;
   cursor: default;
@@ -31,11 +31,11 @@
 }
 
 .composer-token-gauge:hover {
-  background: #f1f2ef;
+  background: var(--surface-2);
 }
 
-/* Higher-specificity descendant selector so this rule wins over the generic
-   `.composer-bar svg { width: var(--icon-size); ... }` rule in composer.css. */
+                                                                            
+                                                                                
 .composer-token-gauge .composer-token-gauge-svg {
   display: block;
   overflow: visible;
@@ -90,16 +90,16 @@
   stroke-width: 1.8;
 }
 
-/* Numeric readout portaled to document.body. Position/transform is set
-   inline in the React component so the badge can escape the 32x32 cell and
-   the composer bar's overflow boundary. Visibility is controlled by the
-   component's hover state; CSS just gives the entry fade-in. */
+                                                                       
+                                                                           
+                                                                        
+                                                                
 .composer-token-gauge-tooltip {
   padding: 4px 9px;
   background: var(--token-gauge-tooltip-bg);
   color: var(--token-gauge-tooltip-text);
   border: 1px solid var(--token-gauge-tooltip-border);
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

@@ -7,14 +7,14 @@
   margin-bottom: 48px;
 }
 
-/* Turn rhythm: the hairline separates "what the user said" from
-   "the assistant's reply" — it sits between the user-message
-   block and the assistant-turn shell, not above the user message.
-   A single turn section contains both [user items] + [assistant
-   shell] in document order, so anchoring the hairline on the
-   assistant-turn shell (and skipping the very first turn, which
-   has no preceding beat to separate from) gives the right
-   placement. */
+                                                                
+                                                             
+                                                                  
+                                                                
+                                                             
+                                                                
+                                                          
+                
 .turn > .assistant-turn-shell {
   border-top: 1px solid var(--wuu-hairline);
   padding-top: 18px;
@@ -37,24 +37,24 @@
 }
 
 .conversation-split-width .assistant-turn-shell {
-  /* In split view the assistant also gets the full split column —
-     same reasoning as above. The split column itself is narrower
-     (--conversation-split-message-max-width) so the overall turn
-     stays narrower than the full flow. */
+                                                                  
+                                                                 
+                                                                 
+                                          
   width: 100%;
 }
 
-/* Process fold — a single <details> element that contains the
-   assistant's reasoning / tool calls / commentary. We deliberately
-   do NOT paint a box around it (no border, no fill, no radius).
-   The fold is part of the text flow: the toggle is a single line of
-   quiet gray text with a chevron glyph, the body is a stack of
-   inline gray rows. Visual hierarchy is carried by color, size, and
-   spacing — never by a container. Matches the reference where the
-   process fold reads as plain prose, not as a separate panel. */
+                                                              
+                                                                   
+                                                                
+                                                                    
+                                                               
+                                                                    
+                                                                  
+                                                                 
 .turn-process-fold {
-  /* Intentionally empty — see the note above. The element exists for
-     the <details>/<summary> semantics, not for its visual chrome. */
+                                                                     
+                                                                     
   min-width: 0;
 }
 
@@ -63,9 +63,9 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  /* No horizontal padding — the fold has no box edges to keep away
-     from. Vertical padding is small so the toggle reads as one
-     line of text, not a clickable button. */
+                                                                   
+                                                               
+                                             
   padding: 2px 0;
   background: transparent;
   border: 0;
@@ -100,12 +100,12 @@
   line-height: var(--conversation-meta-line-height);
 }
 
-/* Hover/focus on the toggle: a quiet underline rather than a fill,
-   so the row stays part of the text flow even on interaction. */
+                                                                   
+                                                                 
 .turn-process-toggle:hover:not(.turn-process-toggle-static),
 .turn-process-toggle:focus-visible:not(.turn-process-toggle-static) {
   text-decoration: underline;
-  text-decoration-color: rgba(31, 35, 40, 0.18);
+  text-decoration-color: var(--ink-overlay-18);
   text-underline-offset: 3px;
 }
 
@@ -126,8 +126,8 @@
 .turn-process-title {
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
-  /* Title sits in the same gray family as the meta — the toggle
-     reads as one quiet row of text, not a labeled control. */
+                                                                
+                                                              
   color: var(--wuu-ink-soft);
 }
 
@@ -161,20 +161,20 @@
 .turn-process-preview .turn-process-live-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: currentColor;
   animation: process-pulse 1.4s ease-in-out infinite;
   flex: 0 0 auto;
 }
 
-/* When the fold is expanded, the body shows every process row in full
-   — including the latest tool call that the header preview mirrors.
-   Showing the same line twice (header preview + body row) reads as
-   "search is happening twice" rather than one in-progress tool call.
-   Hide the header preview when expanded; the fold header still
-   carries the duration + status label, and the body has the full
-   record. When the fold is collapsed the preview is the only signal
-   the user gets, so it stays visible there. */
+                                                                      
+                                                                    
+                                                                   
+                                                                     
+                                                               
+                                                                 
+                                                                    
+                                               
 .turn-process-fold.expanded .turn-process-preview {
   display: none;
 }
@@ -183,10 +183,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--conversation-process-gap);
-  /* No border-top and no horizontal padding — when the fold is
-     expanded, the body is a column of inline rows sitting flush with
-     the answer body below it. The gap on the parent shell already
-     separates them visually. */
+                                                               
+                                                                     
+                                                                  
+                                
   padding: 6px 0 0 0;
 }
 
@@ -196,7 +196,7 @@
 }
 
 .turn-process-entry-commentary {
-  color: #202427;
+  color: var(--ink);
   font-size: var(--conversation-message-font-size);
   font-weight: 400;
   line-height: var(--conversation-prose-line-height);
@@ -217,21 +217,21 @@
   line-height: inherit;
 }
 
-/* Answer body — the actual reply. The parent shell already separates
-   the answer from the process fold via --conversation-process-gap,
-   so the answer body itself just renders its entries in document
-   order. No extra top margin, no separator — the eye reads "process
-   rows on top, answer prose below" purely by content type. */
+                                                                     
+                                                                   
+                                                                 
+                                                                    
+                                                              
 .turn-answer-body {
   display: flex;
   flex-direction: column;
   gap: var(--conversation-prose-block-gap);
 }
 
-/* Empty reply visual: a completed turn kept process records but did
-   not produce a final answer. The reply keeps its normal layout; the
-   outcome is called out with the same compact status-line system used
-   for errors and other turn notices. */
+                                                                    
+                                                                     
+                                                                      
+                                        
 .assistant-turn-shell.missing-reply-turn {
   padding: 0;
   border: 0;
@@ -245,7 +245,7 @@
 
 .message {
   max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 8px 16px;
   font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);
@@ -253,14 +253,14 @@
 
 .user-message {
   align-self: flex-end;
-  /* User bubble keeps its gray fill — it's the iOS-style
-     right-aligned chat bubble convention the user wants to
-     preserve. Toned slightly cooler than --wuu-surface-muted
-     (#f5f5f2) so the bubble has a touch more presence against
-     the paper background without going darker than the
-     prototype reference. */
+                                                         
+                                                           
+                                                             
+                                                              
+                                                       
+                            
   background: #e8e8e4;
-  color: #1f2328;
+  color: var(--ink);
 }
 
 .user-message-block {
@@ -270,16 +270,16 @@
   justify-items: end;
   gap: 8px;
   margin-bottom: 16px;
-  border-radius: 16px;
-  /* Leave room above the jumped-to message so it doesn't slam into the
-     top edge of the conversation scroll surface. */
+  border-radius: var(--radius-lg);
+                                                                       
+                                                    
   scroll-margin-top: 12px;
 }
 
-/* Query-history jump flash — a short, single-pulse outline that confirms
-   the scroll target without lingering. The outline lives outside the
-   message bubble so it doesn't fight the message's own background or
-   clip the bubble's rounded corners. */
+                                                                         
+                                                                     
+                                                                     
+                                        
 .user-message-block.user-message-jump-flash {
   animation: user-message-jump-flash 1.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -319,7 +319,7 @@
   align-self: center;
   max-width: min(760px, 88%);
   margin: 2px auto 18px;
-  color: #7a7f84;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: 1.45;
   text-align: center;
@@ -335,10 +335,10 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  border-radius: 999px;
-  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.08);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 1px 3px var(--ink-overlay-8);
   background: rgba(255, 255, 255, 0.72);
-  color: #6f7478;
+  color: var(--ink-tertiary);
   cursor: pointer;
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
@@ -358,19 +358,19 @@
 .message-copy-button:hover,
 .message-copy-button:focus-visible {
   outline: 0;
-  box-shadow: 0 4px 12px rgba(31, 35, 40, 0.1);
-  background: #fff;
-  color: #202427;
+  box-shadow: 0 4px 12px var(--ink-overlay-12);
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .message-copy-button.copied {
-  background: #e8f5ed;
-  color: #16833a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .message-copy-button.failed {
-  background: #fceeee;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .user-message-block-with-actions:hover .message-copy-button,
@@ -402,10 +402,10 @@
   display: block;
   width: 112px;
   height: 84px;
-  border: 1px solid rgba(31, 35, 40, 0.1);
-  border-radius: 10px;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-sm);
   object-fit: cover;
-  background: #fff;
+  background: var(--paper);
 }
 
 .message-files {
@@ -422,8 +422,8 @@
   max-width: min(280px, 100%);
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(31, 35, 40, 0.12);
-  border-radius: 10px;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.82);
   color: #24292f;
   font-size: 0.84rem;
@@ -441,7 +441,7 @@
   display: block;
   width: 100%;
   min-width: 0;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-prose-line-height);
 }
@@ -457,7 +457,7 @@
   min-height: 24px;
   align-items: center;
   gap: 6px;
-  color: #8b9094;
+  color: var(--ink-muted);
   line-height: var(--conversation-control-line-height);
   opacity: 0;
   pointer-events: none;
@@ -489,10 +489,10 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   box-shadow: none;
-  color: #8b9094;
+  color: var(--ink-muted);
   cursor: pointer;
   opacity: 1;
   padding: 0;
@@ -508,9 +508,9 @@
 .message-actions .message-action-button:focus-visible,
 .message-actions .message-action-button[aria-pressed="true"] {
   outline: 0;
-  background: #f1f2ef;
+  background: var(--surface-2);
   box-shadow: none;
-  color: #202427;
+  color: var(--ink);
 }
 
 .message-actions .message-action-button:disabled {
@@ -520,7 +520,7 @@
 
 .message-actions .message-action-button:disabled:hover {
   background: transparent;
-  color: #8b9094;
+  color: var(--ink-muted);
 }
 
 .message-actions .message-action-button:active {
@@ -528,13 +528,13 @@
 }
 
 .message-actions .message-action-button.copied {
-  background: #e8f5ed;
-  color: #16833a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .message-actions .message-action-button.failed {
-  background: #fceeee;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .agent-text {
@@ -548,12 +548,12 @@
   overflow-wrap: anywhere;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Streaming markdown surface (progressive render)                           */
-/* -------------------------------------------------------------------------- */
-/* The text is the product. We render the markdown progressively, character
-   by character, and let the browser handle layout. The only animation is
-   a 1px static cursor at the end of the visible text. */
+                                                                                
+                                                                               
+                                                                                
+                                                                           
+                                                                         
+                                                         
 
 .streaming-markdown {
   display: block;
@@ -564,18 +564,18 @@
   --stream-cursor-color: #2f4a5f;
 }
 
-/* Off-screen stable blocks skip layout and paint. The intrinsic-size
-   hint keeps the scrollbar from jumping while a block is in the
-   "skipped" state. The tail is intentionally NOT wrapped in this
-   class, so the actively-revealed text always renders at full
-   quality regardless of viewport position. */
+                                                                     
+                                                                
+                                                                 
+                                                              
+                                              
 .streaming-markdown-block {
   content-visibility: auto;
   contain-intrinsic-size: auto 200px;
 }
 
-/* The 1px cursor. Sits inline at the end of the text. No breathing,
-   no glow, no blinking — just a quiet marker that says "more to come". */
+                                                                    
+                                                                          
 .stream-cursor {
   display: inline-block;
   width: 1px;
@@ -588,13 +588,13 @@
   pointer-events: none;
 }
 
-/* On settle, the cursor fades out 200ms then is removed from the DOM. */
+                                                                         
 .stream-cursor.is-fading {
   transition: opacity 200ms ease-out;
   opacity: 0;
 }
 
-/* Reasoning variant: a slightly quieter cursor color. */
+                                                         
 .reasoning-stream.streaming-markdown {
   --stream-cursor-color: #8b8f93;
   color: inherit;
@@ -604,7 +604,7 @@
   color: inherit;
 }
 
-/* Reduced motion: skip the fade transition entirely. */
+                                                        
 @media (prefers-reduced-motion: reduce) {
   .stream-cursor.is-fading {
     transition: none;
@@ -637,7 +637,7 @@
   width: fit-content;
   max-width: 100%;
   margin: 6px 0 -2px;
-  color: #8d9296;
+  color: var(--ink-muted);
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
@@ -680,7 +680,7 @@
 }
 
 .turn-progress-duration {
-  color: #8b9094;
+  color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -718,7 +718,7 @@
   right: 0;
   left: 0;
   height: 1px;
-  background: #e5e5e1;
+  background: var(--surface-4);
   content: "";
 }
 
@@ -805,7 +805,7 @@
   width: 7px;
   height: 7px;
   border: 1.5px solid currentColor;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .stickman-body,
@@ -814,7 +814,7 @@
 .stickman-weapon {
   position: absolute;
   height: 1.5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: currentColor;
   transform-origin: 0 50%;
 }
@@ -859,7 +859,7 @@
   top: 10px;
   left: 18px;
   width: 15px;
-  background: #8a918d;
+  background: var(--ink-muted);
   transform: rotate(-18deg);
 }
 
@@ -869,7 +869,7 @@
   left: 50%;
   width: 4px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   box-shadow:
     -5px 2px 0 rgba(217, 162, 58, 0.7),
@@ -964,7 +964,7 @@
   top: 27px;
   width: 18px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(151, 133, 105, 0.32);
   opacity: 0;
 }
@@ -981,7 +981,7 @@
   top: 28px;
   width: 54px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   opacity: 0;
 }
 
@@ -999,7 +999,7 @@
   top: 17px;
   width: 5px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   box-shadow:
     -7px 3px 0 -1px rgba(217, 162, 58, 0.62),
@@ -1019,7 +1019,7 @@
   top: 18px;
   width: 24px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, transparent, #d9a23a, transparent);
   opacity: 0;
 }
@@ -1052,7 +1052,7 @@
   left: 7px;
   width: 1.5px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: currentColor;
   box-shadow: 5px 3px 0 -2px #d9a23a;
   content: "";
@@ -1083,7 +1083,7 @@
   top: 21px;
   width: 28px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background:
     radial-gradient(circle at 24% 52%, rgba(142, 118, 93, 0.42) 0 4px, transparent 4.5px),
     radial-gradient(circle at 58% 38%, rgba(151, 133, 105, 0.36) 0 5px, transparent 5.5px),
@@ -1104,7 +1104,7 @@
   top: 16px;
   width: 18px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, transparent, #d9a23a, transparent);
   opacity: 0;
 }
@@ -1114,7 +1114,7 @@
   position: absolute;
   width: 3px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   content: "";
 }
@@ -1141,8 +1141,8 @@
   top: 19px;
   width: 9px;
   height: 2px;
-  border-radius: 999px;
-  background: #8a918d;
+  border-radius: var(--radius-pill);
+  background: var(--ink-muted);
   opacity: 0;
 }
 
@@ -1161,8 +1161,8 @@
   bottom: -4px;
   width: 7px;
   height: 7px;
-  border-radius: 999px;
-  background: #8a918d;
+  border-radius: var(--radius-pill);
+  background: var(--ink-muted);
   content: "";
 }
 
@@ -1201,7 +1201,7 @@
   width: 26px;
   height: 26px;
   border: 1.5px solid currentColor;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   opacity: 0.72;
 }
 
@@ -1214,7 +1214,7 @@
   border: 1px solid currentColor;
   border-right-color: transparent;
   border-left-color: transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   content: "";
   transform: rotate(-14deg);
 }
@@ -1623,7 +1623,7 @@
 
 .era-cannon .era-vehicle::before,
 .era-cannon .era-vehicle::after {
-  background: #6e7476;
+  background: var(--ink-tertiary);
 }
 
 .era-cannon .era-projectile {
@@ -1761,7 +1761,7 @@
   left: calc(50% + 16px);
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   border: 2px solid currentColor;
   animation: gear-spin 2200ms linear infinite;
@@ -1853,7 +1853,7 @@
 .era-armor .era-vehicle::after {
   width: 10px;
   height: 10px;
-  background: #6e7476;
+  background: var(--ink-tertiary);
 }
 
 .era-armor .era-projectile {
@@ -1900,7 +1900,7 @@
 .era-armor .battle-squad {
   top: 22px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background:
     linear-gradient(currentColor, currentColor) 0 3px / 100% 3px no-repeat,
     repeating-linear-gradient(90deg, currentColor 0 12px, transparent 12px 17px);
@@ -1960,7 +1960,7 @@
   left: calc(50% - 38px);
   width: 50px;
   height: 7px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: currentColor;
 }
 
@@ -2132,7 +2132,7 @@
   display: block;
   width: 3px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #d9a23a;
   animation: star-twinkle 1800ms ease-in-out infinite;
 }
@@ -2245,7 +2245,7 @@
 
 .turn-progress.failed .turn-progress-label svg,
 .turn-progress.failed .turn-progress-title {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .turn-progress.failed .turn-progress-rule {
@@ -2267,7 +2267,7 @@
   width: min(760px, calc(100vw - 56px));
   gap: 18px;
   border: 1px solid rgba(64, 70, 68, 0.13);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: rgba(253, 254, 251, 0.96);
   box-shadow:
     0 24px 60px rgba(31, 35, 38, 0.16),
@@ -2285,7 +2285,7 @@
 }
 
 .turn-progress-preview-header h2 {
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-body);
   font-weight: var(--weight-semibold);
   margin: 0 0 5px;
@@ -2335,7 +2335,7 @@
 .turn-progress-preview-track {
   height: 3px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #e8e9e4;
 }
 
@@ -2375,7 +2375,7 @@
 
 .turn-process-toggle:hover,
 .turn-process-toggle:focus-visible {
-  color: #6f7478;
+  color: var(--ink-tertiary);
   outline: 0;
 }
 
@@ -2392,10 +2392,10 @@
   color: currentColor;
 }
 
-/* Avatar slot (Brain / MessageCircle) used to be an 18×18 outline
-   placeholder reserved for a future mascot. With the text-first
-   redesign the slot is gone — the JSX still renders the spans for
-   state / test stability, but visually they take no space. */
+                                                                  
+                                                                
+                                                                  
+                                                              
 .turn-process-avatar {
   display: none !important;
 }
@@ -2416,49 +2416,49 @@
 .turn-process-title {
   min-width: 0;
   overflow: hidden;
-  color: #8a8f94;
+  color: var(--ink-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Match meta and preview font-size so all three share the same
-     text metrics and line up on one baseline. Without this, the
-     title silently inherits the body's --font-ui (13px) while
-     meta and preview are --font-sm (12px) — same row, different
-     baselines, reads as "not aligned". */
+                                                                 
+                                                                
+                                                              
+                                                                
+                                          
   font-size: var(--font-sm);
   line-height: var(--conversation-meta-line-height);
 }
 
-/* Text-first glyph: a small play-triangle (▶) that sits at the
-   start of every process status row. Same color as the text so
-   the row reads as a single line. Filled rather than outlined
-   so the cue is unmistakable at 12px. */
+                                                               
+                                                               
+                                                              
+                                         
 .turn-process-glyph {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
-  color: #a8acb0;
-  /* Center on the flex line so the icon shares the visual center
-     of the surrounding text. The previous translateY(1px) hack
-     drifted out of sync with the dot's translateY(-1px), leaving
-     the glyph and dot at opposite offsets. */
+  color: var(--ink-muted);
+                                                                 
+                                                               
+                                                                 
+                                              
   align-self: center;
 }
 
-/* Live process indicator: a 6px pulsing dot rendered next to the
-   live command preview. The animation runs in a 1.2s loop, dim to
-   bright, so the user can tell the command is still going. */
+                                                                 
+                                                                  
+                                                              
 .turn-process-live-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #8a8f94;
+  background: var(--ink-muted);
   margin-right: 6px;
   vertical-align: middle;
-  /* Dropped the translateY(-1px) hack — it was compensating for a
-     baseline mismatch that no longer exists once title/meta/preview
-     share font-size. vertical-align: middle keeps the dot on the
-     text x-height naturally. */
+                                                                  
+                                                                    
+                                                                 
+                                
   animation: turn-process-live-pulse 1.2s ease-in-out infinite;
 }
 
@@ -2518,26 +2518,26 @@
 }
 
 .turn-process-checkpoint[data-live="false"] {
-  /* When the line has caught up, let it blend into the process header. */
-  color: #7d8388;
+                                                                          
+  color: var(--ink-muted);
 }
 
 .turn-process-meta {
-  color: #a8acb0;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: var(--conversation-meta-line-height);
 }
 
-/* Row 2 of the fold header: live process preview. Used to be
-   pinned to col 2 row 2 of a 3-col grid. With the avatar column
-   gone, the preview is now a plain inline span in the flex toggle
-   — the second visual line of the status row, after the title +
-   meta. The text itself still ellipsises on a single line. */
+                                                             
+                                                                
+                                                                  
+                                                                
+                                                              
 .turn-process-preview {
   display: inline;
   min-width: 0;
   align-items: center;
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: var(--conversation-meta-line-height);
 }
@@ -2549,18 +2549,18 @@
   white-space: nowrap;
 }
 
-/* Fold-header preview text is a committed snapshot, not a live
-   surface. The body's StreamingMarkdown is the single place that
-   should advance while a stream is in flight. Reintroducing text
-   animation here would create a second live surface that races the
-   body's cursor — the original "two places incrementing" bug. The
-   live-dot alone communicates "still working". */
+                                                               
+                                                                 
+                                                                 
+                                                                   
+                                                                  
+                                                  
 
-/* The chevron used to sit in col 3 of the toggle grid to hint that
-   the process group folds open. With the text-first redesign the
-   fold affordance is gone — process records always render as
-   plain rows in the flow, no chevron needed. The class is kept
-   for state-manager compatibility, but visually it's hidden. */
+                                                                   
+                                                                 
+                                                             
+                                                               
+                                                                
 .turn-process-chevron {
   display: none;
 }
@@ -2604,33 +2604,33 @@
   display: none;
 }
 
-/* Tool activity rows used to use a collapsible-details pattern: a
-   toggle button showed the section title and a hidden details block
-   rendered the matching command text. In nearly every case (list_files,
-   read_file, grep, run_shell with a readable label) the toggle summary
-   and the command text were identical strings, so the row read as the
-   same tool call shown twice. The panel was hidden via display: none
-   upstream and the collapse transition machinery below is no longer
-   reached, but kept commented so the original intent is documented if
-   a future caller needs to re-introduce the expander for genuinely
-   divergent summary/command text. */
-/* .activity-details {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transform: translateY(var(--collapse-enter-offset-y));
-  transition:
-    grid-template-rows var(--collapse-motion-duration) var(--collapse-motion-easing),
-    opacity var(--collapse-opacity-duration) ease,
-    transform var(--collapse-motion-duration) var(--collapse-motion-easing);
-  will-change: grid-template-rows, opacity, transform;
-}
+                                                                  
+                                                                    
+                                                                        
+                                                                       
+                                                                      
+                                                                     
+                                                                    
+                                                                      
+                                                                   
+                                     
+                      
+                
+                          
+             
+                                                        
+             
+                                                                                     
+                                                  
+                                                                            
+                                                      
+ 
 
-.activity-group.expanded .activity-details {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transform: translateY(0);
-} */
+                                            
+                          
+             
+                           
+    
 
 .turn-process-stack {
   position: static;
@@ -2661,7 +2661,7 @@
 }
 
 .turn-process-entry-commentary {
-  color: #202427;
+  color: var(--ink);
   font-size: var(--conversation-message-font-size);
   font-weight: 400;
   line-height: var(--conversation-prose-line-height);
@@ -2718,7 +2718,7 @@
 }
 
 .turn-process-entry .activity-row svg {
-  color: #a0a4a8;
+  color: var(--ink-muted);
 }
 
 .turn-process-entry .activity-toggle:hover,
@@ -2735,7 +2735,7 @@
 .turn-process-checkpoint-line {
   min-width: 0;
   border-left: 2px solid #e2e4df;
-  color: #6e7478;
+  color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.42;
@@ -2767,17 +2767,17 @@
 }
 
 .activity-row {
-  /* Text-first status row: a single inline line of muted text. No
-     background, no border, no rounded chip. Sits in the assistant
-     flow on its own line, just like the prototype. The leading
-     icon (Terminal / Play / Square from lucide) is sized to 12px
-     so it visually matches a baseline x-height of 12-13px. */
+                                                                  
+                                                                  
+                                                               
+                                                                 
+                                                              
   display: inline-flex;
   min-width: 0;
   min-height: 0;
   align-items: center;
   gap: 6px;
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-control-line-height);
@@ -2818,7 +2818,7 @@
 .activity-group.failed .activity-row svg,
 .activity-row.failed,
 .activity-row.failed svg {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .activity-copy {
@@ -2829,9 +2829,9 @@
   gap: 0 7px;
 }
 
-/* The summary is now a <span>, not a <button>. Inherit the same
-   inline-flex row used by .activity-row, drop the cursor / focus /
-   hover affordances that belonged to the click-to-expand toggle. */
+                                                                
+                                                                   
+                                                                    
 .activity-summary {
   display: inline-flex;
   align-items: center;
@@ -2850,15 +2850,15 @@
 }
 
 .activity-details {
-  /* The collapsible details panel no longer exists in this surface —
-     each tool activity row is a single line of prose plus, when
-     relevant, an error line below. Earlier versions had a toggle
-     button + collapsible details block that always rendered together
-     (because of a display:contents override that flattened the
-     details into the row). That made the same tool call appear twice
-     in the flow, which the user flagged as redundant. Consolidating
-     removes both the duplicate command line and the need for any
-     grid-template-rows collapse animation here. */
+                                                                     
+                                                                
+                                                                 
+                                                                     
+                                                               
+                                                                     
+                                                                    
+                                                                 
+                                                   
   display: none;
 }
 
@@ -2883,7 +2883,7 @@
 }
 
 .activity-detail-marker svg {
-  color: #a0a4a8;
+  color: var(--ink-muted);
 }
 
 .activity-detail-body {
@@ -2900,7 +2900,7 @@
 
 .activity-command {
   display: inline;
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: var(--conversation-control-line-height);
   font-weight: var(--weight-medium);
@@ -2910,11 +2910,11 @@
 }
 
 .activity-command.running {
-  color: #8a8f94;
+  color: var(--ink-muted);
 }
 
 .activity-command.failed {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .activity-detail-title {
@@ -2933,7 +2933,7 @@
 
 .activity-detail-title span {
   overflow: hidden;
-  color: #a8acb0;
+  color: var(--ink-muted);
   font-size: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2942,27 +2942,27 @@
 .activity-status {
   flex: 0 0 auto;
   margin-top: 0;
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
 }
 
 .activity-status.completed {
-  color: #8a8f94;
+  color: var(--ink-muted);
 }
 
 .activity-status.failed {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .activity-detail-error {
-  /* Text-first: a 2px left rule in the failure color, no background
-     fill, no rounded chip. The error message sits on the same
-     baseline as surrounding text. */
+                                                                    
+                                                              
+                                     
   border-radius: 0;
   background: transparent;
   border-left: 2px solid #e89088;
-  color: #b42318;
+  color: var(--danger);
   font-size: var(--font-sm);
   line-height: 1.55;
   margin: 4px 0 4px 0;
@@ -2971,7 +2971,7 @@
 }
 
 .activity-file {
-  color: #2f8cf0;
+  color: var(--info);
   font-weight: var(--weight-medium);
 }
 
@@ -2993,21 +2993,21 @@
 }
 
 .rich-heading {
-  /* Reset margin — the parent .rich-content already provides
-     inter-block gap (--conversation-prose-block-gap, 16px). Adding
-     extra margin-top here would create asymmetric spacing (more
-     above a heading than below it), which reads as "shouty". */
+                                                             
+                                                                   
+                                                                
+                                                                
   margin: 0;
-  color: #202427;
+  color: var(--ink);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   line-height: 1.3;
 }
 
 .rich-heading-1 {
-  /* Notion-style: h1 is only 3px taller than body text, weight 600
-     does the visual lift. Keeping the size close to body avoids
-     the "marketing page" feel that 22px h1 gives. */
+                                                                   
+                                                                
+                                                     
   font-size: 18px;
 }
 
@@ -3056,7 +3056,7 @@
   height: 14px;
   margin: 0 6px 0 -20px;
   vertical-align: -2px;
-  accent-color: #2f8cf0;
+  accent-color: var(--info);
 }
 
 .rich-link {
@@ -3071,14 +3071,14 @@
 }
 
 .rich-content :not(pre) > code {
-  /* Text-first inline code: a small, soft gray pill that sits
-     inline with the surrounding text. The padding is slightly
-     larger than a "tight" inline code chip so the pill reads as
-     part of the prose, not as a token pasted on top of it. */
+                                                              
+                                                              
+                                                                
+                                                              
   border: 0;
-  border-radius: 4.5px;
-  background: rgba(31, 35, 40, 0.055);
-  color: #1f2328;
+  border-radius: var(--radius-xs);
+  background: var(--ink-overlay-6);
+  color: var(--ink);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.92em;
   padding: 1px 6px;
@@ -3101,25 +3101,25 @@
   display: block;
   max-width: 100%;
   max-height: 420px;
-  /* Notion-style: the border is so soft it's almost invisible
-     (6% black, 1px). The bg is barely off-white. The image
-     "floats" in the message flow rather than sitting in a frame. */
-  border: 1px solid rgba(31, 35, 40, 0.06);
-  border-radius: 8px;
-  background: #fafaf8;
+                                                              
+                                                           
+                                                                    
+  border: 1px solid var(--ink-overlay-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
   object-fit: contain;
 }
 
 .rich-code {
   max-height: 460px;
   min-width: 0;
-  /* Notion-style code block: zero border, slightly darker solid bg
-     (#f3f3f0 vs the page's white) so the code "sinks" into a soft
-     plate. 8px radius keeps it from feeling sharp. Internal padding
-     comes from .rich-code pre. */
+                                                                   
+                                                                  
+                                                                    
+                                  
   border: 0;
   background: #f3f3f0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .rich-code code {
@@ -3130,7 +3130,7 @@
   content: attr(data-language);
   display: block;
   margin: -4px 0 8px;
-  color: #7a7f84;
+  color: var(--ink-muted);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
@@ -3140,11 +3140,11 @@
 .rich-table-wrap {
   max-width: 100%;
   overflow: auto;
-  /* Notion-style table: NO outer border, NO border-radius, NO
-     background. The table "sits" in the message flow as a soft
-     block — the only frame is the thead's 4% black background
-     and the 6% black row dividers below. Horizontal overflow
-     becomes the only scrollable surface. */
+                                                              
+                                                               
+                                                              
+                                                             
+                                            
   background: transparent;
   font-variant-numeric: tabular-nums;
 }
@@ -3158,18 +3158,18 @@
 
 .rich-table-wrap th,
 .rich-table-wrap td {
-  /* Generous padding so the table breathes in the chat flow.
-     The only visible line is the 6% black row divider; cell
-     sides are borderless and columns are separated by padding
-     alone, which is the "open" Notion feel. */
+                                                             
+                                                            
+                                                              
+                                               
   padding: 10px 14px;
   text-align: left;
   vertical-align: top;
-  border-bottom: 1px solid rgba(31, 35, 40, 0.06);
+  border-bottom: 1px solid var(--ink-overlay-6);
 }
 
 .rich-table-wrap th {
-  background: rgba(31, 35, 40, 0.04);
+  background: var(--ink-overlay-4);
   color: #42474d;
   font-weight: var(--weight-semibold);
 }
@@ -3180,11 +3180,11 @@
 
 .rich-blockquote {
   margin: 0;
-  /* Notion-style: 2px left bar (down from 3px) at 16% black so
-     the bar reads as a "thoughtful marker" rather than a heavy
-     left rule. Text stays slightly muted (20% lighter than
-     body) so the quoted content feels referenced, not primary. */
-  border-left: 2px solid rgba(31, 35, 40, 0.16);
+                                                               
+                                                               
+                                                           
+                                                                  
+  border-left: 2px solid var(--ink-overlay-18);
   color: #596067;
   padding: 2px 0 2px 12px;
 }
@@ -3199,9 +3199,9 @@
 
 .rich-mermaid {
   overflow: auto;
-  border: 1px solid #e5e5e1;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
   padding: 14px;
 }
 
@@ -3214,21 +3214,21 @@
 
 .rich-mermaid-loading,
 .rich-mermaid-error {
-  color: #6e7478;
+  color: var(--ink-tertiary);
   font-size: var(--font-ui);
 }
 
 .rich-mermaid-error {
   display: grid;
   gap: 10px;
-  border-color: #f1c2bf;
-  background: #fff7f6;
-  color: #b42318;
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .reasoning-block {
   display: block;
-  color: #6f7478;
+  color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: 500;
   line-height: var(--conversation-meta-line-height);
@@ -3256,21 +3256,21 @@
   margin-top: 2px;
 }
 
-/* Reasoning fold — a nested <details> inside the process region.
-   Reasoning is grouped with commentary/tool activity in the process
-   region but folded by default (per the message-display policy:
-   rule 3 — "reasoning 内容默认折叠"). The summary row reads as a
-   single quiet gray line in the same family as a tool-call row
-   ("查看代码差异", "检查 Git 状态") — no leading icon, just text and
-   a chevron to signal that the row is expandable. The body is
-   indented + uses a softer gray than commentary so the user can
-   tell at a glance that this is secondary content the agent
-   thought but did not surface directly. Chevron rotates on open;
-   the body uses grid-template-rows to animate the height change
-   smoothly (the native <details> toggle is otherwise instantaneous).
-   This mirrors the process fold's own "no box, inline with text
-   flow" principle — reasoning is part of the same conversation
-   stream, just at a quieter visual weight. */
+                                                                 
+                                                                    
+                                                                
+                                                           
+                                                               
+                                                           
+                                                              
+                                                                
+                                                            
+                                                                 
+                                                                
+                                                                     
+                                                                
+                                                               
+                                              
 .turn-reasoning-fold {
   min-width: 0;
 }
@@ -3297,13 +3297,13 @@
   display: none;
 }
 
-/* Subtle underline-on-hover so the summary still reads as part of
-   the text flow even when interactive (same convention as the outer
-   process fold toggle). */
+                                                                  
+                                                                    
+                           
 .turn-reasoning-summary:hover,
 .turn-reasoning-summary:focus-visible {
   text-decoration: underline;
-  text-decoration-color: rgba(31, 35, 40, 0.18);
+  text-decoration-color: var(--ink-overlay-18);
   text-underline-offset: 3px;
   outline: 0;
 }
@@ -3313,26 +3313,26 @@
   min-width: 0;
 }
 
-/* Streaming shimmer — the "正在思考" label carries a narrow vertical
-   white light bar sweeping left → right across the glyphs to mark
-   "the agent is working on this row right now." Settled rows are
-   static gray; only the active row gets the animation.
+                                                                 
+                                                                  
+                                                                 
+                                                       
 
-   Implementation: paint the text color through a horizontal
-   linear-gradient with `ink-soft` plateaus on both sides and a
-   tight white peak in the middle. background-size 250% stretches
-   the gradient so the white band itself covers only ~10% of the
-   text width (Claude-style shimmer). Animating `background-position`
-   from `150%` to `-50%` slides the bar from off-screen-left to
-   off-screen-right. `background-clip: text` plus `color: transparent`
-   makes only the glyphs show the gradient. */
+                                                            
+                                                               
+                                                                 
+                                                                
+                                                                     
+                                                               
+                                                                      
+                                              
 .turn-reasoning-summary-text.is-streaming {
   background-image: linear-gradient(
     90deg,
     var(--wuu-ink-soft) 0%,
     var(--wuu-ink-soft) 45%,
     rgba(255, 255, 255, 0.6) 48%,
-    #ffffff 50%,
+    var(--paper) 50%,
     rgba(255, 255, 255, 0.6) 52%,
     var(--wuu-ink-soft) 55%,
     var(--wuu-ink-soft) 100%
@@ -3354,9 +3354,9 @@
   }
 }
 
-/* Respect motion preferences — a static gray "正在思考" reads
-   exactly as well for users who don't want the animation, and is
-   trivially distinguishable from a settled "查看思考过程". */
+                                                          
+                                                                 
+                                                        
 @media (prefers-reduced-motion: reduce) {
   .turn-reasoning-summary-text.is-streaming {
     background-image: none;
@@ -3378,11 +3378,11 @@
   opacity: 1;
 }
 
-/* Body uses a grid-rows trick to animate height between 0fr (closed)
-   and 1fr (open). The inner wrapper carries overflow:hidden so the
-   collapsing content doesn't bleed out during the transition. The
-   opacity transition fades the content in alongside the height
-   change so it doesn't pop visually. */
+                                                                     
+                                                                   
+                                                                  
+                                                               
+                                        
 .turn-reasoning-body {
   display: grid;
   grid-template-rows: 0fr;
@@ -3401,27 +3401,27 @@
   min-height: 0;
   overflow: hidden;
   padding: 4px 0 2px 20px;
-  /* Reasoning body keeps the same gray family as its summary so the
-     expanded content reads as part of the same quiet row, just
-     indented — commentary uses near-black prose color; reasoning is
-     one step lighter on purpose. */
+                                                                    
+                                                               
+                                                                    
+                                    
   color: var(--wuu-ink-soft);
 }
 
-/* When reasoning expands inside an already-open process fold (running
-   turn), the user is reading the agent's trail. Cap the body at a
-   reasonable max-height so a runaway reasoning block doesn't push
-   the rest of the conversation off-screen; a subtle scrollbar is the
-   lesser evil compared to eating the viewport. */
+                                                                      
+                                                                  
+                                                                  
+                                                                     
+                                                  
 .turn-reasoning-body-inner > .reasoning-block {
   max-height: 50vh;
   overflow-y: auto;
 }
 
 .tool-card {
-  border: 1px solid #e5e5e1;
-  border-radius: 8px;
-  background: #fbfbfa;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
   overflow: hidden;
 }
 
@@ -3430,7 +3430,7 @@
   height: 40px;
   align-items: center;
   gap: 9px;
-  border-bottom: 1px solid #e8e8e5;
+  border-bottom: 1px solid var(--surface-3);
   padding: 0 14px;
   font-weight: var(--weight-semibold);
 }
@@ -3438,17 +3438,17 @@
 .status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   margin-left: auto;
-  background: #9aa0a6;
+  background: var(--ink-faint);
 }
 
 .status-dot.completed {
-  background: #1f9d55;
+  background: var(--success);
 }
 
 .status-dot.failed {
-  background: #c93c37;
+  background: var(--danger);
 }
 
 pre {
@@ -3456,8 +3456,8 @@ pre {
   overflow: auto;
   margin: 0;
   padding: 12px 14px;
-  border-bottom: 1px solid #ededeb;
-  background: #f7f7f5;
+  border-bottom: 1px solid var(--surface-3);
+  background: var(--surface-1);
   color: #383d42;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: var(--font-sm);
@@ -3468,26 +3468,26 @@ pre {
 
 .tool-result {
   border-bottom: 0;
-  background: #fff;
+  background: var(--paper);
 }
 
-/*
- * Editorial notice system.
- *
- * No rounded boxes, no fill colors. The notice lives in the conversation
- * flow as inline editorial copy, marked off by a 2px left rule and a
- * compact icon. Color is reserved for the rule + icon; the text always
- * stays in the same gray scale as the body prose. This keeps error
- * states from competing with the conversation itself.
- *
- * Three sibling elements share the same base:
- *   - .turn-notice   → warning/error/context status lines
- *   - .turn-error    → legacy hard-error (kept for back-compat with
- *                       anything that still emits raw .turn-error)
- *   - .system-line   → in-flow editorial line for minor system notes.
- *                       No fill, no border — it sits in
- *                       the prose as if it were written by the author.
- */
+  
+                           
+  
+                                                                         
+                                                                     
+                                                                       
+                                                                   
+                                                      
+  
+                                              
+                                                          
+                                                                    
+                                                                   
+                                                                      
+                                                        
+                                                                       
+   
 
 .turn-notice,
 .turn-error {
@@ -3500,12 +3500,12 @@ pre {
 }
 
 .turn-error {
-  color: #b42318;
+  color: var(--danger);
 }
 
-/* Actions sit beneath the copy as inline text links. We deliberately
-   do not give them button chrome — that would re-introduce the
-   "card" feel we're moving away from. */
+                                                                     
+                                                               
+                                         
 .turn-notice-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3517,9 +3517,9 @@ pre {
 }
 
 .turn-notice-action {
-  color: #1f2328;
+  color: var(--ink);
   text-decoration: none;
-  border-bottom: 1px solid #c8c9c5;
+  border-bottom: 1px solid var(--surface-4);
   padding-bottom: 1px;
   cursor: pointer;
   background: transparent;
@@ -3533,17 +3533,17 @@ pre {
 }
 
 .turn-notice-action:hover {
-  border-bottom-color: #1f2328;
+  border-bottom-color: var(--ink);
 }
 
 .turn-notice-action.secondary {
-  color: #6e7478;
+  color: var(--ink-tertiary);
   border-bottom-color: transparent;
 }
 
 .turn-notice-action.secondary:hover {
-  color: #4f5559;
-  border-bottom-color: #c8c9c5;
+  color: var(--ink);
+  border-bottom-color: var(--surface-4);
 }
 
 .turn-notice {
@@ -3551,7 +3551,7 @@ pre {
   grid-template-columns: 14px 1fr;
   column-gap: 10px;
   align-items: start;
-  color: #6e7478;
+  color: var(--ink-tertiary);
   max-width: min(720px, 100%);
 }
 
@@ -3577,20 +3577,20 @@ pre {
 }
 
 .turn-notice-copy strong {
-  color: #1f2328;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   line-height: 1.35;
 }
 
 .turn-notice-copy span {
-  color: #4f5559;
+  color: var(--ink);
   font-size: var(--font-ui);
   line-height: 1.5;
 }
 
 .turn-notice.warning {
-  color: #8a5b10;
+  color: var(--warning);
 }
 
 .turn-notice.auth {
@@ -3598,11 +3598,11 @@ pre {
 }
 
 .turn-notice.error {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .turn-notice.context-compaction-notice {
-  color: #7b8186;
+  color: var(--ink-muted);
   border-left-color: #c8cbc6;
 }
 
@@ -3610,17 +3610,17 @@ pre {
   color: #3b4045;
 }
 
-/*
- * system-line is no longer a "status block". It's an inline editorial
- * note in the conversation — a thin top rule plus a short sentence
- * introduced by an em-dash. Treated as prose, not chrome.
- */
+  
+                                                                      
+                                                                   
+                                                          
+   
 .system-line {
   border: 0;
-  border-top: 1px solid #ececea;
+  border-top: 1px solid var(--surface-3);
   border-radius: 0;
   background: transparent;
-  color: #6e7478;
+  color: var(--ink-tertiary);
   padding: 10px 0 0;
   margin-top: 4px;
   line-height: var(--line-body);
@@ -3635,7 +3635,7 @@ pre {
 }
 
 .system-line strong {
-  color: #4f5559;
+  color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
@@ -3643,9 +3643,9 @@ pre {
   display: grid;
   min-height: 100%;
   align-items: start;
-  background: #fff;
+  background: var(--paper);
   padding: clamp(96px, 18vh, 192px) 0 clamp(72px, 12vh, 128px);
-  color: #202427;
+  color: var(--ink);
 }
 
 .empty-home-inner {
@@ -3662,7 +3662,7 @@ pre {
   grid-column: 2 / 12;
   max-width: 940px;
   margin: 0;
-  color: #22262a;
+  color: var(--ink);
   font-size: clamp(28px, 2.2vw, 32px);
   font-weight: 460;
   letter-spacing: 0;
@@ -3690,16 +3690,16 @@ pre {
   align-content: start;
   gap: 16px;
   border: 1px solid #e5e5e2;
-  border-radius: 8px;
-  background: #fff;
-  color: #22262a;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
   padding: 18px;
   text-align: left;
 }
 
 .empty-home-actions button:hover {
   border-color: #d8d9d5;
-  background: #fafaf8;
+  background: var(--surface-1);
 }
 
 .empty-home-actions button > svg {
@@ -3717,7 +3717,7 @@ pre {
 }
 
 .empty-home-actions small {
-  color: #858a8e;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.35;
@@ -3727,7 +3727,7 @@ pre {
   display: grid;
   min-height: 0;
   place-items: center;
-  background: #fff;
+  background: var(--paper);
 }
 
 .project-empty-content {
@@ -3740,7 +3740,7 @@ pre {
 
 .project-empty-content h2 {
   margin: 0;
-  color: #22262a;
+  color: var(--ink);
   font-size: var(--font-title);
 }
 
@@ -3755,7 +3755,7 @@ pre {
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
-  color: #22262a;
+  color: var(--ink);
   font-size: 40px;
   font-weight: var(--weight-bold);
   line-height: 1;
@@ -3766,8 +3766,8 @@ pre {
   width: 8px;
   height: 32px;
   margin-left: 6px;
-  border-radius: 2px;
-  background: #2f7d68;
+  border-radius: var(--radius-xs);
+  background: var(--success);
   content: "";
   transform: translateY(4px);
   animation: wuu-caret 900ms steps(1, end) infinite;
@@ -3793,8 +3793,8 @@ pre {
   width: 148px;
   height: 3px;
   overflow: hidden;
-  border-radius: 999px;
-  background: #e7e8e4;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
 }
 
 .wuu-launch-rail::after {
@@ -3803,7 +3803,7 @@ pre {
   bottom: 0;
   width: 46px;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, #2f7d68 48%, #22262a);
+  background: linear-gradient(90deg, transparent, var(--success) 48%, var(--ink));
   content: "";
   animation: wuu-rail-scan 1200ms cubic-bezier(0.2, 0, 0, 1) infinite;
 }
@@ -3811,17 +3811,17 @@ pre {
 .wuu-launch-exit {
   height: 34px;
   border: 1px solid #dedfdb;
-  border-radius: 8px;
-  background: #fff;
-  color: #4f565b;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 0 12px;
 }
 
 .wuu-launch-exit:hover {
-  background: #f1f2ef;
-  color: #22262a;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .view-switch-loading {
@@ -3839,7 +3839,7 @@ pre {
 
 .view-switch-mark {
   gap: 3px;
-  color: #22262a;
+  color: var(--ink);
   font-size: 40px;
 }
 
@@ -5107,7 +5107,7 @@ pre {
 
   .turn-progress.in_progress .turn-progress-rule {
     height: 1px;
-    background: #e5e5e1;
+    background: var(--surface-4);
   }
 
   .turn-progress.in_progress .turn-progress-rule::before,
@@ -5118,7 +5118,7 @@ pre {
 
   .turn-progress.in_progress .turn-progress-title {
     background: none;
-    color: #6f7478;
+    color: var(--ink-tertiary);
   }
 }
 
@@ -5134,9 +5134,9 @@ pre {
   align-items: center;
   gap: 12px;
   border: 1px solid #e0e0dc;
-  border-radius: 8px;
-  background: #fff;
-  color: #22262a;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
   font-weight: var(--weight-semibold);
   padding: 0 16px;
   text-align: left;

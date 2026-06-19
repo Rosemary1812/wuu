@@ -251,7 +251,7 @@ export function SettingsView({
       <aside className="settings-sidebar">
         <div className="traffic-spacer" />
         <button className="settings-back-button" type="button" onClick={onBack}>
-          <ArrowLeft size={17} />
+          <ArrowLeft className="icon" />
           <span>返回应用</span>
         </button>
         <nav className="settings-nav" aria-label="设置">
@@ -261,7 +261,7 @@ export function SettingsView({
             aria-current={activePage === "general" ? "page" : undefined}
             onClick={() => setActivePage("general")}
           >
-            <Settings size={18} />
+            <Settings className="icon-lg" />
             <span>常规</span>
           </button>
           <button
@@ -270,7 +270,7 @@ export function SettingsView({
             aria-current={activePage === "usage" ? "page" : undefined}
             onClick={() => setActivePage("usage")}
           >
-            <BarChart3 size={18} />
+            <BarChart3 className="icon-lg" />
             <span>用量</span>
           </button>
         </nav>
@@ -315,7 +315,7 @@ export function SettingsView({
                       <div className="settings-provider-control">
                         <div className="settings-new-provider-label">新的模型服务</div>
                         <button className="settings-inline-button" type="button" onClick={cancelAddingProvider} disabled={running}>
-                          <X size={15} />
+                          <X className="icon" />
                           <span>取消</span>
                         </button>
                       </div>
@@ -333,7 +333,7 @@ export function SettingsView({
                           <div className="settings-new-provider-label">暂无模型服务</div>
                         )}
                         <button className="settings-inline-button" type="button" onClick={startAddingProvider} disabled={running}>
-                          <Plus size={15} />
+                          <Plus className="icon" />
                           <span>添加</span>
                         </button>
                       </div>

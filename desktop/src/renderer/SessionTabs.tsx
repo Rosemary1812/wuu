@@ -194,7 +194,7 @@ export function SessionTabStrip({
         disabled={!canStartNewThread}
         onClick={onNewThread}
       >
-        <Plus size={19} />
+        <Plus className="icon-lg" />
       </button>
     </div>
   );
@@ -288,7 +288,7 @@ function SortableSessionTab({
           onClose();
         }}
       >
-        <X size={13} />
+        <X className="icon-xs" />
       </button>
     </div>
   );
@@ -325,7 +325,7 @@ function SessionTabDragPreview({
         ) : null}
       </div>
       <div className="session-tab-close" aria-hidden="true">
-        <X size={13} />
+        <X className="icon-xs" />
       </div>
     </div>
   );

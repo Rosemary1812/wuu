@@ -63,7 +63,7 @@ export function TurnNotice({
       }
     >
       <span className="turn-notice-icon" aria-hidden="true">
-        <Icon size={14} />
+        <Icon className="icon-sm" />
       </span>
       <span className="turn-notice-copy">
         <strong>{display.title}</strong>
@@ -100,7 +100,7 @@ export function ContextCompactionNotice({
   return (
     <aside className="turn-notice context-compaction-notice" role="status">
       <span className="turn-notice-icon" aria-hidden="true">
-        <Archive size={14} />
+        <Archive className="icon-sm" />
       </span>
       <span className="turn-notice-copy">
         <strong>上下文已压缩</strong>

@@ -345,7 +345,7 @@ export function WorkspaceBrowserPanel({
           disabled={!canGoBack}
           onClick={goBack}
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft className="icon" />
         </button>
         <button
           className="icon-button workspace-browser-nav"
@@ -355,7 +355,7 @@ export function WorkspaceBrowserPanel({
           disabled={!canGoForward}
           onClick={goForward}
         >
-          <ArrowRight size={16} />
+          <ArrowRight className="icon" />
         </button>
         <button
           className="icon-button workspace-browser-nav"
@@ -364,7 +364,7 @@ export function WorkspaceBrowserPanel({
           title={isLoading ? "停止" : "刷新"}
           onClick={reload}
         >
-          {isLoading ? <X size={16} /> : <RotateCw size={15} />}
+          {isLoading ? <X className="icon" /> : <RotateCw className="icon" />}
         </button>
         <form
           className="workspace-browser-url-form"
@@ -372,7 +372,7 @@ export function WorkspaceBrowserPanel({
           onSubmit={handleSubmit}
         >
           <span className="workspace-browser-url-icon" aria-hidden="true">
-            {status === "error" ? <ShieldAlert size={14} /> : <Globe size={14} />}
+            {status === "error" ? <ShieldAlert className="icon-sm" /> : <Globe className="icon-sm" />}
           </span>
           <input
             ref={inputRef}
@@ -396,7 +396,7 @@ export function WorkspaceBrowserPanel({
           title="新标签页"
           onClick={() => navigate(HOME_PAGE_URL)}
         >
-          <Search size={15} />
+          <Search className="icon" />
         </button>
       </div>
       <div className="workspace-browser-frame">

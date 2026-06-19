@@ -249,7 +249,7 @@ export function DesignTokensPanel(): JSX.Element {
         aria-label="打开设计调音台"
         aria-expanded={open}
       >
-        <Sliders size={16} />
+        <Sliders className="icon" />
       </button>
       {open ? (
         <aside
@@ -259,7 +259,7 @@ export function DesignTokensPanel(): JSX.Element {
         >
           <div className="design-tokens-header">
             <div className="design-tokens-title">
-              <Sliders size={14} />
+              <Sliders className="icon-sm" />
               <h2>设计调音台</h2>
             </div>
             <button
@@ -268,7 +268,7 @@ export function DesignTokensPanel(): JSX.Element {
               onClick={() => setOpen(false)}
               aria-label="关闭"
             >
-              <X size={14} />
+              <X className="icon-sm" />
             </button>
           </div>
           <div className="design-tokens-body">
@@ -304,7 +304,7 @@ export function DesignTokensPanel(): JSX.Element {
               type="button"
               onClick={handleReset}
             >
-              <RotateCcw size={13} />
+              <RotateCcw className="icon-xs" />
               恢复默认
             </button>
             <span className="design-tokens-hint">值保存到 localStorage</span>
