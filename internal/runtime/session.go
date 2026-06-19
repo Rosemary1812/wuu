@@ -1307,6 +1307,7 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model 
 	if profileMemoryEnabled {
 		pb.AddProfileMemoryWithLimits(profileMemoryEntries, profileMemoryCharLimit, profileUserMemoryCharLimit)
 	}
+	pb.AddSlashCommands()
 	pb.AddSkills(discoveredSkills)
 	pb.AddWorkflows(discoveredWorkflows)
 	return pb.Build()

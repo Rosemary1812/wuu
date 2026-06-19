@@ -114,7 +114,7 @@ describe("composer slash commands", () => {
     expect(filterComposerSlashCommands(commands, "internal-only")).toEqual([]);
   });
 
-  it("turns task slash commands into editable prompts", () => {
+  it("keeps task slash commands as command text", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
       initialized: initialized("gpt-5.5", ["gpt-5.5"]),
@@ -127,10 +127,9 @@ describe("composer slash commands", () => {
     const pr = filterComposerSlashCommands(commands, "pr")[0];
 
     expect(debug?.kind).toBe("prompt");
-    expect(composerSlashPrompt(debug!, "login failure")).toContain("Investigate the current bug or failure.");
-    expect(composerSlashPrompt(debug!, "login failure")).toContain("Additional instructions:\nlogin failure");
-    expect(composerSlashPrompt(fix!, "")).toContain("Fix the current issue in this workspace.");
-    expect(composerSlashPrompt(commit!, "")).toContain("create one atomic commit");
-    expect(composerSlashPrompt(pr!, "")).toContain("Prepare a pull request");
+    expect(composerSlashPrompt(debug!, "login failure")).toBe("/debug login failure");
+    expect(composerSlashPrompt(fix!, "")).toBe("/fix ");
+    expect(composerSlashPrompt(commit!, "")).toBe("/commit ");
+    expect(composerSlashPrompt(pr!, "draft")).toBe("/pr draft");
   });
 });

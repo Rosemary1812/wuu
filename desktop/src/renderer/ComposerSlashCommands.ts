@@ -26,7 +26,6 @@ export type ComposerSlashCommand = {
   aliases?: string[];
   keywords?: string[];
   argumentHint?: string;
-  prompt?: string;
   disabledReason?: string;
 };
 
@@ -42,20 +41,6 @@ export type ComposerFastModelTarget = {
 };
 
 const COMPOSER_SLASH_COMMAND_LIMIT = 8;
-const DEFAULT_REVIEW_SLASH_PROMPT =
-  "Review the current code changes (staged, unstaged, and untracked files) and provide prioritized findings.";
-const DEBUG_SLASH_PROMPT =
-  "Investigate the current bug or failure. Start by reproducing or locating evidence, identify the root cause, then propose and apply the smallest product-correct fix. Verify the affected path before finishing.";
-const FIX_SLASH_PROMPT =
-  "Fix the current issue in this workspace. Read the relevant code first, make the smallest coherent change that solves the user-facing problem, and verify the real affected path.";
-const TEST_SLASH_PROMPT =
-  "Add or update focused tests for the current change. Keep the tests tied to real behavior, run the relevant test target, and avoid changing tests just to force a pass.";
-const EXPLAIN_SLASH_PROMPT =
-  "Explain the relevant code, behavior, or error in this workspace. Be concrete, cite the files or runtime evidence that matter, and call out any uncertainty.";
-const COMMIT_SLASH_PROMPT =
-  "Review the current local changes, run the relevant verification, and create one atomic commit with an English commit message if the changes are ready.";
-const PR_SLASH_PROMPT =
-  "Prepare a pull request for the current branch. Summarize the user-facing change, include verification, and create the PR only after checking the branch and local changes are ready.";
 
 export function parseComposerSlashDraft(value: string): ComposerSlashDraft | undefined {
   if (!value.startsWith("/") || value.startsWith("//") || value.includes("\n")) {
@@ -105,7 +90,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["audit"],
       keywords: ["diff", "changes", "code review", "审查", "检查"],
-      prompt: DEFAULT_REVIEW_SLASH_PROMPT,
       disabledReason: needsRuntime
     },
     {
@@ -117,7 +101,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["investigate", "diagnose"],
       keywords: ["bug", "error", "failure", "失败", "报错", "排查", "根因"],
-      prompt: DEBUG_SLASH_PROMPT,
       disabledReason: needsRuntime
     },
     {
@@ -129,7 +112,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["repair"],
       keywords: ["bug", "issue", "修复", "改掉", "问题"],
-      prompt: FIX_SLASH_PROMPT,
       disabledReason: needsRuntime
     },
     {
@@ -141,7 +123,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["tests"],
       keywords: ["unit", "e2e", "coverage", "测试", "验证"],
-      prompt: TEST_SLASH_PROMPT,
       disabledReason: needsRuntime
     },
     {
@@ -153,7 +134,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["why"],
       keywords: ["explain", "understand", "why", "解释", "说明", "为什么"],
-      prompt: EXPLAIN_SLASH_PROMPT,
       disabledReason: needsRuntime
     },
     {
@@ -177,7 +157,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["save"],
       keywords: ["git", "commit", "提交", "保存"],
-      prompt: COMMIT_SLASH_PROMPT,
       disabledReason: needsRuntime ?? needsIdleThread
     },
     {
@@ -189,7 +168,6 @@ export function buildComposerSlashCommands({
       kind: "prompt",
       aliases: ["pull-request", "pullrequest"],
       keywords: ["github", "pull request", "merge request", "pr", "合并请求"],
-      prompt: PR_SLASH_PROMPT,
       disabledReason: needsRuntime ?? needsIdleThread
     },
     {
@@ -379,18 +357,8 @@ function composerSlashCommandSearchText(command: ComposerSlashCommand): string {
 }
 
 export function composerSlashPrompt(command: ComposerSlashCommand, args: string): string {
-  if (command.kind === "skill") {
-    const instructions = args.trim();
-    return `/${command.name}${instructions ? ` ${instructions}` : " "}`;
-  }
-  if (!command.prompt) {
-    return `/${command.name}${args ? ` ${args}` : ""}`;
-  }
   const instructions = args.trim();
-  if (!instructions) {
-    return command.prompt;
-  }
-  return `${command.prompt}\n\nAdditional instructions:\n${instructions}`;
+  return `/${command.name}${instructions ? ` ${instructions}` : " "}`;
 }
 
 function buildSkillSlashCommands(skills: SkillSummary[], disabledReason?: string): ComposerSlashCommand[] {
