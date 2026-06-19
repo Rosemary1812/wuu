@@ -72,6 +72,9 @@ type AgentControl struct {
 	statusStop    chan struct{}
 	statusDone    chan struct{}
 	closeOnce     sync.Once
+
+	awaitedResultsMu sync.Mutex
+	awaitedResults   map[string]struct{}
 }
 
 // Config holds the dependencies needed to build an AgentControl.

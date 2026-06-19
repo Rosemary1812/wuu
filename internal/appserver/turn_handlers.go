@@ -25,6 +25,11 @@ type queuedTurn struct {
 	msg providers.ChatMessage
 }
 
+type agentCompletionTurn struct {
+	agentID string
+	msg     providers.ChatMessage
+}
+
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	var params TurnStartParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -698,7 +703,7 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	return tracePath, nil
 }
 
-func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatMessage) {
+func (s *Server) enqueueAgentCompletionTurn(threadID, agentID string, msg providers.ChatMessage) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" || !chatMessageHasUserPayload(msg) {
 		return
@@ -713,9 +718,12 @@ func (s *Server) enqueueAgentCompletionTurn(threadID string, msg providers.ChatM
 
 	s.agentCompletionMu.Lock()
 	if s.pendingAgentCompletionTurns == nil {
-		s.pendingAgentCompletionTurns = make(map[string][]providers.ChatMessage)
+		s.pendingAgentCompletionTurns = make(map[string][]agentCompletionTurn)
 	}
-	s.pendingAgentCompletionTurns[threadID] = append(s.pendingAgentCompletionTurns[threadID], msg)
+	s.pendingAgentCompletionTurns[threadID] = append(s.pendingAgentCompletionTurns[threadID], agentCompletionTurn{
+		agentID: strings.TrimSpace(agentID),
+		msg:     msg,
+	})
 	s.agentCompletionMu.Unlock()
 
 	s.kickAgentCompletionDrain(threadID)
@@ -963,6 +971,7 @@ func (s *Server) drainAgentCompletionTurns(threadID string) {
 	}
 
 	pending := s.takePendingAgentCompletionTurns(threadID)
+	pending = s.filterAwaitedAgentCompletionTurns(threadID, pending)
 	if len(pending) == 0 {
 		s.clearAgentCompletionDrain(threadID)
 		return
@@ -1060,25 +1069,25 @@ func threadIsRunning(th *threadState) bool {
 	return th.running
 }
 
-func (s *Server) takePendingAgentCompletionTurns(threadID string) []providers.ChatMessage {
+func (s *Server) takePendingAgentCompletionTurns(threadID string) []agentCompletionTurn {
 	s.agentCompletionMu.Lock()
 	defer s.agentCompletionMu.Unlock()
-	pending := cloneHistory(s.pendingAgentCompletionTurns[threadID])
+	pending := cloneAgentCompletionTurns(s.pendingAgentCompletionTurns[threadID])
 	delete(s.pendingAgentCompletionTurns, threadID)
 	return pending
 }
 
-func (s *Server) prependPendingAgentCompletionTurns(threadID string, msgs []providers.ChatMessage) {
-	if len(msgs) == 0 {
+func (s *Server) prependPendingAgentCompletionTurns(threadID string, turns []agentCompletionTurn) {
+	if len(turns) == 0 {
 		return
 	}
 	s.agentCompletionMu.Lock()
 	defer s.agentCompletionMu.Unlock()
 	if s.pendingAgentCompletionTurns == nil {
-		s.pendingAgentCompletionTurns = make(map[string][]providers.ChatMessage)
+		s.pendingAgentCompletionTurns = make(map[string][]agentCompletionTurn)
 	}
-	existing := cloneHistory(s.pendingAgentCompletionTurns[threadID])
-	s.pendingAgentCompletionTurns[threadID] = append(cloneHistory(msgs), existing...)
+	existing := cloneAgentCompletionTurns(s.pendingAgentCompletionTurns[threadID])
+	s.pendingAgentCompletionTurns[threadID] = append(cloneAgentCompletionTurns(turns), existing...)
 }
 
 func (s *Server) discardPendingAgentCompletionTurns(threadID string) {
@@ -1093,16 +1102,17 @@ func (s *Server) clearAgentCompletionDrain(threadID string) {
 	delete(s.drainingAgentCompletionTurns, threadID)
 }
 
-func combineAgentCompletionMessages(msgs []providers.ChatMessage) providers.ChatMessage {
-	if len(msgs) == 0 {
+func combineAgentCompletionMessages(turns []agentCompletionTurn) providers.ChatMessage {
+	if len(turns) == 0 {
 		return providers.ChatMessage{Role: "user"}
 	}
-	if len(msgs) == 1 {
-		return msgs[0]
+	if len(turns) == 1 {
+		return turns[0].msg
 	}
-	contents := make([]string, 0, len(msgs))
+	contents := make([]string, 0, len(turns))
 	name := ""
-	for _, msg := range msgs {
+	for _, turn := range turns {
+		msg := turn.msg
 		if name == "" {
 			name = strings.TrimSpace(msg.Name)
 		}
@@ -1115,6 +1125,49 @@ func combineAgentCompletionMessages(msgs []providers.ChatMessage) providers.Chat
 		Name:    name,
 		Content: strings.Join(contents, "\n\n"),
 	}
+}
+
+func cloneAgentCompletionTurns(turns []agentCompletionTurn) []agentCompletionTurn {
+	if len(turns) == 0 {
+		return nil
+	}
+	msgs := make([]providers.ChatMessage, 0, len(turns))
+	for _, turn := range turns {
+		msgs = append(msgs, turn.msg)
+	}
+	msgs = cloneHistory(msgs)
+	out := make([]agentCompletionTurn, 0, len(turns))
+	for i, turn := range turns {
+		out = append(out, agentCompletionTurn{
+			agentID: turn.agentID,
+			msg:     msgs[i],
+		})
+	}
+	return out
+}
+
+func (s *Server) filterAwaitedAgentCompletionTurns(threadID string, turns []agentCompletionTurn) []agentCompletionTurn {
+	if len(turns) == 0 {
+		return nil
+	}
+	th := s.thread(threadID)
+	if th == nil {
+		return turns
+	}
+	th.mu.Lock()
+	threadRuntime := th.execRuntime
+	th.mu.Unlock()
+	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return turns
+	}
+	out := turns[:0]
+	for _, turn := range turns {
+		if turn.agentID != "" && threadRuntime.AgentControl.AgentResultWasAwaited(turn.agentID) {
+			continue
+		}
+		out = append(out, turn)
+	}
+	return out
 }
 
 func queuedTurnSummary(threadID string, entry queuedTurn) QueuedTurn {

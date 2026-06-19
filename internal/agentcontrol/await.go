@@ -66,6 +66,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 	for {
 		result := c.awaitSnapshot(resolved)
 		if awaitComplete(result.Results) {
+			c.markAwaitedAgentResults(result.Results)
 			result.NextSteps = awaitAgentsNextSteps(result)
 			return result, nil
 		}
@@ -74,6 +75,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 		case <-time.After(50 * time.Millisecond):
 		case <-ctx.Done():
 			result.TimedOut = true
+			c.markAwaitedAgentResults(result.Results)
 			result.NextSteps = awaitAgentsNextSteps(result)
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return result, nil
@@ -81,6 +83,57 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 			return result, ctx.Err()
 		}
 	}
+}
+
+func (c *AgentControl) markAwaitedAgentResults(results []AwaitAgentResult) {
+	if c == nil || len(results) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		if !awaitResultSuppressesCompletion(result) {
+			continue
+		}
+		if id := strings.TrimSpace(result.AgentID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	c.awaitedResultsMu.Lock()
+	defer c.awaitedResultsMu.Unlock()
+	if c.awaitedResults == nil {
+		c.awaitedResults = make(map[string]struct{}, len(ids))
+	}
+	for _, id := range ids {
+		c.awaitedResults[id] = struct{}{}
+	}
+}
+
+func awaitResultSuppressesCompletion(result AwaitAgentResult) bool {
+	switch strings.TrimSpace(result.Status) {
+	case string(harness.TaskStatusCompleted), string(harness.TaskStatusFailed), string(harness.TaskStatusCancelled), string(harness.TaskStatusAwaitingReport):
+		return true
+	default:
+		return false
+	}
+}
+
+// AgentResultWasAwaited reports whether await_agents has already returned a
+// terminal result for agentID to the parent agent.
+func (c *AgentControl) AgentResultWasAwaited(agentID string) bool {
+	if c == nil {
+		return false
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false
+	}
+	c.awaitedResultsMu.Lock()
+	defer c.awaitedResultsMu.Unlock()
+	_, ok := c.awaitedResults[agentID]
+	return ok
 }
 
 func (c *AgentControl) ActiveTaskReminder(currentPath string) string {

@@ -75,7 +75,7 @@ type Server struct {
 	pendingRequests map[string]chan clientResponse
 
 	agentCompletionMu            sync.Mutex
-	pendingAgentCompletionTurns  map[string][]providers.ChatMessage
+	pendingAgentCompletionTurns  map[string][]agentCompletionTurn
 	drainingAgentCompletionTurns map[string]bool
 
 	queuedTurnMu        sync.Mutex
@@ -105,7 +105,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		threads:         make(map[string]*threadState),
 		pendingRequests: make(map[string]chan clientResponse),
 
-		pendingAgentCompletionTurns:  make(map[string][]providers.ChatMessage),
+		pendingAgentCompletionTurns:  make(map[string][]agentCompletionTurn),
 		drainingAgentCompletionTurns: make(map[string]bool),
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
