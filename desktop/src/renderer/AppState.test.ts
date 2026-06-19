@@ -10,6 +10,7 @@ import {
   latestCompletedTurnID,
   markThreadTurnsViewed,
   reduceServerEvent,
+  sortThreads,
 } from "./AppState";
 
 describe("AppState server requests", () => {
@@ -362,5 +363,174 @@ describe("AppState unread tracking", () => {
       threads: [thread],
     };
     expect(markThreadTurnsViewed(state, "thread-1")).toBe(state);
+  });
+});
+
+describe("AppState sortThreads (sidebar order)", () => {
+  function makeSortableThread(args: {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    status?: "idle" | "in_progress";
+    turns?: Array<{ id: string; status: "completed" | "in_progress" | "failed" | "interrupted" }>;
+    archived?: boolean;
+    readOnly?: boolean;
+  }): Thread {
+    return {
+      id: args.id,
+      preview: "",
+      model_provider: "fake",
+      model: "fake-model",
+      cwd: "/tmp",
+      status: args.status ?? "idle",
+      created_at: args.createdAt,
+      updated_at: args.updatedAt,
+      archived: args.archived,
+      read_only: args.readOnly,
+      turns: (args.turns ?? []).map((turn) => ({
+        id: turn.id,
+        items: [],
+        items_view: "full" as const,
+        status: turn.status,
+      })),
+    };
+  }
+
+  it("keeps running threads in created_at order regardless of updated_at jitter", () => {
+    // Two in_progress threads. updated_at keeps bumping while the model
+    // streams; created_at never changes. The old single-key sort shuffled
+    // the rows every time either side streamed a token. The fix pins
+    // running threads to a created_at order so clicking one is stable.
+    const older = makeSortableThread({
+      id: "thread-older",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-20T12:00:00Z",
+      status: "in_progress",
+      turns: [{ id: "turn-1", status: "in_progress" }],
+    });
+    const newer = makeSortableThread({
+      id: "thread-newer",
+      createdAt: "2026-06-19T00:00:00Z",
+      updatedAt: "2026-06-18T00:00:00Z", // stale; should be ignored while running
+      status: "in_progress",
+      turns: [{ id: "turn-1", status: "in_progress" }],
+    });
+
+    const sorted = sortThreads([older, newer]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "thread-newer",
+      "thread-older",
+    ]);
+
+    // Even after flipping updated_at wildly, running order is unchanged.
+    const flipped = sortThreads([
+      { ...newer, updated_at: "2099-01-01T00:00:00Z" },
+      { ...older, updated_at: "1970-01-01T00:00:00Z" },
+    ]);
+    expect(flipped.map((thread) => thread.id)).toEqual([
+      "thread-newer",
+      "thread-older",
+    ]);
+  });
+
+  it("places running threads before settled threads", () => {
+    const running = makeSortableThread({
+      id: "thread-running",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-18T00:00:00Z",
+      status: "in_progress",
+      turns: [{ id: "turn-1", status: "in_progress" }],
+    });
+    // Settled thread updated more recently than the running one. It still
+    // sits below the running section — recency bubbles within the settled
+    // group, not above active conversations.
+    const settledRecent = makeSortableThread({
+      id: "thread-settled-recent",
+      createdAt: "2026-06-17T00:00:00Z",
+      updatedAt: "2099-01-01T00:00:00Z",
+    });
+    const settledOlder = makeSortableThread({
+      id: "thread-settled-older",
+      createdAt: "2026-06-16T00:00:00Z",
+      updatedAt: "2026-06-19T00:00:00Z",
+    });
+
+    const sorted = sortThreads([settledOlder, running, settledRecent]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "thread-running",
+      "thread-settled-recent",
+      "thread-settled-older",
+    ]);
+  });
+
+  it("sorts settled threads by updated_at desc", () => {
+    const settledA = makeSortableThread({
+      id: "thread-a",
+      createdAt: "2026-06-15T00:00:00Z",
+      updatedAt: "2026-06-15T00:00:00Z",
+    });
+    const settledB = makeSortableThread({
+      id: "thread-b",
+      createdAt: "2026-06-15T00:00:00Z",
+      updatedAt: "2026-06-20T00:00:00Z",
+    });
+    const settledC = makeSortableThread({
+      id: "thread-c",
+      createdAt: "2026-06-15T00:00:00Z",
+      updatedAt: "2026-06-17T00:00:00Z",
+    });
+    const sorted = sortThreads([settledA, settledB, settledC]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "thread-b",
+      "thread-c",
+      "thread-a",
+    ]);
+  });
+
+  it("detects running via any in-progress turn even when thread status is idle", () => {
+    // A thread that has just received its first turn but whose own status
+    // hasn't been bumped yet must still be treated as running — the
+    // streaming output lives in the latest turn.
+    const streaming = makeSortableThread({
+      id: "thread-streaming",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-18T00:00:00Z",
+      status: "idle",
+      turns: [{ id: "turn-1", status: "in_progress" }],
+    });
+    const settled = makeSortableThread({
+      id: "thread-idle",
+      createdAt: "2026-06-17T00:00:00Z",
+      updatedAt: "2026-06-20T00:00:00Z",
+    });
+
+    const sorted = sortThreads([settled, streaming]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "thread-streaming",
+      "thread-idle",
+    ]);
+  });
+
+  it("drops archived and read-only threads from the sortable list", () => {
+    const archived = makeSortableThread({
+      id: "thread-archived",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2099-01-01T00:00:00Z",
+      archived: true,
+    });
+    const readOnly = makeSortableThread({
+      id: "thread-readonly",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2099-01-01T00:00:00Z",
+      readOnly: true,
+    });
+    const normal = makeSortableThread({
+      id: "thread-normal",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-19T00:00:00Z",
+    });
+
+    const sorted = sortThreads([archived, readOnly, normal]);
+    expect(sorted.map((thread) => thread.id)).toEqual(["thread-normal"]);
   });
 });

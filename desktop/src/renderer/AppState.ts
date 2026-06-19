@@ -666,12 +666,25 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
 }
 
 function sortThreads(threads: Thread[]): Thread[] {
-  return threads
-    .filter(
-      (thread): thread is Thread =>
-        isThread(thread) && !thread.archived && !thread.read_only,
-    )
-    .sort((left, right) => threadTime(right) - threadTime(left));
+  // Two-section sort. Running threads use `created_at` as the key so that
+  // streaming updates (which bump `updated_at`) do not reshuffle them —
+  // clicking or switching between two running threads must leave the sidebar
+  // order alone. Settled threads keep the recency-first behavior, so the most
+  // recently completed conversation bubbles to the top of the settled group.
+  const valid = threads.filter(
+    (thread): thread is Thread =>
+      isThread(thread) && !thread.archived && !thread.read_only,
+  );
+  const running = valid.filter(isThreadRunning);
+  const settled = valid.filter((thread) => !isThreadRunning(thread));
+  running.sort((left, right) => threadCreatedTime(right) - threadCreatedTime(left));
+  settled.sort((left, right) => threadTime(right) - threadTime(left));
+  return [...running, ...settled];
+}
+
+function threadCreatedTime(thread: Thread): number {
+  const createdAt = Date.parse(thread.created_at);
+  return Number.isFinite(createdAt) ? createdAt : 0;
 }
 
 function mergeListedThreads(current: Thread[], listed: Thread[]): Thread[] {
