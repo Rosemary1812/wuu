@@ -58,7 +58,7 @@ func TestBuildCacheHint_TransientReminderExtendsStableToolLoopPrefix(t *testing.
 		{Role: "user", Content: "current ask"},
 		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{}`}}},
 		{Role: "tool", ToolCallID: "call_1", Content: "file contents"},
-		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: "<system-reminder>\nstate changed\n</system-reminder>"},
+		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: "<system-reminder>\n[ENVIRONMENT]\nsource: runtime.snapshot\n\nstate changed\n</system-reminder>"},
 	})
 	if hint == nil {
 		t.Fatal("expected cache hint")
@@ -71,27 +71,27 @@ func TestBuildCacheHint_TransientReminderExtendsStableToolLoopPrefix(t *testing.
 	}
 }
 
-func TestBuildCacheHint_ExcludesAllTrailingRequestOnlyReminders(t *testing.T) {
-	reminder := func(content string) providers.ChatMessage {
+func TestBuildCacheHint_CachesStableReminderBeforeVolatileReminders(t *testing.T) {
+	reminder := func(source, content string) providers.ChatMessage {
 		return providers.ChatMessage{
 			Role:    "user",
 			Name:    wuucontext.SystemReminderMessageName,
-			Content: "<system-reminder>\n" + content + "\n</system-reminder>",
+			Content: "<system-reminder>\n[ADDITIONAL_CONTEXT]\nsource: " + source + "\n\n" + content + "\n</system-reminder>",
 		}
 	}
 
 	hint := buildCacheHint([]providers.ChatMessage{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "current ask"},
-		reminder("[ENVIRONMENT]\nstate changed"),
-		reminder("[ADDITIONAL_CONTEXT]\nslash command context"),
-		reminder("[TASK]\nactive task contract"),
+		reminder("slash-command", "slash command context"),
+		reminder("runtime.snapshot", "state changed"),
+		reminder("runtime.task_contract", "active task contract"),
 	})
 	if hint == nil {
 		t.Fatal("expected cache hint")
 	}
-	if hint.StablePrefixMessages != 1 {
-		t.Fatalf("expected only current ask in stable prefix, got %d", hint.StablePrefixMessages)
+	if hint.StablePrefixMessages != 2 {
+		t.Fatalf("expected current ask and slash context in stable prefix, got %d", hint.StablePrefixMessages)
 	}
 }
 

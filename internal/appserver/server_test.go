@@ -1756,6 +1756,11 @@ func TestServerTurnStartInjectsSlashCommandContextWithoutPersisting(t *testing.T
 		!messagesContain(requests[0].Messages, "login fails") {
 		t.Fatalf("provider request missing slash context: %+v", requests[0].Messages)
 	}
+	slashIndex := messageContentIndex(requests[0].Messages, "The user invoked /debug")
+	envIndex := messageContentIndex(requests[0].Messages, "[ENVIRONMENT]")
+	if slashIndex < 0 || envIndex < 0 || slashIndex > envIndex {
+		t.Fatalf("slash context should be before volatile environment context: slash=%d env=%d messages=%+v", slashIndex, envIndex, requests[0].Messages)
+	}
 
 	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
 	if err != nil {
@@ -4039,12 +4044,16 @@ func testStringSliceContains(values []string, want string) bool {
 }
 
 func messagesContain(messages []providers.ChatMessage, want string) bool {
-	for _, msg := range messages {
+	return messageContentIndex(messages, want) >= 0
+}
+
+func messageContentIndex(messages []providers.ChatMessage, want string) int {
+	for i, msg := range messages {
 		if strings.Contains(msg.Content, want) {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 func requestByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {

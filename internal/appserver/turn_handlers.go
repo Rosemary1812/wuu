@@ -546,10 +546,10 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	}
 	runner.BeforeRequest = func() []providers.ChatMessage {
 		var messages []providers.ChatMessage
+		messages = append(messages, providers.CloneChatMessages(promptContext)...)
 		if baseBeforeRequest != nil {
 			messages = append(messages, baseBeforeRequest()...)
 		}
-		messages = append(messages, providers.CloneChatMessages(promptContext)...)
 		return messages
 	}
 	defer func() {

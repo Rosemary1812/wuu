@@ -24,11 +24,10 @@ const (
 //     without introducing a heavier session-part model
 //
 // The stable prefix is everything before the most recent user-role message in
-// the request. On the first step of a turn, that excludes the latest human
-// prompt. During the tool loop, request-only system reminders are appended as
-// user-role messages just before the provider request; that makes the current
-// user prompt plus completed tool calls/results cacheable for the rest of the
-// turn while every trailing reminder remains outside the cached prefix.
+// the request. Request-only reminders can refine that boundary: stable
+// prompt-submit reminders such as slash-command context may join the cached
+// prefix for the current turn, while volatile runtime reminders such as
+// environment and task-contract blocks remain outside it.
 //
 // After compact rewrites history, the synthetic conversation summary at
 // the front of the prompt becomes the best stable anchor we have. We
@@ -46,7 +45,7 @@ func buildCacheHint(messages []providers.ChatMessage) *providers.CacheHint {
 
 	systemCount := systemMessageCount(messages)
 	lastUser := lastUserMessageIndex(messages)
-	stablePrefixMessages := stablePrefixMessageCount(messages, systemCount, lastUser, trailingRequestOnlyReminderStart(messages))
+	stablePrefixMessages := stablePrefixMessageCount(messages, systemCount, lastUser, requestOnlyReminderSuffixStart(messages))
 	hasCompactSummary := leadingSystemHasCompactSummary(messages)
 
 	hint := &providers.CacheHint{
@@ -93,9 +92,16 @@ func lastUserMessageIndex(messages []providers.ChatMessage) int {
 	return -1
 }
 
-func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, lastUser, volatileSuffixStart int) int {
-	if volatileSuffixStart >= 0 {
-		stable := volatileSuffixStart - systemCount
+func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, lastUser, reminderSuffixStart int) int {
+	if reminderSuffixStart >= 0 {
+		boundary := len(messages)
+		for i := reminderSuffixStart; i < len(messages); i++ {
+			if isVolatileRequestOnlyReminder(messages[i]) {
+				boundary = i
+				break
+			}
+		}
+		stable := boundary - systemCount
 		if stable < 0 {
 			return 0
 		}
@@ -115,8 +121,8 @@ func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, las
 	return stable
 }
 
-func trailingRequestOnlyReminderStart(messages []providers.ChatMessage) int {
-	start := -1
+func requestOnlyReminderSuffixStart(messages []providers.ChatMessage) int {
+	start := len(messages)
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
@@ -124,7 +130,23 @@ func trailingRequestOnlyReminderStart(messages []providers.ChatMessage) int {
 		}
 		start = i
 	}
+	if start == len(messages) {
+		return -1
+	}
 	return start
+}
+
+func isVolatileRequestOnlyReminder(msg providers.ChatMessage) bool {
+	if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+		return false
+	}
+	for _, line := range strings.Split(msg.Content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "source: runtime.") {
+			return true
+		}
+	}
+	return false
 }
 
 func leadingSystemHasCompactSummary(messages []providers.ChatMessage) bool {
