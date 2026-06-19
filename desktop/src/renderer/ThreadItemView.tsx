@@ -256,32 +256,34 @@ function UserMessageInlineEditor({
     <div className="user-message-edit">
       {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
       {item.files?.length ? <MessageFileList files={item.files} /> : null}
-      <textarea
-        ref={textareaRef}
-        className="user-message-edit-input"
-        value={text}
-        disabled={submitting}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={handleKeyDown}
-        rows={Math.max(2, Math.min(8, text.split("\n").length))}
-      />
-      <div className="user-message-edit-actions">
-        <button
-          className="user-message-edit-button secondary"
-          type="button"
+      <div className="user-message-edit-row">
+        <textarea
+          ref={textareaRef}
+          className="user-message-edit-input"
+          value={text}
           disabled={submitting}
-          onClick={onCancel}
-        >
-          取消
-        </button>
-        <button
-          className="user-message-edit-button primary"
-          type="button"
-          disabled={!canSubmit || submitting}
-          onClick={submit}
-        >
-          发送
-        </button>
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={handleKeyDown}
+          rows={Math.max(1, Math.min(8, text.split("\n").length))}
+        />
+        <div className="user-message-edit-actions">
+          <button
+            className="user-message-edit-button secondary"
+            type="button"
+            disabled={submitting}
+            onClick={onCancel}
+          >
+            取消
+          </button>
+          <button
+            className="user-message-edit-button primary"
+            type="button"
+            disabled={!canSubmit || submitting}
+            onClick={submit}
+          >
+            发送
+          </button>
+        </div>
       </div>
     </div>
   );
