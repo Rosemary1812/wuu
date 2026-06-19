@@ -109,8 +109,8 @@
 }
 
 .primary-button {
-  background: #24282c;
-  color: #fff;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .secondary-button {
@@ -192,16 +192,16 @@
   }
 }
 
-/* ----------------------------------------------------------------------------
-   Design tokens panel ("design-tokens-panel.tsx")
+                                                                               
+                                                  
 
-   A floating button + side drawer that lets the user live-tune the
-   conversation flow's CSS variables without editing the stylesheet.
-   The drawer applies values via JS to .conversation-pane, which
-   override the CSS defaults (specificity-wise, inline style > class
-   rule) until "恢复默认" is pressed or the localStorage override
-   is cleared.
-   -------------------------------------------------------------------------- */
+                                                                   
+                                                                    
+                                                                
+                                                                    
+                                                             
+              
+                                                                                
 
 .design-tokens-toggle {
   position: fixed;
@@ -217,7 +217,7 @@
   border: 0;
   border-radius: 50%;
   background: rgba(31, 35, 40, 0.85);
-  color: #fff;
+  color: var(--paper);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   transition:
@@ -235,7 +235,7 @@
 }
 
 .design-tokens-toggle[aria-expanded="true"] {
-  background: #1f2328;
+  background: var(--ink);
 }
 
 .design-tokens-panel {
@@ -247,11 +247,11 @@
   display: flex;
   flex-direction: column;
   width: 320px;
-  background: #fff;
+  background: var(--paper);
   box-shadow: -2px 0 16px rgba(0, 0, 0, 0.08);
   font-size: 13px;
   line-height: 1.5;
-  color: #1f2328;
+  color: var(--ink);
 }
 
 .design-tokens-header {
@@ -259,14 +259,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+  border-bottom: 1px solid var(--ink-overlay-8);
 }
 
 .design-tokens-title {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #1f2328;
+  color: var(--ink);
 }
 
 .design-tokens-title h2 {
@@ -286,14 +286,14 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #6f7478;
+  color: var(--ink-tertiary);
   cursor: pointer;
 }
 
 .design-tokens-close:hover,
 .design-tokens-close:focus-visible {
-  background: rgba(31, 35, 40, 0.06);
-  color: #1f2328;
+  background: var(--ink-overlay-6);
+  color: var(--ink);
   outline: 0;
 }
 
@@ -306,7 +306,7 @@
 
 .design-token {
   padding: 12px 0;
-  border-bottom: 1px solid rgba(31, 35, 40, 0.05);
+  border-bottom: 1px solid var(--ink-overlay-6);
 }
 
 .design-token:last-child {
@@ -321,19 +321,19 @@
 }
 
 .design-token-name {
-  color: #1f2328;
+  color: var(--ink);
   font-weight: 500;
 }
 
 .design-token-value {
-  color: #6f7478;
+  color: var(--ink-tertiary);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
 
-/* Range input — keep it minimal so it matches the rest of the
-   panel's restrained look. The track is a flat gray line; the
-   thumb is a solid dark circle, no extra chrome. */
+                                                              
+                                                              
+                                                    
 .design-tokens-body input[type="range"] {
   width: 100%;
   height: 18px;
@@ -351,13 +351,13 @@
 
 .design-tokens-body input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
-  background: rgba(31, 35, 40, 0.12);
+  background: var(--ink-overlay-12);
   border-radius: 2px;
 }
 
 .design-tokens-body input[type="range"]::-moz-range-track {
   height: 3px;
-  background: rgba(31, 35, 40, 0.12);
+  background: var(--ink-overlay-12);
   border-radius: 2px;
   border: 0;
 }
@@ -368,7 +368,7 @@
   width: 14px;
   height: 14px;
   margin-top: -5.5px;
-  background: #1f2328;
+  background: var(--ink);
   border: 0;
   border-radius: 50%;
   cursor: pointer;
@@ -377,7 +377,7 @@
 .design-tokens-body input[type="range"]::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: #1f2328;
+  background: var(--ink);
   border: 0;
   border-radius: 50%;
   cursor: pointer;
@@ -389,7 +389,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 18px;
-  border-top: 1px solid rgba(31, 35, 40, 0.08);
+  border-top: 1px solid var(--ink-overlay-8);
 }
 
 .design-tokens-reset {
@@ -397,10 +397,10 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border: 1px solid rgba(31, 35, 40, 0.12);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: 6px;
   background: transparent;
-  color: #1f2328;
+  color: var(--ink);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -409,12 +409,12 @@
 
 .design-tokens-reset:hover,
 .design-tokens-reset:focus-visible {
-  background: rgba(31, 35, 40, 0.04);
+  background: var(--ink-overlay-4);
   outline: 0;
 }
 
 .design-tokens-hint {
-  color: #a1a5a9;
+  color: var(--ink-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }

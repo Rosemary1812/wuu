@@ -11,10 +11,10 @@
   pointer-events: none;
 }
 
-/* Both direct children of the stack — the environment panel and any
-   docked sidecar (e.g. query history popover) — must opt back into
-   pointer events. The stack container itself stays click-through so its
-   empty gutter doesn't absorb clicks on the conversation underneath. */
+                                                                    
+                                                                   
+                                                                        
+                                                                        
 .environment-side-stack > .environment-panel,
 .environment-side-stack > .query-history-environment-slot {
   position: relative;
@@ -33,7 +33,7 @@
   display: grid;
   width: min(var(--environment-panel-width), calc(100% - 32px));
   overflow: visible;
-  border: 1px solid rgba(31, 35, 40, 0.1);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow:
@@ -65,7 +65,7 @@
 
 .environment-panel-header h2 {
   margin: 0;
-  color: #8a8f92;
+  color: var(--ink-muted);
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
 }
@@ -90,7 +90,7 @@
 .environment-plan-section {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid #ececea;
+  border-bottom: 1px solid var(--surface-3);
   margin-bottom: 10px;
   padding: 3px 8px 13px;
   max-height: min(320px, calc(100vh - 360px));
@@ -106,14 +106,14 @@
 .environment-plan-meta {
   display: flex;
   justify-content: flex-end;
-  color: #9a9ea1;
+  color: var(--ink-faint);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
 }
 
 .environment-plan-explanation {
   margin: 0;
-  color: #7f8488;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: 1.35;
@@ -151,31 +151,31 @@
   place-items: center;
   border: 2px solid #9aa0a3;
   border-radius: 50%;
-  color: #fff;
+  color: var(--paper);
   margin-top: 2px;
 }
 
 .environment-plan-item.in_progress {
-  color: #202427;
+  color: var(--ink);
 }
 
 .environment-plan-item.in_progress .environment-plan-marker {
-  border-color: #202427;
-  box-shadow: inset 0 0 0 3px #fff;
-  background: #202427;
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 3px var(--paper);
+  background: var(--ink);
 }
 
 .environment-plan-item.completed {
-  color: #8a8f94;
+  color: var(--ink-muted);
 }
 
 .environment-plan-item.completed .environment-plan-marker {
-  border-color: #09933d;
-  background: #09933d;
+  border-color: var(--success);
+  background: var(--success);
 }
 
 .environment-section-heading {
-  color: #8a8f92;
+  color: var(--ink-muted);
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
   padding: 0 8px 8px;
@@ -188,7 +188,7 @@
   align-items: center;
   border-radius: 9px;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
   text-align: left;
 }
 
@@ -207,7 +207,7 @@
 .environment-row.active,
 .environment-footer-row:hover,
 .environment-footer-row.active {
-  background: #f0f1ee;
+  background: var(--surface-2);
 }
 
 .environment-row:disabled {
@@ -216,7 +216,7 @@
 
 .environment-row svg,
 .environment-footer-row svg {
-  color: #6f757a;
+  color: var(--ink-tertiary);
 }
 
 .environment-row strong {
@@ -231,7 +231,7 @@
 .environment-row-meta {
   min-width: 0;
   overflow: hidden;
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   text-align: right;
@@ -246,7 +246,7 @@
 }
 
 .additions {
-  color: #09933d;
+  color: var(--success);
 }
 
 .deletions {
@@ -256,7 +256,7 @@
 .environment-process-section {
   display: grid;
   gap: 7px;
-  border-top: 1px solid #ececea;
+  border-top: 1px solid var(--surface-3);
   margin-top: 6px;
   padding: 9px 8px 0;
 }
@@ -267,7 +267,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
 }
@@ -284,7 +284,7 @@
 
 .environment-process-heading svg {
   flex: 0 0 auto;
-  color: #6f757a;
+  color: var(--ink-tertiary);
 }
 
 .environment-process-list {
@@ -299,12 +299,12 @@
   align-items: center;
   column-gap: 7px;
   border-radius: 8px;
-  background: #f6f6f4;
+  background: var(--surface-2);
   padding: 6px 7px;
 }
 
 .environment-process-row > svg {
-  color: #6f757a;
+  color: var(--ink-tertiary);
 }
 
 .environment-process-row > div {
@@ -312,12 +312,12 @@
   min-width: 0;
 }
 
-/* Query history popover — reuses .environment-row chrome but the item
-   only contains a single <strong> with no icon/chevron. Override the
-   4-column grid to a single flexible column so the text gets full width
-   instead of being crushed into the `auto` column. */
+                                                                      
+                                                                     
+                                                                        
+                                                      
 .query-history-popover {
-  border: 1px solid rgba(31, 35, 40, 0.1);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.98);
   padding: 8px;
@@ -339,7 +339,7 @@
 }
 
 .query-history-text {
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   letter-spacing: 0;
@@ -354,20 +354,20 @@
 }
 
 .environment-process-row strong {
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
 }
 
 .environment-process-row div span {
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
 }
 
 .environment-process-status {
   border-radius: 999px;
-  color: #6f757a;
+  color: var(--ink-tertiary);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   padding: 2px 6px;
@@ -384,12 +384,12 @@
 }
 
 .environment-process-status.failed {
-  background: #fff0ef;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .environment-process-status.stopped {
-  background: #eeeeeb;
+  background: var(--surface-3);
 }
 
 .environment-process-action {
@@ -403,7 +403,7 @@
 
 .environment-process-action:hover:not(:disabled) {
   background: #e6e6e2;
-  color: #22262a;
+  color: var(--ink);
 }
 
 .environment-process-action:disabled {
@@ -413,9 +413,9 @@
 .environment-footer-row {
   grid-template-columns: minmax(0, 1fr) 18px;
   height: 30px;
-  border-top: 1px solid #ececea;
+  border-top: 1px solid var(--surface-3);
   border-radius: 0;
-  color: #8b9094;
+  color: var(--ink-muted);
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
   margin-top: 4px;
@@ -477,7 +477,7 @@
 }
 
 .environment-side-label {
-  color: #9a9ea1;
+  color: var(--ink-faint);
   font-size: var(--font-body);
   font-weight: var(--weight-semibold);
   padding: 6px 8px 8px;
@@ -493,7 +493,7 @@
   gap: 9px;
   border-radius: 8px;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
   padding: 0 9px;
@@ -506,7 +506,7 @@
 
 .environment-side-menu button svg,
 .environment-source-item svg {
-  color: #6f757a;
+  color: var(--ink-tertiary);
 }
 
 .environment-side-menu button span,
@@ -524,8 +524,8 @@
   align-items: center;
   gap: 8px;
   border-radius: 9px;
-  background: #f6f6f4;
-  color: #8a8f94;
+  background: var(--surface-2);
+  color: var(--ink-muted);
   margin-bottom: 6px;
   padding: 0 10px;
 }
@@ -539,7 +539,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
 }
 
 .environment-branch-list {
@@ -552,14 +552,14 @@
 .environment-side-note,
 .environment-side-error,
 .environment-empty {
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: 1.4;
   padding: 7px 9px;
 }
 
 .environment-side-error {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .environment-create-branch {
@@ -567,7 +567,7 @@
   height: 36px;
   align-items: center;
   gap: 8px;
-  border-top: 1px solid #ececea;
+  border-top: 1px solid var(--surface-3);
   margin-top: 8px;
   padding: 8px 2px 0 8px;
 }
@@ -602,7 +602,7 @@
 }
 
 .environment-source-item span {
-  color: #8a8f94;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
 }
@@ -645,7 +645,7 @@
   max-height: min(680px, calc(100vh - 96px));
   grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid rgba(31, 35, 40, 0.08);
+  border: 1px solid var(--ink-overlay-8);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow:
@@ -668,7 +668,7 @@
   align-items: center;
   gap: 8px;
   border-radius: 12px;
-  background: #f6f6f4;
+  background: var(--surface-2);
   color: #7c8380;
   padding: 0 10px 0 12px;
 }
@@ -678,7 +678,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #202427;
+  color: var(--ink);
   font-size: 18px;
   font-weight: var(--weight-medium);
   letter-spacing: 0;
@@ -705,7 +705,7 @@
 .conversation-search-clear:focus-visible {
   outline: 0;
   background: #e9ebe7;
-  color: #202427;
+  color: var(--ink);
   transform: scale(0.96);
 }
 
@@ -756,8 +756,8 @@
 .conversation-search-status button:hover,
 .conversation-search-status button:focus-visible {
   outline: 0;
-  background: #f0f1ee;
-  color: #202427;
+  background: var(--surface-2);
+  color: var(--ink);
   transform: translate3d(0, -1px, 0);
 }
 
@@ -854,7 +854,7 @@
 .conversation-search-result-title {
   min-width: 0;
   overflow: hidden;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-body);
   font-weight: var(--weight-semibold);
   line-height: 18px;
@@ -960,9 +960,9 @@
   display: grid;
   width: min(640px, calc(100vw - 48px));
   gap: 14px;
-  border: 1px solid #dededb;
+  border: 1px solid var(--surface-4);
   border-radius: 16px;
-  background: #fff;
+  background: var(--paper);
   box-shadow: 0 24px 70px rgba(20, 24, 28, 0.24);
   padding: 20px;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
@@ -981,13 +981,13 @@
   height: 34px;
   place-items: center;
   border-radius: 9px;
-  background: #f4f4f2;
-  color: #202427;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .environment-dialog h2 {
   margin: 0;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-heading);
   font-weight: var(--weight-semibold);
 }
@@ -1001,7 +1001,7 @@
 }
 
 .environment-dialog-summary strong {
-  color: #202427;
+  color: var(--ink);
   text-align: right;
 }
 
@@ -1009,7 +1009,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  color: #202427;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
 }
@@ -1017,13 +1017,13 @@
 .environment-toggle input {
   width: 16px;
   height: 16px;
-  accent-color: #2f8cf0;
+  accent-color: var(--info);
 }
 
 .environment-field {
   display: grid;
   gap: 7px;
-  color: #6f757a;
+  color: var(--ink-tertiary);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
 }
@@ -1033,8 +1033,8 @@
   width: 100%;
   border: 1px solid #e3e3df;
   border-radius: 9px;
-  background: #fff;
-  color: #202427;
+  background: var(--paper);
+  color: var(--ink);
   font-size: var(--font-ui);
   padding: 10px 12px;
 }
@@ -1046,8 +1046,8 @@
 
 .environment-dialog-error {
   border-radius: 9px;
-  background: #fff5f4;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
   font-size: var(--font-ui);
   line-height: 1.45;
   padding: 10px 12px;

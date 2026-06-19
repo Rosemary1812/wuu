@@ -7,7 +7,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: #f7f7f5;
+  background: var(--surface-1);
 }
 
 .app-shell.sidebar-animating {
@@ -231,7 +231,7 @@
 }
 
 .dev-fixture-label {
-  color: #8a918c;
+  color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   padding: 0 10px 2px;
@@ -254,7 +254,7 @@
   gap: 9px;
   border-radius: 8px;
   background: transparent;
-  color: #59615d;
+  color: var(--ink-tertiary);
   cursor: pointer;
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
@@ -272,7 +272,7 @@
 .project-row:hover,
 .thread-row:hover {
   background: var(--sidebar-glass-hover);
-  color: #202427;
+  color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
   transform: translateX(1px);
 }
@@ -295,23 +295,23 @@
   margin-top: 28px;
   min-height: 0;
   flex: 1 1 0;
-  /*
-   * Internal scroll for the project list so an expanded project with many
-   * threads cannot overflow the sidebar and push the settings button (and
-   * any subsequent projects) past the window bottom. overscroll-behavior
-   * keeps the scroll event from bubbling up to the sidebar/page level.
-   */
+    
+                                                                          
+                                                                          
+                                                                         
+                                                                       
+     
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-/*
- * Slim scrollbar matching the main conversation pane. The thumb stays
- * transparent until AppSidebar's scroll listener adds `.scrollbar-visible`
- * while the user is actively scrolling, then fades back after 700ms of
- * idle. The track is always transparent so the sidebar glass effect is
- * never interrupted.
- */
+  
+                                                                      
+                                                                           
+                                                                       
+                                                                       
+                     
+   
 .project-list::-webkit-scrollbar {
   width: 10px;
   background: transparent;
@@ -394,7 +394,7 @@
 }
 
 .section-label {
-  color: #858c88;
+  color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
 }
@@ -406,14 +406,14 @@
   place-items: center;
   border-radius: 8px;
   background: transparent;
-  color: #66716b;
+  color: var(--ink-tertiary);
   -webkit-app-region: no-drag;
 }
 
 .project-add-button:hover,
 .project-add-button[aria-expanded="true"] {
   background: var(--sidebar-glass-hover);
-  color: #202427;
+  color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
 }
 
@@ -444,7 +444,7 @@
   gap: 9px;
   border-radius: 7px;
   background: transparent;
-  color: #1f2328;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 0 9px;
@@ -459,7 +459,7 @@
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
-  color: #596168;
+  color: var(--ink-tertiary);
 }
 
 .project-add-menu button span {
@@ -488,7 +488,7 @@
   color: #343a37;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.38),
-    0 1px 1px rgba(31, 35, 40, 0.02);
+    0 1px 1px var(--ink-overlay-4);
   font-weight: var(--weight-semibold);
 }
 
@@ -525,7 +525,7 @@
 }
 
 .project-row {
-  color: #6b736f;
+  color: var(--ink-tertiary);
   padding-left: 8px;
   padding-right: 40px;
   font-weight: var(--weight-medium);
@@ -533,7 +533,7 @@
 
 .project-row-chevron {
   flex: 0 0 auto;
-  color: #8b938e;
+  color: var(--ink-muted);
   margin-right: -2px;
   transition:
     color 140ms ease,
@@ -541,13 +541,13 @@
 }
 
 .project-row.expanded .project-row-chevron {
-  color: #63726a;
+  color: var(--ink-tertiary);
   transform: rotate(90deg);
 }
 
 .project-row svg:not(.project-row-chevron) {
   flex: 0 0 auto;
-  color: #59645e;
+  color: var(--ink-tertiary);
   transition:
     color 140ms ease,
     transform 140ms ease;
@@ -555,7 +555,7 @@
 
 .project-row:hover svg:not(.project-row-chevron),
 .project-row.active svg:not(.project-row-chevron) {
-  color: #202427;
+  color: var(--ink);
 }
 
 .project-row span {
@@ -586,7 +586,7 @@
   place-items: center;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.64);
-  color: #69726d;
+  color: var(--ink-tertiary);
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
@@ -608,8 +608,8 @@
 .project-row-new-thread:hover,
 .project-row-new-thread:focus-visible {
   outline: 0;
-  background: #fff;
-  color: #202427;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .project-row-new-thread:active {
@@ -617,7 +617,7 @@
 }
 
 .project-empty-note {
-  color: #858c88;
+  color: var(--ink-muted);
   padding: 2px 12px;
 }
 
@@ -681,7 +681,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #78817c;
+  color: var(--ink-muted);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-sm);
@@ -702,7 +702,7 @@
 
 .thread-list-more-count {
   flex: 0 0 auto;
-  color: #a0a7a3;
+  color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
 }
@@ -713,7 +713,7 @@
   justify-content: flex-start;
   gap: 8px;
   border-radius: 7px;
-  color: #646c68;
+  color: var(--ink-tertiary);
   font-size: var(--font-body);
   padding: 0 9px 0 8px;
 }
@@ -739,11 +739,11 @@
 
 .thread-row.active {
   background: var(--sidebar-glass-active);
-  color: #202427;
+  color: var(--ink);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.68),
     inset 0 -1px 0 rgba(17, 19, 21, 0.08),
-    0 2px 8px rgba(31, 35, 40, 0.045);
+    0 2px 8px var(--ink-overlay-6);
   font-weight: var(--weight-medium);
   backdrop-filter: blur(14px) saturate(1.22);
   -webkit-backdrop-filter: blur(14px) saturate(1.22);
@@ -754,12 +754,12 @@
   transform: scale(1);
 }
 
-/* Running thread row: hide the static ::before dot and render a real
-   spinner element instead (see ThreadSidebar.tsx's thread-row-spinner
-   span). Driving the rotation from a plain flex item avoids the
-   transform/transition baseline on ::before that was preventing the
-   animation from starting. Reuses the session-loading-spin keyframe for
-   consistency with .project-row-loading and .thread-row-loading. */
+                                                                     
+                                                                      
+                                                                
+                                                                    
+                                                                        
+                                                                    
 .thread-row.running::before {
   display: none;
 }
@@ -774,16 +774,16 @@
   animation: session-loading-spin 720ms linear infinite;
 }
 
-/* Use a distinct blue (vs. var(--sidebar-accent) used by the running
-   spinner) so users can tell at a glance which session is in progress
-   vs. which has unread replies. */
+                                                                     
+                                                                      
+                                   
 .thread-row.has-unread::before {
-  background: #3b82f6;
+  background: var(--info);
   transform: scale(1);
 }
 
 .thread-row.has-unread .thread-row-title {
-  color: #202427;
+  color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
@@ -816,7 +816,7 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #707875;
+  color: var(--ink-tertiary);
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -841,7 +841,7 @@
 
 .thread-child-agent-row.active {
   background: rgba(95, 126, 104, 0.13);
-  color: #202427;
+  color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(95, 126, 104, 0.12);
 }
 
@@ -866,7 +866,7 @@
 .thread-child-agent-nested,
 .thread-child-agent-status {
   flex: 0 0 auto;
-  color: #8a928e;
+  color: var(--ink-muted);
   font-size: 11px;
 }
 
@@ -876,7 +876,7 @@
 }
 
 .thread-child-agent-row.running .thread-child-agent-status {
-  color: #5f7e68;
+  color: var(--success);
 }
 
 .thread-child-agent-row.completed .thread-child-agent-status {
@@ -920,17 +920,17 @@
   white-space: nowrap;
 }
 
-/*
- * When the sidebar title changes (typically the LLM-generated title replacing
- * the first-user-query fallback after the title model returns), crossfade
- * instead of hard-cutting. The React component remounts the span via `key`,
- * which restarts this animation; data-title-swap is only set after the first
- * swap so initial mount and project-switch hydration stay still.
- *
- * Duration is short (220 ms) so the title still feels responsive — long
- * enough to register as a settle, short enough that it doesn't bottleneck
- * scanning the sidebar.
- */
+  
+                                                                              
+                                                                          
+                                                                            
+                                                                             
+                                                                 
+  
+                                                                        
+                                                                          
+                        
+   
 .thread-row-main > .thread-row-title[data-title-swap] {
   animation: thread-row-title-settle 220ms ease both;
 }
@@ -998,7 +998,7 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #69726d;
+  color: var(--ink-tertiary);
   transition:
     background-color 120ms ease,
     color 120ms ease,
@@ -1009,7 +1009,7 @@
 .thread-row-action:focus-visible {
   outline: 0;
   background: rgba(17, 19, 21, 0.06);
-  color: #202427;
+  color: var(--ink);
 }
 
 .thread-row-action:active {
@@ -1039,7 +1039,7 @@
   gap: 10px;
   border-radius: 8px;
   background: transparent;
-  color: #59615d;
+  color: var(--ink-tertiary);
   font-weight: var(--weight-medium);
   padding: 0 12px;
   text-align: left;
@@ -1053,16 +1053,16 @@
 .settings-button:hover,
 .settings-button[aria-expanded="true"] {
   background: var(--sidebar-glass-hover);
-  color: #202427;
+  color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
   transform: translateX(1px);
 }
 
-/*
- * Right-click menu for thread rows. Position is fixed because the caller
- * passes raw clientX/clientY from a contextmenu event. The visual treatment
- * mirrors .project-add-menu so the two menus feel like the same component.
- */
+  
+                                                                         
+                                                                            
+                                                                           
+   
 .thread-row-context-menu {
   position: fixed;
   z-index: 60;
@@ -1088,7 +1088,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #1f2328;
+  color: var(--ink);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   padding: 0 9px;
