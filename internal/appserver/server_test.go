@@ -1716,6 +1716,71 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 }
 
+func TestServerTurnStartRendersLightweightSlashCommandForModel(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "done"}}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "/debug login failure"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	started := remarshal[TurnStartResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if len(started.Turn.Items) != 1 || started.Turn.Items[0].Text != "/debug login failure" {
+		t.Fatalf("turn should display raw slash command: %+v", started.Turn.Items)
+	}
+	_ = waitForMethod(t, out, NotificationTurnCompleted)
+
+	client.mu.Lock()
+	requestCount := len(client.requests)
+	modelPrompt := ""
+	if requestCount == 1 && len(client.requests[0].Messages) > 1 {
+		modelPrompt = client.requests[0].Messages[1].Content
+	}
+	client.mu.Unlock()
+	if requestCount != 1 {
+		t.Fatalf("expected one provider request, got %d", requestCount)
+	}
+	for _, want := range []string{"Investigate this problem", "login failure", "root cause"} {
+		if !strings.Contains(modelPrompt, want) {
+			t.Fatalf("model prompt missing %q:\n%s", want, modelPrompt)
+		}
+	}
+	if strings.Contains(modelPrompt, "/debug") {
+		t.Fatalf("model prompt should not include raw slash command:\n%s", modelPrompt)
+	}
+
+	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	if len(persisted) < 1 || persisted[0].DisplayContent != "/debug login failure" || !strings.Contains(persisted[0].Content, "Investigate this problem") {
+		t.Fatalf("persisted user message did not keep display/model split: %+v", persisted)
+	}
+	sessions, err := session.List(rt.SessionDir, 1)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Summary != "/debug login failure" {
+		t.Fatalf("session summary should use slash display text: %+v", sessions)
+	}
+}
+
 func TestServerTurnStartForwardsStreamingUsage(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StreamRunner.Client = usageStreamClient{events: []providers.StreamEvent{
@@ -1784,13 +1849,16 @@ func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
 	}
 	<-client.started
 
-	queueReq := fmt.Sprintf(`{"id":"3","method":"turn/queue","params":{"thread_id":%q,"prompt":"queued follow-up","client_id":"queued-1"}}`, threadID)
+	queueReq := fmt.Sprintf(`{"id":"3","method":"turn/queue","params":{"thread_id":%q,"prompt":"/fix login failure","client_id":"queued-1"}}`, threadID)
 	if err := srv.handleLine(context.Background(), []byte(queueReq)); err != nil {
 		t.Fatalf("turn/queue: %v", err)
 	}
 	queueResult := remarshal[TurnQueueResult](t, responseByID(t, parseOutput(t, out.String()), "3")["result"])
 	if queueResult.Queued.ID != "queued-1" || queueResult.Queued.ThreadID != threadID {
 		t.Fatalf("unexpected queue result: %+v", queueResult)
+	}
+	if queueResult.Queued.Preview != "/fix login failure" {
+		t.Fatalf("queued preview should use slash display text: %+v", queueResult.Queued)
 	}
 
 	close(client.release)
@@ -1816,7 +1884,12 @@ func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
 	th.mu.Unlock()
 	var found bool
 	for _, msg := range history {
-		if msg.Role == "user" && msg.Content == "queued follow-up" && msg.ClientID == "queued-1" && !msg.Steered {
+		if msg.Role == "user" &&
+			strings.Contains(msg.Content, "Fix this issue") &&
+			strings.Contains(msg.Content, "login failure") &&
+			msg.DisplayContent == "/fix login failure" &&
+			msg.ClientID == "queued-1" &&
+			!msg.Steered {
 			found = true
 			break
 		}

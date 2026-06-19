@@ -57,7 +57,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
-	userMsg := providers.ChatMessage{Role: "user", Content: params.Prompt, Images: images, Files: files}
+	userMsg := userMessageFromPrompt(params.Prompt, images, files)
 	now := time.Now().UTC()
 
 	th.mu.Lock()
@@ -130,13 +130,8 @@ func (s *Server) handleTurnQueue(req Request) error {
 	if queueID == "" {
 		queueID = session.NewID()
 	}
-	msg := providers.ChatMessage{
-		Role:     "user",
-		ClientID: queueID,
-		Content:  params.Prompt,
-		Images:   images,
-		Files:    files,
-	}
+	msg := userMessageFromPrompt(params.Prompt, images, files)
+	msg.ClientID = queueID
 	queued := queuedTurnSummary(params.ThreadID, queuedTurn{id: queueID, msg: msg})
 	s.enqueueQueuedUserTurn(params.ThreadID, queuedTurn{id: queueID, msg: msg})
 	if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
@@ -218,14 +213,10 @@ func (s *Server) handleTurnSteer(req Request) error {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("expected active turn id `%s` but found `%s`", params.ExpectedTurnID, actual))
 	}
 	turnID := th.currentTurn
-	th.pendingSteers = append(th.pendingSteers, providers.ChatMessage{
-		Role:     "user",
-		ClientID: clientID,
-		Content:  params.Prompt,
-		Images:   images,
-		Files:    files,
-		Steered:  true,
-	})
+	steerMsg := userMessageFromPrompt(params.Prompt, images, files)
+	steerMsg.ClientID = clientID
+	steerMsg.Steered = true
+	th.pendingSteers = append(th.pendingSteers, steerMsg)
 	th.mu.Unlock()
 	if s.removeQueuedUserTurn(params.ThreadID, clientID) {
 		_ = s.writeNotification(NotificationTurnDequeued, TurnDequeuedNotification{
@@ -352,6 +343,20 @@ func normalizeTurnStartFiles(files []TurnStartFile) ([]providers.InputFile, erro
 		})
 	}
 	return out, nil
+}
+
+func userMessageFromPrompt(prompt string, images []providers.InputImage, files []providers.InputFile) providers.ChatMessage {
+	content, display, ok := renderLightweightSlashCommandPrompt(prompt)
+	msg := providers.ChatMessage{
+		Role:    "user",
+		Content: content,
+		Images:  images,
+		Files:   files,
+	}
+	if ok {
+		msg.DisplayContent = display
+	}
+	return msg
 }
 
 func normalizeImagePayload(mediaType, data string) (string, string, error) {
