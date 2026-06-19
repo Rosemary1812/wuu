@@ -154,12 +154,16 @@ function renderShell(
   return { container, root };
 }
 
-function processFold(container: HTMLElement): HTMLDetailsElement | null {
-  return container.querySelector("details.turn-process-fold");
+function processFold(container: HTMLElement): HTMLDivElement | null {
+  return container.querySelector("div.turn-process-fold");
 }
 
 function processFoldOpen(container: HTMLElement): boolean {
-  return processFold(container)?.hasAttribute("open") ?? false;
+  // aria-expanded lives on the toggle <div> (role="button"), not on
+  // the outer fold container. Reading it from the container would
+  // always return null and fail every assertion.
+  const toggle = container.querySelector(".turn-process-toggle");
+  return toggle?.getAttribute("aria-expanded") === "true";
 }
 
 function reasoningFolds(container: HTMLElement): HTMLDetailsElement[] {
@@ -195,10 +199,11 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(false);
-    // The user can re-expand; verify the toggle still works after
-    // the fold defaults closed.
-    const summary = container.querySelector("summary.turn-process-toggle");
-    expect(summary).not.toBeNull();
+    // The user can re-expand; verify the toggle still exists and
+    // exposes its open/closed state via aria-expanded.
+    const toggle = container.querySelector(".turn-process-toggle");
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("does not collapse the fold for an in-flight unknown-phase agent message (rule 7)", () => {

@@ -6,6 +6,7 @@ import type {
   TurnEntry,
   TurnProcessPreview,
 } from "./AssistantTurnDisplay";
+import { CollapsibleDetails } from "./CollapsibleMotion";
 import { ToolActivityTimeline } from "./ToolActivity";
 import { ThreadItemView } from "./ThreadItemView";
 import { LightweightStreamingText } from "./LightweightStreamingText";
@@ -206,39 +207,66 @@ function TurnProcessFold({
     </>
   );
 
-  return (
-    <details
-      open={expanded}
+  // The outer element is a plain <div> instead of a native <details>.
+// Native <details> closes instantly with no height transition, so the
+// moment the turn settles the fold body snaps from full height to zero
+// and the message bubble reflows visibly. We drive the open/closed
+// state ourselves and animate it through CollapsibleDetails
+// (grid-template-rows + opacity + transform). a11y is preserved with
+// role="button" + aria-expanded + aria-controls + an Enter/Space
+// keyboard handler, matching what <details>/<summary> gave us for free.
+return (
+    <div
       className={`turn-process-fold${expanded ? " expanded" : " collapsed"}${
         hasDetails ? "" : " no-details"
       }${hasPreview ? " has-preview" : ""}`}
       id={detailsID}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
-      <summary className="turn-process-toggle">{toggleContent}</summary>
-      {hasDetails ? (
-        <div className="turn-process-fold-body">
-          {entries.map((entry) => (
-            <div
-              className={`turn-process-entry turn-process-entry-${entry.kind}`}
-              key={entry.key}
-            >
-              <EntryRenderer
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-controls={`${detailsID}-body`}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+        className="turn-process-toggle"
+      >
+        {toggleContent}
+      </div>
+      <CollapsibleDetails
+        id={`${detailsID}-body`}
+        expanded={expanded}
+        innerClassName="turn-process-fold-body"
+      >
+        {hasDetails ? (
+          <div className="turn-process-fold-body-inner">
+            {entries.map((entry) => (
+              <div
+                className={`turn-process-entry turn-process-entry-${entry.kind}`}
                 key={entry.key}
-                entry={entry}
-                turn={turn}
-                cwd={cwd}
-                actionableAgentMessageID={actionableAgentMessageID}
-                latestAgentMessageID={latestAgentMessageID}
-                onStreamFrame={onStreamFrame}
-                onForkMessage={onForkMessage}
-                onNoticeAction={onNoticeAction}
-              />
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </details>
+              >
+                <EntryRenderer
+                  key={entry.key}
+                  entry={entry}
+                  turn={turn}
+                  cwd={cwd}
+                  actionableAgentMessageID={actionableAgentMessageID}
+                  latestAgentMessageID={latestAgentMessageID}
+                  onStreamFrame={onStreamFrame}
+                  onForkMessage={onForkMessage}
+                  onNoticeAction={onNoticeAction}
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CollapsibleDetails>
+    </div>
   );
 }
 
