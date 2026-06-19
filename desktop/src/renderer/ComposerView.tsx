@@ -367,6 +367,11 @@ export function Composer({
       return;
     }
     if (slashMenuOpen) {
+      if (event.key === "Enter" && !event.shiftKey && slashDraft && exactRunnableSlashCommand(slashCommands, slashDraft)) {
+        event.preventDefault();
+        submitComposer();
+        return;
+      }
       if (event.key === "ArrowDown" && visibleSlashCommands.length > 0) {
         event.preventDefault();
         setSelectedSlashIndex((current) => nextEnabledSlashCommandIndex(visibleSlashCommands, current, 1));
@@ -736,4 +741,13 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
 
 function composerRuntimeContextKey(context: RuntimeContext): string {
   return context.kind === "project" ? `project:${context.project_id}` : `no_project:${context.cwd}`;
+}
+
+function exactRunnableSlashCommand(commands: ComposerSlashCommand[], draft: ComposerSlashDraft): ComposerSlashCommand | undefined {
+  return commands.find(
+    (command) =>
+      !command.disabledReason &&
+      (command.kind === "prompt" || command.kind === "skill") &&
+      command.name.toLowerCase() === draft.query
+  );
 }

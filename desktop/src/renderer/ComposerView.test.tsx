@@ -350,6 +350,30 @@ describe("Composer send control", () => {
 
     expect(setPrompt).toHaveBeenCalledWith("/slides ");
   });
+
+  it("sends an exact slash command with arguments on Enter", () => {
+    const onSend = vi.fn();
+    renderComposer({
+      prompt: "/debug 登录失败",
+      onSend,
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      textarea?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Composer queue strip", () => {
