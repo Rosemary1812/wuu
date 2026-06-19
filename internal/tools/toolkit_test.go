@@ -2960,6 +2960,100 @@ func TestOK(t *testing.T) {}
 	}
 }
 
+func TestToolkit_RunTestResolvesNpxVitestToLocalRunner(t *testing.T) {
+	root := t.TempDir()
+	localVitest := filepath.Join(root, "node_modules", ".bin", "vitest")
+	mustWriteFile(t, localVitest, "#!/usr/bin/env sh\nprintf 'vitest local ok\\n'\n")
+	if err := os.Chmod(localVitest, 0o755); err != nil {
+		t.Fatalf("chmod local vitest: %v", err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"npx vitest --run","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_test npx vitest should resolve local runner: %v", err)
+	}
+	var got struct {
+		Passed           bool               `json:"passed"`
+		Command          string             `json:"command"`
+		RequestedCommand string             `json:"requested_command"`
+		ResolvedCommand  string             `json:"resolved_command"`
+		Output           string             `json:"output"`
+		Classification   ToolClassification `json:"classification"`
+	}
+	if err := json.Unmarshal([]byte(resp), &got); err != nil {
+		t.Fatalf("parse run_test response: %v\n%s", err, resp)
+	}
+	if !got.Passed || got.RequestedCommand != "npx vitest --run" || got.ResolvedCommand != "./node_modules/.bin/vitest --run" || got.Command != got.ResolvedCommand {
+		t.Fatalf("unexpected resolved npx response: %+v", got)
+	}
+	if !strings.Contains(got.Output, "vitest local ok") {
+		t.Fatalf("run_test output missing local runner evidence: %+v", got)
+	}
+	if got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
+		t.Fatalf("unexpected npx vitest classification: %+v", got.Classification)
+	}
+}
+
+func TestToolkit_RunTestResolvesDirectoryScopedNpxVitest(t *testing.T) {
+	root := t.TempDir()
+	localVitest := filepath.Join(root, "desktop", "node_modules", ".bin", "vitest")
+	mustWriteFile(t, localVitest, "#!/usr/bin/env sh\nprintf 'desktop vitest ok\\n'\n")
+	if err := os.Chmod(localVitest, 0o755); err != nil {
+		t.Fatalf("chmod local vitest: %v", err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"cd desktop && npx vitest","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("run_test directory npx vitest should resolve local runner: %v", err)
+	}
+	var got struct {
+		Passed           bool   `json:"passed"`
+		Command          string `json:"command"`
+		RequestedCommand string `json:"requested_command"`
+		ResolvedCommand  string `json:"resolved_command"`
+		Output           string `json:"output"`
+	}
+	if err := json.Unmarshal([]byte(resp), &got); err != nil {
+		t.Fatalf("parse run_test response: %v\n%s", err, resp)
+	}
+	if !got.Passed || got.RequestedCommand != "cd desktop && npx vitest" || got.ResolvedCommand != "cd desktop && ./node_modules/.bin/vitest" || got.Command != got.ResolvedCommand {
+		t.Fatalf("unexpected directory resolved npx response: %+v", got)
+	}
+	if !strings.Contains(got.Output, "desktop vitest ok") {
+		t.Fatalf("run_test output missing directory runner evidence: %+v", got)
+	}
+}
+
+func TestToolkit_RunTestRejectsMissingLocalNpxRunner(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_test",
+		Arguments: `{"command":"npx vitest","scope":"targeted"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=local_test_runner_missing") || !strings.Contains(err.Error(), "node_modules/.bin/vitest") {
+		t.Fatalf("expected missing local runner rejection, got %v", err)
+	}
+}
+
 func TestToolkit_RunTestToolSummarizesFailures(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/run-test\n\ngo 1.22\n")
@@ -5689,6 +5783,22 @@ func TestToolkit_RunShellRejectsPackageNetworkMutationCommands(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
 			t.Fatalf("expected package/network mutation rejection for %q, got %v", command, err)
 		}
+	}
+}
+
+func TestToolkit_RunShellGuidesNpxVerificationToRunTest(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"npx vitest --run"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=wrong_tool_for_verification") || !strings.Contains(err.Error(), "retry with run_test") {
+		t.Fatalf("expected run_shell to guide npx verification to run_test, got %v", err)
 	}
 }
 

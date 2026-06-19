@@ -125,6 +125,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if shellCommandInvokesDestructiveCommand(args.Command) {
 		return "", errors.New("run_shell refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
 	}
+	if testCommandLooksLikeLocalRunnerVerification(args.Command) {
+		return "", errors.New("run_shell refuses to execute package-runner verification commands directly because they can install packages when the runner is missing; use run_test for local verification so project-local test runners are resolved without downloads: error_kind=wrong_tool_for_verification model_next_action=\"retry with run_test using the same command\"")
+	}
 	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
 		return "", errors.New("run_shell refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
 	}

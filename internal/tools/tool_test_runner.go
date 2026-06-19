@@ -59,6 +59,7 @@ func (t *RunTestTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- Use for targeted, affected, or full test/build/typecheck/lint verification\n" +
 			"- The command must be a single local verification command such as go test, pytest, npm test, npm run lint, cargo test, or make test\n" +
+			"- JavaScript test-runner shims such as npx vitest are resolved to the project-local node_modules/.bin runner when it exists; run_test will not download packages\n" +
 			"- Do not use for package installation, network calls, deploys, git mutations, or arbitrary shell exploration\n" +
 			"- Commands that dump environment variables or touch sensitive credential paths are rejected\n" +
 			"- Results include exit code, duration, compact output, and failure_summary with likely failing tests or error snippets",
@@ -108,7 +109,12 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
 		return "", errors.New("run_test refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
 	}
-	classification := classifyTestCommand(args.Command)
+	resolved, err := resolveRunTestCommand(t.env.RootDir, args.Command)
+	if err != nil {
+		return "", err
+	}
+	command = resolved.Command
+	classification := classifyTestCommand(command)
 	if classification.Risk != ToolRiskMedium || classification.Reason != "local verification command" {
 		return "", errors.New("run_test only accepts local verification commands; use run_shell for other shell commands")
 	}
@@ -182,6 +188,10 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 			"max_failed_runs_without_revision_change": maxRepeatedRunTestFailures,
 		},
 		"next_suggestions": runTestNextSuggestions(shellResult, failureSummary),
+	}
+	if resolved.Changed {
+		result["requested_command"] = redactToolOutput(resolved.Requested)
+		result["resolved_command"] = shellResult.Command
 	}
 	if fullLogRef != "" {
 		result["full_log_ref"] = fullLogRef
@@ -424,6 +434,14 @@ func addTestSnippet(snippets *[]string, lines []string, idx int) {
 }
 
 func classifyTestCommand(command string) ToolClassification {
+	if testCommandLooksLikeLocalRunnerVerification(command) {
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Risk:            ToolRiskMedium,
+			Reason:          "local verification command",
+		}
+	}
 	classification := classifyShellCommand(command)
 	if classification.Risk == ToolRiskMedium && classification.Reason == "local verification command" {
 		return classification
@@ -435,4 +453,195 @@ func classifyTestCommand(command string) ToolClassification {
 		classification.Reason = "run_test requires a local verification command"
 	}
 	return classification
+}
+
+type resolvedRunTestCommand struct {
+	Requested string
+	Command   string
+	Changed   bool
+}
+
+func resolveRunTestCommand(rootDir, command string) (resolvedRunTestCommand, error) {
+	requested := strings.TrimSpace(command)
+	resolved := resolvedRunTestCommand{Requested: requested, Command: requested}
+	if rewritten, changed, err := resolveLocalNpxTestRunner(rootDir, requested); err != nil {
+		return resolved, err
+	} else if changed {
+		resolved.Command = rewritten
+		resolved.Changed = true
+	}
+	return resolved, nil
+}
+
+func testCommandLooksLikeLocalRunnerVerification(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	if left, dir, right, ok := splitDirectoryScopedTestCommand(command); ok {
+		_ = left
+		_ = dir
+		return testCommandLooksLikeLocalRunnerVerification(right)
+	}
+	if strings.ContainsAny(command, "\n;&|><`$()") {
+		return false
+	}
+	fields := normalizeShellCommandFields(strings.Fields(command))
+	if len(fields) == 0 {
+		return false
+	}
+	if fields[0] == "npx" {
+		runnerIdx, ok := npxVerificationRunnerIndex(fields, 0)
+		return ok && jsVerificationRunnerName(fields[runnerIdx])
+	}
+	return jsVerificationRunnerName(fields[0])
+}
+
+func resolveLocalNpxTestRunner(rootDir, command string) (string, bool, error) {
+	if left, dir, right, ok := splitDirectoryScopedTestCommand(command); ok {
+		workDir := filepath.Join(rootDir, dir)
+		rewritten, changed, err := resolveSimpleLocalNpxTestRunner(workDir, right)
+		if err != nil || !changed {
+			return "", false, err
+		}
+		return left + " && " + rewritten, true, nil
+	}
+	if strings.ContainsAny(command, "\n;&|><`$()") {
+		return "", false, nil
+	}
+	return resolveSimpleLocalNpxTestRunner(rootDir, command)
+}
+
+func resolveSimpleLocalNpxTestRunner(workDir, command string) (string, bool, error) {
+	fields := strings.Fields(command)
+	exeIdx := shellExecutableFieldIndex(fields)
+	if exeIdx < 0 || exeIdx >= len(fields) || fields[exeIdx] != "npx" {
+		return "", false, nil
+	}
+	runnerIdx, ok := npxVerificationRunnerIndex(fields, exeIdx)
+	if !ok || !jsVerificationRunnerName(fields[runnerIdx]) {
+		return "", false, nil
+	}
+	runner := jsRunnerBaseName(fields[runnerIdx])
+	localRunner := filepath.Join(workDir, "node_modules", ".bin", runner)
+	if _, err := os.Stat(localRunner); err != nil {
+		if os.IsNotExist(err) {
+			return "", false, localTestRunnerMissingError{
+				Runner:   runner,
+				Expected: filepath.ToSlash(filepath.Join("node_modules", ".bin", runner)),
+			}
+		}
+		return "", false, fmt.Errorf("inspect local test runner %q: %w", localRunner, err)
+	}
+	rewritten := make([]string, 0, len(fields)-runnerIdx+exeIdx+1)
+	rewritten = append(rewritten, fields[:exeIdx]...)
+	rewritten = append(rewritten, "./node_modules/.bin/"+runner)
+	rewritten = append(rewritten, fields[runnerIdx+1:]...)
+	return strings.Join(rewritten, " "), true, nil
+}
+
+func splitDirectoryScopedTestCommand(command string) (left, dir, right string, ok bool) {
+	parts := strings.Split(command, "&&")
+	if len(parts) != 2 {
+		return "", "", "", false
+	}
+	left = strings.TrimSpace(parts[0])
+	right = strings.TrimSpace(parts[1])
+	leftFields := strings.Fields(left)
+	if len(leftFields) != 2 || leftFields[0] != "cd" || !safeRelativeShellDir(leftFields[1]) || right == "" {
+		return "", "", "", false
+	}
+	if strings.ContainsAny(right, "\n;&|><`$()") {
+		return "", "", "", false
+	}
+	return left, shellPathToken(leftFields[1]), right, true
+}
+
+func shellExecutableFieldIndex(fields []string) int {
+	for i := 0; i < len(fields); {
+		for i < len(fields) && looksLikeEnvAssignment(fields[i]) {
+			i++
+		}
+		if i >= len(fields) {
+			return -1
+		}
+		switch fields[i] {
+		case "command", "exec":
+			i++
+			continue
+		case "env":
+			i++
+			for i < len(fields) {
+				field := fields[i]
+				if looksLikeEnvAssignment(field) {
+					i++
+					continue
+				}
+				if strings.HasPrefix(field, "-") {
+					i++
+					if field == "-u" || field == "--unset" || field == "-C" || field == "--chdir" {
+						if i < len(fields) {
+							i++
+						}
+					}
+					continue
+				}
+				break
+			}
+			continue
+		default:
+			return i
+		}
+	}
+	return -1
+}
+
+func npxVerificationRunnerIndex(fields []string, npxIdx int) (int, bool) {
+	if npxIdx < 0 || npxIdx >= len(fields) || fields[npxIdx] != "npx" {
+		return -1, false
+	}
+	i := npxIdx + 1
+	for i < len(fields) {
+		switch fields[i] {
+		case "--no-install", "--":
+			i++
+			continue
+		default:
+			if strings.HasPrefix(fields[i], "-") {
+				return -1, false
+			}
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func jsVerificationRunnerName(name string) bool {
+	switch jsRunnerBaseName(name) {
+	case "vitest", "jest", "mocha", "ava", "tap":
+		return true
+	default:
+		return false
+	}
+}
+
+func jsRunnerBaseName(name string) string {
+	name = shellPathToken(name)
+	name = strings.TrimSuffix(name, ".cmd")
+	name = strings.TrimSuffix(name, ".ps1")
+	return filepath.Base(name)
+}
+
+type localTestRunnerMissingError struct {
+	Runner   string
+	Expected string
+}
+
+func (e localTestRunnerMissingError) Error() string {
+	return fmt.Sprintf(
+		"run_test refuses to invoke npx for local test runner %q because npx can download packages when the runner is missing: error_kind=local_test_runner_missing expected=%q model_next_action=%q",
+		e.Runner,
+		e.Expected,
+		"install project dependencies with explicit approval, use an existing package script, or run a project-local test binary",
+	)
 }
