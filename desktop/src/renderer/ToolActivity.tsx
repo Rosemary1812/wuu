@@ -1,5 +1,6 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import type { ThreadItem } from "../shared/protocol";
+import { LightweightStreamingText } from "./LightweightStreamingText";
 import {
   buildToolActivitySections,
   summarizeToolActivity,
@@ -19,9 +20,17 @@ const TOOL_ACTIVITY_REVEAL_INTERVAL_MS = 85;
 export function ToolActivityTimeline({
   items,
   revealItems = false,
+  streaming = false,
 }: {
   items: ThreadItem[];
   revealItems?: boolean;
+  /**
+   * When true, in-progress tool rows fake-stream their summary line at
+   * a deliberate cadence. Flips to false the moment an agent_message in
+   * the same turn starts streaming so the user's eye is not held on a
+   * still-filling title while the body text rushes past underneath.
+   */
+  streaming?: boolean;
 }): JSX.Element {
   const [visibleCount, setVisibleCount] = useState(() =>
     revealItems ? Math.min(1, items.length) : items.length,
@@ -61,7 +70,7 @@ export function ToolActivityTimeline({
           key={item.id}
           style={{ "--activity-index": index } as CSSProperties}
         >
-          <ToolActivityRow items={[item]} />
+          <ToolActivityRow items={[item]} streaming={streaming} />
         </div>
       ))}
     </div>
@@ -79,8 +88,17 @@ export function ToolActivityTimeline({
 // information that genuinely is not already in the summary.
 export function ToolActivityRow({
   items,
+  streaming = false,
 }: {
   items: ThreadItem[];
+  /**
+   * Drives the fake-stream on the summary text. When true, the summary
+   * reveals progressively at a deliberate cadence; when false it snaps
+   * to the full text. The catch-up signal (turn has an in-progress
+   * agent_message) flips this off so the user's eye follows the body
+   * text rather than a still-filling title above it.
+   */
+  streaming?: boolean;
 }): JSX.Element {
   const summary = summarizeToolActivity(items);
   const sections = buildToolActivitySections(items);
@@ -111,7 +129,10 @@ export function ToolActivityRow({
     <article className={className}>
       <span className="activity-row activity-summary">
         <span className="activity-copy">
-          <span>{summaryText}</span>
+          <LightweightStreamingText
+            text={summaryText}
+            live={streaming ?? false}
+          />
           {summary.additions > 0 ? (
             <span className="activity-add">+{summary.additions}</span>
           ) : null}

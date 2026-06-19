@@ -325,8 +325,22 @@ function EntryRenderer({
   const { item, kind, streaming } = entry;
   if (kind === "activity") {
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
+      // Catch-up: when the agent message starts streaming, the tool
+      // title should snap to full (LightweightStreamingText live=false)
+      // so the user's eye follows the body text rather than a still-
+      // filling title above it.
+      const toolFakeStreaming =
+        streaming &&
+        !turn.items.some(
+          (i) =>
+            i.type === "agent_message" && i.status === "in_progress",
+        );
       return (
-        <ToolActivityTimeline items={[item]} revealItems={streaming} />
+        <ToolActivityTimeline
+          items={[item]}
+          revealItems={streaming}
+          streaming={toolFakeStreaming}
+        />
       );
     }
     return null;
