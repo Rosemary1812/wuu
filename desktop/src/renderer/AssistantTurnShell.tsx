@@ -28,6 +28,7 @@ export function AssistantTurnShell({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onCollapseComplete,
   onNoticeAction,
 }: {
   turn: Turn;
@@ -37,6 +38,7 @@ export function AssistantTurnShell({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const processEntries = display.entries.filter(
@@ -76,6 +78,7 @@ export function AssistantTurnShell({
     latestAgentMessageID,
     onStreamFrame,
     onForkMessage,
+    onCollapseComplete,
     onNoticeAction,
   };
 
@@ -124,6 +127,7 @@ function TurnProcessFold({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onCollapseComplete,
   onNoticeAction,
 }: {
   turn: Turn;
@@ -135,10 +139,20 @@ function TurnProcessFold({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  /**
+   * Fires once the fold has finished collapsing so the conversation
+   * scroll container can re-anchor `scrollTop = scrollHeight`. The
+   * fold collapse drops scrollHeight by the fold body's height, and
+   * without this callback the browser silently clamps `scrollTop`
+   * to the new max, which the user perceives as the scroll bar
+   * jumping upward at turn-settle.
+   */
+  onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
   const previousDefaultCollapsed = useRef(defaultCollapsed);
+  const previousExpanded = useRef(expanded);
   const detailsID = `${turn.id}-process-fold`;
 
   const processCount = entries.reduce(
@@ -171,6 +185,25 @@ function TurnProcessFold({
     }
     previousDefaultCollapsed.current = defaultCollapsed;
   }, [defaultCollapsed]);
+
+  // Watch the expanded → collapsed transition and fire the callback
+  // once the CSS transition has settled (slightly longer than
+  // --collapse-motion-duration so the fold height has reached its
+  // final value before the caller re-anchors scrollTop). Without
+  // this, the browser would silently clamp scrollTop to the new
+  // max as scrollHeight drops by the fold body's height, which the
+  // user perceives as the scroll bar jumping upward at turn-settle.
+  useEffect(() => {
+    if (previousExpanded.current && !expanded) {
+      const timeoutId = window.setTimeout(() => {
+        onCollapseComplete?.();
+      }, 280);
+      previousExpanded.current = expanded;
+      return () => window.clearTimeout(timeoutId);
+    }
+    previousExpanded.current = expanded;
+    return undefined;
+  }, [expanded, onCollapseComplete]);
 
   const hasDetails = entries.length > 0;
   const hasPreview = Boolean(latestPreview);

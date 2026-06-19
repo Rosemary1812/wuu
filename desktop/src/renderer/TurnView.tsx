@@ -26,6 +26,7 @@ export function TurnView({
   editingMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
+  onCollapseComplete,
   onNoticeAction,
 }: {
   turn: Turn;
@@ -43,6 +44,7 @@ export function TurnView({
     images: InputImage[],
     files: InputFile[],
   ) => void;
+  onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const actionableAgentMessageID =
@@ -104,6 +106,7 @@ export function TurnView({
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
           onForkMessage={onForkMessage}
+          onCollapseComplete={onCollapseComplete}
           onNoticeAction={onNoticeAction}
         />
       ) : null}
