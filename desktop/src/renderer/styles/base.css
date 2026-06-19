@@ -65,6 +65,7 @@
   --danger-soft: #fff0ef;
   --danger-border: #f1c2bf;
   --info: #0969da;
+  --accent-warm: #ef5b18;
 
                                                                   
                                                                       
@@ -285,11 +286,11 @@ body {
   --os-size: 10px;
   --os-padding-perpendicular: 2px;
   --os-padding-axis: 3px;
-  --os-track-border-radius: 999px;
+  --os-track-border-radius: var(--radius-pill);
   --os-track-bg: transparent;
   --os-track-bg-hover: rgba(46, 50, 54, 0.06);
   --os-track-bg-active: rgba(46, 50, 54, 0.08);
-  --os-handle-border-radius: 999px;
+  --os-handle-border-radius: var(--radius-pill);
   --os-handle-bg: rgba(82, 88, 94, 0.28);
   --os-handle-bg-hover: rgba(56, 88, 118, 0.46);
   --os-handle-bg-active: rgba(38, 70, 98, 0.62);
