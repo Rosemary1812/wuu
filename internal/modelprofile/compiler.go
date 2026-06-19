@@ -1,0 +1,507 @@
+package modelprofile
+
+import (
+	"sort"
+	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/capability"
+)
+
+// ProfileKey is the stable identifier of a tool-surface compilation.
+// The same ProfileKey is used to build the JSON-RPC initialize result,
+// the Settings debug view, and the prompt-fragment cache. Adding a
+// new key is a deliberate act; renaming an existing key is a breaking
+// change for downstream UIs.
+type ProfileKey string
+
+const (
+	// ProfileOpenAICodex is the OpenAI / Codex harness. It exposes
+	// apply_patch as the preferred editing primitive and treats
+	// bash as the single terminal entry point. Reasoning budgets
+	// are higher (harness iterates more before replying).
+	ProfileOpenAICodex ProfileKey = "openai_codex"
+
+	// ProfileOpenAIGPT covers OpenAI GPT-5-class reasoning models
+	// that ship with the OpenAI Responses API but do not necessarily
+	// accept freeform patch grammars. Most gpt-5/4.x models still
+	// get apply_patch; gpt-4 and gpt-oss fall back to exact edit
+	// (edit_file + write_file) because their patch reliability is
+	// historically lower.
+	ProfileOpenAIGPT ProfileKey = "openai_gpt"
+
+	// ProfileAnthropicClaude is the Anthropic Claude harness. It
+	// uses exact-edit primitives (edit_file + write_file) as the
+	// preferred file-change path and exposes bash for terminal
+	// work. Prompt caching and long-horizon planning are first-class.
+	ProfileAnthropicClaude ProfileKey = "anthropic_claude"
+
+	// ProfileGeneric is the catch-all for BYOK providers (Gemini,
+	// Kimi, DeepSeek, Qwen, local models, anything we have not
+	// explicitly classified). It uses exact-edit primitives and a
+	// conservative surface; local models in particular drop the
+	// command.bash capability because the underlying profile
+	// disables direct shell.
+	ProfileGeneric ProfileKey = "generic"
+)
+
+// Compiler compiles a model profile into a tool surface.
+type Compiler interface {
+	Compile(p Profile) capability.Surface
+}
+
+// DefaultCompiler returns the built-in compiler. The compiler is
+// stateless: callers should keep a single instance and reuse it.
+type DefaultCompiler struct{}
+
+// Compile implements Compiler.
+func (DefaultCompiler) Compile(p Profile) capability.Surface {
+	key := ResolveProfileKey(p)
+	b := newBuilder(p, key)
+	switch key {
+	case ProfileOpenAICodex:
+		compileOpenAICodex(b, p)
+	case ProfileOpenAIGPT:
+		compileOpenAIGPT(b, p)
+	case ProfileAnthropicClaude:
+		compileAnthropicClaude(b, p)
+	default:
+		compileGeneric(b, p)
+	}
+	b.sortCaps()
+	return b.surface
+}
+
+// ResolveProfileKey returns the stable ProfileKey for a model
+// profile. The key is the primary input to the surface compiler; the
+// underlying Family and WriteMode fields refine its output but do
+// not change which compiler variant runs.
+func ResolveProfileKey(p Profile) ProfileKey {
+	switch p.Family {
+	case FamilyCodex:
+		return ProfileOpenAICodex
+	case FamilyGPT:
+		// gpt-4 and gpt-oss are notoriously unreliable with freeform
+		// patches. They still go through the openai_gpt compiler
+		// (which understands the OpenAI Responses shape) but the
+		// compiler downgrades their edit primitive to exact edit.
+		return ProfileOpenAIGPT
+	case FamilyClaude:
+		return ProfileAnthropicClaude
+	default:
+		return ProfileGeneric
+	}
+}
+
+// surfaceBuilder is a helper that incrementally builds a Surface.
+// It enforces the rule that every visible tool and every
+// capability lives in exactly one of (Tools, HiddenTools) and
+// (Capabilities, HiddenCapabilities).
+type surfaceBuilder struct {
+	surface capability.Surface
+	visible map[capability.Capability]struct{}
+	hidden  map[capability.Capability]struct{}
+}
+
+func newSurfaceFor(p Profile, key ProfileKey) capability.Surface {
+	return capability.Surface{
+		ProfileName: string(key),
+		Provider:    p.ProviderName,
+		Model:       p.Model,
+		Tools:       map[string]capability.Capability{},
+		HiddenTools: map[string]capability.Capability{},
+	}
+}
+
+func newBuilder(p Profile, key ProfileKey) *surfaceBuilder {
+	return &surfaceBuilder{
+		surface: newSurfaceFor(p, key),
+		visible: map[capability.Capability]struct{}{},
+		hidden:  map[capability.Capability]struct{}{},
+	}
+}
+
+// addVisible registers a model-visible tool and its capability.
+func (b *surfaceBuilder) addVisible(tool string, c capability.Capability) {
+	b.surface.Tools[tool] = c
+	if _, ok := b.visible[c]; ok {
+		return
+	}
+	b.visible[c] = struct{}{}
+	b.surface.Capabilities = append(b.surface.Capabilities, c)
+}
+
+// addHidden registers a tool the runtime still implements but does
+// not advertise to the model under this surface.
+func (b *surfaceBuilder) addHidden(tool string, c capability.Capability) {
+	b.surface.HiddenTools[tool] = c
+	if _, ok := b.hidden[c]; ok {
+		return
+	}
+	if _, ok := b.visible[c]; ok {
+		return
+	}
+	b.hidden[c] = struct{}{}
+	b.surface.HiddenCapabilities = append(b.surface.HiddenCapabilities, c)
+}
+
+// skipHidden records that a capability exists on this surface but
+// the runtime does not currently implement a tool for it. Used to
+// keep the hidden capability list aligned with the visible one
+// when a future revision will add the implementation back.
+func (b *surfaceBuilder) skipHidden(c capability.Capability) {
+	if _, ok := b.hidden[c]; ok {
+		return
+	}
+	if _, ok := b.visible[c]; ok {
+		return
+	}
+	b.hidden[c] = struct{}{}
+	b.surface.HiddenCapabilities = append(b.surface.HiddenCapabilities, c)
+}
+
+// sortCaps sorts the capability slices for deterministic output.
+func (b *surfaceBuilder) sortCaps() {
+	sort.SliceStable(b.surface.Capabilities, func(i, j int) bool {
+		return string(b.surface.Capabilities[i]) < string(b.surface.Capabilities[j])
+	})
+	sort.SliceStable(b.surface.HiddenCapabilities, func(i, j int) bool {
+		return string(b.surface.HiddenCapabilities[i]) < string(b.surface.HiddenCapabilities[j])
+	})
+}
+
+// ── Per-profile compilation ───────────────────────────────────────
+
+// openaiCodexEditTools is the editing tool list Codex surfaces.
+// apply_patch is preferred; edit_file and write_file are kept as
+// hidden fallbacks so internal callers (e.g. a future bash
+// post-processor that prefers whole-file write) can still route
+// edits through them.
+var openaiCodexEditTools = struct {
+	primary string
+	hidden  []string
+}{
+	primary: "apply_patch",
+	hidden:  []string{"edit_file", "write_file"},
+}
+
+// openaiGPTEditTools covers most OpenAI Responses models that do
+// not ship the Codex freeform patch grammar. apply_patch is still
+// the primary; the hidden list is the same.
+var openaiGPTEditTools = struct {
+	primary string
+	hidden  []string
+}{
+	primary: "apply_patch",
+	hidden:  []string{"edit_file", "write_file"},
+}
+
+// claudeEditTools is the Anthropic / generic exact-edit pair.
+var claudeEditTools = struct {
+	primary  string
+	hidden   []string
+	fallback []string
+}{
+	primary:  "edit_file",
+	hidden:   []string{"apply_patch"},
+	fallback: []string{"write_file"},
+}
+
+func compileOpenAICodex(b *surfaceBuilder, p Profile) {
+	addFileReadTools(b)
+	addSearchTools(b)
+	addBashFirstTools(b, p)
+	addWebTools(b)
+	addTaskTools(b)
+	addMemoryTools(b)
+	addPlanningTools(b)
+	addWorkflowTools(b)
+	addScheduleTools(b)
+	addSkillTools(b)
+	addExtensionTools(b)
+	addOpenAICodexEditTools(b)
+	addOpenAICodexPrompt(b)
+}
+
+func compileOpenAIGPT(b *surfaceBuilder, p Profile) {
+	addFileReadTools(b)
+	addSearchTools(b)
+	addBashFirstTools(b, p)
+	addWebTools(b)
+	addTaskTools(b)
+	addMemoryTools(b)
+	addPlanningTools(b)
+	addWorkflowTools(b)
+	addScheduleTools(b)
+	addSkillTools(b)
+	addExtensionTools(b)
+	addOpenAIGPTEditTools(b, p)
+	addOpenAIGPTPrompt(b, p)
+}
+
+func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
+	addFileReadTools(b)
+	addSearchTools(b)
+	addBashFirstTools(b, p)
+	addWebTools(b)
+	addTaskTools(b)
+	addMemoryTools(b)
+	addPlanningTools(b)
+	addWorkflowTools(b)
+	addScheduleTools(b)
+	addSkillTools(b)
+	addExtensionTools(b)
+	addClaudeEditTools(b)
+	addClaudePrompt(b)
+}
+
+func compileGeneric(b *surfaceBuilder, p Profile) {
+	addFileReadTools(b)
+	addSearchTools(b)
+	// Local models disable direct shell. The compiler still calls
+	// addBashFirstTools so the bash tools land in HiddenTools; the
+	// function itself routes the visible/hidden split based on
+	// AllowDirectShell.
+	addBashFirstTools(b, p)
+	addWebTools(b)
+	addTaskTools(b)
+	addMemoryTools(b)
+	addPlanningTools(b)
+	addWorkflowTools(b)
+	addScheduleTools(b)
+	addSkillTools(b)
+	addExtensionTools(b)
+	addGenericEditTools(b, p)
+	addGenericPrompt(b, p)
+}
+
+// ── Shared capability assembly helpers ─────────────────────────────
+
+func addFileReadTools(b *surfaceBuilder) {
+	b.addVisible("read_file", capability.CapabilityFileRead)
+	b.addVisible("list_files", capability.CapabilityFileList)
+}
+
+func addSearchTools(b *surfaceBuilder) {
+	b.addVisible("grep", capability.CapabilitySearchGrep)
+	b.addVisible("glob", capability.CapabilitySearchGlob)
+	b.addVisible("ast_search", capability.CapabilitySearchAST)
+	b.addVisible("semantic_search", capability.CapabilitySearchSemantic)
+}
+
+func addBashFirstTools(b *surfaceBuilder, p Profile) {
+	processTools := []string{
+		"start_process",
+		"list_processes",
+		"read_process_output",
+		"write_stdin",
+		"stop_process",
+	}
+	if p.Workflow.AllowDirectShell {
+		b.addVisible("bash", capability.CapabilityCommandBash)
+		for _, tool := range processTools {
+			b.addVisible(tool, capability.CapabilityCommandBackground)
+		}
+	} else {
+		// No direct shell: keep the bash tools around as hidden
+		// capabilities so the runtime can still drive background
+		// processes as a backend for non-shell workflows. The
+		// prompt fragment explains this to the model.
+		b.addHidden("bash", capability.CapabilityCommandBash)
+		for _, tool := range processTools {
+			b.addHidden(tool, capability.CapabilityCommandBackground)
+		}
+	}
+	// run_test is intentionally not a model-visible tool on the
+	// bash-first surface. It stays as an internal post-processor
+	// that can annotate bash results with test summaries; the
+	// model never sees it as a separate entry point.
+	b.addHidden("run_test", capability.CapabilityCommandBash)
+	// The structured git tool is a legacy / advanced capability.
+	// Normal git workflow runs through bash with a `git ...`
+	// command pattern; the toolkit still implements git for
+	// progressive disclosure and for any internal callers that
+	// want structured status output, but the model never sees it
+	// as a default tool.
+	b.addHidden("git", capability.CapabilityCommandBash)
+}
+
+func addWebTools(b *surfaceBuilder) {
+	b.addVisible("web_search", capability.CapabilityWebSearch)
+	b.addVisible("web_fetch", capability.CapabilityWebFetch)
+}
+
+func addTaskTools(b *surfaceBuilder) {
+	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
+	b.addVisible("send_message", capability.CapabilityTaskCommunicate)
+	b.addVisible("followup_task", capability.CapabilityTaskCommunicate)
+	b.addVisible("wait_agent", capability.CapabilityTaskManage)
+	b.addVisible("await_agents", capability.CapabilityTaskManage)
+	b.addVisible("close_agent", capability.CapabilityTaskManage)
+	b.addVisible("list_agents", capability.CapabilityTaskManage)
+	b.addVisible("agent_report", capability.CapabilityTaskManage)
+}
+
+func addMemoryTools(b *surfaceBuilder) {
+	b.addVisible("session_memory", capability.CapabilityMemorySession)
+	// Project-level memory tools are gated on the model surface
+	// (not on whether a memory provider is attached). The
+	// toolkit still hides individual memory_* tools when no
+	// provider is configured; the capability is the contract
+	// that says "project memory is a thing on this surface".
+	b.skipHidden(capability.CapabilityMemoryProject)
+}
+
+func addPlanningTools(b *surfaceBuilder) {
+	b.addVisible("update_plan", capability.CapabilityPlan)
+	b.addVisible("start_goal", capability.CapabilityGoal)
+	b.addVisible("update_goal", capability.CapabilityGoal)
+	b.addVisible("complete_goal", capability.CapabilityGoal)
+	b.addVisible("goal_status", capability.CapabilityGoal)
+}
+
+func addWorkflowTools(b *surfaceBuilder) {
+	b.addVisible("list_workflows", capability.CapabilityWorkflow)
+	b.addVisible("load_workflow", capability.CapabilityWorkflow)
+	b.addVisible("save_workflow", capability.CapabilityWorkflow)
+	b.addVisible("list_agent_profiles", capability.CapabilityWorkflow)
+	b.addVisible("create_agent_profile", capability.CapabilityWorkflow)
+	b.addVisible("start_workflow", capability.CapabilityWorkflow)
+	b.addVisible("run_workflow", capability.CapabilityWorkflow)
+	b.addVisible("create_workflow", capability.CapabilityWorkflow)
+	b.addVisible("workflow_control", capability.CapabilityWorkflow)
+	b.addVisible("workflow_status", capability.CapabilityWorkflow)
+}
+
+func addScheduleTools(b *surfaceBuilder) {
+	b.addVisible("schedule_cron", capability.CapabilitySchedule)
+	b.addVisible("cancel_cron", capability.CapabilitySchedule)
+	b.addVisible("list_cron", capability.CapabilitySchedule)
+}
+
+func addSkillTools(b *surfaceBuilder) {
+	b.addVisible("load_skill", capability.CapabilitySkill)
+	b.addVisible("tool_search", capability.CapabilityDiscovery)
+}
+
+func addExtensionTools(b *surfaceBuilder) {
+	b.addVisible("report_listening_ports", capability.CapabilityPorts)
+	// MCP and discovery live in extension surface; the
+	// capabilities are reserved so permission routing can match
+	// them even before any MCP server is attached.
+	b.skipHidden(capability.CapabilityMCP)
+}
+
+func addOpenAICodexEditTools(b *surfaceBuilder) {
+	b.addVisible(openaiCodexEditTools.primary, capability.CapabilityFileEdit)
+	for _, tool := range openaiCodexEditTools.hidden {
+		b.addHidden(tool, capability.CapabilityFileEdit)
+	}
+}
+
+func addOpenAIGPTEditTools(b *surfaceBuilder, p Profile) {
+	// gpt-4 / gpt-oss downgrade to exact edit. The compiler still
+	// reports ProfileOpenAIGPT so the prompt stays OpenAI-shaped.
+	if isGPT4OrOSS(p.Model) {
+		b.addVisible("edit_file", capability.CapabilityFileEdit)
+		b.addVisible("write_file", capability.CapabilityFileEdit)
+		b.addHidden("apply_patch", capability.CapabilityFileEdit)
+		return
+	}
+	b.addVisible(openaiGPTEditTools.primary, capability.CapabilityFileEdit)
+	for _, tool := range openaiGPTEditTools.hidden {
+		b.addHidden(tool, capability.CapabilityFileEdit)
+	}
+}
+
+func addClaudeEditTools(b *surfaceBuilder) {
+	b.addVisible(claudeEditTools.primary, capability.CapabilityFileEdit)
+	b.addVisible("write_file", capability.CapabilityFileEdit)
+	for _, tool := range claudeEditTools.hidden {
+		b.addHidden(tool, capability.CapabilityFileEdit)
+	}
+}
+
+func addGenericEditTools(b *surfaceBuilder, p Profile) {
+	// Local models: only whole-file write is reliable.
+	if p.Family == FamilyLocal {
+		b.addVisible("write_file", capability.CapabilityFileEdit)
+		b.addHidden("edit_file", capability.CapabilityFileEdit)
+		b.addHidden("apply_patch", capability.CapabilityFileEdit)
+		return
+	}
+	b.addVisible("edit_file", capability.CapabilityFileEdit)
+	b.addVisible("write_file", capability.CapabilityFileEdit)
+	b.addHidden("apply_patch", capability.CapabilityFileEdit)
+}
+
+// ── Prompt fragments ──────────────────────────────────────────────
+
+// sharedTail is the common closer every profile fragment shares. It
+// tells the model that permission prompts come from the harness, not
+// from a chat message, and it forbids the "should I continue running
+// tests?" pattern that wastes turns.
+const sharedTail = `
+
+Permission and approval:
+- Permissions, approvals, and audit decisions are made by the Wuu harness and the user-facing approval UI. Do not ask the user chat-side questions like "should I continue running tests?", "do you want me to commit?", or "may I run the build?" — those are policy decisions and will be surfaced as system prompts when relevant.
+- The system tells you the active permission profile and the tool surface available to you. Trust it; do not invent restrictions that are not in the system prompt.`
+
+func addOpenAICodexPrompt(b *surfaceBuilder) {
+	b.surface.SystemFragment = strings.TrimSpace(`
+[Tool surface: openai_codex]
+You are running under the OpenAI / Codex harness. Your editing primitive is apply_patch. Use it for every file change — create new files, update existing files, and remove files via *** Add File / *** Update File / *** Delete File blocks inside a single *** Begin Patch / *** End Patch envelope.
+
+All terminal work — running tests, lint, type checks, build commands, git operations, package manager commands, and arbitrary scripts — is unified under the bash tool. The internal capability is command.bash, and the runtime routes permission checks against it. Do not look for a separate "run test" or "git" tool — they do not exist on this surface. Use bash for:
+- npx vitest, pytest, go test, cargo test, and any other test runner
+- npm/pnpm/yarn/bun install and run; pip/uv/python invocations
+- git status / diff / log / add / commit / push (interactive flags are rejected by the policy)
+- long-lived dev servers, watchers, and background processes: start them with start_process and read their output via read_process_output
+
+Use read_file before editing a file so the patch's context anchors match the on-disk content. Use grep / glob / ast_search / semantic_search to find the code you need to change.
+` + sharedTail)
+}
+
+func addOpenAIGPTPrompt(b *surfaceBuilder, p Profile) {
+	if isGPT4OrOSS(p.Model) {
+		b.surface.SystemFragment = strings.TrimSpace(`
+[Tool surface: openai_gpt (exact-edit fallback)]
+You are running under the OpenAI GPT harness. This model class does not reliably apply structured patches, so your editing primitive is edit_file (with write_file as the whole-file fallback). Call read_file first to anchor the old_string exactly.
+
+Terminal work — tests, lint, build, git, package managers, scripts — goes through the bash tool. There is no separate "run test" or "git" tool on this surface; use bash for everything, and start_process / read_process_output for long-lived commands.
+` + sharedTail)
+		return
+	}
+	b.surface.SystemFragment = strings.TrimSpace(`
+[Tool surface: openai_gpt]
+You are running under the OpenAI GPT harness. Your editing primitive is apply_patch — prefer it for every file change (create, update, delete) and use write_file only when you genuinely want to replace a whole file.
+
+Terminal work is unified under the bash tool. Tests, lint, build, git, package managers, and arbitrary scripts all go through bash. Long-lived processes go through start_process / read_process_output. There is no run_test or git tool on this surface; do not invent one.
+` + sharedTail)
+}
+
+func addClaudePrompt(b *surfaceBuilder) {
+	b.surface.SystemFragment = strings.TrimSpace(`
+[Tool surface: anthropic_claude]
+You are running under the Anthropic Claude harness. Your file editing primitives are read_file, edit_file, and write_file. Call read_file first to anchor the old_string in edit_file, and use write_file only for whole-file replacement (e.g. newly created files or generated outputs).
+
+Terminal work — tests, lint, type checks, build, git, package managers, scripts, and any other shell command — goes through the bash tool. There is no separate "run test" or "git" tool on this surface. Long-lived dev servers, watchers, and other background processes are managed with start_process / list_processes / read_process_output / stop_process.
+` + sharedTail)
+}
+
+func addGenericPrompt(b *surfaceBuilder, p Profile) {
+	if p.Family == FamilyLocal || !p.Workflow.AllowDirectShell {
+		b.surface.SystemFragment = strings.TrimSpace(`
+[Tool surface: generic (no direct shell)]
+You are running under a generic BYOK profile. File work uses read_file, edit_file (with exact old_string match — call read_file first to anchor it), and write_file for whole-file replacement.
+
+This profile does not expose a bash tool. Express terminal work as managed background processes via start_process, observe their output with read_process_output, and stop them with stop_process. If the user asks for an interactive shell, recommend that they switch the active model profile to one that allows direct shell.
+` + sharedTail)
+		return
+	}
+	b.surface.SystemFragment = strings.TrimSpace(`
+[Tool surface: generic]
+You are running under a generic BYOK profile. File work uses read_file, edit_file (exact old_string match — call read_file first), and write_file (whole-file replacement).
+
+Terminal work — tests, lint, build, git, package managers, scripts — goes through the bash tool. Long-lived processes go through start_process and read_process_output. There is no separate run_test or git tool; do not invent one.
+` + sharedTail)
+}
