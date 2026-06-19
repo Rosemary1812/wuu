@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -22,12 +23,12 @@ const (
 //   - let a compacted summary become the new stable history root
 //     without introducing a heavier session-part model
 //
-// The stable prefix is everything before the most recent user-role
-// message in the request. On the first step of a turn, that excludes the
-// latest human prompt. During the tool loop, transient system reminders
-// are appended as user-role messages just before the provider request;
-// that makes completed tool calls and tool results cacheable while the
-// per-request reminder remains outside the cached prefix.
+// The stable prefix is everything before the most recent user-role message in
+// the request. On the first step of a turn, that excludes the latest human
+// prompt. During the tool loop, request-only system reminders are appended as
+// user-role messages just before the provider request; that makes the current
+// user prompt plus completed tool calls/results cacheable for the rest of the
+// turn while every trailing reminder remains outside the cached prefix.
 //
 // After compact rewrites history, the synthetic conversation summary at
 // the front of the prompt becomes the best stable anchor we have. We
@@ -45,7 +46,7 @@ func buildCacheHint(messages []providers.ChatMessage) *providers.CacheHint {
 
 	systemCount := systemMessageCount(messages)
 	lastUser := lastUserMessageIndex(messages)
-	stablePrefixMessages := stablePrefixMessageCount(messages, systemCount, lastUser)
+	stablePrefixMessages := stablePrefixMessageCount(messages, systemCount, lastUser, trailingRequestOnlyReminderStart(messages))
 	hasCompactSummary := leadingSystemHasCompactSummary(messages)
 
 	hint := &providers.CacheHint{
@@ -92,7 +93,14 @@ func lastUserMessageIndex(messages []providers.ChatMessage) int {
 	return -1
 }
 
-func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, lastUser int) int {
+func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, lastUser, volatileSuffixStart int) int {
+	if volatileSuffixStart >= 0 {
+		stable := volatileSuffixStart - systemCount
+		if stable < 0 {
+			return 0
+		}
+		return stable
+	}
 	if lastUser < 0 {
 		stable := len(messages) - systemCount
 		if stable < 0 {
@@ -105,6 +113,18 @@ func stablePrefixMessageCount(messages []providers.ChatMessage, systemCount, las
 		return 0
 	}
 	return stable
+}
+
+func trailingRequestOnlyReminderStart(messages []providers.ChatMessage) int {
+	start := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+			break
+		}
+		start = i
+	}
+	return start
 }
 
 func leadingSystemHasCompactSummary(messages []providers.ChatMessage) bool {

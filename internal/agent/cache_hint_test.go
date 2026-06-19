@@ -71,6 +71,30 @@ func TestBuildCacheHint_TransientReminderExtendsStableToolLoopPrefix(t *testing.
 	}
 }
 
+func TestBuildCacheHint_ExcludesAllTrailingRequestOnlyReminders(t *testing.T) {
+	reminder := func(content string) providers.ChatMessage {
+		return providers.ChatMessage{
+			Role:    "user",
+			Name:    wuucontext.SystemReminderMessageName,
+			Content: "<system-reminder>\n" + content + "\n</system-reminder>",
+		}
+	}
+
+	hint := buildCacheHint([]providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "current ask"},
+		reminder("[ENVIRONMENT]\nstate changed"),
+		reminder("[ADDITIONAL_CONTEXT]\nslash command context"),
+		reminder("[TASK]\nactive task contract"),
+	})
+	if hint == nil {
+		t.Fatal("expected cache hint")
+	}
+	if hint.StablePrefixMessages != 1 {
+		t.Fatalf("expected only current ask in stable prefix, got %d", hint.StablePrefixMessages)
+	}
+}
+
 func TestBuildCacheHint_CompactSummaryBecomesStableAnchor(t *testing.T) {
 	messages := []providers.ChatMessage{
 		{Role: "system", Content: "You are wuu."},
