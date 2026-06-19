@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Plus, Settings, X } from "lucide-react";
+import { ArrowLeft, BarChart3, Plug, PlugZap, Plus, RefreshCw, Settings, X } from "lucide-react";
 import type { SettingsUsageRange } from "../shared/protocol";
 import {
   type CSSProperties,
@@ -16,6 +16,7 @@ import type {
   ExtensionSurfaceTrustSummary,
   ExtensionTrustSummary,
   InitializeResult,
+  MCPServerStatus,
   ProviderSummary,
   RuntimeConnectionUpdate
 } from "../shared/protocol";
@@ -132,6 +133,10 @@ export function SettingsView({
   const [saved, setSaved] = useState(false);
   const [desktopBuild, setDesktopBuild] = useState<DesktopBuildInfo | undefined>();
   const [activePage, setActivePage] = useState<SettingsPage>("general");
+  const [mcpServers, setMCPServers] = useState<MCPServerStatus[]>([]);
+  const [mcpLoading, setMCPLoading] = useState(false);
+  const [mcpError, setMCPError] = useState("");
+  const [mcpBusyServer, setMCPBusyServer] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +145,32 @@ export function SettingsView({
         setDesktopBuild(info.desktop);
       }
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMCPLoading(true);
+    setMCPError("");
+    void window.wuu
+      .listMCPServers()
+      .then((result) => {
+        if (!cancelled) {
+          setMCPServers(result.servers ?? []);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setMCPError(err instanceof Error ? err.message : String(err));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMCPLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -227,6 +258,24 @@ export function SettingsView({
       setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "保存失败");
+    }
+  }
+
+  async function runMCPAction(name: string, action: "connect" | "disconnect" | "refresh"): Promise<void> {
+    setMCPBusyServer(name);
+    setMCPError("");
+    try {
+      const result =
+        action === "connect"
+          ? await window.wuu.connectMCPServer(name)
+          : action === "disconnect"
+            ? await window.wuu.disconnectMCPServer(name)
+            : await window.wuu.refreshMCPServer(name);
+      setMCPServers((servers) => upsertMCPServerStatus(servers, result.status));
+    } catch (err) {
+      setMCPError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMCPBusyServer("");
     }
   }
 
@@ -458,6 +507,66 @@ export function SettingsView({
                   </div>
                 </section>
               ) : null}
+
+              <section className="settings-section" data-testid="settings-mcp">
+                <div>
+                  <h2>MCP</h2>
+                  <p>外部 MCP 服务器连接状态。</p>
+                </div>
+                <div className="settings-card settings-mcp-list">
+                  {mcpLoading ? (
+                    <div className="settings-mcp-empty">加载中…</div>
+                  ) : mcpServers.length > 0 ? (
+                    mcpServers.map((server) => {
+                      const busy = mcpBusyServer === server.name;
+                      const connected = server.connected || server.state === "connected";
+                      return (
+                        <div className="settings-row settings-mcp-row" key={server.name}>
+                          <span>
+                            <strong>{server.name}</strong>
+                            <small>{formatMCPServerMeta(server)}</small>
+                            {server.error ? <small className="settings-mcp-error">{server.error}</small> : null}
+                          </span>
+                          <span className="settings-mcp-controls">
+                            <span className={`settings-status-pill ${mcpStateTone(server.state)}`}>
+                              {mcpStateLabel(server.state)}
+                            </span>
+                            <span className="settings-mcp-actions">
+                              <button
+                                className="settings-inline-button settings-icon-button"
+                                type="button"
+                                title="刷新"
+                                aria-label={`刷新 ${server.name}`}
+                                disabled={busy}
+                                onClick={() => void runMCPAction(server.name, "refresh")}
+                              >
+                                <RefreshCw size={15} aria-hidden="true" />
+                              </button>
+                              <button
+                                className="settings-inline-button settings-icon-button"
+                                type="button"
+                                title={connected ? "断开" : "连接"}
+                                aria-label={`${connected ? "断开" : "连接"} ${server.name}`}
+                                disabled={busy}
+                                onClick={() => void runMCPAction(server.name, connected ? "disconnect" : "connect")}
+                              >
+                                {connected ? (
+                                  <PlugZap size={15} aria-hidden="true" />
+                                ) : (
+                                  <Plug size={15} aria-hidden="true" />
+                                )}
+                              </button>
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="settings-mcp-empty">暂无 MCP 服务器</div>
+                  )}
+                  {mcpError ? <div className="settings-mcp-error settings-mcp-error-row">{mcpError}</div> : null}
+                </div>
+              </section>
 
               <section className="settings-section" data-testid="settings-about">
                 <div>
@@ -853,6 +962,75 @@ function formatCoreBuild(core: InitializeResult["core"]): string {
     pieces.push(formatBuildDate(core.date));
   }
   return pieces.join(" · ");
+}
+
+function upsertMCPServerStatus(servers: MCPServerStatus[], status: MCPServerStatus): MCPServerStatus[] {
+  const next = [...servers];
+  const index = next.findIndex((item) => item.name === status.name);
+  if (index >= 0) {
+    next[index] = status;
+  } else {
+    next.push(status);
+  }
+  next.sort((a, b) => a.name.localeCompare(b.name));
+  return next;
+}
+
+function formatMCPServerMeta(server: MCPServerStatus): string {
+  const pieces = [`${server.tool_count ?? 0} 个工具`];
+  if (server.auth_status && server.auth_status !== "unsupported") {
+    pieces.push(mcpAuthLabel(server.auth_status));
+  }
+  return pieces.join(" · ");
+}
+
+function mcpStateLabel(state: string): string {
+  switch (state) {
+    case "connected":
+      return "已连接";
+    case "connecting":
+      return "连接中";
+    case "failed":
+      return "失败";
+    case "disabled":
+      return "已断开";
+    case "needs_auth":
+      return "需认证";
+    case "needs_client_registration":
+      return "需注册";
+    case "configured":
+      return "已配置";
+    default:
+      return state || "未知";
+  }
+}
+
+function mcpStateTone(state: string): string {
+  switch (state) {
+    case "connected":
+      return "success";
+    case "failed":
+    case "needs_auth":
+    case "needs_client_registration":
+      return "danger";
+    case "connecting":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function mcpAuthLabel(status: string): string {
+  switch (status) {
+    case "bearer_token":
+      return "Header 认证";
+    case "not_logged_in":
+      return "未登录";
+    case "oauth":
+      return "OAuth";
+    default:
+      return status;
+  }
 }
 
 function formatExtensionTrust(trust?: ExtensionTrustSummary): string {

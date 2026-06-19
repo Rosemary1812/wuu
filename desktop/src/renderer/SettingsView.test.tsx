@@ -31,6 +31,10 @@ afterEach(() => {
 function installBuildInfoStub(info: BuildInfoResult): void {
   const stub: Partial<WuuDesktopApi> = {
     getBuildInfo: vi.fn().mockResolvedValue(info),
+    listMCPServers: vi.fn().mockResolvedValue({ servers: [] }),
+    connectMCPServer: vi.fn(),
+    disconnectMCPServer: vi.fn(),
+    refreshMCPServer: vi.fn(),
   };
   (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
   (window as unknown as GlobalWindow).wuu = stub as WuuDesktopApi;
@@ -184,6 +188,34 @@ describe("SettingsView About section", () => {
     expect(text()).toContain("Plugins 1");
     expect(text()).toContain("Skills 2");
     expect(text()).toContain("Reviewer：关闭扩展");
+  });
+
+  it("renders MCP server status", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    (window as unknown as GlobalWindow).wuu.listMCPServers = vi.fn().mockResolvedValue({
+      servers: [
+        {
+          name: "docs",
+          state: "connected",
+          auth_status: "bearer_token",
+          connected: true,
+          tool_count: 3,
+        },
+      ],
+    });
+    const { rootText } = renderSettings({ initialized: baseInitialized() });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(rootText()).toContain("MCP");
+    expect(rootText()).toContain("docs");
+    expect(rootText()).toContain("已连接");
+    expect(rootText()).toContain("3 个工具");
+    expect(rootText()).toContain("Header 认证");
   });
 
   it("switches to the usage page from the settings sidebar", async () => {

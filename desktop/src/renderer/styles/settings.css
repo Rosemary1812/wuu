@@ -224,6 +224,78 @@
   box-shadow: 0 0 0 3px var(--ink-overlay-8);
 }
 
+.settings-icon-button {
+  width: 34px;
+  padding: 0;
+}
+
+.settings-mcp-list {
+  display: grid;
+}
+
+.settings-mcp-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-mcp-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.settings-mcp-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-status-pill {
+  display: inline-flex;
+  min-width: 66px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  padding: 0 8px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.settings-status-pill.success {
+  background: rgba(20, 128, 82, 0.12);
+  color: #146b49;
+}
+
+.settings-status-pill.warning {
+  background: rgba(155, 112, 16, 0.13);
+  color: #7c570e;
+}
+
+.settings-status-pill.danger {
+  background: rgba(184, 48, 48, 0.12);
+  color: #9a2f2f;
+}
+
+.settings-status-pill.neutral {
+  background: var(--surface-2);
+  color: var(--ink-muted);
+}
+
+.settings-mcp-empty,
+.settings-mcp-error-row {
+  padding: 18px 20px;
+  color: var(--ink-muted);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+}
+
+.settings-mcp-error {
+  color: #9a2f2f;
+}
+
 .settings-switch {
   position: relative;
   width: 48px;
