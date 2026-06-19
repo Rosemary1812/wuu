@@ -111,13 +111,31 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	if ev, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = ev
 	}
-	env := *t.env
-	env.RootDir = abs
-	env.readState = nil
-	env.testState = testRunState{}
-	env.planState = planState{}
-	env.webState = webEvidenceState{}
-	env.toolTelemetry = toolTelemetry{}
+	// Build a fresh Env from the source toolkit's configured dependencies.
+	// We must NOT do `env := *t.env`: Env embeds testRunState, which holds a
+	// sync.RWMutex, and the sync package contract forbids copying a Mutex or
+	// RWMutex after first use (go vet's copylocks analyzer enforces this).
+	// The lock-bearing per-session state fields (readState, testState,
+	// planState, webState, toolTelemetry) stay zero so each cloned session
+	// owns independent mutable state, matching the original intent.
+	env := Env{
+		RootDir:             abs,
+		StateDir:            t.env.StateDir,
+		SessionID:           t.env.SessionID,
+		SessionDir:          t.env.SessionDir,
+		AgentID:             t.env.AgentID,
+		AgentPath:           t.env.AgentPath,
+		ProcessMgr:          t.env.ProcessMgr,
+		AgentControl:        t.env.AgentControl,
+		Skills:              t.env.Skills,
+		Workflows:           t.env.Workflows,
+		OnFileChanged:       t.env.OnFileChanged,
+		OnPlanUpdated:       t.env.OnPlanUpdated,
+		OnPortsReported:     t.env.OnPortsReported,
+		Memory:              t.env.Memory,
+		MemoryCharLimit:     t.env.MemoryCharLimit,
+		UserMemoryCharLimit: t.env.UserMemoryCharLimit,
+	}
 
 	clone := &Toolkit{
 		env:                    &env,
