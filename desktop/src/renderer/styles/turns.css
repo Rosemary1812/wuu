@@ -277,9 +277,17 @@
   scroll-margin-top: 12px;
 }
 
+/*
+ * Edit state stretches the message block to the full row width — a "draft
+ * surface" needs every horizontal pixel of the conversation column, and
+ * inherits the default max-width (672px / 83%) otherwise clamps it back to
+ * the bubble width. Override max-width explicitly so the textarea, image
+ * grid, and action row all line up with the assistant turn above and below.
+ */
 .user-message-block:has(.user-message-edit) {
   align-self: stretch;
   width: 100%;
+  max-width: none;
   grid-template-columns: minmax(0, 1fr);
   justify-items: stretch;
 }
