@@ -23,6 +23,9 @@ export function TurnView({
   onStreamFrame,
   onForkMessage,
   onEditMessage,
+  editingMessage,
+  onCancelEditMessage,
+  onSubmitEditMessage,
   onNoticeAction,
 }: {
   turn: Turn;
@@ -31,6 +34,9 @@ export function TurnView({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
+  editingMessage?: { turnID: string; itemID: string; submitting: boolean };
+  onCancelEditMessage?: () => void;
+  onSubmitEditMessage?: (turnID: string, item: ThreadItem, text: string) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const actionableAgentMessageID =
@@ -57,6 +63,16 @@ export function TurnView({
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
         onEditMessage={onEditMessage}
+        editing={
+          editingMessage?.turnID === turn.id && editingMessage.itemID === item.id
+        }
+        editSubmitting={
+          editingMessage?.turnID === turn.id && editingMessage.itemID === item.id
+            ? editingMessage.submitting
+            : false
+        }
+        onCancelEditMessage={onCancelEditMessage}
+        onSubmitEditMessage={onSubmitEditMessage}
         onNoticeAction={onNoticeAction}
       />
     );

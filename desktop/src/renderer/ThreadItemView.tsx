@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import { RichContent } from "./RichContent";
@@ -32,6 +32,10 @@ export function ThreadItemView({
   onStreamFrame,
   onForkMessage,
   onEditMessage,
+  editing,
+  editSubmitting,
+  onCancelEditMessage,
+  onSubmitEditMessage,
   onNoticeAction,
 }: {
   turnID: string;
@@ -45,6 +49,10 @@ export function ThreadItemView({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
+  editing?: boolean;
+  editSubmitting?: boolean;
+  onCancelEditMessage?: () => void;
+  onSubmitEditMessage?: (turnID: string, item: ThreadItem, text: string) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   switch (item.type) {
@@ -70,14 +78,26 @@ export function ThreadItemView({
           data-user-message-id={item.id}
           data-turn-id={turnID}
         >
-          <div className="message user-message">
-            {item.images?.length ? (
-              <MessageImageGrid images={item.images} />
-            ) : null}
-            {item.files?.length ? <MessageFileList files={item.files} /> : null}
-            {text ? <RichContent text={text} cwd={cwd} /> : null}
-          </div>
-          {copyable || editable ? (
+          {editing ? (
+            <UserMessageInlineEditor
+              item={item}
+              initialText={text}
+              submitting={Boolean(editSubmitting)}
+              onCancel={onCancelEditMessage}
+              onSubmit={(nextText) =>
+                onSubmitEditMessage?.(turnID, item, nextText)
+              }
+            />
+          ) : (
+            <div className="message user-message">
+              {item.images?.length ? (
+                <MessageImageGrid images={item.images} />
+              ) : null}
+              {item.files?.length ? <MessageFileList files={item.files} /> : null}
+              {text ? <RichContent text={text} cwd={cwd} /> : null}
+            </div>
+          )}
+          {!editing && (copyable || editable) ? (
             <div
               className="message-actions user-message-actions"
               aria-label="用户消息操作"
@@ -178,6 +198,93 @@ export function ThreadItemView({
     default:
       return null;
   }
+}
+
+function UserMessageInlineEditor({
+  item,
+  initialText,
+  submitting,
+  onCancel,
+  onSubmit,
+}: {
+  item: ThreadItem;
+  initialText: string;
+  submitting: boolean;
+  onCancel?: () => void;
+  onSubmit?: (text: string) => void;
+}): JSX.Element {
+  const [text, setText] = useState(initialText);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hasAttachments = Boolean(item.images?.length || item.files?.length);
+  const canSubmit = text.trim().length > 0 || hasAttachments;
+
+  useEffect(() => {
+    setText(initialText);
+  }, [initialText, item.id]);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    });
+  }, []);
+
+  function submit(): void {
+    if (!canSubmit || submitting) {
+      return;
+    }
+    onSubmit?.(text);
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel?.();
+      return;
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      submit();
+    }
+  }
+
+  return (
+    <div className="user-message-edit">
+      {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
+      {item.files?.length ? <MessageFileList files={item.files} /> : null}
+      <textarea
+        ref={textareaRef}
+        className="user-message-edit-input"
+        value={text}
+        disabled={submitting}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={handleKeyDown}
+        rows={Math.max(2, Math.min(8, text.split("\n").length))}
+      />
+      <div className="user-message-edit-actions">
+        <button
+          className="user-message-edit-button secondary"
+          type="button"
+          disabled={submitting}
+          onClick={onCancel}
+        >
+          取消
+        </button>
+        <button
+          className="user-message-edit-button primary"
+          type="button"
+          disabled={!canSubmit || submitting}
+          onClick={submit}
+        >
+          发送
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function AgentMessageContent({

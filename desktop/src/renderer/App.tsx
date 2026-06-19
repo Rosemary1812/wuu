@@ -41,8 +41,6 @@ import type {
   GitCommitResult,
   GitPullRequestResult,
   GitStatusResult,
-  InputFile,
-  InputImage,
   InitializeResult,
   ManagedProcess,
   PendingToolApproval,
@@ -52,7 +50,6 @@ import type {
   RuntimeContext,
   ServerEvent,
   Thread,
-  ThreadEditDraft,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
@@ -297,60 +294,34 @@ const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 let restoredHistoryAttachmentCounter = 0;
 
+type HistoryMessageEditState = {
+  threadID: string;
+  turnID: string;
+  itemID: string;
+  pane?: ConversationPaneID;
+  submitting: boolean;
+};
+
 function nextRestoredHistoryAttachmentID(): string {
   restoredHistoryAttachmentCounter += 1;
   return `history-edit-${Date.now()}-${restoredHistoryAttachmentCounter}`;
 }
 
-function composerImagesFromDraft(images: InputImage[] | undefined): ComposerImage[] {
-  return (images ?? []).map((image) => ({
+function composerImagesFromThreadItem(item: ThreadItem): ComposerImage[] {
+  return (item.images ?? []).map((image) => ({
     id: nextRestoredHistoryAttachmentID(),
     media_type: image.media_type,
     data: image.data,
   }));
 }
 
-function composerFilesFromDraft(files: InputFile[] | undefined): ComposerFile[] {
-  return (files ?? []).map((file) => ({
+function composerFilesFromThreadItem(item: ThreadItem): ComposerFile[] {
+  return (item.files ?? []).map((file) => ({
     id: nextRestoredHistoryAttachmentID(),
     media_type: file.media_type,
     data: file.data,
     filename: file.filename,
   }));
-}
-
-function composerDraftFromThreadEditDraft(draft: ThreadEditDraft): ComposerDraftState {
-  return {
-    prompt: draft.prompt,
-    images: composerImagesFromDraft(draft.images),
-    files: composerFilesFromDraft(draft.files),
-  };
-}
-
-function composerDraftHasContent(draft: ComposerDraftState): boolean {
-  return (
-    draft.prompt.trim().length > 0 ||
-    draft.images.length > 0 ||
-    draft.files.length > 0
-  );
-}
-
-function latestVisibleUserMessageTarget(thread: Thread): { turnID: string; itemID: string } | undefined {
-  for (let turnIndex = thread.turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
-    const turn = thread.turns[turnIndex];
-    for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex -= 1) {
-      const item = turn.items[itemIndex];
-      if (item.type === "user_message") {
-        return { turnID: turn.id, itemID: item.id };
-      }
-    }
-  }
-  return undefined;
-}
-
-function isLatestVisibleUserMessage(thread: Thread, turnID: string, itemID: string): boolean {
-  const latest = latestVisibleUserMessageTarget(thread);
-  return latest?.turnID === turnID && latest.itemID === itemID;
 }
 
 function initialCollapsedProjectIDs(): Set<string> {
@@ -712,10 +683,8 @@ export function App(): JSX.Element {
   const [splitComposerDrafts, setSplitComposerDrafts] = useState<
     Record<ConversationPaneID, ComposerDraftState>
   >(initialSplitComposerDrafts);
-  const [composerFocusRequest, setComposerFocusRequest] = useState(0);
-  const [splitComposerFocusRequests, setSplitComposerFocusRequests] = useState<
-    Record<ConversationPaneID, number>
-  >({ primary: 0, secondary: 0 });
+  const [historyMessageEdit, setHistoryMessageEdit] =
+    useState<HistoryMessageEditState | undefined>(undefined);
   const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
     useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -2063,7 +2032,6 @@ export function App(): JSX.Element {
         tokensPerSecond={tokenSpeed.tokensPerSecond}
         tokenSpeedSampledAt={tokenSpeed.sampledAt}
         tokenSpeedSource={tokenSpeed.source}
-        focusRequest={composerFocusRequest}
         status={
           activeThreadReadOnly
             ? activeThreadIsRunning
@@ -2167,9 +2135,13 @@ export function App(): JSX.Element {
         activeContextCwd={state.activeContext?.cwd}
         appStatus={state.status}
         draft={splitComposerDrafts[pane] ?? emptyComposerDraft()}
-        focusRequest={splitComposerFocusRequests[pane]}
         viewSwitchPending={viewSwitchPending}
         queryHistory={queryTextsForThread(thread)}
+        editingMessage={
+          historyMessageEdit?.threadID === thread.id
+            ? historyMessageEdit
+            : undefined
+        }
         onActivate={() => activateConversationPane(pane)}
         onClose={() => closeConversationPane(pane)}
         onBodyRef={(node) => {
@@ -2189,9 +2161,13 @@ export function App(): JSX.Element {
         }
         onEditMessage={
           canShowHistoryEditButton(thread)
-            ? (turnID, itemID) =>
-                void editThreadMessageFromHistory(thread, turnID, itemID, pane)
+            ? (turnID, item) =>
+                startEditingThreadMessageFromHistory(thread, turnID, item, pane)
             : undefined
+        }
+        onCancelEditMessage={cancelEditingThreadMessage}
+        onSubmitEditMessage={(turnID, item, text) =>
+          void submitEditedThreadMessageFromHistory(thread, turnID, item, text, pane)
         }
         onStreamFrame={scheduleStreamScroll}
         onNoticeAction={handleNoticeAction}
@@ -2981,17 +2957,6 @@ export function App(): JSX.Element {
     setComposerFiles(draft.files.map((file) => ({ ...file })));
   }
 
-  function requestPrimaryComposerFocus(): void {
-    setComposerFocusRequest((current) => current + 1);
-  }
-
-  function requestSplitComposerFocus(pane: ConversationPaneID): void {
-    setSplitComposerFocusRequests((current) => ({
-      ...current,
-      [pane]: (current[pane] ?? 0) + 1,
-    }));
-  }
-
   function threadHasPendingComposerMessages(threadID: string): boolean {
     return !threadPendingComposerMessagesIsEmpty(
       pendingComposerMessagesForThread(
@@ -3013,29 +2978,6 @@ export function App(): JSX.Element {
         ),
       )
     );
-  }
-
-  function canReplaceComposerDraft(
-    thread: Thread,
-    pane?: ConversationPaneID,
-  ): boolean {
-    const draft =
-      pane === undefined
-        ? currentPrimaryComposerDraft()
-        : splitComposerDrafts[pane] ?? emptyComposerDraft();
-    if (!composerDraftHasContent(draft)) {
-      return true;
-    }
-    setState((current) => ({
-      ...current,
-      status: "先发送或清空当前输入，再编辑历史消息",
-    }));
-    if (pane === undefined) {
-      requestPrimaryComposerFocus();
-    } else if (thread.id) {
-      requestSplitComposerFocus(pane);
-    }
-    return false;
   }
 
   function restoreSessionTabComposerDraft(tab: SessionTab): void {
@@ -3924,12 +3866,12 @@ export function App(): JSX.Element {
     }
   }
 
-  async function editThreadMessageFromHistory(
+  function startEditingThreadMessageFromHistory(
     sourceThread: Thread,
     turnID: string,
-    itemID: string,
+    item: ThreadItem,
     pane?: ConversationPaneID,
-  ): Promise<void> {
+  ): void {
     if (!state.activeContext || sourceThread.read_only) {
       return;
     }
@@ -3945,56 +3887,117 @@ export function App(): JSX.Element {
       setState((current) => ({ ...current, status: "先处理待发送消息，再编辑历史" }));
       return;
     }
-    if (!canReplaceComposerDraft(sourceThread, pane)) {
+    setArchiveConfirmThreadID(undefined);
+    setHistoryMessageEdit({
+      threadID: sourceThread.id,
+      turnID,
+      itemID: item.id,
+      pane,
+      submitting: false,
+    });
+  }
+
+  function cancelEditingThreadMessage(): void {
+    setHistoryMessageEdit(undefined);
+  }
+
+  async function submitEditedThreadMessageFromHistory(
+    sourceThread: Thread,
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    pane?: ConversationPaneID,
+  ): Promise<void> {
+    if (!state.activeContext || sourceThread.read_only) {
       return;
     }
-    if (!isLatestVisibleUserMessage(sourceThread, turnID, itemID)) {
-      const confirmed = window.confirm(
-        "将删除这条消息及之后的对话，并把这条消息恢复到输入框。文件改动不会回滚。继续吗？",
-      );
-      if (!confirmed) {
-        return;
-      }
+    const message = createComposerMessage(
+      text,
+      composerImagesFromThreadItem(item),
+      composerFilesFromThreadItem(item),
+    );
+    if (!message) {
+      setState((current) => ({ ...current, status: "编辑内容不能为空" }));
+      return;
+    }
+    if (isThreadRunning(sourceThread)) {
+      setState((current) => ({ ...current, status: "等待当前回复结束后再编辑历史" }));
+      return;
+    }
+    if (threadHasPendingComposerMessages(sourceThread.id)) {
+      setState((current) => ({ ...current, status: "先处理待发送消息，再编辑历史" }));
+      return;
     }
 
+    setHistoryMessageEdit((current) =>
+      current?.threadID === sourceThread.id &&
+      current.turnID === turnID &&
+      current.itemID === item.id
+        ? { ...current, submitting: true }
+        : current,
+    );
     setArchiveConfirmThreadID(undefined);
-    setState((current) => ({ ...current, status: "正在恢复历史消息" }));
+    setState((current) => ({ ...current, status: "正在发送编辑后的消息" }));
     try {
       const result = await window.wuu.editThreadMessage(
         sourceThread.id,
         turnID,
-        itemID,
+        item.id,
       );
       const thread = requireThread(
         { thread: result.thread },
         "thread/edit-message did not return a thread",
       );
-      const draft = composerDraftFromThreadEditDraft(result.draft);
-      if (pane === undefined) {
-        restorePrimaryComposerDraft(draft);
-        setSplitComposerDrafts(initialSplitComposerDrafts());
-        requestPrimaryComposerFocus();
-      } else {
-        setSplitComposerDrafts((current) => ({
-          ...current,
-          [pane]: draft,
-        }));
-        requestSplitComposerFocus(pane);
-      }
       enableConversationAutoFollow();
+      const targetPane = pane ?? appStateRef.current.activePane;
+      setHistoryMessageEdit(undefined);
+      appStateRef.current = updateThreadByID(
+        { ...appStateRef.current, activePane: targetPane },
+        thread.id,
+        (currentThread) => ({
+          ...thread,
+          child_agents: thread.child_agents ?? currentThread.child_agents,
+        }),
+        { status: "正在发送请求" },
+      );
       setState((current) =>
         updateThreadByID(
-          { ...current, activePane: pane ?? current.activePane },
+          { ...current, activePane: targetPane },
           thread.id,
           (currentThread) => ({
             ...thread,
             child_agents: thread.child_agents ?? currentThread.child_agents,
           }),
-          { status: "已恢复到输入框" },
+          { status: "正在发送请求" },
         ),
       );
-      scrollConversationToBottom({ force: true });
+      const sent = await sendComposerMessageToThread(message, thread);
+      if (!sent) {
+        if (pane === undefined) {
+          restorePrimaryComposerDraft({
+            prompt: message.text,
+            images: message.images.map((image) => ({ ...image })),
+            files: message.files.map((file) => ({ ...file })),
+          });
+        } else {
+          setSplitComposerDrafts((current) => ({
+            ...current,
+            [pane]: {
+              prompt: message.text,
+              images: message.images.map((image) => ({ ...image })),
+              files: message.files.map((file) => ({ ...file })),
+            },
+          }));
+        }
+      }
     } catch (error) {
+      setHistoryMessageEdit((current) =>
+        current?.threadID === sourceThread.id &&
+        current.turnID === turnID &&
+        current.itemID === item.id
+          ? { ...current, submitting: false }
+          : current,
+      );
       setState((current) => ({
         ...current,
         status: desktopApiErrorMessage(error, "编辑历史消息失败"),
@@ -5277,10 +5280,28 @@ export function App(): JSX.Element {
                       onEditMessage={
                         activeThread && canShowHistoryEditButton(activeThread)
                           ? (turnID, item) =>
-                              void editThreadMessageFromHistory(
+                              startEditingThreadMessageFromHistory(
                                 activeThread,
                                 turnID,
-                                item.id,
+                                item,
+                              )
+                          : undefined
+                      }
+                      editingMessage={
+                        activeThread &&
+                        historyMessageEdit?.threadID === activeThread.id
+                          ? historyMessageEdit
+                          : undefined
+                      }
+                      onCancelEditMessage={cancelEditingThreadMessage}
+                      onSubmitEditMessage={
+                        activeThread
+                          ? (turnID, item, text) =>
+                              void submitEditedThreadMessageFromHistory(
+                                activeThread,
+                                turnID,
+                                item,
+                                text,
                               )
                           : undefined
                       }

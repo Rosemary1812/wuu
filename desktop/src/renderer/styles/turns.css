@@ -315,6 +315,84 @@
   max-width: 100%;
 }
 
+.user-message-edit {
+  display: grid;
+  width: min(560px, 100%);
+  min-width: min(360px, 100%);
+  gap: 10px;
+  border-radius: var(--radius-sm);
+  background: #e8e8e4;
+  padding: 10px;
+  color: var(--ink);
+}
+
+.user-message-edit .message-images,
+.user-message-edit .message-files {
+  margin-bottom: 0;
+}
+
+.user-message-edit-input {
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid rgba(31, 35, 40, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font: inherit;
+  line-height: var(--conversation-prose-line-height);
+  outline: none;
+  padding: 10px 12px;
+}
+
+.user-message-edit-input:focus {
+  border-color: rgba(31, 35, 40, 0.28);
+  background: #fff;
+}
+
+.user-message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.user-message-edit-button {
+  display: inline-flex;
+  min-width: 68px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  padding: 0 14px;
+}
+
+.user-message-edit-button.secondary {
+  border-color: rgba(31, 35, 40, 0.1);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink-muted);
+}
+
+.user-message-edit-button.primary {
+  background: #202427;
+  color: #fff;
+}
+
+.user-message-edit-button:hover,
+.user-message-edit-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 3px 10px rgba(31, 35, 40, 0.12);
+}
+
+.user-message-edit-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .agent-handoff-line {
   align-self: center;
   max-width: min(760px, 88%);

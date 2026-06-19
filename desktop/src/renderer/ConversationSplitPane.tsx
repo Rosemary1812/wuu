@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { Thread } from "../shared/protocol";
+import type { Thread, ThreadItem } from "../shared/protocol";
 import { SplitPaneComposer } from "./ComposerView";
 import {
   isThreadRunning,
@@ -18,9 +18,9 @@ export function ConversationSplitPane({
   activeContextCwd,
   appStatus,
   draft,
-  focusRequest,
   viewSwitchPending,
   queryHistory,
+  editingMessage,
   onActivate,
   onClose,
   onBodyRef,
@@ -33,6 +33,8 @@ export function ConversationSplitPane({
   onInterrupt,
   onForkMessage,
   onEditMessage,
+  onCancelEditMessage,
+  onSubmitEditMessage,
   onStreamFrame,
   onNoticeAction,
 }: {
@@ -43,9 +45,9 @@ export function ConversationSplitPane({
   activeContextCwd?: string;
   appStatus: string;
   draft: ComposerDraftState;
-  focusRequest?: number;
   viewSwitchPending: boolean;
   queryHistory: string[];
+  editingMessage?: { turnID: string; itemID: string; submitting: boolean };
   onActivate: () => void;
   onClose: () => void;
   onBodyRef: (node: HTMLElement | null) => void;
@@ -57,7 +59,9 @@ export function ConversationSplitPane({
   onSend: () => void;
   onInterrupt: () => void;
   onForkMessage: (turnID: string, itemID: string) => void;
-  onEditMessage?: (turnID: string, itemID: string) => void;
+  onEditMessage?: (turnID: string, item: ThreadItem) => void;
+  onCancelEditMessage?: () => void;
+  onSubmitEditMessage?: (turnID: string, item: ThreadItem, text: string) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -113,7 +117,14 @@ export function ConversationSplitPane({
               onForkMessage={onForkMessage}
               onEditMessage={
                 onEditMessage
-                  ? (turnID, item) => onEditMessage(turnID, item.id)
+                  ? (turnID, item) => onEditMessage(turnID, item)
+                  : undefined
+              }
+              editingMessage={editingMessage}
+              onCancelEditMessage={onCancelEditMessage}
+              onSubmitEditMessage={
+                onSubmitEditMessage
+                  ? (turnID, item, text) => onSubmitEditMessage(turnID, item, text)
                   : undefined
               }
               onNoticeAction={onNoticeAction}
@@ -136,7 +147,6 @@ export function ConversationSplitPane({
         onInterrupt={onInterrupt}
         queryHistorySessionID={thread.id}
         queryHistory={queryHistory}
-        focusRequest={focusRequest}
       />
     </section>
   );
