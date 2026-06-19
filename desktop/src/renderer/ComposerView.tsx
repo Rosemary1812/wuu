@@ -1,10 +1,16 @@
 import {
+  Bug,
   ChevronDown,
+  CircleHelp,
   FileText,
+  FlaskConical,
   Folder,
   FolderOpen,
   FolderX,
   GitBranch,
+  GitCommitHorizontal,
+  GitPullRequest,
+  Hammer,
   Laptop,
   MessageSquarePlus,
   Paperclip,
@@ -692,6 +698,18 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     case "open-review":
     case "review":
       return <Search size={16} />;
+    case "debug":
+      return <Bug size={16} />;
+    case "fix":
+      return <Hammer size={16} />;
+    case "test":
+      return <FlaskConical size={16} />;
+    case "explain":
+      return <CircleHelp size={16} />;
+    case "commit":
+      return <GitCommitHorizontal size={16} />;
+    case "pr":
+      return <GitPullRequest size={16} />;
     case "open-skills":
       return <Wrench size={16} />;
     case "new-thread":

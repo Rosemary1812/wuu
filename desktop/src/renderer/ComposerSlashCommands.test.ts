@@ -113,4 +113,24 @@ describe("composer slash commands", () => {
     expect(composerSlashPrompt(visible[0]!, "quarterly roadmap")).toBe("/slides quarterly roadmap");
     expect(filterComposerSlashCommands(commands, "internal-only")).toEqual([]);
   });
+
+  it("turns task slash commands into editable prompts", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false
+    });
+
+    const debug = filterComposerSlashCommands(commands, "debug")[0];
+    const fix = filterComposerSlashCommands(commands, "fix")[0];
+    const commit = filterComposerSlashCommands(commands, "commit")[0];
+    const pr = filterComposerSlashCommands(commands, "pr")[0];
+
+    expect(debug?.kind).toBe("prompt");
+    expect(composerSlashPrompt(debug!, "login failure")).toContain("Investigate the current bug or failure.");
+    expect(composerSlashPrompt(debug!, "login failure")).toContain("Additional instructions:\nlogin failure");
+    expect(composerSlashPrompt(fix!, "")).toContain("Fix the current issue in this workspace.");
+    expect(composerSlashPrompt(commit!, "")).toContain("create one atomic commit");
+    expect(composerSlashPrompt(pr!, "")).toContain("Prepare a pull request");
+  });
 });
