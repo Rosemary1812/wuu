@@ -1716,106 +1716,6 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 }
 
-func TestServerTurnStartInjectsSlashCommandContextWithoutPersisting(t *testing.T) {
-	client := &fakeClient{response: providers.ChatResponse{Content: "debugged"}}
-	rt := newTestRuntime(t, client)
-	kit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	rt.Toolkit = kit
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
-		t.Fatalf("thread/start: %v", err)
-	}
-	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	payload := map[string]any{
-		"id":     "2",
-		"method": MethodTurnStart,
-		"params": TurnStartParams{ThreadID: threadID, Prompt: "/debug login fails"},
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal turn request: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), raw); err != nil {
-		t.Fatalf("turn/start: %v", err)
-	}
-	waitForMethod(t, out, NotificationTurnCompleted)
-
-	client.mu.Lock()
-	requests := append([]providers.ChatRequest(nil), client.requests...)
-	client.mu.Unlock()
-	if len(requests) != 1 {
-		t.Fatalf("expected one provider request, got %d", len(requests))
-	}
-	if !messagesContain(requests[0].Messages, "/debug") ||
-		!messagesContain(requests[0].Messages, "The user invoked /debug") ||
-		!messagesContain(requests[0].Messages, "login fails") {
-		t.Fatalf("provider request missing slash context: %+v", requests[0].Messages)
-	}
-	slashIndex := messageContentIndex(requests[0].Messages, "The user invoked /debug")
-	envIndex := messageContentIndex(requests[0].Messages, "[ENVIRONMENT]")
-	if slashIndex < 0 || envIndex < 0 || slashIndex > envIndex {
-		t.Fatalf("slash context should be before volatile environment context: slash=%d env=%d messages=%+v", slashIndex, envIndex, requests[0].Messages)
-	}
-
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
-	if err != nil {
-		t.Fatalf("load persisted history: %v", err)
-	}
-	if len(persisted) != 2 || persisted[0].Content != "/debug login fails" || persisted[1].Content != "debugged" {
-		t.Fatalf("unexpected persisted history: %+v", persisted)
-	}
-	for _, msg := range persisted {
-		if strings.Contains(msg.Content, "The user invoked /debug") {
-			t.Fatalf("slash context should not persist: %+v", persisted)
-		}
-	}
-}
-
-func TestServerTurnStartInjectsUserPromptSubmitHookContext(t *testing.T) {
-	client := &fakeClient{response: providers.ChatResponse{Content: "done"}}
-	rt := newTestRuntime(t, client)
-	rt.HookDispatcher = hooks.NewDispatcher(hooks.NewRegistry(map[hooks.Event][]hooks.HookConfig{
-		hooks.UserPromptSubmit: {
-			{Command: `echo '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"prefer the focused path"}}'`},
-		},
-	}))
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
-		t.Fatalf("thread/start: %v", err)
-	}
-	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	payload := map[string]any{
-		"id":     "2",
-		"method": MethodTurnStart,
-		"params": TurnStartParams{ThreadID: threadID, Prompt: "hello"},
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal turn request: %v", err)
-	}
-	if err := srv.handleLine(context.Background(), raw); err != nil {
-		t.Fatalf("turn/start: %v", err)
-	}
-	waitForMethod(t, out, NotificationTurnCompleted)
-
-	client.mu.Lock()
-	requests := append([]providers.ChatRequest(nil), client.requests...)
-	client.mu.Unlock()
-	if len(requests) != 1 {
-		t.Fatalf("expected one provider request, got %d", len(requests))
-	}
-	if !messagesContain(requests[0].Messages, "prefer the focused path") {
-		t.Fatalf("provider request missing hook context: %+v", requests[0].Messages)
-	}
-}
-
 func TestServerTurnStartForwardsStreamingUsage(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StreamRunner.Client = usageStreamClient{events: []providers.StreamEvent{
@@ -4041,19 +3941,6 @@ func testStringSliceContains(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func messagesContain(messages []providers.ChatMessage, want string) bool {
-	return messageContentIndex(messages, want) >= 0
-}
-
-func messageContentIndex(messages []providers.ChatMessage, want string) int {
-	for i, msg := range messages {
-		if strings.Contains(msg.Content, want) {
-			return i
-		}
-	}
-	return -1
 }
 
 func requestByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {

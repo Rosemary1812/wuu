@@ -21,9 +21,8 @@ import (
 )
 
 type queuedTurn struct {
-	id            string
-	msg           providers.ChatMessage
-	promptContext []providers.ChatMessage
+	id  string
+	msg providers.ChatMessage
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
@@ -52,16 +51,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
 	}
 	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	th.mu.Lock()
-	running := th.running
-	th.mu.Unlock()
-	if running {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
-	}
-	promptContext, err := s.userPromptSubmitContext(ctx, th, threadRuntime, params.Prompt)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -101,7 +90,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return err
 	}
 
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, history, promptContext)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
 	return nil
 }
 
@@ -136,10 +125,6 @@ func (s *Server) handleTurnQueue(req Request) error {
 	if readOnly {
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
 	}
-	promptContext, err := s.userPromptSubmitContext(context.Background(), th, nil, params.Prompt)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
 
 	queueID := strings.TrimSpace(params.ClientID)
 	if queueID == "" {
@@ -152,9 +137,8 @@ func (s *Server) handleTurnQueue(req Request) error {
 		Images:   images,
 		Files:    files,
 	}
-	entry := queuedTurn{id: queueID, msg: msg, promptContext: promptContext}
-	queued := queuedTurnSummary(params.ThreadID, entry)
-	s.enqueueQueuedUserTurn(params.ThreadID, entry)
+	queued := queuedTurnSummary(params.ThreadID, queuedTurn{id: queueID, msg: msg})
+	s.enqueueQueuedUserTurn(params.ThreadID, queuedTurn{id: queueID, msg: msg})
 	if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
 		return err
 	}
@@ -442,7 +426,7 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	return s.writeResponse(req.ID, OKResult{OK: true}, nil)
 }
 
-func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, promptContext []providers.ChatMessage) {
+func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -460,7 +444,6 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
 	}
 	baseBeforeStep := runner.BeforeStep
-	baseBeforeRequest := runner.BeforeRequest
 	baseOnRequestContext := runner.OnRequestContext
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
@@ -544,17 +527,8 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		}
 		return messages
 	}
-	runner.BeforeRequest = func() []providers.ChatMessage {
-		var messages []providers.ChatMessage
-		messages = append(messages, providers.CloneChatMessages(promptContext)...)
-		if baseBeforeRequest != nil {
-			messages = append(messages, baseBeforeRequest()...)
-		}
-		return messages
-	}
 	defer func() {
 		runner.BeforeStep = baseBeforeStep
-		runner.BeforeRequest = baseBeforeRequest
 		runner.OnRequestContext = baseOnRequestContext
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
@@ -899,7 +873,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		Turn:     turn,
 		QueueID:  entry.id,
 	})
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, history, entry.promptContext)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
 	return true, nil
 }
 
@@ -1059,7 +1033,7 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, history, nil)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
 	return true, nil
 }
 
