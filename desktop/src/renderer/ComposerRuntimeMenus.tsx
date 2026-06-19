@@ -252,7 +252,7 @@ function RuntimeMainMenu({
       <div className="codex-menu-separator" />
       <button role="menuitem" type="button" onClick={onOpenModelMenu}>
         <span>{currentLabel}</span>
-        <ChevronRight className="codex-menu-chevron" size={18} />
+        <ChevronRight className="codex-menu-chevron icon-lg" />
       </button>
     </div>
   );

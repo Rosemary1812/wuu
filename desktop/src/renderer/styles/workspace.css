@@ -407,6 +407,11 @@
   color: var(--ink-tertiary);
 }
 
+.workspace-tool-card-icon {
+  width: 25px;
+  height: 25px;
+}
+
 .workspace-tool-card strong {
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);

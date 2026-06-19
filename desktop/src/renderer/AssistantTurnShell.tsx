@@ -171,8 +171,7 @@ function TurnProcessFold({
   const toggleContent = (
     <>
       <Play
-        className="turn-process-glyph"
-        size={12}
+        className="turn-process-glyph icon-xs"
         aria-hidden
         fill="currentColor"
       />
@@ -340,8 +339,7 @@ function ReasoningFold({
       <summary className="turn-reasoning-summary">
         <span className={textClass}>{label}</span>
         <ChevronRight
-          className="turn-reasoning-chevron"
-          size={12}
+          className="turn-reasoning-chevron icon-xs"
           aria-hidden
         />
       </summary>

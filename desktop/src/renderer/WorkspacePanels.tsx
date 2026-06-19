@@ -290,7 +290,7 @@ function SortableWorkspaceToolTab({
         {...dragAttributes}
         {...listeners}
       >
-        <WorkspaceToolIcon view={view} size={15} />
+        <WorkspaceToolIcon view={view} className="icon" />
         <span>{title}</span>
       </button>
       <button
@@ -324,7 +324,7 @@ function WorkspaceToolTabPreview({
   return (
     <div className={`workspace-tool-tab workspace-tool-tab-drag-overlay${active ? " active" : ""}`} style={width ? { width } : undefined}>
       <div className="workspace-tool-tab-main">
-        <WorkspaceToolIcon view={view} size={15} />
+        <WorkspaceToolIcon view={view} className="icon" />
         <span>{title}</span>
       </div>
       <div className="workspace-tool-tab-close" aria-hidden="true">
@@ -351,7 +351,7 @@ function WorkspaceToolPicker({
           onClick={() => onSelectTool(item.id)}
         >
           <span className="workspace-tool-menu-icon" aria-hidden="true">
-            <WorkspaceToolIcon view={item.id} size={20} />
+            <WorkspaceToolIcon view={item.id} className="icon-xl" />
           </span>
           <span className="workspace-tool-menu-copy">
             <strong>{item.title}</strong>
@@ -403,7 +403,7 @@ export function WorkspaceBottomPanel({
               type="button"
               onClick={() => onSelectTool(item.id)}
             >
-              <WorkspaceToolIcon view={item.id} size={25} />
+              <WorkspaceToolIcon view={item.id} className="workspace-tool-card-icon" />
               <strong>{item.title}</strong>
               <span>{item.subtitle}</span>
             </button>
@@ -414,18 +414,18 @@ export function WorkspaceBottomPanel({
   );
 }
 
-export function WorkspaceToolIcon({ view, size }: { view: WorkspacePanelView; size: number }): JSX.Element {
+export function WorkspaceToolIcon({ view, className }: { view: WorkspacePanelView; className?: string }): JSX.Element {
   switch (view) {
     case "files":
-      return <FolderOpen size={size} />;
+      return <FolderOpen className={className} />;
     case "review":
-      return <ShieldCheck size={size} />;
+      return <ShieldCheck className={className} />;
     case "terminal":
-      return <Terminal size={size} />;
+      return <Terminal className={className} />;
     case "browser":
-      return <Globe size={size} />;
+      return <Globe className={className} />;
     case "goals":
-      return <Activity size={size} />;
+      return <Activity className={className} />;
   }
 }
 

@@ -95,7 +95,7 @@ export function ProjectList({
               title={activeProject ? (expanded ? "收起会话" : "展开会话") : "打开项目"}
               onClick={() => (activeProject ? onToggleProjectCollapsed(project.id) : onSelectProject(project.id))}
             >
-              <ChevronRight className="project-row-chevron" size={15} aria-hidden="true" />
+              <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
               {expanded ? <FolderOpen className="icon-lg" /> : <Folder className="icon-lg" />}
               <span>{project.name}</span>
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
@@ -450,7 +450,7 @@ function ThreadChildAgentRows({
             onClick={() => onSelect(agent)}
             onContextMenu={onContextMenu}
           >
-            <CornerDownRight className="thread-child-agent-branch" size={13} />
+            <CornerDownRight className="thread-child-agent-branch icon-xs" />
             <span className="thread-child-agent-name">{label}</span>
             {nestedLabel ? <span className="thread-child-agent-nested">{nestedLabel}</span> : null}
             {pendingSwitch ? (

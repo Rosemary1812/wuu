@@ -47,7 +47,7 @@ export function ComposerAttachmentStrip({
       ))}
       {files.map((file, index) => (
         <div className="composer-file-attachment" key={file.id}>
-          <FileText size={16} aria-hidden="true" />
+          <FileText className="icon" aria-hidden="true" />
           <span>{file.filename?.trim() || `PDF ${index + 1}`}</span>
           <button type="button" aria-label={`移除文件 ${index + 1}`} onClick={() => onRemoveFile(file.id)}>
             <X className="icon-xs" />
@@ -353,7 +353,7 @@ function ComposerQueueItem({
           aria-label={`移除排队消息 ${position}`}
           onClick={onRemove}
         >
-          <X size={14} aria-hidden="true" />
+          <X className="icon-sm" aria-hidden="true" />
         </button>
         <div className="composer-queue-menu-anchor">
           <button
@@ -365,7 +365,7 @@ function ComposerQueueItem({
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <MoreHorizontal size={14} aria-hidden="true" />
+            <MoreHorizontal className="icon-sm" aria-hidden="true" />
           </button>
           {menuOpen ? (
             <div ref={menuRef} className="composer-queue-menu" role="menu">
@@ -377,7 +377,7 @@ function ComposerQueueItem({
                   onEdit();
                 }}
               >
-                <Pencil size={14} aria-hidden="true" />
+                <Pencil className="icon-sm" aria-hidden="true" />
                 <span>编辑消息</span>
               </button>
               {onGuide ? (
@@ -389,7 +389,7 @@ function ComposerQueueItem({
                     onGuide();
                   }}
                 >
-                  <CornerDownRight size={14} aria-hidden="true" />
+                  <CornerDownRight className="icon-sm" aria-hidden="true" />
                   <span>转为引导</span>
                 </button>
               ) : null}
@@ -401,7 +401,7 @@ function ComposerQueueItem({
                   onRemove();
                 }}
               >
-                <X size={14} aria-hidden="true" />
+                <X className="icon-sm" aria-hidden="true" />
                 <span>{kind === "guide" ? "取消引导" : "移除"}</span>
               </button>
             </div>

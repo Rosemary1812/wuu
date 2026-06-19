@@ -785,7 +785,7 @@ function GitChangeTreeNodeView({
           aria-expanded={expanded}
           onClick={() => onTogglePath(node.path)}
         >
-          <ChevronRight className="workspace-diff-tree-chevron" size={15} />
+          <ChevronRight className="workspace-diff-tree-chevron icon" />
           {expanded ? <FolderOpen className="icon" /> : <Folder className="icon" />}
           <span className="workspace-diff-tree-name">{node.name}</span>
           <span className="workspace-diff-tree-count">{node.fileCount}</span>

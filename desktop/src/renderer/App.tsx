@@ -2150,7 +2150,7 @@ export function App(): JSX.Element {
       <>
         {workspaceMode ? (
           <span className="workspace-title-icon" aria-hidden="true">
-            <WorkspaceToolIcon view={workspaceMode} size={18} />
+            <WorkspaceToolIcon view={workspaceMode} className="icon-lg" />
           </span>
         ) : null}
         <h1>{activeTitle}</h1>

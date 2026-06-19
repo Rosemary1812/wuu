@@ -120,7 +120,7 @@ export function MessageFileList({ files }: { files: InputFile[] }): JSX.Element 
     <div className="message-files">
       {files.map((file, index) => (
         <div className="message-file" key={`${file.media_type}-${file.filename ?? index}-${index}`}>
-          <FileText size={16} aria-hidden="true" />
+          <FileText className="icon" aria-hidden="true" />
           <span>{file.filename?.trim() || `File ${index + 1}`}</span>
         </div>
       ))}

@@ -629,7 +629,7 @@ function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX
           {planUpdate.plan.map((item, index) => (
             <li className={`environment-plan-item ${item.status}`} key={`${index}-${item.step}`}>
               <span className="environment-plan-marker" aria-hidden="true">
-                {item.status === "completed" ? <Check size={11} strokeWidth={3} /> : null}
+                {item.status === "completed" ? <Check className="icon-xs" strokeWidth={3} /> : null}
               </span>
               <span>{item.step}</span>
             </li>
