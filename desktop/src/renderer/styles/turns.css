@@ -3595,15 +3595,15 @@
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  animation: reasoning-shimmer 6.4s linear infinite;
+  animation: reasoning-shimmer 4.8s linear infinite;
 }
 
 @keyframes reasoning-shimmer {
   from {
-    background-position: 150% 0;
+    background-position: -12.5% 0;
   }
   to {
-    background-position: -50% 0;
+    background-position: -112.5% 0;
   }
 }
 
