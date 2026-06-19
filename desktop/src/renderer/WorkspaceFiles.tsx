@@ -1,13 +1,11 @@
 import { AlertCircle, ChevronDown, ChevronRight, FileText, Folder, FolderOpen, FolderX } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
   WorkspaceFileReadResult,
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 
 type DirectoryLoadState = {
@@ -194,12 +192,7 @@ function WorkspaceFileTreeView({
         placeholder="Search..."
         spellCheck={false}
       />
-      <OverlayScrollbarsComponent
-        className="workspace-file-tree-scroll"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
+      <div className="workspace-file-tree-scroll">
         <div className="workspace-file-tree-list" role="tree">
           {visibleEntries.length > 0 ? (
             <WorkspaceFileTreeRows
@@ -217,7 +210,7 @@ function WorkspaceFileTreeView({
             <div className="workspace-file-tree-status">没有匹配文件</div>
           )}
         </div>
-      </OverlayScrollbarsComponent>
+      </div>
     </div>
   );
 }
@@ -527,16 +520,11 @@ export function WorkspaceFilePreview({
           </span>
         </div>
       </header>
-      <OverlayScrollbarsComponent
-        className="workspace-file-code-scroll"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
+      <div className="workspace-file-code-scroll">
         <pre className="workspace-file-code">
           <code>{file.text}</code>
         </pre>
-      </OverlayScrollbarsComponent>
+      </div>
     </article>
   );
 }

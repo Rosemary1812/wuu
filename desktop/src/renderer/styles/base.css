@@ -133,14 +133,26 @@
   --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --collapse-enter-offset-y: -2px;
   --conversation-turn-gap: 8px;
-  --sidebar-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 245, 0.9));
+--sidebar-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 245, 0.9));
   --sidebar-glass-border: rgba(17, 19, 21, 0.11);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.62);
   --sidebar-glass-hover: rgba(17, 19, 21, 0.045);
   --sidebar-glass-active: rgba(17, 19, 21, 0.07);
-                                                                       
-                                                                  
-                                  
+
+  /* Scrollbar tokens — unify every scrollbar in the renderer.
+   * The default state hides the thumb (transparent + track transparent) but
+   * still claims its gutter (scrollbar-gutter: stable) so layout never
+   * shifts. .scrollbar-visible (added by JS on scroll) or :hover paints
+   * the thumb at the three opacity tiers. */
+  --scrollbar-width: 10px;
+  --scrollbar-radius: var(--radius-pill);
+  --scrollbar-track-bg: transparent;
+  --scrollbar-thumb: rgba(82, 88, 94, 0.32);
+  --scrollbar-thumb-hover: rgba(56, 88, 118, 0.48);
+  --scrollbar-thumb-active: rgba(38, 70, 98, 0.64);
+  --scrollbar-thin-width: 6px;
+  --scrollbar-thin-thumb: rgba(32, 36, 39, 0.22);
+
   --turn-warning-border: var(--warning-border);
   --turn-warning-bg: var(--warning-soft);
   --turn-warning-text: var(--warning);
@@ -280,22 +292,6 @@ body,
 body {
   margin: 0;
   overflow: hidden;
-}
-
-.os-theme-wuu {
-  --os-size: 10px;
-  --os-padding-perpendicular: 2px;
-  --os-padding-axis: 3px;
-  --os-track-border-radius: var(--radius-pill);
-  --os-track-bg: transparent;
-  --os-track-bg-hover: rgba(46, 50, 54, 0.06);
-  --os-track-bg-active: rgba(46, 50, 54, 0.08);
-  --os-handle-border-radius: var(--radius-pill);
-  --os-handle-bg: rgba(82, 88, 94, 0.28);
-  --os-handle-bg-hover: rgba(56, 88, 118, 0.46);
-  --os-handle-bg-active: rgba(38, 70, 98, 0.62);
-  --os-handle-min-size: 42px;
-  --os-handle-interactive-area-offset: 4px;
 }
 
 .window-resizing *,

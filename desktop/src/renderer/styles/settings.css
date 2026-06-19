@@ -51,13 +51,15 @@
 .settings-main {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   border-left: 1px solid var(--surface-4);
   border-radius: 16px 0 0 16px;
   background: var(--paper);
 }
 
-.settings-main > [data-overlayscrollbars-contents] {
+/* The visible inner page keeps an "at least viewport-tall" baseline so a
+ * short page does not collapse the main area and strand the scroll thumb. */
+.settings-page {
   min-height: 100%;
 }
 

@@ -1,0 +1,94 @@
+/*
+ * Unified scrollbar styles — single source of truth for every scrollbar
+ * in the renderer. The global rules below apply to every element:
+ *
+ *   - default state: thumb is transparent (invisible but still occupying
+ *     its gutter via scrollbar-gutter: stable on individual containers,
+ *     or naturally via the UA). The user does not see a scrollbar until
+ *     they scroll or hover the scroll area.
+ *   - .scrollbar-visible (added by JS in AppSidebar / ConversationScrollState
+ *     while the user is actively scrolling, removed 700ms after the last
+ *     scroll event) OR :hover on the scroll region paints the thumb at
+ *     the --scrollbar-thumb tier.
+ *   - :hover on the thumb itself bumps to --scrollbar-thumb-hover.
+ *   - :active on the thumb bumps to --scrollbar-thumb-active.
+ *
+ * .scrollbar-hidden is a utility class for elements that should never
+ * show a scrollbar at all (the session-tab / workspace-panel-tabs row).
+ *
+ * Components that need a narrower scrollbar (xterm viewport) override
+ * --scrollbar-width / --scrollbar-thumb on the local scope.
+ */
+
+/* Firefox + Chromium 121+: declarative scrollbar width + color. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent var(--scrollbar-track-bg);
+}
+
+*:hover {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track-bg);
+}
+
+.scrollbar-visible,
+.scrollbar-visible * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track-bg);
+}
+
+/* WebKit / Chromium <121: pseudo-elements. */
+*::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
+  background: var(--scrollbar-track-bg);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece {
+  background: var(--scrollbar-track-bg);
+  border: 0;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: var(--scrollbar-radius);
+  background-color: transparent;
+  background-clip: padding-box;
+  transition: background-color 160ms ease;
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track-bg);
+}
+
+/* Three-tier thumb paint — :hover on the scroll container OR the
+ * .scrollbar-visible JS class lifts the thumb into view; :hover on the
+ * thumb itself bumps it to the hover tier; :active bumps it further. */
+*:hover::-webkit-scrollbar-thumb,
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover,
+*:hover::-webkit-scrollbar-thumb:hover,
+.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active,
+*:hover::-webkit-scrollbar-thumb:active,
+.scrollbar-visible::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+
+/* "Always hidden" utility — used for horizontal-only scroll rows where
+ * the native scrollbar would just be visual noise. */
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

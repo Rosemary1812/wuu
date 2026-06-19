@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   GoalAttentionItem,
   GoalApprovalSnapshot,
@@ -20,7 +19,6 @@ import type {
   GoalWorkflowSnapshot,
   RuntimeContext,
 } from "../shared/protocol";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 type GoalPanelState =
   | { status: "idle" | "loading"; snapshot?: GoalSystemSnapshot; error?: undefined }
@@ -131,12 +129,7 @@ function GoalSnapshotView({
 }): JSX.Element {
   const summary = useMemo(() => summarizeGoalSnapshot(snapshot), [snapshot]);
   return (
-    <OverlayScrollbarsComponent
-      className={`workspace-goal-scroll${loading ? " loading" : ""}`}
-      data-overlayscrollbars-initialize
-      defer
-      options={OVERLAY_SCROLLBAR_OPTIONS}
-    >
+    <div className={`workspace-goal-scroll${loading ? " loading" : ""}`}>
       <div className="workspace-goal-summary" aria-label="Goal 汇总">
         <GoalMetric icon={<GitBranch className="icon" />} label="运行" value={summary.workflowCount} />
         <GoalMetric icon={<Activity className="icon" />} label="活跃" value={summary.activeWorkflowCount} />
@@ -210,7 +203,7 @@ function GoalSnapshotView({
           </div>
         </GoalSection>
       ) : null}
-    </OverlayScrollbarsComponent>
+    </div>
   );
 }
 

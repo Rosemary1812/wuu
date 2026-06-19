@@ -100,6 +100,7 @@
   display: grid;
   width: 100%;
   min-height: 0;
+  overflow: auto;
   gap: 8px;
 }
 
@@ -779,22 +780,6 @@
   gap: 8px;
   overflow-y: auto;
   padding: 4px 0 2px;
-}
-
-.conversation-search-results::-webkit-scrollbar {
-  width: 8px;
-}
-
-.conversation-search-results::-webkit-scrollbar-track,
-.conversation-search-results::-webkit-scrollbar-track-piece {
-  background: transparent;
-}
-
-.conversation-search-results::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: var(--radius-pill);
-  background: rgba(82, 88, 94, 0.22);
-  background-clip: padding-box;
 }
 
 .conversation-search-section {

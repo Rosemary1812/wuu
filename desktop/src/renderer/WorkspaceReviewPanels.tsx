@@ -19,9 +19,7 @@ import {
   useRef,
   useState
 } from "react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { GitChangeFile, GitChangesResult, GitFileDiffResult, GitStatusResult, RuntimeContext } from "../shared/protocol";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { formatWorkspaceRoot } from "./WorkspaceFiles";
 import {
   buildGitChangeTree,
@@ -382,12 +380,7 @@ function WorkspaceReviewDiffPeekPanel({
       ) : fileDiff?.binary ? (
         <div className="workspace-diff-empty">这是二进制文件，无法显示文本 diff。</div>
       ) : fileDiff?.patch ? (
-        <OverlayScrollbarsComponent
-          className="workspace-diff-code-scroll"
-          data-overlayscrollbars-initialize
-          defer
-          options={OVERLAY_SCROLLBAR_OPTIONS}
-        >
+        <div className="workspace-diff-code-scroll">
           <pre className="workspace-diff-code" aria-label={`${fileDiff.path} 的代码差异`}>
             {diffLines.map((line, index) => (
               <span className={`workspace-diff-line ${line.kind}`} key={`${index}:${line.content.slice(0, 24)}`}>
@@ -397,7 +390,7 @@ function WorkspaceReviewDiffPeekPanel({
               </span>
             ))}
           </pre>
-        </OverlayScrollbarsComponent>
+        </div>
       ) : (
         <div className="workspace-diff-empty">没有可显示的文本 diff。</div>
       )}
@@ -642,12 +635,7 @@ export function WorkspaceDiffReview({
           ) : fileDiff?.binary ? (
             <div className="workspace-diff-empty">这是二进制文件，无法显示文本 diff。</div>
           ) : fileDiff?.patch ? (
-            <OverlayScrollbarsComponent
-              className="workspace-diff-code-scroll"
-              data-overlayscrollbars-initialize
-              defer
-              options={OVERLAY_SCROLLBAR_OPTIONS}
-            >
+            <div className="workspace-diff-code-scroll">
               <pre className="workspace-diff-code" aria-label={`${fileDiff.path} 的代码差异`}>
                 {diffLines.map((line, index) => (
                   <span
@@ -660,7 +648,7 @@ export function WorkspaceDiffReview({
                   </span>
                 ))}
               </pre>
-            </OverlayScrollbarsComponent>
+            </div>
           ) : (
             <div className="workspace-diff-empty">没有可显示的文本 diff。</div>
           )}
@@ -727,12 +715,7 @@ function GitChangeTreePanel({
           onChange={(event) => onQueryChange(event.currentTarget.value)}
         />
       </label>
-      <OverlayScrollbarsComponent
-        className="workspace-diff-tree-scroll"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
+      <div className="workspace-diff-tree-scroll">
         {nodes.length === 0 ? (
           <div className="workspace-diff-tree-empty">没有匹配文件</div>
         ) : (
@@ -751,7 +734,7 @@ function GitChangeTreePanel({
             ))}
           </div>
         )}
-      </OverlayScrollbarsComponent>
+      </div>
     </aside>
   );
 }

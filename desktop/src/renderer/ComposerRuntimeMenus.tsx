@@ -15,7 +15,6 @@ import {
   type LucideIcon
 } from "lucide-react";
 import type { RefObject } from "react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   CodexModelSummary,
   DesktopProject,
@@ -44,7 +43,6 @@ import {
   shortCodexModelLabel,
   variantLabel
 } from "./RuntimeHelpers";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 type ChipTone = "safe" | "accent" | "review" | "danger";
 
@@ -576,12 +574,7 @@ export function ProjectPickerMenu({
         <Search className="icon-lg" />
         <input value={query} placeholder="搜索项目" onChange={(event) => setQuery(event.target.value)} />
       </label>
-      <OverlayScrollbarsComponent
-        className="project-picker-list"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
+      <div className="project-picker-list">
         {filteredProjects.length === 0 ? <div className="project-picker-empty">没有匹配项目</div> : null}
         {filteredProjects.map((project) => {
           const selected = activeContext?.kind === "project" && activeContext.project_id === project.id;
@@ -593,7 +586,7 @@ export function ProjectPickerMenu({
             </button>
           );
         })}
-      </OverlayScrollbarsComponent>
+      </div>
       <div className="project-picker-divider" />
       <button role="menuitem" onClick={onOpenProject}>
         <FolderOpen className="icon-lg" />

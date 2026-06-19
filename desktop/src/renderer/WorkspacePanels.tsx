@@ -14,9 +14,7 @@ import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Activity, FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 import { WorkspaceGoalPanel } from "./WorkspaceGoalPanel";
@@ -389,12 +387,9 @@ export function WorkspaceBottomPanel({
         </button>
       </div>
       {open ? (
-        <OverlayScrollbarsComponent
+        <div
           className="workspace-tool-grid"
           aria-label="工作区工具"
-          data-overlayscrollbars-initialize
-          defer
-          options={OVERLAY_SCROLLBAR_OPTIONS}
         >
           {WORKSPACE_TOOL_ITEMS.map((item) => (
             <button
@@ -408,7 +403,7 @@ export function WorkspaceBottomPanel({
               <span>{item.subtitle}</span>
             </button>
           ))}
-        </OverlayScrollbarsComponent>
+        </div>
       ) : null}
     </section>
   );

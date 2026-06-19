@@ -802,20 +802,6 @@
   padding-right: 2px;
 }
 
-.slash-command-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.slash-command-list::-webkit-scrollbar-track,
-.slash-command-list::-webkit-scrollbar-track-piece {
-  background: transparent;
-}
-
-.slash-command-list::-webkit-scrollbar-thumb {
-  border-radius: var(--radius-pill);
-  background: rgba(82, 88, 94, 0.18);
-}
-
 .slash-command-item {
   display: grid;
   min-height: 46px;
@@ -1055,12 +1041,9 @@
 }
 
 .project-picker-list {
-  max-height: 188px;
-  overflow: hidden;
-}
-
-.project-picker-list > [data-overlayscrollbars-contents] {
   display: grid;
+  max-height: 188px;
+  overflow: auto;
   gap: 1px;
 }
 

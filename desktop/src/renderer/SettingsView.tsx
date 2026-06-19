@@ -9,7 +9,6 @@ import {
   useMemo,
   useState
 } from "react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import type {
   DesktopBuildInfo,
   ExtensionSessionTrustSummary,
@@ -21,7 +20,6 @@ import type {
   RuntimeConnectionUpdate
 } from "../shared/protocol";
 import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 
 export type SettingsUsageBucket = {
   id: string;
@@ -337,13 +335,7 @@ export function SettingsView({
         onDoubleClick={onSidebarSeparatorDoubleClick}
         onKeyDown={onSidebarSeparatorKey}
       />
-      <OverlayScrollbarsComponent
-        element="main"
-        className="settings-main"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
+      <main className="settings-main">
         <div className="settings-page">
           <h1>{activePage === "general" ? "常规" : "用量"}</h1>
 
@@ -617,7 +609,7 @@ export function SettingsView({
             />
           )}
         </div>
-      </OverlayScrollbarsComponent>
+      </main>
     </div>
   );
 }

@@ -20,7 +20,6 @@ import {
   Terminal,
   X
 } from "lucide-react";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useState } from "react";
 import type {
   DesktopProject,
@@ -32,7 +31,6 @@ import type {
   Thread
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
-import { OVERLAY_SCROLLBAR_OPTIONS } from "./ScrollbarOptions";
 import { shortCodexModelLabel } from "./RuntimeHelpers";
 
 export type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
@@ -615,12 +613,7 @@ function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX
 
   return (
     <section className="environment-plan-section" aria-label="任务进度">
-      <OverlayScrollbarsComponent
-        className="environment-plan-scroll"
-        data-overlayscrollbars-initialize
-        defer
-        options={OVERLAY_SCROLLBAR_OPTIONS}
-      >
+      <div className="environment-plan-scroll">
         <div className="environment-plan-meta">
           <span>{completed}/{total}</span>
         </div>
@@ -635,7 +628,7 @@ function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX
             </li>
           ))}
         </ol>
-      </OverlayScrollbarsComponent>
+      </div>
     </section>
   );
 }
