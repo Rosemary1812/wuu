@@ -2,14 +2,56 @@ import { describe, expect, it } from "vitest";
 import { readableToolActivityCommand } from "./ToolActivity";
 
 describe("readableToolActivityCommand", () => {
-  it("prefers tool-provided display text", () => {
+  it("ignores tool-provided display text and waits for args to parse", () => {
+    // The backend ships a preformatted `display.text` ("查看项目目录")
+    // with item/started, but it's just a placeholder — once args parse
+    // we render the real path. Ignoring display.text keeps the title
+    // timing unified (no placeholder → real flicker).
+    expect(
+      readableToolActivityCommand({
+        name: "list_files",
+        arguments: undefined,
+        display: { kind: "read", text: "查看项目目录" },
+      })
+    ).toBe("");
+
+    // display.text is also ignored when args parse; we render from args.
     expect(
       readableToolActivityCommand({
         name: "list_files",
         arguments: JSON.stringify({ path: "." }),
-        display: { kind: "read", text: "查看项目目录" }
+        display: { kind: "read", text: "（已忽略）" },
       })
     ).toBe("查看项目目录");
+  });
+
+  it("returns empty string when args are missing for known tools", () => {
+    // Until args (or result) actually parses, there is nothing to render.
+    // The next item/toolCall/delta will reveal the title.
+    expect(readableToolActivityCommand({ name: "read_file" })).toBe("");
+    expect(readableToolActivityCommand({ name: "run_shell" })).toBe("");
+  });
+
+  it("returns empty string when args are partial JSON", () => {
+    // Streaming `item/toolCall/delta` builds up the JSON one chunk at a
+    // time; mid-stream it isn't valid JSON yet, so we wait.
+    expect(
+      readableToolActivityCommand({
+        name: "read_file",
+        arguments: '{"path":"/foo"',
+      })
+    ).toBe("");
+  });
+
+  it("renders the path once args parse", () => {
+    // formatPathTarget collapses multi-segment paths to their basename,
+    // so use a single-segment path to assert on the basename directly.
+    expect(
+      readableToolActivityCommand({
+        name: "read_file",
+        arguments: JSON.stringify({ path: "bar.ts" }),
+      })
+    ).toBe("读取 bar.ts");
   });
 
   it("renders tool calls as process log lines instead of raw JSON", () => {

@@ -87,10 +87,15 @@ function sectionSummaryText(section: ToolActivitySection): string {
 }
 
 function toolCommands(items: ThreadItem[]): ToolActivityCommand[] {
-  return items.map((item) => ({
-    text: readableToolActivityCommand(item),
-    status: itemToolStatus(item),
-  }));
+  // readableToolActivityCommand returns "" until args (or result) actually
+  // parses, so a tool call that's mid-stream shows up with no entry yet.
+  // Filter those out so we don't render blank lines inside a section.
+  return items
+    .map((item) => ({
+      text: readableToolActivityCommand(item),
+      status: itemToolStatus(item),
+    }))
+    .filter((command) => command.text.trim() !== "");
 }
 
 function itemToolStatus(item: ThreadItem): ToolActivitySectionStatus {
@@ -120,16 +125,25 @@ function rawToolCommand(name: string, args: string | undefined): string {
 export function readableToolActivityCommand(
   item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">,
 ): string {
-  const displayText = item.display?.text?.trim();
-  if (displayText) {
-    return displayText;
-  }
-
+  // Wait until args (or result) actually parses before returning a title.
+  // The backend ships a preformatted `item.display.text` ("查看项目目录",
+  // "读取 文件") with item/started that lacks the path the args delta will
+  // eventually reveal, and the per-tool fallbacks ("读取 文件", "运行命令")
+  // do the same. Honoring either on first render and then again once args
+  // parse produces a placeholder → real two-step flicker, so we drop both
+  // paths and only render once args (or result) is parseable.
   const args = parseJSONRecord(item.arguments);
   const result = parseJSONRecord(item.result);
   const name = (item.name ?? "").trim();
+
   if (isMCPToolName(name)) {
     return rawToolCommand(name, item.arguments);
+  }
+
+  // No parseable args and no result yet — the tool call just started.
+  // Don't render anything; the next item/toolCall/delta will reveal it.
+  if (!args && !result) {
+    return "";
   }
   const path =
     stringValue(result, "path") ??

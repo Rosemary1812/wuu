@@ -237,8 +237,10 @@ describe("assistant turn entries layout", () => {
     expect(activityItemIDs(inProgressDisplay)).toEqual([toolA.id]);
     expect(inProgressDisplay?.hasAnswer).toBe(false);
     expect(inProgressDisplay?.missingReplyMessage).toBeUndefined();
-    expect(inProgressDisplay?.latestProcessPreview?.text).toBe("搜索 内容");
-    expect(inProgressDisplay?.latestProcessPreview?.kind).toBe("activity");
+    // Both tools lack arguments (pure-tool fixture), so under unified
+    // rendering timing readableToolActivityCommand returns "" for each
+    // and the fold header has no activity preview to surface yet.
+    expect(inProgressDisplay?.latestProcessPreview).toBeUndefined();
 
     // completed with no final answer: pure tool with no text is not a
     // bug. No empty-reply notice because there was no commentary.
@@ -356,18 +358,41 @@ describe("assistant turn fold header preview", () => {
     expect(display?.latestProcessPreview?.text).toBe("Got it. The file says...");
   });
 
-  it("in_progress + tool after commentary → preview = latest tool action", () => {
-    const commentary = makeCommentary("Let me look that up.");
+  it("in_progress + tool whose args haven't arrived yet → no latest preview", () => {
+    // makeToolCall() ships no arguments, so readableToolActivityCommand
+    // returns "" and compactProcessPreview collapses that to undefined.
+    // With no commentary in the turn, the process fold has nothing to
+    // preview yet.
     const tool = makeToolCall("read_file");
     const turn = makeTurn({
       status: "in_progress",
-      items: [commentary, tool],
+      items: [tool],
     });
 
     const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
 
     expect(display).toBeDefined();
-    expect(display?.latestProcessPreview?.text).toBe("读取 文件");
+    expect(display?.latestProcessPreview).toBeUndefined();
+  });
+
+  it("in_progress + tool with parsed args → preview = the rendered tool action", () => {
+    // Once args parse, the renderer can produce a real title and the
+    // preview takes it. We never show the pre-args "placeholder" path
+    // (e.g. "读取 文件") — that's the whole point of unified timing.
+    // Use a single-segment path because formatPathTarget collapses
+    // multi-segment paths to their basename.
+    const tool: ThreadItem = {
+      ...makeToolCall("read_file"),
+      arguments: JSON.stringify({ path: "bar.ts" }),
+    };
+    const turn = makeTurn({
+      status: "in_progress",
+      items: [tool],
+    });
+
+    const display = buildAssistantTurnDisplay(turn, undefined, renderItem);
+
+    expect(display?.latestProcessPreview?.text).toBe("读取 bar.ts");
     expect(display?.latestProcessPreview?.kind).toBe("activity");
   });
 
