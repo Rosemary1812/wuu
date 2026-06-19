@@ -573,7 +573,7 @@
   border: 2px solid rgba(95, 126, 104, 0.22);
   border-top-color: var(--sidebar-accent);
   border-radius: var(--radius-pill);
-  animation: session-loading-spin 720ms linear infinite;
+  animation: session-loading-spin 1400ms linear infinite;
 }
 
 .project-row-new-thread {
@@ -771,7 +771,7 @@
   border: 1.5px solid rgba(95, 126, 104, 0.22);
   border-top-color: var(--sidebar-accent);
   border-radius: var(--radius-pill);
-  animation: session-loading-spin 720ms linear infinite;
+  animation: session-loading-spin 1400ms linear infinite;
 }
 
                                                                      
@@ -960,7 +960,7 @@
   border: 2px solid rgba(95, 126, 104, 0.22);
   border-top-color: var(--sidebar-accent);
   border-radius: var(--radius-pill);
-  animation: session-loading-spin 720ms linear infinite;
+  animation: session-loading-spin 1400ms linear infinite;
 }
 
 .thread-child-agent-loading {
