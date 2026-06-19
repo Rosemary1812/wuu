@@ -566,10 +566,10 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		th.History = append(th.History, res.NewMessages...)
 	}
 	var historyErr error
-	if normalized, nerr := providers.NormalizeAndValidateMessages(th.History); nerr != nil {
+	if repaired, nerr := providers.RepairAndValidateToolCallHistory(th.History); nerr != nil {
 		historyErr = nerr
-	} else if !reflect.DeepEqual(normalized, th.History) {
-		th.History = normalized
+	} else if !reflect.DeepEqual(repaired, th.History) {
+		th.History = repaired
 		rewriteHistory = true
 	}
 	var persistErr error

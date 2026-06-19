@@ -5,24 +5,26 @@ import (
 	"strings"
 )
 
-// NormalizeAndValidateMessagesForModel applies the shared ordering repair plus
-// request-only provider compatibility transforms. It deliberately does not
-// mutate stored history; clients call this just before lowering to wire format.
-func NormalizeAndValidateMessagesForModel(model string, msgs []ChatMessage) ([]ChatMessage, error) {
-	normalized, err := NormalizeAndValidateMessages(msgs)
+// PrepareMessagesForModelRequest applies shared tool-call history repair plus
+// request-only model/provider compatibility transforms. It deliberately does
+// not mutate stored history; clients call this just before lowering to wire
+// format.
+func PrepareMessagesForModelRequest(model string, msgs []ChatMessage) ([]ChatMessage, error) {
+	repaired, err := RepairAndValidateToolCallHistory(msgs)
 	if err != nil {
 		return nil, err
 	}
-	compatible := ApplyMessageCompatibilityForModel(model, normalized)
-	if err := ValidateMessageSequence(compatible); err != nil {
+	compatible := ApplyModelMessageCompatibility(model, repaired)
+	if err := ValidateToolCallHistory(compatible); err != nil {
 		return nil, fmt.Errorf("invalid message sequence after model compatibility: %w", err)
 	}
 	return compatible, nil
 }
 
-// ApplyMessageCompatibilityForModel mirrors the message-level portions of
-// OpenCode's ProviderTransform.message that are relevant to wuu's Go clients.
-func ApplyMessageCompatibilityForModel(model string, msgs []ChatMessage) []ChatMessage {
+// ApplyModelMessageCompatibility mirrors the request-only message transforms
+// in OpenCode's ProviderTransform.message that are relevant to wuu's Go
+// clients.
+func ApplyModelMessageCompatibility(model string, msgs []ChatMessage) []ChatMessage {
 	if len(msgs) == 0 {
 		return nil
 	}

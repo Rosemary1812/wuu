@@ -79,14 +79,14 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		return responsesRequest{}, errors.New("messages is required")
 	}
 
-	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
+	prepared, err := providers.PrepareMessagesForModelRequest(req.Model, req.Messages)
 	if err != nil {
 		return responsesRequest{}, err
 	}
 
-	instructions, messages := splitResponsesInstructions(normalized)
+	instructions, messages := splitResponsesInstructions(prepared)
 	input := make([]responsesInputItem, 0, len(messages))
-	if tools := responsesCompactedDiscoveredTools(req.Model, normalized); len(tools) > 0 {
+	if tools := responsesCompactedDiscoveredTools(req.Model, prepared); len(tools) > 0 {
 		input = append(input, responsesInputItem{
 			Type:      "tool_search_output",
 			CallID:    "wuu-compact-discovered-tools",
@@ -118,7 +118,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		payload.Reasoning = &responsesReasoning{Effort: req.Effort}
 	}
 	if len(req.Tools) > 0 {
-		discoveredToolNames := providers.DiscoveredToolNamesFromMessages(normalized)
+		discoveredToolNames := providers.DiscoveredToolNamesFromMessages(prepared)
 		tools := make([]responsesToolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			if shouldOmitResponsesTopLevelTool(tool, discoveredToolNames) {

@@ -162,7 +162,7 @@ func RunToolLoop(
 				}
 			}
 		}
-		if normalized, changed, nerr := normalizeLiveMessages(messages); nerr != nil {
+		if repaired, changed, nerr := repairLiveToolCallHistory(messages); nerr != nil {
 			return LoopResult{
 				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
 				HistoryRewritten:    historyRewritten,
@@ -172,7 +172,7 @@ func RunToolLoop(
 				CacheReadTokens:     totalCacheRead,
 			}, nerr
 		} else if changed {
-			messages = normalized
+			messages = repaired
 			historyRewritten = true
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
@@ -187,7 +187,7 @@ func RunToolLoop(
 				requestMessages = make([]providers.ChatMessage, 0, len(messages)+len(transient))
 				requestMessages = append(requestMessages, messages...)
 				requestMessages = append(requestMessages, transient...)
-				if normalized, _, nerr := normalizeLiveMessages(requestMessages); nerr != nil {
+				if repaired, _, nerr := repairLiveToolCallHistory(requestMessages); nerr != nil {
 					return LoopResult{
 						NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
 						HistoryRewritten:    historyRewritten,
@@ -197,7 +197,7 @@ func RunToolLoop(
 						CacheReadTokens:     totalCacheRead,
 					}, nerr
 				} else {
-					requestMessages = normalized
+					requestMessages = repaired
 				}
 				if cfg.OnRequestContext != nil {
 					if info, ok := requestContextInfo(stepIdx, transient); ok {
@@ -273,7 +273,7 @@ func RunToolLoop(
 			// collapses any pending estimate into ground truth.
 			usage.RecordResponse(result.Usage)
 		}
-		if err := providers.ValidateToolCalls(result.ToolCalls); err != nil {
+		if err := providers.ValidateAssistantToolCalls(result.ToolCalls); err != nil {
 			return LoopResult{
 				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
 				HistoryRewritten:    historyRewritten,
@@ -561,12 +561,12 @@ func copyMessages(msgs []providers.ChatMessage) []providers.ChatMessage {
 	return providers.CloneChatMessages(msgs)
 }
 
-func normalizeLiveMessages(messages []providers.ChatMessage) ([]providers.ChatMessage, bool, error) {
-	normalized, err := providers.NormalizeAndValidateMessages(messages)
+func repairLiveToolCallHistory(messages []providers.ChatMessage) ([]providers.ChatMessage, bool, error) {
+	repaired, err := providers.RepairAndValidateToolCallHistory(messages)
 	if err != nil {
 		return nil, false, err
 	}
-	return normalized, !reflect.DeepEqual(normalized, messages), nil
+	return repaired, !reflect.DeepEqual(repaired, messages), nil
 }
 
 func newMessagesForReturn(messages []providers.ChatMessage, startLen int, historyRewritten bool) []providers.ChatMessage {

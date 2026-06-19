@@ -395,7 +395,7 @@ func TestCompact_LongSingleUserTurnFallsBackToRecentTail(t *testing.T) {
 	if result[0].Role != "system" || !IsConversationSummaryContent(result[0].Content) {
 		t.Fatalf("expected compact summary first, got %#v", result[0])
 	}
-	if err := providers.ValidateMessageSequence(result); err != nil {
+	if err := providers.ValidateToolCallHistory(result); err != nil {
 		t.Fatalf("compacted history has invalid tool sequence: %v\n%#v", err, result)
 	}
 }
@@ -673,7 +673,7 @@ func TestCompact_DoesNotLeaveDanglingToolResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compact: %v", err)
 	}
-	if err := providers.ValidateMessageSequence(result); err != nil {
+	if err := providers.ValidateToolCallHistory(result); err != nil {
 		t.Fatalf("compacted history has invalid tool sequence: %v\n%#v", err, result)
 	}
 	if len(result) < 6 {

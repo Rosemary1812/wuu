@@ -3425,7 +3425,7 @@ func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 	}
 }
 
-func TestServerThreadResumeNormalizesToolResultOrder(t *testing.T) {
+func TestServerThreadResumeRepairsToolResultOrder(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	sessionID := "20260523-000001-tools"
 	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
@@ -3468,7 +3468,7 @@ func TestServerThreadResumeNormalizesToolResultOrder(t *testing.T) {
 	if th == nil {
 		t.Fatal("expected resumed thread")
 	}
-	if err := providers.ValidateMessageSequence(th.History); err != nil {
+	if err := providers.ValidateToolCallHistory(th.History); err != nil {
 		t.Fatalf("expected valid resumed history, got %v: %+v", err, th.History)
 	}
 	roles := make([]string, 0, len(th.History))

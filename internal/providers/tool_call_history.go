@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// ValidateToolCalls rejects malformed provider tool-call metadata
+// ValidateAssistantToolCalls rejects malformed provider tool-call metadata
 // before it reaches the shared history machinery.
-func ValidateToolCalls(calls []ToolCall) error {
+func ValidateAssistantToolCalls(calls []ToolCall) error {
 	seen := make(map[string]struct{}, len(calls))
 	for i, call := range calls {
 		if call.ID == "" {
@@ -25,7 +25,7 @@ func ValidateToolCalls(calls []ToolCall) error {
 	return nil
 }
 
-// NormalizeMessages ensures every assistant message that contains
+// RepairToolCallHistory ensures every assistant message that contains
 // tool_calls is followed immediately by matching tool results,
 // repairing interleaved history when needed and removing orphan tool
 // outputs that lack a corresponding tool_call.
@@ -35,7 +35,7 @@ func ValidateToolCalls(calls []ToolCall) error {
 // were mistakenly inserted between an assistant tool_call and its
 // tool results, the tool results are pulled back up so the provider
 // still receives a valid sequence.
-func NormalizeMessages(msgs []ChatMessage) []ChatMessage {
+func RepairToolCallHistory(msgs []ChatMessage) []ChatMessage {
 	if len(msgs) == 0 {
 		return nil
 	}
@@ -149,22 +149,22 @@ func isInvalidToolArgumentsResult(content string) bool {
 	return strings.HasPrefix(payload.Error, "invalid tool arguments")
 }
 
-// NormalizeAndValidateMessages repairs any sequence issues that can be
+// RepairAndValidateToolCallHistory repairs any sequence issues that can be
 // safely synthesized client-side, then rejects histories that still
 // violate tool ordering invariants.
-func NormalizeAndValidateMessages(msgs []ChatMessage) ([]ChatMessage, error) {
-	normalized := NormalizeMessages(msgs)
-	if err := ValidateMessageSequence(normalized); err != nil {
-		return nil, fmt.Errorf("invalid message sequence after normalization: %w", err)
+func RepairAndValidateToolCallHistory(msgs []ChatMessage) ([]ChatMessage, error) {
+	repaired := RepairToolCallHistory(msgs)
+	if err := ValidateToolCallHistory(repaired); err != nil {
+		return nil, fmt.Errorf("invalid message sequence after tool-call history repair: %w", err)
 	}
-	return normalized, nil
+	return repaired, nil
 }
 
-// ValidateMessageSequence returns a non-nil error when the message slice
-// violates provider ordering rules that are cheap to check client-side.
-// It is intended for diagnostics and tests, not as a gate (NormalizeMessages
+// ValidateToolCallHistory returns a non-nil error when the message slice
+// violates tool-call history invariants that are cheap to check client-side.
+// It is intended for diagnostics and tests, not as a gate (RepairToolCallHistory
 // should be used to repair sequences instead).
-func ValidateMessageSequence(msgs []ChatMessage) error {
+func ValidateToolCallHistory(msgs []ChatMessage) error {
 	declaredToolCalls := make(map[string]int, 8)
 	for i, msg := range msgs {
 		switch msg.Role {
@@ -173,7 +173,7 @@ func ValidateMessageSequence(msgs []ChatMessage) error {
 				return fmt.Errorf("message %d: system message must precede all non-system messages", i)
 			}
 		case "assistant":
-			if err := ValidateToolCalls(msg.ToolCalls); err != nil {
+			if err := ValidateAssistantToolCalls(msg.ToolCalls); err != nil {
 				return fmt.Errorf("message %d: invalid assistant tool_calls: %w", i, err)
 			}
 			for _, tc := range msg.ToolCalls {

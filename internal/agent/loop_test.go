@@ -339,7 +339,7 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := providers.ValidateMessageSequence(res.NewMessages); err != nil {
+	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("expected valid returned message sequence, got %v: %+v", err, res.NewMessages)
 	}
 	roles := make([]string, 0, len(res.NewMessages))
@@ -384,7 +384,7 @@ func TestRunToolLoop_ConcurrentToolCompletionDoesNotReorderProviderMessages(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := providers.ValidateMessageSequence(res.NewMessages); err != nil {
+	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("expected valid returned message sequence, got %v: %+v", err, res.NewMessages)
 	}
 	if got := strings.Join(tools.completedOrder(), ","); got != "call_2,call_1" {

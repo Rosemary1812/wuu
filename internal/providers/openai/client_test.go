@@ -1326,7 +1326,7 @@ func TestStreamChat_RejectsInvalidMessageSequenceBeforeRequest(t *testing.T) {
 	if hits.Load() != 0 {
 		t.Fatalf("expected zero requests, got %d", hits.Load())
 	}
-	if !strings.Contains(err.Error(), "invalid message sequence after normalization") {
+	if !strings.Contains(err.Error(), "invalid message sequence after tool-call history repair") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -107,16 +107,16 @@ func (s *Server) handleThreadResume(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	normalized, err := providers.NormalizeAndValidateMessages(history)
+	repaired, err := providers.RepairAndValidateToolCallHistory(history)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if !reflect.DeepEqual(normalized, history) {
-		if err := rewriteChatHistory(path, normalized); err != nil {
+	if !reflect.DeepEqual(repaired, history) {
+		if err := rewriteChatHistory(path, repaired); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
-	history = normalized
+	history = repaired
 	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, time.Now().UTC())
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
@@ -228,16 +228,16 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	if err != nil {
 		return forkSourceThread{}, err
 	}
-	normalized, err := providers.NormalizeAndValidateMessages(history)
+	repaired, err := providers.RepairAndValidateToolCallHistory(history)
 	if err != nil {
 		return forkSourceThread{}, err
 	}
-	if !reflect.DeepEqual(normalized, history) {
-		if err := rewriteChatHistory(path, normalized); err != nil {
+	if !reflect.DeepEqual(repaired, history) {
+		if err := rewriteChatHistory(path, repaired); err != nil {
 			return forkSourceThread{}, err
 		}
 	}
-	history = ensureBaseSystemPrompt(normalized, s.rt.StreamRunner.SystemPrompt)
+	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, now)
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return forkSourceThread{}, err

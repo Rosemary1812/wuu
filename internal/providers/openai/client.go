@@ -137,11 +137,11 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
 
-	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
+	prepared, err := providers.PrepareMessagesForModelRequest(req.Model, req.Messages)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
-	req.Messages = normalized
+	req.Messages = prepared
 	for _, msg := range req.Messages {
 		mapped := mapMessage(req.Model, msg)
 		if mapped.Role != "tool" && mapped.ToolCallID == "" {
@@ -259,11 +259,11 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 	applyReasoningEffort(&payload, req.Effort, c.reasoningFormat)
 	applyPromptCacheKey(&payload, req.CacheHint, c.promptCacheKeyFormat)
-	normalized, err := providers.NormalizeAndValidateMessagesForModel(req.Model, req.Messages)
+	prepared, err := providers.PrepareMessagesForModelRequest(req.Model, req.Messages)
 	if err != nil {
 		return nil, err
 	}
-	req.Messages = normalized
+	req.Messages = prepared
 	for _, msg := range req.Messages {
 		mapped := mapMessage(req.Model, msg)
 		if mapped.Role != "tool" && mapped.ToolCallID == "" {
