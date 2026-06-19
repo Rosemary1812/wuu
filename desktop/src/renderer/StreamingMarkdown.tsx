@@ -334,14 +334,16 @@ export function StreamingMarkdown({
   // O(tail) and per-promotion work at O(one block), independent of the
   // total answer length.
   //
-  // Once the stream is settled, we render the whole text in one pass so
-  // the final DOM matches the non-streaming layout exactly.
+  // The settled phase uses the same split as streaming: keeping the
+  // block layout stable across the streaming → settled transition means
+  // React reconciles by updating props in place instead of unmounting
+  // every previously memoized block and remounting one big tail. That
+  // reconciliation jump is what caused the visible "settle flick" on
+  // long answers (block-level memo would be wiped the instant the
+  // upstream went idle).
   const split = useMemo(
-    () =>
-      phase === "settled"
-        ? { blocks: [] as string[], tail: visibleText }
-        : splitIntoStableBlocks(visibleText),
-    [phase, visibleText]
+    () => splitIntoStableBlocks(visibleText),
+    [visibleText]
   );
   const tailText = showCursor ? `${split.tail}${CURSOR_SENTINEL}` : split.tail;
 
