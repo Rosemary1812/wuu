@@ -8,6 +8,7 @@ import type {
 } from "./AssistantTurnDisplay";
 import { ToolActivityTimeline } from "./ToolActivity";
 import { ThreadItemView } from "./ThreadItemView";
+import { LightweightStreamingText } from "./LightweightStreamingText";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
 import { formatDuration, useLiveNow } from "./TurnProgress";
@@ -190,7 +191,11 @@ function TurnProcessFold({
           }`}
         >
           <span className="turn-process-live-dot" aria-hidden />
-          <span className="turn-process-preview-text">{latestPreview?.text}</span>
+          <LightweightStreamingText
+            text={latestPreview?.text ?? ""}
+            live={turn.status === "in_progress"}
+            className="turn-process-preview-text"
+          />
         </span>
       ) : null}
     </>
