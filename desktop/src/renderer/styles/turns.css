@@ -317,8 +317,9 @@
 
 .user-message-edit {
   display: grid;
-  width: min(560px, 100%);
-  min-width: min(360px, 100%);
+  width: 100%;
+  max-width: 560px;
+  justify-self: stretch;
   gap: 10px;
   border-radius: var(--radius-md);
   background: var(--paper);
