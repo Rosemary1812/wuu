@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -45,6 +47,19 @@ func (t *WebSearchTool) Definition() providers.ToolDefinition {
 			"required": []string{"query"},
 		},
 	}
+}
+
+func (t *WebSearchTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Query string `json:"query"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Query) == "" {
+		return errors.New("web_search requires query")
+	}
+	return nil
 }
 
 func (t *WebSearchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
@@ -94,6 +109,19 @@ func (t *WebFetchTool) Definition() providers.ToolDefinition {
 			"required": []string{"url"},
 		},
 	}
+}
+
+func (t *WebFetchTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		URL string `json:"url"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.URL) == "" {
+		return errors.New("web_fetch requires url")
+	}
+	return nil
 }
 
 func (t *WebFetchTool) Execute(ctx context.Context, argsJSON string) (string, error) {

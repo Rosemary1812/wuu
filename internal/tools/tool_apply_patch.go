@@ -95,6 +95,23 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 	}
 }
 
+func (t *ApplyPatchTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		PatchText  string `json:"patchText"`
+		Patch      string `json:"patch"`
+		PatchText2 string `json:"patch_text"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.PatchText) == "" &&
+		strings.TrimSpace(args.PatchText2) == "" &&
+		strings.TrimSpace(args.Patch) == "" {
+		return errors.New("apply_patch requires patchText")
+	}
+	return nil
+}
+
 func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		PatchText       string            `json:"patchText"`

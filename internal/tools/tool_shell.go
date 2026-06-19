@@ -42,6 +42,19 @@ func (t *ShellTool) Classify(argsJSON string) ToolClassification {
 	return classifyShellCommand(args.Command)
 }
 
+func (t *ShellTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Command) == "" {
+		return errors.New("run_shell requires command")
+	}
+	return nil
+}
+
 func (t *ShellTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
 	var args struct {
 		Command string `json:"command"`

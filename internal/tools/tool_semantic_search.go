@@ -69,6 +69,23 @@ func (t *SemanticSearchTool) Definition() providers.ToolDefinition {
 	}
 }
 
+func (t *SemanticSearchTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Query string `json:"query"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
+		return errors.New("semantic_search requires query")
+	}
+	if len(semanticSearchTerms(query)) == 0 {
+		return errors.New("semantic_search query must include searchable terms")
+	}
+	return nil
+}
+
 func (t *SemanticSearchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Query      string `json:"query"`

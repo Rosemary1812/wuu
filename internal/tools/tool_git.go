@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -78,6 +79,31 @@ func (t *GitTool) Classify(argsJSON string) ToolClassification {
 			Reason:          "restricted git read-only command",
 		}
 	}
+}
+
+func (t *GitTool) ValidateInput(argsJSON string) error {
+	_, err := parseGitInvocation(argsJSON)
+	return err
+}
+
+func (t *GitTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
+	invocation, err := parseGitInvocation(argsJSON)
+	if err != nil {
+		return nil
+	}
+	pattern := strings.TrimSpace(invocation.Subcommand + " " + strings.Join(invocation.Args, " "))
+	if pattern == "" {
+		pattern = invocation.Subcommand
+	}
+	return []ToolPermissionRequest{{
+		Permission: "git",
+		Patterns:   []string{pattern},
+		Always:     []string{invocation.Subcommand + " *"},
+		Metadata: map[string]string{
+			"tool":       "git",
+			"subcommand": invocation.Subcommand,
+		},
+	}}
 }
 
 func (t *GitTool) Definition() providers.ToolDefinition {

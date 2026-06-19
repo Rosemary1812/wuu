@@ -60,6 +60,19 @@ func (t *StartProcessTool) Classify(argsJSON string) ToolClassification {
 	}
 }
 
+func (t *StartProcessTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Command) == "" {
+		return errors.New("start_process requires command")
+	}
+	return nil
+}
+
 func (t *StartProcessTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
 	var args struct {
 		Command string `json:"command"`

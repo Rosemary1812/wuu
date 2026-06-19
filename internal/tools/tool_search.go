@@ -84,6 +84,27 @@ func (t *GrepTool) Definition() providers.ToolDefinition {
 	}
 }
 
+func (t *GrepTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Pattern    string `json:"pattern"`
+		IgnoreCase bool   `json:"ignore_case"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Pattern) == "" {
+		return errors.New("grep requires pattern")
+	}
+	validationPattern := args.Pattern
+	if args.IgnoreCase {
+		validationPattern = "(?i)" + args.Pattern
+	}
+	if _, err := regexp.Compile(validationPattern); err != nil {
+		return fmt.Errorf("invalid regex: %w", err)
+	}
+	return nil
+}
+
 func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Pattern    string `json:"pattern"`
@@ -216,6 +237,19 @@ func (t *GlobTool) Definition() providers.ToolDefinition {
 			"required": []string{"pattern"},
 		},
 	}
+}
+
+func (t *GlobTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Pattern) == "" {
+		return errors.New("glob requires pattern")
+	}
+	return nil
 }
 
 func (t *GlobTool) Execute(ctx context.Context, argsJSON string) (string, error) {

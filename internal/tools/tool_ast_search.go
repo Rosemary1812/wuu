@@ -66,6 +66,23 @@ func (t *ASTSearchTool) Definition() providers.ToolDefinition {
 	}
 }
 
+func (t *ASTSearchTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Query string `json:"query"`
+		Kind  string `json:"kind"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Query) == "" {
+		return errors.New("ast_search requires query")
+	}
+	if normalizeASTSearchKind(args.Kind) == "" {
+		return fmt.Errorf("unsupported ast_search kind %q", args.Kind)
+	}
+	return nil
+}
+
 func (t *ASTSearchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Query      string `json:"query"`

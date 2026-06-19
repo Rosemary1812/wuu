@@ -97,6 +97,19 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	}
 }
 
+func (t *ReadFileTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Path) == "" {
+		return errors.New("read_file requires path")
+	}
+	return nil
+}
+
 func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	type lineRangeArgs struct {
 		StartLine int `json:"start_line"`
@@ -787,6 +800,19 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 	}
 }
 
+func (t *WriteFileTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Path) == "" {
+		return errors.New("write_file requires path")
+	}
+	return nil
+}
+
 func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Path            string `json:"path"`
@@ -1150,6 +1176,23 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 			"required": []string{"path", "old_text", "new_text"},
 		},
 	}
+}
+
+func (t *EditFileTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Path    string `json:"path"`
+		OldText string `json:"old_text"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Path) == "" {
+		return errors.New("edit_file requires path")
+	}
+	if args.OldText == "" {
+		return errors.New("edit_file requires old_text")
+	}
+	return nil
 }
 
 func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {

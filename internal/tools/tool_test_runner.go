@@ -39,6 +39,19 @@ func (t *RunTestTool) Classify(argsJSON string) ToolClassification {
 	return classifyTestCommand(args.Command)
 }
 
+func (t *RunTestTool) ValidateInput(argsJSON string) error {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(args.Command) == "" {
+		return errors.New("run_test requires command")
+	}
+	return nil
+}
+
 func (t *RunTestTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "run_test",

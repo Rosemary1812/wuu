@@ -132,6 +132,10 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	approvalRef := ""
 	approvalReview := ToolApprovalReview{}
 
+	if err := validateToolArgumentsJSON(call.Arguments); err != nil {
+		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		return "", err
+	}
 	if validator, ok := tool.(InputValidatingTool); ok {
 		if err := validator.ValidateInput(call.Arguments); err != nil {
 			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
@@ -209,6 +213,21 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, approvalRef, approvalReview, err)
 
 	return returned, err
+}
+
+func validateToolArgumentsJSON(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return fmt.Errorf("invalid tool arguments: %w", err)
+	}
+	if _, ok := payload.(map[string]any); !ok {
+		return errors.New("tool arguments must be a JSON object")
+	}
+	return nil
 }
 
 func (t *Toolkit) applyAutoModeDecision(ctx context.Context, call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision) (ToolPolicyDecision, error) {
