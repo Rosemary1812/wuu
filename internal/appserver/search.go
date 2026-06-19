@@ -190,6 +190,7 @@ func threadSearchCandidatesFromMessage(msg providers.ChatMessage) []threadSearch
 		}
 	}
 	add(msg.Content)
+	add(msg.DisplayContent)
 	add(msg.ReasoningContent)
 	add(msg.Name)
 	for _, call := range msg.ToolCalls {

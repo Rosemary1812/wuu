@@ -498,7 +498,7 @@ func firstUserMessageForTitle(history []providers.ChatMessage, force bool) (stri
 		if msg.Role != "user" || isToolResultMessage(msg) {
 			continue
 		}
-		content := strings.TrimSpace(msg.Content)
+		content := strings.TrimSpace(chatMessageDisplayContent(msg))
 		if content == "" {
 			continue
 		}

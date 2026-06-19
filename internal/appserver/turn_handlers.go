@@ -1113,7 +1113,7 @@ func combineAgentCompletionMessages(msgs []providers.ChatMessage) providers.Chat
 }
 
 func queuedTurnSummary(threadID string, entry queuedTurn) QueuedTurn {
-	preview := strings.TrimSpace(entry.msg.Content)
+	preview := strings.TrimSpace(chatMessageDisplayContent(entry.msg))
 	if preview == "" && len(entry.msg.Images) > 0 {
 		if len(entry.msg.Images) == 1 {
 			preview = "[Image #1]"

@@ -774,7 +774,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 			Type:     ThreadItemUserMessage,
 			Status:   ThreadItemStatusCompleted,
 			Role:     "user",
-			Text:     msg.Content,
+			Text:     chatMessageDisplayContent(msg),
 			Images:   threadItemImages(msg.Images),
 			Files:    threadItemFiles(msg.Files),
 		}
@@ -844,8 +844,8 @@ func threadItemPhaseFromProvider(phase providers.MessagePhase) ThreadItemPhase {
 
 func threadPreview(history []providers.ChatMessage) string {
 	for _, msg := range history {
-		if msg.Role == "user" && !isToolResultMessage(msg) && strings.TrimSpace(msg.Content) != "" {
-			return strings.TrimSpace(msg.Content)
+		if msg.Role == "user" && !isToolResultMessage(msg) && strings.TrimSpace(chatMessageDisplayContent(msg)) != "" {
+			return strings.TrimSpace(chatMessageDisplayContent(msg))
 		}
 		if msg.Role == "user" && !isToolResultMessage(msg) && len(msg.Images) > 0 {
 			if len(msg.Images) == 1 {
@@ -861,6 +861,13 @@ func threadPreview(history []providers.ChatMessage) string {
 		}
 	}
 	return ""
+}
+
+func chatMessageDisplayContent(msg providers.ChatMessage) string {
+	if strings.TrimSpace(msg.DisplayContent) != "" {
+		return msg.DisplayContent
+	}
+	return msg.Content
 }
 
 func threadItemImages(images []providers.InputImage) []ThreadItemImage {

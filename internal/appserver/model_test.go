@@ -147,6 +147,30 @@ func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	}
 }
 
+func TestChatMessageItemUsesDisplayContentForUserMessage(t *testing.T) {
+	item := chatMessageItem("item-1", providers.ChatMessage{
+		Role:           "user",
+		Content:        "expanded model prompt",
+		DisplayContent: "/debug login failure",
+	})
+
+	if item.Text != "/debug login failure" {
+		t.Fatalf("item.Text = %q, want display content", item.Text)
+	}
+}
+
+func TestThreadPreviewUsesDisplayContent(t *testing.T) {
+	preview := threadPreview([]providers.ChatMessage{{
+		Role:           "user",
+		Content:        "expanded model prompt",
+		DisplayContent: "/debug login failure",
+	}})
+
+	if preview != "/debug login failure" {
+		t.Fatalf("preview = %q, want display content", preview)
+	}
+}
+
 func TestTurnsFromHistoryKeepsSteeredUserMessageInCurrentTurn(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{

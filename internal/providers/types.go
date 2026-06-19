@@ -126,11 +126,12 @@ func NormalizeMessagePhase(phase string) MessagePhase {
 
 // ChatMessage is a generic multi-provider chat message.
 type ChatMessage struct {
-	Role     string
-	Name     string
-	ClientID string
-	Content  string
-	Phase    MessagePhase
+	Role           string
+	Name           string
+	ClientID       string
+	Content        string
+	DisplayContent string `json:"display_content,omitempty"`
+	Phase          MessagePhase
 	// Steered marks user input that was injected into an already-running turn.
 	// Providers ignore this; app-server history uses it to restore turn items.
 	Steered bool
