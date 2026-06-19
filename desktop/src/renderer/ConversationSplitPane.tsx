@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { Thread, ThreadItem } from "../shared/protocol";
+import type { InputFile, InputImage, Thread, ThreadItem } from "../shared/protocol";
 import { SplitPaneComposer } from "./ComposerView";
 import {
   isThreadRunning,
@@ -61,7 +61,13 @@ export function ConversationSplitPane({
   onForkMessage: (turnID: string, itemID: string) => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
   onCancelEditMessage?: () => void;
-  onSubmitEditMessage?: (turnID: string, item: ThreadItem, text: string) => void;
+  onSubmitEditMessage?: (
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+  ) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -124,7 +130,8 @@ export function ConversationSplitPane({
               onCancelEditMessage={onCancelEditMessage}
               onSubmitEditMessage={
                 onSubmitEditMessage
-                  ? (turnID, item, text) => onSubmitEditMessage(turnID, item, text)
+                  ? (turnID, item, text, images, files) =>
+                      onSubmitEditMessage(turnID, item, text, images, files)
                   : undefined
               }
               onNoticeAction={onNoticeAction}

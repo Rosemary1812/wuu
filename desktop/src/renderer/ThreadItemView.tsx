@@ -1,6 +1,23 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
-import type { ThreadItem, Turn } from "../shared/protocol";
+import {
+  type ChangeEvent as ReactChangeEvent,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useRef,
+  useState
+} from "react";
+import { Paperclip } from "lucide-react";
+import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
+import {
+  clipboardAttachmentFiles,
+  composerFileFromFile,
+  composerImageFromFile,
+  inputFilesFromComposer,
+  inputImagesFromComposer,
+  isSupportedComposerAttachment
+} from "./ComposerMessages";
 import { RichContent } from "./RichContent";
 import {
   AgentMessageActions,
@@ -52,7 +69,13 @@ export function ThreadItemView({
   editing?: boolean;
   editSubmitting?: boolean;
   onCancelEditMessage?: () => void;
-  onSubmitEditMessage?: (turnID: string, item: ThreadItem, text: string) => void;
+  onSubmitEditMessage?: (
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+  ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   switch (item.type) {
@@ -84,8 +107,8 @@ export function ThreadItemView({
               initialText={text}
               submitting={Boolean(editSubmitting)}
               onCancel={onCancelEditMessage}
-              onSubmit={(nextText) =>
-                onSubmitEditMessage?.(turnID, item, nextText)
+              onSubmit={(nextText, nextImages, nextFiles) =>
+                onSubmitEditMessage?.(turnID, item, nextText, nextImages, nextFiles)
               }
             />
           ) : (
@@ -211,16 +234,27 @@ function UserMessageInlineEditor({
   initialText: string;
   submitting: boolean;
   onCancel?: () => void;
-  onSubmit?: (text: string) => void;
+  onSubmit?: (text: string, images: InputImage[], files: InputFile[]) => void;
 }): JSX.Element {
   const [text, setText] = useState(initialText);
+  const [images, setImages] = useState<InputImage[]>(item.images ?? []);
+  const [files, setFiles] = useState<InputFile[]>(item.files ?? []);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const hasAttachments = Boolean(item.images?.length || item.files?.length);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const hasAttachments = images.length > 0 || files.length > 0;
   const canSubmit = text.trim().length > 0 || hasAttachments;
 
+  // Re-seed local state when the editor is reopened on a different user
+  // message, or when the upstream item swaps its attachment arrays (e.g.
+  // after a stream update). Without this, editing message B and then
+  // cancelling back to message A would show B's draft in A.
   useEffect(() => {
     setText(initialText);
-  }, [initialText, item.id]);
+    setImages(item.images ?? []);
+    setFiles(item.files ?? []);
+  }, [initialText, item.id, item.images, item.files]);
 
   useEffect(() => {
     window.requestAnimationFrame(() => {
@@ -237,7 +271,43 @@ function UserMessageInlineEditor({
     if (!canSubmit || submitting) {
       return;
     }
-    onSubmit?.(text);
+    onSubmit?.(text, images, files);
+  }
+
+  async function addAttachmentFiles(filesToAdd: File[]): Promise<void> {
+    const supported = filesToAdd.filter(isSupportedComposerAttachment);
+    if (supported.length === 0) {
+      return;
+    }
+    const imageAdditions: InputImage[] = [];
+    const fileAdditions: InputFile[] = [];
+    for (const file of supported) {
+      if (file.type.toLowerCase().startsWith("image/")) {
+        try {
+          const composed = await composerImageFromFile(file);
+          imageAdditions.push({ media_type: composed.media_type, data: composed.data });
+        } catch {
+          // Skip the individual failed image; the rest still land.
+        }
+      } else {
+        try {
+          const composed = await composerFileFromFile(file);
+          fileAdditions.push({
+            media_type: composed.media_type,
+            data: composed.data,
+            filename: composed.filename
+          });
+        } catch {
+          // Same per-file resilience — bad PDFs shouldn't kill the batch.
+        }
+      }
+    }
+    if (imageAdditions.length > 0) {
+      setImages((prev) => [...prev, ...imageAdditions]);
+    }
+    if (fileAdditions.length > 0) {
+      setFiles((prev) => [...prev, ...fileAdditions]);
+    }
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
@@ -252,20 +322,110 @@ function UserMessageInlineEditor({
     }
   }
 
+  function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>): void {
+    if (submitting) {
+      return;
+    }
+    const pasted = clipboardAttachmentFiles(event);
+    if (pasted.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    void addAttachmentFiles(pasted);
+  }
+
+  function handleFileInputChange(event: ReactChangeEvent<HTMLInputElement>): void {
+    const selected = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (selected.length > 0) {
+      void addAttachmentFiles(selected);
+    }
+  }
+
+  function handleDragOver(event: ReactDragEvent<HTMLDivElement>): void {
+    if (submitting) {
+      return;
+    }
+    if (!event.dataTransfer.types.includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    setDragOver(true);
+  }
+
+  function handleDragLeave(event: ReactDragEvent<HTMLDivElement>): void {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setDragOver(false);
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLDivElement>): void {
+    if (submitting) {
+      return;
+    }
+    const dropped = Array.from(event.dataTransfer?.files ?? []);
+    if (dropped.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    setDragOver(false);
+    void addAttachmentFiles(dropped);
+  }
+
+  function removeImage(index: number): void {
+    setImages((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  function removeFile(index: number): void {
+    setFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+  }
+
   return (
-    <div className="user-message-edit">
-      {item.images?.length ? <MessageImageGrid images={item.images} /> : null}
-      {item.files?.length ? <MessageFileList files={item.files} /> : null}
-      <div className="user-message-edit-row">
-        <textarea
-          ref={textareaRef}
-          className="user-message-edit-input"
-          value={text}
+    <div
+      className={`user-message-edit${dragOver ? " user-message-edit-drop-active" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <input
+        ref={fileInputRef}
+        className="user-message-edit-file-input"
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        tabIndex={-1}
+        onChange={handleFileInputChange}
+      />
+      {images.length > 0 ? (
+        <MessageImageGrid images={images} onRemove={removeImage} />
+      ) : null}
+      {files.length > 0 ? (
+        <MessageFileList files={files} onRemove={removeFile} />
+      ) : null}
+      <textarea
+        ref={textareaRef}
+        className="user-message-edit-input"
+        value={text}
+        disabled={submitting}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+        rows={Math.max(1, Math.min(8, text.split("\n").length))}
+      />
+      <div className="user-message-edit-toolbar">
+        <button
+          type="button"
+          className="user-message-edit-attach-button"
+          aria-label="添加附件"
+          title="添加图片或 PDF"
           disabled={submitting}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={Math.max(1, Math.min(8, text.split("\n").length))}
-        />
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Paperclip aria-hidden="true" />
+          <span>附件</span>
+        </button>
+        <div className="user-message-edit-spacer" />
         <div className="user-message-edit-actions">
           <button
             className="user-message-edit-button secondary"

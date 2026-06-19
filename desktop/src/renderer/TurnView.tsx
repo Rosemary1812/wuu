@@ -1,6 +1,6 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
-import type { ThreadItem, Turn } from "../shared/protocol";
+import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
@@ -36,7 +36,13 @@ export function TurnView({
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
   editingMessage?: { turnID: string; itemID: string; submitting: boolean };
   onCancelEditMessage?: () => void;
-  onSubmitEditMessage?: (turnID: string, item: ThreadItem, text: string) => void;
+  onSubmitEditMessage?: (
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+  ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const actionableAgentMessageID =

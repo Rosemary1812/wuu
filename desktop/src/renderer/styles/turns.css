@@ -331,22 +331,53 @@
   max-width: 100%;
 }
 
+/*
+ * Draft surface: a noticeably darker background than the conversation,
+ * a stronger border, and a soft lift so the eye knows it's actively
+ * editing and not just hovering a finished message. The transition makes
+ * the drag-over state feel like a deliberate target, not a flash.
+ */
 .user-message-edit {
   display: grid;
   width: 100%;
   max-width: 100%;
   justify-self: stretch;
-  gap: 8px;
+  gap: 10px;
   border-radius: var(--radius-lg);
-  background: var(--paper);
-  border: 1px solid var(--hairline-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--ink-overlay-12);
   padding: 12px 14px 10px;
   color: var(--ink);
+  box-shadow: 0 1px 2px var(--ink-overlay-4);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.user-message-edit.user-message-edit-drop-active {
+  border-color: var(--ink);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--ink-overlay-18);
+}
+
+.user-message-edit-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 
 .user-message-edit .message-images,
 .user-message-edit .message-files {
-  margin-bottom: 0;
+  /*
+   * In a draft surface attachments read as "tools on the desk", so
+   * align them to the start edge instead of mirroring the static
+   * bubble's right edge.
+   */
+  justify-content: flex-start;
+  margin: 0;
 }
 
 .user-message-edit-input {
@@ -361,21 +392,69 @@
   font: inherit;
   line-height: var(--conversation-prose-line-height);
   outline: none;
-  padding: 4px 0;
+  padding: 6px 2px;
 }
 
 .user-message-edit-input:focus {
   outline: none;
 }
 
-.user-message-edit-actions {
+/*
+ * Toolbar replaces the old actions strip: paperclip attach on the left,
+ * a flex spacer, then Cancel / Send on the right. The top hairline
+ * stays so the visual separation between text and actions survives.
+ */
+.user-message-edit-toolbar {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 8px;
   border-top: 1px solid var(--hairline-soft);
   padding-top: 8px;
   margin-top: 2px;
+}
+
+.user-message-edit-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.user-message-edit-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-message-edit-attach-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.user-message-edit-attach-button:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.user-message-edit-attach-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.user-message-edit-attach-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .user-message-edit-button {
@@ -544,6 +623,56 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Attachment frame + remove X (only rendered in edit mode via
+ * MessageImageGrid / MessageFileList when `onRemove` is provided).
+ * The wrapper itself has no border or padding — it's a positioning
+ * context for the X button. That way the static bubble keeps its
+ * current pixel-perfect layout while the editor gains a delete
+ * affordance without any layout shift.
+ */
+.message-image-frame,
+.message-file-frame {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.message-image-remove,
+.message-file-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 2px 8px var(--ink-overlay-12);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.message-image-remove:hover,
+.message-file-remove:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+/*
+ * Editable variant: left-aligns attachments in the draft surface so
+ * they read as "tools on the desk" instead of mirroring the bubble's
+ * right edge. The .user-message-edit parent selector already covers
+ * this, but the explicit class lets the same component behave
+ * correctly when reused outside the editor in the future.
+ */
+.message-images-editable,
+.message-files-editable {
+  justify-content: flex-start;
 }
 
 .agent-block {

@@ -42,6 +42,8 @@ import type {
   GitPullRequestResult,
   GitStatusResult,
   InitializeResult,
+  InputFile,
+  InputImage,
   ManagedProcess,
   PendingToolApproval,
   PlanUpdate,
@@ -292,7 +294,6 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
-let restoredHistoryAttachmentCounter = 0;
 
 type HistoryMessageEditState = {
   threadID: string;
@@ -301,28 +302,6 @@ type HistoryMessageEditState = {
   pane?: ConversationPaneID;
   submitting: boolean;
 };
-
-function nextRestoredHistoryAttachmentID(): string {
-  restoredHistoryAttachmentCounter += 1;
-  return `history-edit-${Date.now()}-${restoredHistoryAttachmentCounter}`;
-}
-
-function composerImagesFromThreadItem(item: ThreadItem): ComposerImage[] {
-  return (item.images ?? []).map((image) => ({
-    id: nextRestoredHistoryAttachmentID(),
-    media_type: image.media_type,
-    data: image.data,
-  }));
-}
-
-function composerFilesFromThreadItem(item: ThreadItem): ComposerFile[] {
-  return (item.files ?? []).map((file) => ({
-    id: nextRestoredHistoryAttachmentID(),
-    media_type: file.media_type,
-    data: file.data,
-    filename: file.filename,
-  }));
-}
 
 function initialCollapsedProjectIDs(): Set<string> {
   try {
@@ -2166,8 +2145,8 @@ export function App(): JSX.Element {
             : undefined
         }
         onCancelEditMessage={cancelEditingThreadMessage}
-        onSubmitEditMessage={(turnID, item, text) =>
-          void submitEditedThreadMessageFromHistory(thread, turnID, item, text, pane)
+        onSubmitEditMessage={(turnID, item, text, images, files) =>
+          void submitEditedThreadMessageFromHistory(thread, turnID, item, text, images, files, pane)
         }
         onStreamFrame={scheduleStreamScroll}
         onNoticeAction={handleNoticeAction}
@@ -3906,16 +3885,31 @@ export function App(): JSX.Element {
     turnID: string,
     item: ThreadItem,
     text: string,
+    images: InputImage[],
+    files: InputFile[],
     pane?: ConversationPaneID,
   ): Promise<void> {
     if (!state.activeContext || sourceThread.read_only) {
       return;
     }
-    const message = createComposerMessage(
-      text,
-      composerImagesFromThreadItem(item),
-      composerFilesFromThreadItem(item),
-    );
+    // The editor lets users remove, add, and reorder attachments, so we
+    // can't trust `item.images` / `item.files` anymore — thread the
+    // post-edit arrays through. IDs are only needed as React keys in the
+    // composer; the protocol strips them via `inputImagesFromComposer`
+    // before they hit the wire.
+    const idSalt = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const composerImages: ComposerImage[] = images.map((image, index) => ({
+      id: `edit-attach-${index}-${idSalt}`,
+      media_type: image.media_type,
+      data: image.data
+    }));
+    const composerFiles: ComposerFile[] = files.map((file, index) => ({
+      id: `edit-file-${index}-${idSalt}`,
+      media_type: file.media_type,
+      data: file.data,
+      filename: file.filename
+    }));
+    const message = createComposerMessage(text, composerImages, composerFiles);
     if (!message) {
       setState((current) => ({ ...current, status: "编辑内容不能为空" }));
       return;
@@ -5296,12 +5290,17 @@ export function App(): JSX.Element {
                       onCancelEditMessage={cancelEditingThreadMessage}
                       onSubmitEditMessage={
                         activeThread
-                          ? (turnID, item, text) =>
+                          // Post-edit attachments (not the original item's
+                          // attachments) flow through here so the editor's
+                          // add/remove controls actually take effect.
+                          ? (turnID, item, text, images, files) =>
                               void submitEditedThreadMessageFromHistory(
                                 activeThread,
                                 turnID,
                                 item,
                                 text,
+                                images,
+                                files,
                               )
                           : undefined
                       }

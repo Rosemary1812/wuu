@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Copy, FileText, GitFork, PencilLine, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertCircle, Check, Copy, FileText, GitFork, PencilLine, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
@@ -127,23 +127,63 @@ export function MessageEditButton({
   );
 }
 
-export function MessageImageGrid({ images }: { images: InputImage[] }): JSX.Element {
+export function MessageImageGrid({
+  images,
+  onRemove,
+}: {
+  images: InputImage[];
+  /** When provided, each image gets a remove button (used inside the inline editor). */
+  onRemove?: (index: number) => void;
+}): JSX.Element {
   return (
-    <div className="message-images">
+    <div className={`message-images${onRemove ? " message-images-editable" : ""}`}>
       {images.map((image, index) => (
-        <img className="message-image" key={`${image.media_type}-${index}`} src={imageSource(image)} alt={`Image ${index + 1}`} />
+        <div className="message-image-frame" key={`${image.media_type}-${index}`}>
+          <img className="message-image" src={imageSource(image)} alt={`Image ${index + 1}`} />
+          {onRemove ? (
+            <button
+              type="button"
+              className="message-image-remove"
+              aria-label={`移除图片 ${index + 1}`}
+              title="移除"
+              onClick={() => onRemove(index)}
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
       ))}
     </div>
   );
 }
 
-export function MessageFileList({ files }: { files: InputFile[] }): JSX.Element {
+export function MessageFileList({
+  files,
+  onRemove,
+}: {
+  files: InputFile[];
+  /** When provided, each file gets a remove button (used inside the inline editor). */
+  onRemove?: (index: number) => void;
+}): JSX.Element {
   return (
-    <div className="message-files">
+    <div className={`message-files${onRemove ? " message-files-editable" : ""}`}>
       {files.map((file, index) => (
-        <div className="message-file" key={`${file.media_type}-${file.filename ?? index}-${index}`}>
-          <FileText className="icon" aria-hidden="true" />
-          <span>{file.filename?.trim() || `File ${index + 1}`}</span>
+        <div className="message-file-frame" key={`${file.media_type}-${file.filename ?? index}-${index}`}>
+          <div className="message-file">
+            <FileText className="icon" aria-hidden="true" />
+            <span>{file.filename?.trim() || `File ${index + 1}`}</span>
+          </div>
+          {onRemove ? (
+            <button
+              type="button"
+              className="message-file-remove"
+              aria-label={`移除文件 ${file.filename?.trim() || index + 1}`}
+              title="移除"
+              onClick={() => onRemove(index)}
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       ))}
     </div>
