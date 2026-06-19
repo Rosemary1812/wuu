@@ -1328,7 +1328,15 @@ export function App(): JSX.Element {
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
   const viewSwitchPending = pendingViewSwitch !== undefined;
-  const anyThreadIsRunning = isAnyThreadRunning(state) || viewSwitchPending;
+  // A "context" switch means a project or runtime-context change that
+  // genuinely has to load remote resources. Only those should trip the
+  // full-screen loading shimmer, the composer "running" lock, or the
+  // environment side stack's "anything is in flight" indicator. Thread
+  // switches resolve from local data and stay instant.
+  const viewContextSwitchPending =
+    pendingViewSwitch?.visible === true &&
+    pendingViewSwitch.kind !== "thread";
+  const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !previewingLaunch &&
@@ -2006,7 +2014,7 @@ export function App(): JSX.Element {
         queuedMessages={queuedMessages}
         guideMessages={guideMessages}
         running={
-          (!activeThreadReadOnly && activeThreadIsRunning) || viewSwitchPending
+          (!activeThreadReadOnly && activeThreadIsRunning) || viewContextSwitchPending
         }
         tokensPerSecond={tokenSpeed.tokensPerSecond}
         tokenSpeedSampledAt={tokenSpeed.sampledAt}
@@ -2114,7 +2122,7 @@ export function App(): JSX.Element {
         activeContextCwd={state.activeContext?.cwd}
         appStatus={state.status}
         draft={splitComposerDrafts[pane] ?? emptyComposerDraft()}
-        viewSwitchPending={viewSwitchPending}
+        viewSwitchPending={viewContextSwitchPending}
         queryHistory={queryTextsForThread(thread)}
         editingMessage={
           historyMessageEdit?.threadID === thread.id
@@ -2218,6 +2226,20 @@ export function App(): JSX.Element {
     const requestID = viewSwitchRequestRef.current + 1;
     viewSwitchRequestRef.current = requestID;
     clearViewSwitchDelay();
+    // Thread switches resolve from in-memory thread data plus a single
+    // resume round-trip. The IPC completes in tens of milliseconds and
+    // the user already has the thread loaded, so the switch should feel
+    // instant. Showing a delayed loading shimmer here flashes the
+    // conversation area, pollutes the composer's "running" indicator,
+    // and adds an "in-flight" guard window for a transition that the
+    // user perceives as a local tab change — so we mark the switch
+    // visible from the start. Project and runtime-context switches
+    // genuinely need to load remote resources, so they keep the
+    // deferred-visible shimmer.
+    if (kind === "thread") {
+      setPendingViewSwitch({ kind, targetID, visible: true });
+      return requestID;
+    }
     setPendingViewSwitch({ kind, targetID, visible: false });
     viewSwitchDelayTimerRef.current = window.setTimeout(() => {
       viewSwitchDelayTimerRef.current = undefined;
@@ -5199,7 +5221,7 @@ export function App(): JSX.Element {
           onSelectQueryHistory={handleQueryHistorySelect}
         />
 
-        {pendingViewSwitch?.visible ? <ViewSwitchLoading /> : null}
+        {viewContextSwitchPending ? <ViewSwitchLoading /> : null}
 
         {state.initialized && !previewingLaunch ? (
           <div
