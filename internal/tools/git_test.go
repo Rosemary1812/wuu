@@ -571,24 +571,45 @@ func TestToolkit_Git_InDefinitions(t *testing.T) {
 	t.Fatal("git not in Definitions()")
 }
 
-func TestToolkit_Git_NotDisabledWithShellDisabled(t *testing.T) {
+func TestToolkit_Git_IsHiddenFromModelSurfaces(t *testing.T) {
+	// Phase 5 of the bash-first redesign: the legacy `git` tool is
+	// demoted to an internal / advanced capability. Bash covers all
+	// git operations (status, diff, add, commit, push) via the
+	// unified terminal entry point, so the model never needs the
+	// structured tool. It stays in the registry for tool_search
+	// activation and replay, but is hidden from every surface.
 	kit, root := setupGitRepo(t)
-	kit.DisableTools("write_file", "edit_file", "run_shell")
-	found := false
-	for _, d := range kit.Definitions() {
+	defs := kit.Definitions()
+	for _, d := range defs {
 		if d.Name == "git" {
-			found = true
-			break
+			t.Fatalf("git must NOT be in Definitions() (Phase 5: advanced/hidden), got %v", d.Name)
 		}
 	}
-	if !found {
-		t.Fatal("git should remain after disabling shell")
+	// Registry reachability: internal callers can still look it up.
+	if kit.LookupTool("git") == nil {
+		t.Fatal("git must remain in the registry for internal callers")
 	}
-	runBash(t, root, "printf 'more\n' >> hello.txt && git add hello.txt")
-	p := gitCallConfirmed(t, kit, "commit", "--message", "Update hello")
-	if p["exit_code"].(float64) != 0 {
-		t.Fatalf("git commit after disable: %v", p)
+	_ = root
+}
+
+func TestToolkit_Git_NotDisabledWithShellDisabled(t *testing.T) {
+	// Phase 5: `git` is Hidden regardless of which other tools are
+	// disabled. The legacy "git should remain after disabling shell"
+	// assertion is inverted: disabling shell does not surface the
+	// structured git tool because it is never visible in the first
+	// place. Bash (also Hidden when shell is disabled) and the
+	// registry still hold it for internal callers.
+	kit, root := setupGitRepo(t)
+	kit.DisableTools("write_file", "edit_file", "run_shell")
+	for _, d := range kit.Definitions() {
+		if d.Name == "git" {
+			t.Fatalf("git must remain hidden even after disabling shell, got %v", d.Name)
+		}
 	}
+	if kit.LookupTool("git") == nil {
+		t.Fatal("git must remain in the registry after disabling shell")
+	}
+	_ = root
 }
 
 // ── branch policy tests ──────────────────────────────────────────

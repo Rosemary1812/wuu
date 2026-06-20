@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -4920,26 +4919,25 @@ func TestToolkit_StartProcessDefaultsOwnerAndReturnsInitialOutput(t *testing.T) 
 	}
 }
 
-func TestToolkit_StartProcessDefinitionKeepsOwnerKindOptional(t *testing.T) {
+func TestToolkit_StartProcessDefinitionIsHiddenFromModelSurfaces(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// Phase 5: start_process is advanced / hidden. The model
+	// never sees it; the registry still holds it for internal
+	// callers (tool_search, replay, the bash background-mode
+	// backend).
 	for _, def := range kit.Definitions() {
-		if def.Name != "start_process" {
-			continue
+		if def.Name == "start_process" {
+			t.Fatalf("start_process must NOT be present in tool definitions (Phase 5: advanced/hidden), got %v", def.Name)
 		}
-		required, _ := def.InputSchema["required"].([]string)
-		if slices.Contains(required, "owner_kind") {
-			t.Fatalf("start_process owner_kind should be optional: %+v", required)
-		}
-		if !strings.Contains(def.Description, "run_shell") || !strings.Contains(def.Description, "&") {
-			t.Fatalf("start_process description should steer long-lived commands: %q", def.Description)
-		}
-		return
 	}
-	t.Fatal("start_process must be present in tool definitions")
+	if kit.LookupTool("start_process") == nil {
+		t.Fatal("start_process must remain in the registry for internal callers")
+	}
+	_ = root
 }
 
 func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
