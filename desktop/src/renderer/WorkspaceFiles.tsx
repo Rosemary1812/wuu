@@ -12,7 +12,6 @@ import {
   FolderOpen,
   FolderX,
   ScrollText,
-  Search,
   Terminal,
   type LucideIcon
 } from "lucide-react";
@@ -158,14 +157,8 @@ export function WorkspaceFileTree({
   return (
     <div className="workspace-file-panel">
       <div className="workspace-file-meta">
-        <span className="workspace-file-meta-title">
-          <FolderOpen className="workspace-file-meta-icon" />
-          {formatWorkspaceRoot(rootDirectory.root ?? workspaceRoot)}
-        </span>
-        <span className="workspace-file-meta-counts">
-          <span>{rootDirectory.entries.length} 项</span>
-          {rootDirectory.truncated ? <small>已截断</small> : null}
-        </span>
+        <span>{formatWorkspaceRoot(rootDirectory.root ?? workspaceRoot)}</span>
+        {rootDirectory.truncated ? <small>已截断</small> : null}
       </div>
       <WorkspaceFileTreeView
         directories={directories}
@@ -208,17 +201,14 @@ function WorkspaceFileTreeView({
 
   return (
     <div className="workspace-file-tree-frame">
-      <label className="workspace-file-search-frame">
-        <Search className="workspace-file-search-icon" aria-hidden="true" />
-        <input
-          className="workspace-file-search"
-          value={search}
-          onChange={(event) => onSearchChange(event.currentTarget.value)}
-          placeholder="搜索文件"
-          spellCheck={false}
-          aria-label="搜索文件"
-        />
-      </label>
+      <input
+        className="workspace-file-search"
+        value={search}
+        onChange={(event) => onSearchChange(event.currentTarget.value)}
+        placeholder="搜索文件"
+        spellCheck={false}
+        aria-label="搜索文件"
+      />
       <div className="workspace-file-tree-scroll">
         <div className="workspace-file-tree-list" role="tree">
           {visibleEntries.length > 0 ? (
