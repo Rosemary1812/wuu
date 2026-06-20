@@ -1182,13 +1182,7 @@ func PermissionRulesFromConfig(in config.PermissionRulesConfig) tools.ToolPermis
 }
 
 func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
-	policy, ok := tools.PolicyForProfile(tools.ToolPolicyProfile(strings.TrimSpace(in.Profile)))
-	if !ok {
-		policy = tools.ToolPolicy{}
-	}
-	if profile := strings.TrimSpace(in.Profile); profile != "" {
-		policy.Profile = tools.ToolPolicyProfile(profile)
-	}
+	policy := tools.ToolPolicy{}
 	if action := toolPolicyAction(in.DefaultAction); action != "" {
 		policy.DefaultAction = action
 	}

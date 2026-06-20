@@ -176,7 +176,6 @@ func (b *lockedBuffer) String() string {
 func TestServerInitializeAndConfigRead(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.ToolPolicy = config.ToolPolicyConfig{
-		Profile:       "balanced",
 		DefaultAction: "allow",
 		Tools:         map[string]string{"run_shell": "require_approval"},
 		Risks:         map[string]string{"high": "deny"},
@@ -206,7 +205,7 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if initResult.Model != "fake-model" || initResult.Provider != "fake-provider" {
 		t.Fatalf("unexpected initialize result: %+v", initResult)
 	}
-	if initResult.ToolPolicy.Profile != "balanced" || initResult.ToolPolicy.Tools["run_shell"] != "require_approval" {
+	if initResult.ToolPolicy.Profile != "agent" || initResult.ToolPolicy.Tools["run_shell"] != "require_approval" {
 		t.Fatalf("initialize missing tool policy summary: %+v", initResult.ToolPolicy)
 	}
 
@@ -215,7 +214,7 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if configResult.ConfigPath == "" || configResult.SessionDir == "" {
 		t.Fatalf("expected config paths, got %+v", configResult)
 	}
-	if configResult.ToolPolicy.Profile != "balanced" || configResult.ToolPolicy.Risks["high"] != "deny" {
+	if configResult.ToolPolicy.Profile != "agent" || configResult.ToolPolicy.Risks["high"] != "deny" {
 		t.Fatalf("config/read missing tool policy summary: %+v", configResult.ToolPolicy)
 	}
 }
@@ -619,7 +618,7 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
-func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
+func TestServerConfigModelUpdateRejectsToolPolicyProfile(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
@@ -627,7 +626,6 @@ func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
 	}
 	rt.Toolkit = kit
 	rt.ToolPolicy = config.ToolPolicyConfig{
-		Profile: "balanced",
 		Tools: map[string]string{
 			"run_shell": "allow",
 		},
@@ -635,7 +633,6 @@ func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "agent": {
     "tool_policy": {
-      "profile": "balanced",
       "tools": {
         "run_shell": "allow"
       }
@@ -658,31 +655,11 @@ func TestServerConfigModelUpdatePersistsToolPolicyProfile(t *testing.T) {
 
 	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","tool_policy_profile":"auto"}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
-		t.Fatalf("config/model/update: %v", err)
+		t.Fatalf("config/model/update should return a JSON-RPC error response, got transport error: %v", err)
 	}
-
-	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if result.ToolPolicy.Profile != "auto" || len(result.ToolPolicy.Tools) != 0 {
-		t.Fatalf("unexpected tool policy result: %+v", result.ToolPolicy)
-	}
-	if result.Permissions.Mode != config.PermissionModeDefault ||
-		result.Permissions.PermissionProfile != config.PermissionProfileWorkspaceWrite ||
-		result.Permissions.ApprovalsReviewer != config.ApprovalsReviewerUser {
-		t.Fatalf("unexpected permission result: %+v", result.Permissions)
-	}
-	if rt.ToolPolicy.Profile != "auto" || len(rt.ToolPolicy.Tools) != 0 {
-		t.Fatalf("runtime tool policy not updated: %+v", rt.ToolPolicy)
-	}
-	block, ok := rt.Toolkit.ToolPolicyContextBlock()
-	if !ok || !strings.Contains(block.Content, "profile: auto") || !strings.Contains(block.Content, "auto_classify means let auto mode decide") {
-		t.Fatalf("toolkit policy context not updated: ok=%v block=%+v", ok, block)
-	}
-	data, err := os.ReadFile(rt.ConfigPath)
-	if err != nil {
-		t.Fatalf("read config: %v", err)
-	}
-	if !strings.Contains(string(data), `"profile": "auto"`) || strings.Contains(string(data), `"run_shell"`) {
-		t.Fatalf("tool policy profile was not persisted cleanly: %s", data)
+	msg := responseByID(t, parseOutput(t, out.String()), "1")
+	if msg["error"] == nil || !strings.Contains(fmt.Sprint(msg["error"]), `unknown field "tool_policy_profile"`) {
+		t.Fatalf("expected tool_policy_profile rejection, got %+v", msg)
 	}
 }
 
@@ -693,11 +670,12 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 		t.Fatalf("new runtime toolkit: %v", err)
 	}
 	rt.Toolkit = kit
-	rt.ToolPolicy = config.ToolPolicyConfig{Profile: "balanced"}
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "agent": {
     "tool_policy": {
-      "profile": "balanced"
+      "tools": {
+        "run_shell": "allow"
+      }
     }
   },
   "default_provider": "fake-provider",
@@ -715,31 +693,31 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
-	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","permission_mode":"approve_for_me"}}`
+	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","permission_mode":"auto_review"}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
 
 	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if result.Permissions.Mode != config.PermissionModeApproveForMe ||
+	if result.Permissions.Mode != config.PermissionModeAutoReview ||
 		result.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
 		t.Fatalf("unexpected permissions result: %+v", result.Permissions)
 	}
-	if result.ToolPolicy.Profile != "" {
-		t.Fatalf("permission mode should clear old tool policy profile: %+v", result.ToolPolicy)
+	if result.ToolPolicy.Profile != "auto_review" {
+		t.Fatalf("permission mode should derive auto_review policy profile: %+v", result.ToolPolicy)
 	}
-	if rt.Permissions.Mode != config.PermissionModeApproveForMe || rt.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
+	if rt.Permissions.Mode != config.PermissionModeAutoReview || rt.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
 		t.Fatalf("runtime permissions not updated: %+v", rt.Permissions)
 	}
-	if rt.ToolPolicy.Profile != "" {
-		t.Fatalf("runtime tool policy not updated: %+v", rt.ToolPolicy)
+	if rt.ToolPolicy.DefaultAction != "" || len(rt.ToolPolicy.Tools) != 0 {
+		t.Fatalf("runtime tool policy overrides not cleared: %+v", rt.ToolPolicy)
 	}
 	data, err := os.ReadFile(rt.ConfigPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
 	for _, want := range []string{
-		`"permission_mode": "approve_for_me"`,
+		`"permission_mode": "auto_review"`,
 		`"permission_profile": "workspace_write"`,
 		`"approval_policy": "on_request"`,
 		`"approvals_reviewer": "auto_review"`,
@@ -748,7 +726,7 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 			t.Fatalf("config missing %s: %s", want, data)
 		}
 	}
-	if strings.Contains(string(data), `"tool_policy"`) || strings.Contains(string(data), `"profile": "auto"`) {
+	if strings.Contains(string(data), `"tool_policy"`) {
 		t.Fatalf("permission mode update should remove old tool policy config: %s", data)
 	}
 }
@@ -882,7 +860,7 @@ func TestServerAutoReviewFailsClosedWithoutGuardianProvider(t *testing.T) {
 	})
 	rt.Toolkit = kit
 	rt.Permissions = config.ResolvedPermissions{
-		Mode:              config.PermissionModeApproveForMe,
+		Mode:              config.PermissionModeAutoReview,
 		PermissionProfile: config.PermissionProfileWorkspaceWrite,
 		ApprovalPolicy:    config.ApprovalPolicyOnRequest,
 		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,
@@ -927,7 +905,7 @@ func TestServerAutoReviewDeniesShellWithoutClientRequestWhenGuardianUnavailable(
 	})
 	rt.Toolkit = kit
 	rt.Permissions = config.ResolvedPermissions{
-		Mode:              config.PermissionModeApproveForMe,
+		Mode:              config.PermissionModeAutoReview,
 		PermissionProfile: config.PermissionProfileWorkspaceWrite,
 		ApprovalPolicy:    config.ApprovalPolicyOnRequest,
 		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,

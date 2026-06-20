@@ -3,10 +3,10 @@ package config
 import "strings"
 
 const (
-	PermissionModeReadOnly     = "read_only"
-	PermissionModeDefault      = "default"
-	PermissionModeApproveForMe = "approve_for_me"
-	PermissionModeFullAccess   = "full_access"
+	PermissionModeReadOnly   = "read_only"
+	PermissionModeAgent      = "agent"
+	PermissionModeAutoReview = "auto_review"
+	PermissionModeFullAccess = "full_access"
 
 	PermissionProfileReadOnly         = "read_only"
 	PermissionProfileWorkspaceWrite   = "workspace_write"
@@ -33,7 +33,7 @@ func ResolveAgentPermissions(agent AgentConfig) ResolvedPermissions {
 	}
 	resolved, ok := PermissionPresetForMode(mode)
 	if !ok {
-		resolved, _ = PermissionPresetForMode(PermissionModeDefault)
+		resolved, _ = PermissionPresetForMode(PermissionModeAgent)
 	}
 	if profile := normalizePermissionProfile(agent.PermissionProfile); profile != "" {
 		resolved.PermissionProfile = profile
@@ -57,16 +57,16 @@ func PermissionPresetForMode(mode string) (ResolvedPermissions, bool) {
 			ApprovalPolicy:    ApprovalPolicyOnRequest,
 			ApprovalsReviewer: ApprovalsReviewerUser,
 		}, true
-	case "", PermissionModeDefault:
+	case "", PermissionModeAgent:
 		return ResolvedPermissions{
-			Mode:              PermissionModeDefault,
+			Mode:              PermissionModeAgent,
 			PermissionProfile: PermissionProfileWorkspaceWrite,
 			ApprovalPolicy:    ApprovalPolicyOnRequest,
 			ApprovalsReviewer: ApprovalsReviewerUser,
 		}, true
-	case PermissionModeApproveForMe:
+	case PermissionModeAutoReview:
 		return ResolvedPermissions{
-			Mode:              PermissionModeApproveForMe,
+			Mode:              PermissionModeAutoReview,
 			PermissionProfile: PermissionProfileWorkspaceWrite,
 			ApprovalPolicy:    ApprovalPolicyOnRequest,
 			ApprovalsReviewer: ApprovalsReviewerAutoReview,
@@ -86,11 +86,13 @@ func PermissionPresetForMode(mode string) (ResolvedPermissions, bool) {
 func ToolPolicyProfileForPermissionMode(mode string) string {
 	switch normalizePermissionMode(mode) {
 	case PermissionModeReadOnly:
-		return "safe"
+		return PermissionModeReadOnly
 	case PermissionModeFullAccess:
-		return "autonomous"
-	case "", PermissionModeDefault, PermissionModeApproveForMe:
-		return "auto"
+		return PermissionModeFullAccess
+	case PermissionModeAutoReview:
+		return PermissionModeAutoReview
+	case "", PermissionModeAgent:
+		return PermissionModeAgent
 	default:
 		return ""
 	}
@@ -98,15 +100,15 @@ func ToolPolicyProfileForPermissionMode(mode string) string {
 
 func normalizePermissionMode(mode string) string {
 	switch strings.TrimSpace(mode) {
-	case PermissionModeReadOnly, "read-only", "readonly":
+	case PermissionModeReadOnly:
 		return PermissionModeReadOnly
 	case "":
 		return ""
-	case PermissionModeDefault, "auto":
-		return PermissionModeDefault
-	case PermissionModeApproveForMe, "approve-for-me", "auto_review":
-		return PermissionModeApproveForMe
-	case PermissionModeFullAccess, "full-access", "danger_full_access", "autonomous":
+	case PermissionModeAgent:
+		return PermissionModeAgent
+	case PermissionModeAutoReview:
+		return PermissionModeAutoReview
+	case PermissionModeFullAccess:
 		return PermissionModeFullAccess
 	default:
 		return strings.TrimSpace(mode)
@@ -149,7 +151,7 @@ func inferPermissionMode(agent AgentConfig) string {
 	if mode := inferResolvedPermissionMode(resolved, ""); mode != "" {
 		return mode
 	}
-	return PermissionModeDefault
+	return PermissionModeAgent
 }
 
 func inferResolvedPermissionMode(resolved ResolvedPermissions, fallback string) string {
@@ -161,11 +163,11 @@ func inferResolvedPermissionMode(resolved ResolvedPermissions, fallback string) 
 	case resolved.PermissionProfile == PermissionProfileWorkspaceWrite &&
 		resolved.ApprovalPolicy == ApprovalPolicyOnRequest &&
 		resolved.ApprovalsReviewer == ApprovalsReviewerAutoReview:
-		return PermissionModeApproveForMe
+		return PermissionModeAutoReview
 	case resolved.PermissionProfile == PermissionProfileWorkspaceWrite &&
 		resolved.ApprovalPolicy == ApprovalPolicyOnRequest &&
 		resolved.ApprovalsReviewer == ApprovalsReviewerUser:
-		return PermissionModeDefault
+		return PermissionModeAgent
 	case resolved.PermissionProfile == PermissionProfileDangerFullAccess &&
 		resolved.ApprovalPolicy == ApprovalPolicyNever:
 		return PermissionModeFullAccess

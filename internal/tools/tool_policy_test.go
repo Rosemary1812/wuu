@@ -12,11 +12,10 @@ func TestPolicyForProfile(t *testing.T) {
 		wantSupported  bool
 	}{
 		{profile: "", wantSupported: true},
-		{profile: ToolPolicyProfileSafe, wantDefault: ToolPolicyDeny, wantLowRisk: ToolPolicyAllow, wantHighRisk: ToolPolicyRequireApproval, wantSupported: true},
-		{profile: ToolPolicyProfileBalanced, wantDefault: ToolPolicyAllow, wantLowRisk: ToolPolicyAllow, wantHighRisk: ToolPolicyRequireApproval, wantSupported: true},
-		{profile: ToolPolicyProfileAuto, wantDefault: ToolPolicyAutoClassify, wantLowRisk: ToolPolicyAllow, wantMediumRisk: ToolPolicyAutoClassify, wantHighRisk: ToolPolicyAutoClassify, wantSupported: true},
-		{profile: ToolPolicyProfileAutonomous, wantDefault: ToolPolicyAllow, wantSupported: true},
-		{profile: ToolPolicyProfileEnterpriseRestricted, wantDefault: ToolPolicyDeny, wantLowRisk: ToolPolicyAllow, wantHighRisk: ToolPolicyDeny, wantSupported: true},
+		{profile: ToolPolicyProfileReadOnly, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileAgent, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileAutoReview, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileFullAccess, wantDefault: ToolPolicyAllow, wantSupported: true},
 		{profile: "unknown", wantSupported: false},
 	}
 	for _, tt := range tests {

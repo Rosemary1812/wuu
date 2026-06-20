@@ -563,15 +563,15 @@ describe("Composer queue strip", () => {
 
 describe("Composer permission menu", () => {
   it("maps permission summaries to mode chip states", () => {
-    expect(permissionModeFromSummary()).toBe("default");
+    expect(permissionModeFromSummary()).toBe("agent");
     expect(permissionModeFromSummary({ mode: "read_only" })).toBe("read_only");
-    expect(permissionModeFromSummary({ mode: "default" })).toBe("default");
-    expect(permissionModeFromSummary({ mode: "approve_for_me" })).toBe("approve_for_me");
+    expect(permissionModeFromSummary({ mode: "agent" })).toBe("agent");
+    expect(permissionModeFromSummary({ mode: "auto_review" })).toBe("auto_review");
     expect(permissionModeFromSummary({ mode: "full_access" })).toBe("full_access");
-    expect(permissionModeHasAdvancedOverrides({ profile: "safe" })).toBe(false);
+    expect(permissionModeHasAdvancedOverrides({ profile: "agent" })).toBe(false);
     expect(
       permissionModeHasAdvancedOverrides({
-        profile: "safe",
+        profile: "agent",
         tools: { run_shell: "allow" },
       }),
     ).toBe(true);
@@ -581,13 +581,13 @@ describe("Composer permission menu", () => {
     const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
-      toolPolicy: { profile: "auto" },
-      permissions: { mode: "default" },
+      toolPolicy: { profile: "agent" },
+      permissions: { mode: "agent" },
       onSelectPermissionMode,
     });
 
     const chip = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"权限模式：默认\"]",
+      "button[aria-label=\"权限模式：Agent\"]",
     );
     expect(chip).not.toBeNull();
     expect(chip?.disabled).toBe(false);
@@ -597,7 +597,7 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(labels).toEqual(["只读", "默认", "替我审批", "完全访问"]);
+    expect(labels).toEqual(["只读", "Agent", "自动审查", "完全访问"]);
     expect(document.body.textContent).not.toContain("平衡");
     expect(document.body.textContent).not.toContain("严格");
 
@@ -606,15 +606,18 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(checkedLabels).toEqual(["默认"]);
+    expect(checkedLabels).toEqual(["Agent"]);
+    expect(document.body.textContent).toContain("profile: workspace_write");
+    expect(document.body.textContent).toContain("approval: on_request");
+    expect(document.body.textContent).toContain("reviewer: user");
   });
 
-  it("lets the user switch between read only, approve for me, and full access", () => {
+  it("lets the user switch between read only, auto review, and full access", () => {
     const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
-      toolPolicy: { profile: "auto" },
-      permissions: { mode: "default" },
+      toolPolicy: { profile: "agent" },
+      permissions: { mode: "agent" },
       onSelectPermissionMode,
     });
 
@@ -633,20 +636,20 @@ describe("Composer permission menu", () => {
 
     expect(onSelectPermissionMode).toHaveBeenCalledWith("read_only");
 
-    const approveForMeOption = Array.from(
+    const autoReviewOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"]",
       ),
-    ).find((button) => button.textContent?.includes("替我审批"));
-    expect(approveForMeOption).not.toBeUndefined();
+    ).find((button) => button.textContent?.includes("自动审查"));
+    expect(autoReviewOption).not.toBeUndefined();
 
     act(() => {
-      approveForMeOption?.dispatchEvent(
+      autoReviewOption?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });
 
-    expect(onSelectPermissionMode).toHaveBeenCalledWith("approve_for_me");
+    expect(onSelectPermissionMode).toHaveBeenCalledWith("auto_review");
 
     const fullAccessOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
@@ -668,7 +671,7 @@ describe("Composer permission menu", () => {
     renderComposer({
       accessMenuOpen: true,
       toolPolicy: {
-        profile: "safe",
+        profile: "agent",
         tools: { run_shell: "allow" },
       },
     });

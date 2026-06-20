@@ -4290,15 +4290,18 @@ func TestToolkit_ToolPolicyContextBlock(t *testing.T) {
 		t.Fatal("empty policy should not inject a context block")
 	}
 
-	policy, ok := PolicyForProfile(ToolPolicyProfileBalanced)
+	policy, ok := PolicyForProfile(ToolPolicyProfileAgent)
 	if !ok {
-		t.Fatal("balanced policy missing")
+		t.Fatal("agent policy missing")
 	}
 	policy.ToolActions = map[string]ToolPolicyAction{
 		"run_shell": ToolPolicyRequireApproval,
 	}
 	policy.KindActions = map[ToolKind]ToolPolicyAction{
 		ToolKindWeb: ToolPolicyDeny,
+	}
+	policy.RiskActions = map[ToolRisk]ToolPolicyAction{
+		ToolRiskHigh: ToolPolicyRequireApproval,
 	}
 	kit.SetToolPolicy(policy)
 
@@ -4310,7 +4313,7 @@ func TestToolkit_ToolPolicyContextBlock(t *testing.T) {
 		t.Fatalf("unexpected policy block metadata: %+v", block)
 	}
 	for _, want := range []string{
-		"profile: balanced",
+		"profile: agent",
 		"default_action: allow",
 		"risk_actions:",
 		"high: require_approval",
@@ -4407,20 +4410,27 @@ func (c *recordingAutoModeClassifier) Classify(ctx context.Context, request Auto
 	return c.result, c.err
 }
 
+func explicitAutoClassifyPolicy() ToolPolicy {
+	return ToolPolicy{
+		DefaultAction: ToolPolicyAutoClassify,
+		RiskActions: map[ToolRisk]ToolPolicyAction{
+			ToolRiskLow:    ToolPolicyAllow,
+			ToolRiskMedium: ToolPolicyAutoClassify,
+			ToolRiskHigh:   ToolPolicyAutoClassify,
+		},
+	}
+}
+
 func TestToolkit_AutoMode_AllowsLowRiskWithoutClassifier(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
-	if !ok {
-		t.Fatal("auto policy missing")
-	}
 	classifier := &recordingAutoModeClassifier{
 		result: AutoModeClassifyResult{Decision: AutoModeDecisionDeny, Reason: "should not be used for low-risk calls"},
 	}
-	kit.SetToolPolicy(policy)
+	kit.SetToolPolicy(explicitAutoClassifyPolicy())
 	kit.SetAutoModeClassifier(classifier)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -4449,14 +4459,10 @@ func TestToolkit_AutoMode_UsesClassifierForWorkspaceWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
-	if !ok {
-		t.Fatal("auto policy missing")
-	}
 	classifier := &recordingAutoModeClassifier{
 		result: AutoModeClassifyResult{Decision: AutoModeDecisionAllow, Reason: "workspace edit is scoped"},
 	}
-	kit.SetToolPolicy(policy)
+	kit.SetToolPolicy(explicitAutoClassifyPolicy())
 	kit.SetAutoModeClassifier(classifier)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -4493,14 +4499,10 @@ func TestToolkit_AutoMode_BlocksClassifierDeniedShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
-	if !ok {
-		t.Fatal("auto policy missing")
-	}
 	classifier := &recordingAutoModeClassifier{
 		result: AutoModeClassifyResult{Decision: AutoModeDecisionDeny, Reason: "destructive shell command"},
 	}
-	kit.SetToolPolicy(policy)
+	kit.SetToolPolicy(explicitAutoClassifyPolicy())
 	kit.SetAutoModeClassifier(classifier)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -4536,11 +4538,7 @@ func TestToolkit_AutoMode_FailsClosedWithoutClassifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	policy, ok := PolicyForProfile(ToolPolicyProfileAuto)
-	if !ok {
-		t.Fatal("auto policy missing")
-	}
-	kit.SetToolPolicy(policy)
+	kit.SetToolPolicy(explicitAutoClassifyPolicy())
 	kit.SetAutoModeClassifier(nil)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{

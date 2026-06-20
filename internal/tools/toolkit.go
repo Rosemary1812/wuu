@@ -416,8 +416,8 @@ func (t *Toolkit) SetExtensionSurfacePolicy(policy ExtensionSurfacePolicy) {
 	t.extensionSurfacePolicy = policy
 }
 
-// SetAutoModeClassifier installs the classifier used by the auto permission
-// profile. Passing nil makes auto mode fail closed for non-low-risk calls.
+// SetAutoModeClassifier installs the reviewer used by explicit auto-classify
+// policy actions. Passing nil makes those actions fail closed for non-low-risk calls.
 func (t *Toolkit) SetAutoModeClassifier(classifier AutoModeClassifier) {
 	t.autoModeClassifier = classifier
 }

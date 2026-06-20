@@ -66,18 +66,18 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     chipTone: "safe"
   },
   {
-    mode: "default",
-    label: "默认",
-    chipLabel: "默认",
-    short: "文件、命令和外部操作按能力确认",
+    mode: "agent",
+    label: "Agent",
+    chipLabel: "Agent",
+    short: "工作区内自动执行，越界时审批",
     icon: ShieldCheck,
     chipTone: "accent"
   },
   {
-    mode: "approve_for_me",
-    label: "替我审批",
-    chipLabel: "替我审批",
-    short: "由审查器审批高风险能力",
+    mode: "auto_review",
+    label: "自动审查",
+    chipLabel: "自动审查",
+    short: "同一工作区边界，由审查器处理审批",
     icon: ShieldQuestion,
     chipTone: "review"
   },
@@ -85,7 +85,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    short: "允许文件、命令和扩展操作直接执行",
+    short: "跳过普通审批并移除本地沙箱边界",
     icon: ShieldAlert,
     chipTone: "danger",
     tone: "danger"
@@ -97,14 +97,14 @@ export function permissionModeFromSummary(permissions?: PermissionSummary): Perm
   switch (mode) {
     case "read_only":
       return "read_only";
-    case "default":
-      return "default";
-    case "approve_for_me":
-      return "approve_for_me";
+    case "agent":
+      return "agent";
+    case "auto_review":
+      return "auto_review";
     case "full_access":
       return "full_access";
     default:
-      return "default";
+      return "agent";
   }
 }
 
@@ -119,6 +119,13 @@ export function permissionModeHasAdvancedOverrides(policy?: ToolPolicySummary): 
 
 export function permissionModeOption(mode: PermissionMode): PermissionModeOption {
   return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[1];
+}
+
+function permissionAxisSummary(permissions?: PermissionSummary): string {
+  const profile = permissions?.permission_profile?.trim() || "workspace_write";
+  const approval = permissions?.approval_policy?.trim() || "on_request";
+  const reviewer = permissions?.approvals_reviewer?.trim() || "user";
+  return `profile: ${profile} / approval: ${approval} / reviewer: ${reviewer}`;
 }
 
 export function RuntimePicker({
@@ -444,6 +451,10 @@ export function AccessMenu({
   const activeMode = hasOverrides ? undefined : mode;
   return (
     <div className="composer-context-menu access-menu" role="menu">
+      <div className="composer-menu-note">
+        <strong>权限边界</strong>
+        <span>{permissionAxisSummary(permissions)}</span>
+      </div>
       {hasOverrides ? (
         <div className="composer-menu-note">
           <strong>自定义权限</strong>
@@ -462,6 +473,7 @@ export function AccessMenu({
           onClick={() => onSelect(option.mode)}
         >
           <strong>{option.label}</strong>
+          <span>{option.short}</span>
         </button>
       ))}
     </div>

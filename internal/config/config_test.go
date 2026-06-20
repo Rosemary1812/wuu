@@ -305,11 +305,8 @@ func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
 
 func TestDefaultConfigUsesPermissionModeAsPolicySource(t *testing.T) {
 	cfg := Default()
-	if cfg.Agent.ToolPolicy.Profile != "" {
-		t.Fatalf("default config should not persist old tool policy profile: %+v", cfg.Agent.ToolPolicy)
-	}
 	permissions := ResolveAgentPermissions(cfg.Agent)
-	if permissions.Mode != PermissionModeDefault ||
+	if permissions.Mode != PermissionModeAgent ||
 		permissions.PermissionProfile != PermissionProfileWorkspaceWrite ||
 		permissions.ApprovalPolicy != ApprovalPolicyOnRequest ||
 		permissions.ApprovalsReviewer != ApprovalsReviewerUser {
@@ -318,8 +315,73 @@ func TestDefaultConfigUsesPermissionModeAsPolicySource(t *testing.T) {
 }
 
 func TestToolPolicyProfileForPermissionModeDefaultsEmptyMode(t *testing.T) {
-	if got := ToolPolicyProfileForPermissionMode(""); got != "auto" {
-		t.Fatalf("empty permission mode tool policy profile = %q, want auto", got)
+	if got := ToolPolicyProfileForPermissionMode(""); got != PermissionModeAgent {
+		t.Fatalf("empty permission mode tool policy profile = %q, want agent", got)
+	}
+}
+
+func TestPermissionPresetsUseCodexStyleAxes(t *testing.T) {
+	tests := []struct {
+		mode     string
+		profile  string
+		approval string
+		reviewer string
+	}{
+		{
+			mode:     PermissionModeReadOnly,
+			profile:  PermissionProfileReadOnly,
+			approval: ApprovalPolicyOnRequest,
+			reviewer: ApprovalsReviewerUser,
+		},
+		{
+			mode:     PermissionModeAgent,
+			profile:  PermissionProfileWorkspaceWrite,
+			approval: ApprovalPolicyOnRequest,
+			reviewer: ApprovalsReviewerUser,
+		},
+		{
+			mode:     PermissionModeAutoReview,
+			profile:  PermissionProfileWorkspaceWrite,
+			approval: ApprovalPolicyOnRequest,
+			reviewer: ApprovalsReviewerAutoReview,
+		},
+		{
+			mode:     PermissionModeFullAccess,
+			profile:  PermissionProfileDangerFullAccess,
+			approval: ApprovalPolicyNever,
+			reviewer: ApprovalsReviewerUser,
+		},
+	}
+
+	for _, tt := range tests {
+		got, ok := PermissionPresetForMode(tt.mode)
+		if !ok {
+			t.Fatalf("%s preset missing", tt.mode)
+		}
+		if got.Mode != tt.mode ||
+			got.PermissionProfile != tt.profile ||
+			got.ApprovalPolicy != tt.approval ||
+			got.ApprovalsReviewer != tt.reviewer {
+			t.Fatalf("%s preset = %+v", tt.mode, got)
+		}
+	}
+}
+
+func TestAutoReviewKeepsAgentBoundaryAndOnlyChangesReviewer(t *testing.T) {
+	agent, ok := PermissionPresetForMode(PermissionModeAgent)
+	if !ok {
+		t.Fatal("agent preset missing")
+	}
+	autoReview, ok := PermissionPresetForMode(PermissionModeAutoReview)
+	if !ok {
+		t.Fatal("auto_review preset missing")
+	}
+	if autoReview.PermissionProfile != agent.PermissionProfile ||
+		autoReview.ApprovalPolicy != agent.ApprovalPolicy {
+		t.Fatalf("auto_review should share agent boundary and approval policy: agent=%+v auto_review=%+v", agent, autoReview)
+	}
+	if autoReview.ApprovalsReviewer != ApprovalsReviewerAutoReview {
+		t.Fatalf("auto_review reviewer = %q, want auto_review", autoReview.ApprovalsReviewer)
 	}
 }
 
@@ -449,7 +511,6 @@ func TestConfig_ToolPolicy(t *testing.T) {
   "agent": {
     "system_prompt": "test",
     "tool_policy": {
-      "profile": "auto",
       "default_action": "allow",
       "tools": {
         "run_shell": "require_approval"
@@ -476,9 +537,6 @@ func TestConfig_ToolPolicy(t *testing.T) {
 	if cfg.Agent.ToolPolicy.DefaultAction != "allow" {
 		t.Fatalf("default_action = %q, want allow", cfg.Agent.ToolPolicy.DefaultAction)
 	}
-	if cfg.Agent.ToolPolicy.Profile != "auto" {
-		t.Fatalf("profile = %q, want auto", cfg.Agent.ToolPolicy.Profile)
-	}
 	if cfg.Agent.ToolPolicy.Tools["run_shell"] != "require_approval" {
 		t.Fatalf("run_shell action = %q, want require_approval", cfg.Agent.ToolPolicy.Tools["run_shell"])
 	}
@@ -493,7 +551,7 @@ func TestConfig_ToolPolicy(t *testing.T) {
 	}
 }
 
-func TestConfig_ToolPolicyRejectsInvalidProfile(t *testing.T) {
+func TestConfig_ToolPolicyRejectsProfileField(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
@@ -519,8 +577,8 @@ func TestConfig_ToolPolicyRejectsInvalidProfile(t *testing.T) {
 	}
 
 	_, _, err := LoadFrom(workdir, "")
-	if err == nil || !strings.Contains(err.Error(), "agent.tool_policy.profile") {
-		t.Fatalf("expected invalid policy profile error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "profile"`) {
+		t.Fatalf("expected tool_policy.profile to be rejected, got %v", err)
 	}
 }
 
@@ -1268,7 +1326,7 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil, nil); err != nil {
+	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1292,62 +1350,12 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 	}
 }
 
-func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".wuu.json")
-	orig := `{
-  "agent": {
-    "tool_policy": {
-      "profile": "balanced",
-      "default_action": "allow",
-      "tools": {
-        "run_shell": "allow"
-      },
-      "risks": {
-        "high": "deny"
-      }
-    }
-  },
-  "default_provider": "old",
-  "providers": {
-    "old": {
-      "type": "openai-compatible",
-      "base_url": "https://old.example.com",
-      "model": "old-model"
-    }
-  }
-}`
-	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	profile := "auto"
-	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &profile, nil); err != nil {
-		t.Fatalf("UpdateProviderRuntime: %v", err)
-	}
-
-	cfg, _, err := LoadFrom(dir, "")
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if cfg.Agent.ToolPolicy.Profile != "auto" {
-		t.Fatalf("tool policy profile not persisted: %+v", cfg.Agent.ToolPolicy)
-	}
-	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {
-		t.Fatalf("preset update should clear fine-grained overrides: %+v", cfg.Agent.ToolPolicy)
-	}
-	if permissions := ResolveAgentPermissions(cfg.Agent); permissions.Mode != PermissionModeDefault {
-		t.Fatalf("tool policy profile should not drive permission mode: %+v", permissions)
-	}
-}
-
 func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".wuu.json")
 	orig := `{
   "agent": {
     "tool_policy": {
-      "profile": "balanced",
       "tools": {
         "run_shell": "allow"
       }
@@ -1366,8 +1374,8 @@ func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mode := PermissionModeApproveForMe
-	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, nil, &mode); err != nil {
+	mode := PermissionModeAutoReview
+	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &mode); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1375,11 +1383,11 @@ func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if cfg.Agent.ToolPolicy.Profile != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 {
+	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {
 		t.Fatalf("permission mode should clear old tool policy config: %+v", cfg.Agent.ToolPolicy)
 	}
 	permissions := ResolveAgentPermissions(cfg.Agent)
-	if permissions.Mode != PermissionModeApproveForMe ||
+	if permissions.Mode != PermissionModeAutoReview ||
 		permissions.PermissionProfile != PermissionProfileWorkspaceWrite ||
 		permissions.ApprovalPolicy != ApprovalPolicyOnRequest ||
 		permissions.ApprovalsReviewer != ApprovalsReviewerAutoReview {
@@ -1407,7 +1415,7 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil, nil, nil); err != nil {
+	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
 		t.Fatalf("CreateProviderRuntime: %v", err)
 	}
 

@@ -22,9 +22,7 @@ func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 			}
 		},
 		"agent": {
-			"tool_policy": {
-				"profile": "auto"
-			}
+			"permission_mode": "agent"
 		}
 	}`), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

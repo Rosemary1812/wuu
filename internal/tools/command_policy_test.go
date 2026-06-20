@@ -162,15 +162,15 @@ func TestToolkitAppliesDefaultCommandPolicyBeforeBashExecution(t *testing.T) {
 	}
 }
 
-func TestAutonomousProfileDoesNotAskForDefaultCommandPolicyReview(t *testing.T) {
+func TestFullAccessProfileDoesNotAskForDefaultCommandPolicyReview(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
-	policy, ok := PolicyForProfile(ToolPolicyProfileAutonomous)
+	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
 	if !ok {
-		t.Fatal("missing autonomous policy")
+		t.Fatal("missing full_access policy")
 	}
 	kit.SetToolPolicy(policy)
 
@@ -186,12 +186,12 @@ func TestAutonomousProfileDoesNotAskForDefaultCommandPolicyReview(t *testing.T) 
 	)
 
 	if got.Action != ToolPolicyAllow {
-		t.Fatalf("autonomous profile should allow command policy ask without approval, got %+v", got)
+		t.Fatalf("full_access profile should allow command policy ask without approval, got %+v", got)
 	}
 	if got.Capability != capability.CapabilityCommandBash ||
 		got.CapabilityObject != "git push origin main" ||
 		got.CapabilityRule != "bash-git-push" {
-		t.Fatalf("autonomous command policy should still annotate capability fields, got %+v", got)
+		t.Fatalf("full_access command policy should still annotate capability fields, got %+v", got)
 	}
 }
 
@@ -202,7 +202,7 @@ func TestDefaultCommandPolicyAskDoesNotOverrideExplicitDeny(t *testing.T) {
 	}
 	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
 	kit.SetToolPolicy(ToolPolicy{
-		Profile: ToolPolicyProfileAutonomous,
+		Profile: ToolPolicyProfileFullAccess,
 		ToolActions: map[string]ToolPolicyAction{
 			"bash": ToolPolicyDeny,
 		},

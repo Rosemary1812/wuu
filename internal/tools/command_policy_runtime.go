@@ -145,7 +145,7 @@ func (t *Toolkit) commandPolicyToolPolicyDecision(base ToolPolicyDecision, capab
 				base.Reason = "policy denied"
 			}
 		case ToolPolicyAllow:
-			if t != nil && t.toolPolicy.Profile == ToolPolicyProfileAutonomous {
+			if t != nil && t.toolPolicy.Profile == ToolPolicyProfileFullAccess {
 				base.Action = ToolPolicyAllow
 			} else {
 				base.Action = ToolPolicyRequireApproval

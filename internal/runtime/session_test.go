@@ -1748,7 +1748,6 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 
 func TestToolPolicyFromConfig(t *testing.T) {
 	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
-		Profile:       "balanced",
 		DefaultAction: "allow",
 		Tools: map[string]string{
 			"run_shell": "require_approval",
@@ -1764,8 +1763,8 @@ func TestToolPolicyFromConfig(t *testing.T) {
 	if policy.DefaultAction != tools.ToolPolicyAllow {
 		t.Fatalf("DefaultAction = %s, want allow", policy.DefaultAction)
 	}
-	if policy.Profile != tools.ToolPolicyProfileBalanced {
-		t.Fatalf("Profile = %s, want balanced", policy.Profile)
+	if policy.Profile != "" {
+		t.Fatalf("Profile = %s, want no profile from explicit override config", policy.Profile)
 	}
 	if policy.ToolActions["run_shell"] != tools.ToolPolicyRequireApproval {
 		t.Fatalf("run_shell action = %s, want require_approval", policy.ToolActions["run_shell"])
@@ -1778,47 +1777,36 @@ func TestToolPolicyFromConfig(t *testing.T) {
 	}
 }
 
-func TestToolPolicyFromConfigAppliesProfileDefaults(t *testing.T) {
-	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
-		Profile: "enterprise_restricted",
+func TestToolPolicyFromConfigAndPermissionsDerivesAgentProfile(t *testing.T) {
+	policy := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{
 		Risks: map[string]string{
-			"medium": "allow",
+			"high": "deny",
 		},
-	})
+	}, config.ResolvedPermissions{Mode: config.PermissionModeAgent})
 
-	if policy.DefaultAction != tools.ToolPolicyDeny {
-		t.Fatalf("DefaultAction = %s, want deny", policy.DefaultAction)
+	if policy.Profile != tools.ToolPolicyProfileAgent {
+		t.Fatalf("Profile = %s, want agent", policy.Profile)
 	}
-	if policy.RiskActions[tools.ToolRiskLow] != tools.ToolPolicyAllow {
-		t.Fatalf("low risk action = %s, want allow", policy.RiskActions[tools.ToolRiskLow])
+	if policy.DefaultAction != tools.ToolPolicyAllow {
+		t.Fatalf("DefaultAction = %s, want allow", policy.DefaultAction)
 	}
 	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
 		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
 	}
-	if policy.RiskActions[tools.ToolRiskMedium] != tools.ToolPolicyAllow {
-		t.Fatalf("explicit medium risk override = %s, want allow", policy.RiskActions[tools.ToolRiskMedium])
-	}
 }
 
-func TestToolPolicyFromConfigAppliesAutoProfileDefaults(t *testing.T) {
-	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
-		Profile: "auto",
-	})
+func TestToolPolicyFromConfigAndPermissionsKeepsAutoReviewAsReviewerOnlyProfile(t *testing.T) {
+	agent := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{Mode: config.PermissionModeAgent})
+	autoReview := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{Mode: config.PermissionModeAutoReview})
 
-	if policy.Profile != tools.ToolPolicyProfileAuto {
-		t.Fatalf("Profile = %s, want auto", policy.Profile)
+	if agent.Profile != tools.ToolPolicyProfileAgent {
+		t.Fatalf("agent Profile = %s, want agent", agent.Profile)
 	}
-	if policy.DefaultAction != tools.ToolPolicyAutoClassify {
-		t.Fatalf("DefaultAction = %s, want auto_classify", policy.DefaultAction)
+	if autoReview.Profile != tools.ToolPolicyProfileAutoReview {
+		t.Fatalf("auto review Profile = %s, want auto_review", autoReview.Profile)
 	}
-	if policy.RiskActions[tools.ToolRiskLow] != tools.ToolPolicyAllow {
-		t.Fatalf("low risk action = %s, want allow", policy.RiskActions[tools.ToolRiskLow])
-	}
-	if policy.RiskActions[tools.ToolRiskMedium] != tools.ToolPolicyAutoClassify {
-		t.Fatalf("medium risk action = %s, want auto_classify", policy.RiskActions[tools.ToolRiskMedium])
-	}
-	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyAutoClassify {
-		t.Fatalf("high risk action = %s, want auto_classify", policy.RiskActions[tools.ToolRiskHigh])
+	if agent.DefaultAction != autoReview.DefaultAction {
+		t.Fatalf("auto_review should not change policy action defaults: agent=%s auto_review=%s", agent.DefaultAction, autoReview.DefaultAction)
 	}
 }
 

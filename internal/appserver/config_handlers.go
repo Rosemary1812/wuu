@@ -96,14 +96,65 @@ func (s *Server) currentToolPolicySummary() ToolPolicySummary {
 	if s == nil || s.rt == nil {
 		return ToolPolicySummary{}
 	}
-	policy := s.rt.ToolPolicy
+	policy := runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions)
 	return ToolPolicySummary{
-		Profile:       strings.TrimSpace(policy.Profile),
-		DefaultAction: strings.TrimSpace(policy.DefaultAction),
-		Tools:         cloneStringMap(policy.Tools),
-		Kinds:         cloneStringMap(policy.Kinds),
-		Risks:         cloneStringMap(policy.Risks),
+		Profile:       strings.TrimSpace(string(policy.Profile)),
+		DefaultAction: strings.TrimSpace(string(policy.DefaultAction)),
+		Tools:         toolPolicyToolSummary(policy.ToolActions),
+		Kinds:         toolPolicyKindSummary(policy.KindActions),
+		Risks:         toolPolicyRiskSummary(policy.RiskActions),
 	}
+}
+
+func toolPolicyToolSummary(in map[string]tools.ToolPolicyAction) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for name, action := range in {
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(string(action)) == "" {
+			continue
+		}
+		out[name] = string(action)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func toolPolicyKindSummary(in map[tools.ToolKind]tools.ToolPolicyAction) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for kind, action := range in {
+		if strings.TrimSpace(string(kind)) == "" || strings.TrimSpace(string(action)) == "" {
+			continue
+		}
+		out[string(kind)] = string(action)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func toolPolicyRiskSummary(in map[tools.ToolRisk]tools.ToolPolicyAction) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for risk, action := range in {
+		if strings.TrimSpace(string(risk)) == "" || strings.TrimSpace(string(action)) == "" {
+			continue
+		}
+		out[string(risk)] = string(action)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Server) currentPermissionSummary() PermissionSummary {
@@ -112,7 +163,7 @@ func (s *Server) currentPermissionSummary() PermissionSummary {
 	}
 	permissions := s.rt.Permissions
 	if strings.TrimSpace(permissions.Mode) == "" {
-		permissions, _ = config.PermissionPresetForMode(config.PermissionModeDefault)
+		permissions, _ = config.PermissionPresetForMode(config.PermissionModeAgent)
 	}
 	return PermissionSummary{
 		Mode:              strings.TrimSpace(permissions.Mode),
@@ -341,9 +392,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if creatingProvider {
-		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile, params.PermissionMode)
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
 	} else {
-		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.ToolPolicyProfile, params.PermissionMode)
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
 	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -392,14 +443,6 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.ToolPolicy = config.ToolPolicyConfig{}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions))
-			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
-			s.installToolApprovalReviewer(s.rt.Toolkit)
-		}
-	} else if params.ToolPolicyProfile != nil {
-		profile := strings.TrimSpace(*params.ToolPolicyProfile)
-		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: profile}
-		if s.rt.Toolkit != nil {
-			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
 			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
 			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}

@@ -30,11 +30,10 @@ const (
 type ToolPolicyProfile string
 
 const (
-	ToolPolicyProfileSafe                 ToolPolicyProfile = "safe"
-	ToolPolicyProfileBalanced             ToolPolicyProfile = "balanced"
-	ToolPolicyProfileAuto                 ToolPolicyProfile = "auto"
-	ToolPolicyProfileAutonomous           ToolPolicyProfile = "autonomous"
-	ToolPolicyProfileEnterpriseRestricted ToolPolicyProfile = "enterprise_restricted"
+	ToolPolicyProfileReadOnly   ToolPolicyProfile = "read_only"
+	ToolPolicyProfileAgent      ToolPolicyProfile = "agent"
+	ToolPolicyProfileAutoReview ToolPolicyProfile = "auto_review"
+	ToolPolicyProfileFullAccess ToolPolicyProfile = "full_access"
 )
 
 // ToolPolicy decides whether a tool call may run. The zero value is the local
@@ -65,50 +64,15 @@ func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
 	switch profile {
 	case "":
 		return ToolPolicy{}, true
-	case ToolPolicyProfileSafe:
-		return ToolPolicy{
-			Profile:       profile,
-			DefaultAction: ToolPolicyDeny,
-			RiskActions: map[ToolRisk]ToolPolicyAction{
-				ToolRiskLow:    ToolPolicyAllow,
-				ToolRiskMedium: ToolPolicyRequireApproval,
-				ToolRiskHigh:   ToolPolicyRequireApproval,
-			},
-		}, true
-	case ToolPolicyProfileBalanced:
-		return ToolPolicy{
-			Profile:       profile,
-			DefaultAction: ToolPolicyAllow,
-			RiskActions: map[ToolRisk]ToolPolicyAction{
-				ToolRiskLow:    ToolPolicyAllow,
-				ToolRiskMedium: ToolPolicyAllow,
-				ToolRiskHigh:   ToolPolicyRequireApproval,
-			},
-		}, true
-	case ToolPolicyProfileAuto:
-		return ToolPolicy{
-			Profile:       profile,
-			DefaultAction: ToolPolicyAutoClassify,
-			RiskActions: map[ToolRisk]ToolPolicyAction{
-				ToolRiskLow:    ToolPolicyAllow,
-				ToolRiskMedium: ToolPolicyAutoClassify,
-				ToolRiskHigh:   ToolPolicyAutoClassify,
-			},
-		}, true
-	case ToolPolicyProfileAutonomous:
+	case ToolPolicyProfileReadOnly:
 		return ToolPolicy{
 			Profile:       profile,
 			DefaultAction: ToolPolicyAllow,
 		}, true
-	case ToolPolicyProfileEnterpriseRestricted:
+	case ToolPolicyProfileAgent, ToolPolicyProfileAutoReview, ToolPolicyProfileFullAccess:
 		return ToolPolicy{
 			Profile:       profile,
-			DefaultAction: ToolPolicyDeny,
-			RiskActions: map[ToolRisk]ToolPolicyAction{
-				ToolRiskLow:    ToolPolicyAllow,
-				ToolRiskMedium: ToolPolicyRequireApproval,
-				ToolRiskHigh:   ToolPolicyDeny,
-			},
+			DefaultAction: ToolPolicyAllow,
 		}, true
 	default:
 		return ToolPolicy{}, false

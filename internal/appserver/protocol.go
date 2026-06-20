@@ -230,15 +230,14 @@ type ExtensionSurfaceTrustSummary struct {
 }
 
 type ConfigModelUpdateParams struct {
-	Provider          string  `json:"provider,omitempty"`
-	Model             string  `json:"model"`
-	Effort            *string `json:"effort,omitempty"`
-	Variant           *string `json:"variant,omitempty"`
-	ToolPolicyProfile *string `json:"tool_policy_profile,omitempty"`
-	PermissionMode    *string `json:"permission_mode,omitempty"`
-	BaseURL           *string `json:"base_url,omitempty"`
-	APIKey            *string `json:"api_key,omitempty"`
-	CreateProvider    bool    `json:"create_provider,omitempty"`
+	Provider       string  `json:"provider,omitempty"`
+	Model          string  `json:"model"`
+	Effort         *string `json:"effort,omitempty"`
+	Variant        *string `json:"variant,omitempty"`
+	PermissionMode *string `json:"permission_mode,omitempty"`
+	BaseURL        *string `json:"base_url,omitempty"`
+	APIKey         *string `json:"api_key,omitempty"`
+	CreateProvider bool    `json:"create_provider,omitempty"`
 }
 
 type ConfigModelUpdateResult struct {

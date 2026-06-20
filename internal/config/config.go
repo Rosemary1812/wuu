@@ -309,10 +309,9 @@ type ModelRoleConfig struct {
 	Variant  string `json:"variant,omitempty"`
 }
 
-// ToolPolicyConfig configures the runtime policy layer that runs before tool
-// execution. Empty means local high-trust mode: allow all tools.
+// ToolPolicyConfig configures explicit capability-policy overrides. The broad
+// runtime profile comes from PermissionMode instead of a second preset system.
 type ToolPolicyConfig struct {
-	Profile       string            `json:"profile,omitempty"`
 	DefaultAction string            `json:"default_action,omitempty"`
 	Tools         map[string]string `json:"tools,omitempty"`
 	Kinds         map[string]string `json:"kinds,omitempty"`
@@ -547,9 +546,6 @@ func validatePermissionConfig(agent AgentConfig) error {
 }
 
 func validateToolPolicyConfig(policy ToolPolicyConfig) error {
-	if err := validateToolPolicyProfile(policy.Profile); err != nil {
-		return err
-	}
 	if err := validateToolPolicyAction("agent.tool_policy.default_action", policy.DefaultAction); err != nil {
 		return err
 	}
@@ -584,21 +580,12 @@ func validateToolPolicyConfig(policy ToolPolicyConfig) error {
 	return nil
 }
 
-func validateToolPolicyProfile(profile string) error {
-	switch strings.TrimSpace(profile) {
-	case "", "safe", "balanced", "auto", "autonomous", "enterprise_restricted":
-		return nil
-	default:
-		return fmt.Errorf("agent.tool_policy.profile must be one of safe, balanced, auto, autonomous, enterprise_restricted")
-	}
-}
-
 func validatePermissionMode(mode string) error {
 	switch normalizePermissionMode(mode) {
-	case "", PermissionModeReadOnly, PermissionModeDefault, PermissionModeApproveForMe, PermissionModeFullAccess:
+	case "", PermissionModeReadOnly, PermissionModeAgent, PermissionModeAutoReview, PermissionModeFullAccess:
 		return nil
 	default:
-		return fmt.Errorf("agent.permission_mode must be one of read_only, default, approve_for_me, full_access")
+		return fmt.Errorf("agent.permission_mode must be one of read_only, agent, auto_review, full_access")
 	}
 }
 
@@ -689,7 +676,7 @@ func Default() Config {
 		},
 		Agent: AgentConfig{
 			Name:              DefaultAgentName,
-			PermissionMode:    PermissionModeDefault,
+			PermissionMode:    PermissionModeAgent,
 			PermissionProfile: PermissionProfileWorkspaceWrite,
 			ApprovalPolicy:    ApprovalPolicyOnRequest,
 			ApprovalsReviewer: ApprovalsReviewerUser,
@@ -853,28 +840,28 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, false)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, false)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
-func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode, false)
+func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, false)
 }
 
 // CreateProviderRuntime creates a new OpenAI-compatible provider, selects it,
 // and persists its editable runtime fields.
-func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode, true)
+func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, true)
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, toolPolicyProfile, permissionMode *string, createProvider bool) error {
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string, createProvider bool) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -965,23 +952,6 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		agent["approval_policy"] = permissions.ApprovalPolicy
 		agent["approvals_reviewer"] = permissions.ApprovalsReviewer
 		delete(agent, "tool_policy")
-	} else if toolPolicyProfile != nil {
-		profile := strings.TrimSpace(*toolPolicyProfile)
-		if err := validateToolPolicyProfile(profile); err != nil {
-			return err
-		}
-		agent, _ := raw["agent"].(map[string]any)
-		if agent == nil {
-			agent = make(map[string]any)
-			raw["agent"] = agent
-		}
-		if profile == "" {
-			delete(agent, "tool_policy")
-		} else {
-			agent["tool_policy"] = map[string]any{
-				"profile": profile,
-			}
-		}
 	}
 
 	out, err := json.MarshalIndent(raw, "", "  ")
