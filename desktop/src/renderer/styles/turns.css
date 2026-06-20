@@ -17,7 +17,7 @@
                 
 .turn > .assistant-turn-shell {
   border-top: 1px solid var(--wuu-hairline);
-  padding-top: 18px;
+  padding-top: 16px;
   margin-top: 8px;
 }
 
@@ -61,7 +61,7 @@
 .turn-process-fold > .turn-process-toggle {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
                                                                    
                                                                
@@ -92,7 +92,7 @@
 .turn-process-toggle-static {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   padding: 2px 0;
   color: var(--wuu-ink-soft);
@@ -342,11 +342,11 @@
   width: 100%;
   max-width: 100%;
   justify-self: stretch;
-  gap: 10px;
+  gap: 8px;
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--ink-overlay-12);
-  padding: 12px 14px 10px;
+  padding: 12px 16px 12px;
   color: var(--ink);
   box-shadow: 0 1px 2px var(--ink-overlay-4);
   transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
@@ -522,7 +522,7 @@
   height: 28px;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   border-radius: var(--radius-pill);
   box-shadow: 0 1px 3px var(--ink-overlay-8);
   background: rgba(255, 255, 255, 0.72);
@@ -904,7 +904,7 @@
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  gap: 9px;
+  gap: 8px;
   color: #777b80;
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
@@ -2514,14 +2514,14 @@
 .turn-progress-preview-panel {
   display: grid;
   width: min(760px, calc(100vw - 56px));
-  gap: 18px;
+  gap: 16px;
   border: 1px solid rgba(64, 70, 68, 0.13);
   border-radius: var(--radius-md);
   background: rgba(253, 254, 251, 0.96);
   box-shadow:
     0 24px 60px rgba(31, 35, 38, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  padding: 18px 18px 16px;
+  padding: 16px 16px 16px;
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
 }
@@ -2530,7 +2530,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
 }
 
 .turn-progress-preview-header h2 {
@@ -2543,7 +2543,7 @@
 .turn-progress-preview-header p {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   color: #747a7e;
   font-size: var(--font-ui);
   margin: 0;
@@ -2658,7 +2658,7 @@
   min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0 7px;
+  gap: 0 8px;
   line-height: var(--conversation-meta-line-height);
 }
 
