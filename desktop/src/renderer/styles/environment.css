@@ -35,7 +35,8 @@
 
 .environment-side-stack > .query-history-environment-slot {
   display: flex;
-  flex: 1 1 128px;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 .environment-panel {
@@ -339,8 +340,9 @@
   display: flex;
   min-height: 0;
   max-height: 100%;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.98);
