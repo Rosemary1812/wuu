@@ -160,7 +160,7 @@ func NewSession(opts Options) (*Session, error) {
 	setupCatwalk(cfg)
 
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
-	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins)
+	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 
@@ -891,7 +891,7 @@ func setupCatwalk(cfg config.Config) {
 	}
 }
 
-func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin) *hooks.Dispatcher {
+func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin, client providers.Client, defaultModel string) *hooks.Dispatcher {
 	hookEntries := make(map[hooks.Event][]hooks.HookConfig)
 	for evName, entries := range cfg.Hooks {
 		ev := hooks.Event(evName)
@@ -922,6 +922,14 @@ func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin) *hooks.D
 		}
 	}
 	hookRegistry := hooks.NewRegistry(hookEntries)
+	if client != nil {
+		// Wire the prompt-hook model client so type=prompt hooks actually
+		// run. Without this, PromptHook.Execute short-circuits with a
+		// nil client and the hook silently passes through. Pass the
+		// configured tool-mode model as the default; individual hook
+		// entries can still override via their own `model` field.
+		hookRegistry.SetModelClient(hooks.NewProviderModelClient(client, defaultModel))
+	}
 	return hooks.NewDispatcher(hookRegistry)
 }
 
