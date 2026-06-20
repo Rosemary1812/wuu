@@ -127,7 +127,7 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return "", errors.New("bash requires command")
 	}
 	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-		return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit -m; use the structured git tool for advanced restricted git operations: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command or use the structured git tool")
+		return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit -m: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("bash refuses to print process environment variables because they may contain secrets")

@@ -83,9 +83,8 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 
-	// Bash-first: bash is visible; run_test / start_process / list_processes
-	// / git are hidden. The start_process set is still visible because
-	// Codex is not a sandboxed profile.
+	// Bash-first: bash is visible; run_test / start_process /
+	// list_processes / git are hidden.
 	if _, ok := s.Tools["bash"]; !ok {
 		t.Fatalf("Codex surface must include bash as a visible tool")
 	}
@@ -315,9 +314,14 @@ func TestNoProfileAdvertisesRunTestStartProcessOrGitAsDefault(t *testing.T) {
 	}
 	for _, p := range cases {
 		s := c.Compile(p)
-		for _, name := range []string{"run_test", "git"} {
+		for _, name := range []string{"run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
 			if _, visible := s.Tools[name]; visible {
 				t.Fatalf("%s/%s: surface must not advertise %s as a default tool", p.ProviderName, p.Model, name)
+			}
+		}
+		for _, hiddenName := range []string{"run_shell", "run_test", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process", "structured git tool"} {
+			if contains(s.SystemFragment, hiddenName) {
+				t.Fatalf("%s/%s: prompt must not advertise hidden command tool %q:\n%s", p.ProviderName, p.Model, hiddenName, s.SystemFragment)
 			}
 		}
 	}

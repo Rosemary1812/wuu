@@ -700,23 +700,22 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 		t.Fatalf("default system prompt must forbid interactive git: %q", prompt)
 	}
 	for _, want := range []string{
-		"Use run_shell for normal non-interactive git workflows",
+		"Use bash for normal non-interactive git workflows",
 		"Stage only intended files with explicit paths",
 		"git restore --staged",
-		"Use the structured git tool when you need structured status output",
-		"Do not use start_process for git",
+		"Do not look for separate test-runner, shell-wrapper, process-manager, or structured git tools",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must teach shell-first git workflow %q: %q", want, prompt)
 		}
 	}
 	for _, want := range []string{
-		"Use start_process for dev servers",
-		"do not append shell '&'",
-		"initial_end_offset",
-		"session-scoped dev servers",
-		"lifecycle=\"managed\"",
+		"may keep running",
+		"Do not background the command with shell '&'",
+		"explicit timeout",
+		"terminal verification is unavailable",
 		"report_listening_ports",
+		"cannot keep a process alive",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include long-lived process guidance %q: %q", want, prompt)

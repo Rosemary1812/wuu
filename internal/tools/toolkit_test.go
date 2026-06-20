@@ -784,7 +784,7 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("edit_file response missing filesystem workspace revision: %+v", parsed)
 	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "bash") {
 		t.Fatalf("edit_file response missing validation suggestion: %+v", parsed.Suggestions)
 	}
 	if got := mustReadFile(t, filepath.Join(root, "a.txt")); got != "bravo\n" {
@@ -980,7 +980,7 @@ func TestToolkit_ApplyPatchEditsAddsDeletesAndMoves(t *testing.T) {
 	if parsed.Provenance.Tool != "apply_patch" || parsed.Provenance.Source != "model_tool_call" {
 		t.Fatalf("unexpected provenance: %+v", parsed.Provenance)
 	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "run_test") {
+	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "bash") {
 		t.Fatalf("apply_patch response missing validation suggestion: %+v", parsed.Suggestions)
 	}
 	if parsed.PatchJournalPath == "" || parsed.ManifestPath != parsed.PatchJournalPath || parsed.PatchPath == "" {

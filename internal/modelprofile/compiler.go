@@ -463,7 +463,7 @@ All terminal work — running tests, lint, type checks, build commands, git oper
 - npx vitest, pytest, go test, cargo test, and any other test runner
 - npm/pnpm/yarn/bun install and run; pip/uv/python invocations
 - git status / diff / log / add / commit / push (interactive flags are rejected by the policy)
-- long-lived dev servers, watchers, and background processes: start them with start_process and read their output via read_process_output
+- long-lived dev servers, watchers, and background processes: run them through bash with an explicit timeout when you need logs or readiness output; do not background them with "&"
 
 Use read_file before editing a file so the patch's context anchors match the on-disk content. Use grep / glob / ast_search / semantic_search to find the code you need to change.
 ` + sharedTail)
@@ -475,7 +475,7 @@ func addOpenAIGPTPrompt(b *surfaceBuilder, p Profile) {
 [Tool surface: openai_gpt (exact-edit fallback)]
 You are running under the OpenAI GPT harness. This model class does not reliably apply structured patches, so your editing primitive is edit_file (with write_file as the whole-file fallback). Call read_file first to anchor the old_string exactly.
 
-Terminal work — tests, lint, build, git, package managers, scripts — goes through the bash tool. There is no separate "run test" or "git" tool on this surface; use bash for everything, and start_process / read_process_output for long-lived commands.
+Terminal work — tests, lint, build, git, package managers, scripts — goes through the bash tool. There is no separate test-runner, git, or background-process tool on this surface; use bash for everything and keep commands non-interactive.
 ` + sharedTail)
 		return
 	}
@@ -483,7 +483,7 @@ Terminal work — tests, lint, build, git, package managers, scripts — goes th
 [Tool surface: openai_gpt]
 You are running under the OpenAI GPT harness. Your editing primitive is apply_patch — prefer it for every file change (create, update, delete) and use write_file only when you genuinely want to replace a whole file.
 
-Terminal work is unified under the bash tool. Tests, lint, build, git, package managers, and arbitrary scripts all go through bash. Long-lived processes go through start_process / read_process_output. There is no run_test or git tool on this surface; do not invent one.
+Terminal work is unified under the bash tool. Tests, lint, build, git, package managers, long-lived commands, and arbitrary scripts all go through bash. There is no separate test-runner, git, or background-process tool on this surface; do not invent one.
 ` + sharedTail)
 }
 
@@ -492,7 +492,7 @@ func addClaudePrompt(b *surfaceBuilder) {
 [Tool surface: anthropic_claude]
 You are running under the Anthropic Claude harness. Your file editing primitives are read_file, edit_file, and write_file. Call read_file first to anchor the old_string in edit_file, and use write_file only for whole-file replacement (e.g. newly created files or generated outputs).
 
-Terminal work — tests, lint, type checks, build, git, package managers, scripts, and any other shell command — goes through the bash tool. There is no separate "run test" or "git" tool on this surface. Long-lived dev servers, watchers, and other background processes are managed with start_process / list_processes / read_process_output / stop_process.
+Terminal work — tests, lint, type checks, build, git, package managers, scripts, long-lived commands, and any other shell command — goes through the bash tool. There is no separate "run test", "git", or background-process tool on this surface.
 ` + sharedTail)
 }
 
@@ -502,7 +502,7 @@ func addGenericPrompt(b *surfaceBuilder, p Profile) {
 [Tool surface: generic (no direct shell)]
 You are running under a generic BYOK profile. File work uses read_file, edit_file (with exact old_string match — call read_file first to anchor it), and write_file for whole-file replacement.
 
-This profile does not expose a bash tool. Express terminal work as managed background processes via start_process, observe their output with read_process_output, and stop them with stop_process. If the user asks for an interactive shell, recommend that they switch the active model profile to one that allows direct shell.
+This profile does not expose a terminal command tool. Do not invent bash, test-runner, git, or background-process tool calls. If terminal verification is required, explain that this active model profile cannot run shell commands and recommend switching to a profile that allows direct shell.
 ` + sharedTail)
 		return
 	}
@@ -510,6 +510,6 @@ This profile does not expose a bash tool. Express terminal work as managed backg
 [Tool surface: generic]
 You are running under a generic BYOK profile. File work uses read_file, edit_file (exact old_string match — call read_file first), and write_file (whole-file replacement).
 
-Terminal work — tests, lint, build, git, package managers, scripts — goes through the bash tool. Long-lived processes go through start_process and read_process_output. There is no separate run_test or git tool; do not invent one.
+Terminal work — tests, lint, build, git, package managers, scripts, and long-lived commands — goes through the bash tool. There is no separate test-runner, git, or background-process tool; do not invent one.
 ` + sharedTail)
 }
