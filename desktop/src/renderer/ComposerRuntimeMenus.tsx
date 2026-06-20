@@ -61,7 +61,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "read_only",
     label: "只读",
     chipLabel: "只读",
-    short: "读取和分析项目",
+    short: "只允许读取、搜索和计划",
     icon: BookOpen,
     chipTone: "safe"
   },
@@ -69,7 +69,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "default",
     label: "默认",
     chipLabel: "默认",
-    short: "工作区内自动，越界时确认",
+    short: "文件、命令和外部操作按能力确认",
     icon: ShieldCheck,
     chipTone: "accent"
   },
@@ -77,7 +77,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "approve_for_me",
     label: "替我审批",
     chipLabel: "替我审批",
-    short: "由受限审查器处理审批",
+    short: "由审查器审批高风险能力",
     icon: ShieldQuestion,
     chipTone: "review"
   },
@@ -85,7 +85,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    short: "跳过审批和边界保护",
+    short: "允许文件、命令和扩展操作直接执行",
     icon: ShieldAlert,
     chipTone: "danger",
     tone: "danger"
@@ -461,7 +461,7 @@ export function AccessMenu({
       {hasOverrides ? (
         <div className="composer-menu-note">
           <strong>自定义权限</strong>
-          <span>当前配置包含高级覆盖；选择任一模式会改为该预设</span>
+          <span>当前配置包含能力规则；选择任一模式会改为该预设</span>
         </div>
       ) : null}
       {PERMISSION_MODE_OPTIONS.map((option) => (

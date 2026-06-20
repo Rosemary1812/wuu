@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { ThreadItem } from "../shared/protocol";
 import { readableToolActivityCommand } from "./ToolActivity";
+import { summarizeToolActivity } from "./ToolActivityHelpers";
 
 describe("readableToolActivityCommand", () => {
   it("ignores tool-provided display text and waits for args to parse", () => {
@@ -100,7 +102,42 @@ describe("readableToolActivityCommand", () => {
         name: "apply_patch",
         arguments: JSON.stringify({ patch: "*** Begin Patch\n*** End Patch" })
       })
-    ).toBe("应用补丁");
+    ).toBe("更新文件");
+  });
+
+  it("renders bash background actions from capability metadata", () => {
+    expect(
+      readableToolActivityCommand({
+        name: "bash",
+        arguments: JSON.stringify({ action: "start_background", command: "npm run dev" }),
+        display: { capability: "command.background" }
+      })
+    ).toBe("启动 npm run dev — command.background");
+  });
+
+  it("summarizes apply_patch result metadata as file updates", () => {
+    const summary = summarizeToolActivity([
+      {
+        id: "tool-1",
+        type: "tool_call",
+        name: "apply_patch",
+        status: "completed",
+        result: JSON.stringify({
+          changed_files: ["src/app.ts"],
+          risk_summary: { added_lines: 3, deleted_lines: 1 }
+        })
+      } satisfies ThreadItem
+    ]);
+
+    expect(summary).toMatchObject({
+      kind: "edit",
+      text: "已编辑",
+      fileName: "app.ts",
+      additions: 3,
+      deletions: 1,
+      running: false,
+      failed: false
+    });
   });
 
   it("keeps MCP tool calls raw", () => {

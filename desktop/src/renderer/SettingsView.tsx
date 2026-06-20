@@ -500,6 +500,44 @@ export function SettingsView({
                 </section>
               ) : null}
 
+              <section className="settings-section" data-testid="settings-tool-surface">
+                <div>
+                  <h2>模型工具面</h2>
+                  <p>当前模型实际能看到的能力和文件编辑方式。</p>
+                </div>
+                <div className="settings-card">
+                  <dl className="settings-about-list">
+                    <div className="settings-row">
+                      <span>
+                        <strong>Profile</strong>
+                        <small>{formatSurfaceRuntime(initialized)}</small>
+                      </span>
+                      <span className="settings-about-value">
+                        {initialized?.tool_surface?.profile_name ?? initialized?.model_profile?.profile_name ?? "—"}
+                      </span>
+                    </div>
+                    <div className="settings-row">
+                      <span>
+                        <strong>编辑方式</strong>
+                        <small>{initialized?.tool_surface?.bash_first ? "终端操作默认走 bash" : "按模型工具面执行"}</small>
+                      </span>
+                      <span className="settings-about-value">
+                        {initialized?.tool_surface?.edit_primitive ?? initialized?.model_profile?.edit_primitive ?? "—"}
+                      </span>
+                    </div>
+                    <div className="settings-row">
+                      <span>
+                        <strong>可见能力</strong>
+                        <small>{formatToolSurfaceCounts(initialized)}</small>
+                      </span>
+                      <span className="settings-about-value">
+                        {formatToolSurfaceCapabilities(initialized)}
+                      </span>
+                    </div>
+                  </dl>
+                </div>
+              </section>
+
               <section className="settings-section" data-testid="settings-mcp">
                 <div>
                   <h2>MCP</h2>
@@ -954,6 +992,34 @@ function formatCoreBuild(core: InitializeResult["core"]): string {
     pieces.push(formatBuildDate(core.date));
   }
   return pieces.join(" · ");
+}
+
+function formatSurfaceRuntime(initialized: InitializeResult | undefined): string {
+  if (!initialized) {
+    return "未连接";
+  }
+  const provider = initialized.tool_surface?.provider || initialized.model_profile?.provider || initialized.provider;
+  const model = initialized.tool_surface?.model || initialized.model_profile?.model || initialized.model;
+  return `${provider} · ${model}`;
+}
+
+function formatToolSurfaceCounts(initialized: InitializeResult | undefined): string {
+  const surface = initialized?.tool_surface;
+  if (!surface) {
+    return "未连接";
+  }
+  const visible = surface.tool_names.length;
+  const hidden = surface.hidden_tool_names.length;
+  return `${visible} 个工具可见，${hidden} 个已隐藏`;
+}
+
+function formatToolSurfaceCapabilities(initialized: InitializeResult | undefined): string {
+  const capabilities = initialized?.tool_surface?.capabilities ?? [];
+  if (capabilities.length === 0) {
+    return "—";
+  }
+  const shown = capabilities.slice(0, 4).join("、");
+  return capabilities.length > 4 ? `${shown} 等 ${capabilities.length} 项` : shown;
 }
 
 function upsertMCPServerStatus(servers: MCPServerStatus[], status: MCPServerStatus): MCPServerStatus[] {

@@ -145,7 +145,7 @@ describe("buildBackgroundProcessItems", () => {
 
   it("reads process observations from result action even when tool name changed", () => {
     const started = {
-      action: "start_process",
+      action: "start_background",
       id: "proc-1",
       command: "npm run dev",
       cwd: "/repo",
@@ -202,8 +202,8 @@ describe("buildBackgroundProcessItems", () => {
           id: "tool-1",
           type: "tool_call",
           status: "completed",
-          name: "list_processes",
-          result: JSON.stringify({ action: "list_processes", processes: [stopped, running] })
+          name: "bash",
+          result: JSON.stringify({ action: "list_background", processes: [stopped, running] })
         }
       ])
     );

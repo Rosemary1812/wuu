@@ -5638,19 +5638,19 @@ function ToolApprovalDialog({
   const rule = approval.capability_rule?.trim() || approval.permission_rule?.trim();
   return (
     <div className="modal-backdrop environment-modal-backdrop">
-      <section className="environment-dialog" role="dialog" aria-modal="true" aria-label="工具审批">
+      <section className="environment-dialog" role="dialog" aria-modal="true" aria-label="操作审批">
         <div className="environment-dialog-header">
           <span className="environment-dialog-icon">
             <AlertCircle className="icon-lg" />
           </span>
           <div>
-            <h2>审批工具调用</h2>
+            <h2>审批操作</h2>
             <p>{capabilityLine || approval.tool_name}</p>
           </div>
         </div>
         <div className="environment-dialog-summary">
           <strong>{approval.risk ? `风险：${approval.risk}` : "需要确认"}</strong>
-          <span>{approval.policy_reason || approval.classification_reason || "这个工具调用需要人工审批后才能继续。"}</span>
+          <span>{approval.policy_reason || approval.classification_reason || "这个操作需要人工审批后才能继续。"}</span>
         </div>
         {capabilityObject ? (
           <div className="environment-dialog-summary">

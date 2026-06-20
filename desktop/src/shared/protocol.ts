@@ -93,6 +93,11 @@ export type ModelProfileSummary = {
 
 export type ToolSurfaceSummary = {
   profile_name: string;
+  provider?: string;
+  model?: string;
+  edit_primitive?: string;
+  bash_first?: boolean;
+  system_fragment?: string;
   tool_names: string[];
   hidden_tool_names: string[];
   capabilities: string[];

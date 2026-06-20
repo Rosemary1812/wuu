@@ -246,6 +246,10 @@ export function EnvironmentPanel({
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const contextLabel =
     activeContext?.kind === "project" ? activeProject?.name ?? "当前项目" : activeContext ? "临时对话" : "未连接";
+  const profileLabel = initialized.model_profile?.profile_name || initialized.tool_surface?.profile_name || initialized.provider;
+  const surfaceLabel = initialized.tool_surface?.edit_primitive
+    ? `${initialized.tool_surface.edit_primitive}${initialized.tool_surface.bash_first ? " · bash" : ""}`
+    : shortCodexModelLabel(initialized.model);
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
@@ -359,8 +363,8 @@ export function EnvironmentPanel({
       </button>
 
       <div className="environment-runtime-summary">
-        <span>{initialized.provider}</span>
-        <span>{shortCodexModelLabel(initialized.model)}</span>
+        <span>{profileLabel}</span>
+        <span>{surfaceLabel}</span>
       </div>
 
       {activeMenu === "mode" ? (
@@ -451,18 +455,31 @@ function processItemsFromToolResult(name: string | undefined, result: string | u
     return [];
   }
   const action = stringValue(record, "action");
-  if (name === "list_processes" || action === "list_processes") {
+  if (name === "list_processes" || action === "list_processes" || action === "list_background") {
     const processes = Array.isArray(record.processes) ? record.processes : [];
     return processes.flatMap((item) => {
       const process = asRecord(item);
       return process ? processItemFromRecord(process) : [];
     });
   }
-  if (name === "read_process_output" || name === "write_stdin" || action === "read_process_output" || action === "write_stdin") {
+  if (
+    name === "read_process_output" ||
+    name === "write_stdin" ||
+    action === "read_process_output" ||
+    action === "read_background" ||
+    action === "write_stdin"
+  ) {
     const process = asRecord(record.process);
     return process ? processItemFromRecord(process) : [];
   }
-  if (name === "start_process" || name === "stop_process" || action === "start_process" || action === "stop_process") {
+  if (
+    name === "start_process" ||
+    name === "stop_process" ||
+    action === "start_process" ||
+    action === "start_background" ||
+    action === "stop_process" ||
+    action === "stop_background"
+  ) {
     return processItemFromRecord(record);
   }
   const process = asRecord(record.process);

@@ -160,17 +160,21 @@ function readableToolActivityCommandInner(
     stringValue(args, "file");
   const command =
     stringValue(result, "command") ?? stringValue(args, "command") ?? "";
+  const action = stringValue(result, "action") ?? stringValue(args, "action") ?? "";
   const pattern =
     stringValue(args, "pattern") ??
     stringValue(args, "query") ??
     stringValue(args, "q");
   const capability = item.display?.capability?.trim();
 
+  if (capability === "command.background") {
+    return readableBackgroundCommandLabel(action, command);
+  }
   if (capability === "command.bash" && command) {
     return `运行 ${truncateText(command, 100)}`;
   }
   if (capability === "file.edit" && path) {
-    return `编辑 ${formatPathTarget(path, "文件")}`;
+    return `更新 ${formatPathTarget(path, "文件")}`;
   }
 
   switch (name) {
@@ -215,11 +219,11 @@ function readableToolActivityCommandInner(
     case "write_stdin":
       return "写入后台输入";
     case "edit_file":
-      return `编辑 ${formatPathTarget(path, "文件")}`;
+      return `更新 ${formatPathTarget(path, "文件")}`;
     case "write_file":
-      return `写入 ${formatPathTarget(path, "文件")}`;
+      return `更新 ${formatPathTarget(path, "文件")}`;
     case "apply_patch":
-      return `应用补丁${path ? ` ${formatPathTarget(path, "文件")}` : ""}`;
+      return `更新文件${path ? ` ${formatPathTarget(path, "文件")}` : ""}`;
     case "spawn_agent": {
       const task =
         stringValue(args, "name") ??
@@ -537,16 +541,19 @@ function firstToolError(items: ThreadItem[]): string | undefined {
 function compactToolTargets(items: ThreadItem[]): string[] {
   return uniqueStrings(
     items
-      .map((item) => {
+      .flatMap((item) => {
         const args = parseJSONRecord(item.arguments);
         const result = parseJSONRecord(item.result);
         const path =
           stringValue(result, "path") ??
           stringValue(args, "path") ??
           stringValue(args, "file");
-        return path ? fileBaseName(path) : undefined;
+        const patchPaths = patchChangedFiles(result);
+        if (patchPaths.length > 0) {
+          return patchPaths.map(fileBaseName);
+        }
+        return path ? [fileBaseName(path)] : [];
       })
-      .filter((value): value is string => Boolean(value)),
   );
 }
 
@@ -653,8 +660,18 @@ function readableCommandLabel(
   const name = (item.name ?? "").trim();
   const command =
     stringValue(result, "command") ?? stringValue(args, "command") ?? "";
+  const action = stringValue(result, "action") ?? stringValue(args, "action") ?? "";
   const subcommand =
     stringValue(result, "subcommand") ?? stringValue(args, "subcommand") ?? "";
+  if (
+    action === "start_background" ||
+    action === "read_background" ||
+    action === "list_background" ||
+    action === "stop_background" ||
+    action === "write_stdin"
+  ) {
+    return readableBackgroundCommandLabel(action, command);
+  }
   if (name === "git" || command.startsWith("git ")) {
     if (subcommand === "status" || command.includes("status")) {
       return "检查 Git 状态";
@@ -686,6 +703,23 @@ function readableCommandLabel(
     return "停止后台任务";
   }
   return "运行命令";
+}
+
+function readableBackgroundCommandLabel(action: string, command: string): string {
+  switch (action) {
+    case "start_background":
+      return command ? `启动 ${truncateText(command, 100)}` : "启动后台任务";
+    case "read_background":
+      return "读取后台输出";
+    case "list_background":
+      return "查看后台任务";
+    case "stop_background":
+      return "停止后台任务";
+    case "write_stdin":
+      return "写入后台输入";
+    default:
+      return command ? `启动 ${truncateText(command, 100)}` : "后台任务";
+  }
 }
 
 function readableBrowserLabel(args: JsonRecord | undefined): string {
@@ -724,7 +758,7 @@ export function readableToolName(name: string | undefined): string {
     case "write_file":
       return "写入文件";
     case "apply_patch":
-      return "应用补丁";
+      return "更新文件";
     case "web_search":
       return "搜索网页";
     case "web_fetch":
@@ -827,7 +861,14 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
     if (name === "edit_file" || name === "write_file" || name === "apply_patch" || capability === "file.edit") {
       const diff = summarizeDiff(result);
       const target = diff.newFile ? createdFiles : editedFiles;
-      addPath(target, path);
+      const patchPaths = patchChangedFiles(result);
+      if (patchPaths.length > 0) {
+        for (const patchPath of patchPaths) {
+          addPath(target, patchPath);
+        }
+      } else {
+        addPath(target, path);
+      }
       additions += diff.additions;
       deletions += diff.deletions;
       primaryKind = diff.newFile ? "create" : "edit";
@@ -913,6 +954,14 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
 }
 
 function summarizeDiff(result: JsonRecord | undefined): DiffStats {
+  const riskSummary = recordValue(result, "risk_summary");
+  if (riskSummary) {
+    return {
+      additions: numberValue(riskSummary, "added_lines") ?? 0,
+      deletions: numberValue(riskSummary, "deleted_lines") ?? 0,
+      newFile: false,
+    };
+  }
   const diff = recordValue(result, "diff");
   if (!diff) {
     return { additions: 0, deletions: 0, newFile: false };
@@ -944,6 +993,24 @@ function summarizeDiff(result: JsonRecord | undefined): DiffStats {
     }
   }
   return { additions, deletions, newFile };
+}
+
+function patchChangedFiles(result: JsonRecord | undefined): string[] {
+  const changedFiles = arrayValue(result, "changed_files").filter(
+    (file): file is string => typeof file === "string" && file.trim().length > 0,
+  );
+  if (changedFiles.length > 0) {
+    return changedFiles.map((file) => file.trim());
+  }
+  return arrayValue(result, "files")
+    .flatMap((file) => {
+      if (!isRecord(file)) {
+        return [];
+      }
+      const path = stringValue(file, "path");
+      const movePath = stringValue(file, "move_path");
+      return [path, movePath].filter((value): value is string => Boolean(value));
+    });
 }
 
 function collectResultFiles(

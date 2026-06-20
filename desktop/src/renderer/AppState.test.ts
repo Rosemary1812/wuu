@@ -33,7 +33,7 @@ describe("AppState server requests", () => {
           tool_name: "run_shell",
           risk: "high",
           arguments_preview: "{\"command\":\"printf hi\"}",
-          permission: "bash",
+          permission: "command.bash",
           permission_patterns: ["printf hi"],
           capability: "command.bash",
           capability_object: "printf hi",
@@ -46,7 +46,7 @@ describe("AppState server requests", () => {
     expect(rejectServerRequest).not.toHaveBeenCalled();
     expect(next.pendingToolApproval?.server_request_id).toBe("server-request-1");
     expect(next.pendingToolApproval?.tool_name).toBe("run_shell");
-    expect(next.pendingToolApproval?.permission).toBe("bash");
+    expect(next.pendingToolApproval?.permission).toBe("command.bash");
     expect(next.pendingToolApproval?.permission_patterns).toEqual(["printf hi"]);
     expect(next.pendingToolApproval?.capability).toBe("command.bash");
     expect(next.pendingToolApproval?.capability_object).toBe("printf hi");
