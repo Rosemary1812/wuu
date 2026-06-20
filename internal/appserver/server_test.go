@@ -279,8 +279,12 @@ func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
 	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"config/read"}`)); err != nil {
+		t.Fatalf("config/read: %v", err)
+	}
 
-	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	msgs := parseOutput(t, out.String())
+	result := remarshal[InitializeResult](t, responseByID(t, msgs, "1")["result"])
 	if result.ModelProfile == nil {
 		t.Fatalf("initialize missing model profile summary: %+v", result)
 	}
@@ -298,6 +302,14 @@ func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
 	}
 	if result.ToolSurface.ToolCapabilityMap["bash"] != "command.bash" {
 		t.Fatalf("tool surface missing bash capability: %+v", result.ToolSurface.ToolCapabilityMap)
+	}
+
+	configResult := remarshal[ConfigReadResult](t, responseByID(t, msgs, "2")["result"])
+	if configResult.ModelProfile == nil || configResult.ModelProfile.ProfileName != "openai_codex" {
+		t.Fatalf("config/read missing model profile summary: %+v", configResult.ModelProfile)
+	}
+	if configResult.ToolSurface == nil || configResult.ToolSurface.ToolCapabilityMap["bash"] != "command.bash" {
+		t.Fatalf("config/read missing tool surface summary: %+v", configResult.ToolSurface)
 	}
 }
 

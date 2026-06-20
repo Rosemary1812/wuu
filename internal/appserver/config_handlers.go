@@ -51,6 +51,7 @@ func (s *Server) handleInitialize(req Request) error {
 }
 
 func (s *Server) handleConfigRead(req Request) error {
+	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigReadResult{
 		Provider:       s.rt.ProviderName,
 		Model:          s.rt.Model,
@@ -62,6 +63,8 @@ func (s *Server) handleConfigRead(req Request) error {
 		ToolPolicy:     s.currentToolPolicySummary(),
 		Permissions:    s.currentPermissionSummary(),
 		ExtensionTrust: s.currentExtensionTrustSummary(),
+		ModelProfile:   modelProfile,
+		ToolSurface:    toolSurface,
 		ModelRoles:     s.currentModelRoleSummaries(),
 		Providers:      s.providerSummaries(),
 	}, nil)
