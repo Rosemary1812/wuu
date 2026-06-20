@@ -803,6 +803,91 @@ func TestNewThreadRuntimeWorkerUsesWorkerProfileToolSurface(t *testing.T) {
 	}
 }
 
+func TestNewThreadRuntimeLocalWorkerDoesNotTeachTerminalPaths(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "ollama",
+			Providers: map[string]config.ProviderConfig{
+				"ollama": {
+					Type:    "openai-compatible",
+					BaseURL: "http://127.0.0.1:11434/v1",
+					APIKey:  "dummy",
+					Model:   "llama-coder",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	client := &sessionRecordingClient{}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-local-worker-surface")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "inspect_repo",
+		Prompt:      "inspect the repo",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	req := client.LastRequest()
+	toolNames := map[string]bool{}
+	for _, def := range req.Tools {
+		toolNames[def.Name] = true
+	}
+	for _, want := range []string{"read_file", "edit_file", "write_file"} {
+		if !toolNames[want] {
+			t.Fatalf("local worker should keep %s from generic edit surface; tools=%v", want, toolNames)
+		}
+	}
+	for _, hidden := range []string{"bash", "run_shell", "run_test", "start_process", "git", "apply_patch"} {
+		if toolNames[hidden] {
+			t.Fatalf("local worker must not expose %s; tools=%v", hidden, toolNames)
+		}
+	}
+	if len(req.Messages) == 0 {
+		t.Fatal("worker sent no messages")
+	}
+	systemPrompt := req.Messages[0].Content
+	if !strings.Contains(systemPrompt, "[Tool surface: generic") {
+		t.Fatalf("local worker prompt missing generic surface fragment:\n%s", systemPrompt)
+	}
+	for _, banned := range []string{
+		"bash",
+		"run_shell",
+		"run_test",
+		"start_process",
+		"command.bash",
+		"git status",
+		"git diff",
+		"git commit",
+		"npx vitest",
+		"npm test",
+		"npm run dev",
+	} {
+		if strings.Contains(systemPrompt, banned) {
+			t.Fatalf("local worker prompt must not teach terminal path %q:\n%s", banned, systemPrompt)
+		}
+	}
+}
+
 func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

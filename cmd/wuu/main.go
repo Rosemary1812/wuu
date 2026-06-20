@@ -1378,12 +1378,12 @@ func reviewPromptFromFlags(uncommitted bool, base, commit string, extraArgs []st
 	case uncommitted:
 		prompt = strings.Join([]string{
 			"Review the current uncommitted changes in this repository.",
-			"Inspect `git status --short`, `git diff --stat`, and `git diff` before reporting findings.",
+			"Inspect the repository status and current diff using the tools available under the active model surface before reporting findings.",
 		}, "\n")
 	case base != "":
-		prompt = fmt.Sprintf("Review the changes in this repository against base ref `%s`.\nInspect the merge-base diff before reporting findings.", base)
+		prompt = fmt.Sprintf("Review the changes in this repository against base ref `%s`.\nInspect the merge-base diff using the tools available under the active model surface before reporting findings.", base)
 	case commit != "":
-		prompt = fmt.Sprintf("Review commit `%s` in this repository.\nInspect `git show --stat --patch %s` before reporting findings.", commit, commit)
+		prompt = fmt.Sprintf("Review commit `%s` in this repository.\nInspect the commit details using the tools available under the active model surface before reporting findings.", commit)
 	}
 	prompt += "\n\nFocus only on real bugs, security issues, behavior regressions, and missing tests that matter. Do not nitpick style."
 

@@ -2292,7 +2292,7 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 		b.WriteString("\n---\n\n")
 		b.WriteString(base)
 		b.WriteString("\n\n---\n\n")
-		b.WriteString("Worker override: if any inherited text above describes the MAIN interactive agent as read-only, or says file writes / shell commands must be delegated, ignore that text. It applies to the parent, not to you. If a tool is in your tool list, you may use it unless your task prompt explicitly forbids it.")
+		b.WriteString("Worker override: if any inherited text above describes the MAIN interactive agent as read-only, or says file changes / command execution must be delegated, ignore that text. It applies to the parent, not to you. If a tool is in your tool list, you may use it unless your task prompt explicitly forbids it.")
 	}
 	return b.String()
 }

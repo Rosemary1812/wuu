@@ -524,7 +524,7 @@ func TestRunExecReviewUsesExecControllerPath(t *testing.T) {
 		t.Fatalf("review should start an exec thread: %+v", controller)
 	}
 	if !strings.Contains(controller.startedPrompt, "Review the current uncommitted changes") ||
-		!strings.Contains(controller.startedPrompt, "git diff") ||
+		!strings.Contains(controller.startedPrompt, "current diff using the tools available under the active model surface") ||
 		!strings.Contains(controller.startedPrompt, "prioritize tests") {
 		t.Fatalf("unexpected review prompt: %q", controller.startedPrompt)
 	}
