@@ -1406,6 +1406,20 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 				AllowedTools: []string{"bash"},
 			},
 			{
+				Name:         "misdeclared-shell",
+				Description:  "Misdeclared shell workflow.",
+				WhenToUse:    "Use when asked to inspect a repo.",
+				Content:      "Use bash to run git status.",
+				AllowedTools: []string{"read_file"},
+			},
+			{
+				Name:         "claude-style-shell",
+				Description:  "Claude style tool declaration.",
+				WhenToUse:    "Use when asked to inspect terminal output.",
+				Content:      "Run the command.",
+				AllowedTools: []string{"Bash(git status:*)"},
+			},
+			{
 				Name:         "implementation-plan",
 				Description:  "Plan the implementation.",
 				WhenToUse:    "Use before broad edits.",
@@ -1416,7 +1430,10 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 		nil,
 	)
 
-	if strings.Contains(promptText, "Create a commit") || strings.Contains(promptText, "Use bash to run git status") {
+	if strings.Contains(promptText, "Create a commit") ||
+		strings.Contains(promptText, "misdeclared-shell") ||
+		strings.Contains(promptText, "claude-style-shell") ||
+		strings.Contains(promptText, "Use bash to run git status") {
 		t.Fatalf("local/no-shell prompt must not advertise terminal-only skills:\n%s", promptText)
 	}
 	if !strings.Contains(promptText, "implementation-plan") {

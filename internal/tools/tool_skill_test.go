@@ -92,6 +92,20 @@ func TestToolkit_LoadSkillFiltersByActiveSurface(t *testing.T) {
 			AllowedTools: []string{"bash"},
 		},
 		{
+			Name:         "misdeclared-shell",
+			Description:  "Misdeclared shell workflow.",
+			WhenToUse:    "Use when asked to inspect a repo.",
+			Content:      "Use bash to run git status.",
+			AllowedTools: []string{"read_file"},
+		},
+		{
+			Name:         "claude-style-shell",
+			Description:  "Claude style tool declaration.",
+			WhenToUse:    "Use when asked to inspect terminal output.",
+			Content:      "Run the command.",
+			AllowedTools: []string{"Bash(git status:*)"},
+		},
+		{
 			Name:         "plan",
 			Description:  "Plan the work.",
 			WhenToUse:    "Use when asked to plan.",
@@ -112,15 +126,20 @@ func TestToolkit_LoadSkillFiltersByActiveSurface(t *testing.T) {
 	if loadSkillDef.Name == "" {
 		t.Fatalf("local/no-shell surface should still expose load_skill for compatible skills, got %v", sortedProfileDefNames(defs))
 	}
-	if strings.Contains(loadSkillDef.Description, "commit") || !strings.Contains(loadSkillDef.Description, "plan") {
+	if strings.Contains(loadSkillDef.Description, "commit") ||
+		strings.Contains(loadSkillDef.Description, "misdeclared-shell") ||
+		strings.Contains(loadSkillDef.Description, "claude-style-shell") ||
+		!strings.Contains(loadSkillDef.Description, "plan") {
 		t.Fatalf("load_skill catalog must hide incompatible skills and keep compatible ones:\n%s", loadSkillDef.Description)
 	}
 
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "load_skill",
-		Arguments: `{"name":"commit"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("local/no-shell must not load bash-only skill, got %v", err)
+	for _, skillName := range []string{"commit", "misdeclared-shell", "claude-style-shell"} {
+		_, err = kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "load_skill",
+			Arguments: `{"name":"` + skillName + `"}`,
+		})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("local/no-shell must not load incompatible skill %q, got %v", skillName, err)
+		}
 	}
 }

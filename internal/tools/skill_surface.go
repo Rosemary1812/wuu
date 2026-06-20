@@ -31,16 +31,19 @@ func skillAllowedBySurface(skill skills.Skill, surface capability.Surface) bool 
 	if surface.ProfileName == "" {
 		return true
 	}
+	if !surfaceHasVisibleCapability(surface, capability.CapabilityCommandBash) && skillMentionsTerminalOnlyPath(skill) {
+		return false
+	}
 	if len(skill.AllowedTools) == 0 {
-		if surfaceHasVisibleCapability(surface, capability.CapabilityCommandBash) {
-			return true
-		}
-		return !skillMentionsTerminalOnlyPath(skill)
+		return true
 	}
 	for _, raw := range skill.AllowedTools {
 		name := strings.TrimSpace(raw)
-		if name == "" || !isKnownSurfaceSkillTool(name) {
+		if name == "" {
 			continue
+		}
+		if !isKnownSurfaceSkillTool(name) {
+			return false
 		}
 		if !surfaceAllowsSkillTool(surface, name) {
 			return false
