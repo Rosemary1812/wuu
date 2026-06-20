@@ -142,21 +142,21 @@ func TestOpenAIGPTSurfaceDefaultsToApplyPatch(t *testing.T) {
 	}
 }
 
-func TestOpenAIGPTSurfaceFallsBackToExactEditForGPT4AndOSS(t *testing.T) {
-	for _, model := range []string{"gpt-4.1-mini", "openai/gpt-oss-120b"} {
+func TestOpenAIGPTSurfaceUsesApplyPatchForAllOpenAIModels(t *testing.T) {
+	for _, model := range []string{"gpt-5.5", "gpt-4.1-mini", "openai/gpt-oss-120b"} {
 		s := DefaultCompiler{}.Compile(Resolve("openai", model))
 		tool, ok := s.ToolForCapability(capability.CapabilityFileEdit)
 		if !ok {
 			t.Fatalf("%s: expected file.edit capability to be visible", model)
 		}
-		if tool != "edit_file" {
-			t.Fatalf("%s: gpt-4/oss must fall back to edit_file, got %q", model, tool)
+		if tool != "apply_patch" {
+			t.Fatalf("%s: OpenAI GPT surface must use apply_patch, got %q", model, tool)
 		}
-		if _, hasWrite := s.Tools["write_file"]; !hasWrite {
-			t.Fatalf("%s: gpt-4/oss must keep write_file visible", model)
+		if _, hasEdit := s.Tools["edit_file"]; hasEdit {
+			t.Fatalf("%s: OpenAI GPT surface must not advertise edit_file", model)
 		}
-		if _, hasApply := s.Tools["apply_patch"]; hasApply {
-			t.Fatalf("%s: gpt-4/oss must not advertise apply_patch", model)
+		if _, hasWrite := s.Tools["write_file"]; hasWrite {
+			t.Fatalf("%s: OpenAI GPT surface must not advertise write_file", model)
 		}
 	}
 }

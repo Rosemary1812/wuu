@@ -302,7 +302,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		return "", fmt.Errorf("bash refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
 	}
 	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("bash refuses to execute destructive shell commands; use apply_patch, edit_file, write_file, or another restricted tool so changes remain auditable")
+		return "", errors.New("bash refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
 	}
 	if shellCommandInvokesPackageOrNetworkMutation(args.Command) && !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(args.Command) {
 		return "", errors.New("bash refuses to execute package, network, or external mutation commands; use dedicated web tools or ask the user for explicit approval")
@@ -448,7 +448,7 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 		return "", errors.New("bash background mode refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
 	}
 	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("bash background mode refuses to execute destructive shell commands; use apply_patch, edit_file, write_file, or another restricted tool so changes remain auditable")
+		return "", errors.New("bash background mode refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
 	}
 	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
 		return "", errors.New("bash background mode refuses to execute package, network, or external mutation commands; use a bounded bash run or ask the user for explicit approval")

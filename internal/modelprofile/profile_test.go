@@ -41,14 +41,14 @@ func TestResolveCodexProfileUsesPatchFirstHarness(t *testing.T) {
 	}
 }
 
-func TestResolveGPT4AndOSSProfilesAvoidPatchMode(t *testing.T) {
-	for _, model := range []string{"gpt-4.1-mini", "openai/gpt-oss-120b"} {
+func TestResolveOpenAIGPTProfilesUsePatchMode(t *testing.T) {
+	for _, model := range []string{"gpt-5.5", "gpt-4.1-mini", "openai/gpt-oss-120b"} {
 		profile := Resolve("openai", model)
-		if profile.Workflow.DefaultWriteMode != WriteModeExactEdit {
-			t.Fatalf("%s DefaultWriteMode = %s, want %s", model, profile.Workflow.DefaultWriteMode, WriteModeExactEdit)
+		if profile.Workflow.DefaultWriteMode != WriteModePatch {
+			t.Fatalf("%s DefaultWriteMode = %s, want %s", model, profile.Workflow.DefaultWriteMode, WriteModePatch)
 		}
-		if profile.APIShape.FreeformTool {
-			t.Fatalf("%s should not default to freeform patch tools", model)
+		if !profile.APIShape.FreeformTool {
+			t.Fatalf("%s should use the OpenAI patch-first freeform tool surface", model)
 		}
 	}
 }

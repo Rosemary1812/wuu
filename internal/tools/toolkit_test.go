@@ -2454,15 +2454,15 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 	}
 }
 
-func TestToolkit_EditToolModeForModelMatchesOpenCodeRule(t *testing.T) {
+func TestToolkit_EditToolModeForModelUsesOpenAIPatchFirstSurface(t *testing.T) {
 	tests := []struct {
 		model string
 		want  EditToolMode
 	}{
 		{model: "gpt-5.5", want: EditToolModePatch},
 		{model: "openai/gpt-5-codex", want: EditToolModePatch},
-		{model: "gpt-4.1-mini", want: EditToolModeText},
-		{model: "openai/gpt-oss-120b", want: EditToolModeText},
+		{model: "gpt-4.1-mini", want: EditToolModePatch},
+		{model: "openai/gpt-oss-120b", want: EditToolModePatch},
 		{model: "anthropic/claude-sonnet-4-5", want: EditToolModeText},
 	}
 	for _, tt := range tests {
@@ -4822,13 +4822,30 @@ func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T)
 	t.Fatal("bash must be present in tool definitions")
 }
 
-func TestShellNextSuggestions_TimedOutLongRunningCommandUsesStartProcess(t *testing.T) {
+func TestShellNextSuggestions_TimedOutLongRunningCommandUsesBashBackground(t *testing.T) {
 	suggestions := strings.Join(shellNextSuggestions(0, true, ToolClassification{}), " ")
-	if !strings.Contains(suggestions, "start_process") {
-		t.Fatalf("timed-out shell guidance should mention start_process: %q", suggestions)
+	if !strings.Contains(suggestions, "bash action=start_background") || !strings.Contains(suggestions, "bash action=read_background") {
+		t.Fatalf("timed-out shell guidance should mention bash background actions: %q", suggestions)
 	}
 	if !strings.Contains(suggestions, "dev server") || !strings.Contains(suggestions, "long-lived") {
 		t.Fatalf("timed-out shell guidance should identify long-lived commands: %q", suggestions)
+	}
+	for _, legacy := range []string{"start_process", "run_shell", "run_test"} {
+		if strings.Contains(suggestions, legacy) {
+			t.Fatalf("timed-out shell guidance must not mention legacy command tool %s: %q", legacy, suggestions)
+		}
+	}
+}
+
+func TestShellNextSuggestions_FailureStaysBashFirst(t *testing.T) {
+	suggestions := strings.Join(shellNextSuggestions(1, false, ToolClassification{}), " ")
+	if !strings.Contains(suggestions, "bash action=run") {
+		t.Fatalf("failed shell guidance should stay on bash action=run: %q", suggestions)
+	}
+	for _, legacy := range []string{"start_process", "run_shell", "run_test"} {
+		if strings.Contains(suggestions, legacy) {
+			t.Fatalf("failed shell guidance must not mention legacy command tool %s: %q", legacy, suggestions)
+		}
 	}
 }
 
@@ -5143,7 +5160,7 @@ func TestToolkit_StartProcessRejectsGitCommandBypass(t *testing.T) {
 			Name:      "start_process",
 			Arguments: fmt.Sprintf(`{"command":%q,"owner_kind":"main_agent"}`, command),
 		})
-		if err == nil || !strings.Contains(err.Error(), "Use run_shell for normal git") {
+		if err == nil || !strings.Contains(err.Error(), "Use bash action=run for normal git") {
 			t.Fatalf("expected short-lived git guidance for %q, got %v", command, err)
 		}
 	}
@@ -5770,6 +5787,40 @@ func TestToolkit_RunShellRejectsDestructiveCommands(t *testing.T) {
 	}
 }
 
+func TestToolkit_BashRejectsDestructiveCommandsWithProfileNeutralGuidance(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "tmp", "keep.txt"), "keep\n")
+
+	for _, args := range []string{
+		`{"command":"rm -rf tmp"}`,
+		`{"action":"start_background","command":"rm -rf tmp"}`,
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "bash",
+			Arguments: args,
+		})
+		if err == nil || !strings.Contains(err.Error(), "destructive shell commands") {
+			t.Fatalf("expected destructive bash rejection for %s, got %v", args, err)
+		}
+		for _, toolName := range []string{"apply_patch", "edit_file", "write_file"} {
+			if strings.Contains(err.Error(), toolName) {
+				t.Fatalf("bash destructive guidance must be profile-neutral, got %v", err)
+			}
+		}
+		if !strings.Contains(err.Error(), "file editing tool exposed in this session") {
+			t.Fatalf("bash destructive guidance should point to the active edit capability, got %v", err)
+		}
+	}
+
+	if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
+		t.Fatalf("destructive bash should not mutate workspace: %q", got)
+	}
+}
+
 func TestToolkit_RunShellRejectsPackageNetworkMutationCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -5794,7 +5845,7 @@ func TestToolkit_RunShellRejectsPackageNetworkMutationCommands(t *testing.T) {
 	}
 }
 
-func TestToolkit_RunShellGuidesNpxVerificationToRunTest(t *testing.T) {
+func TestToolkit_RunShellGuidesNpxVerificationToBash(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -5805,8 +5856,8 @@ func TestToolkit_RunShellGuidesNpxVerificationToRunTest(t *testing.T) {
 		Name:      "run_shell",
 		Arguments: `{"command":"npx vitest --run"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=wrong_tool_for_verification") || !strings.Contains(err.Error(), "retry with run_test") {
-		t.Fatalf("expected run_shell to guide npx verification to run_test, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "error_kind=wrong_tool_for_verification") || !strings.Contains(err.Error(), "retry with bash action=run") {
+		t.Fatalf("expected run_shell to guide npx verification to bash action=run, got %v", err)
 	}
 }
 

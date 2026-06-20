@@ -79,7 +79,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected; use the structured git tool when you need structured status output or restricted git helpers.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected by command policy.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -114,7 +114,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		return "", errors.New("run_shell requires command")
 	}
 	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit -m; use the structured git tool for advanced restricted git operations: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command or use the structured git tool")
+		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit -m through bash: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
@@ -123,10 +123,10 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
 	}
 	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("run_shell refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
+		return "", errors.New("run_shell refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
 	}
 	if testCommandLooksLikeLocalRunnerVerification(args.Command) {
-		return "", errors.New("run_shell refuses to execute package-runner verification commands directly because they can install packages when the runner is missing; use run_test for local verification so project-local test runners are resolved without downloads: error_kind=wrong_tool_for_verification model_next_action=\"retry with run_test using the same command\"")
+		return "", errors.New("run_shell refuses to execute package-runner verification commands directly because they can install packages when the runner is missing; use bash action=run for local verification so project-local test runners are resolved without downloads: error_kind=wrong_tool_for_verification model_next_action=\"retry with bash action=run using the same command\"")
 	}
 	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
 		return "", errors.New("run_shell refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
@@ -297,10 +297,10 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 
 func shellNextSuggestions(exitCode int, timedOut bool, classification ToolClassification) []string {
 	if timedOut {
-		return []string{"if this was a dev server, watch mode, or other long-lived command, rerun it with start_process instead of extending run_shell; otherwise narrow the command scope or increase timeout only when necessary"}
+		return []string{"if this was a dev server, watch mode, or other long-lived command, rerun it with bash action=start_background and inspect it with bash action=read_background; otherwise narrow the command scope or set a bounded timeout only when necessary"}
 	}
 	if exitCode != 0 {
-		return []string{"inspect the redacted stdout/stderr tails, then retry with corrected inputs or use run_test for verification commands"}
+		return []string{"inspect the redacted stdout/stderr tails and full_log_ref when present, then retry the corrected command with bash action=run"}
 	}
 	if classification.ReadOnly {
 		return []string{"use the returned observation as evidence for the next action"}

@@ -288,18 +288,20 @@ func TestSetActiveProfileClaudeExposesEditAndWriteHidesApplyPatch(t *testing.T) 
 	}
 }
 
-func TestSetActiveProfileGPT4FallsBackToEditFile(t *testing.T) {
+func TestSetActiveProfileOpenAIGPTUsesApplyPatch(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-4.1-mini"))
 	defs := kit.Definitions()
-	if !containsProfileDef(defs, "edit_file") || !containsProfileDef(defs, "write_file") {
-		t.Fatalf("gpt-4 profile must expose edit_file + write_file, got %v", sortedProfileDefNames(defs))
+	if !containsProfileDef(defs, "apply_patch") {
+		t.Fatalf("OpenAI GPT profile must expose apply_patch, got %v", sortedProfileDefNames(defs))
 	}
-	if containsProfileDef(defs, "apply_patch") {
-		t.Fatalf("gpt-4 profile must not expose apply_patch, got %v", sortedProfileDefNames(defs))
+	for _, hidden := range []string{"edit_file", "write_file"} {
+		if containsProfileDef(defs, hidden) {
+			t.Fatalf("OpenAI GPT profile must not expose %s, got %v", hidden, sortedProfileDefNames(defs))
+		}
 	}
 }
 

@@ -152,14 +152,6 @@ func Resolve(providerName, model string) Profile {
 		applyLocal(&profile)
 	}
 
-	if isGPT4OrOSS(model) && profile.Family == FamilyGPT {
-		profile.Workflow.DefaultWriteMode = WriteModeExactEdit
-		profile.Code.PreferredEditPrimitive = WriteModeExactEdit
-		profile.Code.PatchReliability = 2
-		profile.Code.ExactEditReliability = 4
-		profile.APIShape.FreeformTool = false
-	}
-
 	return profile
 }
 
@@ -324,12 +316,4 @@ func applyLocal(profile *Profile) {
 	profile.Workflow.DefaultMaxAutonomousSteps = 5
 	profile.Workflow.DefaultSearchBudget = 3
 	profile.Workflow.AllowDirectShell = false
-}
-
-func isGPT4OrOSS(model string) bool {
-	id := strings.ToLower(strings.TrimSpace(model))
-	if idx := strings.LastIndex(id, "/"); idx >= 0 {
-		id = id[idx+1:]
-	}
-	return strings.Contains(id, "gpt-4") || strings.Contains(id, "oss")
 }

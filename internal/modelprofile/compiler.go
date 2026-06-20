@@ -21,12 +21,10 @@ const (
 	// are higher (harness iterates more before replying).
 	ProfileOpenAICodex ProfileKey = "openai_codex"
 
-	// ProfileOpenAIGPT covers OpenAI GPT-5-class reasoning models
-	// that ship with the OpenAI Responses API but do not necessarily
-	// accept freeform patch grammars. Most gpt-5/4.x models still
-	// get apply_patch; gpt-4 and gpt-oss fall back to exact edit
-	// (edit_file + write_file) because their patch reliability is
-	// historically lower.
+	// ProfileOpenAIGPT covers OpenAI GPT reasoning models that ship
+	// with the OpenAI Responses API. It uses the same patch-first
+	// editing surface as Codex: apply_patch for file edits and bash
+	// as the single terminal entry point.
 	ProfileOpenAIGPT ProfileKey = "openai_gpt"
 
 	// ProfileAnthropicClaude is the Anthropic Claude harness. It
@@ -80,10 +78,6 @@ func ResolveProfileKey(p Profile) ProfileKey {
 	case FamilyCodex:
 		return ProfileOpenAICodex
 	case FamilyGPT:
-		// gpt-4 and gpt-oss are notoriously unreliable with freeform
-		// patches. They still go through the openai_gpt compiler
-		// (which understands the OpenAI Responses shape) but the
-		// compiler downgrades their edit primitive to exact edit.
 		return ProfileOpenAIGPT
 	case FamilyClaude:
 		return ProfileAnthropicClaude
@@ -205,8 +199,8 @@ func compileOpenAIGPT(b *surfaceBuilder, p Profile) {
 	addScheduleTools(b)
 	addSkillTools(b)
 	addExtensionTools(b)
-	addOpenAIGPTEditTools(b, p)
-	addOpenAIGPTPrompt(b, p)
+	addOpenAIGPTEditTools(b)
+	addOpenAIGPTPrompt(b)
 }
 
 func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
@@ -334,14 +328,7 @@ func addOpenAICodexEditTools(b *surfaceBuilder) {
 	b.addVisible(openaiPatchEditTool, capability.CapabilityFileEdit)
 }
 
-func addOpenAIGPTEditTools(b *surfaceBuilder, p Profile) {
-	// gpt-4 / gpt-oss downgrade to exact edit. The compiler still
-	// reports ProfileOpenAIGPT so the prompt stays OpenAI-shaped.
-	if isGPT4OrOSS(p.Model) {
-		b.addVisible("edit_file", capability.CapabilityFileEdit)
-		b.addVisible("write_file", capability.CapabilityFileEdit)
-		return
-	}
+func addOpenAIGPTEditTools(b *surfaceBuilder) {
 	b.addVisible(openaiPatchEditTool, capability.CapabilityFileEdit)
 }
 
@@ -387,19 +374,10 @@ Use read_file before editing a file so the patch's context anchors match the on-
 ` + sharedTail)
 }
 
-func addOpenAIGPTPrompt(b *surfaceBuilder, p Profile) {
-	if isGPT4OrOSS(p.Model) {
-		b.surface.SystemFragment = strings.TrimSpace(`
-[Tool surface: openai_gpt (exact-edit fallback)]
-You are running under the OpenAI GPT harness. This model class does not reliably apply structured patches, so your editing primitive is edit_file (with write_file as the whole-file fallback). Call read_file first to anchor the old_string exactly.
-
-Terminal work — tests, lint, build, git, package managers, scripts — goes through the bash tool. There is no separate test-runner, git, or background-process tool on this surface; use bash for everything and keep commands non-interactive.
-` + sharedTail)
-		return
-	}
+func addOpenAIGPTPrompt(b *surfaceBuilder) {
 	b.surface.SystemFragment = strings.TrimSpace(`
 [Tool surface: openai_gpt]
-You are running under the OpenAI GPT harness. Your editing primitive is apply_patch — prefer it for every file change (create, update, delete) and use write_file only when you genuinely want to replace a whole file.
+You are running under the OpenAI GPT harness. Your editing primitive is apply_patch. Use it for every file change — create new files, update existing files, and remove files via *** Add File / *** Update File / *** Delete File blocks inside a single *** Begin Patch / *** End Patch envelope.
 
 Terminal work is unified under the bash tool. Tests, lint, build, git, package managers, long-lived commands, and arbitrary scripts all go through bash. There is no separate test-runner, git, or background-process tool on this surface; do not invent one.
 ` + sharedTail)
