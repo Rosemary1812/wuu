@@ -1,4 +1,21 @@
-import { AlertCircle, ChevronDown, ChevronRight, FileText, Folder, FolderOpen, FolderX } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Container,
+  FileCode,
+  FileCog,
+  FileJson,
+  FileText,
+  FileX,
+  Folder,
+  FolderOpen,
+  FolderX,
+  ScrollText,
+  Search,
+  Terminal,
+  type LucideIcon
+} from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import type {
   RuntimeContext,
@@ -141,8 +158,14 @@ export function WorkspaceFileTree({
   return (
     <div className="workspace-file-panel">
       <div className="workspace-file-meta">
-        <span>{formatWorkspaceRoot(rootDirectory.root ?? workspaceRoot)}</span>
-        {rootDirectory.truncated ? <small>已截断</small> : null}
+        <span className="workspace-file-meta-title">
+          <FolderOpen className="workspace-file-meta-icon" />
+          {formatWorkspaceRoot(rootDirectory.root ?? workspaceRoot)}
+        </span>
+        <span className="workspace-file-meta-counts">
+          <span>{rootDirectory.entries.length} 项</span>
+          {rootDirectory.truncated ? <small>已截断</small> : null}
+        </span>
       </div>
       <WorkspaceFileTreeView
         directories={directories}
@@ -185,13 +208,17 @@ function WorkspaceFileTreeView({
 
   return (
     <div className="workspace-file-tree-frame">
-      <input
-        className="workspace-file-search"
-        value={search}
-        onChange={(event) => onSearchChange(event.currentTarget.value)}
-        placeholder="Search..."
-        spellCheck={false}
-      />
+      <label className="workspace-file-search-frame">
+        <Search className="workspace-file-search-icon" aria-hidden="true" />
+        <input
+          className="workspace-file-search"
+          value={search}
+          onChange={(event) => onSearchChange(event.currentTarget.value)}
+          placeholder="搜索文件"
+          spellCheck={false}
+          aria-label="搜索文件"
+        />
+      </label>
       <div className="workspace-file-tree-scroll">
         <div className="workspace-file-tree-list" role="tree">
           {visibleEntries.length > 0 ? (
@@ -286,20 +313,22 @@ function WorkspaceFileTreeNode({
   const directoryEntries = directoryState?.entries ?? [];
   const visibleChildren = directoryEntries.filter((child) => shouldShowFileTreeEntry(child, query, directories));
   const isExpanded = expandedPaths.has(directoryPath) || Boolean(query && visibleChildren.length > 0);
+  const isHidden = entry.name.startsWith(".");
   const rowStyle = { "--workspace-tree-depth": depth } as CSSProperties;
 
   if (entry.kind === "file") {
+    const fileIcon = fileIconFor(entry.name);
     return (
       <button
         type="button"
-        className={`workspace-file-tree-row${selectedFilePath === entry.path ? " selected" : ""}`}
+        className={`workspace-file-tree-row${selectedFilePath === entry.path ? " selected" : ""}${isHidden ? " hidden" : ""}`}
         style={rowStyle}
         role="treeitem"
         title={entry.path}
         onClick={() => onOpenFile(entry.path)}
       >
         <span className="workspace-file-tree-toggle-spacer" />
-        <FileText className="icon" />
+        <fileIcon.Icon className={`icon workspace-file-tree-icon ${fileIcon.tone}`} />
         <span className="workspace-file-tree-name">{entry.name}</span>
       </button>
     );
@@ -309,7 +338,7 @@ function WorkspaceFileTreeNode({
     <>
       <button
         type="button"
-        className="workspace-file-tree-row"
+        className={`workspace-file-tree-row${isHidden ? " hidden" : ""}`}
         style={rowStyle}
         role="treeitem"
         aria-expanded={isExpanded}
@@ -373,6 +402,33 @@ function shouldShowFileTreeEntry(entry: WorkspaceFileTreeEntry, query: string, d
 
 function normalizeDirectoryPath(path: string): string {
   return path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+type FileIconTone = "code" | "config" | "doc" | "shell" | "data" | "default";
+
+const FILE_ICON_BY_NAME: ReadonlyArray<readonly [RegExp, LucideIcon, FileIconTone]> = [
+  [/^LICENSE(\.|$)/i, ScrollText, "doc"],
+  [/^Makefile$/i, FileCog, "config"],
+  [/^Dockerfile$/i, Container, "config"],
+  [/\.(sh|bash|zsh|fish)$/i, Terminal, "shell"],
+  [/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i, FileCode, "code"],
+  [/\.go$/i, FileCode, "code"],
+  [/\.py$/i, FileCode, "code"],
+  [/\.rs$/i, FileCode, "code"],
+  [/\.json$/i, FileJson, "data"],
+  [/\.(ya?ml|toml|ini|env|properties)$/i, FileCog, "config"],
+  [/\.(mod|sum)$/i, FileCog, "config"],
+  [/\.mdx?$/i, FileText, "doc"],
+  [/\.gitignore$/i, FileX, "config"]
+];
+
+function fileIconFor(name: string): { Icon: LucideIcon; tone: FileIconTone } {
+  for (const [pattern, Icon, tone] of FILE_ICON_BY_NAME) {
+    if (pattern.test(name)) {
+      return { Icon, tone };
+    }
+  }
+  return { Icon: FileText, tone: "default" };
 }
 
 export function WorkspacePanelEmpty({
