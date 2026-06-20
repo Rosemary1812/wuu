@@ -169,6 +169,14 @@ function processFoldOpen(container: HTMLElement): boolean {
   return toggle?.getAttribute("aria-expanded") === "true";
 }
 
+function processEntryList(container: HTMLElement): HTMLElement {
+  const list = container.querySelector(".turn-process-fold-body-inner");
+  if (!(list instanceof HTMLElement)) {
+    throw new Error("expected process entry list");
+  }
+  return list;
+}
+
 function reasoningFolds(container: HTMLElement): HTMLDetailsElement[] {
   return Array.from(container.querySelectorAll("details.turn-reasoning-fold"));
 }
@@ -502,6 +510,19 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     for (const fold of folds) {
       expect(fold.hasAttribute("open")).toBe(false);
     }
+    const entryList = processEntryList(container);
+    expect(
+      Array.from(entryList.children).map((entry) =>
+        Array.from(entry.classList).find((className) =>
+          className.startsWith("turn-process-entry-"),
+        ),
+      ),
+    ).toEqual([
+      "turn-process-entry-process",
+      "turn-process-entry-activity",
+      "turn-process-entry-commentary",
+      "turn-process-entry-process",
+    ]);
     // Commentary text surfaces inline (not folded):
     expect(container.textContent).toContain("found the file");
   });

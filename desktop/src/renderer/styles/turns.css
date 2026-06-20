@@ -190,6 +190,13 @@
   padding: 6px 0 0 0;
 }
 
+.turn-process-fold-body-inner {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--conversation-message-element-gap, 20px);
+}
+
 .turn-process-entry {
   display: block;
   min-width: 0;
@@ -3653,7 +3660,7 @@
 .turn-reasoning-body-inner {
   min-height: 0;
   overflow: hidden;
-  padding: 18px 0 2px 20px;
+  padding: 4px 0 2px 20px;
                                                                     
                                                                
                                                                     
@@ -3671,10 +3678,6 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
-}
-
-.turn-reasoning-scroll > *:not(:first-child) {
-  margin-top: var(--conversation-message-element-gap);
 }
 
 .tool-card {
