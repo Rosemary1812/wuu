@@ -65,6 +65,31 @@ describe("buildBackgroundProcessItems", () => {
     ]);
   });
 
+  it("shows an in-progress command.background item before a process id exists", () => {
+    const processes = buildBackgroundProcessItems(
+      threadWithItems([
+        {
+          id: "tool-1",
+          type: "tool_call",
+          status: "in_progress",
+          name: "bash",
+          display: { capability: "command.background" },
+          arguments: JSON.stringify({ command: "npm run dev", lifecycle: "session" })
+        }
+      ])
+    );
+
+    expect(processes).toEqual([
+      {
+        id: "tool-1",
+        command: "npm run dev",
+        cwd: "",
+        lifecycle: "session",
+        status: "starting"
+      }
+    ]);
+  });
+
   it("merges later process observations by process id", () => {
     const started = {
       id: "proc-1",
@@ -115,6 +140,39 @@ describe("buildBackgroundProcessItems", () => {
       lifecycle: "session",
       status: "stopped",
       updatedAt: "2026-01-01T00:00:02.000Z"
+    });
+  });
+
+  it("reads process observations from result action even when tool name changed", () => {
+    const started = {
+      action: "start_process",
+      id: "proc-1",
+      command: "npm run dev",
+      cwd: "/repo",
+      lifecycle: "session",
+      status: "running",
+      started_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:01.000Z"
+    };
+
+    const processes = buildBackgroundProcessItems(
+      threadWithItems([
+        {
+          id: "tool-1",
+          type: "tool_call",
+          status: "completed",
+          name: "bash",
+          result: JSON.stringify(started)
+        }
+      ])
+    );
+
+    expect(processes).toHaveLength(1);
+    expect(processes[0]).toMatchObject({
+      id: "proc-1",
+      command: "npm run dev",
+      cwd: "/repo",
+      status: "running"
     });
   });
 

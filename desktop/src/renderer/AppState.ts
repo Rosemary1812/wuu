@@ -237,8 +237,27 @@ function toolApprovalFromServerRequest(
     arguments_sha256: stringValue(params, "arguments_sha256"),
     arguments_preview: stringValue(params, "arguments_preview"),
     approval_ref: stringValue(params, "approval_ref"),
+    permission: stringValue(params, "permission"),
+    permission_patterns: stringArrayValue(params, "permission_patterns"),
+    permission_always: stringArrayValue(params, "permission_always"),
+    permission_rule: stringValue(params, "permission_rule"),
+    capability: stringValue(params, "capability"),
+    capability_object: stringValue(params, "capability_object"),
+    capability_action: stringValue(params, "capability_action"),
+    capability_rule: stringValue(params, "capability_rule"),
     model_next_action: stringValue(params, "model_next_action"),
   };
+}
+
+function stringArrayValue(record: JsonRecord, key: string): string[] | undefined {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value
+    .filter((item): item is string => typeof item === "string" && item.trim() !== "")
+    .map((item) => item.trim());
+  return strings.length > 0 ? strings : undefined;
 }
 
 function serverEventTargetsActiveContext(

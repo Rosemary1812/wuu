@@ -155,7 +155,8 @@ export function buildBackgroundProcessItems(
         if (item.type !== "tool_call" && item.type !== "collab_agent_tool_call") {
           continue;
         }
-        if (item.name === "start_process" && item.status === "in_progress") {
+        const capability = item.display?.capability?.trim();
+        if ((item.name === "start_process" || capability === "command.background") && item.status === "in_progress") {
           const args = parseJsonRecord(item.arguments);
           const command = stringValue(args, "command");
           if (command) {
@@ -449,19 +450,24 @@ function processItemsFromToolResult(name: string | undefined, result: string | u
   if (!record) {
     return [];
   }
-  if (name === "list_processes") {
+  const action = stringValue(record, "action");
+  if (name === "list_processes" || action === "list_processes") {
     const processes = Array.isArray(record.processes) ? record.processes : [];
     return processes.flatMap((item) => {
       const process = asRecord(item);
       return process ? processItemFromRecord(process) : [];
     });
   }
-  if (name === "read_process_output" || name === "write_stdin") {
+  if (name === "read_process_output" || name === "write_stdin" || action === "read_process_output" || action === "write_stdin") {
     const process = asRecord(record.process);
     return process ? processItemFromRecord(process) : [];
   }
-  if (name === "start_process" || name === "stop_process") {
+  if (name === "start_process" || name === "stop_process" || action === "start_process" || action === "stop_process") {
     return processItemFromRecord(record);
+  }
+  const process = asRecord(record.process);
+  if (process) {
+    return processItemFromRecord(process);
   }
   return [];
 }

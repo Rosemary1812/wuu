@@ -164,6 +164,14 @@ function readableToolActivityCommandInner(
     stringValue(args, "pattern") ??
     stringValue(args, "query") ??
     stringValue(args, "q");
+  const capability = item.display?.capability?.trim();
+
+  if (capability === "command.bash" && command) {
+    return `运行 ${truncateText(command, 100)}`;
+  }
+  if (capability === "file.edit" && path) {
+    return `编辑 ${formatPathTarget(path, "文件")}`;
+  }
 
   switch (name) {
     case "read_file":
@@ -193,6 +201,7 @@ function readableToolActivityCommandInner(
       return "更新计划";
     case "git":
       return readableCommandLabel(item);
+    case "bash":
     case "run_shell":
       return command ? `运行 ${truncateText(command, 100)}` : "运行命令";
     case "start_process":
@@ -209,6 +218,8 @@ function readableToolActivityCommandInner(
       return `编辑 ${formatPathTarget(path, "文件")}`;
     case "write_file":
       return `写入 ${formatPathTarget(path, "文件")}`;
+    case "apply_patch":
+      return `应用补丁${path ? ` ${formatPathTarget(path, "文件")}` : ""}`;
     case "spawn_agent": {
       const task =
         stringValue(args, "name") ??
@@ -299,6 +310,10 @@ function displaySectionKey(kind: string | undefined): string | undefined {
 }
 
 function toolActivitySectionKey(item: ThreadItem): string {
+  const capabilityKey = capabilitySectionKey(item.display?.capability);
+  if (capabilityKey) {
+    return capabilityKey;
+  }
   const displayKey = displaySectionKey(item.display?.kind);
   if (displayKey) {
     return displayKey;
@@ -316,7 +331,9 @@ function toolActivitySectionKey(item: ThreadItem): string {
       return "search";
     case "edit_file":
     case "write_file":
+    case "apply_patch":
       return "change";
+    case "bash":
     case "run_shell":
     case "git":
     case "start_process":
@@ -346,6 +363,38 @@ function toolActivitySectionKey(item: ThreadItem): string {
       return "skill";
     default:
       return "other";
+  }
+}
+
+function capabilitySectionKey(capability: string | undefined): string | undefined {
+  const normalized = capability?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.startsWith("file.edit")) {
+    return "change";
+  }
+  if (normalized.startsWith("file.") || normalized === "web.fetch") {
+    return "read";
+  }
+  if (normalized.startsWith("search.") || normalized === "web.search" || normalized === "tool.discovery") {
+    return "search";
+  }
+  if (normalized.startsWith("command.")) {
+    return "command";
+  }
+  if (normalized.startsWith("task.")) {
+    return "agent";
+  }
+  switch (normalized) {
+    case "plan":
+      return "plan";
+    case "schedule":
+      return "schedule";
+    case "skill":
+      return "skill";
+    default:
+      return undefined;
   }
 }
 
@@ -674,10 +723,13 @@ export function readableToolName(name: string | undefined): string {
       return "编辑文件";
     case "write_file":
       return "写入文件";
+    case "apply_patch":
+      return "应用补丁";
     case "web_search":
       return "搜索网页";
     case "web_fetch":
       return "读取网页";
+    case "bash":
     case "run_shell":
       return "运行命令";
     case "git":
@@ -739,6 +791,7 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
     const name = (item.name ?? "tool").trim() || "tool";
     const args = parseJSONRecord(item.arguments);
     const result = parseJSONRecord(item.result);
+    const capability = item.display?.capability?.trim();
     const path =
       stringValue(result, "path") ??
       stringValue(args, "path") ??
@@ -766,12 +819,12 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
       listCount++;
       continue;
     }
-    if (name === "run_shell" || name === "git") {
+    if (name === "run_shell" || name === "bash" || name === "git" || capability?.startsWith("command.")) {
       primaryKind = primaryKind === "unknown" ? "command" : primaryKind;
       commandCount++;
       continue;
     }
-    if (name === "edit_file" || name === "write_file") {
+    if (name === "edit_file" || name === "write_file" || name === "apply_patch" || capability === "file.edit") {
       const diff = summarizeDiff(result);
       const target = diff.newFile ? createdFiles : editedFiles;
       addPath(target, path);

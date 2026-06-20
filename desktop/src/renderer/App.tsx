@@ -5631,6 +5631,11 @@ function ToolApprovalDialog({
   onDeny: () => void;
 }): JSX.Element {
   const preview = approval.arguments_preview?.trim();
+  const capability = approval.capability?.trim() || approval.tool_name;
+  const capabilityAction = approval.capability_action?.trim();
+  const capabilityObject = approval.capability_object?.trim();
+  const capabilityLine = [capability, capabilityAction].filter(Boolean).join(" · ");
+  const rule = approval.capability_rule?.trim() || approval.permission_rule?.trim();
   return (
     <div className="modal-backdrop environment-modal-backdrop">
       <section className="environment-dialog" role="dialog" aria-modal="true" aria-label="工具审批">
@@ -5640,13 +5645,25 @@ function ToolApprovalDialog({
           </span>
           <div>
             <h2>审批工具调用</h2>
-            <p>{approval.tool_name}</p>
+            <p>{capabilityLine || approval.tool_name}</p>
           </div>
         </div>
         <div className="environment-dialog-summary">
           <strong>{approval.risk ? `风险：${approval.risk}` : "需要确认"}</strong>
           <span>{approval.policy_reason || approval.classification_reason || "这个工具调用需要人工审批后才能继续。"}</span>
         </div>
+        {capabilityObject ? (
+          <div className="environment-dialog-summary">
+            <strong>对象</strong>
+            <span>{capabilityObject}</span>
+          </div>
+        ) : null}
+        {rule ? (
+          <div className="environment-dialog-summary">
+            <strong>规则</strong>
+            <span>{rule}</span>
+          </div>
+        ) : null}
         {preview ? <pre className="environment-dialog-error">{preview}</pre> : null}
         <div className="environment-dialog-footer">
           <button type="button" onClick={onDeny}>

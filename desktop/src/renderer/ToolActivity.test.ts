@@ -84,6 +84,23 @@ describe("readableToolActivityCommand", () => {
         arguments: JSON.stringify({ command: "npm run typecheck" })
       })
     ).toBe("运行 npm run typecheck");
+
+    expect(
+      readableToolActivityCommand({
+        name: "bash",
+        arguments: JSON.stringify({ command: "npx vitest run" }),
+        display: { capability: "command.bash" }
+      })
+    ).toBe("运行 npx vitest run — command.bash");
+  });
+
+  it("renders apply_patch as a file update tool", () => {
+    expect(
+      readableToolActivityCommand({
+        name: "apply_patch",
+        arguments: JSON.stringify({ patch: "*** Begin Patch\n*** End Patch" })
+      })
+    ).toBe("应用补丁");
   });
 
   it("keeps MCP tool calls raw", () => {
