@@ -464,9 +464,6 @@
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   overflow: hidden;
-  border-radius: var(--radius-sm);
-  background: var(--paper);
-  padding: 12px;
   transform: translateZ(0);
   will-change: transform;
 }
