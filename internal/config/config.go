@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
 const (
@@ -60,8 +62,9 @@ type MCPOAuthConfig struct {
 
 // MCPToolOverride corrects or supplements server-provided MCP tool metadata.
 type MCPToolOverride struct {
-	ReadOnly        *bool `json:"read_only,omitempty"`
-	ConcurrencySafe *bool `json:"concurrency_safe,omitempty"`
+	ReadOnly        *bool                 `json:"read_only,omitempty"`
+	ConcurrencySafe *bool                 `json:"concurrency_safe,omitempty"`
+	Capability      capability.Capability `json:"capability,omitempty"`
 }
 
 // Config holds CLI runtime settings.

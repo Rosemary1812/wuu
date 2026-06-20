@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -73,6 +74,20 @@ func (t *MCPTool) IsReadOnly() bool {
 func (t *MCPTool) IsConcurrencySafe() bool {
 	_, concurrencySafe := t.metadata()
 	return concurrencySafe
+}
+
+// DeclaredCapability returns the local capability classification for the tool.
+// MCP servers do not standardize Wuu capabilities, so only explicit local
+// overrides count.
+func (t *MCPTool) DeclaredCapability() (capability.Capability, bool) {
+	if t == nil || t.client == nil {
+		return "", false
+	}
+	override, ok := t.client.ToolOverride(t.tool.Name)
+	if !ok || strings.TrimSpace(string(override.Capability)) == "" {
+		return "", false
+	}
+	return override.Capability, true
 }
 
 func (t *MCPTool) metadata() (readOnly bool, concurrencySafe bool) {

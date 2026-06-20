@@ -37,3 +37,15 @@ func mcpToolMentionsTerminalOnlyPath(tool Tool) bool {
 	schema, _ := json.Marshal(def.InputSchema)
 	return mentionsTerminalOnlyPath(def.Name, def.Description, string(schema))
 }
+
+func mcpToolCapability(tool Tool) (capability.Capability, bool) {
+	declaring, ok := tool.(CapabilityDeclaringTool)
+	if !ok {
+		return "", false
+	}
+	capName, ok := declaring.DeclaredCapability()
+	if !ok || strings.TrimSpace(string(capName)) == "" {
+		return "", false
+	}
+	return capName, true
+}

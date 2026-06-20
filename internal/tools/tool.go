@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -52,6 +53,13 @@ type ToolClassification struct {
 // isConcurrencySafe methods while preserving Go's simple Tool interface.
 type InputClassifyingTool interface {
 	Classify(argsJSON string) ToolClassification
+}
+
+// CapabilityDeclaringTool lets extension-backed tools map themselves back to
+// Wuu's capability layer. The active model surface remains the authority for
+// whether that capability may be exposed.
+type CapabilityDeclaringTool interface {
+	DeclaredCapability() (capability.Capability, bool)
 }
 
 func classifyToolCall(tool Tool, kind ToolKind, argsJSON string) ToolClassification {

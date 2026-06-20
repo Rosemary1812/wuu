@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -16,6 +17,7 @@ type stubTool struct {
 	defCalls int
 	def      providers.ToolDefinition
 	result   string
+	cap      capability.Capability
 }
 
 func (s *stubTool) Name() string                                    { return s.name }
@@ -23,6 +25,12 @@ func (s *stubTool) Definition() providers.ToolDefinition            { s.defCalls
 func (s *stubTool) Execute(context.Context, string) (string, error) { return s.result, nil }
 func (s *stubTool) IsReadOnly() bool                                { return true }
 func (s *stubTool) IsConcurrencySafe() bool                         { return true }
+func (s *stubTool) DeclaredCapability() (capability.Capability, bool) {
+	if s.cap == "" {
+		return "", false
+	}
+	return s.cap, true
+}
 
 func TestRegistry_DefinitionsCachedAfterFirstCall(t *testing.T) {
 	a := &stubTool{name: "a", def: providers.ToolDefinition{Name: "a", Description: "x"}}

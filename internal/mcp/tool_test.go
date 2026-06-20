@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
 func TestToolAnnotationsDecodeReadOnlyHint(t *testing.T) {
@@ -127,6 +129,19 @@ func TestMCPTool_ConfigOverrideWinsOverAnnotation(t *testing.T) {
 				t.Fatalf("IsConcurrencySafe() = %t, want %t", tool.IsConcurrencySafe(), tt.wantConcurrencySafe)
 			}
 		})
+	}
+}
+
+func TestMCPTool_DeclaredCapabilityComesFromOverride(t *testing.T) {
+	client := &Client{name: "server"}
+	client.SetToolOverrides(map[string]ToolOverride{
+		"tool": {Capability: capability.CapabilitySearchSemantic},
+	})
+	tool := NewMCPTool(client, Tool{Name: "tool"})
+
+	got, ok := tool.DeclaredCapability()
+	if !ok || got != capability.CapabilitySearchSemantic {
+		t.Fatalf("DeclaredCapability() = %q, %v; want %q, true", got, ok, capability.CapabilitySearchSemantic)
 	}
 }
 

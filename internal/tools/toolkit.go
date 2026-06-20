@@ -736,11 +736,45 @@ func activeSurfaceAllowsKnownTool(surface capability.Surface, tool Tool) bool {
 		return false
 	}
 	if classifyToolKind(tool.Name()) == ToolKindMCP &&
-		surfaceLacksTerminalExecution(surface) &&
-		mcpToolMentionsTerminalOnlyPath(tool) {
-		return false
+		surfaceLacksTerminalExecution(surface) {
+		return mcpToolAllowedWithoutTerminalExecution(surface, tool)
 	}
 	return true
+}
+
+func mcpToolAllowedWithoutTerminalExecution(surface capability.Surface, tool Tool) bool {
+	if mcpToolMentionsTerminalOnlyPath(tool) {
+		return false
+	}
+	capName, ok := mcpToolCapability(tool)
+	if !ok {
+		return false
+	}
+	if !surfaceHasVisibleCapability(surface, capName) {
+		return false
+	}
+	if !isReadOnlyMCPProfileCapability(capName) {
+		return false
+	}
+	return tool.IsReadOnly()
+}
+
+func isReadOnlyMCPProfileCapability(capName capability.Capability) bool {
+	switch capName {
+	case capability.CapabilityFileRead,
+		capability.CapabilityFileList,
+		capability.CapabilitySearchGrep,
+		capability.CapabilitySearchGlob,
+		capability.CapabilitySearchAST,
+		capability.CapabilitySearchSemantic,
+		capability.CapabilityWebFetch,
+		capability.CapabilityWebSearch,
+		capability.CapabilityMemorySession,
+		capability.CapabilityMemoryProject:
+		return true
+	default:
+		return false
+	}
 }
 
 func surfaceHasVisibleCapability(surface capability.Surface, capName capability.Capability) bool {

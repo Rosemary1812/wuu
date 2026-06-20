@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
 // ServerConfig describes one MCP server connection.
@@ -33,8 +35,9 @@ func (c ServerConfig) IsEnabled() bool {
 
 // ToolOverride lets local config correct or supplement MCP tool metadata.
 type ToolOverride struct {
-	ReadOnly        *bool `json:"read_only,omitempty"`
-	ConcurrencySafe *bool `json:"concurrency_safe,omitempty"`
+	ReadOnly        *bool                 `json:"read_only,omitempty"`
+	ConcurrencySafe *bool                 `json:"concurrency_safe,omitempty"`
+	Capability      capability.Capability `json:"capability,omitempty"`
 }
 
 // Client is a connected MCP server session.

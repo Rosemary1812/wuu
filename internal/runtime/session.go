@@ -1136,6 +1136,7 @@ func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolO
 		out[name] = mcp.ToolOverride{
 			ReadOnly:        override.ReadOnly,
 			ConcurrencySafe: override.ConcurrencySafe,
+			Capability:      override.Capability,
 		}
 	}
 	return out

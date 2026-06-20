@@ -12,6 +12,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
@@ -1726,6 +1727,7 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 		"search": {
 			ReadOnly:        &readOnly,
 			ConcurrencySafe: &concurrencySafe,
+			Capability:      capability.CapabilitySearchSemantic,
 		},
 	})
 
@@ -1738,6 +1740,9 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 	}
 	if override.ConcurrencySafe == nil || *override.ConcurrencySafe != false {
 		t.Fatalf("ConcurrencySafe = %v, want false", override.ConcurrencySafe)
+	}
+	if override.Capability != capability.CapabilitySearchSemantic {
+		t.Fatalf("Capability = %q, want %q", override.Capability, capability.CapabilitySearchSemantic)
 	}
 }
 

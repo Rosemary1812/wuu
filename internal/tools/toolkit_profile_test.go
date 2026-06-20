@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -161,31 +162,32 @@ func TestLocalNoShellProfileFiltersTerminalMCPTools(t *testing.T) {
 			name:   "mcp_docs_search",
 			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search project documentation through MCP"},
 			result: `{"action":"mcp_docs_search"}`,
+			cap:    capability.CapabilitySearchSemantic,
 		},
 		&stubTool{
-			name: "mcp_terminal_exec",
+			name: "mcp_server_execute_command",
 			def: providers.ToolDefinition{
-				Name:        "mcp_terminal_exec",
-				Description: "Run shell commands in a terminal through MCP",
+				Name:        "mcp_server_execute_command",
+				Description: "Run a command through MCP",
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"command": map[string]any{
+						"cmd": map[string]any{
 							"type":        "string",
-							"description": "npm or git command to run",
+							"description": "Command to run",
 						},
 					},
 				},
 			},
-			result: `{"action":"mcp_terminal_exec"}`,
+			result: `{"action":"mcp_server_execute_command"}`,
 		},
 	)
 	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
 
-	if containsProfileDef(kit.Definitions(), "mcp_terminal_exec") {
+	if containsProfileDef(kit.Definitions(), "mcp_server_execute_command") {
 		t.Fatal("local/no-shell profile must not directly expose terminal MCP tools")
 	}
-	info, ok := kit.ToolInfo("mcp_terminal_exec")
+	info, ok := kit.ToolInfo("mcp_server_execute_command")
 	if !ok || info.Exposure != ToolExposureHidden {
 		t.Fatalf("terminal MCP exposure = %+v, ok=%v; want hidden", info, ok)
 	}
@@ -203,20 +205,58 @@ func TestLocalNoShellProfileFiltersTerminalMCPTools(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if containsString(parsed.ExposedTools, "mcp_terminal_exec") {
+	if containsString(parsed.ExposedTools, "mcp_server_execute_command") {
 		t.Fatalf("tool_search exposed terminal MCP under no-shell profile: %s", resp)
 	}
 	if !containsString(parsed.ExposedTools, "mcp_docs_search") {
 		t.Fatalf("non-command MCP should remain discoverable under no-shell profile: %s", resp)
 	}
 
-	kit.activateDeferredTools("mcp_terminal_exec")
-	if containsProfileDef(kit.Definitions(), "mcp_terminal_exec") {
+	kit.activateDeferredTools("mcp_server_execute_command")
+	if containsProfileDef(kit.Definitions(), "mcp_server_execute_command") {
 		t.Fatal("manual activation must not leak terminal MCP tools into no-shell definitions")
 	}
-	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_terminal_exec", Arguments: `{}`})
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_server_execute_command", Arguments: `{}`})
 	if err == nil || !strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("terminal MCP execution should be blocked by no-shell surface, got %v", err)
+	}
+}
+
+func TestLocalNoShellProfileRequiresExplicitReadOnlyMCPCapability(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name:   "mcp_docs_search",
+			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search project documentation through MCP"},
+			result: `{"action":"mcp_docs_search"}`,
+		},
+	)
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"docs search"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if containsString(parsed.ExposedTools, "mcp_docs_search") {
+		t.Fatalf("no-shell profile should fail closed for MCP without explicit capability: %s", resp)
+	}
+	kit.activateDeferredTools("mcp_docs_search")
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("unclassified MCP execution should be blocked by no-shell surface, got %v", err)
 	}
 }
 

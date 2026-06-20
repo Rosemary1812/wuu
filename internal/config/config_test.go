@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
 func TestLoadFrom_Priority(t *testing.T) {
@@ -388,11 +390,13 @@ func TestConfig_MCPToolOverrides(t *testing.T) {
       "command": "docs-mcp",
       "tool_overrides": {
         "search": {
-          "read_only": true
+          "read_only": true,
+          "capability": "search.semantic"
         },
         "write": {
           "read_only": false,
-          "concurrency_safe": false
+          "concurrency_safe": false,
+          "capability": "file.edit"
         }
       }
     }
@@ -414,12 +418,18 @@ func TestConfig_MCPToolOverrides(t *testing.T) {
 	if search.ConcurrencySafe != nil {
 		t.Fatalf("search.concurrency_safe = %v, want nil", search.ConcurrencySafe)
 	}
+	if search.Capability != capability.CapabilitySearchSemantic {
+		t.Fatalf("search.capability = %q, want %q", search.Capability, capability.CapabilitySearchSemantic)
+	}
 	write := cfg.MCPServers["docs"].ToolOverrides["write"]
 	if write.ReadOnly == nil || *write.ReadOnly != false {
 		t.Fatalf("write.read_only = %v, want false", write.ReadOnly)
 	}
 	if write.ConcurrencySafe == nil || *write.ConcurrencySafe != false {
 		t.Fatalf("write.concurrency_safe = %v, want false", write.ConcurrencySafe)
+	}
+	if write.Capability != capability.CapabilityFileEdit {
+		t.Fatalf("write.capability = %q, want %q", write.Capability, capability.CapabilityFileEdit)
 	}
 }
 
