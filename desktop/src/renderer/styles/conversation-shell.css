@@ -719,8 +719,12 @@
 .jump-to-latest-pill {
   position: absolute;
   bottom: calc(var(--dock-composer-height, 0px) + 12px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin-inline: auto;
+  transform: translateY(0);
   z-index: 20;
 
   display: inline-flex;
@@ -749,6 +753,11 @@
   animation: jump-to-latest-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.conversation-pane.environment-panel-reserved .jump-to-latest-pill {
+  right: var(--environment-panel-reserved-width);
+  max-width: calc(100% - var(--environment-panel-reserved-width) - 32px);
+}
+
 .jump-to-latest-pill:hover {
   background: rgba(255, 255, 255, 1);
   border-color: rgba(17, 19, 21, 0.18);
@@ -770,10 +779,10 @@
 @keyframes jump-to-latest-enter {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
