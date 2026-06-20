@@ -298,8 +298,14 @@ func addBashFirstTools(b *surfaceBuilder, p Profile) {
 	}
 	if p.Workflow.AllowDirectShell {
 		b.addVisible("bash", capability.CapabilityCommandBash)
+		// The five managed-process tools are advanced / hidden
+		// even on profiles that allow direct shell. The model
+		// reaches long-running commands through bash; start_process
+		// and the rest stay in the registry for internal callers
+		// (tool_search, replay, the bash background-mode backend)
+		// only. The model never sees them as separate entries.
 		for _, tool := range processTools {
-			b.addVisible(tool, capability.CapabilityCommandBackground)
+			b.addHidden(tool, capability.CapabilityCommandBackground)
 		}
 	} else {
 		// No direct shell: keep the bash tools around as hidden

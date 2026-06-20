@@ -104,12 +104,15 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isToolDisabled(name) {
 		return ToolExposureHidden
 	}
-	// The legacy run_shell name is preserved as an internal
-	// implementation for replay, progressive disclosure, and any
-	// caller that still calls it by name; the model-facing command
-	// entry point is now the new bash tool emitted by the model
-	// profile compiler. Hide run_shell from every surface.
-	if name == "run_shell" {
+	// The bash-first surface collapses every legacy command entry
+	// point into a single "bash" tool. The model never has to guess
+	// between run_shell / run_test / start_process / git. The
+	// legacy names are kept as internal / advanced implementations
+	// for replay, progressive disclosure, and the bash result
+	// post-processor; they stay registered in the toolkit so
+	// LookupTool still finds them, but toolExposure returns Hidden
+	// for every surface so they never appear in Definitions.
+	if isAdvancedCommandToolHidden(name) {
 		return ToolExposureHidden
 	}
 	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
@@ -128,6 +131,34 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 		return ToolExposureDeferred
 	}
 	return ToolExposureDirect
+}
+
+// isAdvancedCommandToolHidden reports whether the given tool name
+// belongs to the set of advanced / legacy command tools that the
+// bash-first surface demotes to internal. The model-facing command
+// surface is "bash" only; these names stay registered so the
+// internal callers (tool_search, replay, the bash result
+// post-processor that adds test summaries) can still reach them.
+//
+// The set covers the legacy run_shell, the run_test verifier, the
+// five managed-process tools (start_process / list_processes /
+// read_process_output / write_stdin / stop_process), and the
+// structured git tool. Every entry here is also re-listed in the
+// compiler's addBashFirstTools / addExtensionTools helpers so the
+// hidden-tool set matches what the model-profile compiler emits.
+func isAdvancedCommandToolHidden(name string) bool {
+	switch name {
+	case "run_shell",
+		"run_test",
+		"git",
+		"start_process",
+		"list_processes",
+		"read_process_output",
+		"write_stdin",
+		"stop_process":
+		return true
+	}
+	return false
 }
 
 func (t *Toolkit) shouldExposeMCPDirectly(name string) bool {
