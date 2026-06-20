@@ -93,7 +93,7 @@ func TestResolveLocalProfileLimitsAutonomy(t *testing.T) {
 	if profile.Workflow.AllowDirectShell {
 		t.Fatalf("local profile should not allow direct shell by default: %+v", profile.Workflow)
 	}
-	if profile.Workflow.DefaultWriteMode != WriteModeWholeFileNewOnly {
-		t.Fatalf("local DefaultWriteMode = %s, want %s", profile.Workflow.DefaultWriteMode, WriteModeWholeFileNewOnly)
+	if profile.Workflow.DefaultWriteMode != WriteModeExactEdit {
+		t.Fatalf("local DefaultWriteMode = %s, want %s", profile.Workflow.DefaultWriteMode, WriteModeExactEdit)
 	}
 }

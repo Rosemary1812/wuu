@@ -259,6 +259,12 @@ func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
 	if _, has := s.Tools["bash"]; has {
 		t.Fatalf("local profile must not include bash, got tools=%v", sortedKeys(s.Tools))
 	}
+	if _, has := s.Tools["edit_file"]; !has {
+		t.Fatalf("local generic profile must include edit_file so prompt and write_file guidance remain usable, got tools=%v", sortedKeys(s.Tools))
+	}
+	if _, has := s.Tools["write_file"]; !has {
+		t.Fatalf("local generic profile must include write_file, got tools=%v", sortedKeys(s.Tools))
+	}
 	for _, legacy := range []string{"bash", "start_process", "run_shell", "run_test", "git"} {
 		if _, ok := s.HiddenTools[legacy]; ok {
 			t.Fatalf("local profile must not keep %s in hidden profile output", legacy)

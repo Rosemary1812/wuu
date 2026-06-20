@@ -231,7 +231,7 @@ func compileGeneric(b *surfaceBuilder, p Profile) {
 	addScheduleTools(b)
 	addSkillTools(b)
 	addExtensionTools(b)
-	addGenericEditTools(b, p)
+	addGenericEditTools(b)
 	addGenericPrompt(b, p)
 }
 
@@ -337,12 +337,7 @@ func addClaudeEditTools(b *surfaceBuilder) {
 	b.addVisible("write_file", capability.CapabilityFileEdit)
 }
 
-func addGenericEditTools(b *surfaceBuilder, p Profile) {
-	// Local models: only whole-file write is reliable.
-	if p.Family == FamilyLocal {
-		b.addVisible("write_file", capability.CapabilityFileEdit)
-		return
-	}
+func addGenericEditTools(b *surfaceBuilder) {
 	b.addVisible("edit_file", capability.CapabilityFileEdit)
 	b.addVisible("write_file", capability.CapabilityFileEdit)
 }

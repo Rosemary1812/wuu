@@ -312,7 +312,8 @@ func applyLocal(profile *Profile) {
 	profile.Code.WholeFileReliability = 1
 	profile.Code.PathHallucinationRisk = 5
 	profile.Code.TestDebugScore = 2
-	profile.Workflow.DefaultWriteMode = WriteModeWholeFileNewOnly
+	profile.Code.PreferredEditPrimitive = WriteModeExactEdit
+	profile.Workflow.DefaultWriteMode = WriteModeExactEdit
 	profile.Workflow.DefaultMaxAutonomousSteps = 5
 	profile.Workflow.DefaultSearchBudget = 3
 	profile.Workflow.AllowDirectShell = false

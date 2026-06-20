@@ -135,7 +135,7 @@ func TestComposeWorkerSystemPrompt_ContainsWorkerOverride(t *testing.T) {
 	}
 }
 
-func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
+func TestComposeWorkerSystemPrompt_TeachesProfileScopedTerminalGit(t *testing.T) {
 	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
 		t.Fatalf("LookupWorkerType(general-purpose): %v", err)
@@ -143,7 +143,7 @@ func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
 	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace)
 	for _, want := range []string{
 		"Treat shell commands as non-interactive",
-		"Use bash for normal git status/diff/log/add/commit workflows",
+		"current tool surface exposes a terminal command tool",
 		"stage intended files with explicit paths",
 		"git restore --staged",
 		"`git commit -m`",
@@ -155,7 +155,7 @@ func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
 			t.Errorf("worker system prompt missing non-interactive git guidance %q", want)
 		}
 	}
-	for _, old := range []string{"Use run_shell", "structured git tool", "run_test"} {
+	for _, old := range []string{"Use run_shell", "structured git tool", "run_test", "Bash is the terminal entry point"} {
 		if strings.Contains(got, old) {
 			t.Fatalf("worker system prompt must not teach legacy command path %q:\n%s", old, got)
 		}
