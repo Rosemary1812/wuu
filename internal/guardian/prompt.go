@@ -85,6 +85,11 @@ Respond with a single JSON object and nothing else:
 
     {"decision": "approved" | "denied", "risk_level": "low" | "medium" | "high" | "critical", "rationale": "<one sentence>"}
 
+Risk level guidance (the pre-classified level may understate risk for the specific arguments):
+- Echo back "low" / "medium" / "high" verbatim when the arguments match that level's typical blast radius.
+- Promote to "critical" only when the arguments reveal destructive shell commands (rm -rf, dd, mkfs, chmod 777), writes outside the workspace, network exfiltration, or any other action with system-wide blast radius the pre-classifier could not infer from the tool name alone.
+- Never demote to a level below the pre-classified value; the policy classifier is the conservative floor.
+
 Do not include any other text, code fences, or commentary.
 `
 
