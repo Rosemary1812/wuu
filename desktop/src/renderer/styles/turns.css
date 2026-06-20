@@ -66,7 +66,7 @@
                                                                    
                                                                
                                              
-  padding: 2px 0;
+  padding: 0;
   background: transparent;
   border: 0;
   color: var(--wuu-ink-soft);
@@ -94,7 +94,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 2px 0;
+  padding: 0;
   color: var(--wuu-ink-soft);
   font-size: var(--font-ui);
   line-height: var(--conversation-meta-line-height);
