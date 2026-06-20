@@ -157,6 +157,8 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 		return "", err
 	}
 
+	decision = t.applyDefaultCommandPolicyDecision(call, info, decision)
+
 	if permissionDecision, matched, permApprovalRef, permApprovalReview, err := t.applyPermissionRuleDecision(ctx, call, tool, info, decision, startedAt, revisionBefore); err != nil {
 		decision = permissionDecision
 		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, permApprovalRef, permApprovalReview, err)

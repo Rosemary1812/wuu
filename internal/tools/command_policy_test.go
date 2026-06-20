@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
@@ -92,6 +95,70 @@ func TestDecideCommandPolicyReturnsNoMatchForUnrelatedCapability(t *testing.T) {
 	_, _, ok := DecideCommandPolicy(rules, capability.CapabilityFileEdit, "git status")
 	if ok {
 		t.Fatal("file.edit should not match a command.bash rule")
+	}
+}
+
+func TestCommandPolicyTrailingWildcardUsesCommandBoundary(t *testing.T) {
+	rules := DefaultCommandPolicyRules()
+	if _, _, ok := DecideCommandPolicy(rules, capability.CapabilityCommandBash, "git statusx"); ok {
+		t.Fatal("git status * must not match git statusx")
+	}
+	if got, _, ok := DecideCommandPolicy(rules, capability.CapabilityFileEdit, ".ssh/id_rsa"); !ok || got != CommandPolicyDeny {
+		t.Fatalf(".ssh/* should still match path prefixes, got action=%s ok=%t", got, ok)
+	}
+}
+
+func TestDecideShellCommandPolicyChoosesStrictestSegment(t *testing.T) {
+	rules := DefaultCommandPolicyRules()
+	decision, ok := DecideShellCommandPolicy(rules, capability.CapabilityCommandBash, "git status --short && git add internal/tools/command_policy.go")
+	if !ok {
+		t.Fatal("expected composite shell command policy match")
+	}
+	if decision.Action != CommandPolicyAsk || decision.Rule != "bash-git-add" {
+		t.Fatalf("decision = %+v, want ask from bash-git-add", decision)
+	}
+}
+
+func TestShellPackageNetworkMutationRequiresCoveredCommandPolicyRule(t *testing.T) {
+	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx vitest run") {
+		t.Fatal("npx vitest should be covered by the default command policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx vitest run && curl https://example.com") {
+		t.Fatal("mixed covered and uncovered network commands should not be covered")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("curl https://example.com") {
+		t.Fatal("uncovered network commands should not be covered")
+	}
+}
+
+func TestToolkitAppliesDefaultCommandPolicyBeforeBashExecution(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-vitest",
+		Name:      "bash",
+		Arguments: `{"command":"npx vitest run"}`,
+	})
+	if err == nil {
+		t.Fatal("npx vitest should require approval before execution")
+	}
+	if !strings.Contains(err.Error(), "error_kind=approval_required") {
+		t.Fatalf("expected approval_required, got %v", err)
+	}
+	if strings.Contains(err.Error(), "refuses to execute package") {
+		t.Fatalf("default command policy should intercept before bash hard guard, got %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected one telemetry record, got %d", len(records))
+	}
+	if records[0].PolicyAction != ToolPolicyRequireApproval || !strings.Contains(records[0].PolicyReason, "bash-vitest") {
+		t.Fatalf("unexpected command policy telemetry: %+v", records[0])
 	}
 }
 

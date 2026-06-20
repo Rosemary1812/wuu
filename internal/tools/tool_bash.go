@@ -17,11 +17,10 @@ import (
 // the unified terminal entry point.
 //
 // Implementation note: the underlying executor is executeShellCommand
-// (the same package-level function ShellTool uses), so all of the
-// existing bash-mode policy checks (sensitive paths, destructive
-// commands, package-mutation, env-dump) apply unchanged. The legacy
-// run_shell name stays registered as an internal / advanced tool so
-// progressive disclosure and replay paths still work.
+// (the same package-level function ShellTool uses), so the existing
+// bash-mode safety checks still apply. Package/network commands that
+// are covered by the default command policy reach approval before this
+// executor runs; unrelated package/network commands still fail closed.
 type BashTool struct{ env *Env }
 
 func NewBashTool(env *Env) *BashTool { return &BashTool{env: env} }
@@ -93,7 +92,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy; the structured git tool is reserved for advanced restricted operations.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -139,7 +138,7 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	if shellCommandInvokesDestructiveCommand(args.Command) {
 		return "", errors.New("bash refuses to execute destructive shell commands; use apply_patch, edit_file, write_file, or another restricted tool so changes remain auditable")
 	}
-	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+	if shellCommandInvokesPackageOrNetworkMutation(args.Command) && !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(args.Command) {
 		return "", errors.New("bash refuses to execute package, network, or external mutation commands; use dedicated web tools or ask the user for explicit approval")
 	}
 

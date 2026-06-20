@@ -151,6 +151,16 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 // own fallback (typically the legacy tool policy or an approval
 // request).
 func DecideCommandPolicy(rules []CommandPolicyRule, cap capability.Capability, command string) (CommandPolicyAction, string, bool) {
+	decision, ok := DecideNamedCommandPolicy(rules, cap, command)
+	if !ok {
+		return "", "", false
+	}
+	return decision.Action, decision.Reason, true
+}
+
+// DecideNamedCommandPolicy returns the full matching rule decision,
+// including the stable rule name used by telemetry and approval UI.
+func DecideNamedCommandPolicy(rules []CommandPolicyRule, cap capability.Capability, command string) (CommandPolicyDecision, bool) {
 	command = strings.TrimSpace(command)
 	for _, rule := range rules {
 		if rule.Capability != cap {
@@ -159,9 +169,64 @@ func DecideCommandPolicy(rules []CommandPolicyRule, cap capability.Capability, c
 		if !matchCommandPolicyPattern(rule.Pattern, command) {
 			continue
 		}
-		return rule.Action, rule.Reason, true
+		return CommandPolicyDecision{
+			Action: rule.Action,
+			Reason: rule.Reason,
+			Rule:   rule.Name,
+		}, true
 	}
-	return "", "", false
+	return CommandPolicyDecision{}, false
+}
+
+// DecideShellCommandPolicy evaluates a shell command as a sequence of
+// command segments and returns the strictest matching decision. This
+// prevents a composite command such as "git status && git add file"
+// from being allowed just because the first segment is read-only.
+func DecideShellCommandPolicy(rules []CommandPolicyRule, cap capability.Capability, command string) (CommandPolicyDecision, bool) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return CommandPolicyDecision{}, false
+	}
+	segments, ok := splitShellCommandSegmentsQuoted(command)
+	if !ok {
+		segments = splitShellCommandSegments(command)
+	}
+	if len(segments) == 0 {
+		segments = []string{command}
+	}
+	var best CommandPolicyDecision
+	matched := false
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		decision, ok := DecideNamedCommandPolicy(rules, cap, segment)
+		if !ok {
+			continue
+		}
+		if !matched || commandPolicyActionRank(decision.Action) > commandPolicyActionRank(best.Action) {
+			best = decision
+			matched = true
+		}
+	}
+	if matched {
+		return best, true
+	}
+	return DecideNamedCommandPolicy(rules, cap, command)
+}
+
+func commandPolicyActionRank(action CommandPolicyAction) int {
+	switch action {
+	case CommandPolicyDeny, CommandPolicyExplain:
+		return 3
+	case CommandPolicyAsk:
+		return 2
+	case CommandPolicyAllow:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // matchCommandPolicyPattern implements a small glob matcher for the
@@ -193,9 +258,13 @@ func matchCommandPolicyPattern(pattern, value string) bool {
 		return true
 	}
 	if strings.HasSuffix(pattern, "*") {
-		prefix := strings.TrimRight(strings.TrimSuffix(pattern, "*"), " ")
+		rawPrefix := strings.TrimSuffix(pattern, "*")
+		prefix := strings.TrimRight(rawPrefix, " ")
 		if prefix == "" {
 			return true
+		}
+		if strings.HasSuffix(rawPrefix, " ") {
+			return value == prefix || strings.HasPrefix(value, prefix+" ")
 		}
 		return strings.HasPrefix(value, prefix)
 	}
