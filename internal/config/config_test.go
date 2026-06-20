@@ -707,18 +707,18 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 		t.Fatalf("default system prompt must teach model-aware edit tool use: %q", prompt)
 	}
 	for _, want := range []string{
-		"Use terminal execution only when the active tool surface exposes that capability",
+		"Use command execution only when the active tool surface exposes that capability",
 		"command execution and command-based verification are unavailable",
-		"Profile-specific terminal instructions live in the tool_surface section",
+		"Profile-specific command instructions live in the tool_surface section",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must stay capability-neutral for terminal use %q: %q", want, prompt)
+			t.Fatalf("default system prompt must stay capability-neutral for command use %q: %q", want, prompt)
 		}
 	}
 	for _, want := range []string{
 		"may keep running",
 		"explicit timeout",
-		"If terminal execution is unavailable",
+		"If command execution is unavailable",
 		"report_listening_ports",
 		"cannot keep a process alive",
 	} {

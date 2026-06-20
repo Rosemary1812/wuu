@@ -395,10 +395,10 @@ Terminal work goes through the bash tool.
 func addGenericPrompt(b *surfaceBuilder, p Profile) {
 	if p.Family == FamilyLocal || !p.Workflow.AllowDirectShell {
 		b.surface.SystemFragment = strings.TrimSpace(`
-[Tool surface: generic (no direct shell)]
+[Tool surface: generic (no command execution)]
 You are running under a generic BYOK profile. File work uses read_file, edit_file (with exact old_string match — call read_file first to anchor it), and write_file for whole-file replacement.
 
-This profile does not expose terminal execution. If a task requires terminal-only work, explain that the active model profile cannot run those operations and recommend switching to a profile that allows direct terminal execution.
+This profile does not expose command execution. If a task requires command-only work, explain that the active model profile cannot run those operations and recommend switching to a profile that allows command execution.
 ` + sharedTail)
 		return
 	}

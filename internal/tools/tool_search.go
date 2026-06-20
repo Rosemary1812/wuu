@@ -37,7 +37,7 @@ func (t *GrepTool) Definition() providers.ToolDefinition {
 		Name: "grep",
 		Description: "Search file contents using a regex pattern, powered by ripgrep.\n\n" +
 			"Usage:\n" +
-			"- Use this tool for content search; do not invoke grep or rg via a terminal command\n" +
+			"- Use this tool for content search; do not invoke separate search programs through command execution\n" +
 			"- Supports full regex syntax (e.g. \"log.*Error\", \"func\\\\s+\\\\w+\")\n" +
 			"- Filter files with the include glob parameter (e.g. \"*.go\", \"*.ts\")\n" +
 			"- Returns matching lines with file paths and line numbers (max 250 matches)\n" +

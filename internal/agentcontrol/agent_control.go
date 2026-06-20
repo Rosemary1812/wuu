@@ -384,7 +384,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	)
 	if isolation == IsolationWorktree {
 		if c.worktrees == nil {
-			return nil, errors.New("isolation=worktree requires a git repository (this workspace is not a git repo)")
+			return nil, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
 		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
 		if err != nil {
@@ -670,7 +670,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	)
 	if isolation == IsolationWorktree {
 		if c.worktrees == nil {
-			return nil, errors.New("isolation=worktree requires a git repository (this workspace is not a git repo)")
+			return nil, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
 		worktreeRef, err = c.worktrees.Create(c.sessionID, workerID, req.BaseRepo)
 		if err != nil {
@@ -1517,7 +1517,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	var err error
 	if prepared.Isolation == IsolationWorktree {
 		if c.worktrees == nil {
-			return errors.New("isolation=worktree requires a git repository (this workspace is not a git repo)")
+			return errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
 		worktreeRef, err = c.worktrees.Create(c.sessionID, prepared.WorkerID, prepared.BaseRepo)
 		if err != nil {
@@ -1732,15 +1732,15 @@ func (c *AgentControl) recordWorktreeArtifacts(snap subagent.SubAgentSnapshot) {
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return
 	}
-	statusPath := filepath.Join(artifactDir, "git-status.txt")
+	statusPath := filepath.Join(artifactDir, "worktree-status.txt")
 	if err := os.WriteFile(statusPath, []byte(statusOut), 0o644); err == nil {
 		_ = c.harnessStore.AddArtifact(harness.Artifact{
-			ID:        snap.ID + "-git-status",
+			ID:        snap.ID + "-worktree-status",
 			TaskID:    snap.ID,
 			RunID:     harnessRunID(snap.ID),
 			Kind:      harness.ArtifactEvidence,
 			Path:      statusPath,
-			Summary:   "worktree git status",
+			Summary:   "worktree status",
 			CreatedAt: time.Now().UTC(),
 		})
 	}
@@ -2279,7 +2279,7 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 	}
 	switch isolation {
 	case IsolationWorktree:
-		fmt.Fprintf(&b, "Your working directory is %s — a git worktree isolated from other workers. ", workerRoot)
+		fmt.Fprintf(&b, "Your working directory is %s — an isolated worktree for this worker. ", workerRoot)
 		b.WriteString("Edits you make stay sandboxed; the orchestrator will inspect the worktree after you finish. ")
 	default: // inplace
 		fmt.Fprintf(&b, "Your working directory is %s — the SHARED parent repository. ", workerRoot)

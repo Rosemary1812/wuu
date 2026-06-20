@@ -818,7 +818,7 @@ const compactInstructionPrompt = `You are summarizing a coding-agent conversatio
 
 This summary is used to resume after older messages are removed. Include enough detail that the next agent can continue without asking the user to repeat context or guessing missing state.
 
-Respond with text only. Do not call any tools. Do not use read_file, grep, glob, bash, or any other tool. Tool calls will fail this task.
+Respond with text only. Do not call tools, request tool use, or name a tool as part of your own process. Tool calls will fail this task.
 
 Respond with a markdown summary only. Do not include an analysis block, hidden reasoning, XML tags, preamble, or outro. Keep the summary terse but complete enough to continue the task.
 

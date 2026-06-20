@@ -171,20 +171,8 @@ func TestLocalProfileVisibleDefinitionsDoNotTeachShellTools(t *testing.T) {
 
 	for _, def := range kit.Definitions() {
 		text := visibleDefinitionText(def)
-		for _, banned := range []string{
-			"bash",
-			"run_shell",
-			"run_test",
-			"start_process",
-			"list_processes",
-			"read_process_output",
-			"write_stdin",
-			"stop_process",
-			"structured git tool",
-		} {
-			if strings.Contains(text, banned) {
-				t.Fatalf("local/no-shell visible tool %s must not teach unavailable terminal path %q:\n%s", def.Name, banned, text)
-			}
+		if mentionsTerminalOnlyPath(text) {
+			t.Fatalf("local/no-shell visible tool %s must not teach terminal-only paths:\n%s", def.Name, text)
 		}
 	}
 }

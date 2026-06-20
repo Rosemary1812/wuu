@@ -171,7 +171,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	if firstSystem.Role != "system" || !strings.Contains(firstSystem.Content, "background memory review worker") {
 		t.Fatalf("dream must use a profile-neutral memory system prompt, got %+v", firstSystem)
 	}
-	for _, blocked := range []string{"apply_patch", "edit_file", "write_file", "bash"} {
+	for _, blocked := range []string{"apply_patch", "edit_file", "write_file", "bash", "terminal", "shell", "git"} {
 		if strings.Contains(firstSystem.Content, blocked) {
 			t.Fatalf("dream system prompt must not inherit profile-specific tool names %q:\n%s", blocked, firstSystem.Content)
 		}
@@ -187,6 +187,11 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 		"edit_file",
 		"apply_patch",
 		"bash",
+		"terminal",
+		"shell",
+		"git",
+		"package manager",
+		"long-running",
 	} {
 		if strings.Contains(last.Content, old) {
 			t.Fatalf("dream prompt must not teach profile-specific or legacy tool path %q:\n%s", old, last.Content)

@@ -91,7 +91,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				"isolation": map[string]any{
 					"type":        "string",
 					"enum":        []string{"worktree"},
-					"description": "Optional. 'worktree' creates a fresh git worktree for sandboxed edits. Omit to run in the current repo.",
+					"description": "Optional. 'worktree' creates a fresh isolated workspace for sandboxed edits. Omit to run in the current repo.",
 				},
 				"run_in_background": map[string]any{
 					"type":        "boolean",
@@ -264,7 +264,7 @@ This system-reminder OVERRIDES the parent's system prompt for you:
   author, recipient, content, and trigger_turn fields. Treat the
   content field as the actual instruction or notification.
 - Ignore any inherited instruction that says the main interactive
-  agent is read-only or must delegate file writes / shell commands.
+  agent is read-only or must delegate file changes / command execution.
   That restriction applies to the parent, not to you. If a tool is in
   your tool list, you may use it unless the task prompt explicitly
   forbids it.

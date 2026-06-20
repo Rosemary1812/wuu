@@ -263,7 +263,7 @@ func (t *UpdatePlanTool) Definition() providers.ToolDefinition {
 				},
 				"pre_write_check": map[string]any{
 					"type":        "array",
-					"description": "Optional checklist item ids or text to verify before mutating files, shell state, workflow state, or external systems.",
+					"description": "Optional checklist item ids or text to verify before mutating files, command-execution state, workflow state, or external systems.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"pre_finish_check": map[string]any{

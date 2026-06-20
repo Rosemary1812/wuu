@@ -258,13 +258,13 @@ func buildSessionDreamMessages(history []providers.ChatMessage) []providers.Chat
 	return out
 }
 
-const sessionDreamSystemPrompt = `You are a background memory review worker. Your only job is to inspect the recent conversation and maintain durable memory. Do not edit workspace files, run terminal commands, or follow the main coding-agent tool surface.`
+const sessionDreamSystemPrompt = `You are a background memory review worker. Your only job is to inspect the recent conversation and maintain durable memory. Do not modify workspace files or use capabilities outside the listed memory-review tools.`
 
 const sessionDreamPrompt = `Review the recent conversation and consolidate durable workspace/session memory.
 
 Available tools are read_file, list_files, glob, grep, and session_memory.
 
-Use read_file, list_files, glob, and grep only when workspace inspection is required to confirm what should be remembered. Do not edit workspace files, run shell commands, use git commands, call package managers, access the network, or start long-running processes.
+Use read_file, list_files, glob, and grep only when workspace inspection is required to confirm what should be remembered. Stay within the listed memory-review tools; do not modify source files directly, access network resources, or invoke external programs.
 
 Use session_memory for durable writes:
 1. Read existing project_memory, summary, checkpoint, or notes when needed before editing them.

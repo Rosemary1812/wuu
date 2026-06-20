@@ -283,6 +283,8 @@ func TestLocalNoShellFragmentDoesNotNameUnavailableTools(t *testing.T) {
 		"start_process",
 		"test-runner",
 		"background-process",
+		"terminal",
+		"shell",
 		"git",
 	} {
 		if strings.Contains(fragment, banned) {

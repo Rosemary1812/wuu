@@ -149,13 +149,18 @@ func TestCompactInstructionPrompt_EnforcesNoToolsAndFormat(t *testing.T) {
 	for _, want := range []string{
 		"used to resume after older messages are removed",
 		"without asking the user to repeat context",
-		"Do not call any tools",
-		"Do not use read_file, grep, glob, bash",
+		"Do not call tools",
+		"request tool use",
 		"markdown summary only",
 		"Do not include an analysis block",
 	} {
 		if !strings.Contains(compactInstructionPrompt, want) {
 			t.Errorf("compactInstructionPrompt missing %q", want)
+		}
+	}
+	for _, banned := range []string{"read_file", "grep", "glob", "bash", "run_shell", "run_test", "start_process"} {
+		if strings.Contains(compactInstructionPrompt, banned) {
+			t.Fatalf("compactInstructionPrompt must not name unavailable tool path %q:\n%s", banned, compactInstructionPrompt)
 		}
 	}
 	if strings.Contains(compactInstructionPrompt, "ONLY context available when the conversation resumes") {
