@@ -23,8 +23,13 @@ const (
 	MaxEntryChars = 8000
 
 	// MaxActionChars caps the tool-call argument preview (≈ 4000 tokens).
-	// Roughly half of Codex's GUARDIAN_MAX_ACTION_STRING_TOKENS so the
-	// prompt fits comfortably inside a typical 8k-context reviewer model.
+	// Roughly a quarter of Codex's GUARDIAN_MAX_ACTION_STRING_TOKENS
+	// (16 000) so the prompt fits comfortably inside a typical 8k-context
+	// reviewer model. Note: tools/tool_approval.go pre-truncates
+	// arguments to 1200 chars before they reach this point, so this
+	// ceiling is effectively a defensive safety net that rarely fires in
+	// practice; keep both sites in lockstep if the truncation point ever
+	// moves.
 	MaxActionChars = 16000
 
 	// MaxTranscriptChars caps the total transcript length after per-entry

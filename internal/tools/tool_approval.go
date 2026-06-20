@@ -300,9 +300,16 @@ func toolApprovalKey(call providers.ToolCall) string {
 }
 
 func approvalArgumentsPreview(arguments string) string {
+	// Pre-truncate the action preview here. The guardian prompt also
+	// has its own ceiling (guardian.MaxActionChars = 16 000), but
+	// tools/ cannot import guardian/ without an import cycle, so the
+	// source of truth for the actual limit is this local 1200-char
+	// cap. Keep both numbers in lockstep if the truncation point
+	// ever moves.
 	argsPreview := redactToolOutput(strings.TrimSpace(arguments))
-	if len(argsPreview) > 1200 {
-		argsPreview = argsPreview[:1200] + "\n...[truncated]"
+	const previewCap = 1200
+	if len(argsPreview) > previewCap {
+		argsPreview = argsPreview[:previewCap] + "\n...[truncated]"
 	}
 	return argsPreview
 }
