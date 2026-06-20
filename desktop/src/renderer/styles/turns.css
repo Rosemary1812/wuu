@@ -3653,7 +3653,7 @@
 .turn-reasoning-body-inner {
   min-height: 0;
   overflow: hidden;
-  padding: 4px 0 2px 20px;
+  padding: 18px 0 2px 20px;
                                                                     
                                                                
                                                                     
@@ -3671,6 +3671,10 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+
+.turn-reasoning-scroll > *:not(:first-child) {
+  margin-top: var(--conversation-message-element-gap);
 }
 
 .tool-card {
