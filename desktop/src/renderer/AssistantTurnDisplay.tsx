@@ -28,6 +28,7 @@ export type TurnEntry = {
    *  share an id (e.g. consecutive tool calls collapsed into one group). */
   key: string;
   item: ThreadItem;
+  items?: ThreadItem[];
   position: "process" | "answer";
   settled: boolean;
   streaming: boolean;
@@ -42,7 +43,8 @@ export type TurnEntryKind =
   | "commentary"
   | "answer"
   | "activity"
-  | "process";
+  | "process"
+  | "process_cluster";
 
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
@@ -165,6 +167,7 @@ export function buildAssistantTurnDisplay(
       entries.push({
         key: `${item.id}-activity`,
         item,
+        items: group,
         position: "process",
         settled: allSettled,
         streaming: isInProgress && !allSettled,
@@ -217,11 +220,64 @@ export function buildAssistantTurnDisplay(
   }
 
   return {
-    entries,
+    entries: clusterProcessEntries(entries),
     hasAnswer,
     missingReplyMessage,
     latestProcessPreview,
   };
+}
+
+function clusterProcessEntries(entries: TurnEntry[]): TurnEntry[] {
+  const clustered: TurnEntry[] = [];
+  let pending: TurnEntry[] = [];
+
+  const flushPending = (): void => {
+    if (pending.length === 0) {
+      return;
+    }
+    const items = pending.flatMap((entry) => entry.items ?? [entry.item]);
+    const hasActivity = pending.some((entry) => entry.kind === "activity");
+    const shouldCluster =
+      items.length > 1 && (hasActivity || pending.length > 1);
+    if (!shouldCluster) {
+      clustered.push(...pending);
+      pending = [];
+      return;
+    }
+    const first = pending[0];
+    clustered.push({
+      key: `${first.key}-process-cluster`,
+      item: first.item,
+      items,
+      position: "process",
+      settled: pending.every((entry) => entry.settled),
+      streaming: pending.some((entry) => entry.streaming),
+      kind: "process_cluster",
+      count: items.length,
+    });
+    pending = [];
+  };
+
+  for (const entry of entries) {
+    if (isProcessClusterCandidate(entry)) {
+      pending.push(entry);
+      continue;
+    }
+    flushPending();
+    clustered.push(entry);
+  }
+  flushPending();
+  return clustered;
+}
+
+function isProcessClusterCandidate(entry: TurnEntry): boolean {
+  if (entry.position !== "process") {
+    return false;
+  }
+  if (entry.kind === "activity") {
+    return true;
+  }
+  return entry.item.type === "reasoning";
 }
 
 function latestInProgressProcessPreview(

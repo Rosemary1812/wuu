@@ -17,6 +17,10 @@ import { CollapsibleDetails } from "./CollapsibleMotion";
 import { ToolActivityTimeline } from "./ToolActivity";
 import { ThreadItemView } from "./ThreadItemView";
 import { LightweightStreamingText } from "./LightweightStreamingText";
+import {
+  buildToolActivityProcessSegments,
+  type ToolActivityProcessSegment,
+} from "./ToolActivityHelpers";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
 import { formatDuration, useLiveNow } from "./TurnProgress";
@@ -333,6 +337,17 @@ function EntryRenderer({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
+  if (kind === "process_cluster") {
+    return (
+      <ProcessClusterRow
+        entry={entry}
+        turn={turn}
+        cwd={cwd}
+        onStreamFrame={onStreamFrame}
+        onNoticeAction={onNoticeAction}
+      />
+    );
+  }
   if (kind === "activity") {
     if (item.type === "tool_call" || item.type === "collab_agent_tool_call") {
       // Catch-up: when the agent message starts streaming, the tool
@@ -347,7 +362,7 @@ function EntryRenderer({
         );
       return (
         <ToolActivityTimeline
-          items={[item]}
+          items={entry.items ?? [item]}
           revealItems={streaming}
           streaming={toolFakeStreaming}
         />
@@ -402,6 +417,177 @@ function EntryRenderer({
     );
   }
   return null;
+}
+
+function ProcessClusterRow({
+  entry,
+  turn,
+  cwd,
+  onStreamFrame,
+  onNoticeAction,
+}: {
+  entry: TurnEntry;
+  turn: Turn;
+  cwd?: string;
+  onStreamFrame: () => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
+}): JSX.Element {
+  const items = entry.items ?? [entry.item];
+  const toolItems = items.filter(isToolActivityItem);
+  const reasoningItems = items.filter(
+    (clusterItem) => clusterItem.type === "reasoning",
+  );
+  const toolSegments = buildToolActivityProcessSegments(toolItems);
+  const hasReasoning = reasoningItems.length > 0;
+  const hasToolDetails = toolItems.length > 1;
+  const hasDetails = hasReasoning || hasToolDetails;
+  const reasoningStreaming =
+    turn.status === "in_progress" &&
+    reasoningItems.some((clusterItem) => clusterItem.status === "in_progress");
+  const errors = toolSegments
+    .map((segment) => segment.error)
+    .filter((error): error is string => Boolean(error));
+  const failed = toolSegments.some((segment) => segment.status === "failed");
+  const className = `process-cluster-row${entry.streaming ? " running" : ""}${
+    failed ? " failed" : ""
+  }`;
+
+  const summary = (
+    <span className="process-cluster-summary-line">
+      {toolSegments.map((segment, index) => (
+        <ProcessClusterSegmentView
+          key={segment.id}
+          segment={segment}
+          separator={index > 0}
+        />
+      ))}
+      {hasReasoning ? (
+        <span className="process-cluster-segment process-cluster-reasoning-segment">
+          {toolSegments.length > 0 ? (
+            <span className="process-cluster-separator">·</span>
+          ) : null}
+          <span
+            className={`process-cluster-reasoning-label${
+              reasoningStreaming ? " is-streaming" : ""
+            }`}
+          >
+            {reasoningStreaming ? "正在思考" : "思考过程"}
+          </span>
+        </span>
+      ) : null}
+    </span>
+  );
+
+  const errorBlock =
+    errors.length > 0 ? (
+      <div className="process-cluster-errors">
+        {errors.map((message, index) => (
+          <div className="activity-detail-error" key={`error-${index}`}>
+            {message}
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+  if (!hasDetails) {
+    return (
+      <article className={className}>
+        {summary}
+        {errorBlock}
+      </article>
+    );
+  }
+
+  return (
+    <details className={`process-cluster-fold${failed ? " failed" : ""}`}>
+      <summary className={className}>
+        {summary}
+        <ChevronRight
+          className="process-cluster-chevron icon-xs"
+          aria-hidden
+        />
+      </summary>
+      {errorBlock}
+      <div className="process-cluster-body">
+        {hasToolDetails ? (
+          <div className="process-cluster-tool-list">
+            <ToolActivityTimeline items={toolItems} />
+          </div>
+        ) : null}
+        {hasReasoning ? (
+          <div className="process-cluster-reasoning-list">
+            {reasoningItems.map((reasoningItem) => (
+              <ThreadItemView
+                key={reasoningItem.id}
+                turnID={turn.id}
+                turnStatus={turn.status}
+                item={reasoningItem}
+                cwd={cwd}
+                streaming={
+                  turn.status === "in_progress" &&
+                  reasoningItem.status === "in_progress"
+                }
+                onStreamFrame={onStreamFrame}
+                onNoticeAction={onNoticeAction}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function ProcessClusterSegmentView({
+  segment,
+  separator,
+}: {
+  segment: ToolActivityProcessSegment;
+  separator: boolean;
+}): JSX.Element {
+  return (
+    <span
+      className={`process-cluster-segment process-cluster-segment-${segment.kind}`}
+    >
+      {separator ? <span className="process-cluster-separator">·</span> : null}
+      {typeof segment.count === "number" ? (
+        <>
+          <span>{segment.countPrefix}</span>
+          <AnimatedProcessCount value={segment.count} />
+          <span>{segment.countSuffix}</span>
+        </>
+      ) : (
+        <span>{segment.text}</span>
+      )}
+    </span>
+  );
+}
+
+function AnimatedProcessCount({ value }: { value: number }): JSX.Element {
+  const previousValue = useRef(value);
+  const [changing, setChanging] = useState(false);
+
+  useEffect(() => {
+    if (previousValue.current === value) {
+      return undefined;
+    }
+    previousValue.current = value;
+    setChanging(true);
+    const timeoutId = window.setTimeout(() => {
+      setChanging(false);
+    }, 180);
+    return () => window.clearTimeout(timeoutId);
+  }, [value]);
+
+  return (
+    <span className={`process-cluster-count${changing ? " is-changing" : ""}`}>
+      {value}
+    </span>
+  );
+}
+
+function isToolActivityItem(item: ThreadItem): boolean {
+  return item.type === "tool_call" || item.type === "collab_agent_tool_call";
 }
 
 function ReasoningFold({

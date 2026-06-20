@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadItem } from "../shared/protocol";
 import { readableToolActivityCommand } from "./ToolActivity";
-import { summarizeToolActivity } from "./ToolActivityHelpers";
+import {
+  buildToolActivityProcessSegments,
+  summarizeToolActivity,
+} from "./ToolActivityHelpers";
 
 describe("readableToolActivityCommand", () => {
   it("ignores tool-provided display text and waits for args to parse", () => {
@@ -167,5 +170,57 @@ describe("readableToolActivityCommand", () => {
         display: { kind: "command", text: "运行 npx vitest" }
       })
     ).toBe("运行 npx vitest");
+  });
+});
+
+describe("buildToolActivityProcessSegments", () => {
+  it("turns multiple file reads into a count segment", () => {
+    const segments = buildToolActivityProcessSegments([
+      {
+        id: "tool-1",
+        type: "tool_call",
+        name: "read_file",
+        status: "completed",
+        arguments: JSON.stringify({ path: "src/App.tsx" }),
+      },
+      {
+        id: "tool-2",
+        type: "tool_call",
+        name: "read_file",
+        status: "completed",
+        arguments: JSON.stringify({ path: "src/turns.css" }),
+      },
+    ] satisfies ThreadItem[]);
+
+    expect(segments).toMatchObject([
+      {
+        kind: "read",
+        countPrefix: "查看 ",
+        count: 2,
+        countSuffix: " 个文件",
+      },
+    ]);
+  });
+
+  it("compacts long OR search patterns by common prefix", () => {
+    const segments = buildToolActivityProcessSegments([
+      {
+        id: "tool-1",
+        type: "tool_call",
+        name: "grep",
+        status: "completed",
+        arguments: JSON.stringify({
+          pattern:
+            "WORKSPACE_RIGHT_PANEL_MIN_WIDTH|WORKSPACE_RIGHT_PANEL_MAX_WIDTH|WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH",
+        }),
+      },
+    ] satisfies ThreadItem[]);
+
+    expect(segments).toMatchObject([
+      {
+        kind: "search",
+        text: "搜索 WORKSPACE_RIGHT_PANEL_*",
+      },
+    ]);
   });
 });

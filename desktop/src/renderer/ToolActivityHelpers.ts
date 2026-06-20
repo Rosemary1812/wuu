@@ -53,6 +53,17 @@ export type ToolActivitySection = {
   error?: string;
 };
 
+export type ToolActivityProcessSegment = {
+  id: string;
+  kind: ToolActivityKind;
+  status: ToolActivitySectionStatus;
+  text?: string;
+  countPrefix?: string;
+  count?: number;
+  countSuffix?: string;
+  error?: string;
+};
+
 export function buildToolActivitySections(items: ThreadItem[]): ToolActivitySection[] {
   const groups = new Map<string, ThreadItem[]>();
   for (const item of items) {
@@ -61,6 +72,19 @@ export function buildToolActivitySections(items: ThreadItem[]): ToolActivitySect
   }
   return Array.from(groups.entries()).map(([key, grouped]) =>
     toolActivitySectionFromItems(key, grouped),
+  );
+}
+
+export function buildToolActivityProcessSegments(
+  items: ThreadItem[],
+): ToolActivityProcessSegment[] {
+  const groups = new Map<string, ThreadItem[]>();
+  for (const item of items) {
+    const key = toolActivitySectionKey(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return Array.from(groups.entries()).map(([key, grouped]) =>
+    toolActivityProcessSegmentFromItems(key, grouped),
   );
 }
 
@@ -502,6 +526,209 @@ function toolActivitySectionFromItems(
   }
 }
 
+function toolActivityProcessSegmentFromItems(
+  key: string,
+  items: ThreadItem[],
+): ToolActivityProcessSegment {
+  const status = combinedToolStatus(items);
+  const error = firstToolError(items);
+  switch (key) {
+    case "read": {
+      const targets = compactToolTargets(items);
+      return fileCountSegment({
+        id: key,
+        kind: "read",
+        status,
+        error,
+        singularPrefix: "查看",
+        countPrefix: "查看",
+        targets,
+        fallbackCount: items.length,
+      });
+    }
+    case "search": {
+      const targets = compactSearchTargets(items).map(
+        compactSearchProcessTarget,
+      );
+      const count = targets.length || items.length;
+      return count > 1
+        ? {
+            id: key,
+            kind: "search",
+            status,
+            error,
+            countPrefix: "搜索 ",
+            count,
+            countSuffix: " 项",
+          }
+        : {
+            id: key,
+            kind: "search",
+            status,
+            error,
+            text: targets[0] ? `搜索 ${targets[0]}` : "搜索",
+          };
+    }
+    case "change": {
+      const targets = compactToolTargets(items);
+      return fileCountSegment({
+        id: key,
+        kind: "edit",
+        status,
+        error,
+        singularPrefix: "更新",
+        countPrefix: "更新",
+        targets,
+        fallbackCount: items.length,
+      });
+    }
+    case "command": {
+      const labels = compactCommandLabels(items);
+      const count = labels.length || items.length;
+      return count > 1
+        ? {
+            id: key,
+            kind: "command",
+            status,
+            error,
+            countPrefix: "检查 ",
+            count,
+            countSuffix: " 项",
+          }
+        : {
+            id: key,
+            kind: "command",
+            status,
+            error,
+            text: labels[0] ?? "运行命令",
+          };
+    }
+    case "agent": {
+      const labels = compactAgentLabels(items);
+      const count = labels.length || items.length;
+      return count > 1
+        ? {
+            id: key,
+            kind: "agent",
+            status,
+            error,
+            countPrefix: "子任务 ",
+            count,
+            countSuffix: " 项",
+          }
+        : {
+            id: key,
+            kind: "agent",
+            status,
+            error,
+            text: labels[0] ? `子任务 ${truncateText(labels[0], 48)}` : "子任务",
+          };
+    }
+    case "plan":
+      return {
+        id: key,
+        kind: "plan",
+        status,
+        error,
+        text: "更新计划",
+      };
+    case "browser":
+      return {
+        id: key,
+        kind: "browser",
+        status,
+        error,
+        text:
+          items.length > 1
+            ? "检查页面"
+            : (compactDetailText(compactCommandLabels(items)) ?? "检查页面"),
+      };
+    case "skill": {
+      const targets = compactSkillTargets(items);
+      const count = targets.length || items.length;
+      return count > 1
+        ? {
+            id: key,
+            kind: "skill",
+            status,
+            error,
+            countPrefix: "学习 ",
+            count,
+            countSuffix: " 项",
+          }
+        : {
+            id: key,
+            kind: "skill",
+            status,
+            error,
+            text: targets[0] ? `学习 ${truncateText(targets[0], 48)}` : "学习技能",
+          };
+    }
+    default: {
+      const names = uniqueStrings(
+        items.map((item) => readableToolName(item.name)),
+      );
+      const count = names.length || items.length;
+      return count > 1
+        ? {
+            id: key,
+            kind: "unknown",
+            status,
+            error,
+            countPrefix: "工具 ",
+            count,
+            countSuffix: " 项",
+          }
+        : {
+            id: key,
+            kind: "unknown",
+            status,
+            error,
+            text: names[0] ?? "工具",
+          };
+    }
+  }
+}
+
+function fileCountSegment({
+  id,
+  kind,
+  status,
+  error,
+  singularPrefix,
+  countPrefix,
+  targets,
+  fallbackCount,
+}: {
+  id: string;
+  kind: ToolActivityKind;
+  status: ToolActivitySectionStatus;
+  error?: string;
+  singularPrefix: string;
+  countPrefix: string;
+  targets: string[];
+  fallbackCount: number;
+}): ToolActivityProcessSegment {
+  const count = targets.length || fallbackCount;
+  return count > 1
+    ? {
+        id,
+        kind,
+        status,
+        error,
+        countPrefix: `${countPrefix} `,
+        count,
+        countSuffix: " 个文件",
+      }
+    : {
+        id,
+        kind,
+        status,
+        error,
+        text: targets[0] ? `${singularPrefix} ${targets[0]}` : singularPrefix,
+      };
+}
+
 function combinedToolStatus(items: ThreadItem[]): ToolActivitySectionStatus {
   if (items.some((item) => item.status === "failed" || item.error)) {
     return "failed";
@@ -629,6 +856,39 @@ function formatSearchTarget(pattern: string | undefined): string {
     return "内容";
   }
   return truncateText(pattern.replace(/^\*\*\//, ""), 90);
+}
+
+function compactSearchProcessTarget(pattern: string): string {
+  const normalized = pattern.replace(/^\*\*\//, "").trim();
+  if (!normalized) {
+    return "内容";
+  }
+  const alternatives = normalized
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (alternatives.length > 1) {
+    const prefix = commonPrefix(alternatives);
+    const boundary = prefix.lastIndexOf("_");
+    if (boundary >= 3) {
+      return `${prefix.slice(0, boundary + 1)}*`;
+    }
+    return `${alternatives.length} 项`;
+  }
+  return truncateText(normalized, 48);
+}
+
+function commonPrefix(values: string[]): string {
+  if (values.length === 0) {
+    return "";
+  }
+  let prefix = values[0];
+  for (const value of values.slice(1)) {
+    while (prefix && !value.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+    }
+  }
+  return prefix;
 }
 
 function truncateText(text: string, max: number): string {

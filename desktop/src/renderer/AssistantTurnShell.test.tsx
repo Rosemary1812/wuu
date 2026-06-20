@@ -108,6 +108,16 @@ function makeToolCall(name = "lookup"): ThreadItem {
   };
 }
 
+function makeReadFileTool(path: string): ThreadItem {
+  return {
+    id: nextID("tool"),
+    type: "tool_call",
+    status: "completed",
+    name: "read_file",
+    arguments: JSON.stringify({ path }),
+  };
+}
+
 type RenderOptions = {
   // The ThreadItemView renderer used inside the shell will re-enter
   // the items we pass in. For shell-level structural assertions we
@@ -179,6 +189,14 @@ function processEntryList(container: HTMLElement): HTMLElement {
 
 function reasoningFolds(container: HTMLElement): HTMLDetailsElement[] {
   return Array.from(container.querySelectorAll("details.turn-reasoning-fold"));
+}
+
+function processClusterFolds(container: HTMLElement): HTMLDetailsElement[] {
+  return Array.from(container.querySelectorAll("details.process-cluster-fold"));
+}
+
+function processClusterRows(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll(".process-cluster-row"));
 }
 
 function reasoningSummaryText(fold: HTMLDetailsElement): string {
@@ -405,11 +423,10 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(reasoningSummaryText(folds[0])).toBe("正在思考");
   });
 
-  it("marks only the streaming reasoning summary with .is-streaming for the shimmer sweep", () => {
-    // Only the latest reasoning (the one still streaming) should carry
-    // the .is-streaming class so the shimmer animation knows where to
-    // paint. A settled reasoning item — even one that just finished —
-    // must read as static gray prose like any other "查看 X" tool row.
+  it("marks a live process cluster as actively thinking", () => {
+    // Consecutive reasoning items are now one process cluster. Only the
+    // cluster-level thinking label needs the streaming shimmer; the
+    // individual reasoning records live inside the expandable body.
     const settledA = makeReasoning("earlier deliberation, finished");
     const settledB = makeReasoning("next deliberation, finished");
     const streamingNow = makeStreamingReasoning("thinking right now");
@@ -421,16 +438,12 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     ]);
     const { container } = renderShell(turn);
 
-    const folds = reasoningFolds(container);
-    expect(folds).toHaveLength(3);
-
-    const summaries = folds.map((fold) =>
-      fold.querySelector(".turn-reasoning-summary-text"),
-    );
-    // Two settled rows, one streaming row.
-    expect(summaries[0]?.classList.contains("is-streaming")).toBe(false);
-    expect(summaries[1]?.classList.contains("is-streaming")).toBe(false);
-    expect(summaries[2]?.classList.contains("is-streaming")).toBe(true);
+    const clusters = processClusterFolds(container);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].hasAttribute("open")).toBe(false);
+    const label = clusters[0].querySelector(".process-cluster-reasoning-label");
+    expect(label?.textContent).toBe("正在思考");
+    expect(label?.classList.contains("is-streaming")).toBe(true);
   });
 
   it("keeps the reasoning fold closed even when the outer process fold is open", () => {
@@ -473,9 +486,9 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(folds[0]).not.toBeNull();
   });
 
-  it("renders multiple reasoning folds independently", () => {
-    // Multi-segment reasoning should produce multiple nested folds;
-    // each one defaults closed and can be expanded separately.
+  it("groups consecutive reasoning records into one process cluster", () => {
+    // Multi-segment reasoning is a single top-level process row. The
+    // user can expand that row to read the underlying reasoning trail.
     const turn = makeTurn("completed", [
       makeReasoning("step one"),
       makeReasoning("step two"),
@@ -483,17 +496,19 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     ]);
     const { container } = renderShell(turn);
 
-    const folds = reasoningFolds(container);
-    expect(folds).toHaveLength(2);
-    expect(folds[0].hasAttribute("open")).toBe(false);
-    expect(folds[1].hasAttribute("open")).toBe(false);
+    expect(reasoningFolds(container)).toHaveLength(0);
+    const clusters = processClusterFolds(container);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].hasAttribute("open")).toBe(false);
+    expect(clusters[0].textContent).toContain("思考过程");
   });
 
-  it("renders reasoning alongside commentary and tool activity in the process fold", () => {
+  it("groups adjacent reasoning and tool activity without crossing commentary", () => {
     // The canonical scenario from the message-display policy: a
     // turn that interleaves reasoning, commentary, and tool calls.
-    // The outer process fold is open during streaming; reasoning
-    // inside is folded, commentary is inline, tools are visible.
+    // The outer process fold is open during streaming; adjacent
+    // process items collapse into one live row, while commentary is
+    // still a boundary and stays inline.
     const turn = makeTurn("in_progress", [
       makeStreamingReasoning("hmm, what to do"),
       makeToolCall("grep"),
@@ -503,13 +518,13 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(true);
+    const clusters = processClusterRows(container);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].textContent).toContain("搜索");
+    expect(clusters[0].textContent).toContain("正在思考");
     const folds = reasoningFolds(container);
-    expect(folds).toHaveLength(2);
-    // Both reasoning folds are closed, even though the outer
-    // process fold is open and the commentary/tool rows are visible.
-    for (const fold of folds) {
-      expect(fold.hasAttribute("open")).toBe(false);
-    }
+    expect(folds).toHaveLength(1);
+    expect(reasoningSummaryText(folds[0])).toBe("正在思考");
     const entryList = processEntryList(container);
     expect(
       Array.from(entryList.children).map((entry) =>
@@ -518,13 +533,29 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
         ),
       ),
     ).toEqual([
-      "turn-process-entry-process",
-      "turn-process-entry-activity",
+      "turn-process-entry-process_cluster",
       "turn-process-entry-commentary",
       "turn-process-entry-process",
     ]);
     // Commentary text surfaces inline (not folded):
     expect(container.textContent).toContain("found the file");
+  });
+
+  it("groups consecutive tool activity into one count row with details", () => {
+    const turn = makeTurn("completed", [
+      makeReadFileTool("src/App.tsx"),
+      makeReadFileTool("src/turns.css"),
+      makeFinalAnswer("answer"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const clusters = processClusterFolds(container);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].querySelector(".process-cluster-count")?.textContent).toBe(
+      "2",
+    );
+    expect(clusters[0].textContent).toContain("查看 2 个文件");
+    expect(clusters[0].querySelectorAll(".activity-group")).toHaveLength(2);
   });
 
   it("snaps the reasoning scroll container to the bottom when the fold opens", async () => {
