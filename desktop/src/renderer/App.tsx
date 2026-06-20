@@ -26,7 +26,7 @@ import {
 import {
   type CSSProperties,
   type RefObject,
-  Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -294,6 +294,17 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
+
+function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
+  const callbackRef = useRef(callback);
+  useLayoutEffect(() => {
+    callbackRef.current = callback;
+  });
+  return useCallback(
+    ((...args: Parameters<T>): ReturnType<T> => callbackRef.current(...args)) as T,
+    [],
+  );
+}
 
 type HistoryMessageEditState = {
   threadID: string;
@@ -1343,6 +1354,50 @@ export function App(): JSX.Element {
     showingWorkspaceMode: Boolean(showingWorkspaceMode),
     initialized: Boolean(state.initialized),
   });
+  const handleTurnCollapseComplete = useCallback(() => {
+    enableConversationAutoFollow();
+    scheduleStreamScroll();
+  }, [enableConversationAutoFollow, scheduleStreamScroll]);
+  const canEditCachedThreadMessage = useStableCallback((thread: Thread) =>
+    canShowHistoryEditButton(thread),
+  );
+  const handleCachedPaneForkMessage = useStableCallback(
+    (thread: Thread, turnID: string, itemID: string) => {
+      void forkThreadFromMessage(thread, turnID, itemID);
+    },
+  );
+  const handleCachedPaneEditMessage = useStableCallback(
+    (thread: Thread, turnID: string, item: ThreadItem) => {
+      startEditingThreadMessageFromHistory(thread, turnID, item);
+    },
+  );
+  const handleCachedPaneCancelEditMessage = useStableCallback(() => {
+    cancelEditingThreadMessage();
+  });
+  const handleCachedPaneSubmitEditMessage = useStableCallback(
+    (
+      thread: Thread,
+      turnID: string,
+      item: ThreadItem,
+      text: string,
+      images: InputImage[],
+      files: InputFile[],
+    ) => {
+      void submitEditedThreadMessageFromHistory(
+        thread,
+        turnID,
+        item,
+        text,
+        images,
+        files,
+      );
+    },
+  );
+  const handleCachedPaneNoticeAction = useStableCallback(
+    (action: UserFacingErrorAction) => {
+      handleNoticeAction(action);
+    },
+  );
   const sidebarPinnedThreads = pinnedThreads(state.threads);
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
@@ -5301,81 +5356,22 @@ export function App(): JSX.Element {
                 {renderComposer("hero")}
               </EmptyConversationHome>
             ) : (
-              <div className="cached-conversation-panes">
-                {cachedThreadPaneIDs.map((threadID) => {
-                  const thread = state.threads.find(
-                    (candidate) => candidate.id === threadID,
-                  );
-                  if (!thread) return null;
-                  const isActive = threadID === activeThreadID;
-                  const threadTurns = thread.turns ?? [];
-                  const threadLatestAgentMessageID =
-                    latestAgentMessageItemID(threadTurns);
-                  return (
-                    <div
-                      key={threadID}
-                      className="cached-conversation-pane"
-                      data-active={isActive}
-                      style={isActive ? undefined : { display: "none" }}
-                    >
-                      <div className="conversation-width">
-                        {isActive && conversationGridVisible ? (
-                          <ConversationGridGuides />
-                        ) : null}
-                        {threadTurns.map((turn) => (
-                          <Fragment key={turn.id}>
-                            <TurnView
-                              turn={turn}
-                              cwd={thread.cwd ?? state.activeContext?.cwd}
-                              latestAgentMessageID={threadLatestAgentMessageID}
-                              onStreamFrame={scheduleStreamScroll}
-                              onCollapseComplete={() => {
-                                enableConversationAutoFollow();
-                                scheduleStreamScroll();
-                              }}
-                              onForkMessage={(turnID, itemID) =>
-                                void forkThreadFromMessage(
-                                  thread,
-                                  turnID,
-                                  itemID,
-                                )
-                              }
-                              onEditMessage={
-                                canShowHistoryEditButton(thread)
-                                  ? (turnID, item) =>
-                                      startEditingThreadMessageFromHistory(
-                                        thread,
-                                        turnID,
-                                        item,
-                                      )
-                                  : undefined
-                              }
-                              editingMessage={
-                                historyMessageEdit?.threadID === thread.id
-                                  ? historyMessageEdit
-                                  : undefined
-                              }
-                              onCancelEditMessage={cancelEditingThreadMessage}
-                              onSubmitEditMessage={
-                                (turnID, item, text, images, files) =>
-                                  void submitEditedThreadMessageFromHistory(
-                                    thread,
-                                    turnID,
-                                    item,
-                                    text,
-                                    images,
-                                    files,
-                                  )
-                              }
-                              onNoticeAction={handleNoticeAction}
-                            />
-                          </Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <CachedConversationPanes
+                threadIDs={cachedThreadPaneIDs}
+                threads={state.threads}
+                activeThreadID={activeThreadID}
+                activeContextCwd={state.activeContext?.cwd}
+                conversationGridVisible={conversationGridVisible}
+                historyMessageEdit={historyMessageEdit}
+                onStreamFrame={scheduleStreamScroll}
+                onCollapseComplete={handleTurnCollapseComplete}
+                canEditThreadMessage={canEditCachedThreadMessage}
+                onForkMessage={handleCachedPaneForkMessage}
+                onEditMessage={handleCachedPaneEditMessage}
+                onCancelEditMessage={handleCachedPaneCancelEditMessage}
+                onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
+                onNoticeAction={handleCachedPaneNoticeAction}
+              />
             )}
               </>
             )}
@@ -5510,6 +5506,108 @@ export function App(): JSX.Element {
     </div>
   );
 }
+
+type CachedConversationPanesProps = {
+  threadIDs: string[];
+  threads: Thread[];
+  activeThreadID?: string;
+  activeContextCwd?: string;
+  conversationGridVisible: boolean;
+  historyMessageEdit?: HistoryMessageEditState;
+  onStreamFrame: () => void;
+  onCollapseComplete: () => void;
+  canEditThreadMessage: (thread: Thread) => boolean;
+  onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
+  onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
+  onCancelEditMessage: () => void;
+  onSubmitEditMessage: (
+    thread: Thread,
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+  ) => void;
+  onNoticeAction: (action: UserFacingErrorAction) => void;
+};
+
+const CachedConversationPanes = memo(function CachedConversationPanes({
+  threadIDs,
+  threads,
+  activeThreadID,
+  activeContextCwd,
+  conversationGridVisible,
+  historyMessageEdit,
+  onStreamFrame,
+  onCollapseComplete,
+  canEditThreadMessage,
+  onForkMessage,
+  onEditMessage,
+  onCancelEditMessage,
+  onSubmitEditMessage,
+  onNoticeAction,
+}: CachedConversationPanesProps): JSX.Element {
+  return (
+    <div className="cached-conversation-panes">
+      {threadIDs.map((threadID) => {
+        const thread = threads.find((candidate) => candidate.id === threadID);
+        if (!thread) return null;
+        const isActive = threadID === activeThreadID;
+        const threadTurns = thread.turns ?? [];
+        const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
+        return (
+          <div
+            key={threadID}
+            className="cached-conversation-pane"
+            data-active={isActive}
+            style={isActive ? undefined : { display: "none" }}
+          >
+            <div className="conversation-width">
+              {isActive && conversationGridVisible ? (
+                <ConversationGridGuides />
+              ) : null}
+              {threadTurns.map((turn) => (
+                <TurnView
+                  key={turn.id}
+                  turn={turn}
+                  cwd={thread.cwd ?? activeContextCwd}
+                  latestAgentMessageID={threadLatestAgentMessageID}
+                  onStreamFrame={onStreamFrame}
+                  onCollapseComplete={onCollapseComplete}
+                  onForkMessage={(turnID, itemID) =>
+                    onForkMessage(thread, turnID, itemID)
+                  }
+                  onEditMessage={
+                    canEditThreadMessage(thread)
+                      ? (turnID, item) => onEditMessage(thread, turnID, item)
+                      : undefined
+                  }
+                  editingMessage={
+                    historyMessageEdit?.threadID === thread.id
+                      ? historyMessageEdit
+                      : undefined
+                  }
+                  onCancelEditMessage={onCancelEditMessage}
+                  onSubmitEditMessage={(turnID, item, text, images, files) =>
+                    onSubmitEditMessage(
+                      thread,
+                      turnID,
+                      item,
+                      text,
+                      images,
+                      files,
+                    )
+                  }
+                  onNoticeAction={onNoticeAction}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
 
 function ToolApprovalDialog({
   approval,
