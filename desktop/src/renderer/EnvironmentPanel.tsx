@@ -31,7 +31,6 @@ import type {
   Thread
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
-import { shortCodexModelLabel } from "./RuntimeHelpers";
 
 export type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
@@ -246,10 +245,6 @@ export function EnvironmentPanel({
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const contextLabel =
     activeContext?.kind === "project" ? activeProject?.name ?? "当前项目" : activeContext ? "临时对话" : "未连接";
-  const profileLabel = initialized.model_profile?.profile_name || initialized.tool_surface?.profile_name || initialized.provider;
-  const surfaceLabel = initialized.tool_surface?.edit_primitive
-    ? `${initialized.tool_surface.edit_primitive}${initialized.tool_surface.bash_first ? " · bash" : ""}`
-    : shortCodexModelLabel(initialized.model);
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
@@ -361,11 +356,6 @@ export function EnvironmentPanel({
         <span>来源 {sourceItems.length}</span>
         <ChevronRight className="icon" />
       </button>
-
-      <div className="environment-runtime-summary">
-        <span>{profileLabel}</span>
-        <span>{surfaceLabel}</span>
-      </div>
 
       {activeMenu === "mode" ? (
         <EnvironmentModeMenu

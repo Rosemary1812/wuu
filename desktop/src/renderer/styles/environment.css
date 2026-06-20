@@ -452,23 +452,6 @@
   padding: 0 8px;
 }
 
-.environment-runtime-summary {
-  display: flex;
-  min-width: 0;
-  gap: 8px;
-  color: #9ca0a3;
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  padding: 4px 8px 0;
-  text-transform: uppercase;
-}
-
-.environment-runtime-summary span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .environment-side-menu {
   position: absolute;
