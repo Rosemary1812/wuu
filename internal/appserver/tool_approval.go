@@ -35,6 +35,10 @@ type ToolApprovalRequest struct {
 	PermissionPatterns   []string `json:"permission_patterns,omitempty"`
 	PermissionAlways     []string `json:"permission_always,omitempty"`
 	PermissionRule       string   `json:"permission_rule,omitempty"`
+	Capability           string   `json:"capability,omitempty"`
+	CapabilityObject     string   `json:"capability_object,omitempty"`
+	CapabilityAction     string   `json:"capability_action,omitempty"`
+	CapabilityRule       string   `json:"capability_rule,omitempty"`
 	ModelNextAction      string   `json:"model_next_action,omitempty"`
 }
 
@@ -86,6 +90,10 @@ func (s *Server) installToolApprovalReviewer(kit *tools.Toolkit) {
 			PermissionPatterns:   request.PermissionPatterns,
 			PermissionAlways:     request.PermissionAlways,
 			PermissionRule:       request.PermissionRule,
+			Capability:           string(request.Capability),
+			CapabilityObject:     request.CapabilityObject,
+			CapabilityAction:     request.CapabilityAction,
+			CapabilityRule:       request.CapabilityRule,
 			ModelNextAction:      request.ModelNextAction,
 		})
 		if err != nil {

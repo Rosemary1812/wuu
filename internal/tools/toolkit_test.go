@@ -4606,6 +4606,9 @@ func TestToolkit_ToolPolicy_ApprovalRequiredGuidesModel(t *testing.T) {
 	if request["tool_name"] != "run_shell" || request["policy_action"] != string(ToolPolicyRequireApproval) || request["model_next_action"] == "" {
 		t.Fatalf("approval artifact missing policy details: %+v", request)
 	}
+	if request["capability"] != "command.bash" || request["capability_action"] != "execute" || request["capability_object"] == "" {
+		t.Fatalf("approval artifact missing capability details: %+v", request)
+	}
 	envelope := record.ResultEnvelope()
 	if !strings.Contains(strings.Join(envelope.NextSuggestions, " "), "approval") {
 		t.Fatalf("approval policy envelope missing recovery guidance: %+v", envelope)
@@ -4687,6 +4690,9 @@ func TestToolkit_ToolApprovalReviewerApprovesAndExecutes(t *testing.T) {
 	request := reviewer.requests[0]
 	if request.ToolName != "write_file" || request.ApprovalRef == "" || request.ApprovalKey == "" {
 		t.Fatalf("approval request missing details: %+v", request)
+	}
+	if string(request.Capability) != "file.edit" || request.CapabilityObject != "notes.txt" || request.CapabilityAction != "edit" {
+		t.Fatalf("approval request missing capability details: %+v", request)
 	}
 	records := kit.ToolTelemetry()
 	if len(records) != 1 {

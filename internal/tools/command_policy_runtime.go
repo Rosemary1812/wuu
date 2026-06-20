@@ -22,7 +22,7 @@ func (t *Toolkit) applyDefaultCommandPolicyDecision(call providers.ToolCall, inf
 	if !ok {
 		return base
 	}
-	return commandPolicyToolPolicyDecision(base, policyDecision)
+	return commandPolicyToolPolicyDecision(base, capabilityName, subject, policyDecision)
 }
 
 func defaultCommandPolicySubject(surface capability.Surface, call providers.ToolCall, info ToolInfo) (capability.Capability, string, bool) {
@@ -112,8 +112,12 @@ func decideDefaultCommandPolicy(capName capability.Capability, subject string) (
 	}
 }
 
-func commandPolicyToolPolicyDecision(base ToolPolicyDecision, policyDecision CommandPolicyDecision) ToolPolicyDecision {
+func commandPolicyToolPolicyDecision(base ToolPolicyDecision, capabilityName capability.Capability, subject string, policyDecision CommandPolicyDecision) ToolPolicyDecision {
 	base.Reason = commandPolicyReason(policyDecision)
+	base.Capability = capabilityName
+	base.CapabilityObject = strings.TrimSpace(subject)
+	base.CapabilityAction = capabilityActionVerb(capabilityName)
+	base.CapabilityRule = strings.TrimSpace(policyDecision.Rule)
 	switch policyDecision.Action {
 	case CommandPolicyAllow:
 		base.Action = ToolPolicyAllow
@@ -123,6 +127,31 @@ func commandPolicyToolPolicyDecision(base ToolPolicyDecision, policyDecision Com
 		base.Action = ToolPolicyDeny
 	}
 	return base
+}
+
+func capabilityActionVerb(capabilityName capability.Capability) string {
+	switch capabilityName {
+	case capability.CapabilityCommandBash, capability.CapabilityCommandBackground:
+		return "execute"
+	case capability.CapabilityFileRead:
+		return "read"
+	case capability.CapabilityFileList:
+		return "list"
+	case capability.CapabilityFileEdit:
+		return "edit"
+	case capability.CapabilitySearchGrep, capability.CapabilitySearchGlob, capability.CapabilitySearchAST, capability.CapabilitySearchSemantic:
+		return "search"
+	case capability.CapabilityWebFetch:
+		return "fetch"
+	case capability.CapabilityWebSearch:
+		return "search"
+	default:
+		parts := strings.Split(string(capabilityName), ".")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
+		return ""
+	}
 }
 
 func commandPolicyReason(decision CommandPolicyDecision) string {

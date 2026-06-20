@@ -843,6 +843,9 @@ func TestServerToolApprovalRequestApprovesToolkitExecution(t *testing.T) {
 	if params.ToolName != "write_file" || params.ArgumentsPreview == "" {
 		t.Fatalf("unexpected approval request params: %+v", params)
 	}
+	if params.Capability != "file.edit" || params.CapabilityObject != "notes.txt" || params.CapabilityAction != "edit" {
+		t.Fatalf("approval request missing capability fields: %+v", params)
+	}
 	id, ok := request["id"].(string)
 	if !ok || id == "" {
 		t.Fatalf("approval request missing id: %+v", request)

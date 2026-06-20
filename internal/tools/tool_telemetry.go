@@ -96,6 +96,10 @@ type toolApprovalRequest struct {
 	Revision             string           `json:"revision,omitempty"`
 	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
 	ArgumentsPreview     string           `json:"arguments_preview,omitempty"`
+	Capability           string           `json:"capability,omitempty"`
+	CapabilityObject     string           `json:"capability_object,omitempty"`
+	CapabilityAction     string           `json:"capability_action,omitempty"`
+	CapabilityRule       string           `json:"capability_rule,omitempty"`
 	ModelNextAction      string           `json:"model_next_action"`
 	ApprovalOptions      []string         `json:"approval_options"`
 }
@@ -429,6 +433,7 @@ func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo,
 		return ""
 	}
 	id := approvalRequestID(call, createdAt)
+	capabilityFields := t.approvalCapabilityFields(call.Name, call.Arguments, info, decision)
 	request := toolApprovalRequest{
 		ID:                   id,
 		ToolName:             call.Name,
@@ -444,6 +449,10 @@ func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo,
 		Revision:             revision,
 		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
 		ArgumentsPreview:     approvalArgumentsPreview(call.Arguments),
+		Capability:           string(capabilityFields.Capability),
+		CapabilityObject:     capabilityFields.Object,
+		CapabilityAction:     capabilityFields.Action,
+		CapabilityRule:       capabilityFields.Rule,
 		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
 		ApprovalOptions:      []string{"ask_user", "choose_lower_risk_alternative", "stop"},
 	}

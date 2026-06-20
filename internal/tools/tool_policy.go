@@ -1,6 +1,10 @@
 package tools
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blueberrycongee/wuu/internal/capability"
+)
 
 // ToolRisk is a coarse execution risk level used by policy, telemetry, and
 // future approval/sandbox plumbing. It describes the expected blast radius of
@@ -46,11 +50,15 @@ type ToolPolicy struct {
 
 // ToolPolicyDecision is produced before each known tool call executes.
 type ToolPolicyDecision struct {
-	Action           ToolPolicyAction `json:"action"`
-	Risk             ToolRisk         `json:"risk"`
-	Reason           string           `json:"reason,omitempty"`
-	AutoModeDecision AutoModeDecision `json:"auto_mode_decision,omitempty"`
-	AutoModeReason   string           `json:"auto_mode_reason,omitempty"`
+	Action           ToolPolicyAction      `json:"action"`
+	Risk             ToolRisk              `json:"risk"`
+	Reason           string                `json:"reason,omitempty"`
+	AutoModeDecision AutoModeDecision      `json:"auto_mode_decision,omitempty"`
+	AutoModeReason   string                `json:"auto_mode_reason,omitempty"`
+	Capability       capability.Capability `json:"capability,omitempty"`
+	CapabilityObject string                `json:"capability_object,omitempty"`
+	CapabilityAction string                `json:"capability_action,omitempty"`
+	CapabilityRule   string                `json:"capability_rule,omitempty"`
 }
 
 func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -41,27 +42,31 @@ const (
 )
 
 type ToolApprovalReviewRequest struct {
-	ID                   string           `json:"id"`
-	ToolName             string           `json:"tool_name"`
-	CallID               string           `json:"call_id,omitempty"`
-	Kind                 ToolKind         `json:"kind"`
-	Risk                 ToolRisk         `json:"risk"`
-	PolicyAction         ToolPolicyAction `json:"policy_action"`
-	PolicyReason         string           `json:"policy_reason,omitempty"`
-	ClassificationReason string           `json:"classification_reason,omitempty"`
-	ReadOnly             bool             `json:"read_only"`
-	Destructive          bool             `json:"destructive"`
-	CreatedAt            time.Time        `json:"created_at"`
-	Revision             string           `json:"revision,omitempty"`
-	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
-	ArgumentsPreview     string           `json:"arguments_preview,omitempty"`
-	ApprovalRef          string           `json:"approval_ref,omitempty"`
-	ApprovalKey          string           `json:"approval_key,omitempty"`
-	Permission           string           `json:"permission,omitempty"`
-	PermissionPatterns   []string         `json:"permission_patterns,omitempty"`
-	PermissionAlways     []string         `json:"permission_always,omitempty"`
-	PermissionRule       string           `json:"permission_rule,omitempty"`
-	ModelNextAction      string           `json:"model_next_action"`
+	ID                   string                `json:"id"`
+	ToolName             string                `json:"tool_name"`
+	CallID               string                `json:"call_id,omitempty"`
+	Kind                 ToolKind              `json:"kind"`
+	Risk                 ToolRisk              `json:"risk"`
+	PolicyAction         ToolPolicyAction      `json:"policy_action"`
+	PolicyReason         string                `json:"policy_reason,omitempty"`
+	ClassificationReason string                `json:"classification_reason,omitempty"`
+	ReadOnly             bool                  `json:"read_only"`
+	Destructive          bool                  `json:"destructive"`
+	CreatedAt            time.Time             `json:"created_at"`
+	Revision             string                `json:"revision,omitempty"`
+	ArgumentsSHA256      string                `json:"arguments_sha256,omitempty"`
+	ArgumentsPreview     string                `json:"arguments_preview,omitempty"`
+	ApprovalRef          string                `json:"approval_ref,omitempty"`
+	ApprovalKey          string                `json:"approval_key,omitempty"`
+	Permission           string                `json:"permission,omitempty"`
+	PermissionPatterns   []string              `json:"permission_patterns,omitempty"`
+	PermissionAlways     []string              `json:"permission_always,omitempty"`
+	PermissionRule       string                `json:"permission_rule,omitempty"`
+	Capability           capability.Capability `json:"capability,omitempty"`
+	CapabilityObject     string                `json:"capability_object,omitempty"`
+	CapabilityAction     string                `json:"capability_action,omitempty"`
+	CapabilityRule       string                `json:"capability_rule,omitempty"`
+	ModelNextAction      string                `json:"model_next_action"`
 }
 
 type ToolApprovalReview struct {
@@ -171,6 +176,7 @@ func (t *Toolkit) requestToolApproval(
 	if t == nil || t.approvalReviewer == nil {
 		return ToolApprovalReview{}, errToolApprovalReviewerUnavailable
 	}
+	capabilityFields := t.approvalCapabilityFields(call.Name, call.Arguments, info, decision)
 	request := ToolApprovalReviewRequest{
 		ID:                   approvalRequestID(call, createdAt),
 		ToolName:             call.Name,
@@ -188,6 +194,10 @@ func (t *Toolkit) requestToolApproval(
 		ArgumentsPreview:     approvalArgumentsPreview(call.Arguments),
 		ApprovalRef:          approvalRef,
 		ApprovalKey:          key,
+		Capability:           capabilityFields.Capability,
+		CapabilityObject:     capabilityFields.Object,
+		CapabilityAction:     capabilityFields.Action,
+		CapabilityRule:       capabilityFields.Rule,
 		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
 	}
 	if permissionReq != nil {
@@ -200,6 +210,9 @@ func (t *Toolkit) requestToolApproval(
 		rule := normalizeToolPermissionRule(permissionDecision.Rule)
 		if rule.Permission != "" && rule.Pattern != "" {
 			request.PermissionRule = rule.Permission + " " + rule.Pattern
+			if request.CapabilityRule == "" {
+				request.CapabilityRule = request.PermissionRule
+			}
 		}
 	}
 	review, err := t.approvalReviewer.ReviewToolApproval(ctx, request)
