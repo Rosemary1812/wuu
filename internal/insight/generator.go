@@ -103,6 +103,7 @@ func generateSection(ctx context.Context, client providers.Client, model string,
 			{Role: "user", Content: prompt},
 		},
 		Temperature: 0.3,
+		MaxTokens:    def.MaxTokens,
 	})
 	if err != nil {
 		return InsightSection{}, err
