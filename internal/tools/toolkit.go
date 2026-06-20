@@ -680,8 +680,8 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 	if t.isToolDisabled(call.Name) {
 		return "", fmt.Errorf("tool %q is disabled in this session", call.Name)
 	}
-	if t.toolExposure(call.Name) == ToolExposureDeferred {
-		return "", fmt.Errorf("tool %q is deferred; call tool_search first to expose it", call.Name)
+	if err := t.ensureToolAvailableForExecution(call.Name); err != nil {
+		return "", err
 	}
 	tool := t.registry.Lookup(call.Name)
 	if tool == nil {
@@ -696,6 +696,23 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 		return "", fmt.Errorf("unknown tool %q", call.Name)
 	}
 	return t.executeKnownTool(ctx, call, tool)
+}
+
+func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
+	surface := t.activeCompiledSurface()
+	if surface.ProfileName != "" {
+		if _, ok := surface.Tools[name]; !ok {
+			return fmt.Errorf("tool %q is not available in the active model surface", name)
+		}
+		if isDeferredByDefault(name) && !t.isDeferredToolActive(name) {
+			return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
+		}
+		return nil
+	}
+	if t.toolExposure(name) == ToolExposureDeferred {
+		return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
+	}
+	return nil
 }
 
 // LookupTool returns the Tool with the given name, or nil. This

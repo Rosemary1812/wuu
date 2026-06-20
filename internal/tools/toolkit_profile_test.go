@@ -130,6 +130,29 @@ func TestActiveProfileDefinitionsRespectExplicitDisables(t *testing.T) {
 	}
 }
 
+func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_shell", Arguments: `{"command":"echo hi"}`})
+	if err == nil || !strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("hidden run_shell should be blocked by active surface, got %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("inactive deferred run_workflow should ask for tool_search, got %v", err)
+	}
+	kit.activateDeferredTools("run_workflow")
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
+	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("activated run_workflow should reach tool validation, got %v", err)
+	}
+}
+
 func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
