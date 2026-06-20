@@ -263,6 +263,44 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	}
 }
 
+func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.ProviderName = "openai"
+	rt.Model = "gpt-5-codex"
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("New toolkit: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel(rt.ProviderName, rt.Model)
+	rt.Toolkit = kit
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.ModelProfile == nil {
+		t.Fatalf("initialize missing model profile summary: %+v", result)
+	}
+	if result.ModelProfile.ProfileName != "openai_codex" || result.ModelProfile.Provider != "openai" || result.ModelProfile.Model != "gpt-5-codex" {
+		t.Fatalf("unexpected model profile summary: %+v", result.ModelProfile)
+	}
+	if result.ModelProfile.EditPrimitive != "apply_patch" || !result.ModelProfile.BashFirst {
+		t.Fatalf("unexpected model profile capabilities: %+v", result.ModelProfile)
+	}
+	if result.ToolSurface == nil {
+		t.Fatalf("initialize missing tool surface summary: %+v", result)
+	}
+	if result.ToolSurface.ToolCapabilityMap["apply_patch"] != "file.edit" {
+		t.Fatalf("tool surface missing apply_patch capability: %+v", result.ToolSurface.ToolCapabilityMap)
+	}
+	if result.ToolSurface.ToolCapabilityMap["bash"] != "command.bash" {
+		t.Fatalf("tool surface missing bash capability: %+v", result.ToolSurface.ToolCapabilityMap)
+	}
+}
+
 func TestServerInitializeExposesModelRoles(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	cfg := config.Config{
@@ -939,6 +977,16 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	}
 	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"gpt-5.5"}}`)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
+	}
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.ModelProfile == nil {
+		t.Fatalf("config/model/update missing model profile summary: %+v", result)
+	}
+	if result.ModelProfile.Model != "gpt-5.5" || result.ModelProfile.EditPrimitive != "apply_patch" || !result.ModelProfile.BashFirst {
+		t.Fatalf("unexpected update model profile summary: %+v", result.ModelProfile)
+	}
+	if result.ToolSurface == nil || result.ToolSurface.ToolCapabilityMap["apply_patch"] != "file.edit" {
+		t.Fatalf("unexpected update tool surface summary: %+v", result.ToolSurface)
 	}
 
 	if rt.StreamRunner.APIModel != "gpt-5.5" {

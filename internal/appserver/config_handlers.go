@@ -26,6 +26,7 @@ import (
 
 func (s *Server) handleInitialize(req Request) error {
 	core := version.Info()
+	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, InitializeResult{
 		ProtocolVersion: ProtocolVersion,
 		Core: CoreBuildInfo{
@@ -42,6 +43,8 @@ func (s *Server) handleInitialize(req Request) error {
 		ToolPolicy:     s.currentToolPolicySummary(),
 		Permissions:    s.currentPermissionSummary(),
 		ExtensionTrust: s.currentExtensionTrustSummary(),
+		ModelProfile:   modelProfile,
+		ToolSurface:    toolSurface,
 		ModelRoles:     s.currentModelRoleSummaries(),
 		Providers:      s.providerSummaries(),
 	}, nil)
@@ -118,6 +121,25 @@ func (s *Server) currentPermissionSummary() PermissionSummary {
 		ApprovalPolicy:    strings.TrimSpace(permissions.ApprovalPolicy),
 		ApprovalsReviewer: strings.TrimSpace(permissions.ApprovalsReviewer),
 	}
+}
+
+func (s *Server) currentModelSurfaceSummaries() (*ModelProfileSummary, *ToolSurfaceSummary) {
+	if s == nil || s.rt == nil || s.rt.Toolkit == nil {
+		return nil, nil
+	}
+	surface := s.rt.Toolkit.ActiveSurface()
+	if surface.ProfileName == "" {
+		return nil, nil
+	}
+	summary := surface.Summarize()
+	profile := &ModelProfileSummary{
+		ProfileName:   summary.ProfileName,
+		Provider:      summary.Provider,
+		Model:         summary.Model,
+		EditPrimitive: summary.EditPrimitive,
+		BashFirst:     summary.BashFirst,
+	}
+	return profile, &summary
 }
 
 func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
@@ -405,6 +427,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
+	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
 		Provider:       resolvedName,
 		Model:          model,
@@ -413,6 +436,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		ToolPolicy:     s.currentToolPolicySummary(),
 		Permissions:    s.currentPermissionSummary(),
 		ExtensionTrust: s.currentExtensionTrustSummary(),
+		ModelProfile:   modelProfile,
+		ToolSurface:    toolSurface,
 		ModelRoles:     s.currentModelRoleSummaries(),
 		Providers:      s.providerSummaries(),
 	}, nil)

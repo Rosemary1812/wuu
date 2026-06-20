@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
@@ -137,9 +138,21 @@ type InitializeResult struct {
 	ToolPolicy      ToolPolicySummary     `json:"tool_policy"`
 	Permissions     PermissionSummary     `json:"permissions"`
 	ExtensionTrust  ExtensionTrustSummary `json:"extension_trust"`
+	ModelProfile    *ModelProfileSummary  `json:"model_profile,omitempty"`
+	ToolSurface     *ToolSurfaceSummary   `json:"tool_surface,omitempty"`
 	ModelRoles      []ModelRoleSummary    `json:"model_roles,omitempty"`
 	Providers       []ProviderSummary     `json:"providers,omitempty"`
 }
+
+type ModelProfileSummary struct {
+	ProfileName   string `json:"profile_name"`
+	Provider      string `json:"provider"`
+	Model         string `json:"model"`
+	EditPrimitive string `json:"edit_primitive"`
+	BashFirst     bool   `json:"bash_first"`
+}
+
+type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
 	Provider       string                `json:"provider"`
@@ -234,6 +247,8 @@ type ConfigModelUpdateResult struct {
 	ToolPolicy     ToolPolicySummary     `json:"tool_policy"`
 	Permissions    PermissionSummary     `json:"permissions"`
 	ExtensionTrust ExtensionTrustSummary `json:"extension_trust"`
+	ModelProfile   *ModelProfileSummary  `json:"model_profile,omitempty"`
+	ToolSurface    *ToolSurfaceSummary   `json:"tool_surface,omitempty"`
 	ModelRoles     []ModelRoleSummary    `json:"model_roles,omitempty"`
 	Providers      []ProviderSummary     `json:"providers,omitempty"`
 }

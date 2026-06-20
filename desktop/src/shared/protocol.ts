@@ -130,6 +130,12 @@ export type ConfigModelUpdateResult = {
   variant?: string;
   tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
+  // model_profile + tool_surface mirror the initialize result. The
+  // runtime recomputes the surface when the model changes, so the
+  // renderer can re-key capability-aware UI off the new
+  // profile without an extra initialize round-trip.
+  model_profile?: ModelProfileSummary;
+  tool_surface?: ToolSurfaceSummary;
   extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
