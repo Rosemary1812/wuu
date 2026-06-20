@@ -225,7 +225,7 @@
 .turn-answer-body {
   display: flex;
   flex-direction: column;
-  gap: var(--conversation-prose-block-gap);
+  gap: var(--conversation-message-element-gap);
 }
 
                                                                     
