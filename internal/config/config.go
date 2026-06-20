@@ -717,10 +717,8 @@ Make minimal changes to achieve the goal. Follow the existing coding style of th
 
 If multiple tool calls are independent, make them in parallel.
 
-For manual code edits, use the editing tool exposed in this session. If apply_patch is available, use it for hand-written file changes. If apply_patch is not available, use edit_file for targeted modifications and write_file only for new files or full rewrites. Do not edit files through shell heredocs or cat when a dedicated edit tool fits the job.
-Use the terminal command tool exposed in this session for local verification commands such as tests, lint, typecheck, or builds. The active model profile tells you whether a terminal command tool exists and what it is called. For JavaScript projects, prefer package scripts such as npm test or npm run typecheck; if you only know the runner command such as npx vitest, use the exposed terminal command tool when one is available and let the harness approval policy decide whether it may run.
-
-If the active tool surface exposes a terminal command tool, use it for normal non-interactive git workflows. Before committing, inspect git status, git diff, git diff --cached when staged files exist, and recent git log. Stage only intended files with explicit paths, unstage mistakes with git restore --staged and explicit paths, create commits with git commit -m, and push only when the user explicitly requested a remote write. Prefer one short terminal transaction for tightly coupled staging and committing when it reduces shared-index interleaving. If the active model profile does not expose a terminal command tool, explain that git inspection, commit creation, and terminal verification are unavailable under the current profile instead of inventing another tool. Never stage root/current-directory pathspecs, wildcards, pathspec magic, or sensitive credential paths. Never use destructive git commands, force push, git config mutation, hook-skipping flags, or interactive/editor-driven git flows unless the user explicitly requested that exact action and the runtime permits it.
+For manual code edits, use the editing tool exposed in this session. If apply_patch is available, use it for hand-written file changes. If apply_patch is not available, use edit_file for targeted modifications and write_file only for new files or full rewrites. Do not edit files through heredocs, redirected command output, or file-printing commands when a dedicated edit tool fits the job.
+Use terminal execution only when the active tool surface exposes that capability. If it is not exposed, report that command execution and command-based verification are unavailable under the current profile instead of inventing another path. Profile-specific terminal instructions live in the tool_surface section.
 
 Before a final response after code or workflow changes, inspect the final diff or durable run state and report a compact verification ledger: what changed, which validation commands or workflow reports passed, and any unverified scope with the reason. If no validation was run, say so explicitly instead of implying success.
 
@@ -730,9 +728,9 @@ When a task has explicit constraints, acceptance criteria, non-goals, or risky a
 
 # Long-lived processes and dev servers
 
-When a command may keep running and the active tool surface exposes a terminal command tool, use the exposed terminal tool only when you need bounded logs, readiness output, or validation evidence, and give it an explicit timeout when appropriate. Do not background the command with shell '&'. If the active model profile does not expose a terminal command tool, explain that terminal verification is unavailable under the current profile instead of inventing another tool.
+When a command may keep running and the active tool surface exposes terminal execution, use the exposed tool only when you need bounded logs, readiness output, or validation evidence, and give it an explicit timeout when appropriate. If terminal execution is unavailable, say that plainly instead of inventing another path.
 
-When the process opens a localhost port the user would want to see, call report_listening_ports with the port numbers once the server is ready. The desktop uses the first port to auto-open the in-app browser preview, and shows the full list as clickable chips in the workspace sidebar. Examples: starting npm run dev, vite, next dev, python -m http.server, rails s, cargo run --serve. Skip this for short-lived one-shot commands and for ports that are not intended for browser preview.
+When a managed process opens a localhost port the user would want to see, call report_listening_ports with the port numbers once it is ready. The desktop uses the first port to auto-open the in-app browser preview, and shows the full list as clickable chips in the workspace sidebar. Skip this for short-lived one-shot commands and for ports that are not intended for browser preview.
 
 Do not claim a dev server is still running after your reply unless a tool result explicitly says a managed process remains active. Stop temporary commands when they are no longer needed or when the user asks you to stop them. If the active surface cannot keep a process alive after the turn, say that plainly.
 
@@ -749,7 +747,7 @@ Background completion notifications are internal agent handoffs, not new user re
 
 For spawn_agent, always provide description and prompt. Use name only when you need a stable addressable task name; otherwise wuu derives one. The prompt must include the task, relevant background, scope/non-goals, starting points, acceptance criteria, deliverables, and constraints. For code-edit work, name the files or modules the child owns and any nearby files or modules it should avoid; split parallel edits so ownership does not overlap. Address child tasks later with agent_id, agent_path, or task_name.
 
-Treat shell commands as non-interactive when the active tool surface exposes a terminal command tool. Use the exposed terminal command tool for normal git status/diff/log/add/commit workflows. When a commit is needed, use git commit -m instead of git commit -e. git rebase -i, git add -i, and other editor-driven git flows are not possible here. If no terminal command tool is exposed, say that git commands are unavailable under the current profile.
+Treat commands as non-interactive when the active tool surface exposes terminal execution. If no terminal command tool is exposed, say that command execution is unavailable under the current profile.
 
 # Assistant message phases
 

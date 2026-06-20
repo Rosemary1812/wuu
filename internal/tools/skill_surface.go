@@ -91,7 +91,7 @@ func isKnownSurfaceSkillTool(name string) bool {
 }
 
 func skillMentionsTerminalOnlyPath(skill skills.Skill) bool {
-	text := strings.ToLower(strings.Join([]string{
+	return mentionsTerminalOnlyPath(
 		skill.Name,
 		skill.Description,
 		skill.WhenToUse,
@@ -100,20 +100,8 @@ func skillMentionsTerminalOnlyPath(skill skills.Skill) bool {
 		strings.Join(skill.VerificationChecklist, " "),
 		skill.ProgressiveDisclosure,
 		skill.Content,
-	}, "\n"))
-	for _, marker := range []string{
-		"bash",
-		"run_shell",
-		"run_test",
-		"start_process",
-		"git ",
-		"`git",
-		" shell ",
-		"terminal",
-	} {
-		if strings.Contains(text, marker) {
-			return true
-		}
-	}
-	return false
+		skill.Path,
+		skill.Dir,
+		skill.Source,
+	)
 }

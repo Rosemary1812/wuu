@@ -1409,7 +1409,7 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 				Name:         "misdeclared-shell",
 				Description:  "Misdeclared shell workflow.",
 				WhenToUse:    "Use when asked to inspect a repo.",
-				Content:      "Use bash to run git status.",
+				Content:      "Git: run git-status before continuing.",
 				AllowedTools: []string{"read_file"},
 			},
 			{
@@ -1433,11 +1433,93 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 	if strings.Contains(promptText, "Create a commit") ||
 		strings.Contains(promptText, "misdeclared-shell") ||
 		strings.Contains(promptText, "claude-style-shell") ||
+		strings.Contains(promptText, "Git:") ||
+		strings.Contains(promptText, "git-status") ||
 		strings.Contains(promptText, "Use bash to run git status") {
 		t.Fatalf("local/no-shell prompt must not advertise terminal-only skills:\n%s", promptText)
 	}
 	if !strings.Contains(promptText, "implementation-plan") {
 		t.Fatalf("local/no-shell prompt should keep compatible skills:\n%s", promptText)
+	}
+}
+
+func TestBuildBaseSystemPromptFiltersWorkflowsBySurface(t *testing.T) {
+	surface := compiledSurfaceForProviderModel("ollama", "llama-coder")
+	promptText := buildBaseSystemPrompt(
+		t.TempDir(),
+		"base prompt",
+		"",
+		"ollama",
+		"llama-coder",
+		surface,
+		nil,
+		nil,
+		false,
+		0,
+		0,
+		nil,
+		[]workflow.Definition{
+			{
+				Name:        "terminal-release",
+				Description: "Git: release workflow.",
+				WhenToUse:   "Use when a release needs command checks.",
+				Content:     "Run bash, git-status, git_status, and package checks before release.",
+			},
+			{
+				Name:        "portable-plan",
+				Description: "Plan a portable change.",
+				WhenToUse:   "Use for planning.",
+				Content:     "Create a scoped implementation plan.",
+			},
+		},
+	)
+
+	if strings.Contains(promptText, "terminal-release") ||
+		strings.Contains(promptText, "Git:") ||
+		strings.Contains(promptText, "git-status") ||
+		strings.Contains(promptText, "git_status") ||
+		strings.Contains(promptText, "Run bash") {
+		t.Fatalf("local/no-shell prompt must not advertise terminal workflows:\n%s", promptText)
+	}
+	if !strings.Contains(promptText, "portable-plan") {
+		t.Fatalf("local/no-shell prompt should keep compatible workflows:\n%s", promptText)
+	}
+}
+
+func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T) {
+	surface := compiledSurfaceForProviderModel("ollama", "llama-coder")
+	promptText := buildBaseSystemPrompt(
+		t.TempDir(),
+		config.DefaultSystemPrompt(),
+		"",
+		"ollama",
+		"llama-coder",
+		surface,
+		nil,
+		nil,
+		false,
+		0,
+		0,
+		nil,
+		nil,
+	)
+
+	for _, banned := range []string{
+		"bash",
+		"run_shell",
+		"run_test",
+		"start_process",
+		"command.bash",
+		"git status",
+		"git diff",
+		"git commit",
+		"npx vitest",
+		"npm test",
+		"npm run dev",
+	} {
+		if strings.Contains(promptText, banned) {
+			t.Fatalf("local/no-shell prompt must not teach terminal path %q:\n%s", banned, promptText)
+		}
 	}
 }
 

@@ -706,32 +706,38 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 	if !strings.Contains(prompt, "apply_patch") || !strings.Contains(prompt, "edit_file") || !strings.Contains(prompt, "write_file") {
 		t.Fatalf("default system prompt must teach model-aware edit tool use: %q", prompt)
 	}
-	if !strings.Contains(prompt, "non-interactive") {
-		t.Fatalf("default system prompt must teach non-interactive shell: %q", prompt)
-	}
-	if !strings.Contains(prompt, "git commit -e") {
-		t.Fatalf("default system prompt must forbid interactive git: %q", prompt)
-	}
 	for _, want := range []string{
-		"active tool surface exposes a terminal command tool",
-		"Stage only intended files with explicit paths",
-		"git restore --staged",
-		"git inspection, commit creation, and terminal verification are unavailable",
+		"Use terminal execution only when the active tool surface exposes that capability",
+		"command execution and command-based verification are unavailable",
+		"Profile-specific terminal instructions live in the tool_surface section",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must teach shell-first git workflow %q: %q", want, prompt)
+			t.Fatalf("default system prompt must stay capability-neutral for terminal use %q: %q", want, prompt)
 		}
 	}
 	for _, want := range []string{
 		"may keep running",
-		"Do not background the command with shell '&'",
 		"explicit timeout",
-		"terminal verification is unavailable",
+		"If terminal execution is unavailable",
 		"report_listening_ports",
 		"cannot keep a process alive",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include long-lived process guidance %q: %q", want, prompt)
+		}
+	}
+	for _, banned := range []string{
+		"npx vitest",
+		"npm test",
+		"npm run typecheck",
+		"git status",
+		"git diff",
+		"git commit",
+		"npm run dev",
+		"next dev",
+	} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("default system prompt must not teach terminal-specific command %q:\n%s", banned, prompt)
 		}
 	}
 	for _, want := range []string{

@@ -354,19 +354,24 @@ Permission and approval:
 - Permissions, approvals, and audit decisions are made by the Wuu harness and the user-facing approval UI. Do not ask the user chat-side questions like "should I continue running tests?", "do you want me to commit?", or "may I run the build?" — those are policy decisions and will be surfaced as system prompts when relevant.
 - The system tells you the active permission profile and the tool surface available to you. Trust it; do not invent restrictions that are not in the system prompt.`
 
+const bashTerminalGuidance = `
+
+Command and process discipline:
+- Use bash for every terminal operation: tests, lint, type checks, builds, git operations, package manager commands, and arbitrary scripts. There is no separate test-runner, git, or background-process tool on this surface; do not invent one.
+- For JavaScript projects, prefer package scripts such as npm test or npm run typecheck. If you only know the runner command such as npx vitest, still use bash and let the harness approval policy decide whether it may run.
+- For repository history work, inspect git status, git diff, git diff --cached when staged files exist, and recent git log before committing. Stage only intended files with explicit paths, unstage mistakes with explicit paths, create commits with git commit -m, and push only when the user explicitly requested a remote write.
+- Never use broad staging, sensitive credential paths, destructive git commands, force push, git config mutation, hook-skipping flags, or interactive/editor-driven git flows unless the user explicitly requested that exact action and the runtime permits it.
+- For long-lived dev servers, watchers, and background processes, use bash with an explicit timeout when you need bounded logs or readiness output. Do not background commands with "&". After a managed process reports a localhost port, use report_listening_ports so the desktop can preview it.`
+
 func addOpenAICodexPrompt(b *surfaceBuilder) {
 	b.surface.SystemFragment = strings.TrimSpace(`
 [Tool surface: openai_codex]
 You are running under the OpenAI / Codex harness. Your editing primitive is apply_patch. Use it for every file change — create new files, update existing files, and remove files via *** Add File / *** Update File / *** Delete File blocks inside a single *** Begin Patch / *** End Patch envelope.
 
-All terminal work — running tests, lint, type checks, build commands, git operations, package manager commands, and arbitrary scripts — is unified under the bash tool. The internal capability is command.bash, and the runtime routes permission checks against it. Do not look for a separate "run test" or "git" tool — they do not exist on this surface. Use bash for:
-- npx vitest, pytest, go test, cargo test, and any other test runner
-- npm/pnpm/yarn/bun install and run; pip/uv/python invocations
-- git status / diff / log / add / commit / push (interactive flags are rejected by the policy)
-- long-lived dev servers, watchers, and background processes: run them through bash with an explicit timeout when you need logs or readiness output; do not background them with "&"
+All terminal work is unified under the bash tool. The internal capability is command.bash, and the runtime routes permission checks against it.
 
 Use read_file before editing a file so the patch's context anchors match the on-disk content. Use grep / glob / ast_search / semantic_search to find the code you need to change.
-` + sharedTail)
+` + bashTerminalGuidance + sharedTail)
 }
 
 func addOpenAIGPTPrompt(b *surfaceBuilder) {
@@ -374,8 +379,8 @@ func addOpenAIGPTPrompt(b *surfaceBuilder) {
 [Tool surface: openai_gpt]
 You are running under the OpenAI GPT harness. Your editing primitive is apply_patch. Use it for every file change — create new files, update existing files, and remove files via *** Add File / *** Update File / *** Delete File blocks inside a single *** Begin Patch / *** End Patch envelope.
 
-Terminal work is unified under the bash tool. Tests, lint, build, git, package managers, long-lived commands, and arbitrary scripts all go through bash. There is no separate test-runner, git, or background-process tool on this surface; do not invent one.
-` + sharedTail)
+Terminal work is unified under the bash tool.
+` + bashTerminalGuidance + sharedTail)
 }
 
 func addClaudePrompt(b *surfaceBuilder) {
@@ -383,8 +388,8 @@ func addClaudePrompt(b *surfaceBuilder) {
 [Tool surface: anthropic_claude]
 You are running under the Anthropic Claude harness. Your file editing primitives are read_file, edit_file, and write_file. Call read_file first to anchor the old_string in edit_file, and use write_file only for whole-file replacement (e.g. newly created files or generated outputs).
 
-Terminal work — tests, lint, type checks, build, git, package managers, scripts, long-lived commands, and any other shell command — goes through the bash tool. There is no separate "run test", "git", or background-process tool on this surface.
-` + sharedTail)
+Terminal work goes through the bash tool.
+` + bashTerminalGuidance + sharedTail)
 }
 
 func addGenericPrompt(b *surfaceBuilder, p Profile) {
@@ -401,6 +406,6 @@ This profile does not expose terminal execution. If a task requires terminal-onl
 [Tool surface: generic]
 You are running under a generic BYOK profile. File work uses read_file, edit_file (exact old_string match — call read_file first), and write_file (whole-file replacement).
 
-Terminal work — tests, lint, build, git, package managers, scripts, and long-lived commands — goes through the bash tool. There is no separate test-runner, git, or background-process tool; do not invent one.
-` + sharedTail)
+Terminal work goes through the bash tool.
+` + bashTerminalGuidance + sharedTail)
 }

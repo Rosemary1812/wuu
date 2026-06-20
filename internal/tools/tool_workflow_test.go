@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
@@ -354,6 +355,78 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	statusRecords := kit.ToolTelemetry()
 	if len(statusRecords) == 0 || statusRecords[len(statusRecords)-1].ResultAction != "workflow_status" {
 		t.Fatalf("workflow_status telemetry missing result action: %+v", statusRecords)
+	}
+}
+
+func TestToolkitWorkflowToolsFilterByActiveSurface(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	exposeWorkflowDriverToolsForTest(t, kit)
+	kit.SetStateDir(t.TempDir())
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetWorkflows([]workflow.Definition{
+		{
+			Name:        "portable-plan",
+			Description: "Plan a portable change.",
+			WhenToUse:   "Use for planning.",
+			Source:      "project",
+			Content:     "## Intent\n\nCreate a scoped implementation plan.\n\n## Phases\n\n1. Inspect files\n2. Draft plan\n",
+		},
+		{
+			Name:        "terminal-release",
+			Description: "Git: release workflow.",
+			WhenToUse:   "Use when a release needs command checks.",
+			Source:      "project",
+			Content:     "Run bash, git-status, git_status, and package checks before release.",
+		},
+	})
+
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_workflows", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("list_workflows: %v", err)
+	}
+	var listed struct {
+		Count     int `json:"count"`
+		Workflows []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"workflows"`
+	}
+	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
+		t.Fatalf("parse list_workflows: %v", err)
+	}
+	if listed.Count != 1 || listed.Workflows[0].Name != "portable-plan" {
+		t.Fatalf("local/no-shell should only list compatible workflow definitions: %+v", listed)
+	}
+	if strings.Contains(listResp, "terminal-release") || strings.Contains(listResp, "Git:") || strings.Contains(listResp, "git-status") || strings.Contains(listResp, "git_status") {
+		t.Fatalf("local/no-shell list_workflows leaked terminal workflow:\n%s", listResp)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "load_workflow",
+		Arguments: `{"name":"terminal-release"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("local/no-shell must not load terminal workflow, got %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "start_workflow",
+		Arguments: `{"definition_name":"terminal-release","run_id":"blocked"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("local/no-shell must not start terminal workflow, got %v", err)
+	}
+	for _, call := range []providers.ToolCall{
+		{Name: "save_workflow", Arguments: `{"name":"blocked-save","content":"Git: run git-status before release."}`},
+		{Name: "run_workflow", Arguments: `{"script":"// Git: run git-status before release."}`},
+		{Name: "create_workflow", Arguments: `{"plan":"Git: run git-status before release."}`},
+	} {
+		_, err = kit.Execute(context.Background(), call)
+		if err == nil || !strings.Contains(err.Error(), "terminal-dependent") {
+			t.Fatalf("local/no-shell must reject terminal-dependent %s content, got %v", call.Name, err)
+		}
 	}
 }
 

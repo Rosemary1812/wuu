@@ -507,16 +507,25 @@ func (e *Env) ProcessSkillBody(ctx context.Context, skill skills.Skill, argument
 
 // FindWorkflow looks up a workflow definition by name.
 func (e *Env) FindWorkflow(name string) (workflow.Definition, bool) {
-	return workflow.Find(e.Workflows, name)
+	return workflow.Find(e.VisibleWorkflows(), name)
 }
 
 // WorkflowNames returns all available workflow definition names.
 func (e *Env) WorkflowNames() []string {
-	out := make([]string, 0, len(e.Workflows))
-	for _, wf := range e.Workflows {
+	visible := e.VisibleWorkflows()
+	out := make([]string, 0, len(visible))
+	for _, wf := range visible {
 		out = append(out, wf.Name)
 	}
 	return out
+}
+
+// VisibleWorkflows returns workflow definitions allowed by the active surface.
+func (e *Env) VisibleWorkflows() []workflow.Definition {
+	if e == nil {
+		return nil
+	}
+	return FilterWorkflowsForSurface(e.Workflows, e.ActiveSurface)
 }
 
 // ProcessWorkflowBody performs workflow-safe variable substitution. Workflow

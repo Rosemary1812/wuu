@@ -40,8 +40,9 @@ func (t *ListWorkflowsTool) Definition() providers.ToolDefinition {
 }
 
 func (t *ListWorkflowsTool) Execute(_ context.Context, _ string) (string, error) {
-	items := make([]map[string]any, 0, len(t.env.Workflows))
-	for _, wf := range t.env.Workflows {
+	visible := t.env.VisibleWorkflows()
+	items := make([]map[string]any, 0, len(visible))
+	for _, wf := range visible {
 		item := map[string]any{
 			"name":                   wf.Name,
 			"description":            wf.Description,
@@ -296,6 +297,9 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 	if body == "" {
 		return "", errors.New("save_workflow requires content or run_id")
 	}
+	if activeSurfaceLacksTerminalExecution(t.env) && mentionsTerminalOnlyPath(body) {
+		return "", errors.New("save_workflow cannot save terminal-dependent workflow content under the active model surface")
+	}
 	path, source, err := workflowDefinitionPath(t.env.RootDir, args.Scope, name, kind)
 	if err != nil {
 		return "", err
@@ -480,7 +484,7 @@ func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 			"Prefer start_workflow driver=auto for new workflow work and use this only when the task explicitly requires a saved WORKFLOW.js definition or ad hoc script to control the run. " +
 			"Use this when a saved WORKFLOW.js definition or ad hoc script should own repeatable phase/spawn/await/synthesis control. " +
 			"The script creates the same durable Workflow Run, Workflow Team, Agent Run, and final-report state as agent-managed workflows. " +
-			"Inside the script, use phase(), spawn(), spawnBatch([...]), awaitAgents(), and synthesize(). Workers do shell/file work; " +
+			"Inside the script, use phase(), spawn(), spawnBatch([...]), awaitAgents(), and synthesize(). Workers use their compiled tool surface for task work; " +
 			"the script only coordinates and persists state. " +
 			"Default caps are 1000 total worker spawns and 16 agents per spawnBatch/spawnAgents batch unless a lower definition or caller cap is set.",
 		InputSchema: map[string]any{
@@ -564,6 +568,9 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	}
 	if strings.TrimSpace(script) == "" {
 		return "", errors.New("run_workflow requires a non-empty script")
+	}
+	if activeSurfaceLacksTerminalExecution(t.env) && mentionsTerminalOnlyPath(script) {
+		return "", errors.New("run_workflow cannot run terminal-dependent script content under the active model surface")
 	}
 
 	status := workflow.RunStateRunning
@@ -985,6 +992,9 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	plan := strings.TrimSpace(args.Plan)
 	if plan == "" {
 		plan = strings.TrimSpace(body)
+	}
+	if activeSurfaceLacksTerminalExecution(t.env) && mentionsTerminalOnlyPath(plan) {
+		return "", errors.New("create_workflow cannot create terminal-dependent workflow plans under the active model surface")
 	}
 	phases := buildWorkflowPhases(args.Phases, plan, status)
 	if len(phases) == 0 {

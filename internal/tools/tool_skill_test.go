@@ -95,7 +95,7 @@ func TestToolkit_LoadSkillFiltersByActiveSurface(t *testing.T) {
 			Name:         "misdeclared-shell",
 			Description:  "Misdeclared shell workflow.",
 			WhenToUse:    "Use when asked to inspect a repo.",
-			Content:      "Use bash to run git status.",
+			Content:      "Git: run git-status before continuing.",
 			AllowedTools: []string{"read_file"},
 		},
 		{
