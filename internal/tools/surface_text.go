@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 
@@ -8,13 +9,31 @@ import (
 )
 
 var terminalPathMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(?:bash|git|run_shell|run_test|start_process|list_processes|read_process_output|write_stdin|stop_process|command\.bash|terminal|shell)([^a-z0-9]|$)`)
+var packageCommandMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(?:npm|pnpm|yarn|bun|docker|make)[[:space:]_-]+(?:run|test|install|ci|add|exec|dlx|build|start|dev|serve|preview|compose|runner|command|script|shell)([^a-z0-9]|$)?`)
+var npxCommandMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])npx[[:space:]_-]+[a-z0-9]`)
 
 func mentionsTerminalOnlyPath(parts ...string) bool {
-	return terminalPathMarkerRE.MatchString(strings.Join(parts, "\n"))
+	text := strings.Join(parts, "\n")
+	return terminalPathMarkerRE.MatchString(text) ||
+		packageCommandMarkerRE.MatchString(text) ||
+		npxCommandMarkerRE.MatchString(text)
 }
 
 func activeSurfaceLacksTerminalExecution(env *Env) bool {
 	return env != nil &&
-		env.ActiveSurface.ProfileName != "" &&
-		!surfaceHasVisibleCapability(env.ActiveSurface, capability.CapabilityCommandBash)
+		surfaceLacksTerminalExecution(env.ActiveSurface)
+}
+
+func surfaceLacksTerminalExecution(surface capability.Surface) bool {
+	return surface.ProfileName != "" &&
+		!surfaceHasVisibleCapability(surface, capability.CapabilityCommandBash)
+}
+
+func mcpToolMentionsTerminalOnlyPath(tool Tool) bool {
+	if tool == nil || classifyToolKind(tool.Name()) != ToolKindMCP {
+		return false
+	}
+	def := tool.Definition()
+	schema, _ := json.Marshal(def.InputSchema)
+	return mentionsTerminalOnlyPath(def.Name, def.Description, string(schema))
 }

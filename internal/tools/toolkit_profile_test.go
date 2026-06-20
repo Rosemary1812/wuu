@@ -150,6 +150,119 @@ func TestActiveProfileAllowsDeferredMCPThroughToolSearch(t *testing.T) {
 	}
 }
 
+func TestLocalNoShellProfileFiltersTerminalMCPTools(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name:   "mcp_docs_search",
+			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search project documentation through MCP"},
+			result: `{"action":"mcp_docs_search"}`,
+		},
+		&stubTool{
+			name: "mcp_terminal_exec",
+			def: providers.ToolDefinition{
+				Name:        "mcp_terminal_exec",
+				Description: "Run shell commands in a terminal through MCP",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{
+							"type":        "string",
+							"description": "npm or git command to run",
+						},
+					},
+				},
+			},
+			result: `{"action":"mcp_terminal_exec"}`,
+		},
+	)
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+
+	if containsProfileDef(kit.Definitions(), "mcp_terminal_exec") {
+		t.Fatal("local/no-shell profile must not directly expose terminal MCP tools")
+	}
+	info, ok := kit.ToolInfo("mcp_terminal_exec")
+	if !ok || info.Exposure != ToolExposureHidden {
+		t.Fatalf("terminal MCP exposure = %+v, ok=%v; want hidden", info, ok)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"docs terminal shell npm git search"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if containsString(parsed.ExposedTools, "mcp_terminal_exec") {
+		t.Fatalf("tool_search exposed terminal MCP under no-shell profile: %s", resp)
+	}
+	if !containsString(parsed.ExposedTools, "mcp_docs_search") {
+		t.Fatalf("non-command MCP should remain discoverable under no-shell profile: %s", resp)
+	}
+
+	kit.activateDeferredTools("mcp_terminal_exec")
+	if containsProfileDef(kit.Definitions(), "mcp_terminal_exec") {
+		t.Fatal("manual activation must not leak terminal MCP tools into no-shell definitions")
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_terminal_exec", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("terminal MCP execution should be blocked by no-shell surface, got %v", err)
+	}
+}
+
+func TestBashCapableProfileAllowsTerminalMCPTools(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name: "mcp_terminal_exec",
+			def: providers.ToolDefinition{
+				Name:        "mcp_terminal_exec",
+				Description: "Run shell commands in a terminal through MCP",
+			},
+			result: `{"action":"mcp_terminal_exec"}`,
+		},
+	)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"terminal shell"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if !containsString(parsed.ExposedTools, "mcp_terminal_exec") {
+		t.Fatalf("bash-capable profile should discover terminal MCP tools: %s", resp)
+	}
+	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_terminal_exec", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("activated terminal MCP should execute under bash-capable profile: %v", err)
+	}
+	if !strings.Contains(out, "mcp_terminal_exec") {
+		t.Fatalf("unexpected MCP result: %s", out)
+	}
+}
+
 func TestSetActiveProfileLocalProfileDropsBash(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {

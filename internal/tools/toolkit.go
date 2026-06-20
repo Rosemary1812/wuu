@@ -508,12 +508,6 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	all := t.registry.Definitions()
 	surface := t.activeCompiledSurface()
 	hasSurface := surface.ProfileName != ""
-	visibleNames := map[string]struct{}{}
-	if hasSurface {
-		for name := range surface.Tools {
-			visibleNames[name] = struct{}{}
-		}
-	}
 	stable := make([]providers.ToolDefinition, 0, len(all))
 	dynamic := make([]providers.ToolDefinition, 0)
 	for _, d := range all {
@@ -532,7 +526,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			// compiler can promote a Hidden-by-default tool (e.g.
 			// apply_patch on Codex) into a model-visible entry by
 			// listing it in surface.Tools.
-			if _, ok := visibleNames[d.Name]; !ok && !activeSurfaceAllowsDynamicTool(surface, d.Name) {
+			if !activeSurfaceAllowsKnownTool(surface, t.registry.Lookup(d.Name)) {
 				continue
 			}
 			if isDeferredByDefault(d.Name) {
@@ -567,7 +561,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				if t.isToolDisabled(tool.Name()) {
 					continue
 				}
-				if _, ok := visibleNames[tool.Name()]; !ok && !activeSurfaceAllowsDynamicTool(surface, tool.Name()) {
+				if !activeSurfaceAllowsKnownTool(surface, tool) {
 					continue
 				}
 				if isDeferredByDefault(tool.Name()) && !t.isDeferredToolActive(tool.Name()) {
@@ -704,10 +698,8 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
-		if _, ok := surface.Tools[name]; !ok {
-			if !activeSurfaceAllowsDynamicTool(surface, name) {
-				return fmt.Errorf("tool %q is not available in the active model surface", name)
-			}
+		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
+			return fmt.Errorf("tool %q is not available in the active model surface", name)
 		}
 		if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 			return nil
@@ -734,6 +726,21 @@ func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) boo
 		return true
 	}
 	return false
+}
+
+func activeSurfaceAllowsKnownTool(surface capability.Surface, tool Tool) bool {
+	if tool == nil {
+		return false
+	}
+	if !activeSurfaceAllowsDynamicTool(surface, tool.Name()) {
+		return false
+	}
+	if classifyToolKind(tool.Name()) == ToolKindMCP &&
+		surfaceLacksTerminalExecution(surface) &&
+		mcpToolMentionsTerminalOnlyPath(tool) {
+		return false
+	}
+	return true
 }
 
 func surfaceHasVisibleCapability(surface capability.Surface, capName capability.Capability) bool {

@@ -119,6 +119,9 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 		return ToolExposureHidden
 	}
 	if classifyToolKind(name) == ToolKindMCP && t.activeCompiledSurface().ProfileName != "" {
+		if !activeSurfaceAllowsKnownTool(t.activeCompiledSurface(), t.LookupTool(name)) {
+			return ToolExposureHidden
+		}
 		if t.isDeferredToolActive(name) {
 			return ToolExposureDirect
 		}
