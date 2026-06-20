@@ -184,7 +184,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
-		kit.ConfigureEditToolsForProviderModel(ruleProviderName, toolModeModel)
+		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled {
 			// Attach the durable profile memory store for named agents. Ordinary
@@ -262,7 +262,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
 				wkit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 				wkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
-				wkit.ConfigureEditToolsForProviderModel(ruleProviderName, toolModeModel)
+				wkit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
 					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)

@@ -273,6 +273,9 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	if rt.Toolkit.Memory() != nil {
 		t.Fatalf("default profile should be memoryless, got %T", rt.Toolkit.Memory())
 	}
+	if rt.Toolkit.ActiveSurface().ProfileName == "" {
+		t.Fatal("expected runtime toolkit to install a model surface")
+	}
 	if strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
 		t.Fatalf("default profile should not inject persistent memory:\n%s", rt.BaseSystemPrompt)
 	}
@@ -1330,6 +1333,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
 	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
 	if err != nil {
 		t.Fatalf("agent type: %v", err)
@@ -1341,7 +1345,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, allowed := range []string{"read_file", "write_file", "bash", "update_plan", "agent_report"} {
+	for _, allowed := range []string{"read_file", "apply_patch", "bash", "update_plan", "agent_report"} {
 		if !defs[allowed] {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}
@@ -1495,6 +1499,9 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	}
 	if first.Toolkit.SessionID() != "thread-a" || second.Toolkit.SessionID() != "thread-b" {
 		t.Fatalf("unexpected thread toolkit sessions: first=%q second=%q", first.Toolkit.SessionID(), second.Toolkit.SessionID())
+	}
+	if first.Toolkit.ActiveSurface().ProfileName == "" || first.Toolkit.ActiveSurface().ProfileName != rt.Toolkit.ActiveSurface().ProfileName {
+		t.Fatalf("thread toolkit should inherit active surface, got %q want %q", first.Toolkit.ActiveSurface().ProfileName, rt.Toolkit.ActiveSurface().ProfileName)
 	}
 	if first.StreamRunner == rt.StreamRunner || second.StreamRunner == rt.StreamRunner || first.StreamRunner == second.StreamRunner {
 		t.Fatal("thread runtimes must not share stream runner instances")

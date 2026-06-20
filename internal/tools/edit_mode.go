@@ -17,7 +17,10 @@ func EditToolModeForModel(model string) EditToolMode {
 }
 
 func EditToolModeForProviderModel(providerName, model string) EditToolMode {
-	profile := modelprofile.Resolve(providerName, model)
+	return EditToolModeForProfile(modelprofile.Resolve(providerName, model))
+}
+
+func EditToolModeForProfile(profile modelprofile.Profile) EditToolMode {
 	if profile.Workflow.DefaultWriteMode == modelprofile.WriteModePatch {
 		return EditToolModePatch
 	}
@@ -30,6 +33,10 @@ func (t *Toolkit) ConfigureEditToolsForModel(model string) {
 
 func (t *Toolkit) ConfigureEditToolsForProviderModel(providerName, model string) {
 	t.SetEditToolMode(EditToolModeForProviderModel(providerName, model))
+}
+
+func (t *Toolkit) ConfigureSurfaceForProviderModel(providerName, model string) {
+	t.SetActiveProfile(modelprofile.Resolve(providerName, model))
 }
 
 func (t *Toolkit) SetEditToolMode(mode EditToolMode) {

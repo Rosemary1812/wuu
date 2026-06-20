@@ -952,6 +952,9 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	if defs := toolDefinitionNames(rt.Toolkit.Definitions()); !defs["apply_patch"] || defs["edit_file"] || defs["write_file"] {
 		t.Fatalf("runtime toolkit should switch to patch edit mode: %+v", defs)
 	}
+	if rt.Toolkit.ActiveSurface().ProfileName == "" {
+		t.Fatal("runtime toolkit should install active model surface")
+	}
 	thread.mu.Lock()
 	defer thread.mu.Unlock()
 	if thread.ModelProvider != "fake-provider" || thread.Model != "gpt-5.5" {
@@ -968,6 +971,9 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	}
 	if defs := toolDefinitionNames(thread.execRuntime.Toolkit.Definitions()); !defs["apply_patch"] || defs["edit_file"] || defs["write_file"] {
 		t.Fatalf("idle thread toolkit should switch to patch edit mode: %+v", defs)
+	}
+	if thread.execRuntime.Toolkit.ActiveSurface().ProfileName == "" {
+		t.Fatal("idle thread toolkit should install active model surface")
 	}
 	persisted, err := loadChatMessages(thread.MemoryPath)
 	if err != nil {

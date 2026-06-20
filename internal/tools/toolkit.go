@@ -166,6 +166,10 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		permissionRules:        t.PermissionRules(),
 		mcpManager:             t.mcpManager,
 	}
+	t.activeProfileMu.RLock()
+	clone.activeProfile = t.activeProfile
+	clone.activeSurface = cloneSurface(t.activeSurface)
+	t.activeProfileMu.RUnlock()
 	if len(t.disabledTools) > 0 {
 		clone.disabledTools = make(map[string]struct{}, len(t.disabledTools))
 		for name := range t.disabledTools {
@@ -515,16 +519,25 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
 			continue
 		}
+		if hasSurface && t.isToolDisabled(d.Name) {
+			continue
+		}
 		if hasSurface {
 			// Surface is the authoritative whitelist: tools the
 			// surface includes are visible regardless of the legacy
-			// toolExposure state. The compiler can promote a
-			// Hidden-by-default tool (e.g. apply_patch on Codex) into
-			// a model-visible entry by listing it in surface.Tools.
+			// toolExposure state. Explicit session disables still
+			// win, so worker filters and edit-mode switches cannot
+			// leak tools back into the model-visible list. The
+			// compiler can promote a Hidden-by-default tool (e.g.
+			// apply_patch on Codex) into a model-visible entry by
+			// listing it in surface.Tools.
 			if _, ok := visibleNames[d.Name]; !ok {
 				continue
 			}
 			if isDeferredByDefault(d.Name) {
+				if !t.isDeferredToolActive(d.Name) {
+					continue
+				}
 				d.CacheStable = false
 				dynamic = append(dynamic, d)
 				continue
@@ -550,7 +563,13 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	if t.mcpManager != nil {
 		for _, tool := range t.mcpManager.AllTools() {
 			if hasSurface {
+				if t.isToolDisabled(tool.Name()) {
+					continue
+				}
 				if _, ok := visibleNames[tool.Name()]; !ok {
+					continue
+				}
+				if isDeferredByDefault(tool.Name()) && !t.isDeferredToolActive(tool.Name()) {
 					continue
 				}
 				d := tool.Definition()
@@ -581,6 +600,12 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile) {
 	if t == nil {
 		return
 	}
+	if (p == modelprofile.Profile{}) {
+		t.SetEditToolMode(EditToolModeText)
+	} else {
+		t.SetEditToolMode(EditToolModeForProfile(p))
+	}
+
 	t.activeProfileMu.Lock()
 	defer t.activeProfileMu.Unlock()
 	t.activeProfile = p
@@ -610,7 +635,7 @@ func (t *Toolkit) ActiveSurface() capability.Surface {
 	}
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
-	return t.activeSurface
+	return cloneSurface(t.activeSurface)
 }
 
 // activeCompiledSurface is the internal helper Definitions() uses
@@ -624,6 +649,25 @@ func (t *Toolkit) activeCompiledSurface() capability.Surface {
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
 	return t.activeSurface
+}
+
+func cloneSurface(surface capability.Surface) capability.Surface {
+	out := surface
+	if len(surface.Tools) > 0 {
+		out.Tools = make(map[string]capability.Capability, len(surface.Tools))
+		for name, cap := range surface.Tools {
+			out.Tools[name] = cap
+		}
+	}
+	if len(surface.HiddenTools) > 0 {
+		out.HiddenTools = make(map[string]capability.Capability, len(surface.HiddenTools))
+		for name, cap := range surface.HiddenTools {
+			out.HiddenTools[name] = cap
+		}
+	}
+	out.Capabilities = append([]capability.Capability(nil), surface.Capabilities...)
+	out.HiddenCapabilities = append([]capability.Capability(nil), surface.HiddenCapabilities...)
+	return out
 }
 
 // Execute runs one tool call and returns JSON result. This is the

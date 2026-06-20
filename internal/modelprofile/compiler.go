@@ -354,7 +354,8 @@ func addMemoryTools(b *surfaceBuilder) {
 	// toolkit still hides individual memory_* tools when no
 	// provider is configured; the capability is the contract
 	// that says "project memory is a thing on this surface".
-	b.skipHidden(capability.CapabilityMemoryProject)
+	b.addVisible("read_memory", capability.CapabilityMemoryProject)
+	b.addVisible("write_memory", capability.CapabilityMemoryProject)
 }
 
 func addPlanningTools(b *surfaceBuilder) {

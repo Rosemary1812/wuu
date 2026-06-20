@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"context"
 	"sort"
+	"strings"
 	"testing"
 
+	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -86,6 +89,70 @@ func TestSetActiveProfileCodexExposesApplyPatchHidesEditAndWrite(t *testing.T) {
 	}
 }
 
+func TestSetActiveProfileAlignsDefinitionWithExecutionState(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+
+	if !containsProfileDef(kit.Definitions(), "apply_patch") {
+		t.Fatal("Codex surface should advertise apply_patch")
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "apply_patch", Arguments: `{}`})
+	if err == nil {
+		t.Fatal("expected apply_patch to reject missing patchText")
+	}
+	if strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("advertised apply_patch must not be disabled: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "edit_file", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("hidden edit_file should be disabled under Codex surface, got %v", err)
+	}
+}
+
+func TestActiveProfileDefinitionsRespectExplicitDisables(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.DisableTools("spawn_agent")
+
+	defs := kit.Definitions()
+	if containsProfileDef(defs, "spawn_agent") {
+		t.Fatalf("explicitly disabled spawn_agent leaked into active surface: %v", sortedProfileDefNames(defs))
+	}
+	if !containsProfileDef(defs, "apply_patch") {
+		t.Fatalf("unrelated surface tool apply_patch should remain visible: %v", sortedProfileDefNames(defs))
+	}
+}
+
+func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	if containsProfileDef(kit.Definitions(), "read_memory") || containsProfileDef(kit.Definitions(), "write_memory") {
+		t.Fatal("memory tools should stay hidden without a provider")
+	}
+
+	provider, err := memstore.NewFileProvider(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	kit.SetMemory(provider)
+	defs := kit.Definitions()
+	for _, want := range []string{"read_memory", "write_memory"} {
+		if !containsProfileDef(defs, want) {
+			t.Fatalf("memory provider should expose %s, got %v", want, sortedProfileDefNames(defs))
+		}
+	}
+}
+
 func TestSetActiveProfileClaudeExposesEditAndWriteHidesApplyPatch(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
@@ -153,6 +220,33 @@ func TestSetActiveProfileZeroValueRestoresLegacySurface(t *testing.T) {
 	}
 }
 
+func TestCloneForRootPreservesActiveProfileSurface(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+
+	clone, err := kit.CloneForRoot(t.TempDir())
+	if err != nil {
+		t.Fatalf("CloneForRoot: %v", err)
+	}
+	if clone.ActiveSurface().ProfileName != kit.ActiveSurface().ProfileName {
+		t.Fatalf("clone surface = %q, want %q", clone.ActiveSurface().ProfileName, kit.ActiveSurface().ProfileName)
+	}
+	defs := clone.Definitions()
+	if !containsProfileDef(defs, "apply_patch") || containsProfileDef(defs, "edit_file") {
+		t.Fatalf("clone should keep Codex edit surface, got %v", sortedProfileDefNames(defs))
+	}
+	_, err = clone.Execute(context.Background(), providers.ToolCall{Name: "apply_patch", Arguments: `{}`})
+	if err == nil {
+		t.Fatal("expected apply_patch to reject missing patchText")
+	}
+	if strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("clone advertised apply_patch must not be disabled: %v", err)
+	}
+}
+
 func TestActiveProfileReturnsInstalledProfile(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
@@ -169,12 +263,37 @@ func TestActiveProfileReturnsInstalledProfile(t *testing.T) {
 	}
 }
 
+func TestActiveSurfaceReturnsCopy(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+
+	surface := kit.ActiveSurface()
+	delete(surface.Tools, "apply_patch")
+	surface.Capabilities = nil
+
+	if !containsProfileDef(kit.Definitions(), "apply_patch") {
+		t.Fatal("mutating ActiveSurface result must not mutate toolkit surface")
+	}
+	if len(kit.ActiveSurface().Capabilities) == 0 {
+		t.Fatal("mutating ActiveSurface capability slice must not mutate toolkit surface")
+	}
+}
+
 func TestDefinitionsFilterMatchesSurfaceToolsExactly(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	provider, err := memstore.NewFileProvider(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"))
+	kit.activateDeferredTools("schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow")
 	surface := kit.ActiveSurface()
 	defs := kit.Definitions()
 	visible := make(map[string]struct{}, len(defs))

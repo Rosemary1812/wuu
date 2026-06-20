@@ -363,7 +363,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.WorkerClient = workerClient
 	}
 	if s.rt.Toolkit != nil {
-		s.rt.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
+		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
 	}
 	if params.PermissionMode != nil {
 		permissions, _ := config.PermissionPresetForMode(*params.PermissionMode)
@@ -542,7 +542,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 				}
 				th.execRuntime.ModelBudget = s.rt.ModelBudget
 				if th.execRuntime.Toolkit != nil {
-					th.execRuntime.Toolkit.ConfigureEditToolsForProviderModel(ruleProviderName, apiModel)
+					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
 					if s.rt != nil {
 						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
 						th.execRuntime.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
