@@ -5,6 +5,7 @@ import {
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
+  conversationPaneThreadsByID,
   initialState,
   isThreadUnread,
   latestCompletedTurnID,
@@ -532,5 +533,26 @@ describe("AppState sortThreads (sidebar order)", () => {
 
     const sorted = sortThreads([archived, readOnly, normal]);
     expect(sorted.map((thread) => thread.id)).toEqual(["thread-normal"]);
+  });
+
+  it("keeps the active read-only child thread renderable outside the sortable list", () => {
+    const child = makeSortableThread({
+      id: "child-running",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-18T00:00:00Z",
+      readOnly: true,
+      turns: [{ id: "child-turn-1", status: "in_progress" }],
+    });
+    const normal = makeSortableThread({
+      id: "thread-normal",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-19T00:00:00Z",
+    });
+
+    const sidebarThreads = sortThreads([normal, child]);
+    const renderableThreads = conversationPaneThreadsByID(sidebarThreads, child);
+
+    expect(sidebarThreads.map((thread) => thread.id)).toEqual(["thread-normal"]);
+    expect(renderableThreads.get("child-running")?.turns).toHaveLength(1);
   });
 });

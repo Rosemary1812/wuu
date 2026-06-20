@@ -122,6 +122,7 @@ import {
   cloneSessionTabDraft,
   cloneComposerDraft,
   composerSubmissionDetail,
+  conversationPaneThreadsByID,
   createDraftSessionTab,
   createFileSessionTab,
   createSkillsSessionTab,
@@ -856,6 +857,15 @@ export function App(): JSX.Element {
     const ordered = activeID ? [activeID, ...others] : others;
     return ordered.slice(0, CACHED_THREAD_PANE_LIMIT);
   }, [state.thread?.id, state.sessionTabs]);
+  const cachedConversationThreadsByID = useMemo(
+    () =>
+      conversationPaneThreadsByID(
+        state.threads,
+        state.thread,
+        state.secondaryThread,
+      ),
+    [state.threads, state.thread, state.secondaryThread],
+  );
   const activePendingComposerMessages = pendingComposerMessagesForThread(
     pendingComposerMessagesByThread,
     activeThreadID,
@@ -5358,7 +5368,7 @@ export function App(): JSX.Element {
             ) : (
               <CachedConversationPanes
                 threadIDs={cachedThreadPaneIDs}
-                threads={state.threads}
+                threadsByID={cachedConversationThreadsByID}
                 activeThreadID={activeThreadID}
                 activeContextCwd={state.activeContext?.cwd}
                 conversationGridVisible={conversationGridVisible}
@@ -5509,7 +5519,7 @@ export function App(): JSX.Element {
 
 type CachedConversationPanesProps = {
   threadIDs: string[];
-  threads: Thread[];
+  threadsByID: ReadonlyMap<string, Thread>;
   activeThreadID?: string;
   activeContextCwd?: string;
   conversationGridVisible: boolean;
@@ -5533,7 +5543,7 @@ type CachedConversationPanesProps = {
 
 const CachedConversationPanes = memo(function CachedConversationPanes({
   threadIDs,
-  threads,
+  threadsByID,
   activeThreadID,
   activeContextCwd,
   conversationGridVisible,
@@ -5550,7 +5560,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   return (
     <div className="cached-conversation-panes">
       {threadIDs.map((threadID) => {
-        const thread = threads.find((candidate) => candidate.id === threadID);
+        const thread = threadsByID.get(threadID);
         if (!thread) return null;
         const isActive = threadID === activeThreadID;
         const threadTurns = thread.turns ?? [];

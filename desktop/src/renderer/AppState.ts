@@ -665,6 +665,24 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
   return sortThreads(next);
 }
 
+function conversationPaneThreadsByID(
+  threads: Thread[],
+  primaryThread?: Thread,
+  secondaryThread?: Thread,
+): Map<string, Thread> {
+  const byID = new Map<string, Thread>();
+  for (const thread of threads) {
+    byID.set(thread.id, thread);
+  }
+  if (primaryThread) {
+    byID.set(primaryThread.id, primaryThread);
+  }
+  if (secondaryThread) {
+    byID.set(secondaryThread.id, secondaryThread);
+  }
+  return byID;
+}
+
 function sortThreads(threads: Thread[]): Thread[] {
   // Two-section sort. Running threads use `created_at` as the key so that
   // streaming updates (which bump `updated_at`) do not reshuffle them —
@@ -1641,6 +1659,7 @@ export {
   cloneComposerDraft,
   cloneSessionTabDraft,
   composerSubmissionDetail,
+  conversationPaneThreadsByID,
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
   createDraftSessionTab,
