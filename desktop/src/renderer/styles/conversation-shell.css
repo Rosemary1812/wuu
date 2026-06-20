@@ -21,6 +21,7 @@
   --conversation-message-font-size: 15.5px;
   --conversation-prose-line-height: 1.65;
   --conversation-prose-block-gap: 12px;
+  --conversation-message-element-gap: 20px;
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 1.8;
   --conversation-shell-gap: 32px;
