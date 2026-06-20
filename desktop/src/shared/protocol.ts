@@ -55,6 +55,14 @@ export type InitializeResult = {
   workspace_root: string;
   tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
+  // model_profile + tool_surface summarise the per-model tool
+  // surface the runtime compiled for the active session. The
+  // renderer uses these to drive capability-first activity,
+  // approval UI, and the debug surface view; the runtime side
+  // owns the values so the UI never has to re-derive the
+  // bash-first / patch-first split.
+  model_profile?: ModelProfileSummary;
+  tool_surface?: ToolSurfaceSummary;
   extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
@@ -73,6 +81,24 @@ export type PermissionSummary = {
   permission_profile?: string;
   approval_policy?: string;
   approvals_reviewer?: string;
+};
+
+export type ModelProfileSummary = {
+  profile_name: string;
+  provider: string;
+  model: string;
+  edit_primitive: string;
+  bash_first: boolean;
+};
+
+export type ToolSurfaceSummary = {
+  profile_name: string;
+  tool_names: string[];
+  hidden_tool_names: string[];
+  capabilities: string[];
+  hidden_capabilities: string[];
+  tool_capability_map: Record<string, string>;
+  hidden_capability_map: Record<string, string>;
 };
 
 export type ExtensionTrustSummary = {
@@ -918,6 +944,14 @@ export type ToolApprovalRequest = {
   permission_always?: string[];
   permission_rule?: string;
   model_next_action?: string;
+  // capability + capability_object + capability_action are the
+  // capability-first view of the same approval. The renderer
+  // shows these so the user reads "approval for command.bash
+  // / git push origin main" instead of "approval for run_shell".
+  capability?: string;
+  capability_object?: string;
+  capability_action?: string;
+  capability_rule?: string;
 };
 
 export type PendingToolApproval = ToolApprovalRequest & {
