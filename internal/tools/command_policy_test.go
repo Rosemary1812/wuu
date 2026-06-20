@@ -162,6 +162,68 @@ func TestToolkitAppliesDefaultCommandPolicyBeforeBashExecution(t *testing.T) {
 	}
 }
 
+func TestAutonomousProfileDoesNotAskForDefaultCommandPolicyReview(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	policy, ok := PolicyForProfile(ToolPolicyProfileAutonomous)
+	if !ok {
+		t.Fatal("missing autonomous policy")
+	}
+	kit.SetToolPolicy(policy)
+
+	info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
+	base := kit.toolPolicy.Decide(info)
+	got := kit.applyDefaultCommandPolicyDecision(
+		providers.ToolCall{
+			Name:      "bash",
+			Arguments: `{"command":"git push origin main"}`,
+		},
+		info,
+		base,
+	)
+
+	if got.Action != ToolPolicyAllow {
+		t.Fatalf("autonomous profile should allow command policy ask without approval, got %+v", got)
+	}
+	if got.Capability != capability.CapabilityCommandBash ||
+		got.CapabilityObject != "git push origin main" ||
+		got.CapabilityRule != "bash-git-push" {
+		t.Fatalf("autonomous command policy should still annotate capability fields, got %+v", got)
+	}
+}
+
+func TestDefaultCommandPolicyAskDoesNotOverrideExplicitDeny(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.SetToolPolicy(ToolPolicy{
+		Profile: ToolPolicyProfileAutonomous,
+		ToolActions: map[string]ToolPolicyAction{
+			"bash": ToolPolicyDeny,
+		},
+	})
+
+	info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
+	base := kit.toolPolicy.Decide(info)
+	got := kit.applyDefaultCommandPolicyDecision(
+		providers.ToolCall{
+			Name:      "bash",
+			Arguments: `{"command":"git push origin main"}`,
+		},
+		info,
+		base,
+	)
+
+	if got.Action != ToolPolicyDeny || got.Reason != "tool policy" {
+		t.Fatalf("explicit deny should not be softened by command policy ask, got %+v", got)
+	}
+}
+
 func TestDefaultCommandPolicyRulesNamesAreUnique(t *testing.T) {
 	rules := DefaultCommandPolicyRules()
 	seen := map[string]struct{}{}

@@ -22,7 +22,7 @@ func (t *Toolkit) applyDefaultCommandPolicyDecision(call providers.ToolCall, inf
 	if !ok {
 		return base
 	}
-	return commandPolicyToolPolicyDecision(base, capabilityName, subject, policyDecision)
+	return t.commandPolicyToolPolicyDecision(base, capabilityName, subject, policyDecision)
 }
 
 func defaultCommandPolicySubject(surface capability.Surface, call providers.ToolCall, info ToolInfo) (capability.Capability, string, bool) {
@@ -127,7 +127,8 @@ func decideDefaultCommandPolicy(capName capability.Capability, subject string) (
 	}
 }
 
-func commandPolicyToolPolicyDecision(base ToolPolicyDecision, capabilityName capability.Capability, subject string, policyDecision CommandPolicyDecision) ToolPolicyDecision {
+func (t *Toolkit) commandPolicyToolPolicyDecision(base ToolPolicyDecision, capabilityName capability.Capability, subject string, policyDecision CommandPolicyDecision) ToolPolicyDecision {
+	originalReason := strings.TrimSpace(base.Reason)
 	base.Reason = commandPolicyReason(policyDecision)
 	base.Capability = capabilityName
 	base.CapabilityObject = strings.TrimSpace(subject)
@@ -137,7 +138,21 @@ func commandPolicyToolPolicyDecision(base ToolPolicyDecision, capabilityName cap
 	case CommandPolicyAllow:
 		base.Action = ToolPolicyAllow
 	case CommandPolicyAsk:
-		base.Action = ToolPolicyRequireApproval
+		switch base.Action {
+		case ToolPolicyDeny:
+			base.Reason = originalReason
+			if strings.TrimSpace(base.Reason) == "" {
+				base.Reason = "policy denied"
+			}
+		case ToolPolicyAllow:
+			if t != nil && t.toolPolicy.Profile == ToolPolicyProfileAutonomous {
+				base.Action = ToolPolicyAllow
+			} else {
+				base.Action = ToolPolicyRequireApproval
+			}
+		default:
+			base.Action = ToolPolicyRequireApproval
+		}
 	case CommandPolicyDeny, CommandPolicyExplain:
 		base.Action = ToolPolicyDeny
 	}
