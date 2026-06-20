@@ -27,7 +27,7 @@
   --conversation-process-gap: 12px;
   --conversation-process-answer-gap: 12px;
   --conversation-answer-action-gap: 8px;
-  --conversation-activity-gap: 8px;
+  --conversation-activity-gap: 12px;
   --conversation-scrollbar-gutter: 12px;
   --dock-composer-height: 0px;
   grid-column: 2;
