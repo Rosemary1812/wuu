@@ -2,6 +2,7 @@ package modelprofile
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
@@ -268,6 +269,24 @@ func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
 	for _, legacy := range []string{"bash", "start_process", "run_shell", "run_test", "git"} {
 		if _, ok := s.HiddenTools[legacy]; ok {
 			t.Fatalf("local profile must not keep %s in hidden profile output", legacy)
+		}
+	}
+}
+
+func TestLocalNoShellFragmentDoesNotNameUnavailableTools(t *testing.T) {
+	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"))
+	fragment := strings.ToLower(s.SystemFragment)
+	for _, banned := range []string{
+		"bash",
+		"run_shell",
+		"run_test",
+		"start_process",
+		"test-runner",
+		"background-process",
+		"git",
+	} {
+		if strings.Contains(fragment, banned) {
+			t.Fatalf("local/no-shell fragment must not name unavailable tool path %q:\n%s", banned, s.SystemFragment)
 		}
 	}
 }

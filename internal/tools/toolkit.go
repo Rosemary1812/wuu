@@ -170,6 +170,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	clone.activeProfile = t.activeProfile
 	clone.activeSurface = cloneSurface(t.activeSurface)
 	t.activeProfileMu.RUnlock()
+	clone.env.ActiveSurface = cloneSurface(clone.activeSurface)
 	if len(t.disabledTools) > 0 {
 		clone.disabledTools = make(map[string]struct{}, len(t.disabledTools))
 		for name := range t.disabledTools {
@@ -611,9 +612,11 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile) {
 	t.activeProfile = p
 	if (p == modelprofile.Profile{}) {
 		t.activeSurface = capability.Surface{}
+		t.env.ActiveSurface = capability.Surface{}
 		return
 	}
 	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p)
+	t.env.ActiveSurface = cloneSurface(t.activeSurface)
 }
 
 // ActiveProfile returns the currently installed model profile, or the

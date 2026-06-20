@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
 )
@@ -74,5 +75,52 @@ func TestToolkit_LoadSkillRecordsResultAction(t *testing.T) {
 	records := kit.ToolTelemetry()
 	if len(records) != 1 || records[0].ResultAction != "load_skill" {
 		t.Fatalf("load_skill telemetry missing result action: %+v", records)
+	}
+}
+
+func TestToolkit_LoadSkillFiltersByActiveSurface(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetSkills([]skills.Skill{
+		{
+			Name:         "commit",
+			Description:  "Create a commit.",
+			WhenToUse:    "Use when asked to commit.",
+			Content:      "Use bash to run git status.",
+			AllowedTools: []string{"bash"},
+		},
+		{
+			Name:         "plan",
+			Description:  "Plan the work.",
+			WhenToUse:    "Use when asked to plan.",
+			Content:      "Create an implementation plan.",
+			AllowedTools: []string{"read_file", "grep", "glob"},
+		},
+	})
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+
+	defs := kit.Definitions()
+	var loadSkillDef providers.ToolDefinition
+	for _, def := range defs {
+		if def.Name == "load_skill" {
+			loadSkillDef = def
+			break
+		}
+	}
+	if loadSkillDef.Name == "" {
+		t.Fatalf("local/no-shell surface should still expose load_skill for compatible skills, got %v", sortedProfileDefNames(defs))
+	}
+	if strings.Contains(loadSkillDef.Description, "commit") || !strings.Contains(loadSkillDef.Description, "plan") {
+		t.Fatalf("load_skill catalog must hide incompatible skills and keep compatible ones:\n%s", loadSkillDef.Description)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "load_skill",
+		Arguments: `{"name":"commit"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("local/no-shell must not load bash-only skill, got %v", err)
 	}
 }

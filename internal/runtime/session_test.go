@@ -1383,6 +1383,47 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
+	surface := compiledSurfaceForProviderModel("ollama", "llama-coder")
+	promptText := buildBaseSystemPrompt(
+		t.TempDir(),
+		"base prompt",
+		"",
+		"ollama",
+		"llama-coder",
+		surface,
+		nil,
+		nil,
+		false,
+		0,
+		0,
+		[]skills.Skill{
+			{
+				Name:         "commit",
+				Description:  "Create a commit.",
+				WhenToUse:    "Use when asked to commit.",
+				Content:      "Use bash to run git status.",
+				AllowedTools: []string{"bash"},
+			},
+			{
+				Name:         "implementation-plan",
+				Description:  "Plan the implementation.",
+				WhenToUse:    "Use before broad edits.",
+				Content:      "Create a scoped plan.",
+				AllowedTools: []string{"read_file", "grep", "glob"},
+			},
+		},
+		nil,
+	)
+
+	if strings.Contains(promptText, "Create a commit") || strings.Contains(promptText, "Use bash to run git status") {
+		t.Fatalf("local/no-shell prompt must not advertise terminal-only skills:\n%s", promptText)
+	}
+	if !strings.Contains(promptText, "implementation-plan") {
+		t.Fatalf("local/no-shell prompt should keep compatible skills:\n%s", promptText)
+	}
+}
+
 func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
 	got := ResolveInputWindow("gpt-5.5", config.ProviderConfig{
 		Type:  "openai-codex",

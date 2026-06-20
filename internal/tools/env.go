@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/capability"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	proc "github.com/blueberrycongee/wuu/internal/process"
@@ -196,6 +197,11 @@ type Env struct {
 	AgentControl *agentcontrol.AgentControl
 	Skills       []skills.Skill
 	Workflows    []workflow.Definition
+	// ActiveSurface is the compiled model profile surface currently
+	// governing this tool environment. Tools with secondary catalogs
+	// such as load_skill use it to avoid exposing instructions that
+	// require unavailable capabilities.
+	ActiveSurface capability.Surface
 	// OnFileChanged is called after write_file/edit_file successfully
 	// modifies a file. Enables FileChanged hook dispatch without
 	// coupling the tools package to the hooks package.
@@ -465,16 +471,25 @@ func (e *Env) WorkspaceStateDir() (string, error) {
 
 // FindSkill looks up a skill by name, returning it and true if found.
 func (e *Env) FindSkill(name string) (skills.Skill, bool) {
-	return skills.Find(e.Skills, name)
+	return skills.Find(e.VisibleSkills(), name)
 }
 
 // SkillNames returns all available skill names.
 func (e *Env) SkillNames() []string {
-	out := make([]string, 0, len(e.Skills))
-	for _, s := range e.Skills {
+	visible := e.VisibleSkills()
+	out := make([]string, 0, len(visible))
+	for _, s := range visible {
 		out = append(out, s.Name)
 	}
 	return out
+}
+
+// VisibleSkills returns the skills allowed by the active model surface.
+func (e *Env) VisibleSkills() []skills.Skill {
+	if e == nil {
+		return nil
+	}
+	return FilterSkillsForSurface(e.Skills, e.ActiveSurface)
 }
 
 // ProcessSkillBody processes a skill body with variable substitution. Inline

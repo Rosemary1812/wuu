@@ -3,6 +3,7 @@ name: commit
 description: Create a well-structured git commit from staged or unstaged changes
 user-invocable: true
 when_to_use: When the user asks to commit changes, create a commit, or save their work
+allowed-tools: [bash]
 ---
 
 Create a git commit with normal non-interactive shell git commands:

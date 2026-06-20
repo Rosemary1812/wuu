@@ -39,7 +39,7 @@ func (t *LoadSkillTool) Definition() providers.ToolDefinition {
 			"The following skills provide specialized sets of instructions for particular tasks.",
 			"Invoke this tool to load a skill when a task matches one of the available skills listed below:",
 			"",
-			skills.FormatAvailable(t.env.Skills, false),
+			skills.FormatAvailable(t.env.VisibleSkills(), false),
 		}, "\n"),
 		InputSchema: map[string]any{
 			"type": "object",
