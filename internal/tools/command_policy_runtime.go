@@ -42,7 +42,7 @@ func defaultCommandPolicyCapabilityForCall(surface capability.Surface, call prov
 		var args bashArgs
 		if err := json.Unmarshal([]byte(strings.TrimSpace(call.Arguments)), &args); err == nil {
 			switch normalizeBashAction(args) {
-			case bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+			case bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground:
 				return capability.CapabilityCommandBackground
 			default:
 				return capability.CapabilityCommandBash

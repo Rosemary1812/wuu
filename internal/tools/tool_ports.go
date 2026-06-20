@@ -61,7 +61,7 @@ func (t *ReportListeningPortsTool) Definition() providers.ToolDefinition {
 				},
 				"process_id": map[string]any{
 					"type":        "string",
-					"description": "Optional managed process id returned by start_process. When provided, the desktop binds these ports to that background process.",
+					"description": "Optional managed process id returned by bash action=start_background. When provided, the desktop binds these ports to that background process.",
 				},
 				"primary_port": map[string]any{
 					"type":        "integer",

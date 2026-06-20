@@ -34,7 +34,7 @@ func (t *Toolkit) displayCapabilityForTool(call providers.ToolCall) string {
 		var args bashArgs
 		if err := decodeArgs(call.Arguments, &args); err == nil {
 			switch normalizeBashAction(args) {
-			case bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+			case bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground:
 				return "command.background"
 			default:
 				return "command.bash"
@@ -263,7 +263,7 @@ func displayBashLabel(args map[string]any) providers.ToolCallDisplay {
 		return toolDisplay("command", "查看后台任务")
 	case bashActionReadBackground:
 		return toolDisplay("command", "读取后台输出 "+displayTarget(displayString(args, "process_id"), ""))
-	case bashActionWriteStdin:
+	case bashActionWriteBackground:
 		return toolDisplay("command", "写入后台输入 "+displayTarget(displayString(args, "process_id"), ""))
 	case bashActionStopBackground:
 		return toolDisplay("command", "停止后台任务 "+displayTarget(displayString(args, "process_id"), ""))

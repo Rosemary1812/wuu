@@ -235,7 +235,7 @@ func (t *Toolkit) TestFailureContextBlock() (wuucontext.Block, bool) {
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockTestFailures,
 		Title:       "Latest test failure",
-		Source:      "run_test",
+		Source:      "bash",
 		TokenBudget: 900,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true

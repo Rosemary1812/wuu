@@ -56,7 +56,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "researcher",
 			Role:         "Researcher",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "ast_search", "semantic_search", "git", "load_skill", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "ast_search", "semantic_search", "bash", "load_skill", "agent_report"},
 			SystemPrompt: "Read the code and summarize constraints, ownership boundaries, relevant files, and unknowns. Do not edit files.",
 			OutputSchema: "research: relevant files, findings, constraints, risks, suggested next reads",
 			SuccessCriteria: []string{
@@ -80,7 +80,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "reviewer",
 			Role:         "Reviewer",
 			ContextScope: ContextScopeDiff,
-			AllowedTools: []string{"read_file", "grep", "glob", "git", "run_test", "load_skill", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "bash", "load_skill", "agent_report"},
 			SystemPrompt: "Review the diff for real bugs, missed requirements, unsafe behavior, and missing verification. Do not edit files.",
 			OutputSchema: "review: verdict, findings, evidence, residual risk",
 			SuccessCriteria: []string{
@@ -92,7 +92,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "qa",
 			Role:         "QA / Verifier",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "run_test", "run_shell", "start_process", "read_process_output", "stop_process", "git", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "bash", "agent_report"},
 			SystemPrompt: "Verify the real user path with commands, builds, tests, browser or process checks when available. Do not edit files.",
 			OutputSchema: "verification: verdict, commands, outputs, failures, reproduction notes",
 			SuccessCriteria: []string{
@@ -104,7 +104,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "debugger",
 			Role:         "Debugger",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "run_test", "run_shell", "git", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "bash", "agent_report"},
 			SystemPrompt: "Analyze failure logs and identify root cause before proposing or making a fix. Prefer evidence over guesses.",
 			OutputSchema: "debug: symptom, evidence, root cause, fix options, next command",
 			SuccessCriteria: []string{
@@ -116,7 +116,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "integrator",
 			Role:         "Integrator",
 			ContextScope: ContextScopeFull,
-			AllowedTools: []string{"read_file", "grep", "glob", "git", "run_test", "workflow_status", "workflow_control", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "bash", "workflow_status", "workflow_control", "agent_report"},
 			SystemPrompt: "Combine approved outputs, detect conflicts, preserve provenance, and write the final handoff. Do not bypass failed verification.",
 			OutputSchema: "integration: merged artifacts, conflicts, final verification, final report",
 			SuccessCriteria: []string{

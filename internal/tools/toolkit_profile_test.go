@@ -61,6 +61,44 @@ func TestSetActiveProfileCompilesAndExposesBashForAllStandardProfiles(t *testing
 	}
 }
 
+func TestCompiledProfileVisibleDefinitionsDoNotTeachLegacyCommandTools(t *testing.T) {
+	for _, tt := range []struct {
+		provider string
+		model    string
+	}{
+		{provider: "openai", model: "gpt-5-codex"},
+		{provider: "anthropic", model: "claude-sonnet-4-5"},
+	} {
+		kit, err := New(t.TempDir())
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model))
+		for _, def := range kit.Definitions() {
+			text := visibleDefinitionText(def)
+			for _, old := range []string{
+				"run_shell",
+				"run_test",
+				"start_process",
+				"list_processes",
+				"read_process_output",
+				"write_stdin",
+				"stop_process",
+				"structured git tool",
+			} {
+				if strings.Contains(text, old) {
+					t.Fatalf("%s/%s visible tool %s must not teach legacy command path %q:\n%s", tt.provider, tt.model, def.Name, old, text)
+				}
+			}
+		}
+	}
+}
+
+func visibleDefinitionText(def providers.ToolDefinition) string {
+	schema, _ := json.Marshal(def.InputSchema)
+	return def.Name + "\n" + def.Description + "\n" + string(schema)
+}
+
 func TestActiveProfileAllowsDeferredMCPThroughToolSearch(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {

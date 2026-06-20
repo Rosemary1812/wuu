@@ -297,6 +297,26 @@ func TestBuiltinRolesIncludeMakerCheckerSeparation(t *testing.T) {
 	}
 }
 
+func TestBuiltinRolesUseBashFirstCommandSurface(t *testing.T) {
+	legacy := map[string]bool{
+		"git":                 true,
+		"run_shell":           true,
+		"run_test":            true,
+		"start_process":       true,
+		"list_processes":      true,
+		"read_process_output": true,
+		"write_stdin":         true,
+		"stop_process":        true,
+	}
+	for _, role := range BuiltinRoles() {
+		for _, tool := range role.AllowedTools {
+			if legacy[tool] {
+				t.Fatalf("%s role must not allow legacy command tool %s: %+v", role.Name, tool, role.AllowedTools)
+			}
+		}
+	}
+}
+
 func fixedClock() func() time.Time {
 	ts := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
 	return func() time.Time { return ts }

@@ -17,22 +17,20 @@ const (
 	bashActionStartBackground = "start_background"
 	bashActionListBackground  = "list_background"
 	bashActionReadBackground  = "read_background"
-	bashActionWriteStdin      = "write_stdin"
+	bashActionWriteBackground = "write_background"
 	bashActionStopBackground  = "stop_background"
 )
 
 // BashTool is the bash-first command tool exposed to the model on
-// the Codex / GPT / Claude / generic surfaces. It wraps the same
-// command backends as the legacy run_shell / run_test /
-// start_process family but advertises the new "bash" name and a
-// description that calls out bash as the unified terminal entry
-// point.
+// the Codex / GPT / Claude / generic surfaces. It exposes one
+// unified terminal entry point for bounded commands, verification,
+// and managed background processes.
 //
 // Implementation note: short-lived commands use executeShellCommand,
-// verification commands get the old run_test result enrichment as a
-// post-processor, and long-running commands use the managed process
-// backend. Package/network commands that are covered by the default
-// command policy reach approval before this executor runs; unrelated
+// verification commands get result enrichment as a post-processor,
+// and long-running commands use the managed process backend.
+// Package/network commands that are covered by the default command
+// policy reach approval before this executor runs; unrelated
 // package/network commands still fail closed.
 type BashTool struct{ env *Env }
 
@@ -75,7 +73,7 @@ func (t *BashTool) Classify(argsJSON string) ToolClassification {
 			Risk:            ToolRiskMedium,
 			Reason:          "managed background process observation",
 		}
-	case bashActionWriteStdin, bashActionStopBackground:
+	case bashActionWriteBackground, bashActionStopBackground:
 		return ToolClassification{
 			ReadOnly:        false,
 			ConcurrencySafe: true,
@@ -99,12 +97,12 @@ func (t *BashTool) ValidateInput(argsJSON string) error {
 		}
 	case bashActionListBackground:
 		return nil
-	case bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+	case bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground:
 		if strings.TrimSpace(args.ProcessID) == "" {
 			return errors.New("bash background action requires process_id")
 		}
 	default:
-		return errors.New("bash action must be one of run, start_background, list_background, read_background, write_stdin, stop_background")
+		return errors.New("bash action must be one of run, start_background, list_background, read_background, write_background, stop_background")
 	}
 	return nil
 }
@@ -119,7 +117,7 @@ func (t *BashTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
 		return []ToolPermissionRequest{backgroundPermissionRequest(args.Command)}
 	case bashActionListBackground:
 		return []ToolPermissionRequest{backgroundProcessPermissionRequest("*")}
-	case bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+	case bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground:
 		return []ToolPermissionRequest{backgroundProcessPermissionRequest(args.ProcessID)}
 	default:
 		return []ToolPermissionRequest{shellPermissionRequest("bash", args.Command)}
@@ -144,7 +142,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"failure_summary, repeat_guard, and test-focused next_suggestions.\n\n" +
 			"Use action=start_background for dev servers, watch modes, and other long-lived " +
 			"commands; bash returns managed process metadata plus optional initial output. " +
-			"Use list_background, read_background, write_stdin, and stop_background to manage " +
+			"Use list_background, read_background, write_background, and stop_background to manage " +
 			"those processes through the same bash tool.\n\n" +
 			"The working directory defaults to the workspace root. Shell state does not persist " +
 			"between run calls.\n\n" +
@@ -165,8 +163,8 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{bashActionRun, bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground},
-					"description": "Operation to perform. Defaults to run. Use start_background/read_background/list_background/write_stdin/stop_background for managed long-running processes.",
+					"enum":        []string{bashActionRun, bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground},
+					"description": "Operation to perform. Defaults to run. Use start_background/read_background/list_background/write_background/stop_background for managed long-running processes.",
 				},
 				"command": map[string]any{
 					"type":        "string",
@@ -212,11 +210,11 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"process_id": map[string]any{
 					"type":        "string",
-					"description": "Managed background process id for read_background/write_stdin/stop_background.",
+					"description": "Managed background process id for read_background/write_background/stop_background.",
 				},
 				"input": map[string]any{
 					"type":        "string",
-					"description": "Text to write to background process stdin for action=write_stdin. Include a trailing newline when needed.",
+					"description": "Text to write to background process input for action=write_background. Include a trailing newline when needed.",
 				},
 			},
 			"required": []string{},
@@ -238,12 +236,12 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return t.executeListBackground()
 	case bashActionReadBackground:
 		return t.executeReadBackground(ctx, args)
-	case bashActionWriteStdin:
+	case bashActionWriteBackground:
 		return t.executeWriteStdin(args)
 	case bashActionStopBackground:
 		return t.executeStopBackground(args)
 	default:
-		return "", errors.New("bash action must be one of run, start_background, list_background, read_background, write_stdin, stop_background")
+		return "", errors.New("bash action must be one of run, start_background, list_background, read_background, write_background, stop_background")
 	}
 }
 
@@ -349,6 +347,13 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		return "", err
 	}
 	result.Purpose = redactToolOutput(args.Purpose)
+	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
+	if fullLogRef != "" {
+		result.FullLogRef = fullLogRef
+		result.FullLogBytes = fullLogBytes
+	} else if fullLogErr != "" {
+		result.FullLogError = fullLogErr
+	}
 	if verification {
 		result.Verification = t.enrichVerificationResult(command, commandHash, revision, args, result)
 		result.NextSuggestions = result.Verification.NextSuggestions
@@ -356,13 +361,6 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 			result.RequestedCommand = redactToolOutput(resolved.Requested)
 			result.ResolvedCommand = result.Command
 		}
-	}
-	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
-	if fullLogRef != "" {
-		result.FullLogRef = fullLogRef
-		result.FullLogBytes = fullLogBytes
-	} else if fullLogErr != "" {
-		result.FullLogError = fullLogErr
 	}
 	return mustJSON(result)
 }
@@ -583,7 +581,7 @@ func (t *BashTool) executeWriteStdin(args bashArgs) (string, error) {
 		return "", err
 	}
 	return mustJSON(map[string]any{
-		"action":        bashActionWriteStdin,
+		"action":        bashActionWriteBackground,
 		"process_id":    args.ProcessID,
 		"bytes_written": len(args.Input),
 		"process":       redactProcessPtr(p),

@@ -41,15 +41,16 @@ function managedProcess(overrides: Partial<ManagedProcess>): ManagedProcess {
 }
 
 describe("buildBackgroundProcessItems", () => {
-  it("shows an in-progress start_process before a process id exists", () => {
+  it("shows an in-progress bash background command before a process id exists", () => {
     const processes = buildBackgroundProcessItems(
       threadWithItems([
         {
           id: "tool-1",
           type: "tool_call",
           status: "in_progress",
-          name: "start_process",
-          arguments: JSON.stringify({ command: "npm run dev", lifecycle: "session" })
+          name: "bash",
+          display: { capability: "command.background" },
+          arguments: JSON.stringify({ action: "start_background", command: "npm run dev", lifecycle: "session" })
         }
       ])
     );
@@ -112,22 +113,22 @@ describe("buildBackgroundProcessItems", () => {
           id: "tool-1",
           type: "tool_call",
           status: "completed",
-          name: "start_process",
-          result: JSON.stringify(started)
+          name: "bash",
+          result: JSON.stringify({ action: "start_background", ...started })
         },
         {
           id: "tool-2",
           type: "tool_call",
           status: "completed",
-          name: "read_process_output",
-          result: JSON.stringify({ process: started })
+          name: "bash",
+          result: JSON.stringify({ action: "read_background", process: started })
         },
         {
           id: "tool-3",
           type: "tool_call",
           status: "completed",
-          name: "stop_process",
-          result: JSON.stringify(stopped)
+          name: "bash",
+          result: JSON.stringify({ action: "stop_background", ...stopped })
         }
       ])
     );
@@ -176,7 +177,7 @@ describe("buildBackgroundProcessItems", () => {
     });
   });
 
-  it("reads processes from list_processes results", () => {
+  it("reads processes from bash list_background results", () => {
     const running = {
       id: "proc-1",
       command: "npm run dev",
@@ -233,8 +234,8 @@ describe("buildBackgroundProcessItems", () => {
           id: "tool-1",
           type: "tool_call",
           status: "completed",
-          name: "start_process",
-          result: JSON.stringify(started)
+          name: "bash",
+          result: JSON.stringify({ action: "start_background", ...started })
         }
       ]),
       [
@@ -273,8 +274,8 @@ describe("buildBackgroundProcessItems", () => {
           id: "tool-1",
           type: "tool_call",
           status: "completed",
-          name: "start_process",
-          result: JSON.stringify(started)
+          name: "bash",
+          result: JSON.stringify({ action: "start_background", ...started })
         }
       ])
     );

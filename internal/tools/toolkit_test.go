@@ -3140,7 +3140,7 @@ func TestBroken(t *testing.T) {
 	}
 }
 
-func TestToolkit_RunTestFailureContextBlockTracksStaleness(t *testing.T) {
+func TestToolkit_BashFailureContextBlockTracksStaleness(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/failure-context\n\ngo 1.22\n")
 	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package failurecontext
@@ -3159,22 +3159,25 @@ func TestBroken(t *testing.T) {
 	kit.SetSessionDir(sessionDir)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
+		Name:      "bash",
 		Arguments: `{"command":"go test ./...","scope":"targeted","purpose":"capture failure context API_KEY=secret-value-1234567890"}`,
 	})
 	if err != nil {
-		t.Fatalf("run_test should return failed test output, not tool error: %v", err)
+		t.Fatalf("bash should return failed test output, not tool error: %v", err)
 	}
 	if !strings.Contains(resp, "[REDACTED]") {
-		t.Fatalf("run_test response should redact secret-like output: %s", resp)
+		t.Fatalf("bash response should redact secret-like output: %s", resp)
 	}
 
 	block, ok := kit.TestFailureContextBlock()
 	if !ok {
 		t.Fatal("expected test failure context block")
 	}
-	if block.Kind != wuucontext.BlockTestFailures || block.Source != "run_test" {
+	if block.Kind != wuucontext.BlockTestFailures || block.Source != "bash" {
 		t.Fatalf("unexpected context block metadata: %+v", block)
+	}
+	if strings.Contains(block.Source, "run_test") || strings.Contains(block.Content, "run_test") {
+		t.Fatalf("failure context must not expose legacy test tool name:\nsource=%s\n%s", block.Source, block.Content)
 	}
 	if !strings.Contains(block.Content, "status: current") ||
 		!strings.Contains(block.Content, "command: go test ./...") ||

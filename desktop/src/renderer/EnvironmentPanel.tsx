@@ -156,7 +156,7 @@ export function buildBackgroundProcessItems(
           continue;
         }
         const capability = item.display?.capability?.trim();
-        if ((item.name === "start_process" || capability === "command.background") && item.status === "in_progress") {
+        if (capability === "command.background" && item.status === "in_progress") {
           const args = parseJsonRecord(item.arguments);
           const command = stringValue(args, "command");
           if (command) {
@@ -169,7 +169,7 @@ export function buildBackgroundProcessItems(
             });
           }
         }
-        for (const process of processItemsFromToolResult(item.name, item.result)) {
+        for (const process of processItemsFromToolResult(item.result)) {
           byID.delete(item.id);
           byID.set(process.id, process);
         }
@@ -449,13 +449,13 @@ function EnvironmentBackgroundProcesses({
   );
 }
 
-function processItemsFromToolResult(name: string | undefined, result: string | undefined): BackgroundProcessItem[] {
+function processItemsFromToolResult(result: string | undefined): BackgroundProcessItem[] {
   const record = parseJsonRecord(result);
   if (!record) {
     return [];
   }
   const action = stringValue(record, "action");
-  if (name === "list_processes" || action === "list_processes" || action === "list_background") {
+  if (action === "list_background") {
     const processes = Array.isArray(record.processes) ? record.processes : [];
     return processes.flatMap((item) => {
       const process = asRecord(item);
@@ -463,21 +463,14 @@ function processItemsFromToolResult(name: string | undefined, result: string | u
     });
   }
   if (
-    name === "read_process_output" ||
-    name === "write_stdin" ||
-    action === "read_process_output" ||
     action === "read_background" ||
-    action === "write_stdin"
+    action === "write_background"
   ) {
     const process = asRecord(record.process);
     return process ? processItemFromRecord(process) : [];
   }
   if (
-    name === "start_process" ||
-    name === "stop_process" ||
-    action === "start_process" ||
     action === "start_background" ||
-    action === "stop_process" ||
     action === "stop_background"
   ) {
     return processItemFromRecord(record);

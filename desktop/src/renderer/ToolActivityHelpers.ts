@@ -203,21 +203,11 @@ function readableToolActivityCommandInner(
     }
     case "update_plan":
       return "更新计划";
-    case "git":
-      return readableCommandLabel(item);
     case "bash":
-    case "run_shell":
+      if (command.startsWith("git ")) {
+        return readableCommandLabel(item);
+      }
       return command ? `运行 ${truncateText(command, 100)}` : "运行命令";
-    case "start_process":
-      return command ? `启动 ${truncateText(command, 100)}` : "启动后台任务";
-    case "list_processes":
-      return "查看后台任务";
-    case "read_process_output":
-      return "读取后台输出";
-    case "stop_process":
-      return "停止后台任务";
-    case "write_stdin":
-      return "写入后台输入";
     case "edit_file":
       return `更新 ${formatPathTarget(path, "文件")}`;
     case "write_file":
@@ -338,13 +328,6 @@ function toolActivitySectionKey(item: ThreadItem): string {
     case "apply_patch":
       return "change";
     case "bash":
-    case "run_shell":
-    case "git":
-    case "start_process":
-    case "list_processes":
-    case "read_process_output":
-    case "stop_process":
-    case "write_stdin":
       return "command";
     case "spawn_agent":
     case "send_message":
@@ -668,11 +651,11 @@ function readableCommandLabel(
     action === "read_background" ||
     action === "list_background" ||
     action === "stop_background" ||
-    action === "write_stdin"
+    action === "write_background"
   ) {
     return readableBackgroundCommandLabel(action, command);
   }
-  if (name === "git" || command.startsWith("git ")) {
+  if (command.startsWith("git ")) {
     if (subcommand === "status" || command.includes("status")) {
       return "检查 Git 状态";
     }
@@ -693,15 +676,6 @@ function readableCommandLabel(
   if (/go\s+test|npm\s+test|pnpm\s+test|yarn\s+test/.test(command)) {
     return "运行测试";
   }
-  if (name === "read_process_output") {
-    return "读取后台输出";
-  }
-  if (name === "start_process") {
-    return "启动后台任务";
-  }
-  if (name === "stop_process") {
-    return "停止后台任务";
-  }
   return "运行命令";
 }
 
@@ -715,7 +689,7 @@ function readableBackgroundCommandLabel(action: string, command: string): string
       return "查看后台任务";
     case "stop_background":
       return "停止后台任务";
-    case "write_stdin":
+    case "write_background":
       return "写入后台输入";
     default:
       return command ? `启动 ${truncateText(command, 100)}` : "后台任务";
@@ -764,22 +738,13 @@ export function readableToolName(name: string | undefined): string {
     case "web_fetch":
       return "读取网页";
     case "bash":
-    case "run_shell":
       return "运行命令";
-    case "git":
-      return "Git 操作";
     case "tool_search":
       return "搜索工具";
     case "load_skill":
       return "学习技能";
     case "update_plan":
       return "更新计划";
-    case "start_process":
-    case "list_processes":
-    case "read_process_output":
-    case "stop_process":
-    case "write_stdin":
-      return "后台任务";
     case "schedule_cron":
     case "cancel_cron":
     case "list_cron":
@@ -853,7 +818,7 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
       listCount++;
       continue;
     }
-    if (name === "run_shell" || name === "bash" || name === "git" || capability?.startsWith("command.")) {
+    if (name === "bash" || capability?.startsWith("command.")) {
       primaryKind = primaryKind === "unknown" ? "command" : primaryKind;
       commandCount++;
       continue;

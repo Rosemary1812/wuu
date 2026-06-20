@@ -31,7 +31,7 @@ describe("readableToolActivityCommand", () => {
     // Until args (or result) actually parses, there is nothing to render.
     // The next item/toolCall/delta will reveal the title.
     expect(readableToolActivityCommand({ name: "read_file" })).toBe("");
-    expect(readableToolActivityCommand({ name: "run_shell" })).toBe("");
+    expect(readableToolActivityCommand({ name: "bash" })).toBe("");
   });
 
   it("returns empty string when args are partial JSON", () => {
@@ -66,8 +66,8 @@ describe("readableToolActivityCommand", () => {
 
     expect(
       readableToolActivityCommand({
-        name: "git",
-        arguments: JSON.stringify({ subcommand: "status", args: [] })
+        name: "bash",
+        arguments: JSON.stringify({ command: "git status" })
       })
     ).toBe("检查 Git 状态");
 
@@ -82,7 +82,7 @@ describe("readableToolActivityCommand", () => {
   it("keeps explicit shell commands readable", () => {
     expect(
       readableToolActivityCommand({
-        name: "run_shell",
+        name: "bash",
         arguments: JSON.stringify({ command: "npm run typecheck" })
       })
     ).toBe("运行 npm run typecheck");
@@ -152,7 +152,7 @@ describe("readableToolActivityCommand", () => {
   it("appends the capability suffix when display.capability is set", () => {
     expect(
       readableToolActivityCommand({
-        name: "run_shell",
+        name: "bash",
         arguments: JSON.stringify({ command: "npx vitest" }),
         display: { kind: "command", text: "运行 npx vitest", capability: "command.bash" }
       })
@@ -162,7 +162,7 @@ describe("readableToolActivityCommand", () => {
   it("omits the capability suffix when display.capability is missing", () => {
     expect(
       readableToolActivityCommand({
-        name: "run_shell",
+        name: "bash",
         arguments: JSON.stringify({ command: "npx vitest" }),
         display: { kind: "command", text: "运行 npx vitest" }
       })
