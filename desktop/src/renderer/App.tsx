@@ -1647,38 +1647,6 @@ export function App(): JSX.Element {
     }));
   }
 
-  function useSkillFromCatalog(name: string): void {
-    if (!state.activeContext) {
-      return;
-    }
-    draftSessionTabCounterRef.current += 1;
-    const draft = {
-      prompt: `/${name} `,
-      images: [],
-      files: [],
-    };
-    const tab = createDraftSessionTab(
-      `draft:skill:${Date.now()}:${draftSessionTabCounterRef.current}`,
-      state.activeContext,
-      draft,
-    );
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    restorePrimaryComposerDraft(draft);
-    setSplitComposerDrafts(initialSplitComposerDrafts());
-    setState((current) => ({
-      ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
-      thread: undefined,
-      secondaryThread: undefined,
-      activePane: "primary",
-      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
-      activeSessionTabID: tab.id,
-      allowThreadAutoActivation: false,
-      running: false,
-      status: "ready",
-    }));
-  }
-
   async function buildComposerAttachments(files: File[]): Promise<{
     images: ComposerImage[];
     files: ComposerFile[];
@@ -5326,7 +5294,6 @@ export function App(): JSX.Element {
             {showingSkillsCatalog ? (
               <SkillsCatalog
                 activeContext={state.activeContext}
-                onUseSkill={useSkillFromCatalog}
               />
             ) : workspaceMode ? (
               <WorkspaceMainPanel

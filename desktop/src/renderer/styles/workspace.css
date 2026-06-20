@@ -1536,21 +1536,6 @@
   white-space: nowrap;
 }
 
-.skill-card-footer button {
-  height: 30px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-sm);
-  background: var(--surface-3);
-  color: var(--ink);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-  padding: 0 11px;
-}
-
-.skill-card-footer button:hover {
-  background: #e3e5e1;
-}
-
 .skills-empty {
   display: grid;
   min-height: 260px;

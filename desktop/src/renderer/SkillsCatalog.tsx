@@ -15,11 +15,9 @@ const initialLoadState: LoadState = {
 };
 
 export function SkillsCatalog({
-  activeContext,
-  onUseSkill
+  activeContext
 }: {
   activeContext?: RuntimeContext;
-  onUseSkill: (name: string) => void;
 }): JSX.Element {
   const [state, setState] = useState<LoadState>(initialLoadState);
   const [filter, setFilter] = useState("");
@@ -127,9 +125,6 @@ export function SkillsCatalog({
             </div>
             <footer className="skill-card-footer">
               <span className="skill-card-path">{skill.path ? shortPath(skill.path) : sourceLabel(skill.source)}</span>
-              <button type="button" onClick={() => onUseSkill(skill.name)}>
-                使用
-              </button>
             </footer>
           </article>
         ))}
