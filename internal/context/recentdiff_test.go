@@ -40,6 +40,11 @@ func TestRecentDiffBlockReturnsCompactDirtyGitSummary(t *testing.T) {
 			t.Fatalf("recent diff block missing %q:\n%s", want, block.Content)
 		}
 	}
+	for _, banned := range []string{"git diff", "shell", "terminal", "bash", "run_shell"} {
+		if strings.Contains(block.Content, banned) {
+			t.Fatalf("recent diff block must not teach command path %q:\n%s", banned, block.Content)
+		}
+	}
 	if strings.Contains(block.Content, ".env") || strings.Contains(block.Content, "secret-value") {
 		t.Fatalf("recent diff block leaked sensitive path/content:\n%s", block.Content)
 	}

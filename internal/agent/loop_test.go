@@ -1059,3 +1059,18 @@ func TestRunToolLoop_RejectsProviderToolCallInvalidArguments(t *testing.T) {
 		t.Fatalf("invalid tool call should not execute, got %+v", calls)
 	}
 }
+
+func TestTaskContractReminderDoesNotTeachShellPath(t *testing.T) {
+	msg, ok := taskContractReminder([]providers.ChatMessage{{Role: "user", Content: "Please keep the change scoped."}})
+	if !ok {
+		t.Fatal("expected task contract reminder")
+	}
+	for _, banned := range []string{"shell", "terminal", "bash", "run_shell", "run_test", "start_process"} {
+		if strings.Contains(msg.Content, banned) {
+			t.Fatalf("task contract reminder must not teach command path %q:\n%s", banned, msg.Content)
+		}
+	}
+	if !strings.Contains(msg.Content, "command side effects") {
+		t.Fatalf("task contract reminder missing capability-neutral command guidance:\n%s", msg.Content)
+	}
+}

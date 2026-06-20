@@ -422,7 +422,7 @@ func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessa
 
 	ledger := strings.Join([]string{
 		"# Constraint Ledger",
-		"- Pre-write: re-check explicit user constraints before file edits, shell side effects, workflow changes, or commits.",
+		"- Pre-write: re-check explicit user constraints before file edits, command side effects, workflow changes, or commits.",
 		"- Pre-write: if a newer user directive conflicts with an older one, follow the newer directive and do not carry stale work forward.",
 		"- Pre-finish: verify requested deliverables, tests, and atomic commit requirements; report any unmet criterion or skipped verification.",
 		"- Pre-finish: keep the final answer scoped to what changed, what passed, and what remains.",

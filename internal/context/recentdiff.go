@@ -14,8 +14,8 @@ type RecentDiffOptions struct {
 }
 
 // RecentDiffBlock returns a compact dirty-worktree summary for per-turn typed
-// context. It intentionally omits diff bodies; agents should call git diff or
-// read_file when they need exact evidence.
+// context. It intentionally omits diff bodies; agents should use the active
+// tool surface for exact evidence when needed.
 func RecentDiffBlock(root string, opts RecentDiffOptions) (Block, bool) {
 	root = strings.TrimSpace(root)
 	if root == "" {
@@ -62,7 +62,7 @@ func RecentDiffBlock(root string, opts RecentDiffOptions) (Block, bool) {
 	if omitted := len(statusLines) - len(listed); omitted > 0 {
 		fmt.Fprintf(&b, "omitted_files: %d\n", omitted)
 	}
-	b.WriteString("note: diff bodies are omitted; use git diff or read_file for exact evidence.\n")
+	b.WriteString("note: diff bodies are omitted; use available inspection tools for exact evidence.\n")
 
 	return Block{
 		Kind:        BlockRecentDiff,
