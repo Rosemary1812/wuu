@@ -558,19 +558,6 @@ func TestToolkit_Git_NonInteractiveEnv(t *testing.T) {
 	}
 }
 
-func TestToolkit_Git_InDefinitions(t *testing.T) {
-	kit, _ := setupGitRepo(t)
-	for _, d := range kit.Definitions() {
-		if d.Name == "git" {
-			if !strings.Contains(strings.ToLower(d.Description), "commit") || !strings.Contains(strings.ToLower(d.Description), "push") {
-				t.Errorf("desc: %q", d.Description)
-			}
-			return
-		}
-	}
-	t.Fatal("git not in Definitions()")
-}
-
 func TestToolkit_Git_IsHiddenFromModelSurfaces(t *testing.T) {
 	// Phase 5 of the bash-first redesign: the legacy `git` tool is
 	// demoted to an internal / advanced capability. Bash covers all

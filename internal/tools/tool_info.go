@@ -211,7 +211,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindSearch
 	case "tool_search":
 		return ToolKindDiscovery
-	case "run_shell":
+	case "run_shell", "bash":
 		return ToolKindShell
 	case "run_test":
 		return ToolKindTest

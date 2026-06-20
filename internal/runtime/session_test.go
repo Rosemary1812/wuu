@@ -1341,7 +1341,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, allowed := range []string{"read_file", "write_file", "run_shell", "run_test", "update_plan", "agent_report"} {
+	for _, allowed := range []string{"read_file", "write_file", "bash", "update_plan", "agent_report"} {
 		if !defs[allowed] {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}

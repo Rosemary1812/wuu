@@ -82,6 +82,26 @@ func TestPermissionBoundaryReadOnlyUsesInputClassification(t *testing.T) {
 	}
 }
 
+func TestPermissionBoundaryReadOnlyBlocksBashWrites(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileReadOnly))
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"printf blocked > notes.txt"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=permission_boundary_denied") {
+		t.Fatalf("expected read-only boundary to block bash write, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "notes.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("read-only boundary should prevent bash file creation, stat err=%v", statErr)
+	}
+}
+
 func TestPermissionBoundaryWorkspaceWriteBlocksDestructiveActions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
