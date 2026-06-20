@@ -123,6 +123,10 @@ func newBuilder(p Profile, key ProfileKey) *surfaceBuilder {
 // addVisible registers a model-visible tool and its capability.
 func (b *surfaceBuilder) addVisible(tool string, c capability.Capability) {
 	b.surface.Tools[tool] = c
+	b.addVisibleCapability(c)
+}
+
+func (b *surfaceBuilder) addVisibleCapability(c capability.Capability) {
 	if _, ok := b.visible[c]; ok {
 		return
 	}
@@ -298,6 +302,7 @@ func addBashFirstTools(b *surfaceBuilder, p Profile) {
 	}
 	if p.Workflow.AllowDirectShell {
 		b.addVisible("bash", capability.CapabilityCommandBash)
+		b.addVisibleCapability(capability.CapabilityCommandBackground)
 		// The five managed-process tools are advanced / hidden
 		// even on profiles that allow direct shell. The model
 		// reaches long-running commands through bash; start_process

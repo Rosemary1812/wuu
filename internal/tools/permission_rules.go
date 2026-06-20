@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -120,8 +121,8 @@ func normalizePermissionPatterns(patterns []string) []string {
 }
 
 func permissionNameMatches(rulePermission, requestedPermission string) bool {
-	rulePermission = strings.TrimSpace(rulePermission)
-	requestedPermission = strings.TrimSpace(requestedPermission)
+	rulePermission = canonicalPermissionName(rulePermission)
+	requestedPermission = canonicalPermissionName(requestedPermission)
 	if rulePermission == "" || requestedPermission == "" {
 		return false
 	}
@@ -129,6 +130,31 @@ func permissionNameMatches(rulePermission, requestedPermission string) bool {
 		return true
 	}
 	return permissionGlobMatches(rulePermission, requestedPermission)
+}
+
+func canonicalPermissionName(permission string) string {
+	switch strings.TrimSpace(permission) {
+	case "bash", "run_shell":
+		return string(capability.CapabilityCommandBash)
+	case "background", "process", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
+		return string(capability.CapabilityCommandBackground)
+	case "read":
+		return string(capability.CapabilityFileRead)
+	case "list":
+		return string(capability.CapabilityFileList)
+	case "edit", "write", "apply_patch", "edit_file", "write_file":
+		return string(capability.CapabilityFileEdit)
+	case "grep":
+		return string(capability.CapabilitySearchGrep)
+	case "glob":
+		return string(capability.CapabilitySearchGlob)
+	case "web_fetch":
+		return string(capability.CapabilityWebFetch)
+	case "web_search":
+		return string(capability.CapabilityWebSearch)
+	default:
+		return strings.TrimSpace(permission)
+	}
 }
 
 func permissionPatternMatches(rulePattern, requestedPattern string) bool {
@@ -283,16 +309,25 @@ func (t *Toolkit) applyPermissionRuleDecision(
 }
 
 func permissionToolPolicyDecision(decision ToolPermissionDecision) ToolPolicyDecision {
+	rule := normalizeToolPermissionRule(decision.Rule)
+	policyDecision := ToolPolicyDecision{
+		Reason:           decision.Reason,
+		Capability:       capability.Capability(canonicalPermissionName(rule.Permission)),
+		CapabilityObject: strings.TrimSpace(rule.Pattern),
+		CapabilityAction: capabilityActionVerb(capability.Capability(canonicalPermissionName(rule.Permission))),
+		CapabilityRule:   strings.TrimSpace(rule.Permission + " " + rule.Pattern),
+	}
 	switch decision.Action {
 	case ToolPermissionAllow:
-		return ToolPolicyDecision{Action: ToolPolicyAllow, Reason: decision.Reason}
+		policyDecision.Action = ToolPolicyAllow
 	case ToolPermissionDeny:
-		return ToolPolicyDecision{Action: ToolPolicyDeny, Reason: decision.Reason}
+		policyDecision.Action = ToolPolicyDeny
 	case ToolPermissionAsk:
-		return ToolPolicyDecision{Action: ToolPolicyRequireApproval, Reason: decision.Reason}
+		policyDecision.Action = ToolPolicyRequireApproval
 	default:
 		return ToolPolicyDecision{}
 	}
+	return policyDecision
 }
 
 type toolPermissionDeniedError struct {
@@ -345,17 +380,32 @@ func defaultToolPermissionRequests(call providers.ToolCall, info ToolInfo) []Too
 
 func defaultPermissionName(toolName string, info ToolInfo) string {
 	switch strings.TrimSpace(toolName) {
-	case "run_shell", "start_process":
-		return "bash"
+	case "run_shell", "bash", "git", "run_test":
+		return string(capability.CapabilityCommandBash)
+	case "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
+		return string(capability.CapabilityCommandBackground)
 	}
 	switch info.Kind {
 	case ToolKindFile:
 		if info.ReadOnly {
-			return "read"
+			return string(capability.CapabilityFileRead)
 		}
-		return "edit"
-	case ToolKindSearch, ToolKindDiscovery:
-		return "read"
+		return string(capability.CapabilityFileEdit)
+	case ToolKindSearch:
+		switch strings.TrimSpace(toolName) {
+		case "grep":
+			return string(capability.CapabilitySearchGrep)
+		case "glob":
+			return string(capability.CapabilitySearchGlob)
+		case "ast_search":
+			return string(capability.CapabilitySearchAST)
+		case "semantic_search":
+			return string(capability.CapabilitySearchSemantic)
+		default:
+			return string(capability.CapabilitySearchGrep)
+		}
+	case ToolKindDiscovery:
+		return string(capability.CapabilityDiscovery)
 	case ToolKindMCP:
 		return toolName
 	default:
@@ -386,12 +436,46 @@ func shellPermissionRequest(toolName, command string) ToolPermissionRequest {
 		patterns = []string{"*"}
 	}
 	return ToolPermissionRequest{
-		Permission: "bash",
+		Permission: string(capability.CapabilityCommandBash),
 		Patterns:   patterns,
 		Always:     []string{shellPermissionAlwaysPattern(command)},
 		Metadata: map[string]string{
 			"tool":    toolName,
 			"command": command,
+		},
+	}
+}
+
+func backgroundPermissionRequest(command string) ToolPermissionRequest {
+	command = strings.TrimSpace(command)
+	patterns := []string{command}
+	if command == "" {
+		patterns = []string{"*"}
+	}
+	return ToolPermissionRequest{
+		Permission: string(capability.CapabilityCommandBackground),
+		Patterns:   patterns,
+		Always:     []string{shellPermissionAlwaysPattern(command)},
+		Metadata: map[string]string{
+			"tool":    "bash",
+			"action":  bashActionStartBackground,
+			"command": command,
+		},
+	}
+}
+
+func backgroundProcessPermissionRequest(processID string) ToolPermissionRequest {
+	processID = strings.TrimSpace(processID)
+	if processID == "" {
+		processID = "*"
+	}
+	return ToolPermissionRequest{
+		Permission: string(capability.CapabilityCommandBackground),
+		Patterns:   []string{processID},
+		Always:     []string{processID},
+		Metadata: map[string]string{
+			"tool":       "bash",
+			"process_id": processID,
 		},
 	}
 }

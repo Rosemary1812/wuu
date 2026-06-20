@@ -1,0 +1,181 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	proc "github.com/blueberrycongee/wuu/internal/process"
+	"github.com/blueberrycongee/wuu/internal/providers"
+)
+
+func TestBashRunAddsVerificationSummaryAndRepeatGuard(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/bashverify\n\ngo 1.22\n")
+	mustWriteFile(t, filepath.Join(root, "fail_test.go"), `package bashverify
+
+import "testing"
+
+func TestBashVerificationFailure(t *testing.T) {
+	t.Fatalf("expected green")
+}
+`)
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetSessionDir(t.TempDir())
+
+	call := providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"go test ./...","scope":"targeted","purpose":"verify bash summary"}`,
+	}
+	for i := 0; i < maxRepeatedRunTestFailures; i++ {
+		resp, err := kit.Execute(context.Background(), call)
+		if err != nil {
+			t.Fatalf("bash verification run %d: %v", i+1, err)
+		}
+		var parsed shellExecutionResult
+		if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+			t.Fatalf("parse bash result: %v\n%s", err, resp)
+		}
+		if parsed.Verification == nil {
+			t.Fatalf("bash verification metadata missing: %s", resp)
+		}
+		if parsed.Verification.Passed {
+			t.Fatalf("failing go test should not pass: %+v", parsed.Verification)
+		}
+		if !parsed.Verification.FailureSummary.Failed || !containsString(parsed.Verification.FailureSummary.FailingTests, "TestBashVerificationFailure") {
+			t.Fatalf("failure summary did not identify failing test: %+v", parsed.Verification.FailureSummary)
+		}
+		if parsed.Verification.RepeatGuard["max_failed_runs_without_revision_change"] != float64(maxRepeatedRunTestFailures) {
+			t.Fatalf("verification repeat guard missing: %+v", parsed.Verification.RepeatGuard)
+		}
+	}
+
+	_, err = kit.Execute(context.Background(), call)
+	if err == nil || !strings.Contains(err.Error(), "bash blocked repeated failing verification command") {
+		t.Fatalf("expected bash verification repeat guard, got %v", err)
+	}
+}
+
+func TestBashRunResolvesLocalNpxVerificationRunner(t *testing.T) {
+	root := t.TempDir()
+	runnerPath := filepath.Join(root, "node_modules", ".bin", "vitest")
+	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf 'local vitest %s\\n' \"$*\"\n")
+	if err := os.Chmod(runnerPath, 0o755); err != nil {
+		t.Fatalf("chmod runner: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"npx vitest --run","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("bash npx vitest: %v", err)
+	}
+	var parsed shellExecutionResult
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse bash result: %v\n%s", err, resp)
+	}
+	if parsed.RequestedCommand != "npx vitest --run" {
+		t.Fatalf("requested command not preserved: %+v", parsed)
+	}
+	if parsed.Command != "./node_modules/.bin/vitest --run" || parsed.ResolvedCommand != parsed.Command {
+		t.Fatalf("npx command was not resolved to local runner: %+v", parsed)
+	}
+	if parsed.Verification == nil || !parsed.Verification.Passed {
+		t.Fatalf("local vitest verification should pass: %+v", parsed.Verification)
+	}
+}
+
+func TestBashBackgroundModeUsesManagedProcessBackend(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	defer func() { _ = manager.CleanupSession() }()
+	kit.SetProcessManager(manager)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"printf 'ready\n'; sleep 5","wait_ms":500,"max_bytes":4096}`,
+	})
+	if err != nil {
+		t.Fatalf("start background: %v", err)
+	}
+	var started startProcessResponse
+	if err := json.Unmarshal([]byte(resp), &started); err != nil {
+		t.Fatalf("parse start background: %v\n%s", err, resp)
+	}
+	if started.Action != bashActionStartBackground || started.ID == "" {
+		t.Fatalf("unexpected start response: %+v", started)
+	}
+	if !strings.Contains(started.InitialOutput, "ready") {
+		t.Fatalf("initial output should include readiness line: %+v", started)
+	}
+
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"list_background"}`,
+	})
+	if err != nil {
+		t.Fatalf("list background: %v", err)
+	}
+	if !strings.Contains(listResp, started.ID) || !strings.Contains(listResp, bashActionListBackground) {
+		t.Fatalf("list response missing process metadata: %s", listResp)
+	}
+
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"read_background","process_id":"` + started.ID + `","offset_bytes":0,"max_bytes":4096}`,
+	})
+	if err != nil {
+		t.Fatalf("read background: %v", err)
+	}
+	if !strings.Contains(readResp, bashActionReadBackground) || !strings.Contains(readResp, `"process"`) {
+		t.Fatalf("read response missing managed process metadata: %s", readResp)
+	}
+
+	stopResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"stop_background","process_id":"` + started.ID + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("stop background: %v", err)
+	}
+	if !strings.Contains(stopResp, bashActionStopBackground) {
+		t.Fatalf("stop response should use bash background action: %s", stopResp)
+	}
+}
+
+func TestBashPermissionRequestsUseCapabilities(t *testing.T) {
+	tool := NewBashTool(&Env{})
+	runReqs := tool.PermissionRequests(`{"command":"git status --short"}`)
+	if len(runReqs) != 1 || runReqs[0].Permission != "command.bash" {
+		t.Fatalf("run permission request = %+v, want command.bash", runReqs)
+	}
+	backgroundReqs := tool.PermissionRequests(`{"action":"start_background","command":"npm run dev"}`)
+	if len(backgroundReqs) != 1 || backgroundReqs[0].Permission != "command.background" {
+		t.Fatalf("background permission request = %+v, want command.background", backgroundReqs)
+	}
+	rules := ToolPermissionRuleSet{
+		{Permission: "bash", Pattern: "git status *", Action: ToolPermissionAllow},
+	}
+	if decision, ok := rules.Decide(runReqs[0]); !ok || decision.Action != ToolPermissionAllow {
+		t.Fatalf("legacy bash permission alias should match command.bash request: decision=%+v ok=%v", decision, ok)
+	}
+}

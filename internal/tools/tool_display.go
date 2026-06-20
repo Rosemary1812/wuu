@@ -22,13 +22,25 @@ func (t *Toolkit) ToolDisplay(call providers.ToolCall) (providers.ToolCallDispla
 			Text: fallbackDisplayToolName(call.Name),
 		}
 	}
-	if capability := t.displayCapabilityForTool(call.Name); capability != "" {
+	if capability := t.displayCapabilityForTool(call); capability != "" {
 		display.Capability = capability
 	}
 	return display, true
 }
 
-func (t *Toolkit) displayCapabilityForTool(name string) string {
+func (t *Toolkit) displayCapabilityForTool(call providers.ToolCall) string {
+	name := strings.TrimSpace(call.Name)
+	if name == "bash" {
+		var args bashArgs
+		if err := decodeArgs(call.Arguments, &args); err == nil {
+			switch normalizeBashAction(args) {
+			case bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+				return "command.background"
+			default:
+				return "command.bash"
+			}
+		}
+	}
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName == "" {
 		return ""
@@ -75,6 +87,8 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("command", "运行命令")
 		}
 		return toolDisplay("command", "运行 "+displayTruncate(command, 100))
+	case "bash":
+		return displayBashLabel(args)
 	case "run_test":
 		command := displayString(args, "command")
 		if command == "" {
@@ -201,6 +215,40 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 	}
 }
 
+func displayBashLabel(args map[string]any) providers.ToolCallDisplay {
+	action := normalizeBashAction(bashArgs{
+		Action:     displayString(args, "action"),
+		Command:    displayString(args, "command"),
+		ProcessID:  displayString(args, "process_id"),
+		Background: displayBool(args, "background"),
+	})
+	switch action {
+	case bashActionStartBackground:
+		command := displayString(args, "command")
+		if command == "" {
+			return toolDisplay("command", "启动后台任务")
+		}
+		return toolDisplay("command", "启动 "+displayTruncate(command, 100))
+	case bashActionListBackground:
+		return toolDisplay("command", "查看后台任务")
+	case bashActionReadBackground:
+		return toolDisplay("command", "读取后台输出 "+displayTarget(displayString(args, "process_id"), ""))
+	case bashActionWriteStdin:
+		return toolDisplay("command", "写入后台输入 "+displayTarget(displayString(args, "process_id"), ""))
+	case bashActionStopBackground:
+		return toolDisplay("command", "停止后台任务 "+displayTarget(displayString(args, "process_id"), ""))
+	default:
+		command := displayString(args, "command")
+		if command == "" {
+			return toolDisplay("command", "运行命令")
+		}
+		if bashCommandLooksLikeVerification(command) {
+			return toolDisplay("test", "验证 "+displayTruncate(command, 100))
+		}
+		return toolDisplay("command", "运行 "+displayTruncate(command, 100))
+	}
+}
+
 func toolDisplay(kind, text string) providers.ToolCallDisplay {
 	return providers.ToolCallDisplay{Kind: kind, Text: strings.TrimSpace(text)}
 }
@@ -233,6 +281,21 @@ func displayString(args map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func displayBool(args map[string]any, key string) bool {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return false
+	}
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
 }
 
 func displayPathTarget(value, fallback string) string {

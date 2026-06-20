@@ -88,6 +88,9 @@ func TestOpenAICodexSurface(t *testing.T) {
 	if _, ok := s.Tools["bash"]; !ok {
 		t.Fatalf("Codex surface must include bash as a visible tool")
 	}
+	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
+		t.Fatalf("Codex surface must advertise command.background through bash, got caps=%v", s.Capabilities)
+	}
 	for _, hidden := range []string{"run_test", "git"} {
 		if _, visible := s.Tools[hidden]; visible {
 			t.Fatalf("Codex surface must not advertise %s as a default tool", hidden)
@@ -175,6 +178,9 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	// not be model-visible tools.
 	if _, ok := s.Tools["bash"]; !ok {
 		t.Fatalf("Claude surface must include bash")
+	}
+	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
+		t.Fatalf("Claude surface must advertise command.background through bash, got caps=%v", s.Capabilities)
 	}
 	for _, hidden := range []string{"run_test", "git"} {
 		if _, visible := s.Tools[hidden]; visible {
@@ -293,6 +299,9 @@ func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
 	}
 	if !s.HasCapability(capability.CapabilityCommandBash) {
 		t.Fatal("Codex surface must have command.bash")
+	}
+	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
+		t.Fatal("Codex surface must expose command.background through bash")
 	}
 	if got, ok := s.ToolForCapability(capability.CapabilityFileEdit); !ok || got != "apply_patch" {
 		t.Fatalf("ToolForCapability(file.edit) = %q,%v, want apply_patch,true", got, ok)

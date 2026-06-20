@@ -26,7 +26,7 @@ func (t *Toolkit) applyDefaultCommandPolicyDecision(call providers.ToolCall, inf
 }
 
 func defaultCommandPolicySubject(surface capability.Surface, call providers.ToolCall, info ToolInfo) (capability.Capability, string, bool) {
-	capabilityName := defaultCommandPolicyCapability(surface, call.Name, info)
+	capabilityName := defaultCommandPolicyCapabilityForCall(surface, call, info)
 	if capabilityName == "" {
 		return "", "", false
 	}
@@ -35,6 +35,21 @@ func defaultCommandPolicySubject(surface capability.Surface, call providers.Tool
 		return "", "", false
 	}
 	return capabilityName, subject, true
+}
+
+func defaultCommandPolicyCapabilityForCall(surface capability.Surface, call providers.ToolCall, info ToolInfo) capability.Capability {
+	if strings.TrimSpace(call.Name) == "bash" {
+		var args bashArgs
+		if err := json.Unmarshal([]byte(strings.TrimSpace(call.Arguments)), &args); err == nil {
+			switch normalizeBashAction(args) {
+			case bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+				return capability.CapabilityCommandBackground
+			default:
+				return capability.CapabilityCommandBash
+			}
+		}
+	}
+	return defaultCommandPolicyCapability(surface, call.Name, info)
 }
 
 func defaultCommandPolicyCapability(surface capability.Surface, toolName string, info ToolInfo) capability.Capability {

@@ -292,7 +292,7 @@ func (e repeatedToolInputError) Error() string {
 }
 
 func (t *Toolkit) repeatedToolInputCount(call providers.ToolCall, revision string) int {
-	if t == nil || t.env == nil || isRepeatablePollingTool(call.Name) {
+	if t == nil || t.env == nil || isRepeatablePollingTool(call) {
 		return 0
 	}
 	revision = strings.TrimSpace(revision)
@@ -312,8 +312,20 @@ func (t *Toolkit) repeatedToolInputCount(call providers.ToolCall, revision strin
 	return count
 }
 
-func isRepeatablePollingTool(name string) bool {
-	switch strings.TrimSpace(name) {
+func isRepeatablePollingTool(call providers.ToolCall) bool {
+	name := strings.TrimSpace(call.Name)
+	if name == "bash" {
+		var args bashArgs
+		if err := decodeArgs(call.Arguments, &args); err == nil {
+			switch normalizeBashAction(args) {
+			case bashActionListBackground, bashActionReadBackground:
+				return true
+			case bashActionRun:
+				return bashCommandLooksLikeVerification(args.Command)
+			}
+		}
+	}
+	switch name {
 	case "await_agents", "wait_agent", "workflow_status", "read_process_output", "list_processes", "report_listening_ports", "run_test":
 		return true
 	default:

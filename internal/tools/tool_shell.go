@@ -156,26 +156,29 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 }
 
 type shellExecutionResult struct {
-	Action              string             `json:"action"`
-	Command             string             `json:"command"`
-	Purpose             string             `json:"purpose,omitempty"`
-	Classification      ToolClassification `json:"classification"`
-	ExitCode            int                `json:"exit_code"`
-	DurationMS          int64              `json:"duration_ms"`
-	TimedOut            bool               `json:"timed_out"`
-	Truncated           bool               `json:"truncated"`
-	Output              string             `json:"output"`
-	StdoutTail          string             `json:"stdout_tail"`
-	StderrTail          string             `json:"stderr_tail"`
-	StdoutBytes         int                `json:"stdout_bytes"`
-	StderrBytes         int                `json:"stderr_bytes"`
-	WorkspaceRevision   string             `json:"workspace_revision"`
-	StdoutTailTruncated bool               `json:"stdout_tail_truncated"`
-	StderrTailTruncated bool               `json:"stderr_tail_truncated"`
-	FullLogRef          string             `json:"full_log_ref,omitempty"`
-	FullLogBytes        int                `json:"full_log_bytes,omitempty"`
-	FullLogError        string             `json:"full_log_error,omitempty"`
-	NextSuggestions     []string           `json:"next_suggestions,omitempty"`
+	Action              string                  `json:"action"`
+	Command             string                  `json:"command"`
+	RequestedCommand    string                  `json:"requested_command,omitempty"`
+	ResolvedCommand     string                  `json:"resolved_command,omitempty"`
+	Purpose             string                  `json:"purpose,omitempty"`
+	Classification      ToolClassification      `json:"classification"`
+	ExitCode            int                     `json:"exit_code"`
+	DurationMS          int64                   `json:"duration_ms"`
+	TimedOut            bool                    `json:"timed_out"`
+	Truncated           bool                    `json:"truncated"`
+	Output              string                  `json:"output"`
+	StdoutTail          string                  `json:"stdout_tail"`
+	StderrTail          string                  `json:"stderr_tail"`
+	StdoutBytes         int                     `json:"stdout_bytes"`
+	StderrBytes         int                     `json:"stderr_bytes"`
+	WorkspaceRevision   string                  `json:"workspace_revision"`
+	StdoutTailTruncated bool                    `json:"stdout_tail_truncated"`
+	StderrTailTruncated bool                    `json:"stderr_tail_truncated"`
+	FullLogRef          string                  `json:"full_log_ref,omitempty"`
+	FullLogBytes        int                     `json:"full_log_bytes,omitempty"`
+	FullLogError        string                  `json:"full_log_error,omitempty"`
+	NextSuggestions     []string                `json:"next_suggestions,omitempty"`
+	Verification        *bashVerificationResult `json:"verification,omitempty"`
 	redactedStdout      string
 	redactedStderr      string
 }

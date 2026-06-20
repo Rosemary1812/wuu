@@ -43,6 +43,16 @@ func TestToolkitToolDisplayFormatsBuiltInTools(t *testing.T) {
 			want: providers.ToolCallDisplay{Kind: "command", Text: "运行 npm run typecheck"},
 		},
 		{
+			name: "bash verification",
+			call: providers.ToolCall{Name: "bash", Arguments: `{"command":"go test ./..."}`},
+			want: providers.ToolCallDisplay{Kind: "test", Text: "验证 go test ./...", Capability: "command.bash"},
+		},
+		{
+			name: "bash background",
+			call: providers.ToolCall{Name: "bash", Arguments: `{"action":"start_background","command":"npm run dev"}`},
+			want: providers.ToolCallDisplay{Kind: "command", Text: "启动 npm run dev", Capability: "command.background"},
+		},
+		{
 			name: "test",
 			call: providers.ToolCall{Name: "run_test", Arguments: `{"command":"go test ./internal/tools"}`},
 			want: providers.ToolCallDisplay{Kind: "test", Text: "验证 go test ./internal/tools"},
@@ -101,6 +111,14 @@ func TestToolkitToolDisplayAddsCapabilityForActiveSurface(t *testing.T) {
 	}
 	if got.Capability != "command.bash" {
 		t.Fatalf("Capability = %q, want command.bash; display=%+v", got.Capability, got)
+	}
+
+	got, ok = kit.ToolDisplay(providers.ToolCall{Name: "bash", Arguments: `{"action":"start_background","command":"npm run dev"}`})
+	if !ok {
+		t.Fatal("expected display metadata")
+	}
+	if got.Capability != "command.background" {
+		t.Fatalf("Capability = %q, want command.background; display=%+v", got.Capability, got)
 	}
 
 	got, ok = kit.ToolDisplay(providers.ToolCall{Name: "apply_patch", Arguments: `{}`})

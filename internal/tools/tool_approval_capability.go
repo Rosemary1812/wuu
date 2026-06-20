@@ -21,7 +21,7 @@ func (t *Toolkit) approvalCapabilityFields(callName string, args string, info To
 	}
 	call := providersToolCall(callName, args)
 	if fields.Capability == "" {
-		fields.Capability = defaultCommandPolicyCapability(t.activeCompiledSurface(), callName, info)
+		fields.Capability = defaultCommandPolicyCapabilityForCall(t.activeCompiledSurface(), call, info)
 	}
 	if fields.Object == "" && fields.Capability != "" {
 		fields.Object = commandPolicySubjectFromArgs(call, fields.Capability)

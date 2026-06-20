@@ -6,21 +6,34 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+)
+
+const (
+	bashActionRun             = "run"
+	bashActionStartBackground = "start_background"
+	bashActionListBackground  = "list_background"
+	bashActionReadBackground  = "read_background"
+	bashActionWriteStdin      = "write_stdin"
+	bashActionStopBackground  = "stop_background"
 )
 
 // BashTool is the bash-first command tool exposed to the model on
 // the Codex / GPT / Claude / generic surfaces. It wraps the same
-// shell-execution path as the legacy run_shell tool but advertises
-// the new "bash" name and a description that calls out bash as
-// the unified terminal entry point.
+// command backends as the legacy run_shell / run_test /
+// start_process family but advertises the new "bash" name and a
+// description that calls out bash as the unified terminal entry
+// point.
 //
-// Implementation note: the underlying executor is executeShellCommand
-// (the same package-level function ShellTool uses), so the existing
-// bash-mode safety checks still apply. Package/network commands that
-// are covered by the default command policy reach approval before this
-// executor runs; unrelated package/network commands still fail closed.
+// Implementation note: short-lived commands use executeShellCommand,
+// verification commands get the old run_test result enrichment as a
+// post-processor, and long-running commands use the managed process
+// backend. Package/network commands that are covered by the default
+// command policy reach approval before this executor runs; unrelated
+// package/network commands still fail closed.
 type BashTool struct{ env *Env }
 
 func NewBashTool(env *Env) *BashTool { return &BashTool{env: env} }
@@ -30,9 +43,7 @@ func (t *BashTool) IsReadOnly() bool        { return false }
 func (t *BashTool) IsConcurrencySafe() bool { return false }
 
 func (t *BashTool) Classify(argsJSON string) ToolClassification {
-	var args struct {
-		Command string `json:"command"`
-	}
+	var args bashArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return ToolClassification{
 			ReadOnly:        false,
@@ -41,46 +52,102 @@ func (t *BashTool) Classify(argsJSON string) ToolClassification {
 			Reason:          "invalid bash invocation",
 		}
 	}
-	return classifyShellCommand(args.Command)
+	switch normalizeBashAction(args) {
+	case bashActionRun:
+		return classifyShellCommand(args.Command)
+	case bashActionStartBackground:
+		classification := classifyShellCommand(args.Command)
+		reason := "managed background process"
+		if classification.Reason != "" {
+			reason = "background command: " + classification.Reason
+		}
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: false,
+			Destructive:     classification.Destructive,
+			Risk:            ToolRiskHigh,
+			Reason:          reason,
+		}
+	case bashActionListBackground, bashActionReadBackground:
+		return ToolClassification{
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskMedium,
+			Reason:          "managed background process observation",
+		}
+	case bashActionWriteStdin, bashActionStopBackground:
+		return ToolClassification{
+			ReadOnly:        false,
+			ConcurrencySafe: true,
+			Risk:            ToolRiskHigh,
+			Reason:          "managed background process control",
+		}
+	default:
+		return highRiskShellClassification("invalid bash action", false)
+	}
 }
 
 func (t *BashTool) ValidateInput(argsJSON string) error {
-	var args struct {
-		Command string `json:"command"`
-	}
+	var args bashArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return err
 	}
-	if strings.TrimSpace(args.Command) == "" {
-		return errors.New("bash requires command")
+	switch normalizeBashAction(args) {
+	case bashActionRun, bashActionStartBackground:
+		if strings.TrimSpace(args.Command) == "" {
+			return errors.New("bash requires command")
+		}
+	case bashActionListBackground:
+		return nil
+	case bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+		if strings.TrimSpace(args.ProcessID) == "" {
+			return errors.New("bash background action requires process_id")
+		}
+	default:
+		return errors.New("bash action must be one of run, start_background, list_background, read_background, write_stdin, stop_background")
 	}
 	return nil
 }
 
 func (t *BashTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
-	var args struct {
-		Command string `json:"command"`
-	}
+	var args bashArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return nil
 	}
-	return []ToolPermissionRequest{shellPermissionRequest("bash", args.Command)}
+	switch normalizeBashAction(args) {
+	case bashActionStartBackground:
+		return []ToolPermissionRequest{backgroundPermissionRequest(args.Command)}
+	case bashActionListBackground:
+		return []ToolPermissionRequest{backgroundProcessPermissionRequest("*")}
+	case bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground:
+		return []ToolPermissionRequest{backgroundProcessPermissionRequest(args.ProcessID)}
+	default:
+		return []ToolPermissionRequest{shellPermissionRequest("bash", args.Command)}
+	}
 }
 
 func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
-		Description: "Executes a bash command in the workspace and returns its output. " +
+		Description: "Runs bash operations in the workspace and returns structured output. " +
 			"This is the unified command entry point for the Wuu harness.\n\n" +
 			"Use bash for every terminal operation: tests (npx vitest, pytest, go test, " +
 			"cargo test, pnpm test, bun test, …), lint, type checks, build commands, " +
 			"git operations (git status / diff / log / add / commit / push), package " +
 			"manager invocations (npm / pnpm / yarn / bun / pip / uv / cargo / go), " +
-			"docker, scripts, and any other shell command. There is no separate " +
+			"docker, scripts, and managed background processes. There is no separate " +
 			"\"run test\" or \"git\" tool on the bash-first surfaces — bash covers " +
 			"all of them.\n\n" +
-			"The working directory is the workspace root. Shell state does not persist " +
-			"between calls.\n\n" +
+			"The default action is run: it executes a bounded command and returns exit_code, " +
+			"duration_ms, output tails, workspace_revision, and full_log_ref when available. " +
+			"Verification commands automatically include verification metadata with passed, " +
+			"failure_summary, repeat_guard, and test-focused next_suggestions.\n\n" +
+			"Use action=start_background for dev servers, watch modes, and other long-lived " +
+			"commands; bash returns managed process metadata plus optional initial output. " +
+			"Use list_background, read_background, write_stdin, and stop_background to manage " +
+			"those processes through the same bash tool.\n\n" +
+			"The working directory defaults to the workspace root. Shell state does not persist " +
+			"between run calls.\n\n" +
 			"IMPORTANT: Avoid using bash to cat, head, tail, grep, find, sed, awk, or " +
 			"echo when a dedicated tool exists. Use read_file instead of cat, the " +
 			"search tools (grep / glob / ast_search / semantic_search) instead of " +
@@ -96,33 +163,142 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"action": map[string]any{
+					"type":        "string",
+					"enum":        []string{bashActionRun, bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteStdin, bashActionStopBackground},
+					"description": "Operation to perform. Defaults to run. Use start_background/read_background/list_background/write_stdin/stop_background for managed long-running processes.",
+				},
 				"command": map[string]any{
 					"type":        "string",
-					"description": "Shell command to execute. Must be non-interactive; never rely on editors, pagers, or terminal prompts.",
+					"description": "Shell command to execute or start in the background. Must be non-interactive; never rely on editors, pagers, or terminal prompts.",
 				},
 				"timeout_seconds": map[string]any{
 					"type":        "integer",
-					"description": "Max runtime in seconds (1-3600).",
+					"description": "Max runtime in seconds for action=run (1-3600).",
 				},
 				"purpose": map[string]any{
 					"type":        "string",
 					"description": "Why this command is needed. Stored in redacted logs for replay and audit.",
 				},
+				"scope": map[string]any{
+					"type":        "string",
+					"enum":        []string{"targeted", "affected", "full"},
+					"description": "Verification scope for test/build/lint/typecheck commands. Defaults to targeted.",
+				},
+				"cwd": map[string]any{
+					"type":        "string",
+					"description": "Working directory for action=start_background. Defaults to the workspace root.",
+				},
+				"lifecycle": map[string]any{
+					"type":        "string",
+					"enum":        []string{"session", "managed"},
+					"description": "Background process lifecycle. Defaults to session.",
+				},
+				"tty": map[string]any{
+					"type":        "boolean",
+					"description": "Run the background command in a pseudo-terminal.",
+				},
+				"wait_ms": map[string]any{
+					"type":        "integer",
+					"description": "For background start/read: wait this many milliseconds for output. Maximum 60000 for start.",
+				},
+				"max_bytes": map[string]any{
+					"type":        "integer",
+					"description": "Maximum background output bytes to return. Default 32768.",
+				},
+				"offset_bytes": map[string]any{
+					"type":        "integer",
+					"description": "For read_background: byte offset to read from. Use the previous end_offset for incremental logs.",
+				},
+				"process_id": map[string]any{
+					"type":        "string",
+					"description": "Managed background process id for read_background/write_stdin/stop_background.",
+				},
+				"input": map[string]any{
+					"type":        "string",
+					"description": "Text to write to background process stdin for action=write_stdin. Include a trailing newline when needed.",
+				},
 			},
-			"required": []string{"command"},
+			"required": []string{},
 		},
 	}
 }
 
 func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	var args struct {
-		Command        string `json:"command"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
-		Purpose        string `json:"purpose"`
-	}
+	var args bashArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
+	switch normalizeBashAction(args) {
+	case bashActionRun:
+		return t.executeRun(ctx, args)
+	case bashActionStartBackground:
+		return t.executeStartBackground(ctx, args)
+	case bashActionListBackground:
+		return t.executeListBackground()
+	case bashActionReadBackground:
+		return t.executeReadBackground(ctx, args)
+	case bashActionWriteStdin:
+		return t.executeWriteStdin(args)
+	case bashActionStopBackground:
+		return t.executeStopBackground(args)
+	default:
+		return "", errors.New("bash action must be one of run, start_background, list_background, read_background, write_stdin, stop_background")
+	}
+}
+
+type bashArgs struct {
+	Action         string `json:"action"`
+	Command        string `json:"command"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	Purpose        string `json:"purpose"`
+	Scope          string `json:"scope"`
+	CWD            string `json:"cwd"`
+	OwnerKind      string `json:"owner_kind"`
+	OwnerID        string `json:"owner_id"`
+	Lifecycle      string `json:"lifecycle"`
+	TTY            bool   `json:"tty"`
+	WaitMS         int    `json:"wait_ms"`
+	MaxBytes       int    `json:"max_bytes"`
+	OffsetBytes    *int64 `json:"offset_bytes"`
+	ProcessID      string `json:"process_id"`
+	Input          string `json:"input"`
+	Background     bool   `json:"background"`
+}
+
+func normalizeBashAction(args bashArgs) string {
+	action := strings.TrimSpace(args.Action)
+	switch action {
+	case "":
+		if args.Background {
+			return bashActionStartBackground
+		}
+		return bashActionRun
+	case "background", "start_process":
+		return bashActionStartBackground
+	case "list_processes":
+		return bashActionListBackground
+	case "read_process_output":
+		return bashActionReadBackground
+	case "stop_process":
+		return bashActionStopBackground
+	default:
+		return action
+	}
+}
+
+type bashVerificationResult struct {
+	Kind              string             `json:"kind"`
+	Scope             string             `json:"scope"`
+	Passed            bool               `json:"passed"`
+	FailureSummary    testFailureSummary `json:"failure_summary"`
+	WorkspaceRevision string             `json:"workspace_revision,omitempty"`
+	RepeatGuard       map[string]any     `json:"repeat_guard,omitempty"`
+	CommandHash       string             `json:"command_hash,omitempty"`
+	NextSuggestions   []string           `json:"next_suggestions,omitempty"`
+}
+
+func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error) {
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("bash requires command")
 	}
@@ -142,6 +318,18 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return "", errors.New("bash refuses to execute package, network, or external mutation commands; use dedicated web tools or ask the user for explicit approval")
 	}
 
+	command := strings.TrimSpace(args.Command)
+	verification := bashCommandLooksLikeVerification(command)
+	resolved := resolvedRunTestCommand{Requested: command, Command: command}
+	if verification {
+		var err error
+		resolved, err = resolveRunTestCommand(t.env.RootDir, command)
+		if err != nil {
+			return "", err
+		}
+		command = resolved.Command
+	}
+
 	timeout := args.TimeoutSeconds
 	if timeout <= 0 {
 		timeout = defaultShellTimeoutSeconds
@@ -150,11 +338,33 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		timeout = maxShellTimeoutSeconds
 	}
 
-	result, err := executeShellCommand(ctx, t.env, args.Command, timeout)
+	revision := workspaceRevision(ctx, t.env.RootDir)
+	commandHash := sha256Hex([]byte(command))
+	if verification && revision != "" {
+		previousFailures := t.env.ConsecutiveTestFailures(commandHash, revision)
+		if previousFailures >= maxRepeatedRunTestFailures {
+			return "", repeatedBashVerificationFailureError{
+				PreviousFailures: previousFailures,
+				MaxFailures:      maxRepeatedRunTestFailures,
+				Revision:         revision,
+				CommandHash:      commandHash,
+			}
+		}
+	}
+
+	result, err := executeShellCommand(ctx, t.env, command, timeout)
 	if err != nil {
 		return "", err
 	}
 	result.Purpose = redactToolOutput(args.Purpose)
+	if verification {
+		result.Verification = t.enrichVerificationResult(command, commandHash, revision, args, result)
+		result.NextSuggestions = result.Verification.NextSuggestions
+		if resolved.Changed {
+			result.RequestedCommand = redactToolOutput(resolved.Requested)
+			result.ResolvedCommand = result.Command
+		}
+	}
 	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
 	if fullLogRef != "" {
 		result.FullLogRef = fullLogRef
@@ -163,4 +373,243 @@ func (t *BashTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		result.FullLogError = fullLogErr
 	}
 	return mustJSON(result)
+}
+
+func bashCommandLooksLikeVerification(command string) bool {
+	if testCommandLooksLikeLocalRunnerVerification(command) {
+		return true
+	}
+	classification := classifyShellCommand(command)
+	return classification.Risk == ToolRiskMedium && classification.Reason == "local verification command"
+}
+
+func (t *BashTool) enrichVerificationResult(command, commandHash, revision string, args bashArgs, shellResult shellExecutionResult) *bashVerificationResult {
+	scope := strings.TrimSpace(args.Scope)
+	if scope == "" {
+		scope = "targeted"
+	}
+	failureSummary := summarizeTestFailure(shellResult.Output)
+	if shellResult.ExitCode != 0 {
+		failureSummary.Failed = true
+	}
+	failed := shellResult.ExitCode != 0 || shellResult.TimedOut || failureSummary.Failed
+	previousFailures := 0
+	if revision != "" {
+		previousFailures = t.env.ConsecutiveTestFailures(commandHash, revision)
+	}
+	t.env.RecordTestRunResult(testRunEntry{
+		CommandHash:    commandHash,
+		Revision:       revision,
+		Failed:         failed,
+		Command:        command,
+		Scope:          scope,
+		Purpose:        args.Purpose,
+		ExitCode:       shellResult.ExitCode,
+		TimedOut:       shellResult.TimedOut,
+		DurationMS:     shellResult.DurationMS,
+		FailureSummary: failureSummary,
+		FullLogRef:     shellResult.FullLogRef,
+	})
+	return &bashVerificationResult{
+		Kind:              "verification",
+		Scope:             scope,
+		Passed:            shellResult.ExitCode == 0 && !shellResult.TimedOut,
+		FailureSummary:    failureSummary,
+		WorkspaceRevision: revision,
+		CommandHash:       commandHashPrefix(commandHash),
+		RepeatGuard: map[string]any{
+			"previous_failed_runs":                    previousFailures,
+			"max_failed_runs_without_revision_change": maxRepeatedRunTestFailures,
+		},
+		NextSuggestions: runTestNextSuggestions(shellResult, failureSummary),
+	}
+}
+
+type repeatedBashVerificationFailureError struct {
+	PreviousFailures int
+	MaxFailures      int
+	Revision         string
+	CommandHash      string
+}
+
+func (e repeatedBashVerificationFailureError) Error() string {
+	return fmt.Sprintf(
+		"bash blocked repeated failing verification command: error_kind=repeated_failure_same_revision previous_failed_runs=%d max_failed_runs_without_revision_change=%d workspace_revision=%s command_hash=%s safe_retry=%q model_next_action=%q",
+		e.PreviousFailures,
+		e.MaxFailures,
+		e.Revision,
+		commandHashPrefix(e.CommandHash),
+		"change code, narrow the command, or inspect verification.failure_summary/full_log_ref before rerunning",
+		"read the latest failure evidence, form a new hypothesis, patch minimally, then rerun targeted verification after the workspace revision changes",
+	)
+}
+
+func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (string, error) {
+	if strings.TrimSpace(args.Command) == "" {
+		return "", errors.New("bash requires command")
+	}
+	if shellCommandInvokesGit(args.Command) {
+		return "", errors.New("bash background mode refuses to execute git commands because git operations should be short-lived and non-interactive. Use action=run with a safe git shell command")
+	}
+	if shellCommandDumpsEnvironment(args.Command) {
+		return "", errors.New("bash background mode refuses to print process environment variables because they may contain secrets")
+	}
+	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+		return "", errors.New("bash background mode refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
+	}
+	if shellCommandInvokesDestructiveCommand(args.Command) {
+		return "", errors.New("bash background mode refuses to execute destructive shell commands; use apply_patch, edit_file, write_file, or another restricted tool so changes remain auditable")
+	}
+	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+		return "", errors.New("bash background mode refuses to execute package, network, or external mutation commands; use a bounded bash run or ask the user for explicit approval")
+	}
+	args.OwnerKind = defaultProcessOwnerKind(t.env, args.OwnerKind)
+	if strings.TrimSpace(args.OwnerID) == "" {
+		args.OwnerID = defaultProcessOwnerID(t.env)
+	}
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
+	response := startProcessResponse{}
+	if p != nil {
+		response.Process = redactProcess(*p)
+		response.Action = bashActionStartBackground
+		response.NextSuggestions = bashBackgroundNextSuggestions(args.WaitMS)
+		if startErr == nil && args.WaitMS > 0 {
+			wait := time.Duration(args.WaitMS) * time.Millisecond
+			if wait > maxStartProcessInitialWait {
+				wait = maxStartProcessInitialWait
+			}
+			offset := int64(0)
+			snapshot, readErr := m.ReadOutputSnapshot(ctx, p.ID, proc.OutputReadOptions{
+				MaxBytes:    args.MaxBytes,
+				OffsetBytes: &offset,
+				Wait:        wait,
+			})
+			if readErr != nil {
+				response.LastError = redactToolOutput(readErr.Error())
+			} else {
+				process := snapshot.Process
+				detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
+				if len(detectedPreviewURLs) > 0 {
+					if updated, updateErr := m.UpdatePreview(p.ID, detectedPreviewURLs, detectedPreviewURLs[0]); updateErr == nil {
+						process = *updated
+						response.DetectedPreviewURLs = append([]string(nil), updated.PreviewURLs...)
+					}
+				}
+				response.Process = redactProcess(process)
+				response.Action = bashActionStartBackground
+				response.InitialOutput = redactToolOutput(snapshot.Output)
+				response.InitialTruncated = snapshot.Truncated
+				response.InitialStartOffset = snapshot.StartOffset
+				response.InitialEndOffset = snapshot.EndOffset
+				response.InitialTotalBytes = snapshot.TotalBytes
+				response.InitialTimedOut = snapshot.TimedOut
+				response.InitialDurationMS = snapshot.Duration.Milliseconds()
+			}
+		}
+	}
+	out, _ := mustJSON(response)
+	if startErr != nil {
+		return out, startErr
+	}
+	return out, nil
+}
+
+func bashBackgroundNextSuggestions(waitMS int) []string {
+	if waitMS <= 0 {
+		return []string{"use bash action=read_background with offset_bytes=0 and wait_ms to wait for readiness; report listening ports after a dev server prints its localhost URL"}
+	}
+	return []string{"pass initial_end_offset as offset_bytes to bash action=read_background for incremental logs; report listening ports after a dev server prints its localhost URL"}
+}
+
+func (t *BashTool) executeListBackground() (string, error) {
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	ps, err := m.List()
+	if err != nil {
+		return "", err
+	}
+	redacted := make([]proc.Process, 0, len(ps))
+	for _, p := range ps {
+		redacted = append(redacted, redactProcess(p))
+	}
+	return mustJSON(map[string]any{
+		"action":    bashActionListBackground,
+		"processes": redacted,
+	})
+}
+
+func (t *BashTool) executeReadBackground(ctx context.Context, args bashArgs) (string, error) {
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	snapshot, err := m.ReadOutputSnapshot(ctx, args.ProcessID, proc.OutputReadOptions{
+		MaxBytes:    args.MaxBytes,
+		OffsetBytes: args.OffsetBytes,
+		Wait:        time.Duration(args.WaitMS) * time.Millisecond,
+	})
+	if err != nil {
+		return "", err
+	}
+	process := snapshot.Process
+	detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
+	if len(detectedPreviewURLs) > 0 {
+		if updated, updateErr := m.UpdatePreview(args.ProcessID, detectedPreviewURLs, detectedPreviewURLs[0]); updateErr == nil {
+			process = *updated
+		}
+	}
+	return mustJSON(map[string]any{
+		"action":                bashActionReadBackground,
+		"process_id":            args.ProcessID,
+		"output":                redactToolOutput(snapshot.Output),
+		"detected_preview_urls": detectedPreviewURLs,
+		"truncated":             snapshot.Truncated,
+		"start_offset":          snapshot.StartOffset,
+		"end_offset":            snapshot.EndOffset,
+		"total_bytes":           snapshot.TotalBytes,
+		"timed_out":             snapshot.TimedOut,
+		"duration_ms":           snapshot.Duration.Milliseconds(),
+		"status":                process.Status,
+		"exit_code":             process.ExitCode,
+		"process":               redactProcess(process),
+	})
+}
+
+func (t *BashTool) executeWriteStdin(args bashArgs) (string, error) {
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	p, err := m.WriteStdin(args.ProcessID, args.Input)
+	if err != nil {
+		return "", err
+	}
+	return mustJSON(map[string]any{
+		"action":        bashActionWriteStdin,
+		"process_id":    args.ProcessID,
+		"bytes_written": len(args.Input),
+		"process":       redactProcessPtr(p),
+	})
+}
+
+func (t *BashTool) executeStopBackground(args bashArgs) (string, error) {
+	m, err := t.env.ProcessManager()
+	if err != nil {
+		return "", err
+	}
+	p, err := m.Stop(args.ProcessID)
+	if err != nil {
+		return "", err
+	}
+	redacted := redactProcessPtr(p)
+	if redacted != nil {
+		redacted.Action = bashActionStopBackground
+	}
+	return mustJSON(redacted)
 }
