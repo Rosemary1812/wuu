@@ -182,7 +182,7 @@
 .turn-process-fold-body {
   display: flex;
   flex-direction: column;
-  gap: var(--conversation-message-element-gap);
+  gap: var(--conversation-process-gap);
                                                                
                                                                      
                                                                   
@@ -2890,7 +2890,7 @@
   display: block;
   min-height: 0;
   overflow: visible;
-  gap: var(--conversation-message-element-gap);
+  gap: 0;
   margin-left: 0;
   padding: 0;
 }
