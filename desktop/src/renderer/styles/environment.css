@@ -34,9 +34,10 @@
 }
 
 .environment-side-stack > .query-history-environment-slot {
-  display: flex;
+  display: block;
   flex: 0 1 auto;
-  overflow: hidden;
+  align-self: stretch;
+  overflow: visible;
 }
 
 .environment-panel {
@@ -337,12 +338,12 @@
                                                                         
                                                       
 .query-history-popover {
-  display: flex;
+  display: grid;
   width: 100%;
+  box-sizing: border-box;
   min-height: 0;
   max-height: 100%;
-  flex: 0 1 auto;
-  flex-direction: column;
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-md);
