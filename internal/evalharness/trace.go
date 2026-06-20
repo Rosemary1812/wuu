@@ -583,7 +583,7 @@ func (summary *TraceReplaySummary) finalizeToolSummary() {
 }
 
 func (summary *TraceReplaySummary) addValidationToolObservation(record ToolObservation) {
-	if !isValidationTool(record.Name, record.ResultAction) {
+	if !isValidationToolObservation(record) {
 		return
 	}
 	summary.ensureValidationSummary()
@@ -612,15 +612,12 @@ func (summary *TraceReplaySummary) addValidationToolObservation(record ToolObser
 	}
 }
 
-func isValidationTool(name, action string) bool {
-	switch strings.TrimSpace(name) {
-	case "run_test", "workflow_status":
+func isValidationToolObservation(record ToolObservation) bool {
+	switch strings.TrimSpace(record.Name) {
+	case "bash":
+		return strings.TrimSpace(record.ClassificationReason) == "local verification command"
+	case "workflow_status":
 		return true
-	case "git":
-		switch strings.TrimSpace(action) {
-		case "status", "diff", "grep":
-			return true
-		}
 	default:
 		return false
 	}

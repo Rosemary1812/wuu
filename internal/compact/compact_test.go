@@ -150,7 +150,7 @@ func TestCompactInstructionPrompt_EnforcesNoToolsAndFormat(t *testing.T) {
 		"used to resume after older messages are removed",
 		"without asking the user to repeat context",
 		"Do not call any tools",
-		"Do not use read_file, grep, glob, run_shell",
+		"Do not use read_file, grep, glob, bash",
 		"markdown summary only",
 		"Do not include an analysis block",
 	} {

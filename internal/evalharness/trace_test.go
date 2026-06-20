@@ -437,26 +437,28 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 		}},
 		Observability: &Observability{
 			ToolRecords: []ToolObservation{{
-				Name:           "run_test",
-				CallID:         "call-test",
-				ResultAction:   "run",
-				Success:        true,
-				DurationMS:     1234,
-				RevisionBefore: "rev-before",
-				RevisionAfter:  "rev-after",
-				ResultRef:      "/tmp/wuu/tool-results/test.log",
-				ArtifactRefs:   []string{"/tmp/wuu/tool-results/test.log"},
+				Name:                 "bash",
+				CallID:               "call-test",
+				ResultAction:         "run",
+				ClassificationReason: "local verification command",
+				Success:              true,
+				DurationMS:           1234,
+				RevisionBefore:       "rev-before",
+				RevisionAfter:        "rev-after",
+				ResultRef:            "/tmp/wuu/tool-results/test.log",
+				ArtifactRefs:         []string{"/tmp/wuu/tool-results/test.log"},
 			}, {
-				Name:         "git",
-				CallID:       "call-diff",
-				ResultAction: "diff",
+				Name:         "workflow_status",
+				CallID:       "call-workflow",
+				ResultAction: "status",
 				Success:      true,
 			}, {
-				Name:         "run_shell",
-				CallID:       "call-shell",
-				Success:      false,
-				ErrorKind:    "policy_denied",
-				PolicyAction: "deny",
+				Name:                 "bash",
+				CallID:               "call-shell",
+				ClassificationReason: "simple read-only shell command",
+				Success:              false,
+				ErrorKind:            "policy_denied",
+				PolicyAction:         "deny",
 			}},
 		},
 	})
@@ -477,14 +479,14 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 	if summary.Validation.Evidence[0].Command != "go test ./..." {
 		t.Fatalf("validation evidence command not preserved: %+v", summary.Validation.Evidence)
 	}
-	if summary.Validation.ToolCalls[0].ToolName != "run_test" ||
+	if summary.Validation.ToolCalls[0].ToolName != "bash" ||
 		summary.Validation.ToolCalls[0].ResultRef != "/tmp/wuu/tool-results/test.log" ||
 		summary.Validation.ToolCalls[0].RevisionAfter != "rev-after" {
 		t.Fatalf("validation tool call missing metadata: %+v", summary.Validation.ToolCalls)
 	}
 	for _, call := range summary.Validation.ToolCalls {
-		if call.ToolName == "run_shell" {
-			t.Fatalf("generic run_shell should not be treated as validation without structured validation metadata: %+v", summary.Validation.ToolCalls)
+		if call.CallID == "call-shell" {
+			t.Fatalf("generic bash should not be treated as validation without structured validation metadata: %+v", summary.Validation.ToolCalls)
 		}
 	}
 	if len(summary.Validation.NextActions) == 0 {
@@ -507,12 +509,13 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 		}},
 		Observability: &Observability{
 			ToolRecords: []ToolObservation{{
-				Name:         "run_test",
-				CallID:       "call-test",
-				ResultAction: "run",
-				Success:      false,
-				ErrorKind:    "test_failed",
-				ResultRef:    "/tmp/wuu/test.log",
+				Name:                 "bash",
+				CallID:               "call-test",
+				ResultAction:         "run",
+				ClassificationReason: "local verification command",
+				Success:              false,
+				ErrorKind:            "test_failed",
+				ResultRef:            "/tmp/wuu/test.log",
 			}},
 		},
 	})
@@ -528,7 +531,7 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 		t.Fatalf("validation missing requirements not summarized: %+v", summary.Missing)
 	}
 	if len(summary.Failures) != 2 ||
-		summary.Failures[0] != "run_test:test_failed:call_id=call-test" ||
+		summary.Failures[0] != "bash:test_failed:call_id=call-test" ||
 		summary.Failures[1] != "marker" {
 		t.Fatalf("validation failures not summarized: %+v", summary.Failures)
 	}

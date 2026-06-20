@@ -1301,14 +1301,16 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 		}},
 		Observability: &evalharness.Observability{
 			ToolRecords: []evalharness.ToolObservation{{
-				Name:         "run_test",
-				CallID:       "call-test",
-				ResultAction: "run",
-				Success:      true,
+				Name:                 "bash",
+				CallID:               "call-test",
+				ResultAction:         "run",
+				ClassificationReason: "local verification command",
+				Success:              true,
 			}, {
-				Name:            "start_process",
+				Name:            "bash",
 				CallID:          "call-process",
-				Kind:            "process",
+				ResultAction:    "start_background",
+				Kind:            "shell",
 				Risk:            "high",
 				PolicyAction:    "require_approval",
 				ErrorKind:       "approval_required",
@@ -1364,7 +1366,7 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "policy_blocks: start_process:require_approval:approval_required:call_id=call-process:approval_ref="+approvalRef) {
+	if !strings.Contains(output, "policy_blocks: bash:require_approval:approval_required:call_id=call-process:approval_ref="+approvalRef) {
 		t.Fatalf("replay text output missing policy blocks:\n%s", output)
 	}
 	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
