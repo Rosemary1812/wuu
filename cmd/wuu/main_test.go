@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -774,6 +776,70 @@ func TestResolveEvalTasksSelectsCommaSeparatedIDs(t *testing.T) {
 	if len(tasks) != 2 || tasks[0].ID != "test_failure_fix" || tasks[1].ID != "multi_file_pricing" {
 		t.Fatalf("unexpected tasks: %+v", tasks)
 	}
+}
+
+func TestResolveEvalTasksAllFiltersByActiveSurface(t *testing.T) {
+	openaiSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("openai", "gpt-5.5"))
+	openaiTasks, err := resolveEvalTasks("all", evalVisibleToolSet(openaiSurface.ToolNames()))
+	if err != nil {
+		t.Fatalf("resolveEvalTasks openai: %v", err)
+	}
+	openaiIDs := evalTaskIDSet(openaiTasks)
+	for _, want := range []string{"test_failure_fix", "patch_review_risk"} {
+		if !openaiIDs[want] {
+			t.Fatalf("OpenAI default eval tasks missing %s: %v", want, sortedEvalTaskIDs(openaiTasks))
+		}
+	}
+	for _, excluded := range []string{"stale_read_guard", "mcp_live_discovery", "mcp_readonly_concurrency", "checkpoint_rollback", "patch_journal_rollback", "repo_map_navigation"} {
+		if openaiIDs[excluded] {
+			t.Fatalf("OpenAI default eval tasks must not include %s: %v", excluded, sortedEvalTaskIDs(openaiTasks))
+		}
+	}
+
+	claudeSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"))
+	claudeTasks, err := resolveEvalTasks("all", evalVisibleToolSet(claudeSurface.ToolNames()))
+	if err != nil {
+		t.Fatalf("resolveEvalTasks claude: %v", err)
+	}
+	claudeIDs := evalTaskIDSet(claudeTasks)
+	for _, want := range []string{"test_failure_fix", "stale_read_guard", "mcp_live_discovery"} {
+		if !claudeIDs[want] {
+			t.Fatalf("Claude default eval tasks missing %s: %v", want, sortedEvalTaskIDs(claudeTasks))
+		}
+	}
+	for _, excluded := range []string{"patch_review_risk", "checkpoint_rollback", "patch_journal_rollback", "repo_map_navigation"} {
+		if claudeIDs[excluded] {
+			t.Fatalf("Claude default eval tasks must not include %s: %v", excluded, sortedEvalTaskIDs(claudeTasks))
+		}
+	}
+}
+
+func TestResolveEvalTasksExplicitIDBypassesSurfaceFilter(t *testing.T) {
+	openaiSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("openai", "gpt-5.5"))
+	tasks, err := resolveEvalTasks("stale_read_guard", evalVisibleToolSet(openaiSurface.ToolNames()))
+	if err != nil {
+		t.Fatalf("resolveEvalTasks explicit: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "stale_read_guard" {
+		t.Fatalf("explicit task selection should bypass default surface filter, got %v", sortedEvalTaskIDs(tasks))
+	}
+}
+
+func evalTaskIDSet(tasks []evalharness.Task) map[string]bool {
+	out := make(map[string]bool, len(tasks))
+	for _, task := range tasks {
+		out[task.ID] = true
+	}
+	return out
+}
+
+func sortedEvalTaskIDs(tasks []evalharness.Task) []string {
+	out := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, task.ID)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestResolveEvalTasksRejectsUnknownTask(t *testing.T) {

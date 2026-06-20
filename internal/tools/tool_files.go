@@ -766,7 +766,7 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"- Prefer edit_file for modifying existing files — it only sends the diff\n" +
 			"- Only use this tool to create new files or for complete rewrites\n" +
 			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
-			"- Existing files larger than 32KB require overwrite_policy=\"explicit_user_requested\" or generated-file policy; use edit_file/apply_patch for ordinary source edits\n" +
+			"- Existing files larger than 32KB require overwrite_policy=\"explicit_user_requested\" or generated-file policy; use the scoped file editing tool exposed in this session for ordinary source edits\n" +
 			"- Set create_only=true when the file must not already exist\n" +
 			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
 			"- Returns workspace_revision and a structured diff showing what changed",
@@ -973,7 +973,7 @@ func broadWriteFileOverwriteError(path string, size int, policy, reason string) 
 		maxImplicitWriteFileOverwriteBytes,
 		policy,
 		reason,
-		"Use edit_file/apply_patch for scoped edits, or retry write_file with overwrite_policy=explicit_user_requested only if the user explicitly requested a full rewrite.",
+		"Use the scoped file editing tool exposed in this session, or retry write_file with overwrite_policy=explicit_user_requested only if the user explicitly requested a full rewrite.",
 		"prefer a scoped edit tool; if a full rewrite is truly required, explain the reason and use an explicit overwrite policy",
 	)
 }

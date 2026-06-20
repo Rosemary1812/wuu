@@ -716,28 +716,25 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 
 	initialHistory := providers.CloneChatMessages(parentHistory)
-	if threadMeta.AgentProfile != "" {
-		sys, sysErr := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
-		if sysErr != nil {
-			if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
-				_ = c.threadStore.RecordStatus(failed)
-			}
-			if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
-				_ = c.threadStore.RecordEdgeStatus(closed)
-			}
-			if worktreeRef != nil {
-				_ = c.worktrees.Cleanup(worktreeRef)
-			}
-			c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
-			return nil, fmt.Errorf("worker system prompt: %w", sysErr)
+	sys, sysErr := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
+	if sysErr != nil {
+		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordStatus(failed)
 		}
-		initialHistory = withInitialSystemPrompt(initialHistory, sys)
+		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
+			_ = c.threadStore.RecordEdgeStatus(closed)
+		}
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
+		return nil, fmt.Errorf("worker system prompt: %w", sysErr)
 	}
+	initialHistory = withInitialSystemPrompt(initialHistory, sys)
 
-	// Note: for ordinary forks we deliberately do NOT set SystemPrompt — when
-	// InitialHistory is non-nil, the subagent runner uses the inherited system
-	// message. Profile-backed workers replace that inherited system message
-	// above so their durable identity and memory rules are active.
+	// Forks keep the parent's conversation body but always replace the
+	// system prompt so the worker prompt and worker toolkit come from
+	// the same compiled model surface.
 	workerCtx := ctx
 	if !req.Synchronous {
 		workerCtx = context.WithoutCancel(ctx)
@@ -1550,11 +1547,8 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	var initialHistory []providers.ChatMessage
 	if prepared.IsFork {
 		initialHistory = providers.CloneChatMessages(prepared.ParentHistory)
-		if prepared.ThreadMeta.AgentProfile != "" {
-			initialHistory = withInitialSystemPrompt(initialHistory, systemPrompt)
-		} else {
-			systemPrompt = ""
-		}
+		initialHistory = withInitialSystemPrompt(initialHistory, systemPrompt)
+		systemPrompt = ""
 		if prepared.Isolation == IsolationWorktree {
 			prompt = appendForkWorktreeReminder(prompt, workerRoot, prepared.Isolation)
 		}

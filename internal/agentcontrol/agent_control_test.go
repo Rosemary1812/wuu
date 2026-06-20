@@ -326,6 +326,54 @@ func TestForkAgentProfileOverridesInheritedSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestForkWithoutAgentProfileReplacesInheritedSystemPrompt(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	client := &recordingClient{resp: providers.ChatResponse{Content: "task done"}}
+
+	c, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-plain-fork",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		WorkerPrompt: func(_ string, _ WorkerType, _ agentthread.Metadata, _ IsolationMode) (string, error) {
+			return "worker tool surface prompt: use edit_file and write_file", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.Fork(context.Background(), ForkRequest{
+		TaskName:    "plain_check",
+		Prompt:      "check the issue",
+		Synchronous: true,
+	}, []providers.ChatMessage{
+		{Role: "system", Content: "parent OpenAI/Codex prompt: use apply_patch for edits"},
+		{Role: "user", Content: "please delegate"},
+		{Role: "assistant", Content: "spawning"},
+	})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	req := client.LastRequest()
+	if len(req.Messages) == 0 {
+		t.Fatal("client received no messages")
+	}
+	first := req.Messages[0]
+	if first.Role != "system" {
+		t.Fatalf("first message role = %q, want system", first.Role)
+	}
+	if !strings.Contains(first.Content, "worker tool surface prompt") {
+		t.Fatalf("fork did not install worker system prompt:\n%s", first.Content)
+	}
+	if strings.Contains(first.Content, "apply_patch") || strings.Contains(first.Content, "parent OpenAI/Codex prompt") {
+		t.Fatalf("fork leaked inherited parent tool surface prompt:\n%s", first.Content)
+	}
+}
+
 func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

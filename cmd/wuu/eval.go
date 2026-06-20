@@ -106,7 +106,8 @@ func runEval(args []string) error {
 		providerCfg.Model = *modelOverride
 	}
 
-	tasks, err := resolveEvalTasks(*taskFilter)
+	activeSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(resolvedName, providerCfg.Model))
+	tasks, err := resolveEvalTasks(*taskFilter, evalVisibleToolSet(activeSurface.ToolNames()))
 	if err != nil {
 		return err
 	}
@@ -907,10 +908,23 @@ func evalSafePreview(value string, limit int) string {
 	return value
 }
 
-func resolveEvalTasks(input string) ([]evalharness.Task, error) {
+func resolveEvalTasks(input string, visibleToolSets ...map[string]bool) ([]evalharness.Task, error) {
 	input = strings.TrimSpace(input)
 	if input == "" || input == "all" {
-		return evalharness.Catalog(), nil
+		tasks := evalharness.Catalog()
+		if len(visibleToolSets) == 0 || len(visibleToolSets[0]) == 0 {
+			return tasks, nil
+		}
+		filtered := make([]evalharness.Task, 0, len(tasks))
+		for _, task := range tasks {
+			if evalTaskCompatibleWithSurface(task, visibleToolSets[0]) {
+				filtered = append(filtered, task)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, errors.New("no eval tasks match the active model tool surface")
+		}
+		return filtered, nil
 	}
 	parts := strings.Split(input, ",")
 	tasks := make([]evalharness.Task, 0, len(parts))
@@ -929,6 +943,31 @@ func resolveEvalTasks(input string) ([]evalharness.Task, error) {
 		return nil, errors.New("no eval tasks selected")
 	}
 	return tasks, nil
+}
+
+func evalVisibleToolSet(names []string) map[string]bool {
+	visible := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			visible[name] = true
+		}
+	}
+	return visible
+}
+
+func evalTaskCompatibleWithSurface(task evalharness.Task, visible map[string]bool) bool {
+	for _, name := range task.RequiredTools {
+		name = strings.TrimSpace(name)
+		if name == "" || visible[name] {
+			continue
+		}
+		if strings.HasPrefix(name, "mcp_") && visible["tool_search"] {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func summarizeEvalResults(results []evalharness.Result) evalSummary {

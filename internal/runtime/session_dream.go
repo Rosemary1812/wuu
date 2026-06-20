@@ -152,7 +152,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	if job.client == nil || strings.TrimSpace(job.model) == "" {
 		return nil
 	}
-	messages := buildSessionDreamMessages(job.systemPrompt, job.history)
+	messages := buildSessionDreamMessages(job.history)
 	if len(messages) == 0 {
 		return nil
 	}
@@ -192,12 +192,9 @@ func newSessionDreamExecutor(rootDir, workspaceStateDir, sessionArtifactDir stri
 	}
 	registry := tools.NewRegistry(
 		tools.NewReadFileTool(env),
-		tools.NewWriteFileTool(env),
 		tools.NewListFilesTool(env),
-		tools.NewEditFileTool(env),
 		tools.NewGrepTool(env),
 		tools.NewGlobTool(env),
-		tools.NewBashTool(env),
 		tools.NewSessionMemoryTool(env),
 	)
 	return &sessionDreamExecutor{registry: registry, defs: registry.Definitions()}
@@ -249,11 +246,9 @@ func (e *sessionDreamExecutor) ToolMetadata(call providers.ToolCall) (agent.Tool
 	}, true
 }
 
-func buildSessionDreamMessages(systemPrompt string, history []providers.ChatMessage) []providers.ChatMessage {
+func buildSessionDreamMessages(history []providers.ChatMessage) []providers.ChatMessage {
 	out := make([]providers.ChatMessage, 0, len(history)+2)
-	if strings.TrimSpace(systemPrompt) != "" {
-		out = append(out, providers.ChatMessage{Role: "system", Content: systemPrompt})
-	}
+	out = append(out, providers.ChatMessage{Role: "system", Content: sessionDreamSystemPrompt})
 	transcript := selectProfileMemoryReviewTranscript(history)
 	if len(transcript) == 0 {
 		return nil
@@ -263,11 +258,13 @@ func buildSessionDreamMessages(systemPrompt string, history []providers.ChatMess
 	return out
 }
 
+const sessionDreamSystemPrompt = `You are a background memory review worker. Your only job is to inspect the recent conversation and maintain durable memory. Do not edit workspace files, run terminal commands, or follow the main coding-agent tool surface.`
+
 const sessionDreamPrompt = `Review the recent conversation and consolidate durable workspace/session memory.
 
-Available tools are read_file, list_files, glob, grep, bash, write_file, edit_file, and session_memory.
+Available tools are read_file, list_files, glob, grep, and session_memory.
 
-Use read_file, list_files, glob, grep, or bash only to inspect the workspace and verify what should be remembered. Use bash only for non-interactive read-only inspection commands; do not use git commands, package managers, network commands, or long-running processes.
+Use read_file, list_files, glob, and grep only when workspace inspection is required to confirm what should be remembered. Do not edit workspace files, run shell commands, use git commands, call package managers, access the network, or start long-running processes.
 
 Use session_memory for durable writes:
 1. Read existing project_memory, summary, checkpoint, or notes when needed before editing them.
@@ -275,7 +272,7 @@ Use session_memory for durable writes:
 3. Write summary for compact recoverable state of the active task: active intent, next concrete action, current work, decisions, and open questions. Use checkpoint only when maintaining older checkpoint.md content.
 4. Write notes for useful session scratch details that are not durable enough for project_memory.
 
-Use write_file or edit_file only if session_memory is insufficient for a memory artifact. Do not modify source files.
+If session_memory is insufficient for a memory artifact, reply with what is missing instead of writing files directly. Do not modify source files.
 
 Do not store raw transcripts, secrets, temporary task progress, completed-work logs, PR numbers, commit SHAs, raw command output, or facts likely to go stale within a week.
 

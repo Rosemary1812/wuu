@@ -149,8 +149,8 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"IMPORTANT: Avoid using bash to cat, head, tail, grep, find, sed, awk, or " +
 			"echo when a dedicated tool exists. Use read_file instead of cat, the " +
 			"search tools (grep / glob / ast_search / semantic_search) instead of " +
-			"grep / rg / find, and apply_patch / edit_file / write_file instead of " +
-			"sed.\n\n" +
+			"grep / rg / find, and the file editing tool exposed in this session " +
+			"instead of sed.\n\n" +
 			"Instructions:\n" +
 			"- Commands must be non-interactive; never rely on editors, pagers, or terminal prompts\n" +
 			"- Default timeout is 300s, max 3600s\n" +

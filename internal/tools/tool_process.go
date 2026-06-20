@@ -129,7 +129,7 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 		return "", errors.New("start_process refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
 	}
 	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("start_process refuses to execute destructive shell commands; use apply_patch, checkpoint, git, or another restricted tool so changes remain auditable")
+		return "", errors.New("start_process refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
 	}
 	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
 		return "", errors.New("start_process refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")

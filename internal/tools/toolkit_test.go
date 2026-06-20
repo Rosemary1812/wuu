@@ -291,7 +291,7 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	if err == nil ||
 		!strings.Contains(err.Error(), "error_kind=broad_overwrite") ||
 		!strings.Contains(err.Error(), "overwrite_policy") ||
-		!strings.Contains(err.Error(), "edit_file/apply_patch") {
+		!strings.Contains(err.Error(), "scoped file editing tool exposed in this session") {
 		t.Fatalf("expected broad overwrite rejection, got: %v", err)
 	}
 	if got := mustReadFile(t, largePath); got != largeContent {
@@ -4791,7 +4791,7 @@ func TestToolkit_ToolApprovalReviewerCachesApprovedForSession(t *testing.T) {
 	}
 }
 
-func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T) {
+func TestToolkit_BashDefinition_RequiresNonInteractiveCommands(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -4804,6 +4804,11 @@ func TestToolkit_RunShellDefinition_RequiresNonInteractiveCommands(t *testing.T)
 		}
 		if !strings.Contains(strings.ToLower(d.Description), "non-interactive") {
 			t.Fatalf("bash description must mention non-interactive use: %q", d.Description)
+		}
+		for _, profileSpecificEditTool := range []string{"apply_patch", "edit_file", "write_file"} {
+			if strings.Contains(d.Description, profileSpecificEditTool) {
+				t.Fatalf("bash description must not mention profile-specific edit tool %s: %q", profileSpecificEditTool, d.Description)
+			}
 		}
 		props, ok := d.InputSchema["properties"].(map[string]any)
 		if !ok {

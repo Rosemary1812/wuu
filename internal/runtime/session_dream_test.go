@@ -98,7 +98,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	err := scheduler.run(context.Background(), sessionDreamJob{
 		client:             client,
 		model:              "test-model",
-		systemPrompt:       "You are wuu.",
+		systemPrompt:       "Use apply_patch for file edits. Use bash for terminal work.",
 		rootDir:            root,
 		workspaceStateDir:  workspaceState,
 		sessionArtifactDir: sessionArtifact,
@@ -153,7 +153,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	for _, def := range client.requests[0].Tools {
 		toolNames[def.Name] = true
 	}
-	wantTools := []string{"read_file", "write_file", "list_files", "edit_file", "grep", "glob", "bash", "session_memory"}
+	wantTools := []string{"read_file", "list_files", "grep", "glob", "session_memory"}
 	if len(toolNames) != len(wantTools) {
 		t.Fatalf("dream tools = %+v, want %v", toolNames, wantTools)
 	}
@@ -162,13 +162,34 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 			t.Fatalf("dream tools = %+v, missing %s", toolNames, name)
 		}
 	}
+	for _, blocked := range []string{"apply_patch", "edit_file", "write_file", "bash"} {
+		if toolNames[blocked] {
+			t.Fatalf("dream tools must not expose profile-specific or command tools, got %+v", toolNames)
+		}
+	}
+	firstSystem := client.requests[0].Messages[0]
+	if firstSystem.Role != "system" || !strings.Contains(firstSystem.Content, "background memory review worker") {
+		t.Fatalf("dream must use a profile-neutral memory system prompt, got %+v", firstSystem)
+	}
+	for _, blocked := range []string{"apply_patch", "edit_file", "write_file", "bash"} {
+		if strings.Contains(firstSystem.Content, blocked) {
+			t.Fatalf("dream system prompt must not inherit profile-specific tool names %q:\n%s", blocked, firstSystem.Content)
+		}
+	}
 	last := client.requests[0].Messages[len(client.requests[0].Messages)-1]
 	if last.Role != "user" || !strings.Contains(last.Content, "read_file") || !strings.Contains(last.Content, "Nothing to dream") {
 		t.Fatalf("missing dream prompt in request: %+v", last)
 	}
-	for _, old := range []string{"Available tools are read_file, list_files, glob, grep, run_shell", "Use run_shell only"} {
+	for _, old := range []string{
+		"Available tools are read_file, list_files, glob, grep, run_shell",
+		"Use run_shell only",
+		"write_file",
+		"edit_file",
+		"apply_patch",
+		"bash",
+	} {
 		if strings.Contains(last.Content, old) {
-			t.Fatalf("dream prompt must not teach legacy shell path %q:\n%s", old, last.Content)
+			t.Fatalf("dream prompt must not teach profile-specific or legacy tool path %q:\n%s", old, last.Content)
 		}
 	}
 }
