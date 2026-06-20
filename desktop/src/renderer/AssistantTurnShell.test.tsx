@@ -272,6 +272,45 @@ async function withManualAnimationFrames(
   }
 }
 
+async function withMockResizeObserver(
+  run: (flushResizeObservers: () => void) => Promise<void>,
+): Promise<void> {
+  const resizeObserverGlobal = globalThis as typeof globalThis & {
+    ResizeObserver?: typeof ResizeObserver;
+  };
+  const realResizeObserver = resizeObserverGlobal.ResizeObserver;
+  const observers: Array<{ callback: ResizeObserverCallback }> = [];
+
+  class MockResizeObserver {
+    constructor(readonly callback: ResizeObserverCallback) {
+      observers.push(this);
+    }
+
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  resizeObserverGlobal.ResizeObserver =
+    MockResizeObserver as typeof ResizeObserver;
+
+  try {
+    await run(() => {
+      act(() => {
+        for (const observer of observers) {
+          observer.callback([], observer as unknown as ResizeObserver);
+        }
+      });
+    });
+  } finally {
+    if (realResizeObserver) {
+      resizeObserverGlobal.ResizeObserver = realResizeObserver;
+    } else {
+      Reflect.deleteProperty(resizeObserverGlobal, "ResizeObserver");
+    }
+  }
+}
+
 beforeEach(() => {
   idCounter = 0;
 });
@@ -553,6 +592,39 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     });
 
     expect(layout.scrollTop).toBe(layout.scrollHeight);
+  });
+
+  it("keeps auto-follow armed when rapid reasoning growth fires a layout scroll before resize settles", async () => {
+    await withMockResizeObserver(async (flushResizeObservers) => {
+      const item = makeStreamingReasoning("working");
+      const key = streamTextKey("turn-1", item.id, "text");
+      streamTextStore.seed(key, item.text ?? "");
+      const turn = makeTurn("in_progress", [item]);
+      const { container } = renderShell(turn);
+
+      const fold = reasoningFolds(container)[0];
+      const scroll = reasoningScroll(fold);
+      const layout = stubScrollLayout(scroll, {
+        scrollHeight: 1000,
+        clientHeight: 200,
+      });
+
+      await withManualAnimationFrames(async (flush) => {
+        await openReasoningFold(fold);
+        await flush();
+        expect(layout.scrollTop).toBe(1000);
+
+        layout.scrollHeight = 1300;
+        act(() => {
+          scroll.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
+        });
+
+        flushResizeObservers();
+        await flush();
+      });
+
+      expect(layout.scrollTop).toBe(1300);
+    });
   });
 
   it("does not pull live reasoning back to the bottom after the user scrolls up", async () => {

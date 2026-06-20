@@ -504,7 +504,7 @@ function ReasoningFold({
         distanceFromBottom <= REASONING_AUTO_SCROLL_THRESHOLD_PX;
       if (atLatestView) {
         reasoningAutoFollowRef.current = true;
-      } else if (scrolledUp || reasoningAutoFollowRef.current) {
+      } else if (scrolledUp) {
         reasoningAutoFollowRef.current = false;
       }
     },
@@ -524,6 +524,24 @@ function ReasoningFold({
       node.removeEventListener("scroll", handleScroll);
     };
   }, [handleReasoningScrollNode]);
+
+  useLayoutEffect(() => {
+    const node = reasoningScrollRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const content = node.firstElementChild;
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleReasoningScroll();
+    });
+    resizeObserver.observe(node);
+    if (content instanceof HTMLElement) {
+      resizeObserver.observe(content);
+    }
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [scheduleReasoningScroll]);
 
   const handleReasoningStreamFrame = useCallback((): void => {
     onStreamFrame();
@@ -552,7 +570,12 @@ function ReasoningFold({
     if (!body) return;
     reasoningAutoFollowRef.current = true;
     let settled = false;
-    const snapToBottom = () => {
+    const snapToBottom = (transitionEvent?: Event) => {
+      const propertyName = (transitionEvent as TransitionEvent | undefined)
+        ?.propertyName;
+      if (propertyName && propertyName !== "grid-template-rows") {
+        return;
+      }
       if (settled) return;
       settled = true;
       body.removeEventListener("transitionend", snapToBottom);
