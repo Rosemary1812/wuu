@@ -36,15 +36,23 @@ const (
 	ToolPolicyProfileFullAccess ToolPolicyProfile = "full_access"
 )
 
+type ToolApprovalPolicy string
+
+const (
+	ToolApprovalPolicyOnRequest ToolApprovalPolicy = "on_request"
+	ToolApprovalPolicyNever     ToolApprovalPolicy = "never"
+)
+
 // ToolPolicy decides whether a tool call may run. The zero value is the local
 // high-trust mode: every call is allowed unless an explicit override says
 // otherwise.
 type ToolPolicy struct {
-	Profile       ToolPolicyProfile
-	DefaultAction ToolPolicyAction
-	ToolActions   map[string]ToolPolicyAction
-	KindActions   map[ToolKind]ToolPolicyAction
-	RiskActions   map[ToolRisk]ToolPolicyAction
+	Profile        ToolPolicyProfile
+	ApprovalPolicy ToolApprovalPolicy
+	DefaultAction  ToolPolicyAction
+	ToolActions    map[string]ToolPolicyAction
+	KindActions    map[ToolKind]ToolPolicyAction
+	RiskActions    map[ToolRisk]ToolPolicyAction
 }
 
 // ToolPolicyDecision is produced before each known tool call executes.
@@ -66,14 +74,20 @@ func PolicyForProfile(profile ToolPolicyProfile) (ToolPolicy, bool) {
 		return ToolPolicy{}, true
 	case ToolPolicyProfileReadOnly:
 		return ToolPolicy{
-			Profile:       profile,
-			DefaultAction: ToolPolicyAllow,
+			Profile:        profile,
+			ApprovalPolicy: ToolApprovalPolicyOnRequest,
+			DefaultAction:  ToolPolicyAllow,
 		}, true
 	case ToolPolicyProfileAgent, ToolPolicyProfileAutoReview, ToolPolicyProfileFullAccess:
-		return ToolPolicy{
-			Profile:       profile,
-			DefaultAction: ToolPolicyAllow,
-		}, true
+		policy := ToolPolicy{
+			Profile:        profile,
+			ApprovalPolicy: ToolApprovalPolicyOnRequest,
+			DefaultAction:  ToolPolicyAllow,
+		}
+		if profile == ToolPolicyProfileFullAccess {
+			policy.ApprovalPolicy = ToolApprovalPolicyNever
+		}
+		return policy, true
 	default:
 		return ToolPolicy{}, false
 	}

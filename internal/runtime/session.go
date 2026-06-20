@@ -1208,6 +1208,9 @@ func ToolPolicyFromConfigAndPermissions(in config.ToolPolicyConfig, permissions 
 	if !ok {
 		policy = tools.ToolPolicy{}
 	}
+	if approvalPolicy := strings.TrimSpace(permissions.ApprovalPolicy); approvalPolicy != "" {
+		policy.ApprovalPolicy = tools.ToolApprovalPolicy(approvalPolicy)
+	}
 	if action := toolPolicyAction(in.DefaultAction); action != "" {
 		policy.DefaultAction = action
 	}

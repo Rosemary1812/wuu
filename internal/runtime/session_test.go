@@ -1810,6 +1810,26 @@ func TestToolPolicyFromConfigAndPermissionsKeepsAutoReviewAsReviewerOnlyProfile(
 	}
 }
 
+func TestToolPolicyFromConfigAndPermissionsUsesApprovalPolicyAxis(t *testing.T) {
+	fullAccessOnRequest := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{
+		Mode:           config.PermissionModeFullAccess,
+		ApprovalPolicy: config.ApprovalPolicyOnRequest,
+	})
+	if fullAccessOnRequest.Profile != tools.ToolPolicyProfileFullAccess ||
+		fullAccessOnRequest.ApprovalPolicy != tools.ToolApprovalPolicyOnRequest {
+		t.Fatalf("full_access with on_request approval policy mapped incorrectly: %+v", fullAccessOnRequest)
+	}
+
+	agentNever := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{
+		Mode:           config.PermissionModeAgent,
+		ApprovalPolicy: config.ApprovalPolicyNever,
+	})
+	if agentNever.Profile != tools.ToolPolicyProfileAgent ||
+		agentNever.ApprovalPolicy != tools.ToolApprovalPolicyNever {
+		t.Fatalf("agent with never approval policy mapped incorrectly: %+v", agentNever)
+	}
+}
+
 func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

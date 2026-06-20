@@ -96,9 +96,10 @@ func (s *Server) currentToolPolicySummary() ToolPolicySummary {
 	if s == nil || s.rt == nil {
 		return ToolPolicySummary{}
 	}
-	policy := runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions)
+	profile := config.ToolPolicyProfileForPermissionMode(s.rt.Permissions.Mode)
+	policy := runtime.ToolPolicyFromConfig(s.rt.ToolPolicy)
 	return ToolPolicySummary{
-		Profile:       strings.TrimSpace(string(policy.Profile)),
+		Profile:       strings.TrimSpace(profile),
 		DefaultAction: strings.TrimSpace(string(policy.DefaultAction)),
 		Tools:         toolPolicyToolSummary(policy.ToolActions),
 		Kinds:         toolPolicyKindSummary(policy.KindActions),

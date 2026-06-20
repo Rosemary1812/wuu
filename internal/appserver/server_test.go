@@ -219,6 +219,28 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 }
 
+func TestServerInitializeDoesNotExposePresetDefaultActionAsOverride(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[InitializeResult](t, responseByID(t, msgs, "1")["result"])
+	if result.ToolPolicy.Profile != "agent" {
+		t.Fatalf("tool policy profile = %q, want agent", result.ToolPolicy.Profile)
+	}
+	if result.ToolPolicy.DefaultAction != "" ||
+		len(result.ToolPolicy.Tools) != 0 ||
+		len(result.ToolPolicy.Kinds) != 0 ||
+		len(result.ToolPolicy.Risks) != 0 {
+		t.Fatalf("preset defaults should not be exposed as custom overrides: %+v", result.ToolPolicy)
+	}
+}
+
 func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)

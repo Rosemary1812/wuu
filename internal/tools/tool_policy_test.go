@@ -5,6 +5,7 @@ import "testing"
 func TestPolicyForProfile(t *testing.T) {
 	tests := []struct {
 		profile        ToolPolicyProfile
+		wantApproval   ToolApprovalPolicy
 		wantDefault    ToolPolicyAction
 		wantLowRisk    ToolPolicyAction
 		wantMediumRisk ToolPolicyAction
@@ -12,10 +13,10 @@ func TestPolicyForProfile(t *testing.T) {
 		wantSupported  bool
 	}{
 		{profile: "", wantSupported: true},
-		{profile: ToolPolicyProfileReadOnly, wantDefault: ToolPolicyAllow, wantSupported: true},
-		{profile: ToolPolicyProfileAgent, wantDefault: ToolPolicyAllow, wantSupported: true},
-		{profile: ToolPolicyProfileAutoReview, wantDefault: ToolPolicyAllow, wantSupported: true},
-		{profile: ToolPolicyProfileFullAccess, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileReadOnly, wantApproval: ToolApprovalPolicyOnRequest, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileAgent, wantApproval: ToolApprovalPolicyOnRequest, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileAutoReview, wantApproval: ToolApprovalPolicyOnRequest, wantDefault: ToolPolicyAllow, wantSupported: true},
+		{profile: ToolPolicyProfileFullAccess, wantApproval: ToolApprovalPolicyNever, wantDefault: ToolPolicyAllow, wantSupported: true},
 		{profile: "unknown", wantSupported: false},
 	}
 	for _, tt := range tests {
@@ -31,6 +32,9 @@ func TestPolicyForProfile(t *testing.T) {
 		}
 		if policy.DefaultAction != tt.wantDefault {
 			t.Fatalf("PolicyForProfile(%q).DefaultAction = %s, want %s", tt.profile, policy.DefaultAction, tt.wantDefault)
+		}
+		if policy.ApprovalPolicy != tt.wantApproval {
+			t.Fatalf("PolicyForProfile(%q).ApprovalPolicy = %s, want %s", tt.profile, policy.ApprovalPolicy, tt.wantApproval)
 		}
 		if tt.wantLowRisk != "" && policy.RiskActions[ToolRiskLow] != tt.wantLowRisk {
 			t.Fatalf("PolicyForProfile(%q) low risk = %s, want %s", tt.profile, policy.RiskActions[ToolRiskLow], tt.wantLowRisk)

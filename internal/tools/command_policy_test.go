@@ -195,6 +195,55 @@ func TestFullAccessProfileDoesNotAskForDefaultCommandPolicyReview(t *testing.T) 
 	}
 }
 
+func TestDefaultCommandPolicyAskFollowsApprovalPolicyAxis(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy ToolPolicy
+		want   ToolPolicyAction
+	}{
+		{
+			name: "full access profile still asks when approval policy is on request",
+			policy: ToolPolicy{
+				Profile:        ToolPolicyProfileFullAccess,
+				ApprovalPolicy: ToolApprovalPolicyOnRequest,
+			},
+			want: ToolPolicyRequireApproval,
+		},
+		{
+			name: "agent profile skips ask when approval policy is never",
+			policy: ToolPolicy{
+				Profile:        ToolPolicyProfileAgent,
+				ApprovalPolicy: ToolApprovalPolicyNever,
+			},
+			want: ToolPolicyAllow,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kit, err := New(t.TempDir())
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+			kit.SetToolPolicy(tt.policy)
+
+			info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
+			got := kit.applyDefaultCommandPolicyDecision(
+				providers.ToolCall{
+					Name:      "bash",
+					Arguments: `{"command":"git push origin main"}`,
+				},
+				info,
+				kit.toolPolicy.Decide(info),
+			)
+			if got.Action != tt.want {
+				t.Fatalf("Action = %s, want %s: %+v", got.Action, tt.want, got)
+			}
+		})
+	}
+}
+
 func TestDefaultCommandPolicyAskDoesNotOverrideExplicitDeny(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {

@@ -47,7 +47,12 @@ func newFakeControllerBatches(batches ...[]Notification) *fakeController {
 			Provider:        "test-provider",
 			Model:           "test-model",
 			WorkspaceRoot:   "/repo",
-			Permissions:     appserver.PermissionSummary{Mode: "default"},
+			Permissions: appserver.PermissionSummary{
+				Mode:              "agent",
+				PermissionProfile: "workspace_write",
+				ApprovalPolicy:    "on_request",
+				ApprovalsReviewer: "user",
+			},
 		},
 		thread:  appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
 		turn:    appserver.Turn{ID: "turn-1"},
