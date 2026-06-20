@@ -713,10 +713,10 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 		t.Fatalf("default system prompt must forbid interactive git: %q", prompt)
 	}
 	for _, want := range []string{
-		"Use bash for normal non-interactive git workflows",
+		"active tool surface exposes a terminal command tool",
 		"Stage only intended files with explicit paths",
 		"git restore --staged",
-		"Do not look for separate test-runner, shell-wrapper, process-manager, or structured git tools",
+		"git inspection, commit creation, and terminal verification are unavailable",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must teach shell-first git workflow %q: %q", want, prompt)

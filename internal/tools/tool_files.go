@@ -41,7 +41,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"- Files >256KB are rejected unless limit is provided\n" +
 			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
 			"- This tool can only read files, not directories — use list_files for directories\n" +
-			"- Binary files are not supported; use bash for binary inspection",
+			"- Binary files are not supported; if the active surface exposes a terminal command tool, use it for binary inspection",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1281,7 +1281,7 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"new_file_sha":       formatFileSHA(sha256Hex([]byte(newContent))),
 		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
 		"diff":               diff,
-		"next_suggestions":   []string{"run targeted validation with bash or inspect the resulting diff before finishing"},
+		"next_suggestions":   []string{"run targeted validation with the terminal command tool if one is exposed, otherwise inspect the resulting diff before finishing"},
 	}
 	return mustJSON(result)
 }

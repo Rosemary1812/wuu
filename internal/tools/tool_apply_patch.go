@@ -219,7 +219,7 @@ func applyPatchNextSuggestions(dryRun bool) []string {
 	if dryRun {
 		return []string{"inspect the previewed diffs, then rerun apply_patch without dry_run only if the preview matches the intended change"}
 	}
-	return []string{"run targeted validation with bash, then inspect the resulting diff before finishing"}
+	return []string{"run targeted validation with the terminal command tool if one is exposed, then inspect the resulting diff before finishing"}
 }
 
 type applyPatch struct {
