@@ -551,6 +551,30 @@
   color: var(--ink-strong);
 }
 
+.workspace-file-tree-icon.code {
+  color: #2563a8;
+}
+
+.workspace-file-tree-icon.config {
+  color: #8a5b10;
+}
+
+.workspace-file-tree-icon.doc {
+  color: #1f9d55;
+}
+
+.workspace-file-tree-icon.shell {
+  color: #5b6066;
+}
+
+.workspace-file-tree-icon.data {
+  color: #6f3aa3;
+}
+
+.workspace-file-tree-row.selected .workspace-file-tree-icon {
+  color: var(--ink-strong);
+}
+
 .workspace-file-tree-toggle,
 .workspace-file-tree-toggle-spacer {
   display: grid;
