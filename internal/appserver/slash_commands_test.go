@@ -23,6 +23,23 @@ func TestRenderLightweightSlashCommandPrompt(t *testing.T) {
 	}
 }
 
+func TestRenderCommitSlashCommandPromptIsSurfaceNeutral(t *testing.T) {
+	content, _, ok := renderLightweightSlashCommandPrompt("/commit polish summary")
+	if !ok {
+		t.Fatal("expected /commit to render")
+	}
+	for _, want := range []string{"repository commit", "active model surface", "prepared message"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("commit slash prompt missing %q:\n%s", want, content)
+		}
+	}
+	for _, banned := range []string{"git", "bash", "run_shell", "run_test", "start_process"} {
+		if strings.Contains(content, banned) {
+			t.Fatalf("commit slash prompt must not teach command path %q:\n%s", banned, content)
+		}
+	}
+}
+
 func TestRenderLightweightSlashCommandPromptKeepsSkillSlashRaw(t *testing.T) {
 	content, display, ok := renderLightweightSlashCommandPrompt("/slides quarterly roadmap")
 	if ok || display != "" || content != "/slides quarterly roadmap" {

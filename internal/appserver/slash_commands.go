@@ -58,8 +58,8 @@ var lightweightSlashCommandTemplates = []slashCommandTemplate{
 		Name:        "commit",
 		Aliases:     []string{"save"},
 		Execution:   slashCommandExecutionInlinePrompt,
-		Prompt:      "Prepare an atomic git commit for the current changes.\n\nUser notes:\n{{args}}\n\nReview the diff, run relevant checks when practical, and create a clear English commit message.",
-		PromptNoArg: "Prepare an atomic git commit for the current changes. Review the diff, run relevant checks when practical, and create a clear English commit message.",
+		Prompt:      "Prepare an atomic repository commit for the current changes.\n\nUser notes:\n{{args}}\n\nReview the diff, run relevant checks when practical, and create a clear English commit message using the capabilities exposed by the active model surface. If the active surface cannot create commits, explain that limitation and report the prepared message.",
+		PromptNoArg: "Prepare an atomic repository commit for the current changes. Review the diff, run relevant checks when practical, and create a clear English commit message using the capabilities exposed by the active model surface. If the active surface cannot create commits, explain that limitation and report the prepared message.",
 	},
 	{
 		Name:        "pr",
