@@ -87,3 +87,27 @@ func TestToolkitToolDisplayLeavesMCPRaw(t *testing.T) {
 		t.Fatalf("MCP tools should not get built-in display metadata, got %+v", got)
 	}
 }
+
+func TestToolkitToolDisplayAddsCapabilityForActiveSurface(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+
+	got, ok := kit.ToolDisplay(providers.ToolCall{Name: "run_shell", Arguments: `{"command":"npm test"}`})
+	if !ok {
+		t.Fatal("expected display metadata")
+	}
+	if got.Capability != "command.bash" {
+		t.Fatalf("Capability = %q, want command.bash; display=%+v", got.Capability, got)
+	}
+
+	got, ok = kit.ToolDisplay(providers.ToolCall{Name: "apply_patch", Arguments: `{}`})
+	if !ok {
+		t.Fatal("expected display metadata")
+	}
+	if got.Capability != "file.edit" {
+		t.Fatalf("Capability = %q, want file.edit; display=%+v", got.Capability, got)
+	}
+}

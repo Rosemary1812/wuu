@@ -765,6 +765,12 @@ export type ThreadItemPhase = "commentary" | "final_answer";
 export type ToolCallDisplay = {
   kind?: string;
   text?: string;
+  // Capability is the stable dotted identifier the runtime surface
+  // maps this tool to (e.g. "command.bash"). Optional: legacy
+  // callers that build a Display without a surface (e.g. older
+  // builds, tests) leave it empty and the renderer falls back to
+  // Kind.
+  capability?: string;
 };
 
 export type Agent = {

@@ -94,4 +94,24 @@ describe("readableToolActivityCommand", () => {
       })
     ).toBe('mcp_docs_search {"query":"abc"}');
   });
+
+  it("appends the capability suffix when display.capability is set", () => {
+    expect(
+      readableToolActivityCommand({
+        name: "run_shell",
+        arguments: JSON.stringify({ command: "npx vitest" }),
+        display: { kind: "command", text: "运行 npx vitest", capability: "command.bash" }
+      })
+    ).toBe("运行 npx vitest — command.bash");
+  });
+
+  it("omits the capability suffix when display.capability is missing", () => {
+    expect(
+      readableToolActivityCommand({
+        name: "run_shell",
+        arguments: JSON.stringify({ command: "npx vitest" }),
+        display: { kind: "command", text: "运行 npx vitest" }
+      })
+    ).toBe("运行 npx vitest");
+  });
 });

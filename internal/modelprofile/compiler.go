@@ -317,6 +317,7 @@ func addBashFirstTools(b *surfaceBuilder, p Profile) {
 			b.addHidden(tool, capability.CapabilityCommandBackground)
 		}
 	}
+	b.addHidden("run_shell", capability.CapabilityCommandBash)
 	// run_test is intentionally not a model-visible tool on the
 	// bash-first surface. It stays as an internal post-processor
 	// that can annotate bash results with test summaries; the

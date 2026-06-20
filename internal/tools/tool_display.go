@@ -22,7 +22,24 @@ func (t *Toolkit) ToolDisplay(call providers.ToolCall) (providers.ToolCallDispla
 			Text: fallbackDisplayToolName(call.Name),
 		}
 	}
+	if capability := t.displayCapabilityForTool(call.Name); capability != "" {
+		display.Capability = capability
+	}
 	return display, true
+}
+
+func (t *Toolkit) displayCapabilityForTool(name string) string {
+	surface := t.activeCompiledSurface()
+	if surface.ProfileName == "" {
+		return ""
+	}
+	if c, ok := surface.Tools[name]; ok {
+		return string(c)
+	}
+	if c, ok := surface.HiddenTools[name]; ok {
+		return string(c)
+	}
+	return ""
 }
 
 func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {

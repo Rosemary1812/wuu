@@ -125,6 +125,15 @@ function rawToolCommand(name: string, args: string | undefined): string {
 export function readableToolActivityCommand(
   item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">,
 ): string {
+  return appendCapabilitySuffix(
+    readableToolActivityCommandInner(item),
+    item.display?.capability,
+  );
+}
+
+function readableToolActivityCommandInner(
+  item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">,
+): string {
   // Wait until args (or result) actually parses before returning a title.
   // The backend ships a preformatted `item.display.text` ("查看项目目录",
   // "读取 文件") with item/started that lacks the path the args delta will
@@ -238,6 +247,19 @@ export function readableToolActivityCommand(
     default:
       return readableToolName(name);
   }
+}
+
+// appendCapabilitySuffix adds the runtime-supplied capability name to
+// the readable command line when the backend ships one. Format:
+// "运行 npm test — command.bash". The capability is optional and the
+// existing tests rely on the suffix being absent when display lacks
+// it, so the change stays additive.
+function appendCapabilitySuffix(text: string, capability: string | undefined): string {
+  const normalized = capability?.trim();
+  if (!normalized || !text) {
+    return text;
+  }
+  return `${text} — ${normalized}`;
 }
 
 function isMCPToolName(name: string): boolean {
