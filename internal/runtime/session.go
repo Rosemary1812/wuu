@@ -181,7 +181,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
 		kit.SetWorkflows(discoveredWorkflows)
-		kit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+		kit.SetToolPolicy(ToolPolicyFromAgentConfig(cfg.Agent))
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
@@ -259,7 +259,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
-				wkit.SetToolPolicy(ToolPolicyFromConfig(cfg.Agent.ToolPolicy))
+				wkit.SetToolPolicy(ToolPolicyFromAgentConfig(cfg.Agent))
 				wkit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 				wkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 				wkit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
@@ -1173,6 +1173,31 @@ func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
 	}
 	if profile := strings.TrimSpace(in.Profile); profile != "" {
 		policy.Profile = tools.ToolPolicyProfile(profile)
+	}
+	if action := toolPolicyAction(in.DefaultAction); action != "" {
+		policy.DefaultAction = action
+	}
+	if actions := toolPolicyToolActions(in.Tools); len(actions) > 0 {
+		policy.ToolActions = mergeToolPolicyToolActions(policy.ToolActions, actions)
+	}
+	if actions := toolPolicyKindActions(in.Kinds); len(actions) > 0 {
+		policy.KindActions = mergeToolPolicyKindActions(policy.KindActions, actions)
+	}
+	if actions := toolPolicyRiskActions(in.Risks); len(actions) > 0 {
+		policy.RiskActions = mergeToolPolicyRiskActions(policy.RiskActions, actions)
+	}
+	return policy
+}
+
+func ToolPolicyFromAgentConfig(agent config.AgentConfig) tools.ToolPolicy {
+	return ToolPolicyFromConfigAndPermissions(agent.ToolPolicy, config.ResolveAgentPermissions(agent))
+}
+
+func ToolPolicyFromConfigAndPermissions(in config.ToolPolicyConfig, permissions config.ResolvedPermissions) tools.ToolPolicy {
+	profile := config.ToolPolicyProfileForPermissionMode(permissions.Mode)
+	policy, ok := tools.PolicyForProfile(tools.ToolPolicyProfile(profile))
+	if !ok {
+		policy = tools.ToolPolicy{}
 	}
 	if action := toolPolicyAction(in.DefaultAction); action != "" {
 		policy.DefaultAction = action

@@ -194,9 +194,7 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 			cfg.Agent.PermissionProfile = permissions.PermissionProfile
 			cfg.Agent.ApprovalPolicy = permissions.ApprovalPolicy
 			cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
-			if profile := config.LegacyToolPolicyProfileForPermissionMode(permissions.Mode); profile != "" {
-				cfg.Agent.ToolPolicy.Profile = profile
-			}
+			cfg.Agent.ToolPolicy = config.ToolPolicyConfig{}
 		} else {
 			return fmt.Errorf("invalid permission mode %q", opts.PermissionMode)
 		}

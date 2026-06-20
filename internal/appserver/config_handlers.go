@@ -112,11 +112,7 @@ func (s *Server) currentPermissionSummary() PermissionSummary {
 	}
 	permissions := s.rt.Permissions
 	if strings.TrimSpace(permissions.Mode) == "" {
-		mode := config.PermissionModeForLegacyToolPolicyProfile(s.rt.ToolPolicy.Profile)
-		if mode == "" {
-			mode = config.PermissionModeDefault
-		}
-		permissions, _ = config.PermissionPresetForMode(mode)
+		permissions, _ = config.PermissionPresetForMode(config.PermissionModeDefault)
 	}
 	return PermissionSummary{
 		Mode:              strings.TrimSpace(permissions.Mode),
@@ -393,19 +389,15 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if params.PermissionMode != nil {
 		permissions, _ := config.PermissionPresetForMode(*params.PermissionMode)
 		s.rt.Permissions = permissions
-		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: config.LegacyToolPolicyProfileForPermissionMode(permissions.Mode)}
+		s.rt.ToolPolicy = config.ToolPolicyConfig{}
 		if s.rt.Toolkit != nil {
-			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions))
 			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
 			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}
 	} else if params.ToolPolicyProfile != nil {
 		profile := strings.TrimSpace(*params.ToolPolicyProfile)
 		s.rt.ToolPolicy = config.ToolPolicyConfig{Profile: profile}
-		if mode := config.PermissionModeForLegacyToolPolicyProfile(profile); mode != "" {
-			permissions, _ := config.PermissionPresetForMode(mode)
-			s.rt.Permissions = permissions
-		}
 		if s.rt.Toolkit != nil {
 			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
 			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
@@ -572,7 +564,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 				if th.execRuntime.Toolkit != nil {
 					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
 					if s.rt != nil {
-						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfig(s.rt.ToolPolicy))
+						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions))
 						th.execRuntime.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
 						s.installToolApprovalReviewer(th.execRuntime.Toolkit)
 					}

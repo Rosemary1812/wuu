@@ -562,15 +562,12 @@ describe("Composer queue strip", () => {
 });
 
 describe("Composer permission menu", () => {
-  it("maps permission summaries and legacy tool policies to mode chip states", () => {
-    expect(permissionModeFromSummary()).toBe("full_access");
+  it("maps permission summaries to mode chip states", () => {
+    expect(permissionModeFromSummary()).toBe("default");
     expect(permissionModeFromSummary({ mode: "read_only" })).toBe("read_only");
     expect(permissionModeFromSummary({ mode: "default" })).toBe("default");
     expect(permissionModeFromSummary({ mode: "approve_for_me" })).toBe("approve_for_me");
-    expect(permissionModeFromSummary(undefined, { profile: "safe" })).toBe("read_only");
-    expect(permissionModeFromSummary(undefined, { profile: "balanced" })).toBe("default");
-    expect(permissionModeFromSummary(undefined, { profile: "auto" })).toBe("default");
-    expect(permissionModeFromSummary(undefined, { profile: "enterprise_restricted" })).toBe("read_only");
+    expect(permissionModeFromSummary({ mode: "full_access" })).toBe("full_access");
     expect(permissionModeHasAdvancedOverrides({ profile: "safe" })).toBe(false);
     expect(
       permissionModeHasAdvancedOverrides({

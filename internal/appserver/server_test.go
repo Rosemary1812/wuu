@@ -725,13 +725,13 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 		result.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
 		t.Fatalf("unexpected permissions result: %+v", result.Permissions)
 	}
-	if result.ToolPolicy.Profile != "auto" {
-		t.Fatalf("approve for me should keep current legacy auto tool policy during migration: %+v", result.ToolPolicy)
+	if result.ToolPolicy.Profile != "" {
+		t.Fatalf("permission mode should clear old tool policy profile: %+v", result.ToolPolicy)
 	}
 	if rt.Permissions.Mode != config.PermissionModeApproveForMe || rt.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
 		t.Fatalf("runtime permissions not updated: %+v", rt.Permissions)
 	}
-	if rt.ToolPolicy.Profile != "auto" {
+	if rt.ToolPolicy.Profile != "" {
 		t.Fatalf("runtime tool policy not updated: %+v", rt.ToolPolicy)
 	}
 	data, err := os.ReadFile(rt.ConfigPath)
@@ -743,11 +743,13 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 		`"permission_profile": "workspace_write"`,
 		`"approval_policy": "on_request"`,
 		`"approvals_reviewer": "auto_review"`,
-		`"profile": "auto"`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("config missing %s: %s", want, data)
 		}
+	}
+	if strings.Contains(string(data), `"tool_policy"`) || strings.Contains(string(data), `"profile": "auto"`) {
+		t.Fatalf("permission mode update should remove old tool policy config: %s", data)
 	}
 }
 

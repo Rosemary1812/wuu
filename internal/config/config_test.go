@@ -301,10 +301,23 @@ func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigUsesAutoToolPolicy(t *testing.T) {
+func TestDefaultConfigUsesPermissionModeAsPolicySource(t *testing.T) {
 	cfg := Default()
-	if cfg.Agent.ToolPolicy.Profile != "auto" {
-		t.Fatalf("default tool policy profile = %q, want auto", cfg.Agent.ToolPolicy.Profile)
+	if cfg.Agent.ToolPolicy.Profile != "" {
+		t.Fatalf("default config should not persist old tool policy profile: %+v", cfg.Agent.ToolPolicy)
+	}
+	permissions := ResolveAgentPermissions(cfg.Agent)
+	if permissions.Mode != PermissionModeDefault ||
+		permissions.PermissionProfile != PermissionProfileWorkspaceWrite ||
+		permissions.ApprovalPolicy != ApprovalPolicyOnRequest ||
+		permissions.ApprovalsReviewer != ApprovalsReviewerUser {
+		t.Fatalf("default permissions = %+v", permissions)
+	}
+}
+
+func TestToolPolicyProfileForPermissionModeDefaultsEmptyMode(t *testing.T) {
+	if got := ToolPolicyProfileForPermissionMode(""); got != "auto" {
+		t.Fatalf("empty permission mode tool policy profile = %q, want auto", got)
 	}
 }
 
@@ -1307,11 +1320,8 @@ func TestUpdateProviderRuntimePersistsToolPolicyProfilePreset(t *testing.T) {
 	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {
 		t.Fatalf("preset update should clear fine-grained overrides: %+v", cfg.Agent.ToolPolicy)
 	}
-	if cfg.Agent.PermissionMode != PermissionModeDefault ||
-		cfg.Agent.PermissionProfile != PermissionProfileWorkspaceWrite ||
-		cfg.Agent.ApprovalPolicy != ApprovalPolicyOnRequest ||
-		cfg.Agent.ApprovalsReviewer != ApprovalsReviewerUser {
-		t.Fatalf("legacy preset should update resolved permissions: %+v", ResolveAgentPermissions(cfg.Agent))
+	if permissions := ResolveAgentPermissions(cfg.Agent); permissions.Mode != PermissionModeDefault {
+		t.Fatalf("tool policy profile should not drive permission mode: %+v", permissions)
 	}
 }
 
@@ -1349,8 +1359,8 @@ func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if cfg.Agent.ToolPolicy.Profile != "auto" || len(cfg.Agent.ToolPolicy.Tools) != 0 {
-		t.Fatalf("permission mode should reset legacy tool policy preset: %+v", cfg.Agent.ToolPolicy)
+	if cfg.Agent.ToolPolicy.Profile != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 {
+		t.Fatalf("permission mode should clear old tool policy config: %+v", cfg.Agent.ToolPolicy)
 	}
 	permissions := ResolveAgentPermissions(cfg.Agent)
 	if permissions.Mode != PermissionModeApproveForMe ||

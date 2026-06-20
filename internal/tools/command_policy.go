@@ -148,7 +148,7 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 // DecideCommandPolicy returns the first matching rule's action and
 // reason for a capability call against a command string. Returns
 // ("", "", false) when no rule matches so the caller can apply its
-// own fallback (typically the legacy tool policy or an approval
+// own fallback (typically the runtime tool policy or an approval
 // request).
 func DecideCommandPolicy(rules []CommandPolicyRule, cap capability.Capability, command string) (CommandPolicyAction, string, bool) {
 	decision, ok := DecideNamedCommandPolicy(rules, cap, command)
@@ -279,7 +279,7 @@ func matchCommandPolicyPattern(pattern, value string) bool {
 }
 
 // CommandPolicyDecision is the result of looking up a rule. The
-// legacy tool policy and the capability + pattern policy both
+// Runtime tool policy and the capability + pattern policy both
 // produce a value of this shape, so downstream approval / telemetry
 // code can stay uniform.
 type CommandPolicyDecision struct {

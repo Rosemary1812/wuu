@@ -83,27 +83,14 @@ func PermissionPresetForMode(mode string) (ResolvedPermissions, bool) {
 	}
 }
 
-func LegacyToolPolicyProfileForPermissionMode(mode string) string {
+func ToolPolicyProfileForPermissionMode(mode string) string {
 	switch normalizePermissionMode(mode) {
 	case PermissionModeReadOnly:
 		return "safe"
 	case PermissionModeFullAccess:
 		return "autonomous"
-	case PermissionModeDefault, PermissionModeApproveForMe:
+	case "", PermissionModeDefault, PermissionModeApproveForMe:
 		return "auto"
-	default:
-		return ""
-	}
-}
-
-func PermissionModeForLegacyToolPolicyProfile(profile string) string {
-	switch strings.TrimSpace(profile) {
-	case "safe", "enterprise_restricted":
-		return PermissionModeReadOnly
-	case "autonomous":
-		return PermissionModeFullAccess
-	case "balanced", "auto":
-		return PermissionModeDefault
 	default:
 		return ""
 	}
@@ -160,9 +147,6 @@ func inferPermissionMode(agent AgentConfig) string {
 		ApprovalsReviewer: normalizeApprovalsReviewer(agent.ApprovalsReviewer),
 	}
 	if mode := inferResolvedPermissionMode(resolved, ""); mode != "" {
-		return mode
-	}
-	if mode := PermissionModeForLegacyToolPolicyProfile(agent.ToolPolicy.Profile); mode != "" {
 		return mode
 	}
 	return PermissionModeDefault

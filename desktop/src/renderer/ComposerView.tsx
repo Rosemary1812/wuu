@@ -239,7 +239,7 @@ export function Composer({
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
   const permissionModeHasOverrides = permissionModeHasAdvancedOverrides(initialized?.tool_policy);
-  const permissionMode = permissionModeFromSummary(initialized?.permissions, initialized?.tool_policy);
+  const permissionMode = permissionModeFromSummary(initialized?.permissions);
   const permissionOption = permissionModeOption(permissionMode);
   const permissionChipLabel = permissionModeHasOverrides ? "自定义权限" : permissionOption.chipLabel;
   const visibleSlashCommands = useMemo(

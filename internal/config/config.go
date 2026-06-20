@@ -685,10 +685,7 @@ func Default() Config {
 			},
 		},
 		Agent: AgentConfig{
-			Name: DefaultAgentName,
-			ToolPolicy: ToolPolicyConfig{
-				Profile: "auto",
-			},
+			Name:              DefaultAgentName,
 			PermissionMode:    PermissionModeDefault,
 			PermissionProfile: PermissionProfileWorkspaceWrite,
 			ApprovalPolicy:    ApprovalPolicyOnRequest,
@@ -966,11 +963,7 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		agent["permission_profile"] = permissions.PermissionProfile
 		agent["approval_policy"] = permissions.ApprovalPolicy
 		agent["approvals_reviewer"] = permissions.ApprovalsReviewer
-		if profile := LegacyToolPolicyProfileForPermissionMode(permissions.Mode); profile != "" {
-			agent["tool_policy"] = map[string]any{
-				"profile": profile,
-			}
-		}
+		delete(agent, "tool_policy")
 	} else if toolPolicyProfile != nil {
 		profile := strings.TrimSpace(*toolPolicyProfile)
 		if err := validateToolPolicyProfile(profile); err != nil {
@@ -987,13 +980,6 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 			agent["tool_policy"] = map[string]any{
 				"profile": profile,
 			}
-		}
-		if mode := PermissionModeForLegacyToolPolicyProfile(profile); mode != "" {
-			permissions, _ := PermissionPresetForMode(mode)
-			agent["permission_mode"] = permissions.Mode
-			agent["permission_profile"] = permissions.PermissionProfile
-			agent["approval_policy"] = permissions.ApprovalPolicy
-			agent["approvals_reviewer"] = permissions.ApprovalsReviewer
 		}
 	}
 

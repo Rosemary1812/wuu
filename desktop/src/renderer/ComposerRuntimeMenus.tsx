@@ -92,10 +92,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
   }
 ];
 
-export function permissionModeFromSummary(
-  permissions?: PermissionSummary,
-  policy?: ToolPolicySummary
-): PermissionMode {
+export function permissionModeFromSummary(permissions?: PermissionSummary): PermissionMode {
   const mode = permissions?.mode?.trim();
   switch (mode) {
     case "read_only":
@@ -106,19 +103,8 @@ export function permissionModeFromSummary(
       return "approve_for_me";
     case "full_access":
       return "full_access";
-  }
-  const profile = policy?.profile?.trim();
-  switch (profile) {
-    case "safe":
-    case "enterprise_restricted":
-      return "read_only";
-    case "balanced":
-    case "auto":
-      return "default";
-    case "autonomous":
-      return "full_access";
     default:
-      return "full_access";
+      return "default";
   }
 }
 
@@ -454,7 +440,7 @@ export function AccessMenu({
   onSelect: (mode: PermissionMode) => void;
 }): JSX.Element {
   const hasOverrides = permissionModeHasAdvancedOverrides(policy);
-  const mode = permissionModeFromSummary(permissions, policy);
+  const mode = permissionModeFromSummary(permissions);
   const activeMode = hasOverrides ? undefined : mode;
   return (
     <div className="composer-context-menu access-menu" role="menu">
