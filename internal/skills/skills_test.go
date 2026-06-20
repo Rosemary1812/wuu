@@ -307,9 +307,9 @@ func TestRegistryRouteUsesLoopMetadata(t *testing.T) {
 			TriggerCondition: "Use when asked to inspect architecture or find relevant files",
 		},
 		{
-			Name:             "browser-task",
-			Description:      "Verify browser behavior",
-			TriggerCondition: "Use for browser smoke tests and DOM checks",
+			Name:             "electron-debug",
+			Description:      "Verify desktop runtime and IPC behavior",
+			TriggerCondition: "Use for desktop runtime smoke tests and IPC checks",
 			Paths:            []string{"desktop/**/*.tsx"},
 		},
 		{
@@ -324,9 +324,9 @@ func TestRegistryRouteUsesLoopMetadata(t *testing.T) {
 		t.Fatalf("unexpected route result: %+v", routed)
 	}
 
-	routed = registry.Route("run a browser smoke test and DOM check", []string{"desktop/src/renderer/App.tsx"})
-	if len(routed) == 0 || routed[0].Name != "browser-task" {
-		t.Fatalf("unexpected browser route result: %+v", routed)
+	routed = registry.Route("run a desktop smoke test and IPC check", []string{"desktop/src/renderer/App.tsx"})
+	if len(routed) == 0 || routed[0].Name != "electron-debug" {
+		t.Fatalf("unexpected desktop route result: %+v", routed)
 	}
 }
 
