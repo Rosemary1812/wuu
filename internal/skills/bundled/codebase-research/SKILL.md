@@ -2,7 +2,7 @@
 name: codebase-research
 description: Inspect the repository before planning or editing.
 trigger-condition: Use when a task requires architecture understanding, relevant file discovery, or current behavior audit.
-allowed-tools: [read_file, list_files, grep, glob, run_shell]
+allowed-tools: [read_file, list_files, grep, glob, bash]
 required-context: [task goal, repo rules, current git status, relevant files, existing tests]
 examples: [audit current architecture, find where tool calling is implemented, inspect Electron entrypoints]
 verification-checklist: [relevant files cited, current behavior separated from assumptions, open questions recorded]

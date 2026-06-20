@@ -2,7 +2,7 @@
 name: ci-failure-triage
 description: Diagnose failing CI by preserving logs and finding the root cause first.
 trigger-condition: Use when tests, lint, typecheck, build, or CI jobs fail.
-allowed-tools: [read_file, grep, glob, run_shell, run_test]
+allowed-tools: [read_file, grep, glob, bash]
 required-context: [failing command, stderr tail, affected files, recent diff]
 examples: [triage go test failure, inspect npm typecheck error, reproduce CI locally]
 verification-checklist: [failure captured, root cause stated, fix verified or blocker recorded]

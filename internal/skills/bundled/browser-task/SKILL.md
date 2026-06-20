@@ -2,7 +2,7 @@
 name: browser-task
 description: Verify local web or Electron renderer behavior with browser evidence.
 trigger-condition: Use when a task changes UI, browser automation, DOM state, screenshots, or visual behavior.
-allowed-tools: [read_file, run_shell, run_test, browser, screenshot]
+allowed-tools: [read_file, bash, browser, screenshot]
 required-context: [target URL or app path, viewport, changed UI files, expected user behavior]
 examples: [open localhost, smoke test a settings panel, capture screenshot after UI change]
 verification-checklist: [page opened, console errors checked, DOM or screenshot evidence recorded]

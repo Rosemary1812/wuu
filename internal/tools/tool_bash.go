@@ -274,14 +274,6 @@ func normalizeBashAction(args bashArgs) string {
 			return bashActionStartBackground
 		}
 		return bashActionRun
-	case "background", "start_process":
-		return bashActionStartBackground
-	case "list_processes":
-		return bashActionListBackground
-	case "read_process_output":
-		return bashActionReadBackground
-	case "stop_process":
-		return bashActionStopBackground
 	default:
 		return action
 	}

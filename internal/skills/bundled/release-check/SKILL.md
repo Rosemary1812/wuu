@@ -2,7 +2,7 @@
 name: release-check
 description: Run final release gates before publishing or handing off a build.
 trigger-condition: Use before release, packaging, publish, install, or production build claims.
-allowed-tools: [read_file, grep, glob, run_shell, run_test]
+allowed-tools: [read_file, grep, glob, bash]
 required-context: [target version, changed files, release command, verification policy, known risks]
 examples: [run make install verification, check desktop production debug gates, summarize release blockers]
 verification-checklist: [build command passed, version identity checked, release blockers documented]

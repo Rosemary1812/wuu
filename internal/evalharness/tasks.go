@@ -324,8 +324,8 @@ func Catalog() []Task {
 			ID:            "test_failure_fix",
 			Name:          "Fix a failing unit test",
 			Description:   "Small Go module with one implementation bug and a failing test.",
-			Prompt:        "Use run_test to run the tests, find the implementation bug, fix the source code without changing tests, and use run_test again to verify the tests pass.",
-			RequiredTools: []string{"run_test"},
+			Prompt:        "Use bash to run go test ./..., find the implementation bug, fix the source code without changing tests, and use bash again to verify the tests pass.",
+			RequiredTools: []string{"bash"},
 			Setup:         setupTestFailureFix,
 			Verify:        verifyGoTests,
 		},
@@ -333,9 +333,9 @@ func Catalog() []Task {
 			ID:          "git_test_failure_fix",
 			Name:        "Fix a failing unit test in git",
 			Description: "Small committed Go module with one implementation bug; eval verifies tests and final git diff.",
-			Prompt: "This workspace is a git repo. Use run_test to reproduce the failure, find the implementation bug, " +
-				"fix source code without changing tests, use run_test again to verify tests pass, then inspect the final git diff with the git tool before answering. The final diff should only change calc.go.",
-			RequiredTools: []string{"run_test", "git"},
+			Prompt: "This workspace is a git repo. Use bash to run go test ./... and reproduce the failure, find the implementation bug, " +
+				"fix source code without changing tests, use bash again to verify tests pass, then inspect the final git diff with bash before answering. The final diff should only change calc.go.",
+			RequiredTools: []string{"bash"},
 			Setup:         setupGitTestFailureFix,
 			Verify:        verifyGitTestFailureFix,
 		},
@@ -343,8 +343,8 @@ func Catalog() []Task {
 			ID:            "multi_file_pricing",
 			Name:          "Fix behavior across two files",
 			Description:   "Go package where the final behavior requires edits in two implementation files.",
-			Prompt:        "Fix the pricing package so all tests pass. Use run_test for test verification. The bug spans multiple source files. Do not change tests.",
-			RequiredTools: []string{"run_test"},
+			Prompt:        "Fix the pricing package so all tests pass. Use bash for test verification. The bug spans multiple source files. Do not change tests.",
+			RequiredTools: []string{"bash"},
 			Setup:         setupMultiFilePricing,
 			Verify:        verifyGoTests,
 		},
@@ -352,10 +352,10 @@ func Catalog() []Task {
 			ID:          "patch_review_risk",
 			Name:        "Record patch review risk for a multi-file fix",
 			Description: "Git-backed Go package where the agent must use one multi-file apply_patch and verify the resulting diff.",
-			Prompt: "This workspace is a git repo. Use run_test to reproduce the failing pricing tests, then read the relevant pricing source files. " +
+			Prompt: "This workspace is a git repo. Use bash to run go test ./... and reproduce the failing pricing tests, then read the relevant pricing source files. " +
 				"Fix the behavior with a single apply_patch call that updates both pricing/subtotal.go and pricing/tax.go. Do not change tests. " +
-				"Use run_test to verify go test ./... passes, then inspect the final git diff before answering.",
-			RequiredTools: []string{"run_test", "read_file", "apply_patch", "git"},
+				"Use bash to verify go test ./... passes, then inspect the final git diff with bash before answering.",
+			RequiredTools: []string{"bash", "read_file", "apply_patch"},
 			RequiredToolCalls: []ToolCallRequirement{
 				{ToolName: "apply_patch", ArgsContains: []string{"pricing/subtotal.go", "pricing/tax.go"}},
 			},
@@ -367,8 +367,8 @@ func Catalog() []Task {
 			Name:        "Navigate to a symbol with AST search",
 			Description: "Go package where the agent must use ast_search to locate a failing symbol before editing.",
 			Prompt: "Use ast_search first with query='NormalizeSKU' and kind='function' to locate the failing function before reading any source file. " +
-				"Then read the matched source, fix the implementation bug without changing tests, and use run_test to verify go test ./... passes.",
-			RequiredTools: []string{"ast_search", "read_file", "run_test"},
+				"Then read the matched source, fix the implementation bug without changing tests, and use bash to verify go test ./... passes.",
+			RequiredTools: []string{"ast_search", "read_file", "bash"},
 			RequiredToolCalls: []ToolCallRequirement{
 				{ToolName: "ast_search", ArgumentEquals: map[string]string{"query": "NormalizeSKU", "kind": "function"}},
 			},
@@ -380,8 +380,8 @@ func Catalog() []Task {
 			Name:        "Navigate to behavior with semantic search",
 			Description: "Go package where the agent must use semantic_search to find the behavior area before editing.",
 			Prompt: "Use semantic_search first with query='checkout discount total' to find the candidate file before reading any source file. " +
-				"Then read the matched source, fix the implementation bug without changing tests, and use run_test to verify go test ./... passes.",
-			RequiredTools: []string{"semantic_search", "read_file", "run_test"},
+				"Then read the matched source, fix the implementation bug without changing tests, and use bash to verify go test ./... passes.",
+			RequiredTools: []string{"semantic_search", "read_file", "bash"},
 			RequiredToolCalls: []ToolCallRequirement{
 				{ToolName: "semantic_search", ArgumentEquals: map[string]string{"query": "checkout discount total"}},
 			},
@@ -393,8 +393,8 @@ func Catalog() []Task {
 			Name:        "Use repo map before editing",
 			Description: "Go package where the agent must use repo_map to orient around source and test files before editing.",
 			Prompt: "Use repo_map first to inspect representative files and test mappings before reading any source file. " +
-				"Then read the mapped implementation and test, fix the implementation bug without changing tests, and use run_test to verify go test ./... passes.",
-			RequiredTools: []string{"repo_map", "read_file", "run_test"},
+				"Then read the mapped implementation and test, fix the implementation bug without changing tests, and use bash to verify go test ./... passes.",
+			RequiredTools: []string{"repo_map", "read_file", "bash"},
 			RequiredToolCalls: []ToolCallRequirement{
 				{ToolName: "repo_map"},
 			},
@@ -405,8 +405,8 @@ func Catalog() []Task {
 			ID:            "long_process_output",
 			Name:          "Read a long-running process log",
 			Description:   "Script prints a readiness marker after a delay and keeps running.",
-			Prompt:        "Start ./dev.sh as a managed background process, read its output until READY_FOR_EVAL appears, write observed.txt containing READY_FOR_EVAL, then stop the process.",
-			RequiredTools: []string{"start_process", "read_process_output", "stop_process"},
+			Prompt:        "Use bash action=start_background to start ./dev.sh, use bash action=read_background until READY_FOR_EVAL appears, write observed.txt containing READY_FOR_EVAL, then use bash action=stop_background to stop the process.",
+			RequiredTools: []string{"bash"},
 			Setup:         setupLongProcessOutput,
 			Verify:        verifyObservedReadyFile,
 		},
@@ -426,7 +426,7 @@ func Catalog() []Task {
 			Prompt: "Read target.txt, then run ./mutate_after_read.sh to simulate an external edit. Next, try to use edit_file to change " +
 				"\"version: external\" to \"version: final\". If edit_file reports that the file changed since last read, read target.txt " +
 				"again and retry the edit. Finally write stale_read_result.txt containing STALE_READ_GUARD_DONE.",
-			RequiredTools:  []string{"read_file", "run_shell", "edit_file", "write_file"},
+			RequiredTools:  []string{"read_file", "bash", "edit_file", "write_file"},
 			RequiredErrors: []ToolErrorRequirement{{ToolName: "edit_file", ErrorContains: "changed since last read"}},
 			Setup:          setupStaleReadGuard,
 			Verify:         verifyStaleReadGuard,

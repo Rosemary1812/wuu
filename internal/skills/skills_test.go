@@ -43,7 +43,7 @@ func TestParseSkillFile_LoopMetadata(t *testing.T) {
 		"name: loop",
 		"description: Run a durable loop",
 		"trigger-condition: long-running task",
-		"allowed-tools: [read_file, run_test]",
+		"allowed-tools: [read_file, bash]",
 		"required-context: [state, failures]",
 		"examples: [continue loop, recover failed task]",
 		"verification-checklist: [state persisted, verifier passed]",

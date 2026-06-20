@@ -2,7 +2,7 @@
 name: electron-debug
 description: Debug Electron desktop issues across renderer, preload, main process, and Go app-server.
 trigger-condition: Use for desktop crashes, stale IPC, app-server mismatches, or Electron dev restart problems.
-allowed-tools: [read_file, grep, glob, run_shell, run_test]
+allowed-tools: [read_file, grep, glob, bash]
 required-context: [desktop process state, changed main or preload files, app-server PID, failing IPC channel]
 examples: [white screen after IPC change, stale go run cache, debug panel visibility]
 verification-checklist: [correct process restarted, IPC handler exists, production debug controls remain hidden]

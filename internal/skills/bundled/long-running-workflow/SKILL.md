@@ -2,7 +2,7 @@
 name: long-running-workflow
 description: Run durable multi-phase work without relying on one context window.
 trigger-condition: Use for large tasks that need research, plan, execution, verification, review, and resumability.
-allowed-tools: [read_file, apply_patch, run_shell, run_test, spawn_agent]
+allowed-tools: [read_file, apply_patch, bash, spawn_agent]
 required-context: [goal, durable state, progress log, failure log, verification policy, worktree status]
 examples: [resume goal workflow, coordinate agent team, recover after failed verification]
 verification-checklist: [state updated, artifacts written, failures captured, reviewer or verifier separated from worker]

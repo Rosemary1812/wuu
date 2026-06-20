@@ -132,8 +132,8 @@ func TestPatchReviewRiskVerification(t *testing.T) {
 	if !ok {
 		t.Fatal("missing patch_review_risk task")
 	}
-	if !evalTaskRequiresTool(task, "apply_patch") || !evalTaskRequiresTool(task, "git") {
-		t.Fatalf("patch review risk should require apply_patch/git, got %+v", task.RequiredTools)
+	if !evalTaskRequiresTool(task, "apply_patch") || !evalTaskRequiresTool(task, "bash") {
+		t.Fatalf("patch review risk should require apply_patch/bash, got %+v", task.RequiredTools)
 	}
 	if len(task.RequiredToolCalls) != 1 ||
 		task.RequiredToolCalls[0].ToolName != "apply_patch" ||
@@ -204,8 +204,8 @@ func TestASTSearchNavigationVerification(t *testing.T) {
 	if !ok {
 		t.Fatal("missing ast_search_navigation task")
 	}
-	if !evalTaskRequiresTool(task, "ast_search") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "run_test") {
-		t.Fatalf("ast search navigation should require ast_search/read_file/run_test, got %+v", task.RequiredTools)
+	if !evalTaskRequiresTool(task, "ast_search") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "bash") {
+		t.Fatalf("ast search navigation should require ast_search/read_file/bash, got %+v", task.RequiredTools)
 	}
 	if len(task.RequiredToolCalls) != 1 || task.RequiredToolCalls[0].ToolName != "ast_search" {
 		t.Fatalf("ast search navigation should require an ast_search call, got %+v", task.RequiredToolCalls)
@@ -253,8 +253,8 @@ func TestSemanticSearchNavigationVerification(t *testing.T) {
 	if !ok {
 		t.Fatal("missing semantic_search_navigation task")
 	}
-	if !evalTaskRequiresTool(task, "semantic_search") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "run_test") {
-		t.Fatalf("semantic search navigation should require semantic_search/read_file/run_test, got %+v", task.RequiredTools)
+	if !evalTaskRequiresTool(task, "semantic_search") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "bash") {
+		t.Fatalf("semantic search navigation should require semantic_search/read_file/bash, got %+v", task.RequiredTools)
 	}
 	if len(task.RequiredToolCalls) != 1 || task.RequiredToolCalls[0].ToolName != "semantic_search" {
 		t.Fatalf("semantic search navigation should require a semantic_search call, got %+v", task.RequiredToolCalls)
@@ -297,8 +297,8 @@ func TestRepoMapNavigationVerification(t *testing.T) {
 	if !ok {
 		t.Fatal("missing repo_map_navigation task")
 	}
-	if !evalTaskRequiresTool(task, "repo_map") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "run_test") {
-		t.Fatalf("repo map navigation should require repo_map/read_file/run_test, got %+v", task.RequiredTools)
+	if !evalTaskRequiresTool(task, "repo_map") || !evalTaskRequiresTool(task, "read_file") || !evalTaskRequiresTool(task, "bash") {
+		t.Fatalf("repo map navigation should require repo_map/read_file/bash, got %+v", task.RequiredTools)
 	}
 	if len(task.RequiredToolCalls) != 1 || task.RequiredToolCalls[0].ToolName != "repo_map" {
 		t.Fatalf("repo map navigation should require a repo_map call, got %+v", task.RequiredToolCalls)

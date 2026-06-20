@@ -2,7 +2,7 @@
 name: diff-review
 description: Review a diff for real bugs, regressions, and missing verification.
 trigger-condition: Use after implementation and before declaring work complete.
-allowed-tools: [read_file, grep, glob, run_shell, run_test]
+allowed-tools: [read_file, grep, glob, bash]
 required-context: [final diff, acceptance criteria, verification results, touched tests]
 examples: [review worker role changes, inspect appserver schema diff, check test coverage]
 verification-checklist: [findings are actionable, no style-only nits, verification gaps stated]
