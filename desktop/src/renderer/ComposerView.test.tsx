@@ -568,7 +568,23 @@ describe("Composer permission menu", () => {
     expect(permissionModeFromSummary({ mode: "agent" })).toBe("agent");
     expect(permissionModeFromSummary({ mode: "auto_review" })).toBe("auto_review");
     expect(permissionModeFromSummary({ mode: "full_access" })).toBe("full_access");
+    expect(
+      permissionModeFromSummary({
+        mode: "full_access",
+        permission_profile: "danger_full_access",
+        approval_policy: "on_request",
+        approvals_reviewer: "user",
+      }),
+    ).toBe("custom");
     expect(permissionModeHasAdvancedOverrides({ profile: "agent" })).toBe(false);
+    expect(
+      permissionModeHasAdvancedOverrides(undefined, {
+        mode: "agent",
+        permission_profile: "workspace_write",
+        approval_policy: "never",
+        approvals_reviewer: "user",
+      }),
+    ).toBe(true);
     expect(
       permissionModeHasAdvancedOverrides({
         profile: "agent",
@@ -610,6 +626,33 @@ describe("Composer permission menu", () => {
     expect(document.body.textContent).toContain("profile: workspace_write");
     expect(document.body.textContent).toContain("approval: on_request");
     expect(document.body.textContent).toContain("reviewer: user");
+  });
+
+  it("shows a custom state when explicit permission axes do not match the mode preset", () => {
+    renderComposer({
+      accessMenuOpen: true,
+      toolPolicy: { profile: "full_access" },
+      permissions: {
+        mode: "full_access",
+        permission_profile: "danger_full_access",
+        approval_policy: "on_request",
+        approvals_reviewer: "user",
+      },
+    });
+
+    const chip = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"权限模式：自定义权限\"]",
+    );
+    expect(chip).not.toBeNull();
+
+    const checkedLabels = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
+      ),
+    ).map((label) => label.textContent?.trim());
+    expect(checkedLabels).toEqual([]);
+    expect(document.body.textContent).toContain("自定义权限");
+    expect(document.body.textContent).toContain("approval: on_request");
   });
 
   it("lets the user switch between read only, auto review, and full access", () => {

@@ -4314,6 +4314,7 @@ func TestToolkit_ToolPolicyContextBlock(t *testing.T) {
 	}
 	for _, want := range []string{
 		"profile: agent",
+		"approval_policy: on_request",
 		"default_action: allow",
 		"risk_actions:",
 		"high: require_approval",
@@ -4330,6 +4331,31 @@ func TestToolkit_ToolPolicyContextBlock(t *testing.T) {
 	blocks := kit.ContextBlocks()
 	if len(blocks) == 0 || blocks[0].Kind != wuucontext.BlockToolPolicy {
 		t.Fatalf("ContextBlocks should inject tool policy first: %+v", blocks)
+	}
+}
+
+func TestToolkit_ToolPolicyContextBlockShowsApprovalPolicyAxis(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetToolPolicy(ToolPolicy{
+		Profile:        ToolPolicyProfileFullAccess,
+		ApprovalPolicy: ToolApprovalPolicyOnRequest,
+	})
+
+	block, ok := kit.ToolPolicyContextBlock()
+	if !ok {
+		t.Fatal("expected tool policy context block")
+	}
+	for _, want := range []string{
+		"profile: full_access",
+		"approval_policy: on_request",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("policy block missing %q:\n%s", want, block.Content)
+		}
 	}
 }
 

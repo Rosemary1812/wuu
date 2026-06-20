@@ -56,6 +56,9 @@ func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
 	if t.toolPolicy.Profile != "" {
 		fmt.Fprintf(&b, "profile: %s\n", t.toolPolicy.Profile)
 	}
+	if t.toolPolicy.ApprovalPolicy != "" {
+		fmt.Fprintf(&b, "approval_policy: %s\n", t.toolPolicy.ApprovalPolicy)
+	}
 	if t.toolPolicy.DefaultAction != "" {
 		fmt.Fprintf(&b, "default_action: %s\n", t.toolPolicy.DefaultAction)
 	}
@@ -75,6 +78,7 @@ func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
 
 func hasConfiguredToolPolicy(policy ToolPolicy) bool {
 	return policy.Profile != "" ||
+		policy.ApprovalPolicy != "" ||
 		policy.DefaultAction != "" ||
 		len(policy.ToolActions) > 0 ||
 		len(policy.KindActions) > 0 ||

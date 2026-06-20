@@ -46,6 +46,8 @@ import {
 
 type ChipTone = "safe" | "accent" | "review" | "danger";
 
+type PermissionModeState = PermissionMode | "custom";
+
 type PermissionModeOption = {
   mode: PermissionMode;
   label: string;
@@ -92,32 +94,77 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
   }
 ];
 
-export function permissionModeFromSummary(permissions?: PermissionSummary): PermissionMode {
-  const mode = permissions?.mode?.trim();
+const CUSTOM_PERMISSION_MODE_OPTION: Omit<PermissionModeOption, "mode"> & { mode: PermissionModeState } = {
+  mode: "custom",
+  label: "自定义权限",
+  chipLabel: "自定义权限",
+  short: "当前三轴不匹配任何预设",
+  icon: ShieldQuestion,
+  chipTone: "review"
+};
+
+function permissionPresetAxes(mode: PermissionMode): { profile: string; approval: string; reviewer: string } {
   switch (mode) {
     case "read_only":
-      return "read_only";
-    case "agent":
-      return "agent";
+      return { profile: "read_only", approval: "on_request", reviewer: "user" };
     case "auto_review":
-      return "auto_review";
+      return { profile: "workspace_write", approval: "on_request", reviewer: "auto_review" };
     case "full_access":
-      return "full_access";
+      return { profile: "danger_full_access", approval: "never", reviewer: "user" };
+    case "agent":
     default:
-      return "agent";
+      return { profile: "workspace_write", approval: "on_request", reviewer: "user" };
   }
 }
 
-export function permissionModeHasAdvancedOverrides(policy?: ToolPolicySummary): boolean {
+function permissionSummaryMatchesPreset(permissions: PermissionSummary | undefined, mode: PermissionMode): boolean {
+  const preset = permissionPresetAxes(mode);
+  const profile = permissions?.permission_profile?.trim();
+  const approval = permissions?.approval_policy?.trim();
+  const reviewer = permissions?.approvals_reviewer?.trim();
+  return (
+    (!profile || profile === preset.profile) &&
+    (!approval || approval === preset.approval) &&
+    (!reviewer || reviewer === preset.reviewer)
+  );
+}
+
+export function permissionModeFromSummary(permissions?: PermissionSummary): PermissionModeState {
+  const mode = permissions?.mode?.trim();
+  let preset: PermissionMode;
+  switch (mode) {
+    case "read_only":
+      preset = "read_only";
+      break;
+    case "agent":
+      preset = "agent";
+      break;
+    case "auto_review":
+      preset = "auto_review";
+      break;
+    case "full_access":
+      preset = "full_access";
+      break;
+    default:
+      preset = "agent";
+  }
+  return permissionSummaryMatchesPreset(permissions, preset) ? preset : "custom";
+}
+
+export function permissionModeHasAdvancedOverrides(policy?: ToolPolicySummary, permissions?: PermissionSummary): boolean {
   return Boolean(
-    policy?.default_action ||
+    permissionModeFromSummary(permissions) === "custom" ||
+      policy?.default_action ||
       Object.keys(policy?.tools ?? {}).length > 0 ||
       Object.keys(policy?.kinds ?? {}).length > 0 ||
       Object.keys(policy?.risks ?? {}).length > 0
   );
 }
 
-export function permissionModeOption(mode: PermissionMode): PermissionModeOption {
+export function permissionModeOption(mode: PermissionModeState): Omit<PermissionModeOption, "mode"> & { mode: PermissionModeState } {
+  if (mode === "custom") {
+    return CUSTOM_PERMISSION_MODE_OPTION;
+  }
   return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[1];
 }
 
@@ -446,7 +493,7 @@ export function AccessMenu({
   disabled: boolean;
   onSelect: (mode: PermissionMode) => void;
 }): JSX.Element {
-  const hasOverrides = permissionModeHasAdvancedOverrides(policy);
+  const hasOverrides = permissionModeHasAdvancedOverrides(policy, permissions);
   const mode = permissionModeFromSummary(permissions);
   const activeMode = hasOverrides ? undefined : mode;
   return (
@@ -458,7 +505,7 @@ export function AccessMenu({
       {hasOverrides ? (
         <div className="composer-menu-note">
           <strong>自定义权限</strong>
-          <span>当前配置包含能力规则；选择任一模式会改为该预设</span>
+          <span>当前三轴不匹配预设或包含能力规则；选择任一模式会改为该预设</span>
         </div>
       ) : null}
       {PERMISSION_MODE_OPTIONS.map((option) => (
