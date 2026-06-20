@@ -33,6 +33,7 @@
         --line-ui: 1.35;
         --line-body: 1.55;
         --line-prose: 1.75;
+        --gap-message-element: 20px;
 
         --radius-pill: 999px;
         --radius-chip: 8px;
@@ -215,7 +216,7 @@
 
       /* turns */
       .turn-list { display: flex; flex-direction: column; gap: 32px; }
-      .turn { display: flex; flex-direction: column; gap: 16px; }
+      .turn { display: flex; flex-direction: column; gap: var(--gap-message-element); }
       .turn + .turn { margin-top: 16px; }
 
       /* user bubble — keep the gray pill, only the assistant side goes text-first */
@@ -231,12 +232,11 @@
       /* ========================================================
          Process group (assistant turn front)
          ======================================================== */
-      .process { display: grid; gap: 6px; color: var(--status-color); }
+      .process { display: grid; gap: var(--gap-message-element); color: var(--status-color); }
       .proc-toggle {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         column-gap: 10px; align-items: baseline;
-        padding: 4px 0;
         background: transparent; border: 0; cursor: pointer;
         color: inherit; font: inherit; text-align: left; width: 100%;
         border-radius: 6px;
@@ -259,7 +259,7 @@
       .divider { height: 1px; background: rgba(31, 35, 40, 0.08); margin: 2px 0; }
 
       /* stack (process detail) */
-      .stack { display: grid; gap: 4px; padding: 6px 0 4px 0; min-height: 0; }
+      .stack { display: grid; gap: var(--gap-message-element); padding: 0; min-height: 0; }
       .stack.collapsed { display: none; }
 
       /* entry: thought / activity / error */
