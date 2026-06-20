@@ -26,6 +26,6 @@ func HarnessAdapterText(providerName, model string) string {
 			"- Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
 			"- Choose execution shape from the user's task: direct local loop for simple work, subagents for independent parallel work, and workflows only when durable state, scheduling, repeatability, multiple phases/workers, or a matching saved workflow matters.",
 			"- Follow the tools exposed in this session as the source of truth for editing and execution. If apply_patch is available, use it for manual edits; otherwise use edit_file/write_file as described by their tool schemas.",
-			"- Treat provider/model differences as compatibility details only: tool schema, streaming behavior, context window, reasoning options, prompt cache, and available tool set.",
+			"- Treat provider/model differences as compatibility details only: tool schema, streaming behavior, context window, reasoning options (e.g. reasoning_effort, thinking budget, extended thinking toggle), prompt cache, and available tool set.",
 		}, "\n")
 }
