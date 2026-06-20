@@ -153,7 +153,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	for _, def := range client.requests[0].Tools {
 		toolNames[def.Name] = true
 	}
-	wantTools := []string{"read_file", "write_file", "list_files", "edit_file", "grep", "glob", "run_shell", "session_memory"}
+	wantTools := []string{"read_file", "write_file", "list_files", "edit_file", "grep", "glob", "bash", "session_memory"}
 	if len(toolNames) != len(wantTools) {
 		t.Fatalf("dream tools = %+v, want %v", toolNames, wantTools)
 	}
@@ -165,6 +165,11 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	last := client.requests[0].Messages[len(client.requests[0].Messages)-1]
 	if last.Role != "user" || !strings.Contains(last.Content, "read_file") || !strings.Contains(last.Content, "Nothing to dream") {
 		t.Fatalf("missing dream prompt in request: %+v", last)
+	}
+	for _, old := range []string{"Available tools are read_file, list_files, glob, grep, run_shell", "Use run_shell only"} {
+		if strings.Contains(last.Content, old) {
+			t.Fatalf("dream prompt must not teach legacy shell path %q:\n%s", old, last.Content)
+		}
 	}
 }
 

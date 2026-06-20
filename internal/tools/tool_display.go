@@ -51,6 +51,36 @@ func (t *Toolkit) displayCapabilityForTool(call providers.ToolCall) string {
 	if c, ok := surface.HiddenTools[name]; ok {
 		return string(c)
 	}
+	return displayCapabilityForKnownToolName(name)
+}
+
+func displayCapabilityForKnownToolName(name string) string {
+	switch strings.TrimSpace(name) {
+	case "run_shell", "run_test", "git":
+		return "command.bash"
+	case "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
+		return "command.background"
+	case "read_file":
+		return "file.read"
+	case "list_files":
+		return "file.list"
+	case "write_file", "edit_file", "apply_patch", "checkpoint":
+		return "file.edit"
+	case "grep":
+		return "search.grep"
+	case "glob":
+		return "search.glob"
+	case "ast_search":
+		return "search.ast"
+	case "semantic_search":
+		return "search.semantic"
+	case "web_fetch":
+		return "web.fetch"
+	case "web_search":
+		return "web.search"
+	case "update_plan":
+		return "plan"
+	}
 	return ""
 }
 

@@ -134,8 +134,8 @@ func (b *surfaceBuilder) addVisibleCapability(c capability.Capability) {
 	b.surface.Capabilities = append(b.surface.Capabilities, c)
 }
 
-// addHidden registers a tool the runtime still implements but does
-// not advertise to the model under this surface.
+// addHidden registers a profile companion tool that is intentionally
+// not model-visible under this surface.
 func (b *surfaceBuilder) addHidden(tool string, c capability.Capability) {
 	b.surface.HiddenTools[tool] = c
 	if _, ok := b.hidden[c]; ok {
@@ -175,40 +175,7 @@ func (b *surfaceBuilder) sortCaps() {
 
 // ── Per-profile compilation ───────────────────────────────────────
 
-// openaiCodexEditTools is the editing tool list Codex surfaces.
-// apply_patch is preferred; edit_file and write_file are kept as
-// hidden fallbacks so internal callers (e.g. a future bash
-// post-processor that prefers whole-file write) can still route
-// edits through them.
-var openaiCodexEditTools = struct {
-	primary string
-	hidden  []string
-}{
-	primary: "apply_patch",
-	hidden:  []string{"edit_file", "write_file"},
-}
-
-// openaiGPTEditTools covers most OpenAI Responses models that do
-// not ship the Codex freeform patch grammar. apply_patch is still
-// the primary; the hidden list is the same.
-var openaiGPTEditTools = struct {
-	primary string
-	hidden  []string
-}{
-	primary: "apply_patch",
-	hidden:  []string{"edit_file", "write_file"},
-}
-
-// claudeEditTools is the Anthropic / generic exact-edit pair.
-var claudeEditTools = struct {
-	primary  string
-	hidden   []string
-	fallback []string
-}{
-	primary:  "edit_file",
-	hidden:   []string{"apply_patch"},
-	fallback: []string{"write_file"},
-}
+const openaiPatchEditTool = "apply_patch"
 
 func compileOpenAICodex(b *surfaceBuilder, p Profile) {
 	addFileReadTools(b)
@@ -261,10 +228,6 @@ func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
 func compileGeneric(b *surfaceBuilder, p Profile) {
 	addFileReadTools(b)
 	addSearchTools(b)
-	// Local models disable direct shell. The compiler still calls
-	// addBashFirstTools so the bash tools land in HiddenTools; the
-	// function itself routes the visible/hidden split based on
-	// AllowDirectShell.
 	addBashFirstTools(b, p)
 	addWebTools(b)
 	addTaskTools(b)
@@ -293,48 +256,10 @@ func addSearchTools(b *surfaceBuilder) {
 }
 
 func addBashFirstTools(b *surfaceBuilder, p Profile) {
-	processTools := []string{
-		"start_process",
-		"list_processes",
-		"read_process_output",
-		"write_stdin",
-		"stop_process",
-	}
 	if p.Workflow.AllowDirectShell {
 		b.addVisible("bash", capability.CapabilityCommandBash)
 		b.addVisibleCapability(capability.CapabilityCommandBackground)
-		// The five managed-process tools are advanced / hidden
-		// even on profiles that allow direct shell. The model
-		// reaches long-running commands through bash; start_process
-		// and the rest stay in the registry for internal callers
-		// (tool_search, replay, the bash background-mode backend)
-		// only. The model never sees them as separate entries.
-		for _, tool := range processTools {
-			b.addHidden(tool, capability.CapabilityCommandBackground)
-		}
-	} else {
-		// No direct shell: keep the bash tools around as hidden
-		// capabilities so the runtime can still drive background
-		// processes as a backend for non-shell workflows. The
-		// prompt fragment explains this to the model.
-		b.addHidden("bash", capability.CapabilityCommandBash)
-		for _, tool := range processTools {
-			b.addHidden(tool, capability.CapabilityCommandBackground)
-		}
 	}
-	b.addHidden("run_shell", capability.CapabilityCommandBash)
-	// run_test is intentionally not a model-visible tool on the
-	// bash-first surface. It stays as an internal post-processor
-	// that can annotate bash results with test summaries; the
-	// model never sees it as a separate entry point.
-	b.addHidden("run_test", capability.CapabilityCommandBash)
-	// The structured git tool is a legacy / advanced capability.
-	// Normal git workflow runs through bash with a `git ...`
-	// command pattern; the toolkit still implements git for
-	// progressive disclosure and for any internal callers that
-	// want structured status output, but the model never sees it
-	// as a default tool.
-	b.addHidden("git", capability.CapabilityCommandBash)
 }
 
 func addWebTools(b *surfaceBuilder) {
@@ -406,10 +331,7 @@ func addExtensionTools(b *surfaceBuilder) {
 }
 
 func addOpenAICodexEditTools(b *surfaceBuilder) {
-	b.addVisible(openaiCodexEditTools.primary, capability.CapabilityFileEdit)
-	for _, tool := range openaiCodexEditTools.hidden {
-		b.addHidden(tool, capability.CapabilityFileEdit)
-	}
+	b.addVisible(openaiPatchEditTool, capability.CapabilityFileEdit)
 }
 
 func addOpenAIGPTEditTools(b *surfaceBuilder, p Profile) {
@@ -418,34 +340,24 @@ func addOpenAIGPTEditTools(b *surfaceBuilder, p Profile) {
 	if isGPT4OrOSS(p.Model) {
 		b.addVisible("edit_file", capability.CapabilityFileEdit)
 		b.addVisible("write_file", capability.CapabilityFileEdit)
-		b.addHidden("apply_patch", capability.CapabilityFileEdit)
 		return
 	}
-	b.addVisible(openaiGPTEditTools.primary, capability.CapabilityFileEdit)
-	for _, tool := range openaiGPTEditTools.hidden {
-		b.addHidden(tool, capability.CapabilityFileEdit)
-	}
+	b.addVisible(openaiPatchEditTool, capability.CapabilityFileEdit)
 }
 
 func addClaudeEditTools(b *surfaceBuilder) {
-	b.addVisible(claudeEditTools.primary, capability.CapabilityFileEdit)
+	b.addVisible("edit_file", capability.CapabilityFileEdit)
 	b.addVisible("write_file", capability.CapabilityFileEdit)
-	for _, tool := range claudeEditTools.hidden {
-		b.addHidden(tool, capability.CapabilityFileEdit)
-	}
 }
 
 func addGenericEditTools(b *surfaceBuilder, p Profile) {
 	// Local models: only whole-file write is reliable.
 	if p.Family == FamilyLocal {
 		b.addVisible("write_file", capability.CapabilityFileEdit)
-		b.addHidden("edit_file", capability.CapabilityFileEdit)
-		b.addHidden("apply_patch", capability.CapabilityFileEdit)
 		return
 	}
 	b.addVisible("edit_file", capability.CapabilityFileEdit)
 	b.addVisible("write_file", capability.CapabilityFileEdit)
-	b.addHidden("apply_patch", capability.CapabilityFileEdit)
 }
 
 // ── Prompt fragments ──────────────────────────────────────────────

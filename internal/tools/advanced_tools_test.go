@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"sort"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
@@ -20,30 +19,17 @@ func hasCapability(caps []capability.Capability, want capability.Capability) boo
 	return false
 }
 
-// hiddenToolNames returns a stable, sorted view of the names in a
-// surface.HiddenTools map so failure messages are deterministic.
-func hiddenToolNames(surfaceTools map[string]capability.Capability) []string {
-	out := make([]string, 0, len(surfaceTools))
-	for name := range surfaceTools {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // TestAdvancedToolsHiddenFromModelSurfaces verifies that the
 // legacy run_test / start_process / git / managed-process tools
 // — the ones that OpenCode and Codex-style harnesses collapse into
-// bash + tool_search — stay registered in the toolkit so internal
-// callers (progressive disclosure, replay, the bash result
-// post-processor) can still reach them, but never appear on a
-// model-visible tool surface.
+// bash — stay registered in the toolkit so internal callers can
+// still reach them, but never appear on a model-visible tool
+// surface or a compiled profile hidden-tool contract.
 //
 // Phase 5 of the bash-first redesign: the model never has to guess
 // between run_test / start_process / git / list_processes. The
-// compiler hides them in surface.Tools and toolExposure returns
-// Hidden for the legacy fallback surface, so the legacy direct-tool
-// surface (no profile set) also hides them.
+// compiler omits them from profile surfaces, and toolExposure keeps
+// the registry-only implementations out of Definitions.
 func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -76,10 +62,8 @@ func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 		}
 	}
 
-	// Per-profile: the compiler keeps every advanced tool in the
-	// hidden set on every standard profile, and the legacy surface
-	// path agrees because toolExposure short-circuits before the
-	// toolExposure-to-surface wiring runs.
+	// Per-profile: the compiler does not include advanced command
+	// tools in either visible tools or hidden profile output.
 	profiles := []struct {
 		provider string
 		model    string
@@ -93,18 +77,12 @@ func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 	for _, tt := range profiles {
 		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model))
 		surface := kit.ActiveSurface()
-		// run_test and git must be in the surface's HiddenTools
-		// map on every profile. The model never sees them.
-		for _, name := range []string{"run_test", "git"} {
-			if _, ok := surface.HiddenTools[name]; !ok {
-				t.Errorf("%s/%s: %s must be in surface.HiddenTools, got %v",
-					tt.provider, tt.model, name, hiddenToolNames(surface.HiddenTools))
-			}
-		}
-		// All managed-process tools must be hidden on every
-		// profile, including the local sandboxed one.
 		defs := kit.Definitions()
 		for _, name := range advancedTools {
+			if _, ok := surface.HiddenTools[name]; ok {
+				t.Errorf("%s/%s: %s must not remain in surface.HiddenTools",
+					tt.provider, tt.model, name)
+			}
 			if containsProfileDef(defs, name) {
 				t.Errorf("%s/%s: %s must not appear in Definitions (advanced), got %v",
 					tt.provider, tt.model, name, sortedProfileDefNames(defs))
@@ -115,9 +93,8 @@ func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 
 // TestAdvancedToolsRemainReachableViaRegistry confirms that
 // hiding the legacy tools from the model surface does not remove
-// them from the registry. Internal callers (tool_search activation,
-// replay, the bash post-processor that adds test summaries) still
-// need to look them up by name and execute them.
+// them from the registry. Internal callers can still look them up
+// by name and execute them.
 func TestAdvancedToolsRemainReachableViaRegistry(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {

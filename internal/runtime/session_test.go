@@ -276,6 +276,9 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	if rt.Toolkit.ActiveSurface().ProfileName == "" {
 		t.Fatal("expected runtime toolkit to install a model surface")
 	}
+	if !strings.Contains(rt.BaseSystemPrompt, "[Tool surface:") || !strings.Contains(rt.BaseSystemPrompt, "Terminal work") {
+		t.Fatalf("base system prompt should include compiled tool-surface fragment:\n%s", rt.BaseSystemPrompt)
+	}
 	if strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
 		t.Fatalf("default profile should not inject persistent memory:\n%s", rt.BaseSystemPrompt)
 	}
@@ -716,6 +719,90 @@ func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
 	}
 }
 
+func TestNewThreadRuntimeWorkerUsesWorkerProfileToolSurface(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+	t.Setenv("TEST_ANTHROPIC_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "openai",
+			Providers: map[string]config.ProviderConfig{
+				"openai": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-5-codex",
+				},
+				"anthropic": {
+					Type:      "anthropic",
+					BaseURL:   "https://api.anthropic.com",
+					APIKeyEnv: "TEST_ANTHROPIC_KEY",
+					Model:     "claude-sonnet-4-5",
+				},
+			},
+			Agent: config.AgentConfig{
+				ModelRoles: config.ModelRolesConfig{
+					Worker: config.ModelRoleConfig{Provider: "anthropic", Model: "claude-sonnet-4-5"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if !strings.Contains(rt.BaseSystemPrompt, "[Tool surface: openai_codex]") {
+		t.Fatalf("main prompt should use main Codex surface:\n%s", rt.BaseSystemPrompt)
+	}
+
+	client := &sessionRecordingClient{}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-worker-surface")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "inspect_repo",
+		Prompt:      "inspect the repo",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	req := client.LastRequest()
+	toolNames := map[string]bool{}
+	for _, def := range req.Tools {
+		toolNames[def.Name] = true
+	}
+	for _, want := range []string{"bash", "edit_file", "write_file"} {
+		if !toolNames[want] {
+			t.Fatalf("worker should receive %s from worker profile surface; tools=%v", want, toolNames)
+		}
+	}
+	if toolNames["apply_patch"] {
+		t.Fatalf("worker should not inherit Codex apply_patch surface; tools=%v", toolNames)
+	}
+	if len(req.Messages) == 0 {
+		t.Fatal("worker sent no messages")
+	}
+	systemPrompt := req.Messages[0].Content
+	for _, want := range []string{"[Tool surface: anthropic_claude]", "Your file editing primitives are read_file, edit_file, and write_file"} {
+		if !strings.Contains(systemPrompt, want) {
+			t.Fatalf("worker system prompt should use worker profile fragment %q:\n%s", want, systemPrompt)
+		}
+	}
+}
+
 func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -804,6 +891,9 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		if !strings.Contains(systemPrompt, want) {
 			t.Fatalf("profile worker system prompt missing %q:\n%s", want, systemPrompt)
 		}
+	}
+	if !strings.Contains(systemPrompt, "[Tool surface:") || !strings.Contains(systemPrompt, "Terminal work") {
+		t.Fatalf("profile worker system prompt missing tool-surface fragment:\n%s", systemPrompt)
 	}
 }
 
@@ -1141,6 +1231,8 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 		"Provider/model: openai/gpt-5.5",
 		"same product regardless of provider, model family, or BYOK backend",
 		"Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
+		"[Tool surface: openai_gpt]",
+		"Your editing primitive is apply_patch",
 	} {
 		if !strings.Contains(rt.BaseSystemPrompt, want) {
 			t.Fatalf("BaseSystemPrompt missing harness adapter text %q:\n%s", want, rt.BaseSystemPrompt)
@@ -1256,10 +1348,17 @@ func TestNewSessionAppliesPermissionBoundary(t *testing.T) {
 }
 
 func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
+	root := t.TempDir()
+	kit, err := tools.New(root)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
 	rt := &Session{
-		RootDir:          t.TempDir(),
+		RootDir:          root,
 		UserSystemPrompt: "Prefer concise answers.",
 		StreamRunner:     &agent.StreamRunner{SystemPrompt: "old prompt"},
+		Toolkit:          kit,
 	}
 
 	prompt := rt.RefreshSystemPrompt("openai", "gpt-5-codex")
@@ -1267,6 +1366,8 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	for _, want := range []string{
 		"# Harness Adapter",
 		"Provider/model: openai/gpt-5-codex",
+		"[Tool surface: openai_codex]",
+		"Your editing primitive is apply_patch",
 		"same product regardless of provider, model family, or BYOK backend",
 		"Prefer concise answers.",
 	} {
@@ -1353,6 +1454,35 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
 		if defs[blocked] {
 			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
+		}
+	}
+}
+
+func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.T) {
+	kit, err := tools.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New toolkit: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	wt, err := agentcontrol.LookupWorkerType("verification")
+	if err != nil {
+		t.Fatalf("agent type: %v", err)
+	}
+
+	applyWorkerToolFilter(kit, wt)
+
+	defs := map[string]bool{}
+	for _, def := range kit.Definitions() {
+		defs[def.Name] = true
+	}
+	for _, allowed := range []string{"read_file", "grep", "glob", "bash", "agent_report"} {
+		if !defs[allowed] {
+			t.Fatalf("verification worker toolkit should keep %s; defs=%v", allowed, defs)
+		}
+	}
+	for _, hidden := range []string{"run_shell", "run_test", "start_process", "git", "apply_patch", "edit_file", "write_file"} {
+		if defs[hidden] {
+			t.Fatalf("verification worker toolkit should not expose %s; defs=%v", hidden, defs)
 		}
 	}
 }

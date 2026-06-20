@@ -73,7 +73,7 @@ func TestLookupWorkerType_Unknown(t *testing.T) {
 func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	wt, _ := LookupWorkerType(DefaultSubagentType)
 	full := []string{
-		"read_file", "write_file", "edit_file", "run_shell", "run_test",
+		"read_file", "write_file", "edit_file", "bash",
 		"grep", "glob", "spawn_agent", "send_message", "followup_task",
 		"wait_agent", "await_agents", "close_agent", "list_agents", "agent_report",
 	}
@@ -82,7 +82,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	for _, n := range filtered {
 		allowed[n] = true
 	}
-	for _, expected := range []string{"read_file", "write_file", "edit_file", "run_shell", "run_test", "grep", "glob", "agent_report"} {
+	for _, expected := range []string{"read_file", "write_file", "edit_file", "bash", "grep", "glob", "agent_report"} {
 		if !allowed[expected] {
 			t.Errorf("general-purpose agent missing %s", expected)
 		}
@@ -99,7 +99,7 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 	if !wt.Background {
 		t.Fatal("verification agent should run in the background")
 	}
-	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "run_shell", "run_test", "agent_report"}
+	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "agent_report"}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
 	for _, n := range filtered {
@@ -110,7 +110,7 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 			t.Errorf("verification agent should not receive write tool %s", blocked)
 		}
 	}
-	for _, expected := range []string{"read_file", "run_shell", "run_test", "agent_report"} {
+	for _, expected := range []string{"read_file", "bash", "agent_report"} {
 		if !allowed[expected] {
 			t.Errorf("verification agent missing %s", expected)
 		}
@@ -118,7 +118,7 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 }
 
 func TestFilterToolsForWorker_CheckerRolesDisallowProjectWrites(t *testing.T) {
-	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "run_shell", "run_test", "grep", "glob", "agent_report"}
+	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "grep", "glob", "agent_report"}
 	for _, name := range []string{"planner", "researcher", "reviewer", "qa", "debugger", "integrator"} {
 		t.Run(name, func(t *testing.T) {
 			wt, err := LookupWorkerType(name)
@@ -135,11 +135,34 @@ func TestFilterToolsForWorker_CheckerRolesDisallowProjectWrites(t *testing.T) {
 					t.Errorf("%s should not receive write tool %s", name, blocked)
 				}
 			}
-			if !allowed["read_file"] || !allowed["agent_report"] {
+			if !allowed["read_file"] || !allowed["bash"] || !allowed["agent_report"] {
 				t.Errorf("%s missing expected read/report tools: %v", name, filtered)
 			}
 		})
 	}
+}
+
+func TestBuiltInWorkerAllowlistsUseBashFirstTools(t *testing.T) {
+	for _, wt := range AvailableWorkerTypes() {
+		for _, name := range wt.AllowedTools {
+			switch name {
+			case "run_shell", "run_test", "start_process", "list_processes", "read_process_output", "stop_process", "git":
+				t.Fatalf("%s allowlist must not include legacy command tool %s", wt.Name, name)
+			}
+		}
+		if len(wt.AllowedTools) > 0 && !containsString(wt.AllowedTools, "bash") {
+			t.Fatalf("%s has a restricted allowlist without bash: %+v", wt.Name, wt.AllowedTools)
+		}
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWorkerType_DefaultIsolation(t *testing.T) {

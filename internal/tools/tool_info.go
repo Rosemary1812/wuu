@@ -149,9 +149,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 // The set covers the legacy run_shell, the run_test verifier, the
 // five managed-process tools (start_process / list_processes /
 // read_process_output / write_stdin / stop_process), and the
-// structured git tool. Every entry here is also re-listed in the
-// compiler's addBashFirstTools / addExtensionTools helpers so the
-// hidden-tool set matches what the model-profile compiler emits.
+// structured git tool.
 func isAdvancedCommandToolHidden(name string) bool {
 	switch name {
 	case "run_shell",

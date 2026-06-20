@@ -197,7 +197,7 @@ func newSessionDreamExecutor(rootDir, workspaceStateDir, sessionArtifactDir stri
 		tools.NewEditFileTool(env),
 		tools.NewGrepTool(env),
 		tools.NewGlobTool(env),
-		tools.NewShellTool(env),
+		tools.NewBashTool(env),
 		tools.NewSessionMemoryTool(env),
 	)
 	return &sessionDreamExecutor{registry: registry, defs: registry.Definitions()}
@@ -265,9 +265,9 @@ func buildSessionDreamMessages(systemPrompt string, history []providers.ChatMess
 
 const sessionDreamPrompt = `Review the recent conversation and consolidate durable workspace/session memory.
 
-Available tools are read_file, list_files, glob, grep, run_shell, write_file, edit_file, and session_memory.
+Available tools are read_file, list_files, glob, grep, bash, write_file, edit_file, and session_memory.
 
-Use read_file, list_files, glob, grep, or run_shell only to inspect the workspace and verify what should be remembered. Use run_shell only for non-interactive read-only inspection commands; do not use git commands, package managers, network commands, or long-running processes.
+Use read_file, list_files, glob, grep, or bash only to inspect the workspace and verify what should be remembered. Use bash only for non-interactive read-only inspection commands; do not use git commands, package managers, network commands, or long-running processes.
 
 Use session_memory for durable writes:
 1. Read existing project_memory, summary, checkpoint, or notes when needed before editing them.

@@ -83,8 +83,8 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 
-	// Bash-first: bash is visible; run_test / start_process /
-	// list_processes / git are hidden.
+	// Bash-first: bash is visible; old command tools are not part
+	// of the compiled profile surface.
 	if _, ok := s.Tools["bash"]; !ok {
 		t.Fatalf("Codex surface must include bash as a visible tool")
 	}
@@ -98,8 +98,8 @@ func TestOpenAICodexSurface(t *testing.T) {
 		if _, visible := s.Tools[hidden]; visible {
 			t.Fatalf("Codex surface must not advertise %s as a default tool", hidden)
 		}
-		if _, ok := s.HiddenTools[hidden]; !ok {
-			t.Fatalf("Codex surface should keep %s as a hidden capability", hidden)
+		if _, ok := s.HiddenTools[hidden]; ok {
+			t.Fatalf("Codex surface must not keep legacy command tool %s in hidden profile output", hidden)
 		}
 	}
 
@@ -259,11 +259,10 @@ func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
 	if _, has := s.Tools["bash"]; has {
 		t.Fatalf("local profile must not include bash, got tools=%v", sortedKeys(s.Tools))
 	}
-	// Local still gets start_process as a hidden capability so the
-	// runtime can drive long-lived background work behind the
-	// scenes.
-	if _, ok := s.HiddenTools["start_process"]; !ok {
-		t.Fatalf("local profile must keep start_process as a hidden capability")
+	for _, legacy := range []string{"bash", "start_process", "run_shell", "run_test", "git"} {
+		if _, ok := s.HiddenTools[legacy]; ok {
+			t.Fatalf("local profile must not keep %s in hidden profile output", legacy)
+		}
 	}
 }
 
@@ -312,8 +311,8 @@ func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
 	if got, ok := s.ToolForCapability(capability.CapabilityFileEdit); !ok || got != "apply_patch" {
 		t.Fatalf("ToolForCapability(file.edit) = %q,%v, want apply_patch,true", got, ok)
 	}
-	if _, ok := s.HiddenToolForCapability(capability.CapabilityCommandBash); !ok {
-		t.Fatal("Codex surface must keep run_test as a hidden command.bash implementation")
+	if hidden, ok := s.HiddenToolForCapability(capability.CapabilityCommandBash); ok {
+		t.Fatalf("Codex surface must not keep hidden command.bash tools, got %s", hidden)
 	}
 }
 
@@ -332,6 +331,9 @@ func TestNoProfileAdvertisesRunTestStartProcessOrGitAsDefault(t *testing.T) {
 		for _, name := range []string{"run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
 			if _, visible := s.Tools[name]; visible {
 				t.Fatalf("%s/%s: surface must not advertise %s as a default tool", p.ProviderName, p.Model, name)
+			}
+			if _, hidden := s.HiddenTools[name]; hidden {
+				t.Fatalf("%s/%s: surface must not keep %s in hidden profile output", p.ProviderName, p.Model, name)
 			}
 		}
 		for _, hiddenName := range []string{"run_shell", "run_test", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process", "structured git tool"} {

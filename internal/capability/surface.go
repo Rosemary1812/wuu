@@ -29,12 +29,11 @@ type Surface struct {
 	// the model under this surface.
 	Tools map[string]Capability
 
-	// HiddenTools maps tool names that the toolkit still
-	// implements but does not advertise to the model under this
-	// surface. They remain reachable through tool_search
-	// (progressive disclosure) or through internal callers (e.g.
-	// run_test as a bash result post-processor, start_process as a
-	// managed-process backend for bash background mode).
+	// HiddenTools maps profile companion tool names that are known
+	// to this compiled surface but are not advertised to the model.
+	// Ordinary legacy command tools are not part of the profile
+	// contract; the toolkit registry owns any purely internal
+	// implementation details.
 	HiddenTools map[string]Capability
 
 	// Capabilities is the ordered set of capabilities exposed to
@@ -139,18 +138,18 @@ func (s Surface) HiddenToolForCapability(c Capability) (string, bool) {
 // the app-server protocol. InitializeResult, runtime setting
 // updates, and Settings debug views all return this struct.
 type Summary struct {
-	ProfileName         string              `json:"profile_name"`
-	Provider            string              `json:"provider"`
-	Model               string              `json:"model"`
-	ToolNames           []string            `json:"tool_names"`
-	HiddenToolNames     []string            `json:"hidden_tool_names"`
-	Capabilities        []string            `json:"capabilities"`
-	HiddenCapabilities  []string            `json:"hidden_capabilities"`
-	EditPrimitive       string              `json:"edit_primitive"`
-	BashFirst           bool                `json:"bash_first"`
-	ToolCapabilityMap   map[string]string   `json:"tool_capability_map"`
-	HiddenCapabilityMap map[string]string   `json:"hidden_capability_map"`
-	SystemFragment      string              `json:"system_fragment,omitempty"`
+	ProfileName         string            `json:"profile_name"`
+	Provider            string            `json:"provider"`
+	Model               string            `json:"model"`
+	ToolNames           []string          `json:"tool_names"`
+	HiddenToolNames     []string          `json:"hidden_tool_names"`
+	Capabilities        []string          `json:"capabilities"`
+	HiddenCapabilities  []string          `json:"hidden_capabilities"`
+	EditPrimitive       string            `json:"edit_primitive"`
+	BashFirst           bool              `json:"bash_first"`
+	ToolCapabilityMap   map[string]string `json:"tool_capability_map"`
+	HiddenCapabilityMap map[string]string `json:"hidden_capability_map"`
+	SystemFragment      string            `json:"system_fragment,omitempty"`
 }
 
 // Summarize returns a compact summary of the surface. The summary

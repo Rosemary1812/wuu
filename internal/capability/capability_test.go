@@ -37,12 +37,12 @@ func TestSurfaceToolForCapabilityRoundTrip(t *testing.T) {
 	s := Surface{
 		ProfileName: "test",
 		Tools: map[string]Capability{
-			"read_file": CapabilityFileRead,
-			"edit_file": CapabilityFileEdit,
+			"read_file":   CapabilityFileRead,
+			"edit_file":   CapabilityFileEdit,
 			"apply_patch": CapabilityFileEdit,
 		},
 		HiddenTools: map[string]Capability{
-			"run_test": CapabilityCommandBash,
+			"internal_helper": CapabilityCommandBash,
 		},
 		Capabilities:       []Capability{CapabilityFileRead, CapabilityFileEdit, CapabilityCommandBash},
 		HiddenCapabilities: nil,
@@ -52,8 +52,8 @@ func TestSurfaceToolForCapabilityRoundTrip(t *testing.T) {
 	} else if got != "edit_file" && got != "apply_patch" {
 		t.Fatalf("ToolForCapability(file.edit) = %q, want edit_file or apply_patch", got)
 	}
-	if got, ok := s.HiddenToolForCapability(CapabilityCommandBash); !ok || got != "run_test" {
-		t.Fatalf("HiddenToolForCapability(command.bash) = %q,%v, want run_test,true", got, ok)
+	if got, ok := s.HiddenToolForCapability(CapabilityCommandBash); !ok || got != "internal_helper" {
+		t.Fatalf("HiddenToolForCapability(command.bash) = %q,%v, want internal_helper,true", got, ok)
 	}
 	if !s.HasCapability(CapabilityFileRead) {
 		t.Fatal("HasCapability must report visible capabilities")
@@ -70,7 +70,7 @@ func TestSummarizeExposesAllContractFields(t *testing.T) {
 			"bash":        CapabilityCommandBash,
 		},
 		HiddenTools: map[string]Capability{
-			"run_test": CapabilityCommandBash,
+			"internal_helper": CapabilityCommandBash,
 		},
 		Capabilities:       []Capability{CapabilityFileEdit, CapabilityCommandBash},
 		HiddenCapabilities: []Capability{},
@@ -89,7 +89,7 @@ func TestSummarizeExposesAllContractFields(t *testing.T) {
 	if sum.ToolCapabilityMap["apply_patch"] != string(CapabilityFileEdit) {
 		t.Fatalf("ToolCapabilityMap[apply_patch] = %q, want %q", sum.ToolCapabilityMap["apply_patch"], CapabilityFileEdit)
 	}
-	if sum.HiddenCapabilityMap["run_test"] != string(CapabilityCommandBash) {
-		t.Fatalf("HiddenCapabilityMap[run_test] = %q, want %q", sum.HiddenCapabilityMap["run_test"], CapabilityCommandBash)
+	if sum.HiddenCapabilityMap["internal_helper"] != string(CapabilityCommandBash) {
+		t.Fatalf("HiddenCapabilityMap[internal_helper] = %q, want %q", sum.HiddenCapabilityMap["internal_helper"], CapabilityCommandBash)
 	}
 }

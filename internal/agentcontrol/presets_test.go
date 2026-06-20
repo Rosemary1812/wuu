@@ -143,7 +143,7 @@ func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
 	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace)
 	for _, want := range []string{
 		"Treat shell commands as non-interactive",
-		"Use run_shell for normal git status/diff/log/add/commit workflows",
+		"Use bash for normal git status/diff/log/add/commit workflows",
 		"stage intended files with explicit paths",
 		"git restore --staged",
 		"`git commit -m`",
@@ -153,6 +153,11 @@ func TestComposeWorkerSystemPrompt_TeachesNonInteractiveGit(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("worker system prompt missing non-interactive git guidance %q", want)
+		}
+	}
+	for _, old := range []string{"Use run_shell", "structured git tool", "run_test"} {
+		if strings.Contains(got, old) {
+			t.Fatalf("worker system prompt must not teach legacy command path %q:\n%s", old, got)
 		}
 	}
 }
