@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -57,6 +58,57 @@ func TestSetActiveProfileCompilesAndExposesBashForAllStandardProfiles(t *testing
 		if !containsProfileDef(defs, "bash") {
 			t.Fatalf("%s/%s: Definitions must include bash, got %v", tt.provider, tt.model, sortedProfileDefNames(defs))
 		}
+	}
+}
+
+func TestActiveProfileAllowsDeferredMCPThroughToolSearch(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name:   "mcp_docs_search",
+			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
+			result: `{"action":"mcp_docs_search"}`,
+		},
+	)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+
+	if containsProfileDef(kit.Definitions(), "mcp_docs_search") {
+		t.Fatal("MCP tool should not be visible before tool_search")
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("unloaded MCP tool should ask for tool_search, got %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"docs search"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if !containsString(parsed.ExposedTools, "mcp_docs_search") {
+		t.Fatalf("tool_search did not expose MCP tool: %s", resp)
+	}
+	if !containsProfileDef(kit.Definitions(), "mcp_docs_search") {
+		t.Fatal("activated MCP tool should be visible under MCP-capable active profile")
+	}
+	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("activated MCP tool should execute: %v", err)
+	}
+	if !strings.Contains(out, "mcp_docs_search") {
+		t.Fatalf("unexpected MCP result: %s", out)
 	}
 }
 

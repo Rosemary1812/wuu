@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -87,6 +88,46 @@ func TestExtensionSurfacePolicyHidesAndBlocksDeferredMCPTools(t *testing.T) {
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
 	if err == nil || !strings.Contains(err.Error(), "error_kind=extension_surface_denied") {
 		t.Fatalf("expected direct MCP execution denial, got %v", err)
+	}
+}
+
+func TestExtensionSurfacePolicyBlocksMCPEvenWhenProfileAllowsCapability(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name:   "mcp_docs_search",
+			def:    providers.ToolDefinition{Name: "mcp_docs_search", Description: "Search docs through MCP"},
+			result: `{"action":"mcp_docs_search"}`,
+		},
+	)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetExtensionSurfacePolicy(RestrictedExtensionSurfacePolicy())
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"docs search"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var parsed struct {
+		Matched      int      `json:"matched"`
+		ExposedTools []string `json:"exposed_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if parsed.Matched != 0 || len(parsed.ExposedTools) != 0 {
+		t.Fatalf("restricted extension policy should block MCP discovery: %+v", parsed)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=extension_surface_denied") {
+		t.Fatalf("expected extension surface denial, got %v", err)
 	}
 }
 

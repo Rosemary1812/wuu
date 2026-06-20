@@ -102,7 +102,11 @@ func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch
 		return nil
 	}
 	var matches []toolSearchMatch
+	surface := t.activeCompiledSurface()
 	for _, tool := range t.allKnownTools() {
+		if !activeSurfaceAllowsDynamicTool(surface, tool.Name()) {
+			continue
+		}
 		if t.toolExposure(tool.Name()) != ToolExposureDeferred {
 			continue
 		}

@@ -531,7 +531,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			// compiler can promote a Hidden-by-default tool (e.g.
 			// apply_patch on Codex) into a model-visible entry by
 			// listing it in surface.Tools.
-			if _, ok := visibleNames[d.Name]; !ok {
+			if _, ok := visibleNames[d.Name]; !ok && !activeSurfaceAllowsDynamicTool(surface, d.Name) {
 				continue
 			}
 			if isDeferredByDefault(d.Name) {
@@ -566,7 +566,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				if t.isToolDisabled(tool.Name()) {
 					continue
 				}
-				if _, ok := visibleNames[tool.Name()]; !ok {
+				if _, ok := visibleNames[tool.Name()]; !ok && !activeSurfaceAllowsDynamicTool(surface, tool.Name()) {
 					continue
 				}
 				if isDeferredByDefault(tool.Name()) && !t.isDeferredToolActive(tool.Name()) {
@@ -702,7 +702,12 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
 		if _, ok := surface.Tools[name]; !ok {
-			return fmt.Errorf("tool %q is not available in the active model surface", name)
+			if !activeSurfaceAllowsDynamicTool(surface, name) {
+				return fmt.Errorf("tool %q is not available in the active model surface", name)
+			}
+		}
+		if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
+			return nil
 		}
 		if isDeferredByDefault(name) && !t.isDeferredToolActive(name) {
 			return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
@@ -713,6 +718,28 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 		return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
 	}
 	return nil
+}
+
+func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) bool {
+	if surface.ProfileName == "" {
+		return true
+	}
+	if _, ok := surface.Tools[name]; ok {
+		return true
+	}
+	if classifyToolKind(name) == ToolKindMCP && surfaceHasVisibleCapability(surface, capability.CapabilityMCP) {
+		return true
+	}
+	return false
+}
+
+func surfaceHasVisibleCapability(surface capability.Surface, capName capability.Capability) bool {
+	for _, existing := range surface.Capabilities {
+		if existing == capName {
+			return true
+		}
+	}
+	return false
 }
 
 // LookupTool returns the Tool with the given name, or nil. This

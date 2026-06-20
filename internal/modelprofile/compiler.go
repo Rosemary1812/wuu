@@ -398,10 +398,11 @@ func addSkillTools(b *surfaceBuilder) {
 
 func addExtensionTools(b *surfaceBuilder) {
 	b.addVisible("report_listening_ports", capability.CapabilityPorts)
-	// MCP and discovery live in extension surface; the
-	// capabilities are reserved so permission routing can match
-	// them even before any MCP server is attached.
-	b.skipHidden(capability.CapabilityMCP)
+	// MCP has no stable built-in tool name because concrete MCP
+	// tools are discovered at runtime. The visible capability says
+	// this profile may load MCP tools through tool_search; the tools
+	// themselves are still deferred and policy-gated.
+	b.addVisibleCapability(capability.CapabilityMCP)
 }
 
 func addOpenAICodexEditTools(b *surfaceBuilder) {

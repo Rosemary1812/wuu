@@ -91,6 +91,9 @@ func TestOpenAICodexSurface(t *testing.T) {
 	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
 		t.Fatalf("Codex surface must advertise command.background through bash, got caps=%v", s.Capabilities)
 	}
+	if !hasCapability(s.Capabilities, capability.CapabilityMCP) {
+		t.Fatalf("Codex surface must advertise mcp capability for tool_search-gated extensions, got caps=%v", s.Capabilities)
+	}
 	for _, hidden := range []string{"run_test", "git"} {
 		if _, visible := s.Tools[hidden]; visible {
 			t.Fatalf("Codex surface must not advertise %s as a default tool", hidden)
@@ -181,6 +184,9 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	}
 	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
 		t.Fatalf("Claude surface must advertise command.background through bash, got caps=%v", s.Capabilities)
+	}
+	if !hasCapability(s.Capabilities, capability.CapabilityMCP) {
+		t.Fatalf("Claude surface must advertise mcp capability for tool_search-gated extensions, got caps=%v", s.Capabilities)
 	}
 	for _, hidden := range []string{"run_test", "git"} {
 		if _, visible := s.Tools[hidden]; visible {

@@ -118,6 +118,12 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 		return ToolExposureHidden
 	}
+	if classifyToolKind(name) == ToolKindMCP && t.activeCompiledSurface().ProfileName != "" {
+		if t.isDeferredToolActive(name) {
+			return ToolExposureDirect
+		}
+		return ToolExposureDeferred
+	}
 	if t.isDeferredToolActive(name) {
 		return ToolExposureDirect
 	}
