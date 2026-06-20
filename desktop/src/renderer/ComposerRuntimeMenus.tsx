@@ -527,30 +527,7 @@ export function AccessMenu({
   );
 }
 
-export function ModeMenu({
-  activeContext,
-  onSelectNoProject,
-  onOpenProject
-}: {
-  activeContext?: RuntimeContext;
-  onSelectNoProject: () => void;
-  onOpenProject: () => void;
-}): JSX.Element {
-  return (
-    <div className="composer-context-menu mode-menu" role="menu">
-      <button role="menuitem" type="button" onClick={onOpenProject}>
-        <FolderOpen className="icon-lg" />
-        <span>打开本地项目</span>
-        {activeContext?.kind === "project" ? <Check className="icon" /> : null}
-      </button>
-      <button role="menuitem" type="button" onClick={onSelectNoProject}>
-        <FolderX className="icon-lg" />
-        <span>不使用项目</span>
-        {activeContext?.kind === "no_project" ? <Check className="icon" /> : null}
-      </button>
-    </div>
-  );
-}
+
 
 export function BranchMenu({
   gitStatus,

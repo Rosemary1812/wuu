@@ -109,7 +109,6 @@ function renderComposer(props: {
         codexRuntimeRef={createRef<HTMLDivElement>()}
         menuOpen={false}
         accessMenuOpen={props.accessMenuOpen ?? false}
-        modeMenuOpen={false}
         branchMenuOpen={false}
         menuRef={createRef<HTMLDivElement>()}
         accessMenuRef={createRef<HTMLDivElement>()}
@@ -121,7 +120,6 @@ function renderComposer(props: {
         onSelectRuntimeModel={() => {}}
         onSelectRuntimeEffort={() => {}}
         onSelectPermissionMode={onSelectPermissionMode}
-        onToggleModeMenu={() => {}}
         onToggleBranchMenu={() => {}}
         onOpenSettings={() => {}}
         onOpenSkillsCatalog={() => {}}
@@ -305,7 +303,6 @@ describe("Composer send control", () => {
 
     expect(container.querySelector(".composer-context-bar")).toBeNull();
     expect(container.querySelector(".context-project-button")).toBeNull();
-    expect(container.querySelector(".context-mode-chip")).toBeNull();
   });
 
   it("keeps context chips in the hero composer before a session starts", () => {
@@ -315,7 +312,6 @@ describe("Composer send control", () => {
 
     expect(container.querySelector(".composer-context-bar")).not.toBeNull();
     expect(container.querySelector(".context-project-button")).not.toBeNull();
-    expect(container.querySelector(".context-mode-chip")).not.toBeNull();
   });
 
   it("inserts a selected skill slash command into the composer", async () => {

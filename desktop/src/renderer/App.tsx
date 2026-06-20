@@ -716,7 +716,6 @@ export function App(): JSX.Element {
     error: "",
     models: [],
   });
-  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
@@ -921,7 +920,6 @@ export function App(): JSX.Element {
       setProjectMenuOpen(false);
       setRuntimeMenuOpen(false);
       setAccessMenuOpen(false);
-      setModeMenuOpen(false);
       setBranchMenuOpen(false);
       setCodexRuntimeMenu(null);
     },
@@ -1218,12 +1216,11 @@ export function App(): JSX.Element {
         setProjectMenuOpen(false);
       }
       if (
-        (runtimeMenuOpen || modeMenuOpen || branchMenuOpen) &&
+        (runtimeMenuOpen || branchMenuOpen) &&
         !runtimeMenuRef.current?.contains(target) &&
         !isInsideFloatingMenu(target, "composer-runtime")
       ) {
         setRuntimeMenuOpen(false);
-        setModeMenuOpen(false);
         setBranchMenuOpen(false);
       }
       if (
@@ -1265,7 +1262,6 @@ export function App(): JSX.Element {
     environmentPanelHasRoom,
     environmentPanelMenu,
     environmentPanelOpen,
-    modeMenuOpen,
     projectMenuOpen,
     runDebugOpen,
     runtimeMenuOpen,
@@ -2097,7 +2093,6 @@ export function App(): JSX.Element {
         codexRuntimeRef={codexRuntimeRef}
         menuOpen={runtimeMenuOpen}
         accessMenuOpen={accessMenuOpen}
-        modeMenuOpen={modeMenuOpen}
         branchMenuOpen={branchMenuOpen}
         menuRef={runtimeMenuRef}
         accessMenuRef={accessMenuRef}
@@ -2105,29 +2100,19 @@ export function App(): JSX.Element {
         setProjectFilter={setProjectFilter}
         onToggleMenu={() => {
           setAccessMenuOpen(false);
-          setModeMenuOpen(false);
           setBranchMenuOpen(false);
           setCodexRuntimeMenu(null);
           setRuntimeMenuOpen((open) => !open);
         }}
         onToggleAccessMenu={() => {
           setRuntimeMenuOpen(false);
-          setModeMenuOpen(false);
           setBranchMenuOpen(false);
           setCodexRuntimeMenu(null);
           setAccessMenuOpen((open) => !open);
         }}
-        onToggleModeMenu={() => {
-          setRuntimeMenuOpen(false);
-          setAccessMenuOpen(false);
-          setBranchMenuOpen(false);
-          setCodexRuntimeMenu(null);
-          setModeMenuOpen((open) => !open);
-        }}
         onToggleBranchMenu={() => {
           setRuntimeMenuOpen(false);
           setAccessMenuOpen(false);
-          setModeMenuOpen(false);
           setCodexRuntimeMenu(null);
           setBranchMenuOpen((open) => !open);
         }}
@@ -2400,7 +2385,6 @@ export function App(): JSX.Element {
     setRuntimeMenuOpen(false);
     setAccessMenuOpen(false);
     setCodexRuntimeMenu(null);
-    setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setEnvironmentPanelMenu(null);
     setSettingsOpen(false);
@@ -2966,7 +2950,6 @@ export function App(): JSX.Element {
     setEnvironmentPanelDismissed(false);
     setRuntimeMenuOpen(false);
     setAccessMenuOpen(false);
-    setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setCodexRuntimeMenu(null);
   }
@@ -2999,7 +2982,6 @@ export function App(): JSX.Element {
     setRunDebugOpen(false);
     setRuntimeMenuOpen(false);
     setAccessMenuOpen(false);
-    setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setCodexRuntimeMenu(null);
   }
@@ -4783,7 +4765,6 @@ export function App(): JSX.Element {
     }
     setRuntimeMenuOpen(false);
     setAccessMenuOpen(false);
-    setModeMenuOpen(false);
     setBranchMenuOpen(false);
     setCodexRuntimeMenu((current) => (current === menu ? null : menu));
     if (isCodexProvider(state.initialized)) {

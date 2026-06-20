@@ -446,7 +446,6 @@
 .composer-context-bar svg + svg,
 .permission-chip svg + svg,
 .context-project-button svg + svg,
-.context-mode-chip svg + svg,
 .context-branch-chip svg + svg {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
@@ -627,7 +626,6 @@
   text-align: left;
 }
 
-.context-mode-chip,
 .context-branch-chip {
   display: inline-flex;
   max-width: min(360px, 44%);
@@ -641,16 +639,7 @@
   padding: 0 12px;
 }
 
-.context-mode-chip {
-  flex: 0 0 auto;
-  background: var(--surface-3);
-}
 
-.context-mode-chip:hover,
-.context-mode-chip[aria-expanded="true"] {
-  background: var(--surface-3);
-  color: var(--ink);
-}
 
 .context-branch-chip {
   flex: 0 1 auto;
@@ -663,7 +652,6 @@
   color: var(--ink);
 }
 
-.context-mode-chip span,
 .context-branch-chip span {
   min-width: 0;
   overflow: hidden;

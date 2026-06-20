@@ -63,7 +63,6 @@ import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSect
 import {
   AccessMenu,
   BranchMenu,
-  ModeMenu,
   ProjectPickerMenu,
   RuntimePicker,
   permissionModeFromSummary,
@@ -117,7 +116,6 @@ export function Composer({
   codexRuntimeRef,
   menuOpen,
   accessMenuOpen,
-  modeMenuOpen,
   branchMenuOpen,
   menuRef,
   accessMenuRef,
@@ -129,7 +127,6 @@ export function Composer({
   onSelectRuntimeModel,
   onSelectRuntimeEffort,
   onSelectPermissionMode,
-  onToggleModeMenu,
   onToggleBranchMenu,
   onOpenSettings,
   onOpenSkillsCatalog,
@@ -177,7 +174,6 @@ export function Composer({
   codexRuntimeRef: RefObject<HTMLDivElement | null>;
   menuOpen: boolean;
   accessMenuOpen: boolean;
-  modeMenuOpen: boolean;
   branchMenuOpen: boolean;
   menuRef: RefObject<HTMLDivElement | null>;
   accessMenuRef: RefObject<HTMLDivElement | null>;
@@ -189,7 +185,6 @@ export function Composer({
   onSelectRuntimeModel: (provider: string, model: string, variant?: string) => void;
   onSelectRuntimeEffort: (variant: string) => void;
   onSelectPermissionMode: (mode: PermissionMode) => void;
-  onToggleModeMenu: () => void;
   onToggleBranchMenu: () => void;
   onOpenSettings: () => void;
   onOpenSkillsCatalog: () => void;
@@ -610,17 +605,6 @@ export function Composer({
               <span>{contextLabel}</span>
               <ChevronDown aria-hidden="true" />
             </button>
-            <button
-              className="context-mode-chip"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={modeMenuOpen}
-              onClick={onToggleModeMenu}
-            >
-              <Laptop aria-hidden="true" />
-              <span>本地模式</span>
-              <ChevronDown aria-hidden="true" />
-            </button>
             {gitStatus?.is_repo && gitStatus.branch ? (
               <button
                 className="context-branch-chip"
@@ -634,22 +618,6 @@ export function Composer({
                 {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
                 <ChevronDown aria-hidden="true" />
               </button>
-            ) : null}
-            {modeMenuOpen ? (
-              <FloatingMenuPortal
-                anchorRef={menuRef}
-                owner="composer-runtime"
-                placement={menuPlacement}
-                align="left"
-                crossAxisOffset={170}
-                width={224}
-              >
-                <ModeMenu
-                  activeContext={activeContext}
-                  onSelectNoProject={onSelectNoProject}
-                  onOpenProject={onOpenProject}
-                />
-              </FloatingMenuPortal>
             ) : null}
             {branchMenuOpen && gitStatus?.is_repo ? (
               <FloatingMenuPortal
