@@ -187,7 +187,7 @@
                                                                      
                                                                   
                                 
-  padding: 6px 0 0 0;
+  padding: var(--conversation-message-element-gap, 20px) 0 0 0;
 }
 
 .turn-process-fold-body-inner {
