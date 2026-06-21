@@ -1003,18 +1003,71 @@ export type SettingsUsageQuery = {
   range?: SettingsUsageRange;
 };
 
-// SettingsUsageResponse carries the aggregated usage snapshot returned
-// to the desktop. ModelBreakdowns is sorted by total context tokens
+// SettingsUsageMetrics is the headline number block shown at the top of
+// the desktop usage page. Every number is summed across token_usage rows
+// whose At timestamp falls inside the requested range. Prompt tokens
+// count input + cache_read (the prompt side); context tokens also add
+// output so the user sees the full token footprint per session.
+export type SettingsUsageMetrics = {
+  prompt_tokens: number;
+  context_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  cache_hit_rate: number;
+  turns: number;
+  agents: number;
+  date_range: [string, string];
+  active_days: number;
+};
+
+// SettingsUsageDay is one calendar day of token activity, bucketed by
+// the token_usage row's At timestamp. Days are emitted in ascending
+// date order; the desktop fills in the heatmap gaps locally so the
+// backend only ships days that actually saw activity.
+export type SettingsUsageDay = {
+  date: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  cache_hit_rate: number;
+  turns: number;
+  agents: number;
+};
+
+// SettingsUsageEntry is one recent token-spending record surfaced in
+// the "最近记录" list. Source distinguishes primary-session turns from
+// subagent runs so the UI can label them differently.
+export type SettingsUsageEntry = {
+  id: string;
+  source: "turn" | "agent";
+  title: string;
+  provider: string;
+  model: string;
+  at: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+};
+
+// SettingsUsageResponse is the single source of truth for the desktop
+// usage page. ModelBreakdowns is sorted by total context tokens
 // descending; empty Provider+Model entries are bucketed as "(unknown)"
-// in the UI. CacheHitRate is the prompt-cache hit rate weighted by
-// token count.
+// in the UI. Days carries the calendar-day series for the heatmap and
+// Entries carries the most recent N rows for the "最近记录" list —
+// both are derived from the same per-row token_usage trail so the
+// three views always sum to the same totals.
 export type SettingsUsageResponse = {
   range: SettingsUsageRange;
   total_sessions: number;
-  date_range: [string, string];
-  model_breakdowns: ModelUsage[];
-  cache_hit_rate: number;
   generated_at: string;
+  metrics: SettingsUsageMetrics;
+  model_breakdowns: ModelUsage[];
+  days: SettingsUsageDay[];
+  entries: SettingsUsageEntry[];
 };
 
 export type WuuDesktopApi = {

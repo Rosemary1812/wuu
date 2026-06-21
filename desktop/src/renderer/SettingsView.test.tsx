@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SettingsView, type SettingsUsageData } from "./SettingsView";
-import type { BuildInfoResult, InitializeResult, SettingsUsageRange, WuuDesktopApi } from "../shared/protocol";
+import { SettingsView } from "./SettingsView";
+import type {
+  BuildInfoResult,
+  InitializeResult,
+  SettingsUsageRange,
+  SettingsUsageResponse,
+  WuuDesktopApi
+} from "../shared/protocol";
 
 type GlobalWindow = typeof window & { wuu: WuuDesktopApi };
 
@@ -52,7 +58,7 @@ function baseInitialized(overrides: Partial<InitializeResult> = {}): InitializeR
 
 function renderSettings(props: {
   initialized: InitializeResult | undefined;
-  usage?: SettingsUsageData;
+  usage?: SettingsUsageResponse;
   usageRange?: SettingsUsageRange;
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
@@ -223,33 +229,42 @@ describe("SettingsView About section", () => {
       core: undefined,
       desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
     });
-    const usage: SettingsUsageData = {
-      inputTokens: 1000,
-      outputTokens: 200,
-      cacheCreationTokens: 20,
-      cacheReadTokens: 50,
-      turns: 1,
-      agents: 0,
-      buckets: [
+    const usage: SettingsUsageResponse = {
+      range: "all",
+      total_sessions: 1,
+      generated_at: "2026-06-18T12:00:00Z",
+      metrics: {
+        prompt_tokens: 1050,
+        context_tokens: 1250,
+        input_tokens: 1000,
+        output_tokens: 200,
+        cache_read_tokens: 50,
+        cache_creation_tokens: 20,
+        cache_hit_rate: 50 / 1050,
+        turns: 1,
+        agents: 0,
+        date_range: ["2026-06-18", "2026-06-18"],
+        active_days: 1,
+      },
+      model_breakdowns: [
         {
-          id: "openai\nfake-model",
           provider: "OpenAI API",
           model: "fake-model",
-          inputTokens: 1000,
-          outputTokens: 200,
-          cacheCreationTokens: 20,
-          cacheReadTokens: 50,
-          turns: 1,
-          agents: 0,
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_creation_tokens: 20,
+          cache_read_tokens: 50,
+          sessions: 1,
         },
       ],
       days: [
         {
           date: "2026-06-18",
-          inputTokens: 1000,
-          outputTokens: 200,
-          cacheCreationTokens: 20,
-          cacheReadTokens: 50,
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_creation_tokens: 20,
+          cache_read_tokens: 50,
+          cache_hit_rate: 50 / 1050,
           turns: 1,
           agents: 0,
         },
@@ -257,15 +272,15 @@ describe("SettingsView About section", () => {
       entries: [
         {
           id: "turn:turn-1",
-          kind: "turn",
+          source: "turn",
           title: "测试会话",
           provider: "OpenAI API",
           model: "fake-model",
-          date: "2026-06-18",
-          inputTokens: 1000,
-          outputTokens: 200,
-          cacheCreationTokens: 20,
-          cacheReadTokens: 50,
+          at: "2026-06-18T12:00:00Z",
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_creation_tokens: 20,
+          cache_read_tokens: 50,
         },
       ],
     };

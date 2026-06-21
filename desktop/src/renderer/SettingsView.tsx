@@ -17,71 +17,14 @@ import type {
   InitializeResult,
   MCPServerStatus,
   ProviderSummary,
-  RuntimeConnectionUpdate
+  RuntimeConnectionUpdate,
+  SettingsUsageDay,
+  SettingsUsageEntry,
+  SettingsUsageResponse
 } from "../shared/protocol";
 import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 
-export type SettingsUsageBucket = {
-  id: string;
-  provider: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  turns: number;
-  agents: number;
-};
-
-export type SettingsUsageDay = {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  turns: number;
-  agents: number;
-};
-
-export type SettingsUsageEntry = {
-  id: string;
-  kind: "turn" | "agent";
-  title: string;
-  provider: string;
-  model: string;
-  date?: string;
-  status?: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-};
-
-export type SettingsUsageData = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  turns: number;
-  agents: number;
-  buckets: SettingsUsageBucket[];
-  days: SettingsUsageDay[];
-  entries: SettingsUsageEntry[];
-};
-
 type SettingsPage = "general" | "usage";
-
-const EMPTY_USAGE: SettingsUsageData = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheCreationTokens: 0,
-  cacheReadTokens: 0,
-  turns: 0,
-  agents: 0,
-  buckets: [],
-  days: [],
-  entries: [],
-};
 
 export function SettingsView({
   initialized,
@@ -104,7 +47,7 @@ export function SettingsView({
 }: {
   initialized?: InitializeResult;
   running: boolean;
-  usage?: SettingsUsageData;
+  usage?: SettingsUsageResponse;
   usageRange: SettingsUsageRange;
   setUsageRange: (range: SettingsUsageRange) => void;
   showDebugControlsSetting: boolean;
@@ -641,7 +584,7 @@ export function SettingsView({
             </>
           ) : (
             <SettingsUsagePage
-              usage={usage ?? EMPTY_USAGE}
+              usage={usage}
               usageRange={usageRange}
               setUsageRange={setUsageRange}
             />
@@ -657,21 +600,18 @@ function SettingsUsagePage({
   usageRange,
   setUsageRange,
 }: {
-  usage: SettingsUsageData;
+  usage: SettingsUsageResponse | undefined;
   usageRange: SettingsUsageRange;
   setUsageRange: (range: SettingsUsageRange) => void;
 }): JSX.Element {
-  const contextTokens = usageContextTokens(usage);
-  const hitRate = cacheHitRate(usage);
-  const heatmap = buildCacheHeatmap(usage.days);
-  const hasUsage = contextTokens > 0 || usage.cacheCreationTokens > 0 || usage.entries.length > 0;
   const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
+  const heatmap = usage ? buildCacheHeatmap(usage.days) : [];
   return (
     <>
       <section className="settings-section" data-testid="settings-usage">
-        <div>
+        <div className="settings-usage-header">
           <h2>本地用量</h2>
-          <p>显示当前桌面已加载会话和子任务的 token 统计。</p>
+          <p>显示当前桌面已加载会话的 token 统计。</p>
         </div>
         <div
           className="settings-usage-range"
@@ -692,68 +632,99 @@ function SettingsUsagePage({
             </button>
           ))}
         </div>
-        <div className="settings-usage-metrics">
-          <UsageMetric label="上下文 token" value={contextTokens} detail="输入 + 缓存读取 + 输出" />
-          <UsageMetric label="输入 token" value={usage.inputTokens} detail={`${usage.turns} 轮主会话`} />
-          <UsageMetric label="输出 token" value={usage.outputTokens} detail={`${usage.agents} 个子任务`} />
-          <UsageMetric label="缓存命中率" value={formatPercent(hitRate)} detail={`缓存读取 ${formatTokenCount(usage.cacheReadTokens)}`} />
-          <UsageMetric label="缓存写入" value={usage.cacheCreationTokens} detail="供后续请求复用" />
-        </div>
+        {usage ? (
+          <div className="settings-usage-metrics">
+            <UsageMetric
+              label="上下文 token"
+              value={usage.metrics.context_tokens}
+              detail={`输入 ${formatTokenCount(usage.metrics.input_tokens)} · 缓存读取 ${formatTokenCount(usage.metrics.cache_read_tokens)}`}
+            />
+            <UsageMetric
+              label="输入 token"
+              value={usage.metrics.input_tokens}
+              detail={`${usage.metrics.turns} 轮主会话`}
+            />
+            <UsageMetric
+              label="输出 token"
+              value={usage.metrics.output_tokens}
+              detail={`${usage.metrics.agents} 个子任务`}
+            />
+            <UsageMetric
+              label="缓存命中率"
+              value={formatPercent(usage.metrics.cache_hit_rate)}
+              detail={`读取 ${formatTokenCount(usage.metrics.cache_read_tokens)} / 提示 ${formatTokenCount(usage.metrics.prompt_tokens)}`}
+            />
+            <UsageMetric
+              label="缓存写入"
+              value={usage.metrics.cache_creation_tokens}
+              detail="供后续请求复用"
+            />
+          </div>
+        ) : (
+          <div className="settings-usage-empty">加载中…</div>
+        )}
       </section>
 
-      <section className="settings-section">
-        <div>
-          <h2>模型使用</h2>
-          <p>用过的模型服务、模型名称和缓存命中情况。</p>
-        </div>
-        <div className="settings-card settings-usage-table-card">
-          {usage.buckets.length > 0 ? (
-            <table className="settings-usage-table">
-              <thead>
-                <tr>
-                  <th scope="col">模型</th>
-                  <th scope="col">上下文</th>
-                  <th scope="col">缓存命中</th>
-                  <th scope="col">输入</th>
-                  <th scope="col">输出</th>
-                  <th scope="col">记录</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usage.buckets.map((bucket) => (
-                  <tr key={bucket.id}>
-                    <td>
-                      <strong>{bucket.provider}</strong>
-                      <small>{bucket.model}</small>
-                    </td>
-                    <td>{formatTokenCount(usageContextTokens(bucket))}</td>
-                    <td>{formatPercent(cacheHitRate(bucket))}</td>
-                    <td>{formatTokenCount(bucket.inputTokens)}</td>
-                    <td>{formatTokenCount(bucket.outputTokens)}</td>
-                    <td>{formatUsageRecordCount(bucket)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="settings-usage-empty">暂无用量记录</div>
-          )}
-        </div>
-      </section>
+      {usage && (
+        <>
+          <section className="settings-section">
+            <div>
+              <h2>模型使用</h2>
+              <p>用过的模型服务、模型名称和缓存命中情况。</p>
+            </div>
+            <div className="settings-card settings-usage-table-card">
+              {usage.model_breakdowns.length > 0 ? (
+                <table className="settings-usage-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">模型</th>
+                      <th scope="col" className="settings-usage-num">上下文</th>
+                      <th scope="col" className="settings-usage-num">缓存命中</th>
+                      <th scope="col" className="settings-usage-num">输入</th>
+                      <th scope="col" className="settings-usage-num">输出</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usage.model_breakdowns.map((b) => {
+                      const ctx = b.input_tokens + b.cache_read_tokens + b.output_tokens;
+                      const prompt = b.input_tokens + b.cache_read_tokens;
+                      const rate = prompt > 0 ? b.cache_read_tokens / prompt : undefined;
+                      return (
+                        <tr key={`${b.provider}\n${b.model}`}>
+                          <td>
+                            <strong>{b.provider || "(未知服务)"}</strong>
+                            <small>{b.model || "(未知模型)"}</small>
+                          </td>
+                          <td className="settings-usage-num">{formatTokenCount(ctx)}</td>
+                          <td className="settings-usage-num">
+                            <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
+                              {formatPercent(rate)}
+                            </span>
+                          </td>
+                          <td className="settings-usage-num">{formatTokenCount(b.input_tokens)}</td>
+                          <td className="settings-usage-num">{formatTokenCount(b.output_tokens)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="settings-usage-empty">暂无用量记录</div>
+              )}
+            </div>
+          </section>
 
-      <section className="settings-section">
-        <div>
-          <h2>缓存命中热力图</h2>
-          <p>最近 12 周每天的缓存命中率。</p>
-        </div>
-        <div className="settings-card settings-cache-heatmap-card">
-          {hasUsage ? (
-            <>
+          <section className="settings-section">
+            <div>
+              <h2>缓存命中热力图</h2>
+              <p>最近 12 周每天的缓存命中率。</p>
+            </div>
+            <div className="settings-card settings-cache-heatmap-card">
               <div className="settings-cache-heatmap-summary">
-                <strong>{formatPercent(hitRate)}</strong>
-                <span>整体缓存命中率</span>
+                <strong>{formatPercent(usage.metrics.cache_hit_rate)}</strong>
+                <span>整体缓存命中率 · 活跃 {usage.metrics.active_days} 天</span>
                 <small>
-                  读取 {formatTokenCount(usage.cacheReadTokens)} · 写入 {formatTokenCount(usage.cacheCreationTokens)}
+                  读取 {formatTokenCount(usage.metrics.cache_read_tokens)} · 写入 {formatTokenCount(usage.metrics.cache_creation_tokens)}
                 </small>
               </div>
               <div className="settings-cache-heatmap" aria-label="缓存命中率热力图" role="grid">
@@ -775,43 +746,43 @@ function SettingsUsagePage({
                 ))}
                 <span>高</span>
               </div>
-            </>
-          ) : (
-            <div className="settings-usage-empty">暂无缓存命中数据</div>
-          )}
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <div>
-          <h2>最近记录</h2>
-          <p>主会话轮次和子任务的最近用量。</p>
-        </div>
-        <div className="settings-card">
-          {hasUsage ? (
-            <div className="settings-usage-entries">
-              {usage.entries.slice(0, 8).map((entry) => (
-                <div className="settings-usage-entry" key={entry.id}>
-                  <span>
-                    <strong>{entry.title}</strong>
-                    <small>{formatUsageEntryMeta(entry)}</small>
-                  </span>
-                  <span className="settings-usage-entry-value">{formatTokenCount(usageContextTokens(entry))}</span>
-                </div>
-              ))}
             </div>
-          ) : (
-            <div className="settings-usage-empty">暂无用量记录</div>
-          )}
-        </div>
-      </section>
+          </section>
+
+          <section className="settings-section">
+            <div>
+              <h2>最近记录</h2>
+              <p>主会话轮次的最近用量,按时间倒序。</p>
+            </div>
+            <div className="settings-card">
+              {usage.entries.length > 0 ? (
+                <div className="settings-usage-entries">
+                  {usage.entries.slice(0, 8).map((entry) => {
+                    const ctx = entry.input_tokens + entry.cache_read_tokens + entry.output_tokens;
+                    return (
+                      <div className="settings-usage-entry" key={entry.id}>
+                        <span>
+                          <strong>{entry.title}</strong>
+                          <small>{formatUsageEntryMeta(entry)}</small>
+                        </span>
+                        <span className="settings-usage-entry-value">{formatTokenCount(ctx)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="settings-usage-empty">暂无用量记录</div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </>
   );
 }
 
 type CacheHeatmapCell = SettingsUsageDay & {
   level: number;
-  hitRate?: number;
 };
 
 function UsageMetric({ label, value, detail }: { label: string; value: number | string; detail: string }): JSX.Element {
@@ -822,14 +793,6 @@ function UsageMetric({ label, value, detail }: { label: string; value: number | 
       <small>{detail}</small>
     </div>
   );
-}
-
-function usageContextTokens(usage: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-}): number {
-  return usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
 }
 
 function formatTokenCount(value: number): string {
@@ -849,22 +812,19 @@ function formatUsageRange(range: SettingsUsageRange): string {
   }
 }
 
-function cacheHitRate(usage: {
-  inputTokens: number;
-  cacheReadTokens: number;
-}): number | undefined {
-  const promptTokens = usage.inputTokens + usage.cacheReadTokens;
-  if (promptTokens <= 0) {
-    return undefined;
-  }
-  return usage.cacheReadTokens / promptTokens;
-}
-
 function formatPercent(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) {
     return "—";
   }
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function hitRateLevel(rate: number | undefined): number {
+  if (rate === undefined || rate <= 0) return 0;
+  if (rate < 0.25) return 1;
+  if (rate < 0.5) return 2;
+  if (rate < 0.75) return 3;
+  return 4;
 }
 
 function buildCacheHeatmap(days: SettingsUsageDay[]): CacheHeatmapCell[] {
@@ -874,50 +834,37 @@ function buildCacheHeatmap(days: SettingsUsageDay[]): CacheHeatmapCell[] {
   const cells: CacheHeatmapCell[] = [];
   for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
     const date = localDateKey(cursor);
-    const usage = byDate.get(date) ?? {
+    const day = byDate.get(date) ?? {
       date,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      cache_hit_rate: 0,
       turns: 0,
       agents: 0,
     };
-    const hitRate = cacheHitRate(usage);
     cells.push({
-      ...usage,
-      hitRate,
-      level: heatmapLevel(usage, hitRate),
+      ...day,
+      level: heatmapLevel(day),
     });
   }
   return cells;
 }
 
-function heatmapLevel(day: SettingsUsageDay, hitRate: number | undefined): number {
+function heatmapLevel(day: SettingsUsageDay): number {
   if (!hasUsageDayData(day)) {
     return 0;
   }
-  if (hitRate === undefined || hitRate <= 0) {
-    return 1;
-  }
-  if (hitRate < 0.25) {
-    return 1;
-  }
-  if (hitRate < 0.5) {
-    return 2;
-  }
-  if (hitRate < 0.75) {
-    return 3;
-  }
-  return 4;
+  return hitRateLevel(day.cache_hit_rate);
 }
 
 function hasUsageDayData(day: SettingsUsageDay): boolean {
   return (
-    day.inputTokens > 0 ||
-    day.outputTokens > 0 ||
-    day.cacheCreationTokens > 0 ||
-    day.cacheReadTokens > 0 ||
+    day.input_tokens > 0 ||
+    day.output_tokens > 0 ||
+    day.cache_creation_tokens > 0 ||
+    day.cache_read_tokens > 0 ||
     day.turns > 0 ||
     day.agents > 0
   );
@@ -927,7 +874,21 @@ function formatHeatmapTitle(day: CacheHeatmapCell): string {
   if (!hasUsageDayData(day)) {
     return `${day.date}：暂无用量`;
   }
-  return `${day.date}：缓存命中 ${formatPercent(day.hitRate)}，读取 ${formatTokenCount(day.cacheReadTokens)}，写入 ${formatTokenCount(day.cacheCreationTokens)}`;
+  return `${day.date}：缓存命中 ${formatPercent(day.cache_hit_rate)}，读取 ${formatTokenCount(day.cache_read_tokens)}，写入 ${formatTokenCount(day.cache_creation_tokens)}`;
+}
+
+function formatUsageEntryMeta(entry: SettingsUsageEntry): string {
+  const kind = entry.source === "agent" ? "子任务" : "主会话";
+  const when = entry.at ? ` · ${formatEntryTime(entry.at)}` : "";
+  return `${entry.provider || "(未知服务)"} · ${entry.model || "(未知模型)"} · ${kind}${when}`;
+}
+
+function formatEntryTime(at: string): string {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) {
+    return at;
+  }
+  return date.toLocaleString();
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -950,24 +911,6 @@ function localDateKey(date: Date): string {
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function formatUsageRecordCount(bucket: SettingsUsageBucket): string {
-  const pieces: string[] = [];
-  if (bucket.turns > 0) {
-    pieces.push(`${bucket.turns} 轮`);
-  }
-  if (bucket.agents > 0) {
-    pieces.push(`${bucket.agents} 子任务`);
-  }
-  return pieces.length > 0 ? pieces.join("，") : "—";
-}
-
-function formatUsageEntryMeta(entry: SettingsUsageEntry): string {
-  const kind = entry.kind === "agent" ? "子任务" : "主会话";
-  const status = entry.status ? ` · ${entry.status}` : "";
-  const date = entry.date ? ` · ${entry.date}` : "";
-  return `${entry.provider} · ${entry.model} · ${kind}${status}${date}`;
 }
 
 function formatBuildDate(iso: string): string {

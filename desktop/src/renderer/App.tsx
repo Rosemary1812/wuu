@@ -195,16 +195,8 @@ import {
   isCodexProvider,
   pullRequestUnavailableReason,
 } from "./RuntimeHelpers";
-import {
-  SettingsView,
-  type SettingsUsageBucket,
-  type SettingsUsageData,
-  type SettingsUsageEntry,
-} from "./SettingsView";
-import type {
-  SettingsUsageRange,
-  SettingsUsageResponse,
-} from "../shared/protocol";
+import { SettingsView } from "./SettingsView";
+import type { SettingsUsageRange, SettingsUsageResponse } from "../shared/protocol";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
@@ -331,18 +323,6 @@ function initialCollapsedProjectIDs(): Set<string> {
   }
 }
 
-type SettingsUsageTokenFields = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-};
-
-type SortableSettingsUsageEntry = SettingsUsageEntry & {
-  sortTime: number;
-  contextTokens: number;
-};
-
 function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
   if (event.kind !== "notification") {
     return false;
@@ -357,313 +337,6 @@ function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
   }
 }
 
-function adaptSettingsUsageResponse(
-  response: SettingsUsageResponse,
-): SettingsUsageData {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheCreationTokens = 0;
-  let cacheReadTokens = 0;
-  const buckets: SettingsUsageBucket[] = response.model_breakdowns.map((b) => {
-    inputTokens += b.input_tokens;
-    outputTokens += b.output_tokens;
-    cacheCreationTokens += b.cache_creation_tokens;
-    cacheReadTokens += b.cache_read_tokens;
-    return {
-      id: `${b.provider}\n${b.model}`,
-      provider: b.provider,
-      model: b.model,
-      inputTokens: b.input_tokens,
-      outputTokens: b.output_tokens,
-      cacheCreationTokens: b.cache_creation_tokens,
-      cacheReadTokens: b.cache_read_tokens,
-      turns: 1,
-      agents: 0,
-    };
-  });
-  return {
-    inputTokens,
-    outputTokens,
-    cacheCreationTokens,
-    cacheReadTokens,
-    turns: response.total_sessions,
-    agents: 0,
-    buckets,
-    days: [],
-    entries: [],
-  };
-}
-
-function buildSettingsUsageData(state: AppState): SettingsUsageData {
-  const usage: SettingsUsageData = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheCreationTokens: 0,
-    cacheReadTokens: 0,
-    turns: 0,
-    agents: 0,
-    buckets: [],
-    days: [],
-    entries: [],
-  };
-  const buckets = new Map<string, SettingsUsageBucket>();
-  const days = new Map<string, SettingsUsageData["days"][number]>();
-  const entries: SortableSettingsUsageEntry[] = [];
-  const threads = loadedSettingsUsageThreads(state);
-  const threadsByID = new Map(threads.map((thread) => [thread.id, thread]));
-  const fallbackProvider = nonEmptyLabel(state.initialized?.provider, "未知服务");
-  const fallbackModel = nonEmptyLabel(state.initialized?.model, "未知模型");
-
-  for (const [turnID, turnUsage] of Object.entries(state.turnTokenUsage)) {
-    const tokens = normalizeSettingsUsageTokens(turnUsage);
-    if (!hasSettingsUsageTokens(tokens)) {
-      continue;
-    }
-    const thread = threadsByID.get(turnUsage.threadID);
-    const provider = nonEmptyLabel(thread?.model_provider, fallbackProvider);
-    const model = nonEmptyLabel(thread?.model, fallbackModel);
-    const sortTime = latestTurnUsageSampleTime(turnUsage.samples) || parseTime(thread?.updated_at);
-    const date = dateKeyFromTime(sortTime);
-    addSettingsUsage(usage, buckets, provider, model, tokens, "turn");
-    addSettingsUsageDay(days, date, tokens, "turn");
-    entries.push({
-      id: `turn:${turnID}`,
-      kind: "turn",
-      title: thread ? nonEmptyLabel(threadDisplayTitle(thread), "主会话") : "主会话",
-      provider,
-      model,
-      date,
-      status: thread?.status === "in_progress" ? "运行中" : undefined,
-      ...tokens,
-      sortTime,
-      contextTokens: settingsUsageContextTokens(tokens),
-    });
-  }
-
-  const seenAgents = new Set<string>();
-  for (const thread of threads) {
-    for (const agent of thread.child_agents ?? []) {
-      const agentKey = agent.id || `${thread.id}:${agent.agent_path ?? agent.task_name ?? agent.description ?? ""}`;
-      if (seenAgents.has(agentKey)) {
-        continue;
-      }
-      seenAgents.add(agentKey);
-      const tokens = normalizeSettingsUsageTokens(agent);
-      if (!hasSettingsUsageTokens(tokens)) {
-        continue;
-      }
-      const provider = nonEmptyLabel(thread.model_provider, fallbackProvider);
-      const model = nonEmptyLabel(thread.model, fallbackModel);
-      const sortTime = parseTime(agent.completed_at) || parseTime(agent.started_at) || parseTime(thread.updated_at);
-      const date = dateKeyFromTime(sortTime);
-      addSettingsUsage(usage, buckets, provider, model, tokens, "agent");
-      addSettingsUsageDay(days, date, tokens, "agent");
-      entries.push({
-        id: `agent:${agentKey}`,
-        kind: "agent",
-        title: nonEmptyLabel(agent.task_name || agent.description, "子任务"),
-        provider,
-        model,
-        date,
-        status: settingsUsageAgentStatus(agent.status),
-        ...tokens,
-        sortTime,
-        contextTokens: settingsUsageContextTokens(tokens),
-      });
-    }
-  }
-
-  usage.buckets = [...buckets.values()].sort(
-    (a, b) => settingsUsageContextTokens(b) - settingsUsageContextTokens(a),
-  );
-  usage.days = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
-  usage.entries = entries
-    .sort((a, b) => b.sortTime - a.sortTime || b.contextTokens - a.contextTokens)
-    .map(({ sortTime: _sortTime, contextTokens: _contextTokens, ...entry }) => entry);
-  return usage;
-}
-
-function loadedSettingsUsageThreads(state: AppState): Thread[] {
-  const out: Thread[] = [];
-  const seen = new Set<string>();
-  const add = (thread: Thread | undefined): void => {
-    if (!thread || seen.has(thread.id)) {
-      return;
-    }
-    seen.add(thread.id);
-    out.push(thread);
-  };
-  for (const thread of state.threads) {
-    add(thread);
-  }
-  add(state.thread);
-  add(state.secondaryThread);
-  return out;
-}
-
-function normalizeSettingsUsageTokens(source: {
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
-  input_tokens?: number;
-  output_tokens?: number;
-  cache_creation_tokens?: number;
-  cache_read_tokens?: number;
-}): SettingsUsageTokenFields {
-  return {
-    inputTokens: usageNumber(source.inputTokens ?? source.input_tokens),
-    outputTokens: usageNumber(source.outputTokens ?? source.output_tokens),
-    cacheCreationTokens: usageNumber(source.cacheCreationTokens ?? source.cache_creation_tokens),
-    cacheReadTokens: usageNumber(source.cacheReadTokens ?? source.cache_read_tokens),
-  };
-}
-
-function addSettingsUsage(
-  usage: SettingsUsageData,
-  buckets: Map<string, SettingsUsageBucket>,
-  provider: string,
-  model: string,
-  tokens: SettingsUsageTokenFields,
-  kind: "turn" | "agent",
-): void {
-  usage.inputTokens += tokens.inputTokens;
-  usage.outputTokens += tokens.outputTokens;
-  usage.cacheCreationTokens += tokens.cacheCreationTokens;
-  usage.cacheReadTokens += tokens.cacheReadTokens;
-  if (kind === "turn") {
-    usage.turns += 1;
-  } else {
-    usage.agents += 1;
-  }
-  const bucketID = `${provider}\n${model}`;
-  const bucket =
-    buckets.get(bucketID) ??
-    {
-      id: bucketID,
-      provider,
-      model,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 0,
-      turns: 0,
-      agents: 0,
-    };
-  bucket.inputTokens += tokens.inputTokens;
-  bucket.outputTokens += tokens.outputTokens;
-  bucket.cacheCreationTokens += tokens.cacheCreationTokens;
-  bucket.cacheReadTokens += tokens.cacheReadTokens;
-  if (kind === "turn") {
-    bucket.turns += 1;
-  } else {
-    bucket.agents += 1;
-  }
-  buckets.set(bucketID, bucket);
-}
-
-function addSettingsUsageDay(
-  days: Map<string, SettingsUsageData["days"][number]>,
-  date: string | undefined,
-  tokens: SettingsUsageTokenFields,
-  kind: "turn" | "agent",
-): void {
-  if (!date) {
-    return;
-  }
-  const day =
-    days.get(date) ??
-    {
-      date,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 0,
-      turns: 0,
-      agents: 0,
-    };
-  day.inputTokens += tokens.inputTokens;
-  day.outputTokens += tokens.outputTokens;
-  day.cacheCreationTokens += tokens.cacheCreationTokens;
-  day.cacheReadTokens += tokens.cacheReadTokens;
-  if (kind === "turn") {
-    day.turns += 1;
-  } else {
-    day.agents += 1;
-  }
-  days.set(date, day);
-}
-
-function hasSettingsUsageTokens(tokens: SettingsUsageTokenFields): boolean {
-  return (
-    tokens.inputTokens > 0 ||
-    tokens.outputTokens > 0 ||
-    tokens.cacheCreationTokens > 0 ||
-    tokens.cacheReadTokens > 0
-  );
-}
-
-function settingsUsageContextTokens(tokens: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-}): number {
-  return tokens.inputTokens + tokens.cacheReadTokens + tokens.outputTokens;
-}
-
-function dateKeyFromTime(time: number): string | undefined {
-  if (!Number.isFinite(time) || time <= 0) {
-    return undefined;
-  }
-  return localDateKey(new Date(time));
-}
-
-function localDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function latestTurnUsageSampleTime(samples: { at: number }[] | undefined): number {
-  return samples && samples.length > 0 ? samples[samples.length - 1].at : 0;
-}
-
-function usageNumber(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.max(0, Math.trunc(value));
-}
-
-function nonEmptyLabel(value: string | undefined, fallback: string): string {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : fallback;
-}
-
-function parseTime(value: string | null | undefined): number {
-  if (!value) {
-    return 0;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function settingsUsageAgentStatus(status: string | undefined): string | undefined {
-  switch (status) {
-    case "running":
-      return "运行中";
-    case "completed":
-      return "已完成";
-    case "failed":
-      return "失败";
-    case "cancelled":
-    case "canceled":
-      return "已取消";
-    default:
-      return undefined;
-  }
-}
 
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
@@ -871,7 +544,7 @@ export function App(): JSX.Element {
   const queuedMessages = activePendingComposerMessages.queued;
   const guideMessages = activePendingComposerMessages.guides;
   const [usageRange, setUsageRange] = useState<SettingsUsageRange>("all");
-  const [settingsUsage, setSettingsUsage] = useState<SettingsUsageData | undefined>(
+  const [settingsUsage, setSettingsUsage] = useState<SettingsUsageResponse | undefined>(
     undefined,
   );
   useEffect(() => {
@@ -886,7 +559,7 @@ export function App(): JSX.Element {
         if (cancelled) {
           return;
         }
-        setSettingsUsage(adaptSettingsUsageResponse(response));
+        setSettingsUsage(response);
       })
       .catch(() => {
         if (cancelled) {
