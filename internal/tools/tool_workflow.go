@@ -774,7 +774,7 @@ func attachWorkflowGoal(env *Env, store *workflow.Store, run workflow.Run) (work
 }
 
 func initializeWorkflowGoalStatus(store *goalrunner.Store, state goalrunner.State, run workflow.Run) (goalrunner.State, error) {
-	message := "workflow run " + run.ID + " created"
+	message := workflowGoalStatusMessage(run)
 	switch run.Status {
 	case workflow.RunStateRunning:
 		step := goalrunner.StepPlan
@@ -799,12 +799,69 @@ func initializeWorkflowGoalStatus(store *goalrunner.Store, state goalrunner.Stat
 			Message:  firstWorkflowGoalText(run.Error, "workflow run failed"),
 		})
 	case workflow.RunStateCompleted:
-		return store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, message)
+		if workflowRunOwnsGoal(run, state) {
+			return store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, message)
+		}
+		createdAt := run.CompletedAt
+		if createdAt.IsZero() {
+			createdAt = run.UpdatedAt
+		}
+		return store.RecordExternalReport(goalrunner.ExternalReport{
+			Source:     "workflow",
+			SourceID:   run.ID + ":completed",
+			Outcome:    "completed",
+			Summary:    message,
+			ReportPath: run.FinalReportPath,
+			CreatedAt:  createdAt,
+			NextSteps:  []string{"inspect goal_status and complete the broader goal only when the user-visible objective is done"},
+		})
 	case workflow.RunStateCancelled:
+		if !workflowRunOwnsGoal(run, state) {
+			return store.AddFailure(goalrunner.Failure{
+				Step:     goalrunner.StepExecution,
+				Kind:     "workflow_cancelled",
+				Source:   "workflow",
+				SourceID: run.ID,
+				Message:  "workflow run " + run.ID + " was cancelled",
+			})
+		}
 		return store.SetStatus(goalrunner.StatusCancelled, state.CurrentStep, message)
 	default:
 		return state, nil
 	}
+}
+
+func workflowGoalStatusMessage(run workflow.Run) string {
+	runID := strings.TrimSpace(run.ID)
+	if runID == "" {
+		runID = "workflow"
+	}
+	switch run.Status {
+	case workflow.RunStateRunning:
+		return "workflow run " + runID + " running"
+	case workflow.RunStatePaused:
+		return "workflow run " + runID + " paused"
+	case workflow.RunStateFailed:
+		return "workflow run " + runID + " failed"
+	case workflow.RunStateCompleted:
+		return "workflow run " + runID + " completed"
+	case workflow.RunStateCancelled:
+		return "workflow run " + runID + " cancelled"
+	default:
+		return "workflow run " + runID + " created"
+	}
+}
+
+func workflowRunOwnsGoal(run workflow.Run, state goalrunner.State) bool {
+	runID := strings.TrimSpace(run.ID)
+	if runID == "" {
+		return false
+	}
+	goalID := strings.TrimSpace(run.GoalID)
+	if goalID == "" {
+		goalID = runID
+	}
+	return strings.TrimSpace(state.ID) == runID && goalID == runID
 }
 
 func syncWorkflowGoalStatus(run workflow.Run) (goalrunner.State, error) {

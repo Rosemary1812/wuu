@@ -318,7 +318,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 		if err != nil {
 			return "", err
 		}
-		return mustJSON(map[string]any{"action": action, "run": run})
+		return workflowControlRunResult(action, run, nil)
 
 	case "pause_run":
 		run, err := store.UpdateRunStatusWithDetails(args.RunID, workflow.RunStatusUpdate{
@@ -331,7 +331,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 		if err != nil {
 			return "", err
 		}
-		return mustJSON(map[string]any{"action": action, "run": run})
+		return workflowControlRunResult(action, run, nil)
 
 	case "resume_run":
 		previous, err := store.LoadRun(args.RunID)
@@ -377,9 +377,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 			}()
 			background = true
 		}
-		return mustJSON(map[string]any{
-			"action":             action,
-			"run":                run,
+		return workflowControlRunResult(action, run, map[string]any{
 			"background":         background,
 			"profile_resolution": profileResolution,
 		})
@@ -557,6 +555,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 			if err != nil {
 				return "", err
 			}
+			return workflowControlRunResult(action, run, map[string]any{"final_report_path": path})
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "final_report_path": path})
 
@@ -596,6 +595,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 			if err != nil {
 				return "", err
 			}
+			return workflowControlRunResult(action, run, map[string]any{"final_report_path": path, "content": report})
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "final_report_path": path, "content": report})
 
@@ -659,6 +659,32 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 	default:
 		return "", fmt.Errorf("unsupported workflow_control action %q", action)
 	}
+}
+
+func workflowControlRunResult(action string, run workflow.Run, extra map[string]any) (string, error) {
+	result := map[string]any{
+		"action": action,
+		"run":    run,
+	}
+	for key, value := range extra {
+		result[key] = value
+	}
+	if strings.TrimSpace(run.GoalDir) != "" {
+		state, err := syncWorkflowGoalStatus(run)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(state.ID) != "" {
+			result["goal_status"] = map[string]any{
+				"goal_id":    state.ID,
+				"goal_dir":   run.GoalDir,
+				"state_path": filepath.Join(run.GoalDir, "state.json"),
+				"status":     state.Status,
+				"step":       state.CurrentStep,
+			}
+		}
+	}
+	return mustJSON(result)
 }
 
 func persistAcceptedWorkflowMemoryCandidate(ctx context.Context, env *Env, candidate workflow.MemoryCandidate) map[string]any {

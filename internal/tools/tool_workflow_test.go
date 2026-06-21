@@ -292,6 +292,10 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	var final struct {
 		Run             workflow.Run `json:"run"`
 		FinalReportPath string       `json:"final_report_path"`
+		GoalStatus      struct {
+			GoalID string            `json:"goal_id"`
+			Status goalrunner.Status `json:"status"`
+		} `json:"goal_status"`
 	}
 	if err := json.Unmarshal([]byte(finalResp), &final); err != nil {
 		t.Fatalf("parse final response: %v", err)
@@ -299,9 +303,15 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if final.Run.Status != workflow.RunStateCompleted || final.FinalReportPath == "" {
 		t.Fatalf("unexpected final response: %+v", final)
 	}
+	if final.GoalStatus.GoalID != created.GoalID || final.GoalStatus.Status != goalrunner.StatusCompleted {
+		t.Fatalf("workflow-owned goal should complete with workflow run: %+v", final.GoalStatus)
+	}
 	createdGoalState, err = goalrunner.NewStore(created.GoalDir).LoadState()
 	if err != nil {
 		t.Fatalf("Load final workflow goal state: %v", err)
+	}
+	if createdGoalState.Status != goalrunner.StatusCompleted {
+		t.Fatalf("workflow-owned goal status = %s, want completed", createdGoalState.Status)
 	}
 	if !goalStateHasArtifact(createdGoalState, "workflow", created.RunID, "final_report", final.FinalReportPath) {
 		t.Fatalf("goal state missing workflow final report artifact ref: %+v", createdGoalState.Artifacts)
