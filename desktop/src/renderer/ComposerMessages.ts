@@ -1,5 +1,5 @@
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
-import type { InputFile, InputImage } from "../shared/protocol";
+import type { InputFile, InputImage, Turn } from "../shared/protocol";
 
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
@@ -230,4 +230,133 @@ function trimMiddle(value: string, maxLength: number): string {
   const left = Math.ceil((maxLength - 1) / 2);
   const right = Math.floor((maxLength - 1) / 2);
   return `${value.slice(0, left)}…${value.slice(value.length - right)}`;
+}
+
+/**
+ * Prefix that distinguishes client-side optimistic placeholders from real
+ * turn ids minted by the Go core. The renderer can use this to filter,
+ * drop, or otherwise special-case them before the real turn arrives.
+ */
+export const OPTIMISTIC_TURN_ID_PREFIX = "optimistic-turn-";
+
+function nextOptimisticTurnID(): string {
+  return `${OPTIMISTIC_TURN_ID_PREFIX}${nextComposerMessageID()}`;
+}
+
+/**
+ * Build an `in_progress` turn placeholder that mirrors the user's just-sent
+ * message. Inserting it into local state before the Go core round-trip
+ * completes lets the conversation surface "正在回复/处理" and the live
+ * timer immediately, instead of waiting for the first server-side turn
+ * notification.
+ */
+export function createOptimisticTurn(
+  message: QueuedComposerMessage,
+  nowMs: number,
+): Turn {
+  const id = nextOptimisticTurnID();
+  return {
+    id,
+    status: "in_progress",
+    started_at: new Date(nowMs).toISOString(),
+    items_view: "full",
+    items: [
+      {
+        id: `${id}-user`,
+        type: "user_message",
+        status: "completed",
+        text: message.text,
+        images: inputImagesFromComposer(message.images),
+        files: inputFilesFromComposer(message.files),
+      },
+    ],
+  };
+}
+
+/**
+ * Return the earlier of two ISO timestamps. Used to keep the optimistic
+ * started_at (which captures the user's click moment) when the real turn
+ * arrives with a slightly later server-side timestamp, so the live timer
+ * never appears to jump backwards. Accepts null/undefined to match
+ * Turn["started_at"] and returns the same shape so callers can assign the
+ * result back without coercion.
+ */
+export function earlierStartedAt(
+  a?: string | null,
+  b?: string | null,
+): string | null | undefined {
+  const aMs = a ? Date.parse(a) : Number.NaN;
+  const bMs = b ? Date.parse(b) : Number.NaN;
+  if (Number.isFinite(aMs) && Number.isFinite(bMs)) {
+    return aMs <= bMs ? a : b;
+  }
+  if (Number.isFinite(aMs)) {
+    return a;
+  }
+  if (Number.isFinite(bMs)) {
+    return b;
+  }
+  return undefined;
+}
+
+/**
+ * Drop an optimistic turn placeholder from a thread by id. Used on send
+ * failure so the user doesn't see a stuck "正在回复" turn that never
+ * receives a real response. A undefined id is a no-op so the helper is
+ * safe to call from error paths that may not have inserted a placeholder.
+ */
+export function dropOptimisticTurn<T extends { turns: Turn[] }>(
+  thread: T,
+  optimisticTurnID: string | undefined,
+): T {
+  if (!optimisticTurnID) {
+    return thread;
+  }
+  return {
+    ...thread,
+    turns: thread.turns.filter((turn) => turn.id !== optimisticTurnID),
+  };
+}
+
+/**
+ * Apply `dropOptimisticTurn` to every thread whose id matches. Useful
+ * from renderer-level error paths that hold a `Thread[]` and don't want
+ * to round-trip through AppState's `updateThreadByID` (which only accepts
+ * the full AppState).
+ */
+export function dropOptimisticTurnInThreads<T extends { turns: Turn[] }>(
+  threads: T[],
+  optimisticTurnID: string | undefined,
+): T[] {
+  if (!optimisticTurnID) {
+    return threads;
+  }
+  return threads.map((thread) => dropOptimisticTurn(thread, optimisticTurnID));
+}
+
+/**
+ * Replace an optimistic turn placeholder with the real turn returned by
+ * the Go core, preserving the earlier started_at so the live timer does
+ * not jump. If the optimistic placeholder is no longer in the thread
+ * (e.g. it was cleared by a concurrent action), the real turn is still
+ * inserted via `upsertTurn`.
+ */
+export function replaceOptimisticTurn<T extends { turns: Turn[] }>(
+  thread: T,
+  optimisticTurnID: string,
+  realTurn: Turn,
+  upsertTurn: (thread: T, turn: Turn) => T,
+): T {
+  const optimisticStartedAt = thread.turns.find(
+    (turn) => turn.id === optimisticTurnID,
+  )?.started_at;
+  const turnsWithoutOptimistic = thread.turns.filter(
+    (turn) => turn.id !== optimisticTurnID,
+  );
+  const merged: Turn = {
+    ...realTurn,
+    started_at:
+      earlierStartedAt(optimisticStartedAt, realTurn.started_at) ?? null,
+  };
+  return upsertTurn({ ...thread, turns: turnsWithoutOptimistic }, merged);
 }

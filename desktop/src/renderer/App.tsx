@@ -59,10 +59,14 @@ import {
   composerFileFromFile,
   composerImageFromFile,
   createComposerMessage,
+  createOptimisticTurn,
+  dropOptimisticTurn,
+  earlierStartedAt,
   inputFilesFromComposer,
   inputImagesFromComposer,
   isComposerImageFile,
   isPDFFile,
+  replaceOptimisticTurn,
   type ComposerFile,
   type ComposerImage,
   type QueuedComposerMessage,
@@ -4017,6 +4021,8 @@ export function App(): JSX.Element {
       running: true,
       status: "正在发送请求",
     }));
+    let optimisticTurnID: string | undefined;
+    let optimisticThreadID: string | undefined;
     try {
       const thread =
         targetThread ??
@@ -4062,12 +4068,38 @@ export function App(): JSX.Element {
             : current.activeSessionTabID,
         threads: upsertThread(current.threads, thread),
       }));
+      // Insert an optimistic in_progress turn before the IPC round-trip so
+      // the live "正在回复/处理" timer starts at the user's click moment
+      // instead of waiting for the server's first turn notification. The
+      // placeholder is replaced (or dropped on error) once the real turn
+      // arrives or the request fails.
+      const optimisticTurn = createOptimisticTurn(message, Date.now());
+      optimisticTurnID = optimisticTurn.id;
+      optimisticThreadID = thread.id;
+      appStateRef.current = updateThreadByID(
+        appStateRef.current,
+        thread.id,
+        (currentThread) => upsertTurn(currentThread, optimisticTurn),
+      );
+      setState((current) =>
+        updateThreadByID(
+          current,
+          thread.id,
+          (currentThread) => upsertTurn(currentThread, optimisticTurn),
+        ),
+      );
       const result = await window.wuu.startTurn(thread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
           setThreadForPane(current, targetPane, thread),
           thread.id,
-          (currentThread) => upsertTurn(currentThread, result.turn),
+          (currentThread) =>
+            replaceOptimisticTurn(
+              currentThread,
+              optimisticTurnID ?? result.turn.id,
+              result.turn,
+              upsertTurn,
+            ),
         ),
       );
       appendRunDebugEvent({
@@ -4088,13 +4120,29 @@ export function App(): JSX.Element {
         tone: "error",
         threadID: targetThread?.id,
       });
+      const droppedState =
+        optimisticTurnID && optimisticThreadID
+          ? updateThreadByID(
+              appStateRef.current,
+              optimisticThreadID,
+              (currentThread) =>
+                dropOptimisticTurn(currentThread, optimisticTurnID),
+            )
+          : appStateRef.current;
       appStateRef.current = {
-        ...appStateRef.current,
+        ...droppedState,
         running: false,
         status: errorMessage,
       };
       setState((current) => ({
-        ...current,
+        ...(optimisticTurnID && optimisticThreadID
+          ? updateThreadByID(
+              current,
+              optimisticThreadID,
+              (currentThread) =>
+                dropOptimisticTurn(currentThread, optimisticTurnID),
+            )
+          : current),
         running: false,
         status: errorMessage,
       }));
@@ -4199,13 +4247,39 @@ export function App(): JSX.Element {
       running: true,
       status: "正在发送请求",
     }));
+    let optimisticTurnID: string | undefined;
     try {
+      // Insert an optimistic in_progress turn before the IPC round-trip
+      // so the live "正在回复/处理" timer starts at the user's click
+      // moment instead of waiting for the server's first turn
+      // notification. The placeholder is replaced (or dropped on error)
+      // once the real turn arrives or the request fails.
+      const optimisticTurn = createOptimisticTurn(message, Date.now());
+      optimisticTurnID = optimisticTurn.id;
+      appStateRef.current = updateThreadByID(
+        appStateRef.current,
+        targetThread.id,
+        (thread) => upsertTurn(thread, optimisticTurn),
+      );
+      setState((current) =>
+        updateThreadByID(
+          current,
+          targetThread.id,
+          (thread) => upsertTurn(thread, optimisticTurn),
+        ),
+      );
       const result = await window.wuu.startTurn(targetThread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
           { ...current, activePane: pane },
           targetThread.id,
-          (thread) => upsertTurn(thread, result.turn),
+          (thread) =>
+            replaceOptimisticTurn(
+              thread,
+              optimisticTurnID ?? result.turn.id,
+              result.turn,
+              upsertTurn,
+            ),
         ),
       );
       appendRunDebugEvent({
@@ -4226,14 +4300,27 @@ export function App(): JSX.Element {
         tone: "error",
         threadID: targetThread.id,
       });
+      const droppedState = optimisticTurnID
+        ? updateThreadByID(
+            appStateRef.current,
+            targetThread.id,
+            (thread) => dropOptimisticTurn(thread, optimisticTurnID),
+          )
+        : appStateRef.current;
       appStateRef.current = {
-        ...appStateRef.current,
+        ...droppedState,
         activePane: pane,
         running: false,
         status: errorMessage,
       };
       setState((current) => ({
-        ...current,
+        ...(optimisticTurnID
+          ? updateThreadByID(
+              current,
+              targetThread.id,
+              (thread) => dropOptimisticTurn(thread, optimisticTurnID),
+            )
+          : current),
         activePane: pane,
         running: false,
         status: errorMessage,
@@ -4282,13 +4369,39 @@ export function App(): JSX.Element {
         status: "正在发送请求",
       }));
     }
+    let optimisticTurnID: string | undefined;
     try {
+      // Insert an optimistic in_progress turn before the IPC round-trip
+      // so the live "正在回复/处理" timer starts at the user's click
+      // moment instead of waiting for the server's first turn
+      // notification. The placeholder is replaced (or dropped on error)
+      // once the real turn arrives or the request fails.
+      const optimisticTurn = createOptimisticTurn(message, Date.now());
+      optimisticTurnID = optimisticTurn.id;
+      appStateRef.current = updateThreadByID(
+        appStateRef.current,
+        targetThread.id,
+        (thread) => upsertTurn(thread, optimisticTurn),
+      );
+      setState((current) =>
+        updateThreadByID(
+          current,
+          targetThread.id,
+          (thread) => upsertTurn(thread, optimisticTurn),
+        ),
+      );
       const result = await window.wuu.startTurn(targetThread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
           current,
           targetThread.id,
-          (thread) => upsertTurn(thread, result.turn),
+          (thread) =>
+            replaceOptimisticTurn(
+              thread,
+              optimisticTurnID ?? result.turn.id,
+              result.turn,
+              upsertTurn,
+            ),
           targetIsActive ? { running: true } : {},
         ),
       );
@@ -4314,13 +4427,26 @@ export function App(): JSX.Element {
           threadID: targetThread.id,
         });
       }
+      const droppedState = optimisticTurnID
+        ? updateThreadByID(
+            appStateRef.current,
+            targetThread.id,
+            (thread) => dropOptimisticTurn(thread, optimisticTurnID),
+          )
+        : appStateRef.current;
       appStateRef.current = {
-        ...appStateRef.current,
+        ...droppedState,
         running: targetIsActive ? false : appStateRef.current.running,
         status: errorMessage,
       };
       setState((current) => ({
-        ...current,
+        ...(optimisticTurnID
+          ? updateThreadByID(
+              current,
+              targetThread.id,
+              (thread) => dropOptimisticTurn(thread, optimisticTurnID),
+            )
+          : current),
         running: targetIsActive ? false : current.running,
         status: errorMessage,
       }));
