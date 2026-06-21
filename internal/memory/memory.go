@@ -81,7 +81,11 @@ func DefaultOptions() Options {
 // are returned in priority order:
 //
 //  1. User-level files (one per UserDirs entry × Filenames)
-//  2. Project files from project root → workspace root
+//  2. Project files from project root → workspace root. Within one project
+//     directory, AGENTS.md is the preferred shared instruction file when it is
+//     configured and present; CLAUDE.md is loaded only when configured AGENTS.md
+//     is absent. AGENTS.override.md is still loaded as a local override when
+//     present.
 //
 // Files are deduplicated by absolute path so the same file is never
 // counted twice when user dirs and the project tree overlap.
@@ -148,9 +152,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 			projectRoot = findProjectRoot(absRoot, opts.ProjectRootMarkers)
 			dirs := walkBetween(projectRoot, absRoot)
 			for _, dir := range dirs {
-				for _, name := range opts.Filenames {
-					add(filepath.Join(dir, name), "project")
-				}
+				addProjectInstructionFiles(dir, opts.Filenames, add)
 				if includeClaudeCodeMemory {
 					add(filepath.Join(dir, ".claude", "CLAUDE.md"), "project")
 					addRulesDir(filepath.Join(dir, ".claude", "rules"), "project", add)
@@ -167,6 +169,37 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 	}
 
 	return out
+}
+
+func addProjectInstructionFiles(dir string, filenames []string, add func(path, source string)) {
+	wanted := make(map[string]struct{}, len(filenames))
+	for _, name := range filenames {
+		wanted[name] = struct{}{}
+	}
+	_, wantsAgents := wanted["AGENTS.md"]
+	hasAgents := wantsAgents && fileExists(filepath.Join(dir, "AGENTS.md"))
+	if hasAgents {
+		add(filepath.Join(dir, "AGENTS.md"), "project")
+	}
+	if _, ok := wanted["CLAUDE.md"]; ok && !hasAgents {
+		add(filepath.Join(dir, "CLAUDE.md"), "project")
+	}
+	if _, ok := wanted["AGENTS.override.md"]; ok {
+		add(filepath.Join(dir, "AGENTS.override.md"), "project")
+	}
+	for _, name := range filenames {
+		switch name {
+		case "AGENTS.md", "CLAUDE.md", "AGENTS.override.md":
+			continue
+		default:
+			add(filepath.Join(dir, name), "project")
+		}
+	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func addRulesDir(dir, source string, add func(path, source string)) {

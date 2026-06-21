@@ -417,7 +417,7 @@ func workflowDefinitionNextSteps(def workflow.Definition) []string {
 	return []string{
 		"Use start_workflow with definition_name and driver=auto to start an agent-managed Workflow Run.",
 		"Use create_workflow directly only when the task explicitly requires the agent-managed path.",
-		"After create_workflow, list Agent Profiles, record the Workflow Team, spawn agents, await results, and bind them back with workflow_control.",
+		"After start_workflow returns driver=agent_managed, list Agent Profiles, record the Workflow Team, spawn agents, await results, and bind them back with workflow_control.",
 	}
 }
 

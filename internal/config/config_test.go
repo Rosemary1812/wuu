@@ -734,25 +734,25 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"Use Compose as your default way",
-		"choose the lightest suitable path",
-		"direct implementation, read-only planning, skill use, dynamic workflows, sub-agents, and memory",
-		"Do not ask the user to pick a work style first",
-		"Fast path:",
-		"Do not force brainstorms, workflows, or sub-agents",
+		"Choose the lightest path",
+		"do not ask the user to pick a work style first",
+		"Default to direct work",
+		"Use Compose as a decision discipline",
+		"Direct path:",
+		"Do not force workflows, Goals, or sub-agents",
 		"Planning path:",
-		"ask the user only for choices that are irreversible",
+		"the change touches architecture, security, data safety, or product behavior",
 		"Skill path:",
 		"load_skill",
 		"Goal path:",
 		"start_goal",
-		"spans multiple workflow runs",
+		"spans multiple workflow runs, sub-agent tasks, approvals, retries, or later resumption",
 		"Workflow path:",
 		"load_workflow and start_workflow with driver=auto",
-		"start_workflow creates the Goal binding",
-		"Delegation path:",
+		"creates a Goal binding for one self-contained run",
+		"Sub-agent path:",
 		"spawn_agent",
-		"Pass goal_id and goal_dir",
+		"independent investigation, parallel implementation slices, risky verification",
 		"Memory path:",
 		"session_memory",
 	} {
@@ -774,24 +774,24 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"Goal, workflow, and sub-agent closure",
-		"Use the lightest durable boundary",
-		"Call start_goal before orchestration only when the user-visible objective is broader than one workflow run or one child task",
-		"start_workflow; it creates or binds its own Goal state",
-		"Start reusable or ad hoc workflows with start_workflow and driver=auto",
-		"script means the script owns phases",
-		"agent_managed means you own those steps through workflow_control",
-		"record_workflow_team",
-		"spawn each worker with the workflow goal_id and goal_dir",
-		"await required outputs",
+		"Before claiming durable work is complete",
+		"goal_status",
 		"workflow_status",
-		"agent_report evidence",
-		"resolve await_agents warnings",
-		"completed workflow is evidence, not automatic completion",
-		"complete_goal only when the user-visible objective itself is done",
+		"await_agents output",
+		"A completed workflow or child task is evidence for a broader Goal, not automatic completion",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt missing goal/workflow closure guidance %q: %q", want, prompt)
+		}
+	}
+	for _, bad := range []string{
+		"record_workflow_team",
+		"spawn each worker with the workflow goal_id and goal_dir",
+		"phase(...)",
+		"spawnBatch([...])",
+	} {
+		if strings.Contains(prompt, bad) {
+			t.Fatalf("default system prompt should keep workflow execution details out of the core prompt %q: %q", bad, prompt)
 		}
 	}
 }
@@ -903,8 +903,8 @@ func TestDefaultSystemPrompt_AssistantMessagePhases(t *testing.T) {
 
 func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 	prompt := DefaultSystemPrompt()
-	if !strings.Contains(prompt, "spawn sub-agents") {
-		t.Fatalf("default system prompt must mention sub-agent spawning: %q", prompt)
+	if !strings.Contains(prompt, "Sub-agent path") {
+		t.Fatalf("default system prompt must mention sub-agent path: %q", prompt)
 	}
 	if !strings.Contains(prompt, "spawn_agent") {
 		t.Fatalf("default system prompt must mention spawn_agent: %q", prompt)
@@ -916,18 +916,11 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 		t.Fatalf("default system prompt must not mention old sub-agent fields: %q", prompt)
 	}
 	for _, want := range []string{
-		"delegation materially improves",
+		"independent investigation",
+		"parallel implementation slices",
+		"risky verification",
+		"separate context",
 		"Keep work local",
-		"Agent shape:",
-		"Workspace:",
-		"Waiting:",
-		"subagent_type='general-purpose'",
-		"subagent_type='verification'",
-		"run_in_background=true",
-		"isolation='worktree'",
-		"description and prompt",
-		"acceptance criteria",
-		"ownership does not overlap",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include sub-agent decision guidance %q: %q", want, prompt)

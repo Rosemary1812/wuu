@@ -111,7 +111,7 @@ func TestBuilder_AddMemory_DistinguishesDurableMemoryFromInstructions(t *testing
 	b.AddMemory(files)
 	result := b.Build()
 
-	for _, want := range []string{"markdown memory files", "Durable MEMORY.md files are saved context and facts", "verify time-sensitive"} {
+	for _, want := range []string{"Workspace instructions and memory", "Durable MEMORY.md files are saved context and facts", "verify time-sensitive"} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("memory prompt missing %q:\n%s", want, result)
 		}
@@ -169,7 +169,7 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"feature-delivery",
 		"multi-step run",
 		"durable state",
-		"Goal binding rule",
+		"Decision rules",
 		"lightest durable boundary",
 		"`start_goal`",
 		"broader than one workflow run",
@@ -177,28 +177,19 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"`goal_dir`",
 		"`goal_status`",
 		"`complete_goal`",
+		"Entry point",
 		"`start_workflow`",
 		"defaults to `auto`",
-		"selects `script` or `agent_managed`",
-		"script driver",
 		"`driver`",
-		"`agent_managed`",
-		"`spawn(...)`",
-		"`spawnBatch([...])`",
-		"`list_agent_profiles`",
 		"`workflow_control`",
-		"record_workflow_team",
-		"Workflow Team",
-		"Base Agent Brief Contract",
-		"Workflow context",
+		"`workflow_status`",
+		"tool descriptions",
+		"tool result `next_steps`",
+		"after a Workflow Run exists",
 		"`save_workflow`",
 		"`schedule_cron`",
-		"pause_run",
-		"retry_agent_run",
-		"restore_file_checkpoint",
 		"frontend_owner",
 		"qa_reviewer (required)",
-		"memory candidates",
 	} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("workflow prompt missing %q:\n%s", want, result)
@@ -210,6 +201,14 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"internal drivers",
 		"unified workflow entry point",
 		"Workflow Context Extension",
+		"Workflow context",
+		"`spawn(...)`",
+		"phase(",
+		"`spawnBatch([...])`",
+		"spawnBatch",
+		"Base Agent Brief Contract",
+		"record_workflow_team",
+		"list_agent_profiles",
 	} {
 		if strings.Contains(result, bad) {
 			t.Fatalf("workflow prompt should avoid awkward wording %q:\n%s", bad, result)

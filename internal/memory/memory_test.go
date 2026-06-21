@@ -150,6 +150,83 @@ func TestDiscover_AgentsOverrideTakesPrecedence(t *testing.T) {
 	}
 }
 
+func TestDiscover_ProjectAgentsSuppressesSameDirClaude(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, content := range map[string]string{
+		"AGENTS.md":          "agents",
+		"AGENTS.override.md": "override",
+		"CLAUDE.md":          "claude",
+	} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files := Discover(root, "", testOpts(nil))
+	if len(files) != 2 {
+		t.Fatalf("expected AGENTS.md and AGENTS.override.md only, got %d: %+v", len(files), files)
+	}
+	if files[0].Content != "agents" || files[1].Content != "override" {
+		t.Fatalf("unexpected instruction files: %+v", files)
+	}
+	for _, f := range files {
+		if f.Name == "CLAUDE.md" {
+			t.Fatalf("same-directory CLAUDE.md should not be loaded when AGENTS.md exists: %+v", files)
+		}
+	}
+}
+
+func TestDiscover_ProjectClaudeBeforeAgentsOverrideWithoutAgents(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, content := range map[string]string{
+		"CLAUDE.md":          "claude",
+		"AGENTS.override.md": "override",
+	} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files := Discover(root, "", testOpts(nil))
+	if len(files) != 2 {
+		t.Fatalf("expected CLAUDE.md and AGENTS.override.md, got %d: %+v", len(files), files)
+	}
+	if files[0].Name != "CLAUDE.md" || files[1].Name != "AGENTS.override.md" {
+		t.Fatalf("override should be loaded after base project instructions, got %+v", files)
+	}
+}
+
+func TestDiscover_CustomFilenamesClaudeNotSuppressedByUnwantedAgents(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, content := range map[string]string{
+		"AGENTS.md": "agents",
+		"CLAUDE.md": "claude",
+	} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opts := testOpts(nil)
+	opts.Filenames = []string{"CLAUDE.md"}
+
+	files := Discover(root, "", opts)
+	if len(files) != 1 {
+		t.Fatalf("expected only CLAUDE.md, got %d: %+v", len(files), files)
+	}
+	if files[0].Name != "CLAUDE.md" || files[0].Content != "claude" {
+		t.Fatalf("custom Filenames should be respected, got %+v", files)
+	}
+}
+
 func TestDiscover_MultipleUserDirs(t *testing.T) {
 	wuuDir := t.TempDir()
 	claudeDir := t.TempDir()
