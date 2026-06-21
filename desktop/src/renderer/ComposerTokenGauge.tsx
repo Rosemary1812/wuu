@@ -78,6 +78,12 @@ function speedColor(tps: number): string {
   return "var(--token-gauge-high)";
 }
 
+// Flame teardrop silhouette, also reused as the clip path that hides the
+// scrolling band texture outside the flame shape. Pointed at the apex,
+// wider in the middle, rounded at the base.
+const FLAME_TEARDROP_PATH =
+  "M 8 0 C 4 4, 2 12, 2 16 C 2 21, 6 22, 8 22 C 10 22, 14 21, 14 16 C 14 12, 12 4, 8 0 Z";
+
 export function ComposerTokenGauge({
   running,
   tokensPerSecond,
@@ -99,12 +105,11 @@ export function ComposerTokenGauge({
   // React state mirrors the state machine so the JSX re-renders on
   // transitions. The machine itself runs in the RAF tick.
   const [flamesActive, setFlamesActive] = useState(false);
-  // Unique gradient ids per instance, so the gauge can be rendered more
-  // than once (e.g. split-pane composer) without url(#…) collisions on
-  // the <defs> entries that drive the flame's outer and inner fills.
+  // Unique ids per instance so the gauge can be rendered more than once
+  // (e.g. split-pane composer) without url(#…) collisions on the SVG defs.
   const flameUid = useId();
-  const flameOuterGradId = `${flameUid}-flame-outer`;
-  const flameInnerGradId = `${flameUid}-flame-inner`;
+  const flameClipId = `${flameUid}-flame-clip`;
+  const flameBandsId = `${flameUid}-flame-bands`;
   const runningRef = useRef(running);
   const targetRef = useRef(0);
   const sampledAtRef = useRef<number | undefined>(sampledAt);
@@ -228,40 +233,60 @@ export function ComposerTokenGauge({
       >
         {flamesActive ? (
           <span className="composer-token-gauge-flame-wrap" aria-hidden="true">
-            <svg
-              viewBox="0 0 20 24"
-              className="composer-token-gauge-flame"
-            >
+            <svg viewBox="0 0 16 24" className="composer-token-gauge-flame">
               <defs>
+                <clipPath id={flameClipId}>
+                  <path d={FLAME_TEARDROP_PATH} />
+                </clipPath>
+                {/* 12 hard color stops repeating the 6-color Balatro ramp
+                    twice across a 48px-tall rect (2x the viewBox). Scrolling
+                    the rect by 24px (one color cycle) is a seamless loop. */}
                 <linearGradient
-                  id={flameOuterGradId}
+                  id={flameBandsId}
                   x1="0"
                   y1="0"
                   x2="0"
                   y2="1"
                 >
-                  <stop offset="0%" stopColor="#ffb061" />
-                  <stop offset="55%" stopColor="#ff7a2a" />
-                  <stop offset="100%" stopColor="#d94a0c" />
+                  <stop offset="0%"    stopColor="#fffae0" />
+                  <stop offset="7%"    stopColor="#fffae0" />
+                  <stop offset="9%"    stopColor="#ffd17a" />
+                  <stop offset="15%"   stopColor="#ffd17a" />
+                  <stop offset="17%"   stopColor="#ff8c2a" />
+                  <stop offset="23%"   stopColor="#ff8c2a" />
+                  <stop offset="25%"   stopColor="#e85a1a" />
+                  <stop offset="31%"   stopColor="#e85a1a" />
+                  <stop offset="33%"   stopColor="#8c1a00" />
+                  <stop offset="39%"   stopColor="#8c1a00" />
+                  <stop offset="41%"   stopColor="#2a0a00" />
+                  <stop offset="49%"   stopColor="#2a0a00" />
+                  <stop offset="51%"   stopColor="#fffae0" />
+                  <stop offset="57%"   stopColor="#fffae0" />
+                  <stop offset="59%"   stopColor="#ffd17a" />
+                  <stop offset="65%"   stopColor="#ffd17a" />
+                  <stop offset="67%"   stopColor="#ff8c2a" />
+                  <stop offset="73%"   stopColor="#ff8c2a" />
+                  <stop offset="75%"   stopColor="#e85a1a" />
+                  <stop offset="81%"   stopColor="#e85a1a" />
+                  <stop offset="83%"   stopColor="#8c1a00" />
+                  <stop offset="89%"   stopColor="#8c1a00" />
+                  <stop offset="91%"   stopColor="#2a0a00" />
+                  <stop offset="100%"  stopColor="#2a0a00" />
                 </linearGradient>
-                <radialGradient
-                  id={flameInnerGradId}
-                  cx="50%"
-                  cy="65%"
-                  r="55%"
-                >
-                  <stop offset="0%" stopColor="#fffae0" />
-                  <stop offset="100%" stopColor="#ffc66b" />
-                </radialGradient>
               </defs>
-              <path
-                d="M 10 0 C 8 5, 4 7, 4 14 C 4 20, 16 20, 16 14 C 16 7, 12 5, 10 0 Z"
-                fill={`url(#${flameOuterGradId})`}
-              />
-              <path
-                d="M 10 6 C 9 8, 7 10, 7 14 C 7 17, 13 17, 13 14 C 13 10, 11 8, 10 6 Z"
-                fill={`url(#${flameInnerGradId})`}
-              />
+              <g clipPath={`url(#${flameClipId})`}>
+                <g className="composer-token-gauge-flame-sway">
+                  <g className="composer-token-gauge-flame-scroll">
+                    <rect
+                      x="0"
+                      y="-24"
+                      width="16"
+                      height="48"
+                      fill={`url(#${flameBandsId})`}
+                    />
+                  </g>
+                </g>
+              </g>
             </svg>
           </span>
         ) : null}

@@ -126,6 +126,18 @@
   animation: composer-token-gauge-flame-flicker 360ms ease-in-out infinite;
 }
 
+.composer-token-gauge-flame-sway {
+  /* Slow horizontal drift, independent of the inner scroll. ~2.2s period
+     so the draft reads as ambient rather than nervous. */
+  animation: composer-token-gauge-flame-sway 2200ms ease-in-out infinite;
+}
+
+.composer-token-gauge-flame-scroll {
+  /* The actual "fire rises" motion. The 48px rect in the SVG scrolls up
+     by 24px per cycle (one full color cycle) for a seamless loop. */
+  animation: composer-token-gauge-flame-scroll 600ms linear infinite;
+}
+
 @keyframes composer-token-gauge-flame-flicker {
   /* Asymmetric stretch (taller-thinner → shorter-wider) so the flame
      looks like it is leaning in a draft, not breathing symmetrically. */
@@ -145,6 +157,28 @@
   75% {
     transform: scaleY(1.04) scaleX(0.98);
     opacity: 1;
+  }
+}
+
+@keyframes composer-token-gauge-flame-scroll {
+  /* The rect is 2x the viewBox tall (48px) and the gradient repeats its
+     6-color ramp every 24px, so translating -24px lands on the same
+     visual frame as the start. */
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-24px);
+  }
+}
+
+@keyframes composer-token-gauge-flame-sway {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(0.4px);
   }
 }
 
@@ -184,5 +218,9 @@
        frozen in place. */
     animation: none;
     opacity: 0.75;
+  }
+  .composer-token-gauge-flame-sway,
+  .composer-token-gauge-flame-scroll {
+    animation: none;
   }
 }
