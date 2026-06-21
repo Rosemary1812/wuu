@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
-import { ThreadRowTitle } from "./ThreadSidebar";
+import { ScratchThreadSection, ThreadRowTitle } from "./ThreadSidebar";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -181,5 +181,52 @@ describe("ThreadContextMenu", () => {
     });
     expect(onA).toHaveBeenCalledTimes(1);
     expect(onB).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe("ScratchThreadSection", () => {
+  function renderSection(props: {
+    onCreateScratchThread: () => void;
+  }): { button: HTMLButtonElement | null } {
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ScratchThreadSection
+          threads={[]}
+          activeID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          onSelect={() => {}}
+          onSelectChildAgent={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+          onCreateScratchThread={props.onCreateScratchThread}
+        />
+      );
+    });
+    return {
+      button: container.querySelector(
+        ".scratch-thread-add-button",
+      ) as HTMLButtonElement | null,
+    };
+  }
+
+  it("renders the '对话' section label", () => {
+    renderSection({ onCreateScratchThread: vi.fn() });
+    expect(
+      container.querySelector(".scratch-thread-label")?.textContent,
+    ).toBe("对话");
+  });
+
+  it("invokes onCreateScratchThread when the '+' button is clicked", () => {
+    const onCreate = vi.fn();
+    const { button } = renderSection({ onCreateScratchThread: onCreate });
+    expect(button).not.toBeNull();
+    act(() => {
+      button!.click();
+    });
+    expect(onCreate).toHaveBeenCalledTimes(1);
   });
 });

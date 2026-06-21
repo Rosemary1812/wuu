@@ -15,7 +15,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import type { Agent, Thread } from "../shared/protocol";
 import type { AppState } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
-import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
+import { PinnedThreadList, ProjectList, ScratchThreadSection } from "./ThreadSidebar";
 
 // Matches ConversationScrollState.CONVERSATION_SCROLLBAR_HIDE_DELAY_MS so
 // the sidebar scrollbar feels identical to the main conversation pane.
@@ -24,6 +24,7 @@ const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 700;
 export function AppSidebar({
   state,
   pinnedThreads,
+  scratchThreads,
   activeThreadID,
   pendingThreadID,
   pendingProjectID,
@@ -50,10 +51,12 @@ export function AppSidebar({
   onOpenProject,
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
+  onCreateScratchThread,
   onOpenSettings,
 }: {
   state: AppState;
   pinnedThreads: Thread[];
+  scratchThreads: Thread[];
   activeThreadID?: string;
   pendingThreadID?: string;
   pendingProjectID?: string;
@@ -80,6 +83,7 @@ export function AppSidebar({
   onOpenProject: (id: string) => void;
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
+  onCreateScratchThread: () => void;
   onOpenSettings: () => void;
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
@@ -216,6 +220,22 @@ export function AppSidebar({
               onClearArchiveConfirm={onClearArchiveConfirm}
             />
           </section>
+        ) : null}
+
+        {scratchThreads.length > 0 ? (
+          <ScratchThreadSection
+            threads={scratchThreads}
+            activeID={activeThreadID}
+            pendingThreadID={pendingThreadID}
+            archiveConfirmThreadID={archiveConfirmThreadID}
+            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+            onSelect={onSelectThread}
+            onSelectChildAgent={onSelectChildAgent}
+            onTogglePinned={onTogglePinned}
+            onArchive={onArchiveThread}
+            onClearArchiveConfirm={onClearArchiveConfirm}
+            onCreateScratchThread={onCreateScratchThread}
+          />
         ) : null}
 
         <section className="project-list" aria-label="项目" ref={projectListRef}>

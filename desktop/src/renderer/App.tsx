@@ -144,6 +144,7 @@ import {
   persistActiveSessionTabDraft,
   pinnedThreads,
   projectThreads,
+  scratchThreads,
   queryTextsForThread,
   reduceServerEvent,
   removeSessionTab,
@@ -1077,6 +1078,7 @@ export function App(): JSX.Element {
     },
   );
   const sidebarPinnedThreads = pinnedThreads(state.threads);
+  const sidebarScratchThreads = scratchThreads(state.threads, state.projects);
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
       ? pendingViewSwitch.targetID
@@ -4630,6 +4632,8 @@ export function App(): JSX.Element {
       <AppSidebar
         state={state}
         pinnedThreads={sidebarPinnedThreads}
+        scratchThreads={sidebarScratchThreads}
+        onCreateScratchThread={() => void useNoProject(true)}
         activeThreadID={activeThreadID}
         pendingThreadID={visiblePendingThreadID}
         pendingProjectID={visiblePendingProjectID}
