@@ -3342,11 +3342,12 @@
   }
 }
 
-/* The whole process-cluster row sweeps once it's running: tool
-   segments, separators, and the thinking label share the same
-   shimmer, so the cluster reads as "this row is still working"
-   instead of mixing settled gray prose with a highlighted label. */
-.process-cluster-summary-line.is-streaming {
+/* The whole process-cluster row sweeps once it's running: the
+   gradient is sized to the row itself, so the bright stop moves
+   from the first tool segment across the separators, the thinking
+   label, and the chevron area as one continuous bar — instead of
+   each span redrawing the shimmer in its own local coordinates. */
+.process-cluster-row.is-streaming {
   background-image: linear-gradient(
     90deg,
     var(--conversation-process-control-color, #A4A4A5) 0%,
@@ -3365,8 +3366,16 @@
   animation: reasoning-shimmer 4.8s linear infinite;
 }
 
+/* The chevron inherits the row's transparent color and would
+   disappear. Pin it back to the base gray so the expand/collapse
+   affordance stays visible while the row sweeps. */
+.process-cluster-row.is-streaming .process-cluster-chevron {
+  color: var(--conversation-process-control-color, #A4A4A5);
+  opacity: 0.7;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .process-cluster-summary-line.is-streaming {
+  .process-cluster-row.is-streaming {
     background-image: none;
     color: var(--conversation-process-control-color, #A4A4A5);
     animation: none;

@@ -425,10 +425,11 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
 
   it("marks a live process cluster as actively thinking", () => {
     // Consecutive reasoning items collapse into one process cluster, and
-    // the whole summary row sweeps once it's running — tool segments,
-    // separators, and the thinking label all share the same shimmer so
-    // the cluster reads as "this row is still working". The individual
-    // reasoning records live inside the expandable body.
+    // the whole row sweeps once it's running — the gradient is sized to
+    // the row itself, so a single bright stop moves from the first tool
+    // segment across the separators, the thinking label, and the chevron
+    // area as one continuous bar. The individual reasoning records live
+    // inside the expandable body.
     const settledA = makeReasoning("earlier deliberation, finished");
     const settledB = makeReasoning("next deliberation, finished");
     const streamingNow = makeStreamingReasoning("thinking right now");
@@ -443,8 +444,8 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     const clusters = processClusterFolds(container);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].hasAttribute("open")).toBe(false);
-    const summary = clusters[0].querySelector(".process-cluster-summary-line");
-    expect(summary?.classList.contains("is-streaming")).toBe(true);
+    const row = clusters[0].querySelector(".process-cluster-row");
+    expect(row?.classList.contains("is-streaming")).toBe(true);
     const label = clusters[0].querySelector(".process-cluster-reasoning-label");
     expect(label?.textContent).toBe("正在思考");
   });

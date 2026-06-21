@@ -448,16 +448,12 @@ function ProcessClusterRow({
     .map((segment) => segment.error)
     .filter((error): error is string => Boolean(error));
   const failed = toolSegments.some((segment) => segment.status === "failed");
-  const className = `process-cluster-row${entry.streaming ? " running" : ""}${
-    failed ? " failed" : ""
-  }`;
+  const className = `process-cluster-row${
+    entry.streaming ? " running is-streaming" : ""
+  }${failed ? " failed" : ""}`;
 
   const summary = (
-    <span
-      className={`process-cluster-summary-line${
-        entry.streaming ? " is-streaming" : ""
-      }`}
-    >
+    <span className="process-cluster-summary-line">
       {toolSegments.map((segment, index) => (
         <ProcessClusterSegmentView
           key={segment.id}
