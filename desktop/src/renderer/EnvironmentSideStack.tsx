@@ -6,7 +6,6 @@ import {
   type BackgroundProcessItem,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
-  type EnvironmentSourceItem,
 } from "./EnvironmentPanel";
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
 import { QueryHistoryPopover } from "./QueryHistoryPopover";
@@ -20,7 +19,6 @@ export function EnvironmentSideStack({
   motionState,
   activeProject,
   planUpdate,
-  sourceItems,
   backgroundProcesses,
   stoppingProcessIDs,
   activeMenu,
@@ -49,7 +47,6 @@ export function EnvironmentSideStack({
   motionState: EnvironmentPanelMotionState;
   activeProject?: DesktopProject;
   planUpdate?: PlanUpdate;
-  sourceItems: EnvironmentSourceItem[];
   backgroundProcesses: BackgroundProcessItem[];
   stoppingProcessIDs: Set<string>;
   activeMenu: EnvironmentPanelMenu;
@@ -84,7 +81,6 @@ export function EnvironmentSideStack({
         activeContext={state.activeContext}
         activeProject={activeProject}
         planUpdate={planUpdate}
-        sourceItems={sourceItems}
         backgroundProcesses={backgroundProcesses}
         stoppingProcessIDs={stoppingProcessIDs}
         activeMenu={activeMenu}

@@ -481,14 +481,6 @@
   width: 344px;
 }
 
-.environment-side-menu.sources {
-  right: 14px;
-  bottom: 46px;
-  transform-origin: bottom right;
-  --menu-enter-x: 0;
-  --menu-enter-y: 5px;
-}
-
 .environment-side-label {
   color: var(--ink-faint);
   font-size: var(--font-body);
@@ -496,8 +488,7 @@
   padding: 6px 8px 8px;
 }
 
-.environment-side-menu button,
-.environment-source-item {
+.environment-side-menu button {
   display: grid;
   min-width: 0;
   min-height: 36px;
@@ -517,14 +508,11 @@
   background: var(--menu-hover);
 }
 
-.environment-side-menu button svg,
-.environment-source-item svg {
+.environment-side-menu button svg {
   color: var(--ink-tertiary);
 }
 
-.environment-side-menu button span,
-.environment-source-item span,
-.environment-source-item strong {
+.environment-side-menu button span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -595,29 +583,6 @@
   border-radius: var(--radius-sm);
   background: #efefec;
   padding: 0;
-}
-
-.environment-source-item {
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
-  min-height: 48px;
-  padding: 7px 9px;
-}
-
-.environment-source-item div {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.environment-source-item strong {
-  font-size: var(--font-ui);
-}
-
-.environment-source-item span {
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
 }
 
 .modal-backdrop {

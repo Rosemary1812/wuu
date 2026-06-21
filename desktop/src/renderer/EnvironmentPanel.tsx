@@ -3,7 +3,6 @@ import {
   Check,
   ChevronRight,
   CornerDownRight,
-  FileText,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -11,9 +10,7 @@ import {
   Github,
   GitBranch,
   Globe,
-  Image as ImageIcon,
   Laptop,
-  MessageSquarePlus,
   Plus,
   Search,
   Square,
@@ -30,17 +27,9 @@ import type {
   RuntimeContext,
   Thread
 } from "../shared/protocol";
-import type { ComposerFile, ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
 
-export type EnvironmentPanelMenu = "mode" | "branch" | "sources" | null;
+export type EnvironmentPanelMenu = "mode" | "branch" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
-
-export type EnvironmentSourceItem = {
-  id: string;
-  icon: "project" | "temporary" | "file" | "image" | "queue" | "guide";
-  title: string;
-  detail: string;
-};
 
 export type BackgroundProcessItem = {
   id: string;
@@ -57,92 +46,6 @@ export type BackgroundProcessItem = {
 };
 
 type JsonRecord = Record<string, unknown>;
-
-export function buildEnvironmentSourceItems({
-  activeContext,
-  activeProject,
-  selectedWorkspaceFile,
-  composerFiles,
-  composerImages,
-  queuedMessages,
-  guideMessages
-}: {
-  activeContext?: RuntimeContext;
-  activeProject?: DesktopProject;
-  selectedWorkspaceFile?: string;
-  composerFiles: ComposerFile[];
-  composerImages: ComposerImage[];
-  queuedMessages: QueuedComposerMessage[];
-  guideMessages: QueuedComposerMessage[];
-}): EnvironmentSourceItem[] {
-  const items: EnvironmentSourceItem[] = [];
-  if (activeContext?.kind === "project") {
-    items.push({
-      id: "project",
-      icon: "project",
-      title: activeProject?.name ?? "当前项目",
-      detail: activeContext.cwd
-    });
-  } else if (activeContext?.kind === "no_project") {
-    items.push({
-      id: "temporary",
-      icon: "temporary",
-      title: "临时工作区",
-      detail: activeContext.cwd
-    });
-  }
-  if (selectedWorkspaceFile) {
-    items.push({
-      id: "selected-file",
-      icon: "file",
-      title: "当前文件",
-      detail: selectedWorkspaceFile
-    });
-  }
-  if (composerImages.length > 0) {
-    items.push({
-      id: "composer-images",
-      icon: "image",
-      title: "输入图片",
-      detail: `${composerImages.length} 张`
-    });
-  }
-  if (composerFiles.length > 0) {
-    items.push({
-      id: "composer-files",
-      icon: "file",
-      title: "输入文件",
-      detail: `${composerFiles.length} 个`
-    });
-  }
-  if (guideMessages.length > 0) {
-    items.push({
-      id: "guide-messages",
-      icon: "guide",
-      title: "下轮引导",
-      detail: `${guideMessages.length} 条`
-    });
-  }
-  if (queuedMessages.length > 0) {
-    const imageCount = queuedMessages.reduce((count, message) => count + message.images.length, 0);
-    const fileCount = queuedMessages.reduce((count, message) => count + message.files.length, 0);
-    const detail = [
-      `${queuedMessages.length} 条`,
-      imageCount > 0 ? `${imageCount} 张图片` : "",
-      fileCount > 0 ? `${fileCount} 个文件` : ""
-    ]
-      .filter(Boolean)
-      .join("，");
-    items.push({
-      id: "queued-messages",
-      icon: "queue",
-      title: "排队消息",
-      detail
-    });
-  }
-  return items;
-}
-
 export function buildBackgroundProcessItems(
   thread?: Thread,
   managedProcesses: ManagedProcess[] = []
@@ -197,7 +100,6 @@ export function EnvironmentPanel({
   activeContext,
   activeProject,
   planUpdate,
-  sourceItems,
   backgroundProcesses,
   stoppingProcessIDs,
   activeMenu,
@@ -222,7 +124,6 @@ export function EnvironmentPanel({
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
   planUpdate?: PlanUpdate;
-  sourceItems: EnvironmentSourceItem[];
   backgroundProcesses: BackgroundProcessItem[];
   stoppingProcessIDs: Set<string>;
   activeMenu: EnvironmentPanelMenu;
@@ -348,15 +249,6 @@ export function EnvironmentPanel({
         ) : null}
       </div>
 
-      <button
-        className={`environment-footer-row${activeMenu === "sources" ? " active" : ""}`}
-        type="button"
-        onClick={() => toggleMenu("sources")}
-      >
-        <span>来源 {sourceItems.length}</span>
-        <ChevronRight className="icon" />
-      </button>
-
       {activeMenu === "mode" ? (
         <EnvironmentModeMenu
           activeContext={activeContext}
@@ -372,7 +264,6 @@ export function EnvironmentPanel({
           onCreateBranch={onCreateBranch}
         />
       ) : null}
-      {activeMenu === "sources" ? <EnvironmentSourcesMenu items={sourceItems} /> : null}
     </aside>
   );
 }
@@ -740,41 +631,4 @@ function EnvironmentBranchMenu({
       {error ? <div className="environment-side-error">{error}</div> : null}
     </div>
   );
-}
-
-function EnvironmentSourcesMenu({ items }: { items: EnvironmentSourceItem[] }): JSX.Element {
-  return (
-    <div className="environment-side-menu sources" role="menu">
-      <div className="environment-side-label">当前上下文</div>
-      {items.length === 0 ? <div className="environment-empty">没有额外来源</div> : null}
-      {items.map((item) => (
-        <div className="environment-source-item" key={item.id}>
-          <EnvironmentSourceIcon item={item} />
-          <div>
-            <strong>{item.title}</strong>
-            <span>{item.detail}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function EnvironmentSourceIcon({ item }: { item: EnvironmentSourceItem }): JSX.Element {
-  if (item.icon === "project") {
-    return <Folder className="icon" />;
-  }
-  if (item.icon === "temporary") {
-    return <FolderX className="icon" />;
-  }
-  if (item.icon === "file") {
-    return <FileText className="icon" />;
-  }
-  if (item.icon === "image") {
-    return <ImageIcon className="icon" />;
-  }
-  if (item.icon === "guide") {
-    return <CornerDownRight className="icon" />;
-  }
-  return <MessageSquarePlus className="icon" />;
 }

@@ -104,7 +104,6 @@ import {
   backgroundProcessIsLive,
   backgroundProcessNeedsAttention,
   buildBackgroundProcessItems,
-  buildEnvironmentSourceItems,
   type BackgroundProcessItem,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
@@ -1465,27 +1464,6 @@ export function App(): JSX.Element {
     "--environment-panel-edge-gap": "18px",
     "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`,
   } as CSSProperties;
-  const environmentSourceItems = useMemo(
-    () =>
-      buildEnvironmentSourceItems({
-        activeContext: state.activeContext,
-        activeProject,
-        selectedWorkspaceFile: activeWorkspaceFile,
-        composerFiles,
-        composerImages,
-        queuedMessages,
-        guideMessages,
-      }),
-    [
-      activeProject,
-      activeWorkspaceFile,
-      composerFiles,
-      composerImages,
-      guideMessages,
-      queuedMessages,
-      state.activeContext,
-    ],
-  );
   const pullRequestDisabledReason = pullRequestUnavailableReason(
     state.gitStatus,
   );
@@ -5234,7 +5212,6 @@ export function App(): JSX.Element {
           motionState={environmentPanelMotionState}
           activeProject={activeProject}
           planUpdate={activePlanUpdate}
-          sourceItems={environmentSourceItems}
           backgroundProcesses={backgroundProcesses}
           stoppingProcessIDs={stoppingProcessIDs}
           activeMenu={environmentPanelMenu}
