@@ -33,6 +33,15 @@ import { userFacingErrorForMessage } from "./UserFacingErrors";
 
 const REASONING_AUTO_SCROLL_THRESHOLD_PX = 16;
 const REASONING_SCROLLBAR_HIDE_DELAY_MS = 700;
+/**
+ * How long to wait after a turn completes (turn.status → completed)
+ * before auto-collapsing the process fold. Decouples the "turn is
+ * done" signal (label / timer / preview update at t=0) from the
+ * fold body collapse (starts at t=settling-delay), so the user
+ * sees one motion at a time instead of five state changes on the
+ * same frame.
+ */
+const PROCESS_FOLD_SETTLING_DELAY_MS = 600;
 
 export function AssistantTurnShell({
   turn,
@@ -165,7 +174,12 @@ function TurnProcessFold({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
-  const previousDefaultCollapsed = useRef(defaultCollapsed);
+  const [settled, setSettled] = useState(turn.status !== "in_progress");
+  // Tracks whether the user has manually toggled the fold during the
+  // current turn. If so, the auto-collapse on turn completion is
+  // suppressed — the user has expressed their own intent for the
+  // fold state, and we shouldn't override it.
+  const userToggledRef = useRef(false);
   const previousExpanded = useRef(expanded);
   const detailsID = `${turn.id}-process-fold`;
 
@@ -190,15 +204,30 @@ function TurnProcessFold({
   ).label;
   const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
 
-  // Once the parent (Shell) flips `defaultCollapsed` from false → true,
-  // collapse the fold; never re-open it automatically. The user is the
-  // only one who expands it from there.
+  // Two-stage auto-collapse on turn completion. The fold's "settle"
+  // (label / timer / preview update) and "collapse" (body shrinks)
+  // are decoupled so the user sees one motion at a time instead of
+  // five state changes on the same frame.
+  //   t=0      : turn.status flips in_progress → completed
+  //   t=settle : fold body starts collapsing
+  // If the user manually toggles the fold during the settle window,
+  // the auto-collapse is suppressed — they've expressed their own
+  // intent for the fold state.
   useEffect(() => {
-    if (!previousDefaultCollapsed.current && defaultCollapsed) {
-      setExpanded(false);
+    if (turn.status === "in_progress") {
+      setSettled(false);
+      userToggledRef.current = false;
+      return;
     }
-    previousDefaultCollapsed.current = defaultCollapsed;
-  }, [defaultCollapsed]);
+    if (settled || userToggledRef.current) {
+      return;
+    }
+    setSettled(true);
+    const collapseTimer = window.setTimeout(() => {
+      setExpanded(false);
+    }, PROCESS_FOLD_SETTLING_DELAY_MS);
+    return () => window.clearTimeout(collapseTimer);
+  }, [turn.status, settled]);
 
   // Watch the expanded → collapsed transition and fire the callback
   // once the CSS transition has settled (slightly longer than
@@ -211,13 +240,22 @@ function TurnProcessFold({
     if (previousExpanded.current && !expanded) {
       const timeoutId = window.setTimeout(() => {
         onCollapseComplete?.();
-      }, 280);
+      }, 440);
       previousExpanded.current = expanded;
       return () => window.clearTimeout(timeoutId);
     }
     previousExpanded.current = expanded;
     return undefined;
   }, [expanded, onCollapseComplete]);
+
+  // User-initiated toggle: record the intent so the auto-collapse
+  // step above doesn't fight the user. Without this, manually opening
+  // a fold during the settle window would still get slammed shut by
+  // the timer.
+  const handleToggle = useCallback(() => {
+    userToggledRef.current = true;
+    setExpanded((prev) => !prev);
+  }, []);
 
   const hasDetails = entries.length > 0;
   const hasPreview = Boolean(latestPreview);
@@ -274,11 +312,11 @@ return (
         tabIndex={0}
         aria-expanded={expanded}
         aria-controls={`${detailsID}-body`}
-        onClick={() => setExpanded(!expanded)}
+        onClick={handleToggle}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            setExpanded(!expanded);
+            handleToggle();
           }
         }}
         className="turn-process-toggle"
