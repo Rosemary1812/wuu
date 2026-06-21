@@ -3,8 +3,7 @@
   --token-gauge-mid: #d48345;
   --token-gauge-high: var(--accent-warm);
   --token-gauge-track: rgba(138, 142, 145, 0.24);
-  --token-gauge-flame-base: #ff7a2a;
-  --token-gauge-flame-tip: #ffd17a;
+  --token-gauge-flame-glow: rgba(255, 138, 60, 0.55);
 }
 
 .composer-token-gauge {
@@ -18,7 +17,7 @@
   line-height: 1;
   cursor: default;
   /* Allow the flame decoration to extend above the 32px cell when the
-     token-speed is high. The label reserves space for the flames via
+     token-speed is high. The label reserves space for the flame via
      padding + negative margin. */
   overflow: visible;
   transition:
@@ -87,85 +86,86 @@
   letter-spacing: 0;
   white-space: nowrap;
   color: currentColor;
-  /* Reserve a few pixels above the text for the flames decoration. The
-     matching negative margin keeps the text in its original vertical
-     position so the 32px-tall toolbar cell still looks right. */
-  padding-top: 12px;
-  margin-top: -12px;
+  /* Reserve vertical room for the flame (18px ≈ 16px flame + 2px gap).
+     The matching negative margin keeps the text vertically centered in
+     the 32px toolbar cell. */
+  padding-top: 18px;
+  margin-top: -18px;
   will-change: transform;
 }
 
 .composer-token-gauge-label-shake {
-  animation: composer-token-gauge-text-shake 110ms linear infinite;
+  /* Slower (~4.5 Hz) than the buzzy 110ms original so the label reads as
+     a "heat tremor" rather than a vibrating motor. */
+  animation: composer-token-gauge-text-shake 220ms linear infinite;
 }
 
-.composer-token-gauge-flames {
+.composer-token-gauge-flame-wrap {
   position: absolute;
   left: 50%;
   top: 0;
+  width: 12px;
+  height: 16px;
   transform: translateX(-50%);
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  width: 30px;
-  height: 10px;
   pointer-events: none;
 }
 
 .composer-token-gauge-flame {
-  width: 6px;
-  background: linear-gradient(
-    to top,
-    var(--token-gauge-flame-base) 0%,
-    var(--token-gauge-flame-tip) 100%
-  );
-  border-radius: 50% 50% 30% 30% / 70% 70% 30% 30%;
-  animation: composer-token-gauge-flame-flicker 320ms ease-in-out infinite
-    alternate;
-}
-
-.composer-token-gauge-flame:nth-child(1) {
-  height: 8px;
-  animation-delay: 0ms;
-}
-.composer-token-gauge-flame:nth-child(2) {
-  height: 10px;
-  animation-delay: 100ms;
-}
-.composer-token-gauge-flame:nth-child(3) {
-  height: 6px;
-  animation-delay: 200ms;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Let the drop-shadow render fully without being clipped by the SVG
+     viewport. */
+  overflow: visible;
+  /* Soft warm halo that sells the "hot" reading. The falloff distance
+     is small on purpose so the halo does not bleed into the dial. */
+  filter: drop-shadow(0 0 3px var(--token-gauge-flame-glow));
+  /* Anchor at the base so scaleY stretches the flame upward rather than
+     growing it from the center. */
+  transform-origin: 50% 100%;
+  animation: composer-token-gauge-flame-flicker 360ms ease-in-out infinite;
 }
 
 @keyframes composer-token-gauge-flame-flicker {
-  0% {
-    transform: scaleY(0.85) translateY(1px);
-    opacity: 0.85;
-  }
+  /* Asymmetric stretch (taller-thinner → shorter-wider) so the flame
+     looks like it is leaning in a draft, not breathing symmetrically. */
+  0%,
   100% {
-    transform: scaleY(1.05) translateY(-1px);
+    transform: scaleY(1) scaleX(1);
+    opacity: 0.95;
+  }
+  25% {
+    transform: scaleY(1.06) scaleX(0.96);
+    opacity: 1;
+  }
+  50% {
+    transform: scaleY(0.96) scaleX(1.03);
+    opacity: 0.9;
+  }
+  75% {
+    transform: scaleY(1.04) scaleX(0.98);
     opacity: 1;
   }
 }
 
 @keyframes composer-token-gauge-text-shake {
+  /* 4-step tremor at ~0.6px amplitude. Slightly larger than the first
+     cut so the heat is visible at a glance, but the slower period
+     (220ms vs 110ms) keeps it out of "buzzy vibration" territory. */
   0% {
     transform: translate(0, 0);
   }
-  20% {
-    transform: translate(0.4px, -0.3px);
+  25% {
+    transform: translate(0.6px, -0.4px);
   }
-  40% {
-    transform: translate(-0.3px, 0.4px);
+  50% {
+    transform: translate(-0.5px, 0.5px);
   }
-  60% {
-    transform: translate(0.3px, 0.3px);
-  }
-  80% {
-    transform: translate(-0.4px, -0.2px);
+  75% {
+    transform: translate(0.4px, 0.3px);
   }
   100% {
-    transform: translate(0.2px, -0.4px);
+    transform: translate(-0.3px, -0.4px);
   }
 }
 
@@ -180,8 +180,9 @@
     animation: none;
   }
   .composer-token-gauge-flame {
+    /* Keep the warm halo so the user still sees the "hot" cue, just
+       frozen in place. */
     animation: none;
-    opacity: 0.55;
-    transform: scaleY(0.9);
+    opacity: 0.75;
   }
 }

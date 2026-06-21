@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 // Toolbar gauge. The numeric readout is rendered inline next to the dial so
 // the user can see the current rate without hovering. The 32px-tall toolbar
@@ -99,6 +99,12 @@ export function ComposerTokenGauge({
   // React state mirrors the state machine so the JSX re-renders on
   // transitions. The machine itself runs in the RAF tick.
   const [flamesActive, setFlamesActive] = useState(false);
+  // Unique gradient ids per instance, so the gauge can be rendered more
+  // than once (e.g. split-pane composer) without url(#…) collisions on
+  // the <defs> entries that drive the flame's outer and inner fills.
+  const flameUid = useId();
+  const flameOuterGradId = `${flameUid}-flame-outer`;
+  const flameInnerGradId = `${flameUid}-flame-inner`;
   const runningRef = useRef(running);
   const targetRef = useRef(0);
   const sampledAtRef = useRef<number | undefined>(sampledAt);
@@ -221,10 +227,42 @@ export function ComposerTokenGauge({
         }
       >
         {flamesActive ? (
-          <span className="composer-token-gauge-flames" aria-hidden="true">
-            <span className="composer-token-gauge-flame" />
-            <span className="composer-token-gauge-flame" />
-            <span className="composer-token-gauge-flame" />
+          <span className="composer-token-gauge-flame-wrap" aria-hidden="true">
+            <svg
+              viewBox="0 0 20 24"
+              className="composer-token-gauge-flame"
+            >
+              <defs>
+                <linearGradient
+                  id={flameOuterGradId}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop offset="0%" stopColor="#ffb061" />
+                  <stop offset="55%" stopColor="#ff7a2a" />
+                  <stop offset="100%" stopColor="#d94a0c" />
+                </linearGradient>
+                <radialGradient
+                  id={flameInnerGradId}
+                  cx="50%"
+                  cy="65%"
+                  r="55%"
+                >
+                  <stop offset="0%" stopColor="#fffae0" />
+                  <stop offset="100%" stopColor="#ffc66b" />
+                </radialGradient>
+              </defs>
+              <path
+                d="M 10 0 C 8 5, 4 7, 4 14 C 4 20, 16 20, 16 14 C 16 7, 12 5, 10 0 Z"
+                fill={`url(#${flameOuterGradId})`}
+              />
+              <path
+                d="M 10 6 C 9 8, 7 10, 7 14 C 7 17, 13 17, 13 14 C 13 10, 11 8, 10 6 Z"
+                fill={`url(#${flameInnerGradId})`}
+              />
+            </svg>
           </span>
         ) : null}
         {speedLabel}
