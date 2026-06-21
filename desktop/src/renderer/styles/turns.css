@@ -3342,7 +3342,11 @@
   }
 }
 
-.process-cluster-reasoning-label.is-streaming {
+/* The whole process-cluster row sweeps once it's running: tool
+   segments, separators, and the thinking label share the same
+   shimmer, so the cluster reads as "this row is still working"
+   instead of mixing settled gray prose with a highlighted label. */
+.process-cluster-summary-line.is-streaming {
   background-image: linear-gradient(
     90deg,
     var(--conversation-process-control-color, #A4A4A5) 0%,
@@ -3359,6 +3363,14 @@
   -webkit-background-clip: text;
   color: transparent;
   animation: reasoning-shimmer 4.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-cluster-summary-line.is-streaming {
+    background-image: none;
+    color: var(--conversation-process-control-color, #A4A4A5);
+    animation: none;
+  }
 }
 
 .process-cluster-chevron {

@@ -453,7 +453,11 @@ function ProcessClusterRow({
   }`;
 
   const summary = (
-    <span className="process-cluster-summary-line">
+    <span
+      className={`process-cluster-summary-line${
+        entry.streaming ? " is-streaming" : ""
+      }`}
+    >
       {toolSegments.map((segment, index) => (
         <ProcessClusterSegmentView
           key={segment.id}
@@ -466,11 +470,7 @@ function ProcessClusterRow({
           {toolSegments.length > 0 ? (
             <span className="process-cluster-separator">·</span>
           ) : null}
-          <span
-            className={`process-cluster-reasoning-label${
-              reasoningStreaming ? " is-streaming" : ""
-            }`}
-          >
+          <span className="process-cluster-reasoning-label">
             {reasoningStreaming ? "正在思考" : "思考过程"}
           </span>
         </span>
