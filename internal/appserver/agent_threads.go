@@ -218,7 +218,7 @@ func (s *Server) syncFinalAgentThread(rootThreadID string, control *agentcontrol
 		turn, _ := th.startAgentTurnLocked(now)
 		turnID = turn.ID
 	}
-	turn := th.completeTurnLocked(turnID, status, turnErr, now)
+	turn := th.completeTurnLocked(turnID, status, turnErr, now, "", "", false)
 	th.mu.Unlock()
 	return th, turn, status, turnErr
 }

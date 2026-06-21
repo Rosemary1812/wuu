@@ -75,6 +75,9 @@ type HistoryRecord struct {
 	DiscoveredTools     json.RawMessage `json:"discovered_tools,omitempty"`
 	ToolCallID          string          `json:"tool_call_id,omitempty"`
 	ToolResultKind      string          `json:"tool_result_kind,omitempty"`
+	FinishReason        string          `json:"finish_reason,omitempty"`
+	StopReason          string          `json:"stop_reason,omitempty"`
+	Truncated           bool            `json:"truncated,omitempty"`
 	Name                string          `json:"name,omitempty"`
 	At                  time.Time       `json:"at,omitempty"`
 	InputTokens         int             `json:"input_tokens,omitempty"`

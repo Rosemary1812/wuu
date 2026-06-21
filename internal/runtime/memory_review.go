@@ -160,6 +160,7 @@ func (s profileMemoryReviewStep) Execute(ctx context.Context, req providers.Chat
 		ReasoningContent: resp.ReasoningContent,
 		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), resp.ReasoningBlocks...),
 		ToolCalls:        append([]providers.ToolCall(nil), resp.ToolCalls...),
+		FinishReason:     resp.FinishReason,
 		Truncated:        resp.Truncated,
 		StopReason:       resp.StopReason,
 		Usage:            resp.Usage,

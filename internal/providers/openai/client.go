@@ -232,6 +232,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if resp.StopReason == "length" {
 		resp.Truncated = true
 	}
+	resp.FinishReason = providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(calls) > 0)
 	resp.Usage = parsed.Usage.asTokenUsage()
 	return resp, nil
 }
@@ -397,6 +398,7 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 		lastFinishReason string
 		sawThinking      bool
 		thinkingDone     bool
+		sawToolCall      bool
 		currentPhase     providers.MessagePhase
 	)
 
@@ -433,11 +435,13 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 				thinkingDone = true
 			}
 			emitToolEnds()
+			truncated := lastFinishReason == "length"
 			ch <- providers.StreamEvent{
-				Type:       providers.EventDone,
-				Usage:      lastUsage,
-				StopReason: lastFinishReason,
-				Truncated:  lastFinishReason == "length",
+				Type:         providers.EventDone,
+				Usage:        lastUsage,
+				StopReason:   lastFinishReason,
+				FinishReason: providers.NormalizeFinishReason(lastFinishReason, truncated, sawToolCall),
+				Truncated:    truncated,
 			}
 			return
 		}
@@ -507,6 +511,7 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 		}
 
 		for _, tc := range choice.Delta.ToolCalls {
+			sawToolCall = true
 			if sawThinking && !thinkingDone {
 				ch <- providers.StreamEvent{Type: providers.EventThinkingDone}
 				thinkingDone = true

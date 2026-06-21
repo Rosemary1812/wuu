@@ -50,6 +50,9 @@ type persistedMessage struct {
 	DiscoveredTools     []providers.LoadableToolDefinition `json:"discovered_tools,omitempty"`
 	ToolCallID          string                             `json:"tool_call_id,omitempty"`
 	ToolResultKind      string                             `json:"tool_result_kind,omitempty"`
+	FinishReason        string                             `json:"finish_reason,omitempty"`
+	StopReason          string                             `json:"stop_reason,omitempty"`
+	Truncated           bool                               `json:"truncated,omitempty"`
 	Name                string                             `json:"name,omitempty"`
 	At                  time.Time                          `json:"at,omitempty"`
 	InputTokens         int                                `json:"input_tokens,omitempty"`
@@ -109,6 +112,9 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			ReasoningBlocks:  append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
 			ToolCallID:       rec.ToolCallID,
 			ToolResultKind:   providers.NormalizeToolCallKind(rec.ToolResultKind),
+			FinishReason:     providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
+			StopReason:       strings.ToLower(strings.TrimSpace(rec.StopReason)),
+			Truncated:        rec.Truncated,
 			DiscoveredTools:  providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
 		}
 		for _, image := range rec.Images {
@@ -282,6 +288,9 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		DiscoveredTools:  providers.CloneLoadableToolDefinitions(msg.DiscoveredTools),
 		ToolCallID:       msg.ToolCallID,
 		ToolResultKind:   string(msg.ToolResultKind),
+		FinishReason:     string(msg.FinishReason),
+		StopReason:       strings.ToLower(strings.TrimSpace(msg.StopReason)),
+		Truncated:        msg.Truncated,
 		Name:             msg.Name,
 		At:               time.Now().UTC(),
 	}
@@ -443,6 +452,9 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		DiscoveredTools:     mustJSON(rec.DiscoveredTools),
 		ToolCallID:          rec.ToolCallID,
 		ToolResultKind:      rec.ToolResultKind,
+		FinishReason:        rec.FinishReason,
+		StopReason:          rec.StopReason,
+		Truncated:           rec.Truncated,
 		Name:                rec.Name,
 		At:                  rec.At,
 		InputTokens:         rec.InputTokens,
@@ -465,6 +477,9 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		ReasoningContent:    rec.ReasoningContent,
 		ToolCallID:          rec.ToolCallID,
 		ToolResultKind:      rec.ToolResultKind,
+		FinishReason:        rec.FinishReason,
+		StopReason:          rec.StopReason,
+		Truncated:           rec.Truncated,
 		Name:                rec.Name,
 		At:                  rec.At,
 		InputTokens:         rec.InputTokens,

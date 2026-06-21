@@ -195,6 +195,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if resp.StopReason == "max_tokens" {
 		resp.Truncated = true
 	}
+	resp.FinishReason = providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(toolCalls) > 0)
 	if parsed.Usage != nil {
 		resp.Usage = &providers.TokenUsage{
 			InputTokens:         parsed.Usage.InputTokens,
@@ -966,7 +967,14 @@ func (c *Client) handleSSEEvent(
 		if sawMessageStop != nil {
 			*sawMessageStop = true
 		}
-		ch <- providers.StreamEvent{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens}, StopReason: *stopReason, Truncated: *stopReason == "max_tokens"}
+		truncated := *stopReason == "max_tokens"
+		ch <- providers.StreamEvent{
+			Type:         providers.EventDone,
+			Usage:        &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens},
+			StopReason:   *stopReason,
+			FinishReason: providers.NormalizeFinishReason(*stopReason, truncated, false),
+			Truncated:    truncated,
+		}
 	case "error":
 		if sawStreamError != nil {
 			*sawStreamError = true

@@ -44,6 +44,9 @@ type TurnRecord struct {
 	OutputTokens        int                 `json:"output_tokens,omitempty"`
 	CacheCreationTokens int                 `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int                 `json:"cache_read_tokens,omitempty"`
+	FinishReason        string              `json:"finish_reason,omitempty"`
+	StopReason          string              `json:"stop_reason,omitempty"`
+	Truncated           bool                `json:"truncated,omitempty"`
 	HistoryRewritten    bool                `json:"history_rewritten,omitempty"`
 	Error               string              `json:"error,omitempty"`
 }
@@ -127,6 +130,9 @@ type FinalRecord struct {
 	OutputTokens        int    `json:"output_tokens,omitempty"`
 	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
+	FinishReason        string `json:"finish_reason,omitempty"`
+	StopReason          string `json:"stop_reason,omitempty"`
+	Truncated           bool   `json:"truncated,omitempty"`
 	FinalAnswerPreview  string `json:"final_answer_preview,omitempty"`
 	Error               string `json:"error,omitempty"`
 }

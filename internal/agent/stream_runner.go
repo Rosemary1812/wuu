@@ -25,7 +25,7 @@ type StreamCallback func(event providers.StreamEvent)
 // StreamRunner manages one multi-step coding turn with streaming.
 // It is a thin wrapper around RunToolLoop that supplies a streamStep
 // adapter (Step → providers.StreamClient.StreamChat with reconnect),
-// so the actual loop logic — step counting, truncation recovery,
+// so the actual loop logic — step counting, finish handling,
 // context-overflow auto-compact — comes from the same code as Runner.
 type StreamRunner struct {
 	Client       providers.StreamClient
@@ -423,6 +423,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		pendingTools    = map[int]*providers.ToolCall{}
 		usage           *providers.TokenUsage
 		stopReason      string
+		finishReason    providers.FinishReason
 		truncated       bool
 		messagePhase    providers.MessagePhase
 	)
@@ -450,7 +451,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			toolRuntime = NewTurnToolRuntime(s.tools)
 		}
 	}
-	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &usage, &stopReason, &truncated, resetRuntime); err != nil {
+	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
@@ -467,13 +468,16 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 	}
 
-	// Non-streaming fallback: when the stream completed without
-	// producing any content or tool calls AND there is no normal
-	// stop reason, the stream was likely broken by a proxy or
-	// provider compatibility issue. Try one non-streaming Chat()
-	// call before giving up — this mirrors Claude Code's fallback
-	// strategy for empty SSE responses.
-	if strings.TrimSpace(contentBuf.String()) == "" && len(toolCalls) == 0 && !isNormalStop(stopReason) {
+	if finishReason == "" {
+		finishReason = providers.NormalizeFinishReason(stopReason, truncated, len(toolCalls) > 0)
+	}
+
+	// Non-streaming fallback: when the stream completed without producing any
+	// visible content or tool calls AND the provider did not send any terminal
+	// reason, the stream was likely broken by a proxy or compatibility issue.
+	// A terminal length/max_tokens reason is a completed model response, not a
+	// broken stream, even when the visible text is empty.
+	if strings.TrimSpace(contentBuf.String()) == "" && len(toolCalls) == 0 && strings.TrimSpace(stopReason) == "" && finishReason == "" && !truncated {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
@@ -500,11 +504,14 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 				Phase:   resp.Phase,
 			})
 			s.onEvent(providers.StreamEvent{
-				Type:       providers.EventDone,
-				Usage:      resp.Usage,
-				StopReason: resp.StopReason,
+				Type:         providers.EventDone,
+				Usage:        resp.Usage,
+				StopReason:   resp.StopReason,
+				FinishReason: normalizedChatResponseFinish(resp),
+				Truncated:    resp.Truncated,
 			})
 		}
+		fbFinishReason := normalizedChatResponseFinish(resp)
 		return StepResult{
 			Content:          resp.Content,
 			Phase:            resp.Phase,
@@ -512,6 +519,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			ReasoningBlocks:  cloneReasoningBlocks(resp.ReasoningBlocks),
 			ToolCalls:        fbToolCalls,
 			Usage:            resp.Usage,
+			FinishReason:     fbFinishReason,
 			StopReason:       resp.StopReason,
 			Truncated:        resp.Truncated,
 		}, nil
@@ -528,20 +536,18 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		ReasoningBlocks:  cloneReasoningBlocks(reasoningBlocks),
 		ToolCalls:        toolCalls,
 		Usage:            usage,
+		FinishReason:     finishReason,
 		StopReason:       stopReason,
 		Truncated:        truncated,
 		ToolRuntime:      toolRuntime,
 	}, nil
 }
 
-// isNormalStop reports whether the stop reason indicates the model
-// intentionally ended its turn (as opposed to the stream breaking).
-func isNormalStop(reason string) bool {
-	switch reason {
-	case "stop", "end_turn":
-		return true
+func normalizedChatResponseFinish(resp providers.ChatResponse) providers.FinishReason {
+	if resp.FinishReason != "" {
+		return resp.FinishReason
 	}
-	return false
+	return providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(resp.ToolCalls) > 0)
 }
 
 func truncateLog(s string, maxLen int) string {
@@ -590,6 +596,7 @@ func (s *streamStep) runStreamWithReconnect(
 	messagePhase *providers.MessagePhase,
 	usage **providers.TokenUsage,
 	stopReason *string,
+	finishReason *providers.FinishReason,
 	truncated *bool,
 	onAttemptStart func(),
 ) error {
@@ -638,6 +645,7 @@ func (s *streamStep) runStreamWithReconnect(
 		*messagePhase = ""
 		*usage = nil
 		*stopReason = ""
+		*finishReason = ""
 		*truncated = false
 		if onEvent == nil {
 			return
@@ -822,6 +830,9 @@ func (s *streamStep) runStreamWithReconnect(
 				}
 				if event.StopReason != "" {
 					*stopReason = event.StopReason
+				}
+				if event.FinishReason != "" {
+					*finishReason = event.FinishReason
 				}
 				if event.Truncated {
 					*truncated = true

@@ -82,6 +82,9 @@ type RunResult struct {
 	OutputTokens        int
 	CacheCreationTokens int
 	CacheReadTokens     int
+	FinishReason        providers.FinishReason
+	StopReason          string
+	Truncated           bool
 }
 
 // Run executes one prompt with optional tool-use loop.
@@ -146,5 +149,8 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
+		FinishReason:        res.FinishReason,
+		StopReason:          res.StopReason,
+		Truncated:           res.Truncated,
 	}, err
 }

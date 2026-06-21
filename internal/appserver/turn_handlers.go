@@ -604,7 +604,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	if err == nil {
 		titleHistory = cloneHistory(th.History)
 	}
-	turn := th.completeTurnLocked(turnID, status, err, now)
+	turn := th.completeTurnLocked(turnID, status, err, now, string(res.FinishReason), res.StopReason, res.Truncated)
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
@@ -635,6 +635,9 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
+		FinishReason:        string(res.FinishReason),
+		StopReason:          res.StopReason,
+		Truncated:           res.Truncated,
 		TracePath:           tracePath,
 	})
 	go s.generateThreadTitle(th.ID, titleHistory)
@@ -680,6 +683,9 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
+		FinishReason:        string(res.FinishReason),
+		StopReason:          res.StopReason,
+		Truncated:           res.Truncated,
 		HistoryRewritten:    res.HistoryRewritten,
 		Error:               errorText,
 	}
@@ -689,6 +695,9 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
+		FinishReason:        string(res.FinishReason),
+		StopReason:          res.StopReason,
+		Truncated:           res.Truncated,
 		FinalAnswerPreview:  res.Content,
 		Error:               errorText,
 	}

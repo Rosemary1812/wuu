@@ -130,12 +130,21 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	return turn, started
 }
 
-func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err error, now time.Time) Turn {
+func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err error, now time.Time, finishReason, stopReason string, truncated bool) Turn {
 	th.running = false
 	th.currentTurn = ""
 	th.cancel = nil
 	th.UpdatedAt = now
-	th.activeAgentItemID = ""
+	if th.activeAgentItemID != "" {
+		if item, ok := th.itemLocked(turnID, th.activeAgentItemID); ok && status == TurnStatusCompleted {
+			item.Status = ThreadItemStatusCompleted
+			item.FinishReason = finishReason
+			item.StopReason = stopReason
+			item.Truncated = truncated
+			th.upsertItemLocked(turnID, item, now)
+		}
+		th.activeAgentItemID = ""
+	}
 	th.activeReasoningItemID = ""
 	th.toolItems = make(map[string]string)
 
@@ -144,6 +153,9 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	if err != nil {
 		turn.Error = &TurnError{Message: err.Error()}
 	}
+	turn.FinishReason = finishReason
+	turn.StopReason = stopReason
+	turn.Truncated = truncated
 	turn.CompletedAt = &now
 	if turn.StartedAt != nil {
 		duration := now.Sub(*turn.StartedAt).Milliseconds()
@@ -424,6 +436,9 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 		item.Text = msg.Content
 		item.Phase = phase
 		item.Status = ThreadItemStatusCompleted
+		item.FinishReason = string(msg.FinishReason)
+		item.StopReason = msg.StopReason
+		item.Truncated = msg.Truncated
 		th.upsertItemLocked(turnID, item, now)
 		th.activeAgentItemID = ""
 		out = append(out, itemCompleted(th.ID, turnID, item, now))
@@ -723,13 +738,21 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			}
 			if strings.TrimSpace(msg.Content) != "" {
 				appendItem(ThreadItem{
-					ID:     nextItemID(current.ID),
-					Type:   ThreadItemAgentMessage,
-					Status: ThreadItemStatusCompleted,
-					Phase:  assistantMessagePhase(msg),
-					Role:   "assistant",
-					Text:   msg.Content,
+					ID:           nextItemID(current.ID),
+					Type:         ThreadItemAgentMessage,
+					Status:       ThreadItemStatusCompleted,
+					Phase:        assistantMessagePhase(msg),
+					Role:         "assistant",
+					Text:         msg.Content,
+					FinishReason: string(msg.FinishReason),
+					StopReason:   msg.StopReason,
+					Truncated:    msg.Truncated,
 				})
+			}
+			if msg.FinishReason != "" || msg.StopReason != "" || msg.Truncated {
+				current.FinishReason = string(msg.FinishReason)
+				current.StopReason = msg.StopReason
+				current.Truncated = msg.Truncated
 			}
 			for _, call := range msg.ToolCalls {
 				item := ThreadItem{
@@ -781,12 +804,15 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {
 			return ThreadItem{
-				ID:     id,
-				Type:   ThreadItemAgentMessage,
-				Status: ThreadItemStatusCompleted,
-				Phase:  assistantMessagePhase(msg),
-				Role:   "assistant",
-				Text:   msg.Content,
+				ID:           id,
+				Type:         ThreadItemAgentMessage,
+				Status:       ThreadItemStatusCompleted,
+				Phase:        assistantMessagePhase(msg),
+				Role:         "assistant",
+				Text:         msg.Content,
+				FinishReason: string(msg.FinishReason),
+				StopReason:   msg.StopReason,
+				Truncated:    msg.Truncated,
 			}
 		}
 		if strings.TrimSpace(msg.ReasoningContent) != "" {

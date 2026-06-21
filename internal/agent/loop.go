@@ -13,17 +13,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-// maxTruncationRecoveries caps how many times the loop will ask the
-// model to keep going after hitting its output token cap. Aligned with
-// Claude Code's MAX_OUTPUT_TOKENS_RECOVERY_LIMIT.
-const maxTruncationRecoveries = 3
-
-// truncationContinuePrompt is sent after the model is cut off by its
-// output token limit. Lifted verbatim from Claude Code's recovery flow
-// — terse and emphatic so the model resumes mid-thought instead of
-// re-introducing the topic.
-const truncationContinuePrompt = "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces."
-
 const (
 	taskContractMaxMessages       = 3
 	taskContractMaxDirectiveRunes = 1200
@@ -64,10 +53,9 @@ func IsEmptyAnswer(err error) bool {
 //   - Loops up to cfg.MaxSteps rounds (0 = unlimited).
 //   - On context-overflow errors from the step, calls cfg.Compact
 //     once and re-issues the step. Subsequent overflows propagate.
-//   - On output truncation (StepResult.Truncated with no tool calls),
-//     appends a "continue" prompt and re-issues, capped at
-//     maxTruncationRecoveries attempts. The accumulated partial
-//     content is concatenated into the final result.
+//   - Output truncation is treated as a completed model response with
+//     FinishReason=length. The caller/UI can surface that reason without
+//     classifying the turn as a user interruption or transport failure.
 //   - Executes any tool calls the model requested, recording results
 //     as tool messages and (if configured) emitting them through
 //     OnToolResult so callers can render them live.
@@ -92,19 +80,10 @@ func RunToolLoop(
 	copy(messages, history)
 	startLen := len(messages)
 
-	// Output token escalation: start with DefaultMaxTokens, escalate
-	// to EscalatedMaxTokens after the first truncation recovery.
-	// Aligned with Claude Code's "start low, escalate on truncation".
-	const defaultEscalatedMaxTokens = 65536
 	currentMaxTokens := cfg.DefaultMaxTokens // 0 = provider default
 
 	var (
 		totalIn, totalOut, totalCacheCreation, totalCacheRead int
-		// Accumulates partial assistant text across truncation-recovery
-		// rounds. Concatenated into the final answer when the model
-		// finally returns a non-truncated response.
-		truncatedBuf         strings.Builder
-		truncationRecoveries int
 		// Reactive auto-compact (overflow recovery) runs at most once
 		// per Run; if a single compaction isn't enough, surfacing the
 		// error is more honest than silently looping. Proactive
@@ -284,36 +263,9 @@ func RunToolLoop(
 			}, fmt.Errorf("provider returned invalid tool_calls: %w", err)
 		}
 
-		// Output-token truncation recovery: model hit max_tokens
-		// (Anthropic) / finish_reason=length (OpenAI) without finishing
-		// its thought. Append the partial text, ask it to continue,
-		// loop back. Tool-call rounds bypass this — those go through
-		// the normal tool execution path below.
-		if result.Truncated && len(result.ToolCalls) == 0 && truncationRecoveries < maxTruncationRecoveries {
-			truncatedBuf.WriteString(result.Content)
-			appendMessage(providers.ChatMessage{
-				Role:             "assistant",
-				Content:          result.Content,
-				Phase:            result.Phase,
-				ReasoningContent: result.ReasoningContent,
-				ReasoningBlocks:  cloneReasoningBlocks(result.ReasoningBlocks),
-			})
-			appendMessage(providers.ChatMessage{
-				Role:    "user",
-				Content: truncationContinuePrompt,
-			})
-			// Escalate output token cap on first truncation so the
-			// continuation has room to finish. Matches Claude Code's
-			// "start low (16K), escalate to 64K on truncation" pattern.
-			if truncationRecoveries == 0 {
-				esc := cfg.EscalatedMaxTokens
-				if esc <= 0 {
-					esc = defaultEscalatedMaxTokens
-				}
-				currentMaxTokens = esc
-			}
-			truncationRecoveries++
-			continue
+		finishReason := result.FinishReason
+		if finishReason == "" {
+			finishReason = providers.NormalizeFinishReason(result.StopReason, result.Truncated, len(result.ToolCalls) > 0)
 		}
 
 		assistant := providers.ChatMessage{
@@ -323,16 +275,19 @@ func RunToolLoop(
 			ReasoningContent: result.ReasoningContent,
 			ReasoningBlocks:  cloneReasoningBlocks(result.ReasoningBlocks),
 			ToolCalls:        result.ToolCalls,
+			FinishReason:     finishReason,
+			StopReason:       result.StopReason,
+			Truncated:        result.Truncated,
 		}
 		if shouldPersistAssistantMessage(assistant) {
 			appendMessage(assistant)
 		}
 
-		// No tool calls → model is done. Return concatenated content.
+		// No tool calls → model is done. Return content plus finish metadata.
 		if len(result.ToolCalls) == 0 {
-			finalContent := truncatedBuf.String() + result.Content
+			finalContent := result.Content
 			if strings.TrimSpace(finalContent) == "" {
-				if isLegitimateEmptyCompletion(result.StopReason) {
+				if isLegitimateEmptyCompletion(finishReason, result.StopReason) {
 					return LoopResult{
 						Content:             "",
 						NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
@@ -341,6 +296,9 @@ func RunToolLoop(
 						OutputTokens:        totalOut,
 						CacheCreationTokens: totalCacheCreation,
 						CacheReadTokens:     totalCacheRead,
+						FinishReason:        finishReason,
+						StopReason:          result.StopReason,
+						Truncated:           result.Truncated,
 					}, nil
 				}
 				return LoopResult{
@@ -360,6 +318,9 @@ func RunToolLoop(
 				OutputTokens:        totalOut,
 				CacheCreationTokens: totalCacheCreation,
 				CacheReadTokens:     totalCacheRead,
+				FinishReason:        finishReason,
+				StopReason:          result.StopReason,
+				Truncated:           result.Truncated,
 			}, nil
 		}
 
@@ -604,7 +565,11 @@ func shouldPersistAssistantMessage(msg providers.ChatMessage) bool {
 	return len(msg.ToolCalls) > 0
 }
 
-func isLegitimateEmptyCompletion(stopReason string) bool {
+func isLegitimateEmptyCompletion(finishReason providers.FinishReason, stopReason string) bool {
+	switch finishReason {
+	case providers.FinishReasonLength:
+		return true
+	}
 	switch strings.TrimSpace(strings.ToLower(stopReason)) {
 	case "end_turn":
 		return true

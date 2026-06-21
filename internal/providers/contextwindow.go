@@ -218,7 +218,8 @@ const defaultMaxOutputTokens = 16_000
 
 var maxOutputTokensRegistry = []contextWindowEntry{
 	// Anthropic Claude 4.6 — aligned with CC's getMaxOutputTokensForModel().
-	// Start at 16K; the agent loop escalates on truncation recovery.
+	// Start at 16K; providers can override this for models with larger
+	// documented output windows.
 	{"opus-4-6", 16_000},
 	{"sonnet-4-6", 16_000},
 	// Anthropic Claude 4.x

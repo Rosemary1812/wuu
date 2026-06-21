@@ -80,56 +80,45 @@ func TestRunner_RunWithToolCall(t *testing.T) {
 	}
 }
 
-func TestRunner_TruncationRecovery(t *testing.T) {
+func TestRunner_OutputTruncationCompletesRun(t *testing.T) {
 	client := &fakeClient{responses: []providers.ChatResponse{
 		{Content: "part one ", Truncated: true, StopReason: "length"},
-		{Content: "part two ", Truncated: true, StopReason: "max_tokens"},
-		{Content: "part three."},
 	}}
 	runner := Runner{Client: client, Model: "gpt-test"}
 
-	answer, err := runner.Run(context.Background(), "write a story")
+	res, err := runner.RunWithUsage(context.Background(), "write a story", nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if answer != "part one part two part three." {
-		t.Fatalf("expected concatenated answer, got %q", answer)
+	if res.Content != "part one " {
+		t.Fatalf("expected first partial answer, got %q", res.Content)
 	}
-	// Each recovery round should have appended a continuation prompt
-	// to the conversation that the next request observes.
-	if len(client.requests) != 3 {
-		t.Fatalf("expected 3 chat calls, got %d", len(client.requests))
+	if res.FinishReason != providers.FinishReasonLength || res.StopReason != "length" || !res.Truncated {
+		t.Fatalf("expected length finish metadata, got reason=%q stop=%q truncated=%v", res.FinishReason, res.StopReason, res.Truncated)
 	}
-	last := client.requests[2].Messages
-	foundContinuePrompts := 0
-	for _, msg := range last {
-		if msg.Role == "user" && msg.Content == truncationContinuePrompt {
-			foundContinuePrompts++
-		}
-	}
-	if foundContinuePrompts != 2 {
-		t.Fatalf("expected 2 continue prompts in final request, got %d", foundContinuePrompts)
+	if len(client.requests) != 1 {
+		t.Fatalf("expected 1 chat call, got %d", len(client.requests))
 	}
 }
 
-func TestRunner_TruncationRecoveryCappedAtLimit(t *testing.T) {
-	// All responses stay truncated. Runner should bail with the
-	// concatenated partial after maxTruncationRecoveries attempts.
-	responses := make([]providers.ChatResponse, 0, maxTruncationRecoveries+1)
-	for i := 0; i <= maxTruncationRecoveries; i++ {
-		responses = append(responses, providers.ChatResponse{Content: "x", Truncated: true, StopReason: "length"})
-	}
-	client := &fakeClient{responses: responses}
+func TestRunner_MaxTokensStopReasonNormalizesLength(t *testing.T) {
+	client := &fakeClient{responses: []providers.ChatResponse{
+		{Content: "x", Truncated: true, StopReason: "max_tokens"},
+	}}
 	runner := Runner{Client: client, Model: "gpt-test"}
 
-	answer, err := runner.Run(context.Background(), "loop")
+	res, err := runner.RunWithUsage(context.Background(), "loop", nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	// 3 buffered partials + 1 final partial that hit the cap
-	expected := "xxxx"
-	if answer != expected {
-		t.Fatalf("expected %q, got %q", expected, answer)
+	if res.Content != "x" {
+		t.Fatalf("expected partial answer, got %q", res.Content)
+	}
+	if res.FinishReason != providers.FinishReasonLength || res.StopReason != "max_tokens" || !res.Truncated {
+		t.Fatalf("expected max_tokens to normalize to length, got reason=%q stop=%q truncated=%v", res.FinishReason, res.StopReason, res.Truncated)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("expected 1 chat call, got %d", len(client.requests))
 	}
 }
 

@@ -70,6 +70,52 @@ func NormalizeToolCallKind(kind string) ToolCallKind {
 	}
 }
 
+// FinishReason is Wuu's provider-neutral reason for why a model response ended.
+// StopReason keeps the raw provider string for diagnostics; FinishReason is the
+// stable semantic value used by the agent loop and app-server.
+type FinishReason string
+
+const (
+	FinishReasonStop          FinishReason = "stop"
+	FinishReasonLength        FinishReason = "length"
+	FinishReasonToolCalls     FinishReason = "tool_calls"
+	FinishReasonContentFilter FinishReason = "content_filter"
+	FinishReasonError         FinishReason = "error"
+	FinishReasonUnknown       FinishReason = "unknown"
+)
+
+func NormalizeFinishReason(stopReason string, truncated bool, hasToolCalls bool) FinishReason {
+	reason := strings.ToLower(strings.TrimSpace(stopReason))
+	if truncated {
+		return FinishReasonLength
+	}
+	switch reason {
+	case "stop", "end_turn", "stop_sequence", "pause_turn", "completed":
+		if hasToolCalls {
+			return FinishReasonToolCalls
+		}
+		return FinishReasonStop
+	case "length", "max_tokens", "max_output_tokens":
+		return FinishReasonLength
+	case "tool_calls", "tool_use", "function_call":
+		return FinishReasonToolCalls
+	case "content_filter", "refusal":
+		return FinishReasonContentFilter
+	case "error", "failed":
+		return FinishReasonError
+	case "":
+		if hasToolCalls {
+			return FinishReasonToolCalls
+		}
+		return ""
+	default:
+		if hasToolCalls {
+			return FinishReasonToolCalls
+		}
+		return FinishReasonUnknown
+	}
+}
+
 // ToolCall is a model requested tool execution.
 type ToolCall struct {
 	ID        string           `json:"id,omitempty"`
@@ -146,6 +192,9 @@ type ChatMessage struct {
 	ToolCallID       string
 	ToolResultKind   ToolCallKind
 	ToolCalls        []ToolCall
+	FinishReason     FinishReason
+	StopReason       string
+	Truncated        bool
 	// DiscoveredTools carries provider-native deferred tool state across
 	// compact/resume/fork boundaries without adding full schemas to prompt text.
 	DiscoveredTools []LoadableToolDefinition
@@ -192,8 +241,8 @@ type ChatRequest struct {
 	Temperature float64
 	CacheHint   *CacheHint
 	// MaxTokens caps the model's output length. Zero means the provider
-	// should use its own default. The agent loop sets this and escalates
-	// it automatically on truncation recovery (e.g. 16 384 → 65 536).
+	// should use its own default. If the provider hits this cap, the
+	// response completes with FinishReason=length.
 	MaxTokens int
 	// Effort controls how much reasoning the model performs before
 	// responding. Empty string means "use API default". Valid values
@@ -221,8 +270,13 @@ type ChatResponse struct {
 	// Common values: "stop" / "end_turn" (natural finish), "length" /
 	// "max_tokens" (output truncation), "tool_calls" / "tool_use".
 	StopReason string
+	// FinishReason is Wuu's provider-neutral stop semantic. It preserves
+	// OpenCode-style behavior where max_tokens/max_output_tokens are a
+	// completed response with finish_reason=length, not an interrupted turn.
+	FinishReason FinishReason
 	// Truncated is true when the model hit its output token cap mid-response.
-	// Callers (e.g. agent.Runner) can use this to issue a "continue" prompt.
+	// Callers can surface this as "output reached the limit" without treating
+	// the turn as a user interruption or transport failure.
 	Truncated bool
 }
 
@@ -351,12 +405,12 @@ type StreamEvent struct {
 	Lifecycle      *StreamLifecycle
 	Error          error
 	Usage          *TokenUsage
-	// StopReason / Truncated are populated on the terminal EventDone
-	// when the provider reports them. They mirror the same fields on
-	// ChatResponse so streaming callers can drive truncation-recovery
-	// the same way the non-stream Runner does.
-	StopReason string
-	Truncated  bool
+	// StopReason / FinishReason / Truncated are populated on the terminal
+	// EventDone when the provider reports them. StopReason is raw-ish provider
+	// detail; FinishReason is the normalized semantic.
+	StopReason   string
+	FinishReason FinishReason
+	Truncated    bool
 }
 
 // StreamClient extends Client with streaming support.

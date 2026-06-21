@@ -71,9 +71,10 @@ type Event struct {
 	RequestContext *providers.RequestContextSummary
 
 	// Usage carries token consumption for a completed turn.
-	Usage      *providers.TokenUsage
-	StopReason string
-	Truncated  bool
+	Usage        *providers.TokenUsage
+	StopReason   string
+	FinishReason providers.FinishReason
+	Truncated    bool
 
 	// Error carries fatal or non-fatal errors.
 	Error error
@@ -163,7 +164,7 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 	case providers.EventRequestContext:
 		return Event{Type: RequestContext, RequestContext: se.RequestContext}
 	case providers.EventDone:
-		return Event{Type: Done, Usage: se.Usage, StopReason: se.StopReason, Truncated: se.Truncated}
+		return Event{Type: Done, Usage: se.Usage, StopReason: se.StopReason, FinishReason: se.FinishReason, Truncated: se.Truncated}
 	case providers.EventError:
 		return Event{Type: Error, Error: se.Error}
 	case providers.EventReconnect:
@@ -202,7 +203,7 @@ func ToStreamEvent(ev Event) providers.StreamEvent {
 	case RequestContext:
 		return providers.StreamEvent{Type: providers.EventRequestContext, RequestContext: ev.RequestContext}
 	case Done:
-		return providers.StreamEvent{Type: providers.EventDone, Usage: ev.Usage, StopReason: ev.StopReason, Truncated: ev.Truncated}
+		return providers.StreamEvent{Type: providers.EventDone, Usage: ev.Usage, StopReason: ev.StopReason, FinishReason: ev.FinishReason, Truncated: ev.Truncated}
 	case Error:
 		return providers.StreamEvent{Type: providers.EventError, Error: ev.Error}
 	default:

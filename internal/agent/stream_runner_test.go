@@ -1430,24 +1430,12 @@ func TestStreamRunner_ReplaysReasoningContentAfterToolCall(t *testing.T) {
 	}
 }
 
-func TestStreamRunner_TruncationRecovery(t *testing.T) {
-	// Three rounds: first two are truncated content-only (no tool calls)
-	// with stop_reason=length; the third returns the final answer.
-	// The shared loop should concatenate them and surface a clean
-	// result via RunWithCallback.
+func TestStreamRunner_OutputTruncationCompletesTurn(t *testing.T) {
 	client := &mockStreamClient{
 		attempts: []mockStreamAttempt{
 			{events: []providers.StreamEvent{
 				{Type: providers.EventContentDelta, Content: "part1 "},
 				{Type: providers.EventDone, StopReason: "length", Truncated: true},
-			}},
-			{events: []providers.StreamEvent{
-				{Type: providers.EventContentDelta, Content: "part2 "},
-				{Type: providers.EventDone, StopReason: "max_tokens", Truncated: true},
-			}},
-			{events: []providers.StreamEvent{
-				{Type: providers.EventContentDelta, Content: "done."},
-				{Type: providers.EventDone},
 			}},
 		},
 	}
@@ -1457,15 +1445,18 @@ func TestStreamRunner_TruncationRecovery(t *testing.T) {
 		Model:  "test-model",
 	}
 
-	out, err := runner.Run(context.Background(), "long output")
+	res, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{userMsg("long output")}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if out != "part1 part2 done." {
-		t.Fatalf("expected concatenated parts, got %q", out)
+	if res.Content != "part1 " {
+		t.Fatalf("expected first partial content, got %q", res.Content)
 	}
-	if client.callCount != 3 {
-		t.Fatalf("expected 3 stream attempts, got %d", client.callCount)
+	if res.FinishReason != providers.FinishReasonLength || res.StopReason != "length" || !res.Truncated {
+		t.Fatalf("expected length finish metadata, got reason=%q stop=%q truncated=%v", res.FinishReason, res.StopReason, res.Truncated)
+	}
+	if client.callCount != 1 {
+		t.Fatalf("expected 1 stream attempt, got %d", client.callCount)
 	}
 }
 
@@ -1560,6 +1551,37 @@ func TestStreamRunner_NoFallbackOnNormalStop(t *testing.T) {
 	}
 	if !IsEmptyAnswer(err) {
 		t.Fatalf("expected EmptyAnswerError, got %v", err)
+	}
+	if client.chatCallCount != 0 {
+		t.Fatalf("expected 0 Chat() calls (no fallback), got %d", client.chatCallCount)
+	}
+}
+
+func TestStreamRunner_NoFallbackOnEmptyLengthFinish(t *testing.T) {
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{events: []providers.StreamEvent{
+				{Type: providers.EventDone, StopReason: "max_tokens", FinishReason: providers.FinishReasonLength, Truncated: true},
+			}},
+		},
+		chatResponses: []providers.ChatResponse{
+			{Content: "fallback should not run", StopReason: "stop"},
+		},
+	}
+	runner := &StreamRunner{
+		Client:              client,
+		Model:               "test",
+		StreamRetryMaxDelay: time.Millisecond,
+	}
+	res, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{userMsg("hello")}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Content != "" {
+		t.Fatalf("expected empty content, got %q", res.Content)
+	}
+	if res.FinishReason != providers.FinishReasonLength || res.StopReason != "max_tokens" || !res.Truncated {
+		t.Fatalf("expected length finish metadata, got reason=%q stop=%q truncated=%v", res.FinishReason, res.StopReason, res.Truncated)
 	}
 	if client.chatCallCount != 0 {
 		t.Fatalf("expected 0 Chat() calls (no fallback), got %d", client.chatCallCount)

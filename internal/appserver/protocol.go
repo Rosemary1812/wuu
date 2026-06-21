@@ -674,6 +674,9 @@ type TurnCompletedNotification struct {
 	OutputTokens        int    `json:"output_tokens"`
 	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
+	FinishReason        string `json:"finish_reason,omitempty"`
+	StopReason          string `json:"stop_reason,omitempty"`
+	Truncated           bool   `json:"truncated,omitempty"`
 	TracePath           string `json:"trace_path,omitempty"`
 }
 
@@ -770,14 +773,17 @@ type ThreadBrowserState struct {
 }
 
 type Turn struct {
-	ID          string        `json:"id"`
-	Items       []ThreadItem  `json:"items"`
-	ItemsView   TurnItemsView `json:"items_view"`
-	Status      TurnStatus    `json:"status"`
-	Error       *TurnError    `json:"error,omitempty"`
-	StartedAt   *time.Time    `json:"started_at,omitempty"`
-	CompletedAt *time.Time    `json:"completed_at,omitempty"`
-	DurationMS  *int64        `json:"duration_ms,omitempty"`
+	ID           string        `json:"id"`
+	Items        []ThreadItem  `json:"items"`
+	ItemsView    TurnItemsView `json:"items_view"`
+	Status       TurnStatus    `json:"status"`
+	Error        *TurnError    `json:"error,omitempty"`
+	FinishReason string        `json:"finish_reason,omitempty"`
+	StopReason   string        `json:"stop_reason,omitempty"`
+	Truncated    bool          `json:"truncated,omitempty"`
+	StartedAt    *time.Time    `json:"started_at,omitempty"`
+	CompletedAt  *time.Time    `json:"completed_at,omitempty"`
+	DurationMS   *int64        `json:"duration_ms,omitempty"`
 }
 
 type TurnError struct {
@@ -814,20 +820,23 @@ const (
 )
 
 type ThreadItem struct {
-	ID        string                     `json:"id"`
-	SourceID  string                     `json:"source_id,omitempty"`
-	Type      ThreadItemType             `json:"type"`
-	Status    ThreadItemStatus           `json:"status,omitempty"`
-	Phase     ThreadItemPhase            `json:"phase,omitempty"`
-	Role      string                     `json:"role,omitempty"`
-	Text      string                     `json:"text,omitempty"`
-	Images    []ThreadItemImage          `json:"images,omitempty"`
-	Files     []ThreadItemFile           `json:"files,omitempty"`
-	Name      string                     `json:"name,omitempty"`
-	Arguments string                     `json:"arguments,omitempty"`
-	Display   *providers.ToolCallDisplay `json:"display,omitempty"`
-	Result    string                     `json:"result,omitempty"`
-	Error     string                     `json:"error,omitempty"`
+	ID           string                     `json:"id"`
+	SourceID     string                     `json:"source_id,omitempty"`
+	Type         ThreadItemType             `json:"type"`
+	Status       ThreadItemStatus           `json:"status,omitempty"`
+	Phase        ThreadItemPhase            `json:"phase,omitempty"`
+	Role         string                     `json:"role,omitempty"`
+	Text         string                     `json:"text,omitempty"`
+	Images       []ThreadItemImage          `json:"images,omitempty"`
+	Files        []ThreadItemFile           `json:"files,omitempty"`
+	Name         string                     `json:"name,omitempty"`
+	Arguments    string                     `json:"arguments,omitempty"`
+	Display      *providers.ToolCallDisplay `json:"display,omitempty"`
+	Result       string                     `json:"result,omitempty"`
+	Error        string                     `json:"error,omitempty"`
+	FinishReason string                     `json:"finish_reason,omitempty"`
+	StopReason   string                     `json:"stop_reason,omitempty"`
+	Truncated    bool                       `json:"truncated,omitempty"`
 }
 
 type ThreadItemImage struct {
@@ -907,6 +916,7 @@ type StreamEventPayload struct {
 	RequestContext *providers.RequestContextSummary `json:"request_context,omitempty"`
 	Usage          *providers.TokenUsage            `json:"usage,omitempty"`
 	StopReason     string                           `json:"stop_reason,omitempty"`
+	FinishReason   string                           `json:"finish_reason,omitempty"`
 	Truncated      bool                             `json:"truncated,omitempty"`
 	Error          string                           `json:"error,omitempty"`
 }

@@ -404,46 +404,48 @@ func TestRunToolLoop_ConcurrentToolCompletionDoesNotReorderProviderMessages(t *t
 	}
 }
 
-func TestRunToolLoop_TruncationRecovery(t *testing.T) {
+func TestRunToolLoop_OutputTruncationCompletesTurn(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{Content: "part1 ", Truncated: true, StopReason: "length"},
-		{Content: "part2 ", Truncated: true, StopReason: "max_tokens"},
-		{Content: "done."},
 	}}
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("write story")}, LoopConfig{Model: "m"}, step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Content != "part1 part2 done." {
-		t.Fatalf("expected concatenated content, got %q", res.Content)
+	if res.Content != "part1 " {
+		t.Fatalf("expected first partial content, got %q", res.Content)
 	}
-	if len(step.calls) != 3 {
-		t.Fatalf("expected 3 step calls, got %d", len(step.calls))
+	if res.FinishReason != providers.FinishReasonLength || res.StopReason != "length" || !res.Truncated {
+		t.Fatalf("expected length finish metadata, got reason=%q stop=%q truncated=%v", res.FinishReason, res.StopReason, res.Truncated)
 	}
-	final := step.calls[2].Messages
-	continues := 0
-	for _, m := range final {
-		if m.Role == "user" && m.Content == truncationContinuePrompt {
-			continues++
-		}
+	if len(step.calls) != 1 {
+		t.Fatalf("expected 1 step call, got %d", len(step.calls))
 	}
-	if continues != 2 {
-		t.Fatalf("expected 2 continue prompts in final request, got %d", continues)
+	if len(res.NewMessages) != 1 {
+		t.Fatalf("expected one assistant message, got %+v", res.NewMessages)
+	}
+	msg := res.NewMessages[0]
+	if msg.FinishReason != providers.FinishReasonLength || msg.StopReason != "length" || !msg.Truncated {
+		t.Fatalf("expected assistant message finish metadata, got %+v", msg)
 	}
 }
 
-func TestRunToolLoop_TruncationCappedReturnsPartial(t *testing.T) {
-	results := make([]StepResult, 0, maxTruncationRecoveries+1)
-	for i := 0; i <= maxTruncationRecoveries; i++ {
-		results = append(results, StepResult{Content: "x", Truncated: true, StopReason: "length"})
-	}
-	step := &fakeStep{results: results}
+func TestRunToolLoop_MaxTokensStopReasonNormalizesLength(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{Content: "x", Truncated: true, StopReason: "max_tokens"},
+	}}
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("loop")}, LoopConfig{Model: "m"}, step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Content != "xxxx" {
-		t.Fatalf("got %q", res.Content)
+	if res.Content != "x" {
+		t.Fatalf("expected partial content, got %q", res.Content)
+	}
+	if res.FinishReason != providers.FinishReasonLength || res.StopReason != "max_tokens" || !res.Truncated {
+		t.Fatalf("expected max_tokens to normalize to length, got reason=%q stop=%q truncated=%v", res.FinishReason, res.StopReason, res.Truncated)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("expected 1 step call, got %d", len(step.calls))
 	}
 }
 

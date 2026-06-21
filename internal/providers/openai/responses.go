@@ -596,12 +596,13 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 		case "response.completed":
 			pending.emitEnds(ch)
-			usage, stopReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
+			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
 			ch <- providers.StreamEvent{
-				Type:       providers.EventDone,
-				Usage:      usage,
-				StopReason: stopReason,
-				Truncated:  truncated,
+				Type:         providers.EventDone,
+				Usage:        usage,
+				StopReason:   stopReason,
+				FinishReason: finishReason,
+				Truncated:    truncated,
 			}
 			return
 
@@ -647,12 +648,12 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 	}
 }
 
-func responsesDoneMetadata(resp *responsesResponse, sawToolCall bool) (*providers.TokenUsage, string, bool) {
+func responsesDoneMetadata(resp *responsesResponse, sawToolCall bool) (*providers.TokenUsage, string, providers.FinishReason, bool) {
 	if resp == nil {
 		if sawToolCall {
-			return nil, "tool_calls", false
+			return nil, "tool_calls", providers.FinishReasonToolCalls, false
 		}
-		return nil, "", false
+		return nil, "", "", false
 	}
 
 	usage := resp.Usage.asTokenUsage()
@@ -665,7 +666,7 @@ func responsesDoneMetadata(resp *responsesResponse, sawToolCall bool) (*provider
 	if sawToolCall && !truncated {
 		stopReason = "tool_calls"
 	}
-	return usage, stopReason, truncated
+	return usage, stopReason, providers.NormalizeFinishReason(stopReason, truncated, sawToolCall), truncated
 }
 
 type responsesPendingTool struct {
@@ -916,14 +917,16 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 	if len(calls) > 0 && !truncated {
 		stopReason = "tool_calls"
 	}
+	finishReason := providers.NormalizeFinishReason(stopReason, truncated, len(calls) > 0)
 
 	return providers.ChatResponse{
-		Content:    strings.Join(contentParts, "\n"),
-		Phase:      phase,
-		ToolCalls:  calls,
-		Usage:      r.Usage.asTokenUsage(),
-		StopReason: stopReason,
-		Truncated:  truncated,
+		Content:      strings.Join(contentParts, "\n"),
+		Phase:        phase,
+		ToolCalls:    calls,
+		Usage:        r.Usage.asTokenUsage(),
+		StopReason:   stopReason,
+		FinishReason: finishReason,
+		Truncated:    truncated,
 	}, nil
 }
 

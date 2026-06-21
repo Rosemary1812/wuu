@@ -334,6 +334,9 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 	if ev.StopReason != "" {
 		out.StopReason = ev.StopReason
 	}
+	if ev.FinishReason != "" {
+		out.FinishReason = string(ev.FinishReason)
+	}
 	if ev.Error != nil {
 		out.Error = ev.Error.Error()
 	}

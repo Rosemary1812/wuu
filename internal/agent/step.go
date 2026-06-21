@@ -2,7 +2,7 @@
 // shared tool-use loop drives. Both Runner and StreamRunner execute
 // through Step (Runner adapts providers.Client to StreamClient first),
 // so the actual loop logic — step counting, tool execution,
-// truncation recovery, context-overflow auto-compact — lives in
+// finish handling, context-overflow auto-compact — lives in
 // exactly one place. See loop.go.
 package agent
 
@@ -33,11 +33,13 @@ type StepResult struct {
 	// requested in this round, fully assembled (arguments included).
 	ToolCalls []providers.ToolCall
 	// Truncated is true when the provider signalled an output-token
-	// cap (Anthropic stop_reason=max_tokens, OpenAI finish_reason=
-	// length). The loop uses this to drive the "continue" recovery.
+	// cap (Anthropic stop_reason=max_tokens, OpenAI finish_reason=length).
+	// It is a completed model response whose canonical FinishReason is length.
 	Truncated bool
+	// FinishReason is the provider-neutral reason this model response ended.
+	FinishReason providers.FinishReason
 	// StopReason is the lowercase normalized stop signal. Surfaced
-	// for diagnostics; the loop's behavior is driven by Truncated.
+	// for diagnostics; FinishReason carries the cross-provider semantic.
 	StopReason string
 	// Usage is the per-round token consumption when the provider
 	// reports it. nil is allowed.
@@ -179,9 +181,9 @@ type LoopConfig struct {
 	// Zero means the provider's default (e.g. 16 384 for Anthropic).
 	// Aligned with Claude Code's initial max_tokens.
 	DefaultMaxTokens int
-	// EscalatedMaxTokens is the output token cap used after the first
-	// truncation recovery. Zero defaults to 65 536. Aligned with
-	// Claude Code's "start low, escalate on truncation" strategy.
+	// EscalatedMaxTokens is retained for config compatibility. Output
+	// truncation now completes the turn with FinishReason=length instead
+	// of issuing an automatic continuation request.
 	EscalatedMaxTokens int
 	// Effort controls reasoning depth. Empty = API default. Valid:
 	//   Anthropic: "low", "medium", "high", "max"
@@ -198,8 +200,7 @@ type LoopConfig struct {
 
 // LoopResult is what RunToolLoop returns on success.
 type LoopResult struct {
-	// Content is the model's final assistant message after any
-	// truncation-recovery rounds have been concatenated.
+	// Content is the model's final assistant message for this run.
 	Content string
 	// NewMessages is the slice of messages produced during this run
 	// (assistant turns + tool result turns) in order. When a compact
@@ -212,10 +213,13 @@ type LoopResult struct {
 	// it when this is true.
 	HistoryRewritten bool
 	// InputTokens / OutputTokens are the cumulative usage across
-	// every round in this run, including any compact + recovery
-	// rounds. Zero when the provider doesn't report usage.
+	// every round in this run, including compact requests. Zero when
+	// the provider doesn't report usage.
 	InputTokens         int
 	OutputTokens        int
 	CacheCreationTokens int
 	CacheReadTokens     int
+	FinishReason        providers.FinishReason
+	StopReason          string
+	Truncated           bool
 }

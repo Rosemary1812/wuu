@@ -327,6 +327,7 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 
 	var content strings.Builder
 	var usage *providers.TokenUsage
+	var finishReason providers.FinishReason
 	stopReason := ""
 	truncated := false
 	done := false
@@ -347,6 +348,7 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 			if event.Usage != nil {
 				usage = event.Usage
 			}
+			finishReason = event.FinishReason
 			stopReason = event.StopReason
 			truncated = event.Truncated
 		}
@@ -358,19 +360,24 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 		}
 		return providers.ChatResponse{}, err
 	}
+	if finishReason == "" {
+		finishReason = providers.NormalizeFinishReason(stopReason, truncated, false)
+	}
 	return providers.ChatResponse{
-		Content:    content.String(),
-		Usage:      usage,
-		StopReason: stopReason,
-		Truncated:  truncated,
+		Content:      content.String(),
+		Usage:        usage,
+		FinishReason: finishReason,
+		StopReason:   stopReason,
+		Truncated:    truncated,
 	}, nil
 }
 
 func recoverCompactStream(ctx context.Context, client providers.Client, req providers.ChatRequest, partial string, streamErr error) (providers.ChatResponse, bool, error) {
 	if partial = strings.TrimSpace(partial); len(partial) >= compactPartialMinOutputChars {
 		return providers.ChatResponse{
-			Content:   partial,
-			Truncated: true,
+			Content:      partial,
+			FinishReason: providers.FinishReasonLength,
+			Truncated:    true,
 		}, true, nil
 	}
 	if !isIncompleteCompactStream(streamErr) {

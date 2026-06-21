@@ -59,10 +59,11 @@ func (a adaptedStreamClient) StreamChat(ctx context.Context, req ChatRequest) (<
 		})
 	}
 	events = append(events, StreamEvent{
-		Type:       EventDone,
-		Usage:      resp.Usage,
-		StopReason: resp.StopReason,
-		Truncated:  resp.Truncated,
+		Type:         EventDone,
+		Usage:        resp.Usage,
+		StopReason:   resp.StopReason,
+		FinishReason: normalizedResponseFinishReason(resp),
+		Truncated:    resp.Truncated,
 	})
 
 	ch := make(chan StreamEvent, len(events))
@@ -71,4 +72,11 @@ func (a adaptedStreamClient) StreamChat(ctx context.Context, req ChatRequest) (<
 	}
 	close(ch)
 	return ch, nil
+}
+
+func normalizedResponseFinishReason(resp ChatResponse) FinishReason {
+	if resp.FinishReason != "" {
+		return resp.FinishReason
+	}
+	return NormalizeFinishReason(resp.StopReason, resp.Truncated, len(resp.ToolCalls) > 0)
 }
