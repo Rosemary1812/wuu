@@ -421,7 +421,6 @@ var gitSecretValuePatterns = []*regexp.Regexp{
 }
 
 var blockedCommitFlags = map[string]bool{
-	"--amend":               true,
 	"--no-verify":           true,
 	"--gpg-sign":            true,
 	"--no-gpg-sign":         true,
@@ -431,8 +430,6 @@ var blockedCommitFlags = map[string]bool{
 	"--squash":              true,
 	"-C":                    true,
 	"-c":                    true,
-	"-F":                    true,
-	"--file":                true,
 	"--author":              true,
 	"--date":                true,
 	"--allow-empty":         true,
@@ -980,10 +977,20 @@ func validateCatFileArgs(args []string) error {
 
 func isCommitMessageArg(subcmd string, args []string, idx int) bool {
 	if subcmd != "commit" || idx <= 0 || idx >= len(args) {
+		if subcmd == "commit" && idx >= 0 && idx < len(args) {
+			arg := args[idx]
+			return strings.HasPrefix(arg, "-m") && arg != "-m" ||
+				strings.HasPrefix(arg, "--message=")
+		}
 		return false
 	}
 	prev := args[idx-1]
-	return prev == "-m" || prev == "--message"
+	if prev == "-m" || prev == "--message" {
+		return true
+	}
+	arg := args[idx]
+	return strings.HasPrefix(arg, "-m") && arg != "-m" ||
+		strings.HasPrefix(arg, "--message=")
 }
 
 func isExplicitGitPathArg(subcmd, arg string) bool {
@@ -1021,7 +1028,7 @@ func hasDangerousGlobalConfigArgs(args []string) bool {
 
 func validateCommitArgs(args []string) error {
 	if len(args) == 0 {
-		return errors.New("git commit requires an explicit message via -m or --message")
+		return errors.New("git commit requires an explicit message via -m/--message or -F/--file")
 	}
 	messageSeen := false
 	for i := 0; i < len(args); i++ {
@@ -1036,11 +1043,18 @@ func validateCommitArgs(args []string) error {
 		}
 		switch arg {
 		case "-m", "--message":
-			if messageSeen {
-				return errors.New("git commit accepts exactly one explicit message")
-			}
 			if i+1 >= len(args) {
 				return fmt.Errorf("git commit flag %q requires a message", arg)
+			}
+			messageSeen = true
+			i++
+			continue
+		case "-F", "--file":
+			if i+1 >= len(args) {
+				return fmt.Errorf("git commit flag %q requires a message file", arg)
+			}
+			if err := validateCommitMessageFileArg(arg, args[i+1]); err != nil {
+				return err
 			}
 			messageSeen = true
 			i++
@@ -1051,19 +1065,50 @@ func validateCommitArgs(args []string) error {
 			continue
 		}
 		if strings.HasPrefix(arg, "--message=") {
-			if messageSeen {
-				return errors.New("git commit accepts exactly one explicit message")
+			messageSeen = true
+			continue
+		}
+		if strings.HasPrefix(arg, "--file=") {
+			if err := validateCommitMessageFileArg("--file", strings.TrimPrefix(arg, "--file=")); err != nil {
+				return err
 			}
 			messageSeen = true
+			continue
+		}
+		if arg == "--amend" {
 			continue
 		}
 		if strings.HasPrefix(arg, "-") {
 			return fmt.Errorf("git commit flag %q is not allowed in restricted mode", arg)
 		}
-		return fmt.Errorf("git commit only supports -m/--message; unexpected arg %q", arg)
+		return fmt.Errorf("git commit only supports explicit non-interactive message flags; unexpected arg %q", arg)
 	}
 	if !messageSeen {
-		return errors.New("git commit requires an explicit message via -m or --message")
+		return errors.New("git commit requires an explicit message via -m/--message or -F/--file")
+	}
+	return nil
+}
+
+func validateCommitMessageFileArg(flag, raw string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return fmt.Errorf("git commit flag %q requires a non-empty message file", flag)
+	}
+	if value == "-" {
+		return fmt.Errorf("git commit flag %q cannot read the message from stdin in restricted mode", flag)
+	}
+	if filepath.IsAbs(value) {
+		return fmt.Errorf("git commit flag %q requires a workspace-relative message file, got absolute path %q", flag, value)
+	}
+	cleaned := path.Clean(filepath.ToSlash(value))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return fmt.Errorf("git commit flag %q requires a workspace-relative message file, got %q", flag, value)
+	}
+	if strings.ContainsAny(cleaned, "*?[") || strings.HasPrefix(cleaned, ":") || strings.Contains(cleaned, ":(") {
+		return fmt.Errorf("git commit flag %q requires a literal message file path, got %q", flag, value)
+	}
+	if reason, ok := sensitivePathReason(cleaned); ok {
+		return fmt.Errorf("git commit refuses message file %q (%s). Ask the user for explicit secret handling before committing", cleaned, reason)
 	}
 	return nil
 }

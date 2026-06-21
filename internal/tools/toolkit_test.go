@@ -6002,6 +6002,51 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 	if parsed.ExitCode != 0 || parsed.Classification.ReadOnly || parsed.Classification.Risk != ToolRiskMedium {
 		t.Fatalf("git add+commit shell response = %+v, want successful medium-risk write", parsed)
 	}
+
+	mustWriteFile(t, filepath.Join(root, "hello.txt"), "updated again\n")
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git add hello.txt && git commit -m \"Sweep the whole process cluster row when it's running\" -m \"Body includes \\\"still working\\\" and punctuation; still a message.\"","timeout_seconds":10}`,
+	})
+	if err != nil {
+		t.Fatalf("expected repeated -m commit with escaped quotes to run: %v", err)
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse repeated -m response: %v\n%s", err, resp)
+	}
+	if parsed.ExitCode != 0 || parsed.Classification.ReadOnly || parsed.Classification.Risk != ToolRiskMedium {
+		t.Fatalf("repeated -m shell response = %+v, want successful medium-risk write", parsed)
+	}
+
+	mustWriteFile(t, filepath.Join(root, "hello.txt"), "updated from file\n")
+	mustWriteFile(t, filepath.Join(root, "commit-message.txt"), "Message from file\n\nBody\n")
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git add hello.txt && git commit -F commit-message.txt","timeout_seconds":10}`,
+	})
+	if err != nil {
+		t.Fatalf("expected -F commit to run: %v", err)
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse -F response: %v\n%s", err, resp)
+	}
+	if parsed.ExitCode != 0 || parsed.Classification.ReadOnly || parsed.Classification.Risk != ToolRiskMedium {
+		t.Fatalf("-F shell response = %+v, want successful medium-risk write", parsed)
+	}
+
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"git commit --amend -m \"Amended shell subject\"","timeout_seconds":10}`,
+	})
+	if err != nil {
+		t.Fatalf("expected --amend -m commit to run: %v", err)
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse --amend response: %v\n%s", err, resp)
+	}
+	if parsed.ExitCode != 0 || parsed.Classification.ReadOnly || parsed.Classification.Risk != ToolRiskMedium {
+		t.Fatalf("--amend shell response = %+v, want successful medium-risk write", parsed)
+	}
 }
 
 func TestToolkit_RunShellRejectsUnsafeGitCommands(t *testing.T) {

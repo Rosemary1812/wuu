@@ -115,7 +115,7 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 			"remote show, config --get/--get-all/--list, rev-parse, rev-list, describe, " +
 			"cat-file metadata modes, for-each-ref, grep, worktree list, merge-base, shortlog.\n\n" +
 			"Supported write commands: add (stage explicit paths only), restore --staged (unstage explicit paths only), " +
-			"commit (with explicit -m message and no staged sensitive paths), push (plain or -u origin <branch>).\n\n" +
+			"commit (non-interactive explicit message via -m/--message or -F/--file, no staged sensitive paths), push (plain or -u origin <branch>).\n\n" +
 			"Git workflow: use status to inspect {staged, unstaged, untracked}; use diff and diff --cached before deciding; " +
 			"use add with explicit paths from status to stage intended files; use restore --staged with explicit paths to remove accidental staged files; " +
 			"then commit and push only when the user explicitly requested those write actions.\n\n" +
@@ -136,7 +136,7 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 				"args": map[string]any{
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
-					"description": "Arguments to pass to the git subcommand. add and restore --staged require explicit workspace-relative paths from git status and do not accept '.', wildcards, pathspec magic, or flags. commit only supports explicit -m/--message forms on staged non-sensitive changes; push only supports plain push or -u/--set-upstream origin <current-branch>.",
+					"description": "Arguments to pass to the git subcommand. add and restore --staged require explicit workspace-relative paths from git status and do not accept '.', wildcards, pathspec magic, or flags. commit supports non-interactive explicit messages with one or more -m/--message flags, a workspace-relative -F/--file message file, and --amend when explicitly requested; push only supports plain push or -u/--set-upstream origin <current-branch>.",
 				},
 				"confirm_user_approved": map[string]any{
 					"type":        "boolean",

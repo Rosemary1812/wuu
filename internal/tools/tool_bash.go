@@ -157,7 +157,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -293,7 +293,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		return "", errors.New("bash requires command")
 	}
 	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-		return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit -m: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
+		return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("bash refuses to print process environment variables because they may contain secrets")

@@ -79,7 +79,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with git commit -m, and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected by command policy.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected by command policy.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -114,7 +114,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 		return "", errors.New("run_shell requires command")
 	}
 	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit -m through bash: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
+		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
@@ -579,10 +579,17 @@ func splitShellCommandSegmentsQuoted(command string) ([]string, bool) {
 	var b strings.Builder
 	inSingle := false
 	inDouble := false
-	for _, r := range command {
+	runes := []rune(command)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		switch {
-		case r == '\\':
-			return nil, false
+		case r == '\\' && !inSingle:
+			if i+1 >= len(runes) {
+				return nil, false
+			}
+			b.WriteRune(r)
+			i++
+			b.WriteRune(runes[i])
 		case r == '\'' && !inDouble:
 			inSingle = !inSingle
 			b.WriteRune(r)
@@ -617,10 +624,17 @@ func splitShellFields(segment string) ([]string, bool) {
 		b.Reset()
 		haveField = false
 	}
-	for _, r := range segment {
+	runes := []rune(segment)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		switch {
-		case r == '\\':
-			return nil, false
+		case r == '\\' && !inSingle:
+			if i+1 >= len(runes) {
+				return nil, false
+			}
+			i++
+			b.WriteRune(runes[i])
+			haveField = true
 		case r == '\'' && !inDouble:
 			inSingle = !inSingle
 			haveField = true

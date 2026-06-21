@@ -394,14 +394,65 @@ func TestToolkit_Git_CommitRejectsSensitiveStagedPaths(t *testing.T) {
 func TestToolkit_Git_CommitRejectedFlags(t *testing.T) {
 	kit, _ := setupGitRepo(t)
 	for _, args := range [][]string{
-		{"--amend", "-m", "x"},
 		{"--no-verify", "-m", "x"},
 		{"--allow-empty", "-m", "x"},
-		{"-F", "msg.txt"},
+		{"-e", "-m", "x"},
 	} {
 		msg := gitErr(t, kit, "commit", args...)
 		if !strings.Contains(msg, "not allowed") {
 			t.Errorf("commit args %v: want restricted error, got %s", args, msg)
+		}
+	}
+}
+
+func TestToolkit_Git_CommitAllowsNormalMessageForms(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'next\n' > staged.txt && git add staged.txt")
+
+	p := gitCallConfirmed(t, kit, "commit",
+		"-m", "Subject with spaces",
+		"-m", "Body mentions \"quoted text\" and shell-looking text $(ignored); still a message.",
+	)
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("commit with repeated -m failed: %+v", p)
+	}
+	if log := runBash(t, root, "git log -1 --format=%B"); !strings.Contains(log, "Subject with spaces") || !strings.Contains(log, "shell-looking text") {
+		t.Fatalf("unexpected commit message:\n%s", log)
+	}
+}
+
+func TestToolkit_Git_CommitAllowsMessageFileAndAmend(t *testing.T) {
+	kit, root := setupGitRepo(t)
+	runBash(t, root, "printf 'From message file\n\nBody\n' > msg.txt")
+	runBash(t, root, "printf 'next\n' > staged.txt && git add staged.txt")
+
+	p := gitCallConfirmed(t, kit, "commit", "-F", "msg.txt")
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("commit with -F failed: %+v", p)
+	}
+	if log := runBash(t, root, "git log -1 --format=%B"); !strings.Contains(log, "From message file") {
+		t.Fatalf("unexpected commit message from file:\n%s", log)
+	}
+
+	p = gitCallConfirmed(t, kit, "commit", "--amend", "-m", "Amended subject")
+	if p["exit_code"].(float64) != 0 {
+		t.Fatalf("commit --amend -m failed: %+v", p)
+	}
+	if log := runBash(t, root, "git log -1 --format=%s"); strings.TrimSpace(log) != "Amended subject" {
+		t.Fatalf("unexpected amended subject: %q", log)
+	}
+}
+
+func TestToolkit_Git_CommitRejectsUnsafeMessageFile(t *testing.T) {
+	kit, _ := setupGitRepo(t)
+	for _, args := range [][]string{
+		{"-F", "-"},
+		{"-F", "../msg.txt"},
+		{"--file=.env"},
+	} {
+		msg := gitErr(t, kit, "commit", args...)
+		if !strings.Contains(msg, "message") && !strings.Contains(msg, "secret") {
+			t.Errorf("commit args %v: want message-file restriction, got %s", args, msg)
 		}
 	}
 }
