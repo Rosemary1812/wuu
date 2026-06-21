@@ -70,6 +70,7 @@ function renderComposer(props: {
   onInterrupt?: () => void;
   onSend?: () => void;
   onRemoveQueuedMessage?: (id: string) => void;
+  onRemoveGuideMessage?: (id: string) => void;
   onGuideQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string) => void;
   onEditGuideMessage?: (id: string) => void;
@@ -134,7 +135,7 @@ function renderComposer(props: {
         onRemoveFile={() => {}}
         onRemoveImage={() => {}}
         onRemoveQueuedMessage={props.onRemoveQueuedMessage ?? (() => {})}
-        onRemoveGuideMessage={() => {}}
+        onRemoveGuideMessage={props.onRemoveGuideMessage ?? (() => {})}
         onGuideQueuedMessage={props.onGuideQueuedMessage ?? (() => {})}
         onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
         onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
@@ -480,6 +481,28 @@ describe("Composer queue strip", () => {
     });
 
     expect(onEditQueuedMessage).toHaveBeenCalledWith("queue-1");
+  });
+
+  it("cancels a guide from a single inline button click", () => {
+    const onRemoveGuideMessage = vi.fn();
+    renderComposer({
+      running: true,
+      guideMessages: [
+        { id: "guide-1", text: "已引导消息", images: [], files: [] }
+      ],
+      onRemoveGuideMessage
+    });
+
+    const cancelButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"取消引导 1\"]"
+    );
+    expect(cancelButton).not.toBeNull();
+
+    act(() => {
+      cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onRemoveGuideMessage).toHaveBeenCalledWith("guide-1");
   });
 
   it("does not render a per-row overflow menu (actions are inline)", () => {

@@ -1,5 +1,6 @@
 import {
   CornerDownRight,
+  CornerUpLeft,
   FileText,
   Paperclip,
   Send,
@@ -310,7 +311,17 @@ function ComposerQueueItem({
         {queuedMessagePreview(message)}
       </button>
       <div className="composer-queue-actions">
-        {onGuide ? (
+        {kind === "guide" ? (
+          <button
+            type="button"
+            className="composer-queue-action"
+            aria-label={`取消引导 ${position}`}
+            title="取消引导"
+            onClick={onRemove}
+          >
+            <CornerUpLeft className="icon-sm" aria-hidden="true" />
+          </button>
+        ) : onGuide ? (
           <button
             type="button"
             className="composer-queue-action"
