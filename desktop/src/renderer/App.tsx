@@ -3683,6 +3683,37 @@ export function App(): JSX.Element {
         ),
       );
       const sent = await sendComposerMessageToThread(message, thread);
+      if (sent) {
+        // `editThreadMessage` truncated the thread at the edited user_message
+        // (length = `thread.turns.length`, the original edit index), and
+        // `sendComposerMessageToThread` appends the new turn at the end. Make
+        // sure the new turn sits at the original edit index so the right-side
+        // "historical query" list reflects the edit in place (e.g. A,B,C
+        // → edit C to D → [A,B,D]; A,B,C,D → edit C to E → [A,B,E]).
+        const editIndex = thread.turns.length;
+        const reordered = (latest: Thread): Thread => {
+          if (latest.turns.length <= editIndex) return latest;
+          const newTurn = latest.turns[latest.turns.length - 1];
+          if (latest.turns[editIndex] === newTurn) return latest;
+          const turns = latest.turns.slice(0, editIndex);
+          turns.push(newTurn);
+          return { ...latest, turns };
+        };
+        appStateRef.current = updateThreadByID(
+          { ...appStateRef.current, activePane: targetPane },
+          thread.id,
+          reordered,
+          {},
+        );
+        setState((current) =>
+          updateThreadByID(
+            { ...current, activePane: targetPane },
+            thread.id,
+            reordered,
+            {},
+          ),
+        );
+      }
       if (!sent) {
         if (pane === undefined) {
           restorePrimaryComposerDraft({
