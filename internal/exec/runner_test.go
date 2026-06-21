@@ -442,6 +442,85 @@ func TestRunJSONLEmitsWorkEventFamilies(t *testing.T) {
 	}
 }
 
+func TestRunIgnoresChildTurnCompletionUntilRootCompletes(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
+			ThreadID: "thread-1",
+			Agent:    appserver.Agent{ID: "agent-1", Type: "general-purpose", TaskName: "worker", Status: "running"},
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+			ThreadID: "agent-1",
+			Turn:     appserver.Turn{ID: "agent-turn-1"},
+			Content:  "child result",
+		}),
+		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
+			ThreadID: "thread-1",
+			Agent:    appserver.Agent{ID: "agent-1", Type: "general-purpose", TaskName: "worker", Status: "completed", Result: "child result"},
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+			ThreadID:  "thread-1",
+			Turn:      appserver.Turn{ID: "turn-1"},
+			Content:   "parent result",
+			TracePath: "/trace.jsonl",
+		}),
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:     "spawn worker",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	types := eventTypes(events)
+	if !containsString(types, "subagent_completed") {
+		t.Fatalf("missing subagent_completed in %#v\n%s", types, stdout.String())
+	}
+	result := events[len(events)-1]
+	if result["type"] != "result" || result["thread_id"] != "thread-1" || result["turn_id"] != "turn-1" || result["final_message"] != "parent result" {
+		t.Fatalf("exec should finish on root turn, got %+v\n%s", result, stdout.String())
+	}
+}
+
+func TestRunIgnoresChildTurnErrorUntilRootCompletes(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{
+			ThreadID: "agent-1",
+			TurnID:   "agent-turn-1",
+			Error:    "child failed",
+			Turn:     appserver.Turn{ID: "agent-turn-1"},
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+			ThreadID:  "thread-1",
+			Turn:      appserver.Turn{ID: "turn-1"},
+			Content:   "parent handled child failure",
+			TracePath: "/trace.jsonl",
+		}),
+	)
+	var stdout bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:     "await worker",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	types := eventTypes(events)
+	if !containsString(types, "turn_failed") {
+		t.Fatalf("missing child turn_failed in %#v\n%s", types, stdout.String())
+	}
+	result := events[len(events)-1]
+	if result["type"] != "result" || result["status"] != "completed" || result["final_message"] != "parent handled child failure" {
+		t.Fatalf("exec should let root turn decide after child error, got %+v\n%s", result, stdout.String())
+	}
+}
+
 func TestRunApprovalUnavailableReturnsPermissionExit(t *testing.T) {
 	controller := newFakeController(
 		notification(notificationApprovalRequested, approvalRequestedNotification{

@@ -293,7 +293,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		if state.turnID == "" || params.TurnID == state.turnID {
+		if isCurrentTurn(state, params.ThreadID, params.TurnID) {
 			state.finalMessage += params.Delta
 			emitJSON(opts, map[string]any{"type": "agent_message_delta", "thread_id": params.ThreadID, "turn_id": params.TurnID, "delta": params.Delta})
 		}
@@ -302,7 +302,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		if state.turnID == "" || params.TurnID == state.turnID {
+		if isCurrentTurn(state, params.ThreadID, params.TurnID) {
 			state.finalMessage = params.Text
 			emitJSON(opts, map[string]any{"type": "agent_message_final", "thread_id": params.ThreadID, "turn_id": params.TurnID, "message": params.Text})
 		}
@@ -361,6 +361,10 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
+		emitJSON(opts, map[string]any{"type": "turn_completed", "thread_id": params.ThreadID, "turn_id": params.Turn.ID, "input_tokens": params.InputTokens, "output_tokens": params.OutputTokens, "trace_path": params.TracePath})
+		if !isCurrentTurn(state, params.ThreadID, params.Turn.ID) {
+			return false, nil
+		}
 		if params.Content != "" {
 			state.finalMessage = params.Content
 		}
@@ -368,12 +372,15 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.turnID = params.Turn.ID
 		state.tracePath = params.TracePath
 		state.status = "completed"
-		emitJSON(opts, map[string]any{"type": "turn_completed", "thread_id": params.ThreadID, "turn_id": params.Turn.ID, "input_tokens": params.InputTokens, "output_tokens": params.OutputTokens, "trace_path": params.TracePath})
 		return true, nil
 	case appserver.NotificationTurnError:
 		var params appserver.TurnErrorNotification
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
+		}
+		emitJSON(opts, map[string]any{"type": "turn_failed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "error": params.Error})
+		if !isCurrentTurn(state, params.ThreadID, params.TurnID) {
+			return false, nil
 		}
 		state.threadID = params.ThreadID
 		state.turnID = params.TurnID
@@ -393,7 +400,6 @@ func handleNotification(opts Options, notification Notification, state *runState
 		case isToolFailure(params.Error):
 			code = ExitToolFailed
 		}
-		emitJSON(opts, map[string]any{"type": "turn_failed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "error": params.Error})
 		emitResult(opts, *state, status, params.Error)
 		return false, WithExitCode(code, errors.New(params.Error))
 	case notificationApprovalRequested:
@@ -410,6 +416,19 @@ func handleNotification(opts Options, notification Notification, state *runState
 		emitApprovalResolved(opts, state, params)
 	}
 	return false, nil
+}
+
+func isCurrentTurn(state *runState, threadID, turnID string) bool {
+	if state == nil {
+		return false
+	}
+	if state.threadID != "" && threadID != state.threadID {
+		return false
+	}
+	if state.turnID != "" && turnID != state.turnID {
+		return false
+	}
+	return true
 }
 
 func emitSessionConfigured(opts Options, result appserver.InitializeResult) {
