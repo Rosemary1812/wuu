@@ -1532,7 +1532,9 @@ func TestWorkflowToolDescriptionsPreferStartWorkflow(t *testing.T) {
 	if !strings.Contains(startDesc, "Start a workflow run") ||
 		!strings.Contains(startDesc, "driver=auto") ||
 		!strings.Contains(startDesc, "script path") ||
-		!strings.Contains(startDesc, "agent-managed path") {
+		!strings.Contains(startDesc, "agent-managed path") ||
+		!strings.Contains(startDesc, "creates a Goal binding") ||
+		!strings.Contains(startDesc, "broader user-visible Goal") {
 		t.Fatalf("start_workflow description should present the default workflow path: %q", startDesc)
 	}
 	runDesc := NewRunWorkflowTool(env).Definition().Description

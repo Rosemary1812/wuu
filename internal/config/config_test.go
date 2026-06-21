@@ -744,10 +744,15 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 		"ask the user only for choices that are irreversible",
 		"Skill path:",
 		"load_skill",
+		"Goal path:",
+		"start_goal",
+		"spans multiple workflow runs",
 		"Workflow path:",
-		"load_workflow and start_workflow",
+		"load_workflow and start_workflow with driver=auto",
+		"start_workflow creates the Goal binding",
 		"Delegation path:",
 		"spawn_agent",
+		"Pass goal_id and goal_dir",
 		"Memory path:",
 		"session_memory",
 	} {
@@ -762,6 +767,31 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 	} {
 		if strings.Contains(prompt, bad) {
 			t.Fatalf("default system prompt should avoid awkward mode wording %q: %q", bad, prompt)
+		}
+	}
+}
+
+func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
+	prompt := DefaultSystemPrompt()
+	for _, want := range []string{
+		"Goal, workflow, and sub-agent closure",
+		"Use the lightest durable boundary",
+		"Call start_goal before orchestration only when the user-visible objective is broader than one workflow run or one child task",
+		"start_workflow; it creates or binds its own Goal state",
+		"Start reusable or ad hoc workflows with start_workflow and driver=auto",
+		"script means the script owns phases",
+		"agent_managed means you own those steps through workflow_control",
+		"record_workflow_team",
+		"spawn each worker with the workflow goal_id and goal_dir",
+		"await required outputs",
+		"workflow_status",
+		"agent_report evidence",
+		"resolve await_agents warnings",
+		"completed workflow is evidence, not automatic completion",
+		"complete_goal only when the user-visible objective itself is done",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("default system prompt missing goal/workflow closure guidance %q: %q", want, prompt)
 		}
 	}
 }

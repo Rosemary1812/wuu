@@ -27,8 +27,9 @@ func (t *StartGoalTool) IsConcurrencySafe() bool { return false }
 func (t *StartGoalTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_goal",
-		Description: "Start a durable user-visible Goal for work that needs explicit progress tracking, a workflow, subagents, approvals, retries, or later resumption. " +
-			"Do not call this for tiny one-shot edits or ordinary local investigation. If the goal will use a workflow, call start_goal first only when the user-level goal is broader than one workflow run, then pass the returned goal_id and goal_dir to start_workflow.",
+		Description: "Start a durable user-visible Goal for work that needs explicit progress tracking, multiple workflow runs, subagents, approvals, retries, or later resumption. " +
+			"Do not call this for tiny one-shot edits, ordinary local investigation, or one self-contained workflow run; start_workflow creates a Goal binding for that run. " +
+			"If the user-level Goal is broader than one workflow or child task, pass the returned goal_id and goal_dir to start_workflow and workflow-bound spawn_agent calls, then call complete_goal only when the user-visible outcome is done.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

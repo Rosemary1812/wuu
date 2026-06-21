@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
@@ -81,6 +82,23 @@ func TestGoalToolsLifecycle(t *testing.T) {
 	}
 	if status.Goal.ID != "goal-tools" || status.Goal.Status != string(goalrunner.StatusCompleted) || status.Goal.FinalArtifact != "reports/goal-tools.md" || status.EventCount == 0 {
 		t.Fatalf("unexpected goal_status result: %+v", status)
+	}
+}
+
+func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
+	desc := NewStartGoalTool(&Env{}).Definition().Description
+	for _, want := range []string{
+		"durable user-visible Goal",
+		"multiple workflow runs",
+		"Do not call this for tiny one-shot edits",
+		"one self-contained workflow run",
+		"start_workflow creates a Goal binding",
+		"pass the returned goal_id and goal_dir",
+		"complete_goal only when the user-visible outcome is done",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("start_goal description missing %q: %q", want, desc)
+		}
 	}
 }
 

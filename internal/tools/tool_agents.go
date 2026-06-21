@@ -99,11 +99,11 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Optional goal id returned by start_workflow. Pass it when spawning agents for that workflow so agent_report can update the workflow goal state.",
+					"description": "Optional goal id returned by start_goal or start_workflow. Pass it when spawning agents for that Goal or workflow so agent_report can update durable goal state.",
 				},
 				"goal_dir": map[string]any{
 					"type":        "string",
-					"description": "Optional goal_dir returned by start_workflow. Use with goal_id for workflow-bound spawned agents.",
+					"description": "Optional goal_dir returned by start_goal or start_workflow. Use with goal_id for Goal- or workflow-bound spawned agents.",
 				},
 			},
 			"required": []string{"description", "prompt"},
