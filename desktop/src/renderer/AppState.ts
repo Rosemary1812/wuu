@@ -805,6 +805,35 @@ function projectThreads(threads: Thread[]): Thread[] {
   return sortThreads(threads).filter((thread) => !thread.pinned);
 }
 
+// isScratchThread classifies a thread as belonging to the scratch (no-project)
+// workspace. Newer builds set Thread.workspace_kind at creation; older threads
+// loaded from disk omit the field, so fall back to comparing cwd against the
+// registered project list. Anything whose cwd is not a known project path
+// must have come from the desktop-managed scratch root.
+export function isScratchThread(
+  thread: Thread,
+  projects: DesktopProject[],
+): boolean {
+  if (thread.workspace_kind === "scratch") {
+    return true;
+  }
+  if (thread.workspace_kind === "project") {
+    return false;
+  }
+  return !projects.some((project) => project.path === thread.cwd);
+}
+
+// scratchThreads returns the non-pinned threads that belong to the scratch
+// workspace, sorted newest-first to match the project list ordering.
+export function scratchThreads(
+  threads: Thread[],
+  projects: DesktopProject[],
+): Thread[] {
+  return sortThreads(threads).filter(
+    (thread) => !thread.pinned && isScratchThread(thread, projects),
+  );
+}
+
 function createDraftSessionTab(
   id: string,
   context: RuntimeContext,

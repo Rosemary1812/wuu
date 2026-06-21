@@ -262,6 +262,63 @@ export function PinnedThreadList({
   );
 }
 
+export function ScratchThreadSection({
+  threads,
+  activeID,
+  pendingThreadID,
+  archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
+  onSelect,
+  onSelectChildAgent,
+  onToggleThreadPinned,
+  onArchiveThread,
+  onClearArchiveConfirm,
+  onCreateScratchThread
+}: {
+  threads: Thread[];
+  activeID?: string;
+  pendingThreadID?: string;
+  archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
+  onSelect: (id: string) => void;
+  onSelectChildAgent: (agent: Agent) => void;
+  onToggleThreadPinned: (thread: Thread) => void;
+  onArchiveThread: (thread: Thread) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
+  onCreateScratchThread: () => void;
+}): JSX.Element {
+  return (
+    <section className="scratch-thread-section" aria-label="对话">
+      <div className="scratch-thread-header">
+        <span className="section-label scratch-thread-label">对话</span>
+        <button
+          className="scratch-thread-add-button"
+          type="button"
+          aria-label="新建对话"
+          title="新建对话"
+          onClick={onCreateScratchThread}
+        >
+          <MessageSquarePlus className="icon-xl" />
+        </button>
+      </div>
+      <div className="scratch-thread-list">
+        <ThreadRows
+          threads={threads}
+          activeID={activeID}
+          pendingThreadID={pendingThreadID}
+          archiveConfirmThreadID={archiveConfirmThreadID}
+          lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+          onSelect={onSelect}
+          onSelectChildAgent={onSelectChildAgent}
+          onTogglePinned={onToggleThreadPinned}
+          onArchive={onArchiveThread}
+          onClearArchiveConfirm={onClearArchiveConfirm}
+        />
+      </div>
+    </section>
+  );
+}
+
 function ThreadRows({
   threads,
   activeID,
