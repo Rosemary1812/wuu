@@ -2693,6 +2693,31 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
 		Name:      "run_shell",
+		Arguments: `{"command":"nice go test ./..."}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskMedium) || meta.Reason != "local verification command" {
+		t.Fatalf("wrapped go test metadata = %+v, want medium-risk verification", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"timeout --bogus 10 go test ./..."}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || meta.Risk != string(ToolRiskHigh) || meta.Reason == "local verification command" {
+		t.Fatalf("unknown timeout flag metadata = %+v, want conservative high-risk classification", meta)
+	}
+	if meta.Reason != "unsupported shell wrapper command" {
+		t.Fatalf("unknown timeout flag reason = %q, want unsupported shell wrapper command", meta.Reason)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
 		Arguments: `{"command":"cd pkg && go test ./..."}`,
 	})
 	if !ok {
@@ -2748,6 +2773,17 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
 		Name:      "run_shell",
+		Arguments: `{"command":"nice git status --short"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if !meta.ReadOnly || !meta.ConcurrencySafe || meta.Risk != string(ToolRiskLow) || meta.Reason != "git shell read-only command" {
+		t.Fatalf("wrapped git status shell metadata = %+v, want read-only low-risk git shell", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
 		Arguments: `{"command":"cd pkg && git status"}`,
 	})
 	if !ok {
@@ -2799,6 +2835,17 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 	if meta.ReadOnly || !meta.Destructive || meta.Risk != string(ToolRiskHigh) || meta.Reason != "destructive git shell command" {
 		t.Fatalf("destructive git shell metadata = %+v, want destructive high-risk git shell", meta)
+	}
+
+	meta, ok = kit.ToolMetadata(providers.ToolCall{
+		Name:      "run_shell",
+		Arguments: `{"command":"nice git reset --hard"}`,
+	})
+	if !ok {
+		t.Fatal("run_shell metadata not found")
+	}
+	if meta.ReadOnly || !meta.Destructive || meta.Risk != string(ToolRiskHigh) || meta.Reason != "destructive git shell command" {
+		t.Fatalf("wrapped destructive git shell metadata = %+v, want destructive high-risk git shell", meta)
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
@@ -5203,15 +5250,41 @@ func TestToolkit_StartProcessRejectsDestructiveCommands(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(root, "tmp", "keep.txt"), "keep\n")
 
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"command rm -rf tmp","owner_kind":"main_agent"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "destructive shell commands") {
-		t.Fatalf("expected destructive command rejection, got %v", err)
+	for _, command := range []string{
+		"command rm -rf tmp",
+		"stdbuf -o0 rm -rf tmp",
+	} {
+		_, err = kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "start_process",
+			Arguments: fmt.Sprintf(`{"command":%q,"owner_kind":"main_agent"}`, command),
+		})
+		if err == nil || !strings.Contains(err.Error(), "destructive shell commands") {
+			t.Fatalf("expected destructive command rejection for %q, got %v", command, err)
+		}
+		if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
+			t.Fatalf("destructive start_process should not mutate workspace after %q: %q", command, got)
+		}
 	}
-	if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
-		t.Fatalf("destructive start_process should not mutate workspace: %q", got)
+}
+
+func TestShellCommandRecognitionUsesExecutableBasename(t *testing.T) {
+	if !shellCommandInvokesDestructiveCommand("/bin/rm -rf tmp") {
+		t.Fatal("absolute rm should be recognized as destructive")
+	}
+	if !shellCommandInvokesDestructiveCommand("/usr/bin/env rm -rf tmp") {
+		t.Fatal("path-qualified env rm should be recognized as destructive")
+	}
+	if !shellCommandInvokesDestructiveCommand("/usr/bin/timeout 10 rm -rf tmp") {
+		t.Fatal("path-qualified timeout rm should be recognized as destructive")
+	}
+	if !shellCommandUsesUnsupportedWrapper("/usr/bin/timeout --bogus 10 rm -rf tmp") {
+		t.Fatal("path-qualified unsupported timeout wrapper should be rejected")
+	}
+	if !shellCommandInvokesPackageOrNetworkMutation("/usr/bin/env curl https://example.com") {
+		t.Fatal("path-qualified env curl should be recognized as a network mutation")
+	}
+	if !shellCommandInvokesGit("/usr/bin/env git status --short") {
+		t.Fatal("path-qualified env git should be recognized as git")
 	}
 }
 
@@ -5226,6 +5299,8 @@ func TestToolkit_StartProcessRejectsPackageNetworkMutationCommands(t *testing.T)
 		"npm install left-pad",
 		"printf ok && curl https://example.com",
 		"env FOO=bar npx some-tool",
+		"nice curl https://example.com",
+		"timeout 10 npm install left-pad",
 	} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
 			Name:      "start_process",
@@ -5783,7 +5858,7 @@ func TestToolkit_RunShellRejectsEnvironmentDump(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	for _, command := range []string{"env", "printenv PATH", "env | grep TOKEN"} {
+	for _, command := range []string{"env", "printenv PATH", "env | grep TOKEN", "nice env", "stdbuf -o0 printenv PATH"} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
 			Name:      "run_shell",
 			Arguments: `{"command":"` + command + `"}`,
@@ -5805,7 +5880,20 @@ func TestToolkit_RunShellRejectsDestructiveCommands(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(root, "tmp", "keep.txt"), "keep\n")
 
-	for _, command := range []string{"rm -rf tmp", "printf ok && command rm -rf tmp", "env FOO=bar rm -rf tmp"} {
+	for _, command := range []string{
+		"rm -rf tmp",
+		"printf ok && command rm -rf tmp",
+		"env FOO=bar rm -rf tmp",
+		"nice rm -rf tmp",
+		"nice -n 5 rm -rf tmp",
+		"nice -5 rm -rf tmp",
+		"nohup rm -rf tmp",
+		"time rm -rf tmp",
+		"time -p rm -rf tmp",
+		"timeout 10 rm -rf tmp",
+		"timeout --foreground -k 1s 10 rm -rf tmp",
+		"stdbuf -o0 -eL rm -rf tmp",
+	} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
 			Name:      "run_shell",
 			Arguments: fmt.Sprintf(`{"command":%q}`, command),
@@ -5815,6 +5903,32 @@ func TestToolkit_RunShellRejectsDestructiveCommands(t *testing.T) {
 		}
 		if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
 			t.Fatalf("destructive run_shell should not mutate workspace after %q: %q", command, got)
+		}
+	}
+}
+
+func TestToolkit_RejectsUnsupportedShellWrappers(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(root, "tmp", "keep.txt"), "keep\n")
+
+	cases := []providers.ToolCall{
+		{Name: "run_shell", Arguments: `{"command":"timeout --bogus 10 rm -rf tmp"}`},
+		{Name: "run_shell", Arguments: `{"command":"timeout .5 rm -rf tmp"}`},
+		{Name: "bash", Arguments: `{"command":"nice --adjustment=5 rm -rf tmp"}`},
+		{Name: "bash", Arguments: `{"action":"start_background","command":"stdbuf --output L rm -rf tmp"}`},
+		{Name: "start_process", Arguments: `{"command":"time -o out.txt rm -rf tmp","owner_kind":"main_agent"}`},
+	}
+	for _, call := range cases {
+		_, err := kit.Execute(context.Background(), call)
+		if err == nil || !strings.Contains(err.Error(), "unsupported shell wrapper") {
+			t.Fatalf("expected unsupported wrapper rejection for %+v, got %v", call, err)
+		}
+		if got := mustReadFile(t, filepath.Join(root, "tmp", "keep.txt")); got != "keep\n" {
+			t.Fatalf("unsupported wrapper should not mutate workspace after %+v: %q", call, got)
 		}
 	}
 }
@@ -5829,7 +5943,9 @@ func TestToolkit_BashRejectsDestructiveCommandsWithProfileNeutralGuidance(t *tes
 
 	for _, args := range []string{
 		`{"command":"rm -rf tmp"}`,
+		`{"command":"nice rm -rf tmp"}`,
 		`{"action":"start_background","command":"rm -rf tmp"}`,
+		`{"action":"start_background","command":"timeout 10 rm -rf tmp"}`,
 	} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
 			Name:      "bash",
@@ -5866,6 +5982,10 @@ func TestToolkit_RunShellRejectsPackageNetworkMutationCommands(t *testing.T) {
 		"curl https://example.com",
 		"printf ok && wget https://example.com",
 		"env FOO=bar npx some-tool",
+		"nice curl https://example.com",
+		"timeout 10 npm install left-pad",
+		"nohup uv sync",
+		"stdbuf -o0 wget https://example.com",
 	} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
 			Name:      "run_shell",
@@ -5873,6 +5993,27 @@ func TestToolkit_RunShellRejectsPackageNetworkMutationCommands(t *testing.T) {
 		})
 		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
 			t.Fatalf("expected package/network mutation rejection for %q, got %v", command, err)
+		}
+	}
+}
+
+func TestToolkit_BashRejectsWrappedPackageNetworkMutationCommands(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, args := range []string{
+		`{"command":"nice curl https://example.com"}`,
+		`{"action":"start_background","command":"timeout 10 npm install left-pad"}`,
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "bash",
+			Arguments: args,
+		})
+		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
+			t.Fatalf("expected wrapped package/network mutation rejection for %s, got %v", args, err)
 		}
 	}
 }
@@ -5963,6 +6104,7 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 		"git status --short",
 		"command git status --short",
 		"env FOO=bar git status --short",
+		"nice git status --short",
 		"cd . && git status --short",
 	} {
 		resp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -6059,6 +6201,7 @@ func TestToolkit_RunShellRejectsUnsafeGitCommands(t *testing.T) {
 	for _, command := range []string{
 		"git add .",
 		"git reset --hard",
+		"nice git reset --hard",
 		"git config user.name tester",
 		"git commit --no-verify -m test",
 		"cd .. && git status",

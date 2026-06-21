@@ -216,11 +216,14 @@ func shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(command string) 
 		if !ok {
 			fields = strings.Fields(segment)
 		}
+		if shellFieldsUseUnsupportedWrapper(fields) {
+			return false
+		}
 		fields = normalizeShellCommandFields(fields)
 		if !shellFieldsLookLikePackageOrNetworkMutation(fields) {
 			continue
 		}
-		decision, ok := DecideNamedCommandPolicy(DefaultCommandPolicyRules(), capability.CapabilityCommandBash, segment)
+		decision, ok := DecideNamedCommandPolicy(DefaultCommandPolicyRules(), capability.CapabilityCommandBash, strings.Join(fields, " "))
 		if !ok || decision.Action == CommandPolicyDeny || decision.Action == CommandPolicyExplain {
 			return false
 		}

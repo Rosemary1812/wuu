@@ -201,7 +201,7 @@ func DecideShellCommandPolicy(rules []CommandPolicyRule, cap capability.Capabili
 		if segment == "" {
 			continue
 		}
-		decision, ok := DecideNamedCommandPolicy(rules, cap, segment)
+		decision, ok := DecideNamedCommandPolicy(rules, cap, commandPolicySubjectForShellSegment(segment))
 		if !ok {
 			continue
 		}
@@ -214,6 +214,21 @@ func DecideShellCommandPolicy(rules []CommandPolicyRule, cap capability.Capabili
 		return best, true
 	}
 	return DecideNamedCommandPolicy(rules, cap, command)
+}
+
+func commandPolicySubjectForShellSegment(segment string) string {
+	fields, ok := splitShellFields(segment)
+	if !ok {
+		fields = strings.Fields(segment)
+	}
+	if shellFieldsUseUnsupportedWrapper(fields) {
+		return strings.TrimSpace(segment)
+	}
+	fields = normalizeShellCommandFields(fields)
+	if len(fields) == 0 {
+		return strings.TrimSpace(segment)
+	}
+	return strings.Join(fields, " ")
 }
 
 func commandPolicyActionRank(action CommandPolicyAction) int {

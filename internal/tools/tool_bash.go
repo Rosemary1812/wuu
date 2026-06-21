@@ -144,8 +144,10 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"commands; bash returns managed process metadata plus optional initial output. " +
 			"Use list_background, read_background, write_background, and stop_background to manage " +
 			"those processes through the same bash tool.\n\n" +
-			"The working directory defaults to the workspace root. Shell state does not persist " +
-			"between run calls.\n\n" +
+			"The working directory defaults to the workspace root. Set cwd for action=run or " +
+			"action=start_background; cwd values are resolved inside the workspace root. " +
+			"Shell state does not persist between " +
+			"run calls.\n\n" +
 			"IMPORTANT: Avoid using bash to cat, head, tail, grep, find, sed, awk, or " +
 			"echo when a dedicated tool exists. Use read_file instead of cat, the " +
 			"search tools (grep / glob / ast_search / semantic_search) instead of " +
@@ -185,7 +187,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"cwd": map[string]any{
 					"type":        "string",
-					"description": "Working directory for action=start_background. Defaults to the workspace root.",
+					"description": "Working directory for action=run or action=start_background. Defaults to the workspace root. Paths are resolved inside the workspace root.",
 				},
 				"lifecycle": map[string]any{
 					"type":        "string",
@@ -295,6 +297,9 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
 		return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
 	}
+	if shellCommandUsesUnsupportedWrapper(args.Command) {
+		return "", errors.New("bash refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("bash refuses to print process environment variables because they may contain secrets")
 	}
@@ -309,11 +314,14 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 	}
 
 	command := strings.TrimSpace(args.Command)
+	runCWD, err := resolveShellWorkingDir(t.env, args.CWD)
+	if err != nil {
+		return "", err
+	}
 	verification := bashCommandLooksLikeVerification(command)
 	resolved := resolvedRunTestCommand{Requested: command, Command: command}
 	if verification {
-		var err error
-		resolved, err = resolveRunTestCommand(t.env.RootDir, command)
+		resolved, err = resolveRunTestCommand(runCWD, command)
 		if err != nil {
 			return "", err
 		}
@@ -342,7 +350,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		}
 	}
 
-	result, err := executeShellCommand(ctx, t.env, command, timeout)
+	result, err := executeShellCommandWithCWD(ctx, t.env, command, timeout, runCWD)
 	if err != nil {
 		return "", err
 	}
@@ -440,6 +448,9 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	}
 	if shellCommandInvokesGit(args.Command) {
 		return "", errors.New("bash background mode refuses to execute git commands because git operations should be short-lived and non-interactive. Use action=run with a safe git shell command")
+	}
+	if shellCommandUsesUnsupportedWrapper(args.Command) {
+		return "", errors.New("bash background mode refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
 	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("bash background mode refuses to print process environment variables because they may contain secrets")

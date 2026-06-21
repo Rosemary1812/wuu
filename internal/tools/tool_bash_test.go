@@ -97,6 +97,171 @@ func TestBashRunResolvesLocalNpxVerificationRunner(t *testing.T) {
 	}
 }
 
+func TestBashRunResolvesWrappedLocalNpxVerificationRunner(t *testing.T) {
+	root := t.TempDir()
+	runnerPath := filepath.Join(root, "node_modules", ".bin", "vitest")
+	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf 'wrapped local vitest %s\\n' \"$*\"\n")
+	if err := os.Chmod(runnerPath, 0o755); err != nil {
+		t.Fatalf("chmod runner: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"nice npx vitest --run","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("bash wrapped npx vitest: %v", err)
+	}
+	var parsed shellExecutionResult
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse bash result: %v\n%s", err, resp)
+	}
+	if parsed.RequestedCommand != "nice npx vitest --run" {
+		t.Fatalf("requested command not preserved: %+v", parsed)
+	}
+	if parsed.Command != "nice ./node_modules/.bin/vitest --run" || parsed.ResolvedCommand != parsed.Command {
+		t.Fatalf("wrapped npx command was not resolved to local runner: %+v", parsed)
+	}
+	if parsed.Verification == nil || !parsed.Verification.Passed {
+		t.Fatalf("wrapped local vitest verification should pass: %+v", parsed.Verification)
+	}
+	if !strings.Contains(parsed.Output, "wrapped local vitest --run") {
+		t.Fatalf("wrapped local vitest output missing: %+v", parsed)
+	}
+}
+
+func TestBashRunUsesCWD(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "root-only.txt"), "root\n")
+	subdir := filepath.Join(root, "desktop")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	expectedRevision := workspaceRevision(context.Background(), kit.env.RootDir)
+
+	tests := []struct {
+		name       string
+		includeCWD bool
+		cwd        string
+		want       string
+	}{
+		{name: "default root", want: kit.env.RootDir},
+		{name: "relative cwd", includeCWD: true, cwd: "desktop", want: filepath.Join(kit.env.RootDir, "desktop")},
+		{name: "absolute cwd", includeCWD: true, cwd: filepath.Join(kit.env.RootDir, "desktop"), want: filepath.Join(kit.env.RootDir, "desktop")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			args := map[string]any{"command": "pwd -P"}
+			if tc.includeCWD {
+				args["cwd"] = tc.cwd
+			}
+			argsJSON, err := json.Marshal(args)
+			if err != nil {
+				t.Fatalf("marshal args: %v", err)
+			}
+			resp, err := kit.Execute(context.Background(), providers.ToolCall{
+				Name:      "bash",
+				Arguments: string(argsJSON),
+			})
+			if err != nil {
+				t.Fatalf("bash pwd: %v", err)
+			}
+			var parsed shellExecutionResult
+			if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+				t.Fatalf("parse bash result: %v\n%s", err, resp)
+			}
+			got := filepath.Clean(strings.TrimSpace(parsed.StdoutTail))
+			want := filepath.Clean(tc.want)
+			if got != want {
+				t.Fatalf("pwd = %q, want %q; full result: %+v", got, want, parsed)
+			}
+			if parsed.WorkspaceRevision != expectedRevision {
+				t.Fatalf("workspace revision = %q, want root revision %q", parsed.WorkspaceRevision, expectedRevision)
+			}
+		})
+	}
+}
+
+func TestBashRunRejectsInvalidCWD(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "not-a-dir"), "file\n")
+	outside := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"pwd","cwd":"missing"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "working directory") || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("expected missing cwd error, got %v", err)
+	}
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"pwd","cwd":"not-a-dir"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "working directory") || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("expected file cwd error, got %v", err)
+	}
+
+	argsJSON, err := json.Marshal(map[string]any{"command": "pwd", "cwd": outside})
+	if err != nil {
+		t.Fatalf("marshal outside cwd args: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: string(argsJSON),
+	})
+	if err == nil || !strings.Contains(err.Error(), "escapes workspace") {
+		t.Fatalf("expected outside cwd rejection, got %v", err)
+	}
+}
+
+func TestBashRunWithCWDResolvesLocalNpxVerificationRunner(t *testing.T) {
+	root := t.TempDir()
+	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "vitest")
+	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf 'desktop vitest %s\\n' \"$*\"\n")
+	if err := os.Chmod(runnerPath, 0o755); err != nil {
+		t.Fatalf("chmod runner: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"npx vitest --run","cwd":"desktop","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("bash npx vitest from cwd: %v", err)
+	}
+	var parsed shellExecutionResult
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse bash result: %v\n%s", err, resp)
+	}
+	if parsed.Command != "./node_modules/.bin/vitest --run" || parsed.ResolvedCommand != parsed.Command {
+		t.Fatalf("npx command was not resolved relative to cwd: %+v", parsed)
+	}
+	if !strings.Contains(parsed.Output, "desktop vitest --run") {
+		t.Fatalf("cwd-local vitest output missing: %+v", parsed)
+	}
+	if parsed.Verification == nil || !parsed.Verification.Passed {
+		t.Fatalf("cwd-local vitest verification should pass: %+v", parsed.Verification)
+	}
+}
+
 func TestBashBackgroundModeUsesManagedProcessBackend(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -160,6 +325,55 @@ func TestBashBackgroundModeUsesManagedProcessBackend(t *testing.T) {
 	if !strings.Contains(stopResp, bashActionStopBackground) {
 		t.Fatalf("stop response should use bash background action: %s", stopResp)
 	}
+}
+
+func TestBashBackgroundUsesCWD(t *testing.T) {
+	root := t.TempDir()
+	subdir := filepath.Join(root, "server")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	defer func() { _ = manager.CleanupSession() }()
+	kit.SetProcessManager(manager)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"pwd -P; sleep 5","cwd":"server","wait_ms":500,"max_bytes":4096}`,
+	})
+	if err != nil {
+		t.Fatalf("start background: %v", err)
+	}
+	var started startProcessResponse
+	if err := json.Unmarshal([]byte(resp), &started); err != nil {
+		t.Fatalf("parse start background: %v\n%s", err, resp)
+	}
+	defer func() {
+		_, _ = kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: `{"action":"stop_background","process_id":"` + started.ID + `"}`})
+	}()
+	want := canonicalTestPath(t, subdir)
+	got := canonicalTestPath(t, started.CWD)
+	if got != want {
+		t.Fatalf("background cwd = %q, want %q", got, want)
+	}
+	if !strings.Contains(started.InitialOutput, want) {
+		t.Fatalf("initial output should include background cwd %q: %+v", want, started)
+	}
+}
+
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	if evaluated, err := filepath.EvalSymlinks(path); err == nil {
+		path = evaluated
+	}
+	return filepath.Clean(path)
 }
 
 func TestBashPermissionRequestsUseCapabilities(t *testing.T) {

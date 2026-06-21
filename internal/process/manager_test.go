@@ -36,6 +36,84 @@ func TestStartListAndPersist(t *testing.T) {
 	}
 }
 
+func TestStartResolvesCWDInsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	subdir := filepath.Join(root, "server")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := m.Start(context.Background(), StartOptions{Command: "pwd -P; sleep 1", CWD: "server", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = m.Stop(p.ID) }()
+
+	want := canonicalTestPath(t, subdir)
+	got := canonicalTestPath(t, p.CWD)
+	if got != want {
+		t.Fatalf("cwd = %q, want %q", got, want)
+	}
+	offset := int64(0)
+	snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{MaxBytes: 1024, OffsetBytes: &offset, Wait: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(snapshot.Output, want) {
+		t.Fatalf("process did not run in cwd %q: %q", want, snapshot.Output)
+	}
+}
+
+func TestStartRejectsInvalidCWD(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "not-a-dir"), []byte("file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		cwd     string
+		wantErr string
+	}{
+		{name: "missing", cwd: "missing", wantErr: "does not exist"},
+		{name: "file", cwd: "not-a-dir", wantErr: "not a directory"},
+		{name: "outside absolute", cwd: outside, wantErr: "escapes workspace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := m.Start(context.Background(), StartOptions{Command: "sleep 1", CWD: tc.cwd, OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected cwd error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+
+	link := filepath.Join(root, "escape-link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	_, err = m.Start(context.Background(), StartOptions{Command: "sleep 1", CWD: "escape-link", OwnerKind: OwnerMainAgent, OwnerID: "main", Lifecycle: LifecycleSession})
+	if err == nil || !strings.Contains(err.Error(), "escapes workspace") {
+		t.Fatalf("expected symlink escape cwd rejection, got %v", err)
+	}
+}
+
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	if evaluated, err := filepath.EvalSymlinks(path); err == nil {
+		path = evaluated
+	}
+	return filepath.Clean(path)
+}
+
 func TestStartDetachesProcessLifecycleFromStartContext(t *testing.T) {
 	root := t.TempDir()
 	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))

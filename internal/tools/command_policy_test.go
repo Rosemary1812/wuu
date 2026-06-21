@@ -117,17 +117,45 @@ func TestDecideShellCommandPolicyChoosesStrictestSegment(t *testing.T) {
 	if decision.Action != CommandPolicyAsk || decision.Rule != "bash-git-add" {
 		t.Fatalf("decision = %+v, want ask from bash-git-add", decision)
 	}
+
+	decision, ok = DecideShellCommandPolicy(rules, capability.CapabilityCommandBash, "timeout 10 npx vitest run")
+	if !ok {
+		t.Fatal("expected wrapped vitest command policy match")
+	}
+	if decision.Action != CommandPolicyAsk || decision.Rule != "bash-vitest" {
+		t.Fatalf("wrapped decision = %+v, want ask from bash-vitest", decision)
+	}
+
+	decision, ok = DecideShellCommandPolicy(rules, capability.CapabilityCommandBash, "nice git status --short")
+	if !ok {
+		t.Fatal("expected wrapped git status command policy match")
+	}
+	if decision.Action != CommandPolicyAllow || decision.Rule != "bash-git-status" {
+		t.Fatalf("wrapped git decision = %+v, want allow from bash-git-status", decision)
+	}
 }
 
 func TestShellPackageNetworkMutationRequiresCoveredCommandPolicyRule(t *testing.T) {
 	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx vitest run") {
 		t.Fatal("npx vitest should be covered by the default command policy")
 	}
+	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("timeout 10 npx vitest run") {
+		t.Fatal("wrapped npx vitest should be covered by the default command policy")
+	}
+	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("nice npm install left-pad") {
+		t.Fatal("wrapped npm install should be covered by the default command policy")
+	}
 	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx vitest run && curl https://example.com") {
 		t.Fatal("mixed covered and uncovered network commands should not be covered")
 	}
 	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("curl https://example.com") {
 		t.Fatal("uncovered network commands should not be covered")
+	}
+	if !shellCommandInvokesPackageOrNetworkMutation("nice curl https://example.com") {
+		t.Fatal("wrapped curl should be detected as a network mutation")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("nice curl https://example.com") {
+		t.Fatal("wrapped uncovered network commands should not be covered")
 	}
 }
 

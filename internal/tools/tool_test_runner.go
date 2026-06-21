@@ -565,7 +565,7 @@ func shellExecutableFieldIndex(fields []string) int {
 		if i >= len(fields) {
 			return -1
 		}
-		switch fields[i] {
+		switch shellCommandBaseName(fields[i]) {
 		case "command", "exec":
 			i++
 			continue
@@ -590,6 +590,14 @@ func shellExecutableFieldIndex(fields []string) int {
 			}
 			continue
 		default:
+			stripped, ok := stripSafeShellWrapperPrefix(fields[i:])
+			if ok {
+				i += len(fields[i:]) - len(stripped)
+				continue
+			}
+			if shellWrapperCommandName(fields[i]) {
+				return -1
+			}
 			return i
 		}
 	}

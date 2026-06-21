@@ -116,6 +116,9 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
 		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
 	}
+	if shellCommandUsesUnsupportedWrapper(args.Command) {
+		return "", errors.New("run_shell refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
 	}
@@ -228,17 +231,25 @@ func buildShellLog(shellResult shellExecutionResult) string {
 }
 
 func executeShellCommand(ctx context.Context, env *Env, command string, timeoutSeconds int) (shellExecutionResult, error) {
+	return executeShellCommandWithCWD(ctx, env, command, timeoutSeconds, "")
+}
+
+func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, timeoutSeconds int, cwd string) (shellExecutionResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if env == nil {
 		env = &Env{}
 	}
+	workDir, err := resolveShellWorkingDir(env, cwd)
+	if err != nil {
+		return shellExecutionResult{}, err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 
 	var stdout bytes.Buffer
@@ -247,7 +258,7 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 	cmd.Stderr = &stderr
 
 	startedAt := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	durationMS := time.Since(startedAt).Milliseconds()
 	exitCode := 0
 	if err != nil {
@@ -295,6 +306,37 @@ func executeShellCommand(ctx context.Context, env *Env, command string, timeoutS
 	}, nil
 }
 
+func resolveShellWorkingDir(env *Env, cwd string) (string, error) {
+	if env == nil {
+		env = &Env{}
+	}
+	if strings.TrimSpace(env.RootDir) == "" {
+		if strings.TrimSpace(cwd) == "" {
+			return "", nil
+		}
+		return "", fmt.Errorf("working directory %q requires workspace root", cwd)
+	}
+	workDir, err := env.ResolvePath(cwd)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory %q: %w", cwd, err)
+	}
+	abs, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory %q: %w", workDir, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("working directory %q does not exist", abs)
+		}
+		return "", fmt.Errorf("inspect working directory %q: %w", abs, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("working directory %q is not a directory", abs)
+	}
+	return abs, nil
+}
+
 func shellNextSuggestions(exitCode int, timedOut bool, classification ToolClassification) []string {
 	if timedOut {
 		return []string{"if this was a dev server, watch mode, or other long-lived command, rerun it with bash action=start_background and inspect it with bash action=read_background; otherwise narrow the command scope or set a bounded timeout only when necessary"}
@@ -325,15 +367,30 @@ func classifyShellCommand(command string) ToolClassification {
 		return highRiskShellClassification("empty shell command", false)
 	}
 	hasShellMetacharacters := strings.ContainsAny(command, "\n;&|><`$()")
-	fields := strings.Fields(command)
-	if len(fields) == 0 {
+	rawFields := strings.Fields(command)
+	if len(rawFields) == 0 {
 		return highRiskShellClassification("empty shell command", false)
 	}
-	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
-		fields = fields[1:]
-	}
+	fields := stripLeadingShellEnvAssignments(rawFields)
 	if len(fields) == 0 {
 		return highRiskShellClassification("environment-only shell command", false)
+	}
+	if shellFieldsDumpEnvironment(command, fields) {
+		return highRiskShellClassification("shell command may expose environment secrets", false)
+	}
+	if shellFieldsTouchSensitivePath(fields) {
+		return highRiskShellClassification("shell command may read secrets", false)
+	}
+	if shellCommandUsesUnsupportedWrapper(command) {
+		return highRiskShellClassification("unsupported shell wrapper command", false)
+	}
+	envFields := normalizeShellCommandFieldsPreservingEnv(fields)
+	if shellFieldsDumpEnvironment(command, envFields) {
+		return highRiskShellClassification("shell command may expose environment secrets", false)
+	}
+	fields = normalizeShellCommandFields(fields)
+	if len(fields) == 0 {
+		return highRiskShellClassification("wrapper-only shell command", false)
 	}
 	if shellFieldsDumpEnvironment(command, fields) {
 		return highRiskShellClassification("shell command may expose environment secrets", false)
@@ -385,7 +442,7 @@ func classifyShellCommand(command string) ToolClassification {
 func shellCommandInvokesGit(command string) bool {
 	for _, segment := range splitShellCommandSegments(command) {
 		fields := normalizeShellCommandFields(strings.Fields(segment))
-		if len(fields) > 0 && fields[0] == "git" {
+		if len(fields) > 0 && shellCommandBaseName(fields[0]) == "git" {
 			return true
 		}
 	}
@@ -435,15 +492,16 @@ func classifyShellGitCommand(command string) (ToolClassification, bool) {
 		if len(fields) == 0 {
 			continue
 		}
-		if fields[0] == "cd" {
+		if shellCommandBaseName(fields[0]) == "cd" {
 			if len(fields) == 2 && safeRelativeShellDir(fields[1]) {
 				continue
 			}
 			return highRiskShellClassification("unsupported git shell command", false), true
 		}
-		if fields[0] != "git" {
+		if shellCommandBaseName(fields[0]) != "git" {
 			return highRiskShellClassification("unsupported git shell command", false), true
 		}
+		fields[0] = "git"
 		sawGit = true
 		segmentClass := classifyShellGitFields(fields)
 		if segmentClass.Destructive {
@@ -675,21 +733,347 @@ func shellCommandInvokesPackageOrNetworkMutation(command string) bool {
 	return false
 }
 
+func shellCommandUsesUnsupportedWrapper(command string) bool {
+	segments, ok := splitShellCommandSegmentsQuoted(command)
+	if !ok {
+		segments = splitShellCommandSegments(command)
+	}
+	if len(segments) == 0 {
+		segments = []string{command}
+	}
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		fields, ok := splitShellFields(segment)
+		if !ok {
+			fields = strings.Fields(segment)
+		}
+		if shellFieldsUseUnsupportedWrapper(fields) {
+			return true
+		}
+	}
+	return false
+}
+
+func shellFieldsUseUnsupportedWrapper(fields []string) bool {
+	fields = stripLeadingShellEnvAssignments(fields)
+	for len(fields) > 0 {
+		switch shellCommandBaseName(fields[0]) {
+		case "command", "exec":
+			fields = stripLeadingShellEnvAssignments(fields[1:])
+		case "env":
+			fields = stripLeadingShellEnvAssignments(stripEnvCommandPrefix(fields[1:]))
+		default:
+			if !shellWrapperCommandName(fields[0]) {
+				return false
+			}
+			stripped, ok := stripSafeShellWrapperPrefix(fields)
+			if !ok {
+				return true
+			}
+			fields = stripLeadingShellEnvAssignments(stripped)
+		}
+	}
+	return false
+}
+
 func normalizeShellCommandFields(fields []string) []string {
+	fields = stripLeadingShellEnvAssignments(fields)
+	for len(fields) > 0 {
+		switch shellCommandBaseName(fields[0]) {
+		case "command", "exec":
+			fields = fields[1:]
+		case "env":
+			fields = stripEnvCommandPrefix(fields[1:])
+		default:
+			stripped, ok := stripSafeShellWrapperPrefix(fields)
+			if !ok {
+				return fields
+			}
+			fields = stripped
+		}
+		fields = stripLeadingShellEnvAssignments(fields)
+	}
+	return fields
+}
+
+func normalizeShellCommandFieldsPreservingEnv(fields []string) []string {
+	fields = stripLeadingShellEnvAssignments(fields)
+	for len(fields) > 0 {
+		switch shellCommandBaseName(fields[0]) {
+		case "command", "exec":
+			fields = fields[1:]
+		case "env":
+			return fields
+		default:
+			stripped, ok := stripSafeShellWrapperPrefix(fields)
+			if !ok {
+				return fields
+			}
+			fields = stripped
+		}
+		fields = stripLeadingShellEnvAssignments(fields)
+	}
+	return fields
+}
+
+func stripLeadingShellEnvAssignments(fields []string) []string {
 	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
 		fields = fields[1:]
 	}
+	return fields
+}
+
+func stripSafeShellWrapperPrefix(fields []string) ([]string, bool) {
 	if len(fields) == 0 {
-		return fields
+		return fields, false
 	}
-	switch fields[0] {
-	case "command", "exec":
-		return fields[1:]
-	case "env":
-		return stripEnvCommandPrefix(fields[1:])
+	switch shellCommandBaseName(fields[0]) {
+	case "timeout":
+		i := timeoutWrappedCommandIndex(fields)
+		if i < 0 {
+			return fields, false
+		}
+		return fields[i:], true
+	case "time":
+		i := timeWrappedCommandIndex(fields)
+		if i < 0 {
+			return fields, false
+		}
+		return fields[i:], true
+	case "nice":
+		i := niceWrappedCommandIndex(fields)
+		if i < 0 {
+			return fields, false
+		}
+		return fields[i:], true
+	case "nohup":
+		i := 1
+		if len(fields) > i && fields[i] == "--" {
+			i++
+		}
+		if i >= len(fields) || strings.HasPrefix(fields[i], "-") {
+			return fields, false
+		}
+		return fields[i:], true
+	case "stdbuf":
+		i := stdbufWrappedCommandIndex(fields)
+		if i < 0 {
+			return fields, false
+		}
+		return fields[i:], true
 	default:
-		return fields
+		return fields, false
 	}
+}
+
+func shellWrapperCommandName(name string) bool {
+	switch shellCommandBaseName(name) {
+	case "timeout", "time", "nice", "nohup", "stdbuf":
+		return true
+	default:
+		return false
+	}
+}
+
+func shellCommandBaseName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if strings.Contains(name, "/") {
+		return filepath.Base(name)
+	}
+	return name
+}
+
+func timeoutWrappedCommandIndex(fields []string) int {
+	i := 1
+	for i < len(fields) {
+		arg := fields[i]
+		switch {
+		case arg == "--foreground" || arg == "--preserve-status" || arg == "--verbose" || arg == "-v":
+			i++
+		case strings.HasPrefix(arg, "--kill-after=") || strings.HasPrefix(arg, "--signal="):
+			value := arg[strings.IndexByte(arg, '=')+1:]
+			if !shellWrapperValueLooksSafe(value) {
+				return -1
+			}
+			i++
+		case arg == "--kill-after" || arg == "--signal" || arg == "-k" || arg == "-s":
+			if i+1 >= len(fields) || !shellWrapperValueLooksSafe(fields[i+1]) {
+				return -1
+			}
+			i += 2
+		case strings.HasPrefix(arg, "-k") || strings.HasPrefix(arg, "-s"):
+			if len(arg) <= 2 || !shellWrapperValueLooksSafe(arg[2:]) {
+				return -1
+			}
+			i++
+		case arg == "--":
+			i++
+			goto duration
+		case strings.HasPrefix(arg, "-"):
+			return -1
+		default:
+			goto duration
+		}
+	}
+
+duration:
+	if i >= len(fields) || i+1 >= len(fields) || !shellTimeoutDurationLooksSafe(fields[i]) {
+		return -1
+	}
+	return i + 1
+}
+
+func timeWrappedCommandIndex(fields []string) int {
+	i := 1
+	if i < len(fields) && fields[i] == "-p" {
+		i++
+	}
+	if i < len(fields) && fields[i] == "--" {
+		i++
+	}
+	if i >= len(fields) || strings.HasPrefix(fields[i], "-") {
+		return -1
+	}
+	return i
+}
+
+func niceWrappedCommandIndex(fields []string) int {
+	i := 1
+	if i >= len(fields) {
+		return -1
+	}
+	switch {
+	case fields[i] == "--":
+		i++
+	case fields[i] == "-n":
+		if i+1 >= len(fields) || !shellNiceAdjustmentLooksSafe(fields[i+1]) {
+			return -1
+		}
+		i += 2
+		if i < len(fields) && fields[i] == "--" {
+			i++
+		}
+	case shellLegacyNiceAdjustmentLooksSafe(fields[i]):
+		i++
+		if i < len(fields) && fields[i] == "--" {
+			i++
+		}
+	case strings.HasPrefix(fields[i], "-"):
+		return -1
+	}
+	if i >= len(fields) {
+		return -1
+	}
+	return i
+}
+
+func stdbufWrappedCommandIndex(fields []string) int {
+	i := 1
+	consumedFlag := false
+	for i < len(fields) {
+		arg := fields[i]
+		switch {
+		case arg == "-i" || arg == "-o" || arg == "-e":
+			if i+1 >= len(fields) || !shellWrapperValueLooksSafe(fields[i+1]) {
+				return -1
+			}
+			i += 2
+			consumedFlag = true
+		case len(arg) > 2 && arg[0] == '-' && (arg[1] == 'i' || arg[1] == 'o' || arg[1] == 'e'):
+			if !shellWrapperValueLooksSafe(arg[2:]) {
+				return -1
+			}
+			i++
+			consumedFlag = true
+		case strings.HasPrefix(arg, "--input=") || strings.HasPrefix(arg, "--output=") || strings.HasPrefix(arg, "--error="):
+			value := arg[strings.IndexByte(arg, '=')+1:]
+			if !shellWrapperValueLooksSafe(value) {
+				return -1
+			}
+			i++
+			consumedFlag = true
+		case strings.HasPrefix(arg, "-"):
+			return -1
+		default:
+			if !consumedFlag {
+				return -1
+			}
+			return i
+		}
+	}
+	return -1
+}
+
+func shellWrapperValueLooksSafe(value string) bool {
+	if value == "" || strings.ContainsAny(value, "\n;&|><`$()") {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		if r == '_' || r == '.' || r == '+' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func shellTimeoutDurationLooksSafe(value string) bool {
+	if value == "" || strings.ContainsAny(value, "\n;&|><`$()+-") {
+		return false
+	}
+	if last := value[len(value)-1]; last == 's' || last == 'm' || last == 'h' || last == 'd' {
+		value = value[:len(value)-1]
+	}
+	if value == "" {
+		return false
+	}
+	sawDigit := false
+	sawDot := false
+	for _, r := range value {
+		switch {
+		case r >= '0' && r <= '9':
+			sawDigit = true
+		case r == '.':
+			if sawDot {
+				return false
+			}
+			sawDot = true
+		default:
+			return false
+		}
+	}
+	return sawDigit && value[0] != '.' && value[len(value)-1] != '.'
+}
+
+func shellNiceAdjustmentLooksSafe(value string) bool {
+	if value == "" || strings.ContainsAny(value, "\n;&|><`$()+.") {
+		return false
+	}
+	if value[0] == '-' {
+		value = value[1:]
+	}
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func shellLegacyNiceAdjustmentLooksSafe(value string) bool {
+	return strings.HasPrefix(value, "-") && shellNiceAdjustmentLooksSafe(value)
 }
 
 func splitShellCommandSegments(command string) []string {
@@ -738,6 +1122,7 @@ func shellCommandLooksLikeDirectoryScopedVerification(command string) bool {
 		return false
 	}
 	rightFields := strings.Fields(right)
+	rightFields = normalizeShellCommandFields(rightFields)
 	return shellFieldsLookLikeVerification(rightFields)
 }
 
@@ -761,11 +1146,21 @@ func highRiskShellClassification(reason string, destructive bool) ToolClassifica
 }
 
 func shellCommandDumpsEnvironment(command string) bool {
-	fields := strings.Fields(strings.TrimSpace(command))
-	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
-		fields = fields[1:]
+	for _, segment := range splitShellCommandSegments(command) {
+		fields := stripLeadingShellEnvAssignments(strings.Fields(strings.TrimSpace(segment)))
+		if shellFieldsDumpEnvironment(command, fields) {
+			return true
+		}
+		envFields := normalizeShellCommandFieldsPreservingEnv(fields)
+		if shellFieldsDumpEnvironment(command, envFields) {
+			return true
+		}
+		fields = normalizeShellCommandFields(fields)
+		if shellFieldsDumpEnvironment(command, fields) {
+			return true
+		}
 	}
-	return shellFieldsDumpEnvironment(command, fields)
+	return false
 }
 
 func shellFieldsDumpEnvironment(command string, fields []string) bool {
@@ -834,7 +1229,7 @@ func shellFieldsLookDestructive(fields []string) bool {
 	if len(fields) == 0 {
 		return false
 	}
-	switch fields[0] {
+	switch shellCommandBaseName(fields[0]) {
 	case "rm", "rmdir", "unlink", "mv", "chmod", "chown", "sudo", "dd", "truncate":
 		return true
 	case "git":
@@ -854,7 +1249,7 @@ func shellFieldsLookLikeVerification(fields []string) bool {
 	if len(fields) == 0 {
 		return false
 	}
-	switch fields[0] {
+	switch shellCommandBaseName(fields[0]) {
 	case "go":
 		return len(fields) > 1 && oneOf(fields[1], "test", "vet", "build", "list")
 	case "cargo":
@@ -895,7 +1290,7 @@ func shellFieldsLookLikePackageOrNetworkMutation(fields []string) bool {
 	if len(fields) == 0 {
 		return false
 	}
-	switch fields[0] {
+	switch shellCommandBaseName(fields[0]) {
 	case "npm", "pnpm", "yarn", "bun":
 		if len(fields) > 1 {
 			return oneOf(fields[1], "install", "i", "add", "remove", "update", "upgrade", "publish", "exec", "dlx")

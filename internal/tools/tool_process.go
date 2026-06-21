@@ -122,6 +122,9 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if shellCommandInvokesGit(args.Command) {
 		return "", errors.New("start_process refuses to execute git commands because git operations should be short-lived and non-interactive. Use bash action=run for normal git status/diff/log/add/commit workflows: error_kind=unsupported_tool_path model_next_action=\"retry with bash action=run for short-lived git\"")
 	}
+	if shellCommandUsesUnsupportedWrapper(args.Command) {
+		return "", errors.New("start_process refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+	}
 	if shellCommandDumpsEnvironment(args.Command) {
 		return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
 	}

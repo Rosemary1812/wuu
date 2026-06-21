@@ -174,14 +174,10 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	if opt.Lifecycle != LifecycleSession && opt.Lifecycle != LifecycleManaged {
 		return nil, errors.New("lifecycle must be session or managed")
 	}
-	cwd := opt.CWD
-	if strings.TrimSpace(cwd) == "" {
-		cwd = m.rootDir
+	cwd, err := resolveStartCWD(m.rootDir, opt.CWD)
+	if err != nil {
+		return nil, err
 	}
-	if !filepath.IsAbs(cwd) {
-		cwd = filepath.Join(m.rootDir, cwd)
-	}
-	cwd, _ = filepath.Abs(cwd)
 	id := "proc-" + randomHex(4)
 	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
 	m.mu.Lock()
@@ -263,6 +259,48 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		go m.wait(id, cmd, logf)
 	}
 	return p, nil
+}
+
+func resolveStartCWD(rootDir, cwd string) (string, error) {
+	root, err := filepath.Abs(rootDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root %q: %w", rootDir, err)
+	}
+	if evaluatedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		root = evaluatedRoot
+	}
+	workDir := strings.TrimSpace(cwd)
+	if workDir == "" {
+		workDir = root
+	} else if !filepath.IsAbs(workDir) {
+		workDir = filepath.Join(root, workDir)
+	}
+	abs, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory %q: %w", workDir, err)
+	}
+	evaluated, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("working directory %q does not exist", abs)
+		}
+		return "", fmt.Errorf("inspect working directory %q: %w", abs, err)
+	}
+	info, err := os.Stat(evaluated)
+	if err != nil {
+		return "", fmt.Errorf("inspect working directory %q: %w", evaluated, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("working directory %q is not a directory", evaluated)
+	}
+	rel, err := filepath.Rel(root, evaluated)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory %q against workspace root %q: %w", evaluated, root, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("working directory %q escapes workspace %q", evaluated, root)
+	}
+	return evaluated, nil
 }
 
 func managedCommand(command, cwd string) *exec.Cmd {
