@@ -3330,43 +3330,62 @@
   }
 }
 
-/* The whole process-cluster row sweeps once it's running: the
-   gradient is sized to the row itself, so the bright stop moves
-   from the first tool segment across the separators, the thinking
-   label, and the chevron area as one continuous bar — instead of
-   each span redrawing the shimmer in its own local coordinates. */
-.process-cluster-row.is-streaming {
-  background-image: linear-gradient(
-    90deg,
-    var(--conversation-process-control-color, #A4A4A5) 0%,
-    var(--conversation-process-control-color, #A4A4A5) 45%,
-    rgba(255, 255, 255, 0.6) 48%,
-    var(--paper) 50%,
-    rgba(255, 255, 255, 0.6) 52%,
-    var(--conversation-process-control-color, #A4A4A5) 55%,
-    var(--conversation-process-control-color, #A4A4A5) 100%
-  );
-  background-size: 250% 100%;
-  background-position: 150% 0;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  animation: reasoning-shimmer 4.8s linear infinite;
+/* The whole process-cluster row sweeps while it's running. We use
+   a `::after` overlay with `mix-blend-mode: lighten` instead of
+   painting the row itself: this keeps the row at full opacity
+   (no `color: transparent`) so there is no one-frame flash the
+   moment `is-streaming` flips on, and the overlay covers the
+   chevron and the rest of the row's children naturally without a
+   dedicated color override.
+
+   The overlay slides a transform translate from -50% to 150% of
+   the host's own width, so the bright bar always traverses the
+   whole row in lockstep with its width — top to bottom of any
+   text appended during streaming. The same overlay also covers
+   `.turn-reasoning-summary-text.is-streaming`, so the keyframes
+   are shared between the process cluster and the reasoning fold. */
+@keyframes reasoning-shimmer {
+  from { transform: translateX(-50%); }
+  to   { transform: translateX(150%); }
 }
 
-/* The chevron inherits the row's transparent color and would
-   disappear. Pin it back to the base gray so the expand/collapse
-   affordance stays visible while the row sweeps. */
-.process-cluster-row.is-streaming .process-cluster-chevron {
-  color: var(--conversation-process-control-color, #A4A4A5);
-  opacity: 0.7;
+.process-cluster-row.is-streaming,
+.turn-reasoning-summary-text.is-streaming {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.process-cluster-row.is-streaming::after,
+.turn-reasoning-summary-text.is-streaming::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(255, 255, 255, 0.5) 47%,
+    #ffffff 50%,
+    rgba(255, 255, 255, 0.5) 53%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  mix-blend-mode: lighten;
+  animation: reasoning-shimmer 2.4s linear infinite;
+  z-index: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .process-cluster-row.is-streaming {
-    background-image: none;
-    color: var(--conversation-process-control-color, #A4A4A5);
+  .process-cluster-row.is-streaming::after,
+  .turn-reasoning-summary-text.is-streaming::after {
     animation: none;
+    transform: translateX(50%);
   }
 }
 
@@ -3756,44 +3775,19 @@
                                                                
                                                                       
                                               
-.turn-reasoning-summary-text.is-streaming {
-  background-image: linear-gradient(
-    90deg,
-    var(--conversation-process-control-color, #A4A4A5) 0%,
-    var(--conversation-process-control-color, #A4A4A5) 45%,
-    rgba(255, 255, 255, 0.6) 48%,
-    var(--paper) 50%,
-    rgba(255, 255, 255, 0.6) 52%,
-    var(--conversation-process-control-color, #A4A4A5) 55%,
-    var(--conversation-process-control-color, #A4A4A5) 100%
-  );
-  background-size: 250% 100%;
-  background-position: 150% 0;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  animation: reasoning-shimmer 4.8s linear infinite;
-}
+/* (the overlay + keyframes for `.turn-reasoning-summary-text.is-streaming`
+   moved up to share with `.process-cluster-row.is-streaming` above) */
 
-@keyframes reasoning-shimmer {
-  from {
-    background-position: -12.5% 0;
-  }
-  to {
-    background-position: -112.5% 0;
-  }
-}
+/* (the `reasoning-shimmer` keyframes are defined next to the
+   unified `.process-cluster-row.is-streaming, .turn-reasoning-summary-text.is-streaming`
+   selector list at the top of this file) */
 
                                                           
                                                                  
                                                         
-@media (prefers-reduced-motion: reduce) {
-  .turn-reasoning-summary-text.is-streaming {
-    background-image: none;
-    color: var(--conversation-process-control-color, #A4A4A5);
-    animation: none;
-  }
-}
+/* (reduced-motion handling for `.turn-reasoning-summary-text.is-streaming`
+   lives with the unified `.process-cluster-row.is-streaming, .turn-reasoning-summary-text.is-streaming`
+   selector list at the top of this file) */
 
 .turn-reasoning-chevron {
   flex: 0 0 auto;
