@@ -808,6 +808,13 @@ export type Thread = {
   model_provider: string;
   model: string;
   cwd: string;
+  // workspace_kind tags the thread with the workspace it was created in.
+  // "scratch" threads live in the desktop-managed scratch root
+  // (~/.wuu/scratch/<date>) and have no registered project; the sidebar
+  // surfaces them in the standalone "对话" section. Threads loaded from
+  // older builds may omit this field — the renderer falls back to
+  // classifying them by cwd against the known project list.
+  workspace_kind?: "project" | "scratch";
   status: ThreadStatus;
   read_only?: boolean;
   pinned?: boolean;

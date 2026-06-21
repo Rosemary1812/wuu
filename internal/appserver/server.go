@@ -31,6 +31,7 @@ type threadState struct {
 	ModelProvider    string
 	Model            string
 	CWD              string
+	WorkspaceKind    WorkspaceKind
 	ForkedFromID     string
 	ForkedFromTurnID string
 	ForkedFromItemID string

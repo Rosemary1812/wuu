@@ -736,16 +736,28 @@ const (
 	TurnItemsViewFull TurnItemsView = "full"
 )
 
+type WorkspaceKind string
+
+const (
+	// WorkspaceKindProject threads belong to a registered project workspace
+	// (i.e. cwd matches a DesktopProject path).
+	WorkspaceKindProject WorkspaceKind = "project"
+	// WorkspaceKindScratch threads live in the ephemeral scratch root
+	// (typically ~/.wuu/scratch/<date>) and have no registered project.
+	WorkspaceKindScratch WorkspaceKind = "scratch"
+)
+
 type Thread struct {
-	ID               string       `json:"id"`
-	ParentID         string       `json:"parent_id,omitempty"`
-	AgentPath        string       `json:"agent_path,omitempty"`
-	Preview          string       `json:"preview"`
-	Title            string       `json:"title,omitempty"`
-	ModelProvider    string       `json:"model_provider"`
-	Model            string       `json:"model"`
-	CWD              string       `json:"cwd"`
-	Status           ThreadStatus `json:"status"`
+	ID               string        `json:"id"`
+	ParentID         string        `json:"parent_id,omitempty"`
+	AgentPath        string        `json:"agent_path,omitempty"`
+	Preview          string        `json:"preview"`
+	Title            string        `json:"title,omitempty"`
+	ModelProvider    string        `json:"model_provider"`
+	Model            string        `json:"model"`
+	CWD              string        `json:"cwd"`
+	WorkspaceKind    WorkspaceKind `json:"workspace_kind,omitempty"`
+	Status           ThreadStatus  `json:"status"`
 	ReadOnly         bool         `json:"read_only,omitempty"`
 	Ephemeral        bool         `json:"ephemeral,omitempty"`
 	Pinned           bool         `json:"pinned,omitempty"`

@@ -16,6 +16,27 @@ import (
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
+// workspaceKindForCWD classifies a thread by where its working directory lives.
+// Threads whose cwd sits under <wuuHome>/scratch belong to the scratch
+// (no-project) workspace; everything else is treated as a project thread. The
+// scratch root mirrors the layout produced by the desktop
+// ProjectManager.selectNoProject helper, so threads created from a scratch
+// chat round-trip with the correct kind after a desktop restart.
+func workspaceKindForCWD(wuuHome, cwd string) WorkspaceKind {
+	if wuuHome == "" || cwd == "" {
+		return WorkspaceKindProject
+	}
+	scratchRoot := filepath.Clean(filepath.Join(wuuHome, "scratch"))
+	cleanCWD := filepath.Clean(cwd)
+	if cleanCWD == scratchRoot {
+		return WorkspaceKindScratch
+	}
+	if strings.HasPrefix(cleanCWD, scratchRoot+string(filepath.Separator)) {
+		return WorkspaceKindScratch
+	}
+	return WorkspaceKindProject
+}
+
 func (s *Server) handleThreadStart(req Request) error {
 	var params ThreadStartParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -37,6 +58,7 @@ func (s *Server) handleThreadStart(req Request) error {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, memoryPath, time.Now().UTC())
+	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	th.Ephemeral = params.Ephemeral
 
 	s.mu.Lock()
@@ -119,6 +141,7 @@ func (s *Server) handleThreadResume(req Request) error {
 	history = repaired
 	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, time.Now().UTC())
+	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	} else if ok {
