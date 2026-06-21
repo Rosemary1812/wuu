@@ -60,6 +60,47 @@ func ScanSessionsForCWD(sessDir, cwd string, maxSessions int) ([]SessionMeta, er
 	return scanSessions(sessDir, sessions, maxSessions)
 }
 
+// CollectTokenUsageRows walks every session in sessDir and returns one
+// TokenUsageRow per persisted token_usage meta record, in the order they
+// appear in the session history. Corrupt or missing session files are
+// skipped silently; an empty slice with a nil error means "no usage
+// rows yet". Callers are responsible for time-windowing and per-day
+// bucketing — this function never aggregates, so range filters and
+// "最近 N 条" lists stay exact instead of inheriting whatever rollup
+// the SessionMeta cache happens to hold.
+func CollectTokenUsageRows(sessDir string) ([]TokenUsageRow, error) {
+	sessions, err := sessionstore.List(sessDir, 0)
+	if err != nil {
+		return nil, err
+	}
+	var rows []TokenUsageRow
+	for _, sess := range sessions {
+		records, err := sessionstore.LoadHistoryRecords(sessDir, sess.ID, true)
+		if err != nil {
+			continue
+		}
+		for _, rec := range records {
+			if !strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+				continue
+			}
+			if strings.TrimSpace(rec.Content) != "token_usage" {
+				continue
+			}
+			rows = append(rows, TokenUsageRow{
+				SessionID:           sess.ID,
+				At:                  rec.At,
+				Provider:            rec.Provider,
+				Model:               rec.Model,
+				InputTokens:         rec.InputTokens,
+				OutputTokens:        rec.OutputTokens,
+				CacheCreationTokens: rec.CacheCreationTokens,
+				CacheReadTokens:     rec.CacheReadTokens,
+			})
+		}
+	}
+	return rows, nil
+}
+
 func scanSessions(sessDir string, sessions []sessionstore.Session, maxSessions int) ([]SessionMeta, error) {
 	metas := make([]SessionMeta, 0, len(sessions))
 	for _, sess := range sessions {

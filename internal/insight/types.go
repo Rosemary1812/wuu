@@ -79,6 +79,24 @@ type Facet struct {
 	ExtractedAt    int64          `json:"extracted_at"`
 }
 
+// TokenUsageRow is one token_usage meta row extracted from a session
+// history. It carries the per-row timestamp so callers can bucket usage
+// by day or pick the most recent N rows for a "最近记录" list, neither
+// of which can be done from the pre-aggregated SessionMeta alone.
+// At is taken from the persisted record (UTC); rows with a zero At are
+// always included for "all" range but excluded from any time-windowed
+// query so a malformed legacy record cannot be pinned to "today".
+type TokenUsageRow struct {
+	SessionID          string
+	At                 time.Time
+	Provider           string
+	Model              string
+	InputTokens        int
+	OutputTokens       int
+	CacheCreationTokens int
+	CacheReadTokens    int
+}
+
 // AggregatedData combines statistics from all sessions and facets.
 type AggregatedData struct {
 	TotalSessions            int              `json:"total_sessions"`
