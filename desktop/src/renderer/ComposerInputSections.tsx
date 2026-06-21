@@ -1,14 +1,12 @@
 import {
   CornerDownRight,
   FileText,
-  MoreHorizontal,
   Paperclip,
-  Pencil,
   Send,
   Square,
   X
 } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useRef } from "react";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
   clipboardAttachmentFiles,
@@ -297,41 +295,6 @@ function ComposerQueueItem({
   onEdit: () => void;
   onRemove: () => void;
 }): JSX.Element {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Close on outside click (mousedown) and on Escape. The menu button itself
-  // stays in the "inside" set so the toggle click doesn't race against this
-  // listener; the toggle click handler still owns the open/close flip.
-  useEffect(() => {
-    if (!menuOpen) {
-      return;
-    }
-    function handlePointerDown(event: MouseEvent): void {
-      const target = event.target as Node | null;
-      if (menuRef.current?.contains(target ?? null)) {
-        return;
-      }
-      if (menuButtonRef.current?.contains(target ?? null)) {
-        return;
-      }
-      setMenuOpen(false);
-    }
-    function handleKey(event: KeyboardEvent): void {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        menuButtonRef.current?.focus();
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [menuOpen]);
-
   return (
     <li className={`composer-queue-row ${kind}`} data-position={position}>
       <span className="composer-queue-index" aria-hidden="true">
@@ -347,66 +310,26 @@ function ComposerQueueItem({
         {queuedMessagePreview(message)}
       </button>
       <div className="composer-queue-actions">
+        {onGuide ? (
+          <button
+            type="button"
+            className="composer-queue-action"
+            aria-label={`转为引导 ${position}`}
+            title="转为引导"
+            onClick={onGuide}
+          >
+            <CornerDownRight className="icon-sm" aria-hidden="true" />
+          </button>
+        ) : null}
         <button
           type="button"
           className="composer-queue-action danger"
           aria-label={`移除排队消息 ${position}`}
+          title="移除"
           onClick={onRemove}
         >
           <X className="icon-sm" aria-hidden="true" />
         </button>
-        <div className="composer-queue-menu-anchor">
-          <button
-            ref={menuButtonRef}
-            type="button"
-            className="composer-queue-action"
-            aria-label="待发送消息操作"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <MoreHorizontal className="icon-sm" aria-hidden="true" />
-          </button>
-          {menuOpen ? (
-            <div ref={menuRef} className="composer-queue-menu" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onEdit();
-                }}
-              >
-                <Pencil className="icon-sm" aria-hidden="true" />
-                <span>编辑消息</span>
-              </button>
-              {onGuide ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onGuide();
-                  }}
-                >
-                  <CornerDownRight className="icon-sm" aria-hidden="true" />
-                  <span>转为引导</span>
-                </button>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onRemove();
-                }}
-              >
-                <X className="icon-sm" aria-hidden="true" />
-                <span>{kind === "guide" ? "取消引导" : "移除"}</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
       </div>
     </li>
   );

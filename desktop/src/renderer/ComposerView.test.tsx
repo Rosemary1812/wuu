@@ -416,7 +416,7 @@ describe("Composer queue strip", () => {
     expect(shell?.contains(list ?? null)).toBe(true);
   });
 
-  it("lets a queued message become a guide from the per-row menu", () => {
+  it("lets a queued message become a guide from a single inline button click", () => {
     const onGuideQueuedMessage = vi.fn();
     renderComposer({
       running: true,
@@ -426,22 +426,13 @@ describe("Composer queue strip", () => {
       onGuideQueuedMessage
     });
 
-    const menuButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"待发送消息操作\"]"
+    const guideButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"转为引导 1\"]"
     );
-    expect(menuButton).not.toBeNull();
+    expect(guideButton).not.toBeNull();
 
     act(() => {
-      menuButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-
-    const guideItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]")
-    ).find((button) => button.textContent?.includes("转为引导"));
-    expect(guideItem).not.toBeUndefined();
-
-    act(() => {
-      guideItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      guideButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(onGuideQueuedMessage).toHaveBeenCalledWith("queue-1");
@@ -469,7 +460,7 @@ describe("Composer queue strip", () => {
     expect(onRemoveQueuedMessage).toHaveBeenCalledWith("queue-1");
   });
 
-  it("opens the queued message menu and edits the selected item", () => {
+  it("edits a queued message by clicking the preview text", () => {
     const onEditQueuedMessage = vi.fn();
     renderComposer({
       running: true,
@@ -479,81 +470,33 @@ describe("Composer queue strip", () => {
       onEditQueuedMessage
     });
 
-    const menuButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"待发送消息操作\"]"
+    const previewButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"编辑排队消息 1\"]"
     );
-    expect(menuButton).not.toBeNull();
+    expect(previewButton).not.toBeNull();
 
     act(() => {
-      menuButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-
-    const editItem = Array.from(
-      container.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]")
-    ).find((button) => button.textContent?.includes("编辑消息"));
-    expect(editItem).not.toBeUndefined();
-
-    act(() => {
-      editItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      previewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(onEditQueuedMessage).toHaveBeenCalledWith("queue-1");
   });
 
-  it("closes the menu when clicking outside the row", () => {
+  it("does not render a per-row overflow menu (actions are inline)", () => {
     renderComposer({
       running: true,
       queuedMessages: [
-        { id: "queue-1", text: "测试点击外部", images: [], files: [] }
+        { id: "queue-1", text: "no menu", images: [], files: [] }
+      ],
+      guideMessages: [
+        { id: "guide-1", text: "no menu either", images: [], files: [] }
       ]
     });
 
-    const menuButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"待发送消息操作\"]"
-    );
-    expect(menuButton).not.toBeNull();
-
-    act(() => {
-      menuButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true })
-      );
-    });
-    expect(container.querySelector('[role="menu"]')).not.toBeNull();
-
-    act(() => {
-      document.body.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true })
-      );
-    });
     expect(container.querySelector('[role="menu"]')).toBeNull();
-  });
-
-  it("closes the menu on Escape key", () => {
-    renderComposer({
-      running: true,
-      queuedMessages: [
-        { id: "queue-1", text: "测试 Escape", images: [], files: [] }
-      ]
-    });
-
-    const menuButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"待发送消息操作\"]"
-    );
-    expect(menuButton).not.toBeNull();
-
-    act(() => {
-      menuButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true })
-      );
-    });
-    expect(container.querySelector('[role="menu"]')).not.toBeNull();
-
-    act(() => {
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
-      );
-    });
-    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="待发送消息操作"]')
+    ).toBeNull();
   });
 });
 
