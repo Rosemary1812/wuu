@@ -2823,36 +2823,28 @@
 }
 
 .collapsible-details {
-  display: grid;
-  grid-template-rows: 0fr;
-  min-height: 0;
+  /* Drive the fold body height directly with height: 0 / auto.
+     interpolate-size: allow-keywords lets the browser transition
+     between the two as a real height animation, replacing the
+     grid-template-rows: 0fr/1fr hack used previously. Supported
+     in Chromium 129+; on older browsers the body just snaps, the
+     same fallback as <details>. */
+  interpolate-size: allow-keywords;
+  height: 0;
   overflow: hidden;
-  opacity: 0;
-  transform: translateY(var(--collapse-enter-offset-y));
-  transition:
-    grid-template-rows var(--collapse-motion-duration) var(--collapse-motion-easing),
-    opacity var(--collapse-opacity-duration) ease,
-    transform var(--collapse-motion-duration) var(--collapse-motion-easing);
-  will-change: grid-template-rows, opacity, transform;
-}
-
-/* Reset transform: 0 to override the default enter offset, and rely
- * on grid-template-rows: 0fr + min-height: 0 to size the container
- * so the collapse animates smoothly instead of snapping the
- * container to 0 height on the same frame the className changes. */
-.collapsible-details.collapsed {
-  transform: translateY(0);
+  transition: height var(--collapse-motion-duration) var(--collapse-motion-easing);
+  will-change: height;
 }
 
 .collapsible-details.expanded {
   height: auto;
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transform: translateY(0);
 }
 
+/* The inner holds the body content. The outer clips it during
+   the height transition, so the inner just renders its content
+   normally. min-height: 0 is no longer needed — the height is
+   driven by the outer, not a grid track. */
 .collapsible-details-inner {
-  min-height: 0;
   overflow: hidden;
 }
 

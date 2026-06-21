@@ -127,11 +127,9 @@
   --search-enter-duration: 220ms;
   --search-exit-duration: 180ms;
   --search-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
-  --collapse-motion-duration: 260ms;
-  --collapse-opacity-duration: 180ms;
+  --collapse-motion-duration: 400ms;
   --collapse-chevron-duration: 140ms;
   --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
-  --collapse-enter-offset-y: -2px;
   --conversation-turn-gap: 12px;
 --sidebar-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 245, 0.9));
   --sidebar-glass-border: rgba(17, 19, 21, 0.11);
