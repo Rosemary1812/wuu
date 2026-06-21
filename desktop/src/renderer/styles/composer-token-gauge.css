@@ -3,11 +3,9 @@
   --token-gauge-mid: #d48345;
   --token-gauge-high: var(--accent-warm);
   --token-gauge-track: rgba(138, 142, 145, 0.24);
-  --token-gauge-flame-glow: rgba(255, 138, 60, 0.55);
 }
 
 .composer-token-gauge {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -16,10 +14,6 @@
   user-select: none;
   line-height: 1;
   cursor: default;
-  /* Allow the flame decoration to extend above the 32px cell when the
-     token-speed is high. The label reserves space for the flame via
-     padding + negative margin. */
-  overflow: visible;
   transition:
     color 420ms cubic-bezier(0.16, 1, 0.3, 1),
     opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -27,7 +21,6 @@
 
 .composer-token-gauge .composer-token-gauge-svg {
   display: block;
-  overflow: visible;
   width: 20px;
   height: 20px;
   stroke-width: initial;
@@ -78,129 +71,12 @@
 }
 
 .composer-token-gauge-label {
-  position: relative;
-  display: inline-block;
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   white-space: nowrap;
   color: currentColor;
-  /* Reserve vertical room for the flame (18px ≈ 16px flame + 2px gap).
-     The matching negative margin keeps the text vertically centered in
-     the 32px toolbar cell. */
-  padding-top: 18px;
-  margin-top: -18px;
-  will-change: transform;
-}
-
-.composer-token-gauge-label-shake {
-  /* Slower (~4.5 Hz) than the buzzy 110ms original so the label reads as
-     a "heat tremor" rather than a vibrating motor. */
-  animation: composer-token-gauge-text-shake 220ms linear infinite;
-}
-
-.composer-token-gauge-flame-wrap {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 12px;
-  height: 16px;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.composer-token-gauge-flame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  /* Let the drop-shadow render fully without being clipped by the SVG
-     viewport. */
-  overflow: visible;
-  /* Soft warm halo that sells the "hot" reading. The falloff distance
-     is small on purpose so the halo does not bleed into the dial. */
-  filter: drop-shadow(0 0 3px var(--token-gauge-flame-glow));
-  /* Anchor at the base so scaleY stretches the flame upward rather than
-     growing it from the center. */
-  transform-origin: 50% 100%;
-  animation: composer-token-gauge-flame-flicker 360ms ease-in-out infinite;
-}
-
-.composer-token-gauge-flame-sway {
-  /* Slow horizontal drift, independent of the inner scroll. ~2.2s period
-     so the draft reads as ambient rather than nervous. */
-  animation: composer-token-gauge-flame-sway 2200ms ease-in-out infinite;
-}
-
-.composer-token-gauge-flame-scroll {
-  /* The actual "fire rises" motion. The 48px rect in the SVG scrolls up
-     by 24px per cycle (one full color cycle) for a seamless loop. */
-  animation: composer-token-gauge-flame-scroll 600ms linear infinite;
-}
-
-@keyframes composer-token-gauge-flame-flicker {
-  /* Asymmetric stretch (taller-thinner → shorter-wider) so the flame
-     looks like it is leaning in a draft, not breathing symmetrically. */
-  0%,
-  100% {
-    transform: scaleY(1) scaleX(1);
-    opacity: 0.95;
-  }
-  25% {
-    transform: scaleY(1.06) scaleX(0.96);
-    opacity: 1;
-  }
-  50% {
-    transform: scaleY(0.96) scaleX(1.03);
-    opacity: 0.9;
-  }
-  75% {
-    transform: scaleY(1.04) scaleX(0.98);
-    opacity: 1;
-  }
-}
-
-@keyframes composer-token-gauge-flame-scroll {
-  /* The rect is 2x the viewBox tall (48px) and the gradient repeats its
-     6-color ramp every 24px, so translating -24px lands on the same
-     visual frame as the start. */
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(-24px);
-  }
-}
-
-@keyframes composer-token-gauge-flame-sway {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  50% {
-    transform: translateX(0.4px);
-  }
-}
-
-@keyframes composer-token-gauge-text-shake {
-  /* 4-step tremor at ~0.6px amplitude. Slightly larger than the first
-     cut so the heat is visible at a glance, but the slower period
-     (220ms vs 110ms) keeps it out of "buzzy vibration" territory. */
-  0% {
-    transform: translate(0, 0);
-  }
-  25% {
-    transform: translate(0.6px, -0.4px);
-  }
-  50% {
-    transform: translate(-0.5px, 0.5px);
-  }
-  75% {
-    transform: translate(0.4px, 0.3px);
-  }
-  100% {
-    transform: translate(-0.3px, -0.4px);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -209,18 +85,5 @@
   .composer-token-gauge-needle,
   .composer-token-gauge-needle-shape {
     transition: none;
-  }
-  .composer-token-gauge-label-shake {
-    animation: none;
-  }
-  .composer-token-gauge-flame {
-    /* Keep the warm halo so the user still sees the "hot" cue, just
-       frozen in place. */
-    animation: none;
-    opacity: 0.75;
-  }
-  .composer-token-gauge-flame-sway,
-  .composer-token-gauge-flame-scroll {
-    animation: none;
   }
 }
