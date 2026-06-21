@@ -196,7 +196,13 @@ export function buildAssistantTurnDisplay(
     });
   }
 
-  if (!sawAssistantWork) {
+  // For an in_progress turn we always return a display so TurnView keeps
+  // the AssistantTurnShell (process row + live elapsed timer) mounted
+  // even when the turn has no items yet — both the optimistic placeholder
+  // before the server's first item and the brief window between the real
+  // turn arriving and the first agent_message delta would otherwise
+  // flicker through an undefined display.
+  if (!sawAssistantWork && !isInProgress) {
     return undefined;
   }
 
@@ -215,7 +221,7 @@ export function buildAssistantTurnDisplay(
     ? latestInProgressProcessPreview(turn)
     : undefined;
 
-  if (entries.length === 0 && !latestProcessPreview) {
+  if (entries.length === 0 && !latestProcessPreview && !isInProgress) {
     return undefined;
   }
 

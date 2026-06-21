@@ -245,21 +245,15 @@ function nextOptimisticTurnID(): string {
 
 /**
  * Build an `in_progress` turn placeholder that mirrors the user's
- * just-sent message and seeds an empty streaming `agent_message` so
- * the renderer (specifically `buildAssistantTurnDisplay`) immediately
- * surfaces the "正在处理/回复" process row and the live elapsed timer
- * instead of waiting for the first server-side agent_message delta.
+ * just-sent message. Inserting it into local state before the Go core
+ * round-trip completes lets the conversation surface "正在处理/回复"
+ * and the live elapsed timer immediately, instead of waiting for the
+ * first server-side turn notification.
  *
- * Without the seed item, an in_progress turn whose only item is the
- * user_message yields `sawAssistantWork=false` in
- * `buildAssistantTurnDisplay`, which causes `TurnView` to skip the
- * entire `AssistantTurnShell` (including the live timer) — exactly
- * the delay the user complained about.
- *
- * The empty agent_message is purely a renderer anchor; it is filtered
- * out by `replaceOptimisticTurn` (matched by the optimistic turn id)
- * once the real turn arrives, so it never collides with the
- * server-side items.
+ * `AssistantTurnDisplay.buildAssistantTurnDisplay` now always returns a
+ * display for in_progress turns, so this placeholder does not need to
+ * seed an extra agent_message item. The placeholder turn is filtered
+ * out by `replaceOptimisticTurn` once the real turn arrives.
  */
 export function createOptimisticTurn(
   message: QueuedComposerMessage,
@@ -279,13 +273,6 @@ export function createOptimisticTurn(
         text: message.text,
         images: inputImagesFromComposer(message.images),
         files: inputFilesFromComposer(message.files),
-      },
-      {
-        id: `${id}-agent`,
-        type: "agent_message",
-        status: "in_progress",
-        phase: "commentary",
-        text: "",
       },
     ],
   };
