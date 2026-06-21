@@ -10,6 +10,11 @@ import {
   type ComposerVariant,
   type PermissionMode,
 } from "./ComposerView";
+import {
+  computeFlameState,
+  INITIAL_FLAME_STATE,
+  type FlameState,
+} from "./ComposerTokenGauge";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import type {
   InitializeResult,
@@ -687,19 +692,24 @@ describe("Composer permission menu", () => {
 });
 
 describe("ComposerTokenGauge", () => {
-  it("keeps the gauge visible with an idle speed when the composer is idle", () => {
+  it("keeps the gauge visible with the speed label always shown when idle", () => {
     renderComposer({ running: false, tokensPerSecond: 0 });
     const gauge = container.querySelector(".composer-token-gauge");
     expect(gauge).not.toBeNull();
     expect(gauge?.getAttribute("data-state")).toBe("idle");
     expect(gauge?.getAttribute("aria-label")).toContain("0.0");
 
-    // Tooltip is portaled out of the cell and only mounted on hover, so it
-    // must not be in the DOM until the user hovers the gauge.
+    // The label is now inline next to the dial — no hover portal. It must
+    // be in the DOM from the first render so the user always sees the rate.
+    const label = container.querySelector(".composer-token-gauge-label");
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toContain("0.0");
+    expect(label?.textContent).toContain("tok/s");
+    expect(gauge?.getAttribute("data-flames")).toBe("off");
     expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
   });
 
-  it("renders a live gauge and ports the hover tooltip out of the 32px cell", () => {
+  it("renders a live gauge with the speed label inline, no hover required", () => {
     renderComposer({ running: true, tokensPerSecond: 18.4 });
 
     const gauge = container.querySelector(".composer-token-gauge");
@@ -707,21 +717,19 @@ describe("ComposerTokenGauge", () => {
     expect(gauge?.getAttribute("data-state")).toBe("running");
     expect(gauge?.getAttribute("title")).toBeNull();
 
-    // No tooltip in the DOM before hover.
-    expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
+    // Label is inline; no portal, no hover gate. Hovering must not
+    // resurrect a tooltip either.
+    const label = container.querySelector(".composer-token-gauge-label");
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toContain("18.4");
+    expect(label?.textContent).toContain("tok/s");
 
     act(() => {
       gauge?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
+    expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
 
-    // After hover the tooltip is portaled to document.body (escapes the
-    // 32px cell) and is not a child of the gauge container.
-    const portaled = document.body.querySelector(".composer-token-gauge-tooltip");
-    expect(portaled).not.toBeNull();
-    expect(container.querySelector(".composer-token-gauge-tooltip")).toBeNull();
-    expect(portaled?.textContent).toContain("18.4");
-    expect(portaled?.textContent).toContain("tok/s");
-
+    // Dial components are still rendered.
     const svg = container.querySelector(".composer-token-gauge-svg");
     expect(svg?.getAttribute("width")).toBe("20");
     expect(svg?.getAttribute("height")).toBe("20");
@@ -729,22 +737,88 @@ describe("ComposerTokenGauge", () => {
     expect(container.querySelector(".composer-token-gauge-needle")).not.toBeNull();
     expect(container.querySelector(".composer-token-gauge-inner-arc")).toBeNull();
     expect(container.querySelectorAll(".composer-token-gauge-speed-dot")).toHaveLength(0);
-    expect(container.querySelector(".composer-token-gauge-label")).toBeNull();
+
+    // At 18.4 tok/s we are well below the 90 tok/s flame threshold, so
+    // the flame decoration and the shake class must not be present.
+    expect(container.querySelector(".composer-token-gauge-flames")).toBeNull();
+    expect(container.querySelector(".composer-token-gauge-label-shake")).toBeNull();
   });
 
-  it("marks fallback token speed as approximate", () => {
+  it("marks fallback token speed as approximate in the inline label", () => {
     renderComposer({
       running: true,
       tokensPerSecond: 18.4,
       tokenSpeedSource: "estimated",
     });
 
-    const gauge = container.querySelector(".composer-token-gauge");
-    act(() => {
-      gauge?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-    });
+    const label = container.querySelector(".composer-token-gauge-label");
+    expect(label?.textContent).toContain("约 18.4 tok/s");
+  });
 
-    const tooltip = document.body.querySelector(".composer-token-gauge-tooltip");
-    expect(tooltip?.textContent).toContain("约 18.4 tok/s");
+  it("ignites flames after the speed stays above the high threshold for the dwell", () => {
+    renderComposer({ running: true, tokensPerSecond: 95 });
+
+    // The state machine only runs inside the RAF loop, which has not
+    // fired yet on this synchronous render. The initial paint must show
+    // no flames and no shake class so the user does not see a flash on
+    // mount; the state machine itself is exercised by the dedicated
+    // computeFlameState unit tests below.
+    expect(container.querySelector(".composer-token-gauge-flames")).toBeNull();
+    expect(container.querySelector(".composer-token-gauge-label-shake")).toBeNull();
+    expect(container.querySelector('[data-flames="on"]')).toBeNull();
+  });
+
+  it("does not ignite flames when the speed stays below the high threshold", () => {
+    renderComposer({ running: true, tokensPerSecond: 30 });
+
+    expect(container.querySelector(".composer-token-gauge-flames")).toBeNull();
+    expect(container.querySelector(".composer-token-gauge-label-shake")).toBeNull();
+    expect(container.querySelector('[data-flames="on"]')).toBeNull();
+  });
+});
+
+describe("computeFlameState", () => {
+  it("ignites after the speed stays above threshold for the ignite dwell", () => {
+    let state: FlameState = INITIAL_FLAME_STATE;
+    state = computeFlameState(state, 95, 0);
+    expect(state.kind).toBe("warming");
+    state = computeFlameState(state, 95, 799);
+    expect(state.kind).toBe("warming");
+    state = computeFlameState(state, 95, 800);
+    expect(state.kind).toBe("on");
+  });
+
+  it("does not ignite when the speed stays below the flame threshold", () => {
+    let state: FlameState = INITIAL_FLAME_STATE;
+    for (let t = 0; t < 5000; t += 16) {
+      state = computeFlameState(state, 30, t);
+    }
+    expect(state.kind).toBe("off");
+  });
+
+  it("resets the warming timer when the speed drops before ignition", () => {
+    let state: FlameState = INITIAL_FLAME_STATE;
+    state = computeFlameState(state, 95, 0);
+    expect(state.kind).toBe("warming");
+    state = computeFlameState(state, 30, 500);
+    expect(state.kind).toBe("off");
+  });
+
+  it("extinguishes after the speed stays below threshold for the extinguish dwell", () => {
+    let state: FlameState = { kind: "on" };
+    state = computeFlameState(state, 30, 0);
+    expect(state.kind).toBe("cooling");
+    state = computeFlameState(state, 30, 399);
+    expect(state.kind).toBe("cooling");
+    state = computeFlameState(state, 30, 400);
+    expect(state.kind).toBe("off");
+  });
+
+  it("stays ignited when the speed briefly dips but recovers", () => {
+    let state: FlameState = { kind: "on" };
+    state = computeFlameState(state, 30, 0);
+    expect(state.kind).toBe("cooling");
+    state = computeFlameState(state, 95, 100);
+    expect(state.kind).toBe("on");
   });
 });

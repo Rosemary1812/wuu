@@ -1,47 +1,38 @@
-                                                                         
-                                                                  
-                                                                     
-                                           
-
 :root {
   --token-gauge-idle: var(--ink-muted);
   --token-gauge-mid: #d48345;
   --token-gauge-high: var(--accent-warm);
   --token-gauge-track: rgba(138, 142, 145, 0.24);
-  --token-gauge-tooltip-bg: rgba(255, 255, 255, 0.98);
-  --token-gauge-tooltip-text: var(--ink);
-  --token-gauge-tooltip-border: var(--ink-overlay-12);
+  --token-gauge-flame-base: #ff7a2a;
+  --token-gauge-flame-tip: #ffd17a;
 }
 
 .composer-token-gauge {
   position: relative;
-  display: grid;
-  width: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 32px;
   flex: 0 0 auto;
-  place-items: center;
-  border-radius: var(--radius-sm);
   user-select: none;
   line-height: 1;
   cursor: default;
+  /* Allow the flame decoration to extend above the 32px cell when the
+     token-speed is high. The label reserves space for the flames via
+     padding + negative margin. */
+  overflow: visible;
   transition:
-    background-color 160ms ease,
     color 420ms cubic-bezier(0.16, 1, 0.3, 1),
     opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.composer-token-gauge:hover {
-  background: var(--surface-2);
-}
-
-                                                                            
-                                                                                
 .composer-token-gauge .composer-token-gauge-svg {
   display: block;
   overflow: visible;
   width: 20px;
   height: 20px;
   stroke-width: initial;
+  flex: 0 0 auto;
 }
 
 .composer-token-gauge-track,
@@ -69,9 +60,6 @@
   transition:
     stroke-dashoffset 620ms cubic-bezier(0.16, 1, 0.3, 1),
     stroke 420ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.composer-token-gauge-progress {
   will-change: stroke-dashoffset;
 }
 
@@ -90,41 +78,110 @@
   stroke-width: 1.8;
 }
 
-                                                                       
-                                                                           
-                                                                        
-                                                                
-.composer-token-gauge-tooltip {
-  padding: 4px 9px;
-  background: var(--token-gauge-tooltip-bg);
-  color: var(--token-gauge-tooltip-text);
-  border: 1px solid var(--token-gauge-tooltip-border);
-  border-radius: var(--radius-xs);
+.composer-token-gauge-label {
+  position: relative;
+  display: inline-block;
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   white-space: nowrap;
-  pointer-events: none;
-  z-index: 1000;
-  box-shadow:
-    0 8px 22px rgba(20, 24, 28, 0.12),
-    0 1px 4px rgba(20, 24, 28, 0.08);
-  animation: composer-token-gauge-tooltip-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  color: currentColor;
+  /* Reserve a few pixels above the text for the flames decoration. The
+     matching negative margin keeps the text in its original vertical
+     position so the 32px-tall toolbar cell still looks right. */
+  padding-top: 12px;
+  margin-top: -12px;
+  will-change: transform;
 }
 
-@keyframes composer-token-gauge-tooltip-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.composer-token-gauge-label-shake {
+  animation: composer-token-gauge-text-shake 110ms linear infinite;
+}
+
+.composer-token-gauge-flames {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  width: 30px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.composer-token-gauge-flame {
+  width: 6px;
+  background: linear-gradient(
+    to top,
+    var(--token-gauge-flame-base) 0%,
+    var(--token-gauge-flame-tip) 100%
+  );
+  border-radius: 50% 50% 30% 30% / 70% 70% 30% 30%;
+  animation: composer-token-gauge-flame-flicker 320ms ease-in-out infinite
+    alternate;
+}
+
+.composer-token-gauge-flame:nth-child(1) {
+  height: 8px;
+  animation-delay: 0ms;
+}
+.composer-token-gauge-flame:nth-child(2) {
+  height: 10px;
+  animation-delay: 100ms;
+}
+.composer-token-gauge-flame:nth-child(3) {
+  height: 6px;
+  animation-delay: 200ms;
+}
+
+@keyframes composer-token-gauge-flame-flicker {
+  0% {
+    transform: scaleY(0.85) translateY(1px);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scaleY(1.05) translateY(-1px);
+    opacity: 1;
+  }
+}
+
+@keyframes composer-token-gauge-text-shake {
+  0% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(0.4px, -0.3px);
+  }
+  40% {
+    transform: translate(-0.3px, 0.4px);
+  }
+  60% {
+    transform: translate(0.3px, 0.3px);
+  }
+  80% {
+    transform: translate(-0.4px, -0.2px);
+  }
+  100% {
+    transform: translate(0.2px, -0.4px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .composer-token-gauge,
   .composer-token-gauge-progress,
   .composer-token-gauge-needle,
-  .composer-token-gauge-needle-shape,
-  .composer-token-gauge-tooltip {
-    animation: none;
+  .composer-token-gauge-needle-shape {
     transition: none;
+  }
+  .composer-token-gauge-label-shake {
+    animation: none;
+  }
+  .composer-token-gauge-flame {
+    animation: none;
+    opacity: 0.55;
+    transform: scaleY(0.9);
   }
 }
