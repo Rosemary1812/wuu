@@ -9,6 +9,10 @@
   width: min(var(--environment-panel-width), calc(100% - 32px));
   max-height: calc(100vh - 86px);
   min-height: 0;
+  /* Clip the children to the window-bound stack; without this the absolute
+     stack would let flex children paint past max-height and overflow the
+     window when there are many rows in either panel. */
+  overflow: hidden;
   pointer-events: none;
 }
 
@@ -28,16 +32,21 @@
 
 .environment-side-stack > .environment-panel {
   display: flex;
-  flex: 0 1 auto;
+  /* Share the available stack height between EnvironmentPanel and the
+     docked query history; each panel then scrolls on its own when its
+     content overflows, instead of either one blowing past the window. */
+  flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
 }
 
 .environment-side-stack > .query-history-environment-slot {
   display: block;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   align-self: stretch;
-  overflow: visible;
+  /* Hidden so .query-history-popover's `max-height: 100%` can resolve
+     against the slot's flex-allocated height, letting the list scroll. */
+  overflow: hidden;
 }
 
 .environment-panel {
@@ -105,6 +114,9 @@
 .environment-side-stack > .environment-panel .environment-panel-body {
   min-height: 0;
   overflow: auto;
+  /* Grow to fill the panel so the existing overflow:auto above can scroll
+     when EnvironmentPanel is flex-shrunk inside the bounded stack. */
+  flex: 1 1 auto;
 }
 
 @keyframes environment-plan-item-in {
@@ -368,6 +380,8 @@
                                                       
 .query-history-popover {
   display: grid;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr);
   width: 100%;
   box-sizing: border-box;
   min-height: 0;

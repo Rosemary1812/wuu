@@ -468,6 +468,30 @@ func (s *Store) SetStatus(status Status, step Step, message string) (State, erro
 	return state, s.AppendEvent(Event{Type: "status_changed", GoalID: state.ID, Step: state.CurrentStep, Message: message, Data: map[string]string{"status": string(status)}})
 }
 
+// UpdateText rewrites the goal objective. Used by the composer banner's
+// "edit goal" affordance: the renderer captures explicit user
+// confirmation, then calls this to apply the new text atomically.
+// Event type is "goal_text_updated" so the event log distinguishes the
+// edit from a fresh Init() which already emits "goal_initialized".
+func (s *Store) UpdateText(goal string) (State, error) {
+	goal = strings.TrimSpace(goal)
+	if goal == "" {
+		return State{}, errors.New("goal text is required")
+	}
+	if s == nil || s.dir == "" {
+		return State{}, errors.New("goal store is not configured")
+	}
+	state, err := s.LoadState()
+	if err != nil {
+		return State{}, err
+	}
+	state.Goal = goal
+	if err := s.SaveState(state); err != nil {
+		return State{}, err
+	}
+	return state, s.AppendEvent(Event{Type: "goal_text_updated", GoalID: state.ID, Message: goal})
+}
+
 func (s *Store) RecordTestResults(results []TestResult) (State, error) {
 	state, err := s.LoadState()
 	if err != nil {

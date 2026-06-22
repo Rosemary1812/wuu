@@ -177,6 +177,12 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleGoalWorktreeMerge(req)
 	case MethodGoalApprovalResolve:
 		return s.handleGoalApprovalResolve(req)
+	case MethodGoalActiveSummary:
+		return s.handleGoalActiveSummary(req)
+	case MethodGoalCancel:
+		return s.handleGoalCancel(req)
+	case MethodGoalUpdateText:
+		return s.handleGoalUpdateText(req)
 	case MethodThreadStart:
 		return s.handleThreadStart(req)
 	case MethodThreadResume:

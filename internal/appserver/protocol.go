@@ -26,6 +26,15 @@ const (
 	MethodGoalWorktreeRollback  = "goal/worktree/rollback"
 	MethodGoalWorktreeMerge     = "goal/worktree/merge"
 	MethodGoalApprovalResolve   = "goal/approval/resolve"
+	// MethodGoalActiveSummary returns the lightweight composer-banner view
+	// of the most-recently-updated non-terminal goal in the workspace.
+	// MethodGoalCancel marks that goal as cancelled; MethodGoalUpdateText
+	// rewrites its objective. The renderer only needs these three to drive
+	// the inline "current goal" strip in the composer; full goal state
+	// stays on the agent tool loop.
+	MethodGoalActiveSummary = "goal/active-summary"
+	MethodGoalCancel        = "goal/cancel"
+	MethodGoalUpdateText    = "goal/update-text"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -299,6 +308,46 @@ type GoalSnapshotParams struct {
 
 type GoalSnapshotResult struct {
 	Snapshot goal.SystemSnapshot `json:"snapshot"`
+}
+
+// GoalActiveSummary is the composer-banner view of the most recently
+// updated non-terminal goal in the workspace. The handler filters
+// terminal statuses (completed, failed, cancelled) so the renderer can
+// treat a nil summary as "no active goal" without re-checking status.
+// Text is a single-line truncation of goal.Goal suitable for the inline
+// banner; it intentionally omits task / step / approvals to keep the
+// composer surface quiet.
+type GoalActiveSummary struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	Status    string `json:"status"`
+	Step      string `json:"step,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type GoalActiveSummaryParams struct{}
+
+type GoalActiveSummaryResult struct {
+	Summary *GoalActiveSummary `json:"summary,omitempty"`
+}
+
+type GoalCancelParams struct {
+	GoalID              string `json:"goal_id"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
+type GoalUpdateTextParams struct {
+	GoalID              string `json:"goal_id"`
+	Text                string `json:"text"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
+type GoalCancelResult struct {
+	OK bool `json:"ok"`
+}
+
+type GoalUpdateTextResult struct {
+	OK bool `json:"ok"`
 }
 
 type GoalWorktreeReviewParams struct {

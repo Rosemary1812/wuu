@@ -3,8 +3,10 @@ package appserver
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/harness"
@@ -160,6 +162,164 @@ func (s *Server) handleGoalApprovalResolve(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	return s.writeResponse(req.ID, GoalApprovalResolveResult{Approval: approval}, nil)
+}
+
+// handleGoalActiveSummary returns the lightweight composer-banner view of
+// the most recently updated non-terminal goal. The renderer only needs id,
+// text (single-line), status, step, updated_at — full goal state (tasks,
+// approvals, workflow phases) is intentionally omitted so the renderer
+// cannot rebuild the deleted right-side Goal panel from this surface.
+func (s *Server) handleGoalActiveSummary(req Request) error {
+	summary, err := s.findActiveGoalSummary()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, GoalActiveSummaryResult{Summary: summary}, nil)
+}
+
+// handleGoalCancel marks the named goal as cancelled. Terminal-status
+// goals (completed/failed/cancelled) refuse the request to keep the
+// renderer's banner from racing against a finished goal.
+func (s *Server) handleGoalCancel(req Request) error {
+	var params GoalCancelParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal cancel params: %w", err))
+		}
+	}
+	if !params.ConfirmUserApproved {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal cancel requires confirm_user_approved=true"))
+	}
+	store, err := s.goalStoreForID(params.GoalID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("load goal state: %w", err))
+	}
+	if goalStatusIsTerminal(state.Status) {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal %q is already %s", params.GoalID, state.Status))
+	}
+	if _, err := store.SetStatus(goalrunner.StatusCancelled, state.CurrentStep, "cancelled from composer banner"); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, GoalCancelResult{OK: true}, nil)
+}
+
+// handleGoalUpdateText rewrites the goal objective. The renderer is
+// expected to obtain explicit user confirmation before invoking this;
+// the server enforces confirm_user_approved as a guardrail.
+func (s *Server) handleGoalUpdateText(req Request) error {
+	var params GoalUpdateTextParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal update text params: %w", err))
+		}
+	}
+	if !params.ConfirmUserApproved {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal update text requires confirm_user_approved=true"))
+	}
+	text := strings.TrimSpace(params.Text)
+	if text == "" {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal text is required"))
+	}
+	store, err := s.goalStoreForID(params.GoalID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if _, err := store.UpdateText(text); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, GoalUpdateTextResult{OK: true}, nil)
+}
+
+// findActiveGoalSummary walks the workspace's goal directory and returns
+// the most recently updated non-terminal goal's lightweight summary. The
+// walk is bounded: missing or malformed goal subdirectories are skipped
+// rather than failing the whole call, since this powers a renderer banner
+// and a transient disk error should not blank the composer surface.
+func (s *Server) findActiveGoalSummary() (*GoalActiveSummary, error) {
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	goalRoot := statepath.GoalRoot(stateDir)
+	entries, err := os.ReadDir(goalRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read goal root: %w", err)
+	}
+	var best *goalrunner.State
+	var bestDir string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+			continue
+		}
+		store := goalrunner.NewStore(statepath.GoalDir(stateDir, name))
+		state, err := store.LoadState()
+		if err != nil {
+			continue
+		}
+		if goalStatusIsTerminal(state.Status) {
+			continue
+		}
+		if best == nil || state.UpdatedAt.After(best.UpdatedAt) {
+			best = &state
+			bestDir = name
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+	updated := ""
+	if !best.UpdatedAt.IsZero() {
+		updated = best.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	return &GoalActiveSummary{
+		ID:        best.ID,
+		Text:      goalSummaryText(best.Goal),
+		Status:    string(best.Status),
+		Step:      string(best.CurrentStep),
+		UpdatedAt: updated,
+	}, nil
+}
+
+// goalStatusIsTerminal reports whether a goal status can no longer change.
+// The composer banner only shows non-terminal goals so the user always
+// sees a goal that is still doing something.
+func goalStatusIsTerminal(status goalrunner.Status) bool {
+	switch status {
+	case goalrunner.StatusCompleted, goalrunner.StatusFailed, goalrunner.StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// goalSummaryText collapses goal.Goal into the single-line form the
+// banner renders. Long objectives keep the first line plus a trailing
+// ellipsis so the inline strip never overflows the composer width.
+func goalSummaryText(goal string) string {
+	goal = strings.TrimSpace(goal)
+	if goal == "" {
+		return ""
+	}
+	if idx := strings.IndexAny(goal, "\n\r"); idx >= 0 {
+		goal = goal[:idx]
+	}
+	const maxRunes = 240
+	runes := []rune(goal)
+	if len(runes) > maxRunes {
+		goal = string(runes[:maxRunes]) + "…"
+	}
+	return goal
 }
 
 func (s *Server) goalWorkflowStore() (*workflow.Store, error) {

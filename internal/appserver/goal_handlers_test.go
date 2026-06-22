@@ -417,3 +417,289 @@ func remarshalGoalHandlerRaw(t *testing.T, value any) []byte {
 	}
 	return data
 }
+
+func TestGoalActiveSummaryReturnsMostRecentNonTerminalGoal(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	stateDir := rt.StateDir
+	older := goalrunner.NewStore(statepath.GoalDir(stateDir, "older"))
+	if _, err := older.Init(goalrunner.Spec{ID: "older", Goal: "older goal"}); err != nil {
+		t.Fatalf("Init older: %v", err)
+	}
+	if _, err := older.AddProgress(goalrunner.StepResearch, "older progress"); err != nil {
+		t.Fatalf("AddProgress older: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	newer := goalrunner.NewStore(statepath.GoalDir(stateDir, "newer"))
+	if _, err := newer.Init(goalrunner.Spec{ID: "newer", Goal: "newer goal"}); err != nil {
+		t.Fatalf("Init newer: %v", err)
+	}
+	if _, err := newer.AddProgress(goalrunner.StepExecution, "newer progress"); err != nil {
+		t.Fatalf("AddProgress newer: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "sum")
+	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
+	if result.Summary == nil {
+		t.Fatalf("expected active summary, got %+v", result)
+	}
+	if result.Summary.ID != "newer" {
+		t.Fatalf("expected most-recent active goal id=newer, got %+v", result.Summary)
+	}
+	if result.Summary.Text != "newer goal" {
+		t.Fatalf("summary text mismatch: %+v", result.Summary)
+	}
+	if result.Summary.Status != string(goalrunner.StatusRunning) {
+		t.Fatalf("summary status mismatch: %+v", result.Summary)
+	}
+	if result.Summary.Step != string(goalrunner.StepExecution) {
+		t.Fatalf("summary step mismatch: %+v", result.Summary)
+	}
+	if result.Summary.UpdatedAt == "" {
+		t.Fatalf("summary updated_at empty: %+v", result.Summary)
+	}
+}
+
+func TestGoalActiveSummarySkipsTerminalGoals(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "done"))
+	if _, err := store.Init(goalrunner.Spec{ID: "done", Goal: "done goal"}); err != nil {
+		t.Fatalf("Init done: %v", err)
+	}
+	if _, err := store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, "done"); err != nil {
+		t.Fatalf("SetStatus done: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "sum")
+	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
+	if result.Summary != nil {
+		t.Fatalf("expected nil summary when only terminal goal exists, got %+v", result.Summary)
+	}
+}
+
+func TestGoalActiveSummaryCollapsesMultilineText(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "multi"))
+	if _, err := store.Init(goalrunner.Spec{ID: "multi", Goal: "first line\nsecond line\nthird"}); err != nil {
+		t.Fatalf("Init multi: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "sum")
+	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
+	if result.Summary == nil {
+		t.Fatalf("expected summary, got %+v", result)
+	}
+	if result.Summary.Text != "first line" {
+		t.Fatalf("expected text collapsed to first line, got %+v", result.Summary)
+	}
+}
+
+func TestGoalCancelRequiresConfirmation(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
+	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
+		t.Fatalf("Init live: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"live"}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/cancel: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "cancel")
+	if msg["error"] == nil {
+		t.Fatalf("expected error when confirm_user_approved missing, got %+v", msg)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.Status == goalrunner.StatusCancelled {
+		t.Fatalf("goal must not be cancelled without confirmation: %+v", state.Status)
+	}
+}
+
+func TestGoalCancelMarksRunningGoalCancelled(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
+	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
+		t.Fatalf("Init live: %v", err)
+	}
+	if _, err := store.AddProgress(goalrunner.StepExecution, "running"); err != nil {
+		t.Fatalf("AddProgress: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"live","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/cancel: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "cancel")
+	if msg["error"] != nil {
+		t.Fatalf("unexpected error: %+v", msg["error"])
+	}
+	result := remarshal[GoalCancelResult](t, msg["result"])
+	if !result.OK {
+		t.Fatalf("expected OK result, got %+v", result)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.Status != goalrunner.StatusCancelled {
+		t.Fatalf("expected status=cancelled, got %s", state.Status)
+	}
+}
+
+func TestGoalCancelRefusesTerminalGoal(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "done"))
+	if _, err := store.Init(goalrunner.Spec{ID: "done", Goal: "done goal"}); err != nil {
+		t.Fatalf("Init done: %v", err)
+	}
+	if _, err := store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, ""); err != nil {
+		t.Fatalf("SetStatus done: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"done","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/cancel: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "cancel")
+	if msg["error"] == nil {
+		t.Fatalf("expected error cancelling terminal goal, got %+v", msg)
+	}
+}
+
+func TestGoalUpdateTextRequiresConfirmation(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
+	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
+		t.Fatalf("Init live: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"upd","method":"goal/update-text","params":{"goal_id":"live","text":"new goal"}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/update-text: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "upd")
+	if msg["error"] == nil {
+		t.Fatalf("expected error when confirm_user_approved missing, got %+v", msg)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.Goal != "live goal" {
+		t.Fatalf("goal text must not change without confirmation, got %q", state.Goal)
+	}
+}
+
+func TestGoalUpdateTextRejectsEmptyText(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
+	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
+		t.Fatalf("Init live: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"upd","method":"goal/update-text","params":{"goal_id":"live","text":"   ","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/update-text: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "upd")
+	if msg["error"] == nil {
+		t.Fatalf("expected error for empty text, got %+v", msg)
+	}
+}
+
+func TestGoalUpdateTextRewritesGoalAndEmitsEvent(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
+	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
+		t.Fatalf("Init live: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"upd","method":"goal/update-text","params":{"goal_id":"live","text":"updated goal","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/update-text: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "upd")
+	if msg["error"] != nil {
+		t.Fatalf("unexpected error: %+v", msg["error"])
+	}
+	result := remarshal[GoalUpdateTextResult](t, msg["result"])
+	if !result.OK {
+		t.Fatalf("expected OK result, got %+v", result)
+	}
+	state, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if state.Goal != "updated goal" {
+		t.Fatalf("expected goal rewritten, got %q", state.Goal)
+	}
+	events, err := store.Events()
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	foundEdit := false
+	for _, ev := range events {
+		if ev.Type == "goal_text_updated" {
+			foundEdit = true
+		}
+	}
+	if !foundEdit {
+		t.Fatalf("expected goal_text_updated event, got %+v", events)
+	}
+}
