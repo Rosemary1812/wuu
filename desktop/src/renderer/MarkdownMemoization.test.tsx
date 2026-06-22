@@ -7,47 +7,15 @@ import { streamTextKey, streamTextStore } from "./StreamText";
 
 const markdownRender = vi.hoisted(() => ({ count: 0 }));
 
-// Mock the deepest renderer so the test can count how many times
-// MarkdownContent actually re-renders. With Vercel's Streamdown in
-// place, react-markdown is no longer imported; we mock streamdown
-// instead. The plugin packages are stubbed so jsdom does not try to
-// load Shiki or Mermaid language workers, which it cannot.
-vi.mock("streamdown", async () => {
+vi.mock("react-markdown", async () => {
   const React = await import("react");
   return {
-    Streamdown: ({ children }: { children?: import("react").ReactNode }) => {
+    default: ({ children }: { children?: import("react").ReactNode }) => {
       markdownRender.count += 1;
-      return React.createElement(
-        "div",
-        { "data-mock-streamdown": "true" },
-        children
-      );
+      return React.createElement("div", { "data-mock-markdown": "true" }, children);
     }
   };
 });
-
-vi.mock("@streamdown/code", () => ({
-  createCodePlugin: () => ({
-    name: "shiki",
-    type: "code-highlighter",
-    getSupportedLanguages: () => [],
-    getThemes: () => ["github-light", "github-dark"],
-    highlight: () => null,
-    supportsLanguage: () => false
-  })
-}));
-
-vi.mock("@streamdown/mermaid", () => ({
-  createMermaidPlugin: () => ({
-    name: "mermaid",
-    type: "diagram",
-    language: "mermaid",
-    getMermaid: () => ({
-      initialize: () => undefined,
-      render: async () => ({ svg: "" })
-    })
-  })
-}));
 
 const longMarkdown = Array.from(
   { length: 80 },

@@ -6,10 +6,42 @@ import {
   useRef,
   useState
 } from "react";
-import { MarkdownContent } from "./RichContent";
+import { MarkdownContent, type RichTextRenderer } from "./RichContent";
 import {
   useStreamedText
 } from "./StreamText";
+
+/**
+ * Returns `true` when the user has asked the OS to reduce motion. The
+ * value is computed once on mount and updated when the user toggles the
+ * system setting, so components that consult it can do so synchronously
+ * in render.
+ */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return undefined;
+    }
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (): void => {
+      setReduced(media.matches);
+    };
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    }
+    // Legacy Safari path.
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, []);
+  return reduced;
+}
 
 /**
  * Progressive Markdown renderer used while assistant text is arriving.
@@ -18,14 +50,14 @@ import {
  * back-end thread item. We do not maintain an internal
  * streaming/settling/settled state machine — `isLive` flips the renderer
  * between two modes:
- *   - `isLive=true`:  RAF loop reveals characters one at a time.
- *   - `isLive=false`: text is rendered in full immediately.
+ *   - `isLive=true`:  RAF loop reveals characters one at a time with a cursor.
+ *   - `isLive=false`: text is rendered in full immediately. The cursor
+ *                     fades out and `onSettled` fires once the visible
+ *                     cursor reaches the end of the text.
  *
- * The caret is owned by Streamdown: we pass `isLive` through to the
- * tail's `MarkdownContent`, and Streamdown shows or hides its caret
- * accordingly. The surface-level phase is for styling hooks only —
- * commentary and final-answer text share the same rendering path so a
- * late phase resolution never causes a typography jump.
+ * `phase` is accepted so callers can pass the same semantic state they use
+ * elsewhere, but typography and streaming affordances stay stable across
+ * commentary and final-answer text.
  */
 type StreamingMarkdownProps = {
   streamKey: string;
@@ -46,6 +78,8 @@ type StreamingMarkdownProps = {
 type StreamPhase = "streaming" | "settled";
 
 const DEFAULT_CLASS_NAME = "streaming-markdown rich-content";
+const CURSOR_CLASS_NAME = "stream-cursor";
+const CURSOR_SENTINEL = "\uE000";
 
 const STREAM_CONFIG = {
   /** Calm default rate used while the reader is keeping up. */
@@ -92,6 +126,9 @@ export function StreamingMarkdown({
 
   /* ------------------------- Visible character cursor -------------------- */
   const [visibleLength, setVisibleLength] = useState<number>(initialText.length);
+
+  /* --------------------- Cursor lifecycle (shown -> fading -> gone) ------- */
+  const [cursorState, setCursorState] = useState<"shown" | "fading" | "gone">("shown");
 
   /* ------------------------------- Refs ---------------------------------- */
   const renderedTextRef = useRef(renderedText);
@@ -247,13 +284,48 @@ export function StreamingMarkdown({
     trySettle();
   }, [isLive, syncImmediate, trySettle]);
 
+  /* --------------------- Cursor visibility & fade-out ------------------- */
+  const hasMoreToReveal = visibleLength < renderedText.length;
+  const prefersReducedMotion = useReducedMotion();
+  useEffect(() => {
+    if (hasMoreToReveal) {
+      // Still streaming: keep the cursor visible.
+      setCursorState("shown");
+      return;
+    }
+    if (!isLive) {
+      // Caught up and not live: fade out, then remove from DOM. When the
+      // user prefers reduced motion, skip the fade and remove the cursor
+      // immediately so the settled DOM matches the non-streaming render
+      // byte-for-byte.
+      if (prefersReducedMotion) {
+        setCursorState("gone");
+        return;
+      }
+      setCursorState("fading");
+      const t = window.setTimeout(() => {
+        setCursorState("gone");
+      }, 180);
+      return () => window.clearTimeout(t);
+    }
+    // Caught up but still live: keep visible while we wait for more.
+    setCursorState("shown");
+  }, [hasMoreToReveal, isLive, prefersReducedMotion]);
+
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);
-  // The caret is shown for any live surface: while the back-end is still
-  // pushing deltas, and while the visible character cursor is still
-  // catching up to the latest target. Once both flip, the caret goes away
-  // because Streamdown drops it as soon as `isLive` returns false.
-  const tailIsLive = isLive || visibleLength < renderedText.length;
+  // The cursor appears for all live assistant text. Commentary and final
+  // answers share the same visual treatment so a later phase resolution does
+  // not cause a typography or affordance jump.
+  const showCursor = cursorState !== "gone";
+  const cursorClassName =
+    CURSOR_CLASS_NAME + (cursorState === "fading" ? " is-fading" : "");
+  const cursorTextRenderer = useMemo(
+    () => showCursor ? createCursorTextRenderer(cursorClassName) : undefined,
+    [cursorClassName, showCursor]
+  );
+  // Mermaid is expensive; defer until the stream settles.
+  const renderMermaid = phase === "settled";
 
   // Split the visible text into stable blocks + an open tail. Every
   // stable block is its own memoized markdown surface, so promoting a
@@ -273,6 +345,7 @@ export function StreamingMarkdown({
     () => splitIntoStableBlocks(visibleText),
     [visibleText]
   );
+  const tailText = showCursor ? `${split.tail}${CURSOR_SENTINEL}` : split.tail;
 
   /* ------------------------------- Render -------------------------------- */
   return (
@@ -288,12 +361,53 @@ export function StreamingMarkdown({
         // MarkdownContent keeps the existing block-level memoization
         // contract intact.
         <div className="streaming-markdown-block" key={index}>
-          <MarkdownContent text={block} cwd={cwd} isLive={false} />
+          <MemoMarkdownContent
+            text={block}
+            cwd={cwd}
+            renderMermaid={renderMermaid}
+          />
         </div>
       ))}
-      <MarkdownContent text={split.tail} cwd={cwd} isLive={tailIsLive} />
+      <MarkdownContent
+        text={tailText}
+        cwd={cwd}
+        renderText={cursorTextRenderer}
+        renderMermaid={renderMermaid}
+      />
     </div>
   );
+}
+
+/**
+ * Memoized markdown surface. Stable blocks are passed in by value;
+ * React.memo's default shallow compare on the `text` string is exactly
+ * what we want — identical text means identical render.
+ */
+const MemoMarkdownContent = MarkdownContent;
+
+function createCursorTextRenderer(cursorClassName: string): RichTextRenderer {
+  return (text, keyPrefix) => {
+    if (!text.includes(CURSOR_SENTINEL)) {
+      return [text];
+    }
+    const output: Array<JSX.Element | string> = [];
+    const parts = text.split(CURSOR_SENTINEL);
+    parts.forEach((part, index) => {
+      if (part) {
+        output.push(part);
+      }
+      if (index < parts.length - 1) {
+        output.push(
+          <span
+            key={`${keyPrefix}-cursor-${index}`}
+            className={cursorClassName}
+            aria-hidden="true"
+          />
+        );
+      }
+    });
+    return output;
+  };
 }
 
 /**

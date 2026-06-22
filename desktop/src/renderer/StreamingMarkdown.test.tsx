@@ -1,80 +1,15 @@
 /**
  * Tests for StreamingMarkdown.
  *
- * Contract: render the markdown progressively; during streaming, the
- * surface contains the partial text and a visible caret (Streamdown's
- * caret, owned by the renderer, not by us); after settling, the full
- * text is rendered with no caret remaining.
+ * Contract: render the markdown progressively, show a 1px cursor at
+ * the end during streaming, fade the cursor out 200ms after settle,
+ * then remove it from the DOM.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { StreamingMarkdown, splitIntoStableBlocks } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
-
-// Mock the deepest renderer so jsdom does not try to load the real
-// Shiki or Mermaid workers. The mock also lets the caret test assert
-// against a known stable class instead of Streamdown's internal one.
-// The wrapped `<p class="rich-paragraph">` mirrors the real
-// component override in `RichContent.tsx`, so caret-positioning
-// assertions have a meaningful ancestor to walk up to.
-vi.mock("streamdown", async () => {
-  const React = await import("react");
-  return {
-    Streamdown: ({
-      children,
-      isAnimating
-    }: {
-      children?: import("react").ReactNode;
-      isAnimating?: boolean;
-    }) => {
-      // Mirror Streamdown's caret: a SPAN rendered inside the parsed
-      // text when isAnimating is true, omitted otherwise. The caret
-      // sits inside the paragraph wrapper so the streaming test can
-      // walk up the DOM and find the rich-paragraph ancestor.
-      const caret = isAnimating
-        ? React.createElement("span", {
-            "data-mock-caret": "true",
-            className: "streamdown-caret-mock",
-            "aria-hidden": "true"
-          })
-        : null;
-      return React.createElement(
-        "div",
-        { "data-mock-streamdown": "true" },
-        React.createElement(
-          "p",
-          { className: "rich-paragraph" },
-          children,
-          caret
-        )
-      );
-    }
-  };
-});
-
-vi.mock("@streamdown/code", () => ({
-  createCodePlugin: () => ({
-    name: "shiki",
-    type: "code-highlighter",
-    getSupportedLanguages: () => [],
-    getThemes: () => ["github-light", "github-dark"],
-    highlight: () => null,
-    supportsLanguage: () => false
-  })
-}));
-
-vi.mock("@streamdown/mermaid", () => ({
-  createMermaidPlugin: () => ({
-    name: "mermaid",
-    type: "diagram",
-    language: "mermaid",
-    getMermaid: () => ({
-      initialize: () => undefined,
-      render: async () => ({ svg: "" })
-    })
-  })
-}));
 
 // jsdom doesn't implement layout. Stub getBoundingClientRect so React
 // doesn't crash on layout queries.
@@ -122,7 +57,7 @@ afterEach(() => {
 });
 
 describe("StreamingMarkdown", () => {
-  it("renders the visible text during streaming", async () => {
+  it("renders the visible text as markdown during streaming", async () => {
     const key = streamTextKey("turn", "s1", "text");
     streamTextStore.seed(key, "");
     mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
@@ -135,14 +70,11 @@ describe("StreamingMarkdown", () => {
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
     expect(surface).toBeTruthy();
-    // The streaming layer hands the partial text to the renderer. The
-    // renderer is mocked here; its parsing behavior is Streamdown's
-    // contract, not ours, so the assertion is the raw markdown text
-    // reaches the surface, not a parsed <strong>.
-    expect(surface.textContent).toContain("**hi**");
+    const strong = surface.querySelector("strong");
+    expect(strong?.textContent).toBe("hi");
   });
 
-  it("shows a caret during streaming", async () => {
+  it("shows a 1px cursor span during streaming", async () => {
     const key = streamTextKey("turn", "s2", "text");
     streamTextStore.seed(key, "Hello world");
     mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
@@ -152,14 +84,13 @@ describe("StreamingMarkdown", () => {
     });
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
-    const caret = surface.querySelector("[data-mock-caret]") as HTMLElement | null;
-    expect(caret).toBeTruthy();
-    expect(caret?.tagName).toBe("SPAN");
-    // The caret should sit inside the rendered paragraph.
-    expect(caret?.closest(".rich-paragraph")).toBeTruthy();
+    const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
+    expect(cursor).toBeTruthy();
+    expect(cursor?.tagName).toBe("SPAN");
+    expect(cursor?.closest(".rich-paragraph")).toBeTruthy();
   });
 
-  it("uses the same live caret treatment for commentary text", async () => {
+  it("uses the same live cursor treatment for commentary text", async () => {
     const key = streamTextKey("turn", "s8", "text");
     streamTextStore.seed(key, "Working through it");
     mount({ streamKey: key, initialText: "Working", isLive: true, phase: "commentary" });
@@ -170,7 +101,7 @@ describe("StreamingMarkdown", () => {
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
     expect(surface.classList.contains("streaming-commentary-live")).toBe(false);
-    expect(surface.querySelector("[data-mock-caret]")).toBeTruthy();
+    expect(surface.querySelector(".stream-cursor")).toBeTruthy();
   });
 
   it("does not use a clip-path mask (no .streaming-cover)", async () => {
@@ -195,22 +126,18 @@ describe("StreamingMarkdown", () => {
     expect(surface.textContent).toContain("Hello world");
   });
 
-  it("drops the caret once isLive flips to false", async () => {
+  it("removes the cursor from the DOM after the fade-out completes", async () => {
     const key = streamTextKey("turn", "s5", "text");
     streamTextStore.seed(key, "Hello world");
     mount({ streamKey: key, initialText: "Hello world", isLive: false, phase: "final_answer" });
 
-    // isLive=false immediately snaps visible to the full text and
-    // Streamdown drops its caret. The settled DOM is what the user
-    // sees after the streaming surface has finished.
+    // Wait for the 200ms fade-out to complete.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 300));
     });
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
-    expect(surface.textContent).toContain("Hello world");
-    expect(surface.getAttribute("data-stream-state")).toBe("settled");
-    expect(surface.querySelector("[data-mock-caret]")).toBeNull();
+    expect(surface.querySelector(".stream-cursor")).toBeNull();
   });
 
   it("notifies once when isLive flips off and the cursor is caught up", async () => {
@@ -236,7 +163,7 @@ describe("StreamingMarkdown", () => {
     expect(settledCount).toBe(1);
   });
 
-  it("renders streamed prose inside the surface", async () => {
+  it("keeps the cursor inside a streaming list item", async () => {
     const key = streamTextKey("turn", "s7", "text");
     streamTextStore.seed(key, "- first item");
     mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
@@ -246,10 +173,9 @@ describe("StreamingMarkdown", () => {
     });
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
-    // Streamdown owns list parsing; the streaming layer's job is to
-    // hand the source text over. We assert the raw text reaches the
-    // surface, not that it is wrapped in an <li>.
-    expect(surface.textContent).toContain("- first item");
+    const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
+    expect(surface.textContent).not.toContain("\uE000");
+    expect(cursor?.closest("li")).toBeTruthy();
   });
 });
 
