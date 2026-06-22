@@ -318,6 +318,7 @@
  * sidebar layout never shifts when the scrollbar appears/disappears. */
 .project-list {
   scrollbar-gutter: stable;
+  margin-top: 22px;
 }
 
 .pinned-thread-section {
@@ -351,8 +352,60 @@
   display: none;
 }
 
-.pinned-thread-section + .project-list {
+.scratch-thread-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 22px;
+}
+
+.scratch-thread-header {
+  position: relative;
+  display: flex;
+  height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 8px 12px;
+}
+
+.scratch-thread-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scratch-thread-list .thread-row {
+  height: 32px;
+  padding-left: 10px;
+}
+
+.scratch-thread-list .thread-row::before {
+  display: none;
+}
+
+.scratch-thread-empty-note {
+  color: var(--ink-muted);
+  padding: 2px 12px;
+}
+
+.scratch-thread-add-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-tertiary);
+  -webkit-app-region: no-drag;
+}
+
+.scratch-thread-add-button:hover,
+.scratch-thread-add-button[aria-expanded="true"] {
+  background: var(--sidebar-glass-hover);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
 }
 
 .project-section-header {
