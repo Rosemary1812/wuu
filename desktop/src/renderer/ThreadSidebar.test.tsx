@@ -185,14 +185,28 @@ describe("ThreadContextMenu", () => {
 });
 
 describe("ScratchThreadSection", () => {
+  function makeScratchThread(id: string): Thread {
+    return {
+      id,
+      preview: `Preview ${id}`,
+      model_provider: "openai",
+      model: "gpt-4",
+      cwd: "/tmp/scratch",
+      workspace_kind: "scratch",
+      status: "idle",
+      turns: [],
+    };
+  }
+
   function renderSection(props: {
     onCreateScratchThread: () => void;
+    threads?: Thread[];
   }): { button: HTMLButtonElement | null } {
     act(() => {
       root = createRoot(container);
       root.render(
         <ScratchThreadSection
-          threads={[]}
+          threads={props.threads ?? []}
           activeID={undefined}
           pendingThreadID={undefined}
           archiveConfirmThreadID={undefined}
@@ -235,5 +249,33 @@ describe("ScratchThreadSection", () => {
     expect(
       container.querySelector(".scratch-thread-empty-note")?.textContent,
     ).toBe("还没有对话");
+  });
+
+  it("renders a show-more button when there are more than 8 scratch threads", () => {
+    const threads: Thread[] = Array.from({ length: 12 }, (_, i) =>
+      makeScratchThread(`scratch-${i}`)
+    );
+    renderSection({ onCreateScratchThread: vi.fn(), threads });
+    const showMore = container.querySelector(
+      ".thread-list-more"
+    ) as HTMLButtonElement | null;
+    expect(showMore).not.toBeNull();
+    expect(showMore?.textContent ?? "").toContain("再显示");
+  });
+
+  it("loads 10 more scratch threads when the show-more button is clicked", () => {
+    const threads: Thread[] = Array.from({ length: 12 }, (_, i) =>
+      makeScratchThread(`scratch-${i}`)
+    );
+    renderSection({ onCreateScratchThread: vi.fn(), threads });
+    expect(container.querySelectorAll(".thread-row").length).toBe(8);
+    const showMore = container.querySelector(
+      ".thread-list-more"
+    ) as HTMLButtonElement | null;
+    expect(showMore).not.toBeNull();
+    act(() => {
+      showMore!.click();
+    });
+    expect(container.querySelectorAll(".thread-row").length).toBe(12);
   });
 });

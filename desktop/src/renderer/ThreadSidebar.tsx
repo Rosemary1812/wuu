@@ -287,6 +287,12 @@ export function ScratchThreadSection({
   onClearArchiveConfirm: (threadID: string) => void;
   onCreateScratchThread: () => void;
 }): JSX.Element {
+  const [visibleCount, setVisibleCount] = useState(PROJECT_THREAD_INITIAL_VISIBLE_COUNT);
+
+  function showMoreScratchThreads(): void {
+    setVisibleCount((current) => current + PROJECT_THREAD_VISIBLE_INCREMENT);
+  }
+
   return (
     <section className="scratch-thread-section" aria-label="对话">
       <div className="scratch-thread-header">
@@ -305,17 +311,19 @@ export function ScratchThreadSection({
         <div className="scratch-thread-empty-note">还没有对话</div>
       ) : (
         <div className="scratch-thread-list">
-          <ThreadRows
+          <ThreadList
             threads={threads}
             activeID={activeID}
             pendingThreadID={pendingThreadID}
             archiveConfirmThreadID={archiveConfirmThreadID}
             lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+            visibleCount={visibleCount}
             onSelect={onSelect}
             onSelectChildAgent={onSelectChildAgent}
             onTogglePinned={onToggleThreadPinned}
             onArchive={onArchiveThread}
             onClearArchiveConfirm={onClearArchiveConfirm}
+            onShowMore={showMoreScratchThreads}
           />
         </div>
       )}
