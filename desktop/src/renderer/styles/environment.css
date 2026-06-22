@@ -35,15 +35,14 @@
 }
 
 .environment-side-stack > .query-history-environment-slot {
-  display: flex;
+  display: block;
   flex: 0 1 auto;
-  min-height: min(112px, 28vh);
+  min-height: 0;
   align-self: stretch;
   overflow: hidden;
 }
 
 .environment-side-stack > .query-history-environment-slot > .query-history-popover {
-  height: 100%;
   grid-template-rows: minmax(0, 1fr);
 }
 
