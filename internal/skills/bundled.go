@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-//go:embed bundled/*.md bundled/*/SKILL.md
+//go:embed bundled/*/SKILL.md
 var bundledFS embed.FS
 
 // BundledSkills returns skills compiled into the binary. These are

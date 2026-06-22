@@ -20,13 +20,14 @@ thirdparty/
 
 # Local AI agent/editor config
 CLAUDE.md
-AGENTS.md
 .mavis/
 .opencode/
 
 # Local docs/notes
 /doc/
 /docs/*
+/GOAL_*.md
+/prototypes/
 !/docs/
 !/docs/exec.md
 !/docs/app-server-protocol.md
