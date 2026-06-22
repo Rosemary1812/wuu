@@ -292,7 +292,7 @@ export function ScratchThreadSection({
       <div className="scratch-thread-header">
         <span className="section-label scratch-thread-label">对话</span>
         <button
-          className="scratch-thread-add-button"
+          className="project-add-button"
           type="button"
           aria-label="新建对话"
           title="新建对话"

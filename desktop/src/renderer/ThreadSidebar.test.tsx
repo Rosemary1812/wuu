@@ -208,7 +208,7 @@ describe("ScratchThreadSection", () => {
     });
     return {
       button: container.querySelector(
-        ".scratch-thread-add-button",
+        ".project-add-button",
       ) as HTMLButtonElement | null,
     };
   }
