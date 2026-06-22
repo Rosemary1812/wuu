@@ -33,19 +33,19 @@
 .environment-side-stack > .environment-panel {
   display: flex;
   /* Keep EnvironmentPanel at its natural content height so the rounded
-     "white card with border" visual is preserved. flex-shrink: 1 lets it
-     still give up space when plan items blow it past the stack cap. */
-  flex: 0 1 auto;
+     white-card visual is preserved. flex-shrink: 0 stops the parent stack
+     from squashing it when the total height exceeds the window; the stack
+     will scroll instead. */
+  flex: 0 0 auto;
   flex-direction: column;
   overflow: hidden;
 }
 
 .environment-side-stack > .query-history-environment-slot {
   display: block;
-  /* Keep the query history card at its natural content height so the
-     rounded white-card visual is preserved. The parent stack scrolls
-     when EnvironmentPanel + this slot together exceed the window. */
-  flex: 0 1 auto;
+  /* Same reasoning as the panel above: keep the query history card at its
+     natural content height; let the parent stack scroll. */
+  flex: 0 0 auto;
   align-self: stretch;
   overflow: visible;
 }
