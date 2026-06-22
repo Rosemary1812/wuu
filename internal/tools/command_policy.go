@@ -94,7 +94,7 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 		// request instead of a hard error so the user can opt in.
 		{Name: "bash-vitest", Capability: capability.CapabilityCommandBash, Pattern: "npx vitest *", Action: CommandPolicyAsk, Reason: "vitest test runner"},
 		{Name: "bash-jest", Capability: capability.CapabilityCommandBash, Pattern: "npx jest *", Action: CommandPolicyAsk, Reason: "jest test runner"},
-		{Name: "bash-tsc", Capability: capability.CapabilityCommandBash, Pattern: "npx tsc *", Action: CommandPolicyAsk, Reason: "TypeScript typecheck runner"},
+		{Name: "bash-tsc-noemit", Capability: capability.CapabilityCommandBash, Pattern: "npx tsc --noEmit *", Action: CommandPolicyAsk, Reason: "TypeScript no-emit typecheck runner"},
 		{Name: "bash-pytest", Capability: capability.CapabilityCommandBash, Pattern: "pytest *", Action: CommandPolicyAsk, Reason: "pytest test runner"},
 		{Name: "bash-go-test", Capability: capability.CapabilityCommandBash, Pattern: "go test *", Action: CommandPolicyAsk, Reason: "go test runner"},
 		{Name: "bash-cargo-test", Capability: capability.CapabilityCommandBash, Pattern: "cargo test *", Action: CommandPolicyAsk, Reason: "cargo test runner"},

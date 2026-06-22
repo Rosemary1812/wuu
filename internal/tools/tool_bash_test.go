@@ -134,6 +134,37 @@ func TestBashRunResolvesLocalNpxTypecheckRunner(t *testing.T) {
 	}
 }
 
+func TestBashRunRejectsNonNoEmitNpxTsc(t *testing.T) {
+	root := t.TempDir()
+	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "tsc")
+	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf ran > tsc-ran.txt\n")
+	if err := os.Chmod(runnerPath, 0o755); err != nil {
+		t.Fatalf("chmod runner: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, command := range []string{
+		"cd desktop && npx tsc --init",
+		"cd desktop && npx tsc --build",
+		"cd desktop && npx tsc",
+	} {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{
+			Name:      "bash",
+			Arguments: `{"command":"` + command + `","scope":"targeted"}`,
+		})
+		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
+			t.Fatalf("expected non-noEmit npx tsc rejection for %q, got %v", command, err)
+		}
+		if _, statErr := os.Stat(filepath.Join(root, "desktop", "tsc-ran.txt")); !os.IsNotExist(statErr) {
+			t.Fatalf("non-noEmit npx tsc should not execute local runner for %q, stat err=%v", command, statErr)
+		}
+	}
+}
+
 func TestBashRunResolvesWrappedLocalNpxVerificationRunner(t *testing.T) {
 	root := t.TempDir()
 	runnerPath := filepath.Join(root, "node_modules", ".bin", "vitest")

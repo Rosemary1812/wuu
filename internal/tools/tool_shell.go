@@ -1254,8 +1254,10 @@ func shellFieldsLookLikeVerification(fields []string) bool {
 		return len(fields) > 1 && oneOf(fields[1], "test", "vet", "build", "list")
 	case "cargo":
 		return len(fields) > 1 && oneOf(fields[1], "test", "check", "build", "clippy")
-	case "pytest", "ruff", "mypy", "tsc":
+	case "pytest", "ruff", "mypy":
 		return true
+	case "tsc":
+		return tscCommandLooksLikeTypecheck(fields[1:])
 	case "python", "python3":
 		return len(fields) > 2 && fields[1] == "-m" && oneOf(fields[2], "pytest", "mypy")
 	case "npm", "pnpm", "yarn", "bun":

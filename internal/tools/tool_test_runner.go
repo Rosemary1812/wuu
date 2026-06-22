@@ -492,9 +492,9 @@ func testCommandLooksLikeLocalRunnerVerification(command string) bool {
 	}
 	if fields[0] == "npx" {
 		runnerIdx, ok := npxVerificationRunnerIndex(fields, 0)
-		return ok && jsVerificationRunnerName(fields[runnerIdx])
+		return ok && jsVerificationRunnerInvocation(fields, runnerIdx)
 	}
-	return jsVerificationRunnerName(fields[0])
+	return jsVerificationRunnerInvocation(fields, 0)
 }
 
 func resolveLocalNpxTestRunner(rootDir, command string) (string, bool, error) {
@@ -519,7 +519,7 @@ func resolveSimpleLocalNpxTestRunner(workDir, command string) (string, bool, err
 		return "", false, nil
 	}
 	runnerIdx, ok := npxVerificationRunnerIndex(fields, exeIdx)
-	if !ok || !jsVerificationRunnerName(fields[runnerIdx]) {
+	if !ok || !jsVerificationRunnerInvocation(fields, runnerIdx) {
 		return "", false, nil
 	}
 	runner := jsRunnerBaseName(fields[runnerIdx])
@@ -624,13 +624,28 @@ func npxVerificationRunnerIndex(fields []string, npxIdx int) (int, bool) {
 	return -1, false
 }
 
-func jsVerificationRunnerName(name string) bool {
-	switch jsRunnerBaseName(name) {
-	case "vitest", "jest", "mocha", "ava", "tap", "tsc":
+func jsVerificationRunnerInvocation(fields []string, runnerIdx int) bool {
+	if runnerIdx < 0 || runnerIdx >= len(fields) {
+		return false
+	}
+	switch jsRunnerBaseName(fields[runnerIdx]) {
+	case "vitest", "jest", "mocha", "ava", "tap":
 		return true
+	case "tsc":
+		return tscCommandLooksLikeTypecheck(fields[runnerIdx+1:])
 	default:
 		return false
 	}
+}
+
+func tscCommandLooksLikeTypecheck(args []string) bool {
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		if arg == "--noEmit" || arg == "--noEmit=true" {
+			return true
+		}
+	}
+	return false
 }
 
 func jsRunnerBaseName(name string) string {

@@ -41,7 +41,7 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 		{command: "npx vitest run", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-vitest"},
 		{command: "npx vitest run --reporter=verbose", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-vitest"},
 		{command: "npx jest", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-jest"},
-		{command: "npx tsc --noEmit", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-tsc"},
+		{command: "npx tsc --noEmit", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-tsc-noemit"},
 		{command: "pytest -k smoke", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-pytest"},
 		{command: "go test ./...", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-go-test"},
 		{command: "cargo test --workspace", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-cargo-test"},
@@ -88,6 +88,9 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 		if got != tt.want || name != tt.wantName {
 			t.Errorf("%s/%s: got (%s, %s), want (%s, %s)", tt.cap, tt.command, got, name, tt.want, tt.wantName)
 		}
+	}
+	if _, _, _, ok := lookupNamedRule(rules, capability.CapabilityCommandBash, "npx tsc --init"); ok {
+		t.Fatal("npx tsc --init must not match the no-emit typecheck policy")
 	}
 }
 
@@ -146,6 +149,15 @@ func TestShellPackageNetworkMutationRequiresCoveredCommandPolicyRule(t *testing.
 	}
 	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("cd desktop && npx tsc --noEmit") {
 		t.Fatal("directory-scoped npx tsc should be covered by the default command policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc --init") {
+		t.Fatal("npx tsc --init should not be covered by the typecheck policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc --build") {
+		t.Fatal("npx tsc --build should not be covered by the typecheck policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc") {
+		t.Fatal("bare npx tsc should not be covered because it may emit files")
 	}
 	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("cd desktop && npx tsc --noEmit 2>&1 | tail -30") {
 		t.Fatal("piped npx tsc should not be covered because it cannot be safely rewritten to a local runner")
