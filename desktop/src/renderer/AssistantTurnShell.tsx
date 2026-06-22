@@ -323,34 +323,36 @@ return (
       >
         {toggleContent}
       </div>
-      <CollapsibleDetails
-        id={`${detailsID}-body`}
-        expanded={expanded}
-        innerClassName="turn-process-fold-body"
-      >
-        {hasDetails ? (
-          <div className="turn-process-fold-body-inner">
-            {entries.map((entry) => (
-              <div
-                className={`turn-process-entry turn-process-entry-${entry.kind}`}
-                key={entry.key}
-              >
-                <EntryRenderer
+      {hasDetails || hasPreview ? (
+        <CollapsibleDetails
+          id={`${detailsID}-body`}
+          expanded={expanded}
+          innerClassName="turn-process-fold-body"
+        >
+          {hasDetails ? (
+            <div className="turn-process-fold-body-inner">
+              {entries.map((entry) => (
+                <div
+                  className={`turn-process-entry turn-process-entry-${entry.kind}`}
                   key={entry.key}
-                  entry={entry}
-                  turn={turn}
-                  cwd={cwd}
-                  actionableAgentMessageID={actionableAgentMessageID}
-                  latestAgentMessageID={latestAgentMessageID}
-                  onStreamFrame={onStreamFrame}
-                  onForkMessage={onForkMessage}
-                  onNoticeAction={onNoticeAction}
-                />
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </CollapsibleDetails>
+                >
+                  <EntryRenderer
+                    key={entry.key}
+                    entry={entry}
+                    turn={turn}
+                    cwd={cwd}
+                    actionableAgentMessageID={actionableAgentMessageID}
+                    latestAgentMessageID={latestAgentMessageID}
+                    onStreamFrame={onStreamFrame}
+                    onForkMessage={onForkMessage}
+                    onNoticeAction={onNoticeAction}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </CollapsibleDetails>
+      ) : null}
     </div>
   );
 }
