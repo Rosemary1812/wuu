@@ -7,6 +7,7 @@
   flex-direction: column;
   gap: 16px;
   width: min(var(--environment-panel-width), calc(100% - 32px));
+  height: calc(100vh - 86px);
   max-height: calc(100vh - 86px);
   min-height: 0;
   pointer-events: none;
@@ -34,10 +35,16 @@
 }
 
 .environment-side-stack > .query-history-environment-slot {
-  display: block;
+  display: flex;
   flex: 0 1 auto;
+  min-height: min(112px, 28vh);
   align-self: stretch;
-  overflow: visible;
+  overflow: hidden;
+}
+
+.environment-side-stack > .query-history-environment-slot > .query-history-popover {
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .environment-panel {
