@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 import { ScratchThreadSection, ThreadRowTitle } from "./ThreadSidebar";
+import type { Thread } from "../shared/protocol";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -194,6 +195,8 @@ describe("ScratchThreadSection", () => {
       cwd: "/tmp/scratch",
       workspace_kind: "scratch",
       status: "idle",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
       turns: [],
     };
   }
@@ -260,7 +263,7 @@ describe("ScratchThreadSection", () => {
       ".thread-list-more"
     ) as HTMLButtonElement | null;
     expect(showMore).not.toBeNull();
-    expect(showMore?.textContent ?? "").toContain("再显示");
+    expect(showMore?.textContent ?? "").toContain("显示剩余 4 条");
   });
 
   it("loads 10 more scratch threads when the show-more button is clicked", () => {
