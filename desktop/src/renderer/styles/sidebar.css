@@ -317,7 +317,6 @@
  * there; .project-list just needs the gutter-stable declaration so the
  * sidebar layout never shifts when the scrollbar appears/disappears. */
 .project-list {
-  scrollbar-gutter: stable;
   margin-top: 22px;
 }
 
