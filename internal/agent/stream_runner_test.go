@@ -91,7 +91,7 @@ func isCompactSummaryRequest(req providers.ChatRequest) bool {
 	return false
 }
 
-func TestStreamRunner_DefaultReconnectConfigMatchesCC(t *testing.T) {
+func TestStreamRunner_DefaultReconnectConfigUsesWuuDefaults(t *testing.T) {
 	cfg := (&StreamRunner{}).streamReconnectCfg()
 	if cfg.Budget != 10*time.Minute {
 		t.Fatalf("expected 10m budget, got %s", cfg.Budget)

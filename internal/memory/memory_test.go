@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// testOpts returns Options that scan only the given dirs (no defaults
-// like ~/.claude that could leak from the host).
+// testOpts returns Options that scan only the given dirs, avoiding host
+// defaults that could leak into tests.
 func testOpts(userDirs []string) Options {
 	o := DefaultOptions()
 	o.UserDirs = userDirs
@@ -46,7 +46,7 @@ func TestDiscover_UserDirOnly(t *testing.T) {
 }
 
 func TestDiscover_ProjectHierarchyWithGitMarker(t *testing.T) {
-	// Create: tmp/repo/.git, tmp/repo/AGENTS.md, tmp/repo/sub/CLAUDE.md
+	// Create a project root with shared instructions plus a legacy file below.
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	sub := filepath.Join(repo, "sub")
@@ -150,7 +150,7 @@ func TestDiscover_AgentsOverrideTakesPrecedence(t *testing.T) {
 	}
 }
 
-func TestDiscover_ProjectAgentsSuppressesSameDirClaude(t *testing.T) {
+func TestDiscover_ProjectAgentsSuppressesSameDirLegacyInstruction(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestDiscover_ProjectAgentsSuppressesSameDirClaude(t *testing.T) {
 	}
 }
 
-func TestDiscover_ProjectClaudeBeforeAgentsOverrideWithoutAgents(t *testing.T) {
+func TestDiscover_ProjectLegacyBeforeAgentsOverrideWithoutAgents(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -202,7 +202,7 @@ func TestDiscover_ProjectClaudeBeforeAgentsOverrideWithoutAgents(t *testing.T) {
 	}
 }
 
-func TestDiscover_CustomFilenamesClaudeNotSuppressedByUnwantedAgents(t *testing.T) {
+func TestDiscover_CustomFilenamesLegacyNotSuppressedByUnwantedAgents(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func TestDiscover_MultipleUserDirs(t *testing.T) {
 	}
 }
 
-func TestDiscover_ClaudeCodeProjectMemoryLayout(t *testing.T) {
+func TestDiscover_LegacyProjectMemoryLayout(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -294,7 +294,7 @@ func TestDiscover_ClaudeCodeProjectMemoryLayout(t *testing.T) {
 	}
 }
 
-func TestDiscover_ClaudeCodeUserRules(t *testing.T) {
+func TestDiscover_LegacyUserRules(t *testing.T) {
 	home := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(filepath.Join(claudeDir, "rules"), 0o755); err != nil {
@@ -313,7 +313,7 @@ func TestDiscover_ClaudeCodeUserRules(t *testing.T) {
 	}
 }
 
-func TestDiscover_ClaudeCodeAutoMemoryEntrypoint(t *testing.T) {
+func TestDiscover_LegacyAutoMemoryEntrypoint(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(home, "repo")
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {

@@ -3,8 +3,7 @@
 // status) that gets injected as <system-reminder> blocks in user
 // messages, keeping the system prompt stable for prompt caching.
 //
-// Design aligned with Claude Code's getSystemContext() +
-// getUserContext() dual-path injection architecture:
+// The prompt path stays split:
 //   - System prompt = static role, rules, instructions (cacheable)
 //   - User context = dynamic environment info, memory, skills (per-turn)
 package context

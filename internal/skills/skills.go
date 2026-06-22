@@ -11,9 +11,8 @@ import (
 	"strings"
 )
 
-// Skill represents a discovered skill definition. Fields mirror Claude Code's
-// frontmatter schema for cross-compatibility — wuu reads them so a CC-style
-// SKILL.md can be dropped in unchanged.
+// Skill represents a discovered skill definition. Wuu accepts a portable
+// frontmatter shape so imported skills can be used without rewriting metadata.
 type Skill struct {
 	Name         string // canonical name without leading slash, e.g. "commit"
 	Description  string // one-line description from frontmatter; empty descriptions stay hidden from model catalogs
@@ -30,7 +29,7 @@ type Skill struct {
 	VerificationChecklist []string
 	ProgressiveDisclosure string
 
-	// CC-compatible fields.
+	// Portable skill metadata fields.
 	Model              string   // "sonnet", "haiku", "opus", "inherit"
 	Context            string   // "inline" (default) or "fork"
 	Agent              string   // sub-agent type when Context=fork
@@ -43,7 +42,7 @@ type Skill struct {
 	Shell              string   // "bash" or "powershell"
 	// Hooks declares lifecycle hooks this skill registers when loaded.
 	// Parsed from YAML frontmatter. Keys are event names, values are
-	// lists of hook configs. Aligned with Claude Code's skill frontmatter hooks.
+	// lists of hook configs.
 	Hooks map[string][]SkillHookConfig `json:"-"`
 }
 
@@ -67,7 +66,7 @@ type SourceDir struct {
 // list. Project skills override user skills with the same name.
 //
 // Each directory is scanned for two formats:
-//  1. Directory format: <dir>/<skill-name>/SKILL.md (preferred, CC-compatible)
+//  1. Directory format: <dir>/<skill-name>/SKILL.md (preferred, portable)
 //  2. Flat file format: <dir>/<skill-name>.md (legacy, simpler)
 func Discover(projectDir, userDir string) []Skill {
 	return DiscoverDirs([]string{projectDir}, []string{userDir})
@@ -313,7 +312,7 @@ func parseSkillFile(path, source string) (Skill, error) {
 	skill := Skill{
 		Source:        source,
 		Path:          path,
-		UserInvocable: true, // default true for CC compatibility
+		UserInvocable: true, // default true for imported skills
 	}
 
 	// Parse frontmatter as flat key:value pairs. Multi-line YAML lists are

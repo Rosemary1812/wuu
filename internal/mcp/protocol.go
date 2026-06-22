@@ -1,8 +1,8 @@
 // Package mcp implements a lightweight Model Context Protocol client.
 //
 // It supports stdio and SSE transports, tool discovery, and invocation.
-// Design aligned with Claude Code's MCP client and Kimi CLI's fastmcp
-// integration, but kept minimal to avoid heavy dependencies.
+// The design keeps Wuu's transport layer small while preserving the common
+// stdio and SSE semantics expected by coding-agent harnesses.
 package mcp
 
 import (

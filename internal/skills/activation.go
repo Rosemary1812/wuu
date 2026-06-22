@@ -10,8 +10,7 @@ import (
 // one entry in touchedPaths, plus any skills without Paths constraints
 // (unconditional). This enables lazy activation: skills with narrow
 // paths only appear in the prompt when the user is working with
-// matching files. Aligned with Claude Code's conditional skill
-// activation pattern.
+// matching files.
 func FilterActiveSkills(all []Skill, touchedPaths []string) []Skill {
 	if len(all) == 0 {
 		return nil

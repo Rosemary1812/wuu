@@ -91,7 +91,7 @@ var policiedSubcommands = map[string]*subcommandPolicy{
 	"status":           statusPolicy,
 }
 
-// ── policy definitions (ported from CC readOnlyCommandValidation.ts) ─
+// ── policy definitions for read-only git subcommands ─
 
 var branchPolicy = &subcommandPolicy{
 	safeFlags: map[string]flagArgType{

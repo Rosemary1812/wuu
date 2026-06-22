@@ -12,7 +12,6 @@ import (
 // Result budgeting: large tool outputs are persisted to disk so the
 // model receives a compact reference (file path + preview) instead of
 // a truncated blob. The model can read_file the full result if needed.
-// Aligned with Claude Code's toolResultStorage / maxResultSizeChars.
 
 const (
 	// defaultResultBudget is the per-result char threshold above which
@@ -21,9 +20,8 @@ const (
 	// to prevent prompt bloat from runaway grep/shell output.
 	defaultResultBudget = 50_000
 	// MaxAggregateResultChars is the per-message aggregate cap for all
-	// tool results in one turn. Prevents N parallel tools × 50K each
-	// from creating an enormous message. Aligned with Claude Code's
-	// per-message 200K aggregate budget.
+	// tool results in one turn. Prevents N parallel tools x 50K each
+	// from creating an enormous message.
 	MaxAggregateResultChars = 200_000
 	// previewHeadChars / previewTailChars control the preview shown to
 	// the model when a result is persisted. Enough to see the beginning

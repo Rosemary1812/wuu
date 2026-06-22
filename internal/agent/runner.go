@@ -26,9 +26,8 @@ type ToolMetadata struct {
 
 // ToolMetadataProvider is an optional interface a ToolExecutor can
 // implement to expose per-tool metadata (read-only, concurrency-safe).
-// The agent loop uses this to partition tool calls — read-only tools
-// run concurrently, write tools run serially. Aligned with Claude
-// Code's partitionToolCalls / runToolsConcurrently architecture.
+// The agent loop uses this to partition tool calls: read-only tools run
+// concurrently, write tools run serially.
 type ToolMetadataProvider interface {
 	ToolMetadata(call providers.ToolCall) (ToolMetadata, bool)
 }
@@ -42,9 +41,8 @@ type ToolDisplayProvider interface {
 
 // ToolContextProvider is an optional interface a ToolExecutor can
 // implement to return additional context alongside tool results.
-// Hook systems use this to inject context into the conversation
-// after PostToolUse hooks run. Aligned with Claude Code's
-// additionalContext hook output mechanism.
+// Hook systems use this to inject context into the conversation after
+// PostToolUse hooks run.
 type ToolContextProvider interface {
 	// LastAdditionalContext returns the additional context string
 	// from the most recent Execute call, if any. Callers should

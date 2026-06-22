@@ -246,7 +246,6 @@ func isContextOverflowCode(code string) bool {
 // error messages like "prompt is too long: 137500 tokens > 135000
 // maximum" or "This model's maximum context length is 128000 tokens.
 // However, your messages resulted in 145230 tokens."
-// Aligned with Claude Code's getPromptTooLongTokenGap().
 var overflowTokenRe = regexp.MustCompile(
 	`(\d[\d,]*)\s*tokens?\s*[>\.]\s*(\d[\d,]*)` +
 		`|maximum[^0-9]*(\d[\d,]*)[^0-9]*resulted[^0-9]*(\d[\d,]*)`,

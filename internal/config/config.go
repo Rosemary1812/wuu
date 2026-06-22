@@ -74,25 +74,21 @@ type Config struct {
 	Agent           AgentConfig               `json:"agent"`
 	Hooks           map[string][]HookEntry    `json:"hooks,omitempty"`
 	Memory          MemoryConfig              `json:"memory,omitempty"`
-	// MCPServers maps server name → connection config. When present, wuu
+	// MCPServers maps server name to connection config. When present, wuu
 	// connects to each server at startup (in the background) and exposes
-	// its tools to the agent. Aligned with Claude Code's mcpServers config
-	// and Codex CLI's mcp.servers field.
+	// its tools to the agent.
 	MCPServers map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
 }
 
-// MemoryConfig overrides the defaults for memory file discovery
-// (CLAUDE.md / AGENTS.md auto-loading). All fields are optional;
-// empty values fall back to memory.DefaultOptions().
+// MemoryConfig overrides the defaults for memory file discovery. All fields
+// are optional; empty values fall back to memory.DefaultOptions().
 type MemoryConfig struct {
-	// Filenames to look for in priority order. Default:
-	// ["AGENTS.md", "AGENTS.override.md", "CLAUDE.md"].
+	// Filenames to look for in priority order.
 	Filenames []string `json:"filenames,omitempty"`
 	// ProjectRootMarkers stop the upward walk through ancestors.
 	// Default: [".git", ".hg", ".jj", ".svn"].
 	ProjectRootMarkers []string `json:"project_root_markers,omitempty"`
 	// UserDirs are scanned for user-level memory. Tilde-expanded.
-	// Default: ["~/.config/wuu", "~/.claude", "~/.codex"].
 	UserDirs []string `json:"user_dirs,omitempty"`
 	// Disable turns off memory loading entirely.
 	Disable bool `json:"disable,omitempty"`
@@ -680,9 +676,8 @@ func Default() Config {
 			PermissionProfile: PermissionProfileWorkspaceWrite,
 			ApprovalPolicy:    ApprovalPolicyOnRequest,
 			ApprovalsReviewer: ApprovalsReviewerUser,
-			// 0 = unlimited. Aligned with Claude Code, which has no
-			// default step cap; the model decides when to stop. Users
-			// who want a runaway safety net can set this explicitly.
+			// 0 = unlimited; the model decides when to stop. Users who
+			// want a runaway safety net can set this explicitly.
 			MaxSteps:    0,
 			Temperature: 0.2,
 		},
@@ -983,8 +978,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
 	}
 	// max_steps = 0 means unlimited (no step cap, the model decides
-	// when to stop). Aligned with Claude Code's default behavior.
-	// Users who set an explicit positive value get a hard cap.
+	// when to stop). Users who set an explicit positive value get a hard cap.
 	if cfg.Agent.Temperature == 0 {
 		cfg.Agent.Temperature = 0.2
 	}

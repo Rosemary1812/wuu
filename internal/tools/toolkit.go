@@ -31,11 +31,11 @@ const (
 	maxShellTimeoutSeconds     = 3600
 	defaultMaxFileBytes        = 256 * 1024
 	defaultMaxEntries          = 1000
-	// Per-tool output size limits (in bytes). Aligned with Claude Code's
-	// per-tool maxResultSizeChars: shell/grep produce verbose, low-density
-	// output and get a tighter cap; other tools use a generous default.
-	maxShellOutputBytes = 30 * 1024  // 30 KB — matches Claude Code BashTool
-	maxGrepOutputBytes  = 20 * 1024  // 20 KB — matches Claude Code GrepTool
+	// Per-tool output size limits (in bytes). Shell/grep produce verbose,
+	// low-density output and get a tighter cap; other tools use a generous
+	// default.
+	maxShellOutputBytes = 30 * 1024  // 30 KB
+	maxGrepOutputBytes  = 20 * 1024  // 20 KB
 	maxToolOutputBytes  = 100 * 1024 // 100 KB — general cap for other tools
 )
 
@@ -671,8 +671,8 @@ func cloneSurface(surface capability.Surface) capability.Surface {
 // registry-based dispatch that replaces the old switch-case.
 //
 // Large results are automatically persisted to disk when a SessionDir
-// is configured, so the model receives a compact reference instead of
-// a truncated blob. Aligned with Claude Code's tool result budgeting.
+// is configured, so the model receives a compact reference instead of a
+// truncated blob.
 func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
 	if t.isToolDisabled(call.Name) {
 		return "", fmt.Errorf("tool %q is disabled in this session", call.Name)

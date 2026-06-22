@@ -345,13 +345,11 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		)
 	}
 
-	// Effort level: maps to output_config.effort. Aligned with Claude
-	// Code's configureEffortParams(). Empty = API default (high).
+	// Effort level: maps to output_config.effort. Empty = API default (high).
 	if req.Effort != "" {
 		payload.OutputConfig = &anthropicOutputConfig{Effort: req.Effort}
-		// Adaptive thinking: when effort is set, enable thinking so
-		// the model can use its reasoning budget. Claude Code uses
-		// adaptive mode for newer models (Opus 4.6, Sonnet 4.6).
+		// Adaptive thinking: when effort is set, enable thinking so the model
+		// can use its reasoning budget.
 		payload.Thinking = &anthropicThinking{Type: "adaptive"}
 	}
 	applyAnthropicProviderOptions(&payload, req.ProviderOptions)
@@ -1250,16 +1248,14 @@ type anthropicRequest struct {
 	Betas        []string               `json:"-"`
 }
 
-// anthropicThinking configures extended thinking. Aligned with Claude
-// Code's adaptive thinking mode for newer models.
+// anthropicThinking configures extended thinking.
 type anthropicThinking struct {
 	Type         string `json:"type"`                    // "adaptive" or "enabled"
 	BudgetTokens int    `json:"budget_tokens,omitempty"` // only for type=enabled
 	Display      string `json:"display,omitempty"`
 }
 
-// anthropicOutputConfig controls output behavior. The effort field
-// maps to Claude Code's /effort command levels.
+// anthropicOutputConfig controls output behavior.
 type anthropicOutputConfig struct {
 	Effort string `json:"effort,omitempty"` // "low", "medium", "high", "max"
 }

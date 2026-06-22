@@ -15,11 +15,10 @@ import (
 // cheap byte-based estimate for messages added afterwards (the user's
 // next prompt + tool results that haven't been sent yet).
 //
-// This is the same approach Claude Code and Codex CLI use. Errors are
-// bounded: the estimate only ever covers messages from the LAST round
-// onward, so the worst-case undercount is one turn's delta. The next
-// successful API call collapses the delta to zero by overwriting the
-// ground truth.
+// Errors are bounded: the estimate only ever covers messages from the LAST
+// round onward, so the worst-case undercount is one turn's delta. The next
+// successful API call collapses the delta to zero by overwriting the ground
+// truth.
 //
 // UsageTracker is safe for concurrent reads/writes.
 type UsageTracker struct {

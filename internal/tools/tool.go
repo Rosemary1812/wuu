@@ -12,8 +12,8 @@ import (
 // abstraction the toolkit dispatches through — replacing the old
 // switch-case monolith with a registry of self-describing tools.
 //
-// Design aligned with Claude Code's Tool<Input, Output> interface,
-// simplified for Go idioms and wuu's highest-permission model.
+// The interface keeps tools self-describing so policy, display, and execution
+// can share one provider-neutral dispatch path.
 type Tool interface {
 	// Name returns the tool's unique identifier (e.g. "read_file").
 	Name() string
@@ -49,8 +49,7 @@ type ToolClassification struct {
 }
 
 // InputClassifyingTool lets tools classify a specific call from its JSON
-// arguments. This mirrors Claude Code's input-aware isReadOnly /
-// isConcurrencySafe methods while preserving Go's simple Tool interface.
+// arguments while preserving Go's simple Tool interface.
 type InputClassifyingTool interface {
 	Classify(argsJSON string) ToolClassification
 }

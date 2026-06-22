@@ -431,10 +431,9 @@ func (m *Manager) WriteManifest(lease *Lease) error {
 // changes. Returns kept=true (with no error) if the worktree was dirty
 // and was therefore preserved for the user to inspect.
 //
-// Mirrors Claude Code's behavior: ephemeral read-only sub-agents
-// shouldn't leave detritus on disk, but anything the worker actually
-// modified must survive so the orchestrator (or user) can review and
-// merge it.
+// Ephemeral read-only sub-agents should not leave detritus on disk, but
+// anything the worker actually modified must survive so the orchestrator
+// or user can review and merge it.
 func (m *Manager) CleanupIfClean(wt *Worktree) (kept bool, err error) {
 	if wt == nil || wt.Path == "" {
 		return false, nil

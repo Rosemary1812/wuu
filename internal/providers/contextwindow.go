@@ -195,8 +195,7 @@ var contextWindowRegistry = []contextWindowEntry{
 	{"qwen", 32_000},
 }
 
-// MaxOutputTokensFor returns the default max output tokens for the
-// given model, aligned with Claude Code's production values.
+// MaxOutputTokensFor returns the default max output tokens for the given model.
 func MaxOutputTokensFor(model string) int {
 	if model == "" {
 		return defaultMaxOutputTokens
@@ -217,7 +216,7 @@ func MaxOutputTokensFor(model string) int {
 const defaultMaxOutputTokens = 16_000
 
 var maxOutputTokensRegistry = []contextWindowEntry{
-	// Anthropic Claude 4.6 — aligned with CC's getMaxOutputTokensForModel().
+	// Anthropic Claude 4.6.
 	// Start at 16K; providers can override this for models with larger
 	// documented output windows.
 	{"opus-4-6", 16_000},

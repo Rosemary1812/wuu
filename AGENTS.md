@@ -48,7 +48,7 @@
 
 - When modifying or reviewing core agent behavior, evaluate the design as a closed loop: if an LLM-facing tool is added or changed, verify that prompts teach the model when to use it and when not to use it, and verify that the tool implementation cannot break provider API invariants such as message ordering, tool-call/result pairing, or other protocol rules that would prevent the API from returning a valid response.
 - Agent design often contains many thresholds, budgets, scoring weights, stop conditions, retry limits, and other magic numbers. When this repository has no experiment, product constraint, or runtime evidence proving a better value, inspect close analogues in `thirdparty/` and prefer aligning with established defaults before inventing new constants.
-- Treat harness comparisons by product fit: Claude Code is primarily a Claude-optimized harness, Codex is primarily an OpenAI-optimized harness, and OpenCode is a more general harness. Wuu's goal is to become a strong general-purpose BYOK coding-agent harness, so prefer general cross-provider defaults unless there is a clear reason to specialize.
+- Treat harness comparisons by product fit. Wuu's goal is to become a strong general-purpose BYOK coding-agent harness, so prefer general cross-provider defaults unless there is a clear reason to specialize.
 - Reference defaults are evidence, not authority. Diverge when Wuu's product goals, architecture, provider contracts, or user experience require it, and keep the reason explicit.
 
 ## User-Facing Output
@@ -205,7 +205,7 @@ Workflow patterns:
    `hydra spawn --task "<specific task>" --repo . [--worktree .]`
 
 Agent launch rule:
-- When dispatching Claude/Codex through TermCanvas CLI, start a fresh agent terminal with `termcanvas terminal create --prompt "..."`
+- When dispatching agents through TermCanvas CLI, start a fresh agent terminal with `termcanvas terminal create --prompt "..."`
 - Do not use `termcanvas terminal input` for task dispatch; it is not a supported automation path
 
 Workflow control:

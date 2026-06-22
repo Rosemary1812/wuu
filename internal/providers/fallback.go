@@ -8,7 +8,6 @@ import (
 
 // FallbackClient wraps a StreamClient and transparently falls back to
 // an alternative model after consecutive overload (429/529) errors.
-// Aligned with Claude Code's model fallback pattern (Opus → Sonnet).
 //
 // The fallback is temporary: once a request succeeds on the primary
 // model, the counter resets and subsequent requests use the primary.

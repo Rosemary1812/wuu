@@ -1,20 +1,14 @@
-// Package memory discovers and loads project / user memory files
-// (AGENTS.md, AGENTS.override.md, CLAUDE.md) so they can be injected
-// into the system prompt at session start.
+// Package memory discovers and loads project / user memory files so they can
+// be injected into the system prompt at session start.
 //
 // The design intentionally avoids locking wuu into a single ecosystem:
 //
-//   - AGENTS.md is the cross-tool convention (codex, GitHub, Cursor,
-//     and others use it). It takes priority by default.
-//   - AGENTS.override.md is the local-only override (gitignored), same
-//     idea as Codex's LOCAL_PROJECT_DOC_FILENAME.
-//   - CLAUDE.md is supported for compatibility with Claude Code users.
-//   - User-level memory is read from ~/.config/wuu/, ~/.claude/, and
-//     ~/.codex/ so existing CC or Codex users get their files picked
-//     up automatically.
+//   - Shared project instructions take priority by default.
+//   - Local-only overrides are supported for machine-specific notes.
+//   - Legacy project and user memory layouts are imported for migration.
 //
-// Project root detection follows Codex's approach: walk up from the
-// workspace root looking for marker directories (.git, .hg, .jj, .svn).
+// Project root detection walks up from the workspace root looking for marker
+// directories (.git, .hg, .jj, .svn).
 // Memory files are only collected between the project root and the
 // workspace root, never above the project root. If no marker is found,
 // only the workspace root itself contributes.
@@ -42,7 +36,7 @@ type File struct {
 // or customize the behavior.
 type Options struct {
 	// Filenames to look for in each scanned directory, in priority order.
-	// Defaults: AGENTS.md, AGENTS.override.md, CLAUDE.md.
+	// Defaults include shared, local override, and legacy instruction names.
 	Filenames []string
 
 	// ProjectRootMarkers stop the upward walk through project ancestors.
@@ -52,18 +46,12 @@ type Options struct {
 
 	// UserDirs are absolute or home-relative directories scanned for
 	// user-level memory files (no hierarchy walk). Empty entries and
-	// missing directories are silently skipped. Defaults expand to
-	// ~/.config/wuu, ~/.claude, ~/.codex.
+	// missing directories are silently skipped. Defaults include Wuu and
+	// legacy tool directories.
 	UserDirs []string
 
-	// IncludeClaudeCodeMemory enables compatibility with Claude Code's
-	// markdown memory layout:
-	//   - .claude/CLAUDE.md and .claude/rules/*.md in projects
-	//   - CLAUDE.local.md in projects
-	//   - ~/.claude/rules/*.md
-	//   - ~/.claude/projects/<project>/memory/MEMORY.md
-	// It defaults to true.
-	IncludeClaudeCodeMemory *bool
+	// Enables import of legacy markdown memory layouts. It defaults to true.
+	IncludeLegacyMemory *bool
 }
 
 // DefaultOptions returns the recommended configuration.
@@ -72,7 +60,7 @@ func DefaultOptions() Options {
 		Filenames:               []string{"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"},
 		ProjectRootMarkers:      []string{".git", ".hg", ".jj", ".svn"},
 		UserDirs:                []string{"~/.config/wuu", "~/.claude", "~/.codex"},
-		IncludeClaudeCodeMemory: boolPtr(true),
+		IncludeLegacyMemory: boolPtr(true),
 	}
 }
 
@@ -80,12 +68,10 @@ func DefaultOptions() Options {
 // hierarchy (bounded by project root markers) for memory files. Files
 // are returned in priority order:
 //
-//  1. User-level files (one per UserDirs entry × Filenames)
-//  2. Project files from project root → workspace root. Within one project
-//     directory, AGENTS.md is the preferred shared instruction file when it is
-//     configured and present; CLAUDE.md is loaded only when configured AGENTS.md
-//     is absent. AGENTS.override.md is still loaded as a local override when
-//     present.
+//  1. User-level files (one per UserDirs entry x Filenames)
+//  2. Project files from project root to workspace root. Within one project
+//     directory, the preferred shared instruction file wins over legacy names.
+//     Local override files are still loaded when present.
 //
 // Files are deduplicated by absolute path so the same file is never
 // counted twice when user dirs and the project tree overlap.
@@ -99,10 +85,10 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 	if opts.UserDirs == nil {
 		opts.UserDirs = DefaultOptions().UserDirs
 	}
-	if opts.IncludeClaudeCodeMemory == nil {
-		opts.IncludeClaudeCodeMemory = DefaultOptions().IncludeClaudeCodeMemory
+	if opts.IncludeLegacyMemory == nil {
+		opts.IncludeLegacyMemory = DefaultOptions().IncludeLegacyMemory
 	}
-	includeClaudeCodeMemory := opts.IncludeClaudeCodeMemory != nil && *opts.IncludeClaudeCodeMemory
+	includeLegacyMemory := opts.IncludeLegacyMemory != nil && *opts.IncludeLegacyMemory
 
 	var out []File
 	seen := make(map[string]struct{})
@@ -137,7 +123,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 		for _, name := range opts.Filenames {
 			add(filepath.Join(dir, name), "user")
 		}
-		if includeClaudeCodeMemory {
+		if includeLegacyMemory {
 			addRulesDir(filepath.Join(dir, "rules"), "user", add)
 		}
 	}
@@ -153,7 +139,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 			dirs := walkBetween(projectRoot, absRoot)
 			for _, dir := range dirs {
 				addProjectInstructionFiles(dir, opts.Filenames, add)
-				if includeClaudeCodeMemory {
+				if includeLegacyMemory {
 					add(filepath.Join(dir, ".claude", "CLAUDE.md"), "project")
 					addRulesDir(filepath.Join(dir, ".claude", "rules"), "project", add)
 					add(filepath.Join(dir, "CLAUDE.local.md"), "local")
@@ -162,7 +148,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 		}
 	}
 
-	if includeClaudeCodeMemory && absRoot != "" {
+	if includeLegacyMemory && absRoot != "" {
 		for _, path := range claudeCodeAutoMemoryPaths(absRoot, projectRoot, homeDir) {
 			add(path, "claude_auto")
 		}

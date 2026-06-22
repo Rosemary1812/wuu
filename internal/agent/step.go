@@ -108,9 +108,8 @@ type LoopConfig struct {
 	Model string
 	// Temperature is the sampling temperature; 0 means provider default.
 	Temperature float64
-	// MaxSteps caps the number of model round-trips per Run. Zero
-	// means unlimited (aligned with Claude Code's default), positive
-	// values act as a runaway safety net.
+	// MaxSteps caps the number of model round-trips per Run. Zero means
+	// unlimited; positive values act as a runaway safety net.
 	MaxSteps int
 	// Compact is invoked when the loop wants to summarize the older
 	// conversation (proactive fill-rate trigger or reactive
@@ -133,9 +132,9 @@ type LoopConfig struct {
 	// budgeting. It does not force the request's max_tokens; DefaultMaxTokens
 	// remains the request cap.
 	OutputReserveTokens int
-	// CompactThresholdPct overrides the default OpenCode-style usable-window
-	// trigger with a fraction of the configured input/context window. Zero
-	// means use the default usable-window calculation.
+	// CompactThresholdPct overrides the default usable-window trigger with a
+	// fraction of the configured input/context window. Zero means use the
+	// default usable-window calculation.
 	CompactThresholdPct float64
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
@@ -179,7 +178,6 @@ type LoopConfig struct {
 
 	// DefaultMaxTokens is the output token cap sent on every request.
 	// Zero means the provider's default (e.g. 16 384 for Anthropic).
-	// Aligned with Claude Code's initial max_tokens.
 	DefaultMaxTokens int
 	// EscalatedMaxTokens is retained for config compatibility. Output
 	// truncation now completes the turn with FinishReason=length instead
@@ -188,7 +186,7 @@ type LoopConfig struct {
 	// Effort controls reasoning depth. Empty = API default. Valid:
 	//   Anthropic: "low", "medium", "high", "max"
 	//   OpenAI:    "low", "medium", "high"
-	// Aligned with Claude Code's /effort and Codex's reasoning_effort.
+	// This maps to each provider's reasoning-depth control.
 	Effort string
 	// ProviderOptions are provider-specific model options selected by the
 	// active model variant. They are forwarded to ChatRequest.

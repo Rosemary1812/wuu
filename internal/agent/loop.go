@@ -335,9 +335,8 @@ func RunToolLoop(
 			}, errors.New("model requested tools but none are configured")
 		}
 
-		// Execute tool calls. Read-only tools that are concurrency-
-		// safe run in parallel; write tools run serially. This is
-		// aligned with Claude Code's partitionToolCalls architecture.
+		// Execute tool calls. Read-only tools that are concurrency-safe run in
+		// parallel; write tools run serially.
 		//
 		// The tool's execution context carries the current `messages`
 		// slice (via withHistory) so tools like spawn_agent can fork
@@ -668,7 +667,6 @@ func HistoryFromContext(ctx context.Context) []providers.ChatMessage {
 
 // ── Concurrency partitioning ───────────────────────────────────────
 //
-// Aligned with Claude Code's partitionToolCalls / runToolsConcurrently:
 // consecutive read-only tools run in parallel (up to maxToolConcurrency),
 // write tools run serially. This preserves ordering semantics while
 // getting maximum throughput for common patterns like multiple
@@ -736,10 +734,8 @@ func partitionToolCalls(executor ToolExecutor, calls []providers.ToolCall) []too
 	return batches
 }
 
-// maxAggregateResultChars caps the total content of all tool-role
-// messages in a single batch. Prevents N parallel tools × 50K each
-// from bloating the prompt. Aligned with Claude Code's per-message
-// 200K aggregate budget.
+// maxAggregateResultChars caps the total content of all tool-role messages in
+// a single batch. Prevents N parallel tools x 50K each from bloating the prompt.
 const maxAggregateResultChars = 200_000
 
 // enforceAggregateResultBudget trims tool messages in-place so their

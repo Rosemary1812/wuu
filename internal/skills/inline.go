@@ -16,10 +16,10 @@ import (
 type ProcessOptions struct {
 	// Arguments substituted into ${ARGUMENTS} placeholders.
 	Arguments string
-	// SkillDir substituted into ${CLAUDE_SKILL_DIR} and used as cwd
-	// for inline shell commands.
+	// SkillDir is substituted into the legacy skill directory placeholder and
+	// used as cwd for inline shell commands.
 	SkillDir string
-	// SessionID substituted into ${CLAUDE_SESSION_ID}.
+	// SessionID is substituted into the legacy session placeholder.
 	SessionID string
 	// Shell to use for inline command execution. Defaults to "sh".
 	Shell string
@@ -39,7 +39,7 @@ type ProcessOptions struct {
 
 // ProcessSkillBody applies all transformations a skill body needs before
 // being delivered to the model:
-//  1. Variable substitution (${ARGUMENTS}, ${CLAUDE_SKILL_DIR}, ${CLAUDE_SESSION_ID})
+//  1. Variable substitution for arguments plus legacy skill/session placeholders.
 //  2. Inline shell command execution (`!cmd` and ```! ... ``` blocks)
 //
 // The function never returns an error: shell failures are inlined as
@@ -57,7 +57,7 @@ func ProcessSkillBody(ctx context.Context, body string, opts ProcessOptions) str
 	return body
 }
 
-// substituteVariables replaces the three CC-compatible placeholders.
+// substituteVariables replaces supported inline skill placeholders.
 func substituteVariables(body string, opts ProcessOptions) string {
 	r := strings.NewReplacer(
 		"${ARGUMENTS}", opts.Arguments,

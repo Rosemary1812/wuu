@@ -11,8 +11,7 @@ const (
 	SessionStart       Event = "SessionStart"
 	SessionEnd         Event = "SessionEnd"
 	Stop               Event = "Stop"
-	// FileChanged fires after a tool successfully writes or edits a
-	// file. Aligned with Claude Code's FileChanged hook event.
+	// FileChanged fires after a tool successfully writes or edits a file.
 	FileChanged Event = "FileChanged"
 )
 

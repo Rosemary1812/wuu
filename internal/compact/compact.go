@@ -25,8 +25,7 @@ var protectedToolResults = map[string]bool{
 }
 
 // maxCompactOutputChars caps the summarization output to approximately
-// 20K tokens (~4 chars per token). Aligned with Claude Code's
-// MAX_OUTPUT_TOKENS_FOR_SUMMARY and Codex's COMPACT_USER_MESSAGE_MAX_TOKENS.
+// 20K tokens (~4 chars per token).
 // Without this cap, the summary itself can consume a large portion of
 // the context window, defeating the purpose of compaction.
 const maxCompactOutputChars = 80_000
@@ -91,10 +90,9 @@ func EstimateTokens(text string) int {
 	return (nonCJK / 4) + (cjkCount / 2) + 1
 }
 
-// EstimateJSONTokens estimates tokens for JSON content. JSON is
-// denser than prose because single-character structural tokens
-// ({, }, :, ,, ") each consume one token. Aligned with Claude Code's
-// file-type-aware bytesPerToken=2 for JSON.
+// EstimateJSONTokens estimates tokens for JSON content. JSON is denser than
+// prose because single-character structural tokens ({, }, :, ,, ") each
+// consume one token.
 func EstimateJSONTokens(text string) int {
 	if text == "" {
 		return 0
@@ -108,9 +106,8 @@ func EstimateJSONTokens(text string) int {
 // becomes the dominant context risk.
 const imageTokenEstimate = 2000
 
-// toolDefinitionOverhead is the approximate token cost the API adds
-// for tool definitions in the request (schema preamble, JSON wrapping).
-// Claude Code documents this as ~500 tokens when tools are present.
+// toolDefinitionOverhead is the approximate token cost the API adds for tool
+// definitions in the request (schema preamble, JSON wrapping).
 const toolDefinitionOverhead = 500
 
 // EstimateMessagesTokens estimates total tokens for a message list.

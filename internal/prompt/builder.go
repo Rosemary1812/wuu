@@ -6,9 +6,8 @@
 // memory, skills, and workflows follow. Volatile environment and git
 // state belong in per-turn context injection, not in this builder.
 //
-// Memory files are truncated to MaxMemoryLines / MaxMemoryBytes to
-// prevent prompt explosion from large AGENTS.md or CLAUDE.md files.
-// Aligned with Claude Code's 200-line / 25 KB caps.
+// Memory files are truncated to MaxMemoryLines / MaxMemoryBytes to prevent
+// prompt explosion from large project instruction files.
 package prompt
 
 import (

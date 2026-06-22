@@ -16,8 +16,7 @@ type PromptModelClient interface {
 }
 
 // PromptHook evaluates a condition by sending a prompt to a small/fast
-// LLM and parsing the structured {ok, reason} response. Aligned with
-// Claude Code's execPromptHook — lightweight LLM-as-middleware.
+// LLM and parsing the structured {ok, reason} response.
 //
 // If ok is true the hook passes. If ok is false the hook blocks,
 // and the reason is propagated as both the block reason and as

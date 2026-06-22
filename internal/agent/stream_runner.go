@@ -69,10 +69,9 @@ type StreamRunner struct {
 	// The reactive context-overflow recovery still runs. Off by default.
 	DisableAutoCompact bool
 
-	// StreamingToolExecution, when true, starts executing read-only
-	// tools during model streaming (before the full response arrives).
-	// Off by default until stabilized. Aligned with Claude Code's
-	// StreamingToolExecutor pattern.
+	// StreamingToolExecution, when true, starts executing read-only tools
+	// during model streaming (before the full response arrives). Off by default
+	// until stabilized.
 	StreamingToolExecution bool
 
 	// BeforeStep, when set, is called at the start of each model
@@ -105,7 +104,7 @@ type StreamRunner struct {
 	// to providers that support explicit prompt-cache routing.
 	PromptCacheKey string
 
-	// Stream reconnect policy. Zero values use CC-aligned defaults.
+	// Stream reconnect policy. Zero values use Wuu defaults.
 	StreamReconnectBudget   time.Duration // total time for reconnection (default: 2m)
 	StreamRetryInitialDelay time.Duration // backoff start (default: 1s)
 	StreamRetryMaxDelay     time.Duration // backoff cap (default: 30s)
@@ -897,7 +896,7 @@ func enrichToolCallDisplay(executor ToolExecutor, call providers.ToolCall) provi
 	return call
 }
 
-// streamReconnectConfig holds CC-aligned time-budget reconnection parameters.
+// streamReconnectConfig holds time-budget reconnection parameters.
 type streamReconnectConfig struct {
 	Budget       time.Duration
 	InitialDelay time.Duration
@@ -943,7 +942,7 @@ func streamRetryDelay(attempt int, initial, maxDelay time.Duration) time.Duratio
 	if base > float64(maxDelay) {
 		base = float64(maxDelay)
 	}
-	// ±25% jitter (CC-aligned) to avoid thundering herd.
+	// +/-25% jitter to avoid thundering herd.
 	jitter := 0.25 * base * (2*rand.Float64() - 1)
 	return time.Duration(base + jitter)
 }

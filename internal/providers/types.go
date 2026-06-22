@@ -249,8 +249,7 @@ type ChatRequest struct {
 	// are provider-specific:
 	//   Anthropic: "low", "medium", "high", "max"
 	//   OpenAI:    "low", "medium", "high"
-	// Aligned with Claude Code's /effort command and Codex's
-	// reasoning_effort setting.
+	// This maps to each provider's reasoning-depth control.
 	Effort string
 	// ProviderOptions carries model/provider-specific options selected through
 	// model variants. Keys follow OpenCode's AI SDK option names where

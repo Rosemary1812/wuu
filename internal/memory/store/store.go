@@ -2,8 +2,8 @@
 //
 // It is intentionally separate from the sibling memory package
 // (internal/memory), which discovers and loads read-only project and
-// user memory files (AGENTS.md, CLAUDE.md, ...) for system-prompt
-// injection. The store here is the LLM-curated, append-friendly memory
+// user memory files for system-prompt injection. The store here is the
+// LLM-curated, append-friendly memory
 // the model can read from and write to during a session.
 //
 // The first and only supported backend is file-backed: entries live as
