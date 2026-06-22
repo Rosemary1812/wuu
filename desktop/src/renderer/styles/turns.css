@@ -3377,7 +3377,7 @@
      row text in place, instead of trying to clip to the ::after's
      own (empty) text glyphs) */
   mix-blend-mode: lighten;
-  animation: reasoning-shimmer 2.4s linear infinite;
+  animation: reasoning-shimmer 4.8s linear infinite;
   z-index: 1;
 }
 
