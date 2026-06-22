@@ -201,7 +201,7 @@ import {
   pullRequestUnavailableReason,
 } from "./RuntimeHelpers";
 import { SettingsView } from "./SettingsView";
-import type { SettingsUsageRange, SettingsUsageResponse } from "../shared/protocol";
+import type { ComposerGoalSummary, SettingsUsageRange, SettingsUsageResponse } from "../shared/protocol";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
@@ -348,6 +348,9 @@ export function App(): JSX.Element {
   const [prompt, setPrompt] = useState("");
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
   const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
+  const [goalSummary, setGoalSummary] = useState<ComposerGoalSummary | null>(
+    null
+  );
   const [splitComposerDrafts, setSplitComposerDrafts] = useState<
     Record<ConversationPaneID, ComposerDraftState>
   >(initialSplitComposerDrafts);
@@ -357,6 +360,30 @@ export function App(): JSX.Element {
     useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
+  const refreshGoalSummary = useCallback(async () => {
+    try {
+      setGoalSummary(await window.wuu.getActiveGoalSummary());
+    } catch {
+      setGoalSummary(null);
+    }
+  }, []);
+  const editGoalText = useCallback(
+    async (nextText: string) => {
+      if (!goalSummary) {
+        return;
+      }
+      await window.wuu.updateGoalText(goalSummary.id, nextText);
+      await refreshGoalSummary();
+    },
+    [goalSummary, refreshGoalSummary]
+  );
+  const cancelCurrentGoal = useCallback(async () => {
+    if (!goalSummary) {
+      return;
+    }
+    await window.wuu.cancelGoal(goalSummary.id);
+    await refreshGoalSummary();
+  }, [goalSummary, refreshGoalSummary]);
   const {
     sidebarWidth,
     sidebarCollapsed,
@@ -783,6 +810,34 @@ export function App(): JSX.Element {
   useEffect(() => {
     appStateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    void refreshGoalSummary();
+  }, [refreshGoalSummary]);
+
+  useEffect(() => {
+    const off = window.wuu.onServerEvent((event) => {
+      if (event.kind !== "notification") {
+        return;
+      }
+      const method = event.message.method;
+      // Refresh the composer goal banner whenever a turn or thread
+      // lifecycle event lands. The backend filters terminal goals, so
+      // the summary just collapses to null after a clean completion.
+      if (
+        method === "turn/started" ||
+        method === "turn/completed" ||
+        method === "turn/error" ||
+        method === "turn/interrupted" ||
+        method === "thread/started" ||
+        method === "thread/resumed" ||
+        method === "thread/updated"
+      ) {
+        void refreshGoalSummary();
+      }
+    });
+    return off;
+  }, [refreshGoalSummary]);
 
   useEffect(() => {
     let mounted = true;
@@ -1805,6 +1860,9 @@ export function App(): JSX.Element {
         onEditGuideMessage={(id) => void editGuideMessage(id)}
         onSend={() => void sendPrompt()}
         onInterrupt={() => void interrupt()}
+        goalSummary={goalSummary}
+        onEditGoal={editGoalText}
+        onCancelGoal={cancelCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
       />
@@ -5091,7 +5149,6 @@ export function App(): JSX.Element {
               <WorkspaceMainPanel
                 view={workspaceMode}
                 activeContext={state.activeContext}
-                threadId={state.thread?.id}
                 gitStatus={state.gitStatus}
                 selectedFilePath={activeWorkspaceFile}
                 onOpenRightPanel={() => {
@@ -5216,7 +5273,6 @@ export function App(): JSX.Element {
         view={workspaceRightPanelView}
         openTabs={workspaceToolTabs}
         activeContext={state.activeContext}
-        threadId={state.thread?.id}
         gitStatus={state.gitStatus}
         selectedFilePath={activeWorkspaceFile}
         onSelectView={openWorkspaceTool}

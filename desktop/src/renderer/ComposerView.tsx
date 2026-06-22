@@ -60,6 +60,7 @@ import {
 } from "./ComposerMessages";
 import { FloatingMenuPortal } from "./ComposerFloatingMenu";
 import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSections";
+import { ComposerGoalStrip } from "./ComposerGoalStrip";
 import {
   AccessMenu,
   BranchMenu,
@@ -80,6 +81,7 @@ import type {
 import { composerStatusText } from "./ComposerTypes";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
+import type { ComposerGoalSummary } from "../shared/protocol";
 
 export type {
   CodexModelLoadState,
@@ -147,6 +149,9 @@ export function Composer({
   onEditGuideMessage,
   onSend,
   onInterrupt,
+  goalSummary,
+  onEditGoal,
+  onCancelGoal,
   tokensPerSecond,
   tokenSpeedSampledAt,
   tokenSpeedSource,
@@ -205,6 +210,9 @@ export function Composer({
   onEditGuideMessage: (id: string) => void;
   onSend: () => void;
   onInterrupt: () => void;
+  goalSummary?: ComposerGoalSummary | null;
+  onEditGoal?: (nextText: string) => void | Promise<void>;
+  onCancelGoal?: () => void | Promise<void>;
   tokensPerSecond: number;
   tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
@@ -401,6 +409,22 @@ export function Composer({
   const content = (
     <div className="composer-stack">
       <div className="composer-shell">
+        <ComposerGoalStrip
+          summary={goalSummary ?? null}
+          disabled={readOnly || running}
+          onEdit={(nextText) => {
+            if (onEditGoal) {
+              return onEditGoal(nextText);
+            }
+            return undefined;
+          }}
+          onCancel={() => {
+            if (onCancelGoal) {
+              return onCancelGoal();
+            }
+            return undefined;
+          }}
+        />
         <ComposerQueueStrip
           guideMessages={guideMessages}
           queuedMessages={queuedMessages}

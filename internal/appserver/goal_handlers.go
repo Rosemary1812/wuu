@@ -253,7 +253,6 @@ func (s *Server) findActiveGoalSummary() (*GoalActiveSummary, error) {
 		return nil, fmt.Errorf("read goal root: %w", err)
 	}
 	var best *goalrunner.State
-	var bestDir string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -272,7 +271,6 @@ func (s *Server) findActiveGoalSummary() (*GoalActiveSummary, error) {
 		}
 		if best == nil || state.UpdatedAt.After(best.UpdatedAt) {
 			best = &state
-			bestDir = name
 		}
 	}
 	if best == nil {
@@ -303,9 +301,9 @@ func goalStatusIsTerminal(status goalrunner.Status) bool {
 	}
 }
 
-// goalSummaryText collapses goal.Goal into the single-line form the
-// banner renders. Long objectives keep the first line plus a trailing
-// ellipsis so the inline strip never overflows the composer width.
+// goalSummaryText collapses goal.Goal into the first-line form the
+// banner renders. Width truncation is a renderer concern so editing a
+// long first line does not accidentally persist a server-side truncation.
 func goalSummaryText(goal string) string {
 	goal = strings.TrimSpace(goal)
 	if goal == "" {
@@ -313,11 +311,6 @@ func goalSummaryText(goal string) string {
 	}
 	if idx := strings.IndexAny(goal, "\n\r"); idx >= 0 {
 		goal = goal[:idx]
-	}
-	const maxRunes = 240
-	runes := []rune(goal)
-	if len(runes) > maxRunes {
-		goal = string(runes[:maxRunes]) + "…"
 	}
 	return goal
 }

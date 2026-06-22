@@ -517,6 +517,32 @@ func TestGoalActiveSummaryCollapsesMultilineText(t *testing.T) {
 	}
 }
 
+func TestGoalActiveSummaryLeavesLongTextForRendererEllipsis(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	longGoal := strings.Repeat("a", 320)
+	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "long"))
+	if _, err := store.Init(goalrunner.Spec{ID: "long", Goal: longGoal}); err != nil {
+		t.Fatalf("Init long: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	msg := responseByID(t, msgs, "sum")
+	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
+	if result.Summary == nil {
+		t.Fatalf("expected summary, got %+v", result)
+	}
+	if result.Summary.Text != longGoal {
+		t.Fatalf("expected untruncated summary text, got %d chars", len(result.Summary.Text))
+	}
+}
+
 func TestGoalCancelRequiresConfirmation(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")

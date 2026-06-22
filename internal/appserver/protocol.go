@@ -15,26 +15,26 @@ import (
 const (
 	ProtocolVersion = "wuu-app-server/v0.1"
 
-	MethodInitialize            = "initialize"
-	MethodConfigRead            = "config/read"
-	MethodConfigModelUpdate     = "config/model/update"
-	MethodConfigCodexModels     = "config/codex/models"
-	MethodSkillList             = "skill/list"
-	MethodGoalSnapshot          = "goal/snapshot"
-	MethodGoalWorktreeReview    = "goal/worktree/review"
-	MethodGoalWorktreeCleanup   = "goal/worktree/cleanup"
-	MethodGoalWorktreeRollback  = "goal/worktree/rollback"
-	MethodGoalWorktreeMerge     = "goal/worktree/merge"
-	MethodGoalApprovalResolve   = "goal/approval/resolve"
+	MethodInitialize           = "initialize"
+	MethodConfigRead           = "config/read"
+	MethodConfigModelUpdate    = "config/model/update"
+	MethodConfigCodexModels    = "config/codex/models"
+	MethodSkillList            = "skill/list"
+	MethodGoalSnapshot         = "goal/snapshot"
+	MethodGoalWorktreeReview   = "goal/worktree/review"
+	MethodGoalWorktreeCleanup  = "goal/worktree/cleanup"
+	MethodGoalWorktreeRollback = "goal/worktree/rollback"
+	MethodGoalWorktreeMerge    = "goal/worktree/merge"
+	MethodGoalApprovalResolve  = "goal/approval/resolve"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
 	// of the most-recently-updated non-terminal goal in the workspace.
 	// MethodGoalCancel marks that goal as cancelled; MethodGoalUpdateText
 	// rewrites its objective. The renderer only needs these three to drive
 	// the inline "current goal" strip in the composer; full goal state
 	// stays on the agent tool loop.
-	MethodGoalActiveSummary = "goal/active-summary"
-	MethodGoalCancel        = "goal/cancel"
-	MethodGoalUpdateText    = "goal/update-text"
+	MethodGoalActiveSummary     = "goal/active-summary"
+	MethodGoalCancel            = "goal/cancel"
+	MethodGoalUpdateText        = "goal/update-text"
 	MethodThreadStart           = "thread/start"
 	MethodThreadResume          = "thread/resume"
 	MethodThreadFork            = "thread/fork"
@@ -314,9 +314,10 @@ type GoalSnapshotResult struct {
 // updated non-terminal goal in the workspace. The handler filters
 // terminal statuses (completed, failed, cancelled) so the renderer can
 // treat a nil summary as "no active goal" without re-checking status.
-// Text is a single-line truncation of goal.Goal suitable for the inline
-// banner; it intentionally omits task / step / approvals to keep the
-// composer surface quiet.
+// Text is the first line of goal.Goal. The renderer owns visual ellipsis
+// so editing a long first line never persists a server-side truncation.
+// It intentionally omits task / step / approvals to keep the composer
+// surface quiet.
 type GoalActiveSummary struct {
 	ID        string `json:"id"`
 	Text      string `json:"text"`
@@ -807,17 +808,17 @@ type Thread struct {
 	CWD              string        `json:"cwd"`
 	WorkspaceKind    WorkspaceKind `json:"workspace_kind,omitempty"`
 	Status           ThreadStatus  `json:"status"`
-	ReadOnly         bool         `json:"read_only,omitempty"`
-	Ephemeral        bool         `json:"ephemeral,omitempty"`
-	Pinned           bool         `json:"pinned,omitempty"`
-	Archived         bool         `json:"archived,omitempty"`
-	ForkedFromID     string       `json:"forked_from_id,omitempty"`
-	ForkedFromTurnID string       `json:"forked_from_turn_id,omitempty"`
-	ForkedFromItemID string       `json:"forked_from_item_id,omitempty"`
-	CreatedAt        time.Time    `json:"created_at"`
-	UpdatedAt        time.Time    `json:"updated_at"`
-	Turns            []Turn       `json:"turns"`
-	ChildAgents      []Agent      `json:"child_agents,omitempty"`
+	ReadOnly         bool          `json:"read_only,omitempty"`
+	Ephemeral        bool          `json:"ephemeral,omitempty"`
+	Pinned           bool          `json:"pinned,omitempty"`
+	Archived         bool          `json:"archived,omitempty"`
+	ForkedFromID     string        `json:"forked_from_id,omitempty"`
+	ForkedFromTurnID string        `json:"forked_from_turn_id,omitempty"`
+	ForkedFromItemID string        `json:"forked_from_item_id,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
+	Turns            []Turn        `json:"turns"`
+	ChildAgents      []Agent       `json:"child_agents,omitempty"`
 	// ListeningPorts is the latest deduped, sorted list of localhost
 	// ports the agent asked the desktop to surface (via
 	// report_listening_ports). The desktop uses the first entry to
@@ -1006,47 +1007,47 @@ type SettingsUsageQuery struct {
 // turn and agent buckets share a per-row key so a single model row can
 // surface either kind without losing fidelity.
 type SettingsUsageMetrics struct {
-	PromptTokens       int     `json:"prompt_tokens"`
-	ContextTokens      int     `json:"context_tokens"`
-	InputTokens        int     `json:"input_tokens"`
-	OutputTokens       int     `json:"output_tokens"`
-	CacheReadTokens    int     `json:"cache_read_tokens"`
-	CacheCreationTokens int    `json:"cache_creation_tokens"`
-	CacheHitRate       float64 `json:"cache_hit_rate"`
-	Turns              int     `json:"turns"`
-	Agents             int     `json:"agents"`
-	DateRange          [2]string `json:"date_range"`
-	ActiveDays         int     `json:"active_days"`
+	PromptTokens        int       `json:"prompt_tokens"`
+	ContextTokens       int       `json:"context_tokens"`
+	InputTokens         int       `json:"input_tokens"`
+	OutputTokens        int       `json:"output_tokens"`
+	CacheReadTokens     int       `json:"cache_read_tokens"`
+	CacheCreationTokens int       `json:"cache_creation_tokens"`
+	CacheHitRate        float64   `json:"cache_hit_rate"`
+	Turns               int       `json:"turns"`
+	Agents              int       `json:"agents"`
+	DateRange           [2]string `json:"date_range"`
+	ActiveDays          int       `json:"active_days"`
 }
 
 // SettingsUsageDay is one calendar day of token activity, bucketed by the
 // token_usage row's At timestamp (UTC). Days are emitted in ascending
 // date order; gaps in the visible window are filled in by the desktop.
 type SettingsUsageDay struct {
-	Date               string  `json:"date"`
-	InputTokens        int     `json:"input_tokens"`
-	OutputTokens       int     `json:"output_tokens"`
-	CacheCreationTokens int    `json:"cache_creation_tokens"`
-	CacheReadTokens    int     `json:"cache_read_tokens"`
-	CacheHitRate       float64 `json:"cache_hit_rate"`
-	Turns              int     `json:"turns"`
-	Agents             int     `json:"agents"`
+	Date                string  `json:"date"`
+	InputTokens         int     `json:"input_tokens"`
+	OutputTokens        int     `json:"output_tokens"`
+	CacheCreationTokens int     `json:"cache_creation_tokens"`
+	CacheReadTokens     int     `json:"cache_read_tokens"`
+	CacheHitRate        float64 `json:"cache_hit_rate"`
+	Turns               int     `json:"turns"`
+	Agents              int     `json:"agents"`
 }
 
 // SettingsUsageEntry is one recent token-spending record surfaced in the
 // "最近记录" list. Source identifies whether the row came from a primary
 // session turn or a subagent run; Title is rendered as the entry headline.
 type SettingsUsageEntry struct {
-	ID                 string `json:"id"`
-	Source             string `json:"source"` // "turn" | "agent"
-	Title              string `json:"title"`
-	Provider           string `json:"provider"`
-	Model              string `json:"model"`
-	At                 string `json:"at"`
-	InputTokens        int    `json:"input_tokens"`
-	OutputTokens       int    `json:"output_tokens"`
-	CacheCreationTokens int   `json:"cache_creation_tokens"`
-	CacheReadTokens    int    `json:"cache_read_tokens"`
+	ID                  string `json:"id"`
+	Source              string `json:"source"` // "turn" | "agent"
+	Title               string `json:"title"`
+	Provider            string `json:"provider"`
+	Model               string `json:"model"`
+	At                  string `json:"at"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	CacheCreationTokens int    `json:"cache_creation_tokens"`
+	CacheReadTokens     int    `json:"cache_read_tokens"`
 }
 
 // SettingsUsageResponse is the single source of truth for the desktop

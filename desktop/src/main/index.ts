@@ -9,6 +9,7 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
+  ComposerGoalSummary,
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   GitCommitParams,
@@ -19,12 +20,6 @@ import type {
   InputFile,
   InputImage,
   InitializeResult,
-  GoalApprovalResolveResult,
-  GoalSnapshotResult,
-  GoalWorktreeCleanupResult,
-  GoalWorktreeMergeResult,
-  GoalWorktreeRollbackResult,
-  GoalWorktreeReviewResult,
   MCPListResult,
   MCPServerActionResult,
   ManagedProcessListResult,
@@ -340,82 +335,6 @@ app.whenReady().then(() => {
         { range } satisfies SettingsUsageQuery,
       ),
   );
-  ipcMain.handle("wuu:goal-snapshot", (_event, threadId?: string) =>
-    appServerClientPool.request<GoalSnapshotResult>("goal/snapshot", {
-      thread_id: threadId ?? "",
-    }),
-  );
-  ipcMain.handle("wuu:goal-worktree-review", (_event, worktreePath: string) =>
-    appServerClientPool.request<GoalWorktreeReviewResult>("goal/worktree/review", {
-      worktree_path: worktreePath,
-    }),
-  );
-  ipcMain.handle(
-    "wuu:goal-worktree-cleanup",
-    (
-      _event,
-      worktreePath: string,
-      confirmUserApproved: boolean,
-      confirmRemoveCleanWorktree: boolean,
-    ) =>
-      appServerClientPool.request<GoalWorktreeCleanupResult>("goal/worktree/cleanup", {
-        worktree_path: worktreePath,
-        confirm_user_approved: confirmUserApproved,
-        confirm_remove_clean_worktree: confirmRemoveCleanWorktree,
-      }),
-  );
-  ipcMain.handle(
-    "wuu:goal-worktree-rollback",
-    (
-      _event,
-      worktreePath: string,
-      confirmUserApproved: boolean,
-      confirmDiscardWorktreeChanges: boolean,
-    ) =>
-      appServerClientPool.request<GoalWorktreeRollbackResult>("goal/worktree/rollback", {
-        worktree_path: worktreePath,
-        confirm_user_approved: confirmUserApproved,
-        confirm_discard_worktree_changes: confirmDiscardWorktreeChanges,
-      }),
-  );
-  ipcMain.handle(
-    "wuu:goal-worktree-merge",
-    (
-      _event,
-      worktreePath: string,
-      confirmUserApproved: boolean,
-      confirmApplyWorktreeDiff: boolean,
-      confirmTargetRepoMutation: boolean,
-    ) =>
-      appServerClientPool.request<GoalWorktreeMergeResult>("goal/worktree/merge", {
-        worktree_path: worktreePath,
-        confirm_user_approved: confirmUserApproved,
-        confirm_apply_worktree_diff: confirmApplyWorktreeDiff,
-        confirm_target_repo_mutation: confirmTargetRepoMutation,
-      }),
-  );
-  ipcMain.handle(
-    "wuu:goal-approval-resolve",
-    (
-      _event,
-      goalId: string,
-      approvalId: string,
-      approved: boolean,
-      rejected: boolean,
-      resolvedBy: string,
-      resolution: string,
-      confirmUserApproved: boolean,
-    ) =>
-      appServerClientPool.request<GoalApprovalResolveResult>("goal/approval/resolve", {
-        goal_id: goalId,
-        approval_id: approvalId,
-        approved,
-        rejected,
-        resolved_by: resolvedBy,
-        resolution,
-        confirm_user_approved: confirmUserApproved,
-      }),
-  );
   ipcMain.handle("wuu:process-list", () =>
     appServerClientPool.request<ManagedProcessListResult>("process/list"),
   );
@@ -579,6 +498,30 @@ app.whenReady().then(() => {
     (_event, id: string, message: string) => {
       appServerClientPool.rejectServerRequest(id, message);
     },
+  );
+  // Composer goal banner surface. The renderer only needs a lightweight
+  // summary plus explicit cancel/edit affordances; the full GoalSnapshot
+  // and workflow/agent run detail stay on the agent tool loop.
+  ipcMain.handle("wuu:goal-active-summary", async () => {
+    const result = await appServerClientPool.request<{
+      summary?: ComposerGoalSummary | null;
+    }>("goal/active-summary");
+    return result.summary ?? null;
+  });
+  ipcMain.handle("wuu:goal-cancel", (_event, goalID: string) =>
+    appServerClientPool.request<{ ok: boolean }>("goal/cancel", {
+      goal_id: goalID,
+      confirm_user_approved: true,
+    }),
+  );
+  ipcMain.handle(
+    "wuu:goal-update-text",
+    (_event, goalID: string, text: string) =>
+      appServerClientPool.request<{ ok: boolean }>("goal/update-text", {
+        goal_id: goalID,
+        text,
+        confirm_user_approved: true,
+      }),
   );
 
   createWindow();

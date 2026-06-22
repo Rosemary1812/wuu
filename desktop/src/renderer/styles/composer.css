@@ -307,6 +307,143 @@
   }
 }
 
+.composer-goal-strip {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  min-height: 36px;
+  padding: 4px 10px 4px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--ink-overlay-6);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: transparent;
+}
+
+.composer-goal-strip.confirming-cancel {
+  background: var(--ink-overlay-6);
+}
+
+.composer-goal-strip-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--ink-muted);
+}
+
+.composer-goal-strip-label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.composer-goal-strip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-goal-strip-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-xs);
+  background: var(--surface-1);
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.composer-goal-strip-input:focus {
+  border-color: var(--ink-overlay-18);
+}
+
+.composer-goal-strip-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+}
+
+.composer-goal-strip-action {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-goal-strip-action:hover:not(:disabled) {
+  background: var(--ink-overlay-8);
+  color: var(--ink);
+}
+
+.composer-goal-strip-action:focus-visible {
+  outline: 2px solid var(--ink-overlay-18);
+  outline-offset: 1px;
+}
+
+.composer-goal-strip-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-goal-strip-action.danger {
+  color: var(--ink-muted);
+}
+
+.composer-goal-strip-action.danger:hover:not(:disabled) {
+  background: var(--danger-overlay, rgba(220, 80, 80, 0.12));
+  color: var(--danger);
+}
+
+.composer-goal-strip-error {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--danger);
+  padding: 0 0 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-goal-strip-spin {
+  animation: composer-goal-strip-spin 1s linear infinite;
+}
+
+@keyframes composer-goal-strip-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-goal-strip-spin {
+    animation: none;
+  }
+}
+
 .composer textarea {
   width: 100%;
   min-height: 80px;
@@ -550,13 +687,13 @@
   gap: 12px;
   overflow: hidden;
   border-top: 1px solid var(--surface-3);
-  border-radius: 0 0 18px 18px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   background: var(--surface-2);
   padding: 0 12px;
 }
 
 .hero-composer-wrap .composer-context-bar {
-  border-radius: 0 0 22px 22px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   background: var(--surface-2);
   padding: 0 24px;
 }

@@ -263,259 +263,6 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
-export type GoalAttentionItem = {
-  source: string;
-  id?: string;
-  status?: string;
-  message?: string;
-  path?: string;
-};
-
-export type GoalWorkflowPhaseSnapshot = {
-  id: string;
-  name?: string;
-  status: string;
-  error?: string;
-  agent_run_ids?: string[];
-};
-
-export type GoalWorkflowAgentSnapshot = {
-  id: string;
-  phase_id?: string;
-  agent_id?: string;
-  agent_path?: string;
-  task_name?: string;
-  agent_profile?: string;
-  status: string;
-  report_path?: string;
-  report_missing?: boolean;
-  changed_files?: string[];
-  artifacts?: string[];
-  worktree_path?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  duration_ms?: number;
-  error?: string;
-};
-
-export type GoalWorkflowTeamMemberSnapshot = {
-  id?: string;
-  role?: string;
-  mode?: string;
-  agent_profile?: string;
-  task_name?: string;
-  phase_id?: string;
-  created_profile?: boolean;
-};
-
-export type GoalWorkflowTeamSnapshot = {
-  members?: GoalWorkflowTeamMemberSnapshot[];
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type GoalChangedFileOverlapSnapshot = {
-  file: string;
-  agent_run_ids: string[];
-};
-
-export type GoalWorkflowArbitration = {
-  status?: string;
-  open_agent_runs?: string[];
-  missing_reports?: string[];
-  failed_agent_runs?: string[];
-  changed_file_overlaps?: GoalChangedFileOverlapSnapshot[];
-  next_actions?: string[];
-};
-
-export type GoalWorkflowSnapshot = {
-  id: string;
-  run_dir?: string;
-  event_log_path?: string;
-  definition_name?: string;
-  driver?: string;
-  entrypoint?: string;
-  status: string;
-  error?: string;
-  script_path?: string;
-  final_report_path?: string;
-  goal_id?: string;
-  goal_dir?: string;
-  phases?: GoalWorkflowPhaseSnapshot[];
-  agent_runs?: GoalWorkflowAgentSnapshot[];
-  team?: GoalWorkflowTeamSnapshot;
-  arbitration?: GoalWorkflowArbitration;
-  event_count?: number;
-};
-
-export type GoalHarnessTaskSnapshot = {
-  id: string;
-  parent_id?: string;
-  path?: string;
-  name?: string;
-  role?: string;
-  goal_id?: string;
-  goal_dir?: string;
-  status: string;
-  report_path?: string;
-  artifact_paths?: string[];
-  input_tokens?: number;
-  output_tokens?: number;
-  error?: string;
-};
-
-export type GoalHarnessReportSnapshot = {
-  id: string;
-  task_id: string;
-  run_id?: string;
-  agent_id?: string;
-  agent_path?: string;
-  outcome: string;
-  summary?: string;
-  changed_files?: string[];
-  verification?: string[];
-  artifacts?: string[];
-  report_path?: string;
-};
-
-export type GoalHarnessSnapshot = {
-  tasks?: GoalHarnessTaskSnapshot[];
-  reports?: GoalHarnessReportSnapshot[];
-};
-
-export type GoalApprovalSnapshot = {
-  id: string;
-  goal_id?: string;
-  goal_dir?: string;
-  step?: string;
-  source?: string;
-  source_id?: string;
-  title: string;
-  reason?: string;
-  requested_action?: string;
-  risk?: string;
-  artifact?: string;
-  status: string;
-  requested_by?: string;
-  resolved_by?: string;
-  resolution?: string;
-  created_at: string;
-  resolved_at?: string;
-};
-
-export type GoalStateSnapshot = {
-  id: string;
-  goal_dir?: string;
-  goal: string;
-  task?: string;
-  status: string;
-  current_step?: string;
-  assigned_agent?: string;
-  needs_human?: boolean;
-  current_blocker?: string;
-  final_artifact?: string;
-  modified_files?: string[];
-  retry_count?: number;
-  pending_approvals?: GoalApprovalSnapshot[];
-  updated_at?: string;
-};
-
-export type GoalSystemSnapshot = {
-  generated_at: string;
-  goal_root?: string;
-  workflow_dir?: string;
-  harness_dir?: string;
-  goals?: GoalStateSnapshot[];
-  workflows?: GoalWorkflowSnapshot[];
-  harness?: GoalHarnessSnapshot;
-  approvals?: GoalApprovalSnapshot[];
-  attention?: GoalAttentionItem[];
-  warnings?: string[];
-};
-
-export type GoalSnapshotResult = {
-  snapshot: GoalSystemSnapshot;
-};
-
-export type GoalWorktreeStatus = {
-  dirty: boolean;
-  changed_files?: string[];
-  porcelain?: string[];
-};
-
-export type GoalWorktreeMergePreview = {
-  can_apply: boolean;
-  conflict_files?: string[];
-  error?: string;
-};
-
-export type GoalWorktreeReview = {
-  worktree_path: string;
-  target_repo?: string;
-  status: GoalWorktreeStatus;
-  diff?: string;
-  diff_truncated?: boolean;
-  merge_preview: GoalWorktreeMergePreview;
-};
-
-export type GoalWorktreeReviewResult = {
-  review: GoalWorktreeReview;
-};
-
-export type GoalWorktreeCleanup = {
-  worktree_path: string;
-  removed: boolean;
-  kept: boolean;
-  status_before: GoalWorktreeStatus;
-};
-
-export type GoalWorktreeCleanupResult = {
-  cleanup: GoalWorktreeCleanup;
-};
-
-export type GoalWorktreeRollback = {
-  worktree_path: string;
-  rolled_back: boolean;
-  status_before: GoalWorktreeStatus;
-  status_after: GoalWorktreeStatus;
-};
-
-export type GoalWorktreeRollbackResult = {
-  rollback: GoalWorktreeRollback;
-};
-
-export type GoalWorktreeMerge = {
-  worktree_path: string;
-  target_repo: string;
-  applied: boolean;
-  changed_files?: string[];
-  preview: GoalWorktreeMergePreview;
-};
-
-export type GoalWorktreeMergeResult = {
-  merge: GoalWorktreeMerge;
-};
-
-export type GoalApprovalResolveResult = {
-  approval: {
-    id: string;
-    step?: string;
-    source?: string;
-    source_id?: string;
-    title: string;
-    reason?: string;
-    requested_action?: string;
-    risk?: string;
-    artifact?: string;
-    status: string;
-    requested_by?: string;
-    resolved_by?: string;
-    resolution?: string;
-    created_at: string;
-    resolved_at?: string;
-  };
-};
-
 export type ManagedProcess = {
   action?: string;
   id: string;
@@ -1077,6 +824,20 @@ export type SettingsUsageResponse = {
   entries: SettingsUsageEntry[];
 };
 
+// ComposerGoalSummary is the composer-banner view of the most-recently
+// updated non-terminal goal in the workspace. The backend filters out
+// terminal goals (completed/failed/cancelled) so a null summary on the
+// renderer side means "no active goal" without re-checking status. Text
+// is the first line of goal.Goal; the renderer owns visual ellipsis so
+// editing a long first line never persists a server-side truncation.
+export type ComposerGoalSummary = {
+  id: string;
+  text: string;
+  status: string;
+  step?: string;
+  updated_at?: string;
+};
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -1115,33 +876,6 @@ export type WuuDesktopApi = {
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   refreshMCPServer: (name: string) => Promise<MCPServerActionResult>;
   listSkills: () => Promise<SkillListResult>;
-  getGoalSnapshot: (threadId?: string) => Promise<GoalSnapshotResult>;
-  getGoalWorktreeReview: (worktreePath: string) => Promise<GoalWorktreeReviewResult>;
-  cleanupGoalWorktree: (
-    worktreePath: string,
-    confirmUserApproved: boolean,
-    confirmRemoveCleanWorktree: boolean
-  ) => Promise<GoalWorktreeCleanupResult>;
-  rollbackGoalWorktree: (
-    worktreePath: string,
-    confirmUserApproved: boolean,
-    confirmDiscardWorktreeChanges: boolean
-  ) => Promise<GoalWorktreeRollbackResult>;
-  mergeGoalWorktree: (
-    worktreePath: string,
-    confirmUserApproved: boolean,
-    confirmApplyWorktreeDiff: boolean,
-    confirmTargetRepoMutation: boolean
-  ) => Promise<GoalWorktreeMergeResult>;
-  resolveGoalApproval: (
-    goalId: string,
-    approvalId: string,
-    approved: boolean,
-    rejected: boolean,
-    resolvedBy: string,
-    resolution: string,
-    confirmUserApproved: boolean
-  ) => Promise<GoalApprovalResolveResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
@@ -1177,6 +911,12 @@ export type WuuDesktopApi = {
   renameThread: (threadId: string, title: string) => Promise<{ thread: Thread }>;
   revealSession: (threadId: string) => Promise<void>;
   getSettingsUsage: (range?: SettingsUsageRange) => Promise<SettingsUsageResponse>;
+  // Composer goal banner surface. The renderer only needs a lightweight
+  // summary plus explicit cancel/edit affordances; the full GoalSnapshot
+  // and workflow/agent run detail stay on the agent tool loop.
+  getActiveGoalSummary: () => Promise<ComposerGoalSummary | null>;
+  cancelGoal: (goalId: string) => Promise<{ ok: boolean }>;
+  updateGoalText: (goalId: string, text: string) => Promise<{ ok: boolean }>;
 };
 
 declare global {
