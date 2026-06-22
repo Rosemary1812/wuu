@@ -230,8 +230,8 @@ export function AppSidebar({
           lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
           onSelect={onSelectThread}
           onSelectChildAgent={onSelectChildAgent}
-          onTogglePinned={onTogglePinned}
-          onArchive={onArchiveThread}
+          onToggleThreadPinned={onTogglePinned}
+          onArchiveThread={onArchiveThread}
           onClearArchiveConfirm={onClearArchiveConfirm}
           onCreateScratchThread={onCreateScratchThread}
         />
