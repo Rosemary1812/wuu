@@ -3372,10 +3372,10 @@
     transparent 60%,
     transparent 100%
   );
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  /* (no background-clip / color: transparent — the overlay is a
+     plain gradient that mix-blend-mode: lighten uses to whiten the
+     row text in place, instead of trying to clip to the ::after's
+     own (empty) text glyphs) */
   mix-blend-mode: lighten;
   animation: reasoning-shimmer 2.4s linear infinite;
   z-index: 1;
