@@ -94,7 +94,7 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 		// request instead of a hard error so the user can opt in.
 		{Name: "bash-vitest", Capability: capability.CapabilityCommandBash, Pattern: "npx vitest *", Action: CommandPolicyAsk, Reason: "vitest test runner"},
 		{Name: "bash-jest", Capability: capability.CapabilityCommandBash, Pattern: "npx jest *", Action: CommandPolicyAsk, Reason: "jest test runner"},
-		{Name: "bash-tsc-noemit", Capability: capability.CapabilityCommandBash, Pattern: "npx tsc --noEmit *", Action: CommandPolicyAsk, Reason: "TypeScript no-emit typecheck runner"},
+		{Name: "bash-tsc-noemit", Capability: capability.CapabilityCommandBash, Pattern: "npx tsc *", Action: CommandPolicyAsk, Reason: "TypeScript no-emit typecheck runner"},
 		{Name: "bash-pytest", Capability: capability.CapabilityCommandBash, Pattern: "pytest *", Action: CommandPolicyAsk, Reason: "pytest test runner"},
 		{Name: "bash-go-test", Capability: capability.CapabilityCommandBash, Pattern: "go test *", Action: CommandPolicyAsk, Reason: "go test runner"},
 		{Name: "bash-cargo-test", Capability: capability.CapabilityCommandBash, Pattern: "cargo test *", Action: CommandPolicyAsk, Reason: "cargo test runner"},
@@ -168,7 +168,7 @@ func DecideNamedCommandPolicy(rules []CommandPolicyRule, cap capability.Capabili
 		if rule.Capability != cap {
 			continue
 		}
-		if !matchCommandPolicyPattern(rule.Pattern, command) {
+		if !matchCommandPolicyPattern(rule.Pattern, command) || !commandPolicyRuleSemanticMatch(rule, command) {
 			continue
 		}
 		return CommandPolicyDecision{
@@ -293,6 +293,31 @@ func matchCommandPolicyPattern(pattern, value string) bool {
 		return strings.HasSuffix(value, suffix)
 	}
 	return value == pattern
+}
+
+func commandPolicyRuleSemanticMatch(rule CommandPolicyRule, command string) bool {
+	switch rule.Name {
+	case "bash-tsc-noemit":
+		return npxTscCommandLooksLikeNoEmitTypecheck(command)
+	default:
+		return true
+	}
+}
+
+func npxTscCommandLooksLikeNoEmitTypecheck(command string) bool {
+	fields, ok := splitShellFields(command)
+	if !ok {
+		fields = strings.Fields(command)
+	}
+	fields = normalizeShellCommandFields(fields)
+	if len(fields) == 0 || shellCommandBaseName(fields[0]) != "npx" {
+		return false
+	}
+	runnerIdx, ok := npxVerificationRunnerIndex(fields, 0)
+	if !ok || jsRunnerBaseName(fields[runnerIdx]) != "tsc" {
+		return false
+	}
+	return tscCommandLooksLikeTypecheck(fields[runnerIdx+1:])
 }
 
 // CommandPolicyDecision is the result of looking up a rule. The

@@ -134,7 +134,44 @@ func TestBashRunResolvesLocalNpxTypecheckRunner(t *testing.T) {
 	}
 }
 
-func TestBashRunRejectsNonNoEmitNpxTsc(t *testing.T) {
+func TestBashRunResolvesLocalNpxTypecheckRunnerWithProjectOptionOrder(t *testing.T) {
+	root := t.TempDir()
+	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "tsc")
+	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf 'local tsc %s\\n' \"$*\"\n")
+	if err := os.Chmod(runnerPath, 0o755); err != nil {
+		t.Fatalf("chmod runner: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"cd desktop && npx tsc -p tsconfig.json --noEmit","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("bash npx tsc project noEmit: %v", err)
+	}
+	var parsed shellExecutionResult
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse bash result: %v\n%s", err, resp)
+	}
+	if parsed.RequestedCommand != "cd desktop && npx tsc -p tsconfig.json --noEmit" {
+		t.Fatalf("requested command not preserved: %+v", parsed)
+	}
+	if parsed.Command != "cd desktop && ./node_modules/.bin/tsc -p tsconfig.json --noEmit" || parsed.ResolvedCommand != parsed.Command {
+		t.Fatalf("npx tsc command was not resolved to local runner: %+v", parsed)
+	}
+	if parsed.Verification == nil || !parsed.Verification.Passed {
+		t.Fatalf("local tsc verification should pass: %+v", parsed.Verification)
+	}
+	if !strings.Contains(parsed.Output, "local tsc -p tsconfig.json --noEmit") {
+		t.Fatalf("local tsc output missing: %+v", parsed)
+	}
+}
+
+func TestBashRunRejectsNonTypecheckNpxTsc(t *testing.T) {
 	root := t.TempDir()
 	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "tsc")
 	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf ran > tsc-ran.txt\n")
@@ -149,7 +186,9 @@ func TestBashRunRejectsNonNoEmitNpxTsc(t *testing.T) {
 
 	for _, command := range []string{
 		"cd desktop && npx tsc --init",
+		"cd desktop && npx tsc --noEmit --init",
 		"cd desktop && npx tsc --build",
+		"cd desktop && npx tsc --noEmit --build",
 		"cd desktop && npx tsc",
 	} {
 		_, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -157,10 +196,10 @@ func TestBashRunRejectsNonNoEmitNpxTsc(t *testing.T) {
 			Arguments: `{"command":"` + command + `","scope":"targeted"}`,
 		})
 		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
-			t.Fatalf("expected non-noEmit npx tsc rejection for %q, got %v", command, err)
+			t.Fatalf("expected non-typecheck npx tsc rejection for %q, got %v", command, err)
 		}
 		if _, statErr := os.Stat(filepath.Join(root, "desktop", "tsc-ran.txt")); !os.IsNotExist(statErr) {
-			t.Fatalf("non-noEmit npx tsc should not execute local runner for %q, stat err=%v", command, statErr)
+			t.Fatalf("non-typecheck npx tsc should not execute local runner for %q, stat err=%v", command, statErr)
 		}
 	}
 }

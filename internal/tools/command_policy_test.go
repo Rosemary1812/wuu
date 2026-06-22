@@ -42,6 +42,7 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 		{command: "npx vitest run --reporter=verbose", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-vitest"},
 		{command: "npx jest", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-jest"},
 		{command: "npx tsc --noEmit", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-tsc-noemit"},
+		{command: "npx tsc -p tsconfig.json --noEmit", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-tsc-noemit"},
 		{command: "pytest -k smoke", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-pytest"},
 		{command: "go test ./...", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-go-test"},
 		{command: "cargo test --workspace", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-cargo-test"},
@@ -91,6 +92,9 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 	}
 	if _, _, _, ok := lookupNamedRule(rules, capability.CapabilityCommandBash, "npx tsc --init"); ok {
 		t.Fatal("npx tsc --init must not match the no-emit typecheck policy")
+	}
+	if _, _, _, ok := lookupNamedRule(rules, capability.CapabilityCommandBash, "npx tsc --noEmit --init"); ok {
+		t.Fatal("npx tsc --noEmit --init must not match the no-emit typecheck policy")
 	}
 }
 
@@ -150,8 +154,17 @@ func TestShellPackageNetworkMutationRequiresCoveredCommandPolicyRule(t *testing.
 	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("cd desktop && npx tsc --noEmit") {
 		t.Fatal("directory-scoped npx tsc should be covered by the default command policy")
 	}
+	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("cd desktop && npx tsc -p tsconfig.json --noEmit") {
+		t.Fatal("directory-scoped npx tsc with project option should be covered by the default command policy")
+	}
 	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc --init") {
 		t.Fatal("npx tsc --init should not be covered by the typecheck policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc --noEmit --init") {
+		t.Fatal("npx tsc --noEmit --init should not be covered by the typecheck policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc --noEmit --build") {
+		t.Fatal("npx tsc --noEmit --build should not be covered by the typecheck policy")
 	}
 	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("npx tsc --build") {
 		t.Fatal("npx tsc --build should not be covered by the typecheck policy")

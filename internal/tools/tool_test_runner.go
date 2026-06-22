@@ -639,9 +639,32 @@ func jsVerificationRunnerInvocation(fields []string, runnerIdx int) bool {
 }
 
 func tscCommandLooksLikeTypecheck(args []string) bool {
+	hasNoEmit := false
 	for _, arg := range args {
 		arg = strings.TrimSpace(arg)
-		if arg == "--noEmit" || arg == "--noEmit=true" {
+		if arg == "" {
+			continue
+		}
+		if tscCommandArgLooksMutatingOrLongRunning(arg) {
+			return false
+		}
+		switch {
+		case arg == "--noEmit" || arg == "--noEmit=true":
+			hasNoEmit = true
+		case arg == "--noEmit=false":
+			return false
+		}
+	}
+	return hasNoEmit
+}
+
+func tscCommandArgLooksMutatingOrLongRunning(arg string) bool {
+	switch arg {
+	case "--init", "--build", "-b", "--watch", "-w", "--generateTrace":
+		return true
+	}
+	for _, prefix := range []string{"--init=", "--build=", "--watch=", "--generateTrace="} {
+		if strings.HasPrefix(arg, prefix) {
 			return true
 		}
 	}
