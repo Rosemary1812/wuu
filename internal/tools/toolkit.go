@@ -162,7 +162,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		extensionSurfacePolicy: t.extensionSurfacePolicy,
 		autoModeClassifier:     t.autoModeClassifier,
 		approvalReviewer:       t.approvalReviewer,
-		approvalStore:          t.approvalStore,
+		approvalStore:          NewToolApprovalStore(),
 		permissionRules:        t.PermissionRules(),
 		mcpManager:             t.mcpManager,
 	}

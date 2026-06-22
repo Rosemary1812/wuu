@@ -1230,14 +1230,29 @@ func toolPolicyToolActions(in map[string]string) map[string]tools.ToolPolicyActi
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]tools.ToolPolicyAction, len(in))
+	out := make(map[string]tools.ToolPolicyAction, len(in)*2)
 	for name, action := range in {
 		name = strings.TrimSpace(name)
 		if name != "" {
-			out[name] = toolPolicyAction(action)
+			resolved := toolPolicyAction(action)
+			out[name] = resolved
+			for _, alias := range toolPolicyToolActionAliases(name) {
+				out[alias] = resolved
+			}
 		}
 	}
 	return out
+}
+
+func toolPolicyToolActionAliases(name string) []string {
+	switch strings.TrimSpace(name) {
+	case "bash":
+		return []string{"run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"}
+	case "run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
+		return []string{"bash"}
+	default:
+		return nil
+	}
 }
 
 func toolPolicyKindActions(in map[string]string) map[tools.ToolKind]tools.ToolPolicyAction {

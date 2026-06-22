@@ -434,7 +434,7 @@ func classifyShellCommand(command string) ToolClassification {
 		}
 	}
 	if shellFieldsLookLikePackageOrNetworkMutation(fields) {
-		return highRiskShellClassification("package, network, or external mutation command", true)
+		return highRiskShellClassification("package, network, or external mutation command", false)
 	}
 	return highRiskShellClassification("shell command is not proven read-only or verification-only", false)
 }

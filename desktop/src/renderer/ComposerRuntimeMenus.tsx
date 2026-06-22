@@ -71,7 +71,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "agent",
     label: "Agent",
     chipLabel: "Agent",
-    short: "工作区内自动执行，越界时审批",
+    short: "工作区内执行，高风险操作会确认",
     icon: ShieldCheck,
     chipTone: "accent"
   },
@@ -79,7 +79,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "auto_review",
     label: "自动审查",
     chipLabel: "自动审查",
-    short: "同一工作区边界，由审查器处理审批",
+    short: "同一工具边界，由审查器处理确认",
     icon: ShieldQuestion,
     chipTone: "review"
   },
@@ -87,7 +87,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    short: "跳过普通审批并移除本地沙箱边界",
+    short: "跳过普通确认，仍保留工具硬保护",
     icon: ShieldAlert,
     chipTone: "danger",
     tone: "danger"

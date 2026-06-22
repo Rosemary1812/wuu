@@ -71,7 +71,10 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 		{Name: "bash-readonly-pwd", Capability: capability.CapabilityCommandBash, Pattern: "pwd *", Action: CommandPolicyAllow, Reason: "read-only path query"},
 		{Name: "bash-readonly-echo", Capability: capability.CapabilityCommandBash, Pattern: "echo *", Action: CommandPolicyAllow, Reason: "read-only echo"},
 		{Name: "bash-readonly-which", Capability: capability.CapabilityCommandBash, Pattern: "which *", Action: CommandPolicyAllow, Reason: "read-only command lookup"},
-		{Name: "bash-readonly-env-print", Capability: capability.CapabilityCommandBash, Pattern: "env *", Action: CommandPolicyAllow, Reason: "read-only environment listing"},
+		{Name: "bash-env-dump", Capability: capability.CapabilityCommandBash, Pattern: "env *", Action: CommandPolicyExplain, Reason: "bash does not print process environment variables because they may contain secrets"},
+		{Name: "bash-printenv-dump", Capability: capability.CapabilityCommandBash, Pattern: "printenv *", Action: CommandPolicyExplain, Reason: "bash does not print process environment variables because they may contain secrets"},
+		{Name: "bash-set-dump", Capability: capability.CapabilityCommandBash, Pattern: "set *", Action: CommandPolicyExplain, Reason: "bash does not print shell environment because it may contain secrets"},
+		{Name: "bash-export-dump", Capability: capability.CapabilityCommandBash, Pattern: "export *", Action: CommandPolicyExplain, Reason: "bash does not print or mutate shell exports through this surface"},
 
 		// Git: status, diff, log, show, branch are read-only → allow.
 		{Name: "bash-git-status", Capability: capability.CapabilityCommandBash, Pattern: "git status *", Action: CommandPolicyAllow, Reason: "git status is read-only"},
@@ -84,8 +87,8 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 		{Name: "bash-git-add", Capability: capability.CapabilityCommandBash, Pattern: "git add *", Action: CommandPolicyAsk, Reason: "git add stages the working tree for commit"},
 		{Name: "bash-git-commit", Capability: capability.CapabilityCommandBash, Pattern: "git commit *", Action: CommandPolicyAsk, Reason: "git commit writes local history"},
 		{Name: "bash-git-push", Capability: capability.CapabilityCommandBash, Pattern: "git push *", Action: CommandPolicyAsk, Reason: "git push writes to the remote"},
-		{Name: "bash-git-checkout", Capability: capability.CapabilityCommandBash, Pattern: "git checkout *", Action: CommandPolicyAsk, Reason: "git checkout switches the working tree"},
-		{Name: "bash-git-merge", Capability: capability.CapabilityCommandBash, Pattern: "git merge *", Action: CommandPolicyAsk, Reason: "git merge combines histories"},
+		{Name: "bash-git-checkout", Capability: capability.CapabilityCommandBash, Pattern: "git checkout *", Action: CommandPolicyExplain, Reason: "bash does not run destructive git checkout commands"},
+		{Name: "bash-git-merge", Capability: capability.CapabilityCommandBash, Pattern: "git merge *", Action: CommandPolicyExplain, Reason: "bash does not run destructive git merge commands"},
 
 		// Test and verification runners: ask. The legacy harness used
 		// to reject npx vitest inside run_shell and redirect to

@@ -89,15 +89,52 @@ func TestToolkitPermissionRuleDenyBlocksSpecificPath(t *testing.T) {
 
 func TestShellPermissionAlwaysPattern(t *testing.T) {
 	tests := map[string]string{
-		"git status --short":        "git status *",
-		"npm run test -- --watch":   "npm run *",
-		"FOO=bar go test ./...":     "go test *",
-		"custom-command --flag abc": "custom-command *",
+		"git status --short":             "git status *",
+		"npm run test -- --watch":        "npm run *",
+		"FOO=bar go test ./...":          "go test *",
+		"timeout 10 npx vitest run":      "npx vitest *",
+		"nice npm install left-pad":      "npm install *",
+		"custom-command --flag abc":      "custom-command *",
+		"git status && git add file.txt": "git status && git add file.txt",
 	}
 	for command, want := range tests {
 		if got := shellPermissionAlwaysPattern(command); got != want {
 			t.Fatalf("shellPermissionAlwaysPattern(%q) = %q, want %q", command, got, want)
 		}
+	}
+}
+
+func TestShellPermissionRequestIncludesCanonicalWrapperPattern(t *testing.T) {
+	req := shellPermissionRequest("bash", "timeout 10 git push origin main")
+	rules := ToolPermissionRuleSet{
+		{Permission: "bash", Pattern: "git push *", Action: ToolPermissionDeny, Source: "test"},
+	}
+	decision, ok := rules.Decide(req)
+	if !ok {
+		t.Fatalf("expected wrapper command to match canonical permission pattern: %+v", req)
+	}
+	if decision.Action != ToolPermissionDeny {
+		t.Fatalf("decision action = %s, want deny", decision.Action)
+	}
+}
+
+func TestSessionPermissionAllowUsesCanonicalShellPattern(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req := shellPermissionRequest("bash", "timeout 10 npx vitest run")
+	kit.addSessionPermissionAllow(req, ToolApprovalReview{Decision: ToolApprovalDecisionApprovedForSession})
+
+	rules := kit.PermissionRules()
+	if len(rules) != 1 {
+		t.Fatalf("session rules = %+v, want one rule", rules)
+	}
+	if rules[0].Pattern != "npx vitest *" {
+		t.Fatalf("session allow pattern = %q, want canonical npx vitest wildcard", rules[0].Pattern)
+	}
+	if strings.HasPrefix(rules[0].Pattern, "timeout ") {
+		t.Fatalf("session allow must not be widened to timeout wildcard: %+v", rules[0])
 	}
 }
 

@@ -1769,11 +1769,36 @@ func TestToolPolicyFromConfig(t *testing.T) {
 	if policy.ToolActions["run_shell"] != tools.ToolPolicyRequireApproval {
 		t.Fatalf("run_shell action = %s, want require_approval", policy.ToolActions["run_shell"])
 	}
+	if policy.ToolActions["bash"] != tools.ToolPolicyRequireApproval {
+		t.Fatalf("bash alias action = %s, want require_approval", policy.ToolActions["bash"])
+	}
 	if policy.KindActions[tools.ToolKindWeb] != tools.ToolPolicyAllow {
 		t.Fatalf("web action = %s, want allow", policy.KindActions[tools.ToolKindWeb])
 	}
 	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
 		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
+	}
+}
+
+func TestToolPolicyFromConfigAliasesUnifiedCommandTools(t *testing.T) {
+	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
+		Tools: map[string]string{
+			"bash": "deny",
+		},
+	})
+	for _, name := range []string{"bash", "run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
+		if policy.ToolActions[name] != tools.ToolPolicyDeny {
+			t.Fatalf("%s action = %s, want deny", name, policy.ToolActions[name])
+		}
+	}
+
+	legacy := ToolPolicyFromConfig(config.ToolPolicyConfig{
+		Tools: map[string]string{
+			"run_shell": "require_approval",
+		},
+	})
+	if legacy.ToolActions["bash"] != tools.ToolPolicyRequireApproval {
+		t.Fatalf("legacy run_shell action did not alias to bash: %+v", legacy.ToolActions)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 // TestToolApprovalReview_JSONRoundtrip verifies that the new RiskLevel and
@@ -129,5 +131,30 @@ func TestNormalizeToolApprovalReview_PreservesNewFields(t *testing.T) {
 	if got.ReviewModel != "review-model" || got.ReviewRole != "guardian" || got.ReviewOutcome != "completed" ||
 		got.ReviewRequestFingerprint != strings.Repeat("b", 64) || got.ReviewDurationMS != 456 {
 		t.Fatalf("review metadata not preserved: %+v", got)
+	}
+}
+
+func TestToolkitCloneUsesFreshApprovalStore(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	call := providers.ToolCall{Name: "bash", Arguments: `{"command":"git push origin main"}`}
+	key := toolApprovalKey(call)
+	kit.ApprovalStore().ApproveForSession(key, ToolApprovalReview{Decision: ToolApprovalDecisionApprovedForSession})
+	if _, ok := kit.ApprovalStore().IsApproved(key); !ok {
+		t.Fatal("expected parent approval store to contain approved call")
+	}
+
+	clone, err := kit.CloneForRoot(root)
+	if err != nil {
+		t.Fatalf("CloneForRoot: %v", err)
+	}
+	if clone.ApprovalStore() == kit.ApprovalStore() {
+		t.Fatal("clone must not share approval store with parent toolkit")
+	}
+	if _, ok := clone.ApprovalStore().IsApproved(key); ok {
+		t.Fatal("clone approval store must not inherit parent session approvals")
 	}
 }

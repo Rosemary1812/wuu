@@ -20,7 +20,10 @@ func (t *Toolkit) applyDefaultCommandPolicyDecision(call providers.ToolCall, inf
 	}
 	policyDecision, ok := decideDefaultCommandPolicy(capabilityName, subject)
 	if !ok {
-		return base
+		policyDecision, ok = fallbackDefaultCommandPolicyDecision(capabilityName, info)
+		if !ok {
+			return base
+		}
 	}
 	return t.commandPolicyToolPolicyDecision(base, capabilityName, subject, policyDecision)
 }
@@ -124,6 +127,39 @@ func decideDefaultCommandPolicy(capName capability.Capability, subject string) (
 		return DecideShellCommandPolicy(rules, capName, subject)
 	default:
 		return DecideNamedCommandPolicy(rules, capName, subject)
+	}
+}
+
+func fallbackDefaultCommandPolicyDecision(capName capability.Capability, info ToolInfo) (CommandPolicyDecision, bool) {
+	switch capName {
+	case capability.CapabilityCommandBash:
+		return fallbackCommandPolicyDecision("bash", info), true
+	case capability.CapabilityCommandBackground:
+		return fallbackCommandPolicyDecision("background", info), true
+	default:
+		return CommandPolicyDecision{}, false
+	}
+}
+
+func fallbackCommandPolicyDecision(prefix string, info ToolInfo) CommandPolicyDecision {
+	if info.ReadOnly {
+		return CommandPolicyDecision{
+			Action: CommandPolicyAllow,
+			Rule:   prefix + "-readonly-fallback",
+			Reason: "read-only command outside the default command policy table",
+		}
+	}
+	if info.Destructive {
+		return CommandPolicyDecision{
+			Action: CommandPolicyDeny,
+			Rule:   prefix + "-destructive-command",
+			Reason: "destructive command is outside the default command policy table",
+		}
+	}
+	return CommandPolicyDecision{
+		Action: CommandPolicyAsk,
+		Rule:   prefix + "-unclassified-command",
+		Reason: "command is not covered by the default command policy table",
 	}
 }
 

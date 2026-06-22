@@ -49,10 +49,14 @@ func (t *Toolkit) SessionMemoryContextBlocks() []wuucontext.Block {
 }
 
 func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
-	if t == nil || !hasConfiguredToolPolicy(t.toolPolicy) {
+	if t == nil || !hasRuntimeToolPolicyContext(t.toolPolicy, t.permissionBoundary) {
 		return wuucontext.Block{}, false
 	}
 	var b strings.Builder
+	if profile := strings.TrimSpace(t.permissionBoundary.Profile); profile != "" {
+		fmt.Fprintf(&b, "permission_profile: %s\n", profile)
+		writePermissionBoundaryContext(&b, profile)
+	}
 	if t.toolPolicy.Profile != "" {
 		fmt.Fprintf(&b, "profile: %s\n", t.toolPolicy.Profile)
 	}
@@ -65,15 +69,19 @@ func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
 	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(t.toolPolicy.RiskActions))
 	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(t.toolPolicy.KindActions))
 	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(t.toolPolicy.ToolActions))
-	b.WriteString("note: require_approval means ask the user; auto_classify means let auto mode decide before execution; do not set approval flags yourself unless the user explicitly approved that action.\n")
+	b.WriteString("note: permission_boundary is checked before command policy and approval; hard boundary denials cannot be fixed by setting approval flags. require_approval means ask the user; auto_classify means let auto mode decide before execution; do not set approval flags yourself unless the user explicitly approved that action.\n")
 
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockToolPolicy,
 		Title:       "Runtime tool policy",
 		Source:      "runtime.tool_policy",
-		TokenBudget: 350,
+		TokenBudget: 650,
 		Content:     strings.TrimRight(b.String(), "\n"),
 	}, true
+}
+
+func hasRuntimeToolPolicyContext(policy ToolPolicy, boundary PermissionBoundary) bool {
+	return hasConfiguredToolPolicy(policy) || strings.TrimSpace(boundary.Profile) != ""
 }
 
 func hasConfiguredToolPolicy(policy ToolPolicy) bool {
@@ -83,6 +91,19 @@ func hasConfiguredToolPolicy(policy ToolPolicy) bool {
 		len(policy.ToolActions) > 0 ||
 		len(policy.KindActions) > 0 ||
 		len(policy.RiskActions) > 0
+}
+
+func writePermissionBoundaryContext(b *strings.Builder, profile string) {
+	switch strings.TrimSpace(profile) {
+	case PermissionProfileReadOnly:
+		b.WriteString("boundary: read_only blocks non-read-only file, shell, git, test, process, schedule, agent, workflow, memory, and MCP mutation before approval.\n")
+	case PermissionProfileWorkspaceWrite:
+		b.WriteString("boundary: workspace_write allows workspace edits and approved routine commands, but blocks destructive runtime actions before approval; outside-workspace tool paths are rejected instead of escalated.\n")
+	case PermissionProfileDangerFullAccess:
+		b.WriteString("boundary: danger_full_access removes Wuu's permission boundary and ordinary approvals may be disabled; individual tools still enforce their own hard safety checks.\n")
+	default:
+		fmt.Fprintf(b, "boundary: unknown permission profile %s; stop and report the invalid runtime policy.\n", profile)
+	}
 }
 
 func writeToolPolicyActions(b *strings.Builder, title string, lines []string) {

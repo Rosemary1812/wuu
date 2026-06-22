@@ -4406,6 +4406,30 @@ func TestToolkit_ToolPolicyContextBlockShowsApprovalPolicyAxis(t *testing.T) {
 	}
 }
 
+func TestToolkit_ToolPolicyContextBlockShowsPermissionBoundary(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileWorkspaceWrite))
+
+	block, ok := kit.ToolPolicyContextBlock()
+	if !ok {
+		t.Fatal("expected permission boundary context block")
+	}
+	for _, want := range []string{
+		"permission_profile: workspace_write",
+		"boundary: workspace_write",
+		"permission_boundary is checked before command policy and approval",
+		"hard boundary denials cannot be fixed by setting approval flags",
+	} {
+		if !strings.Contains(block.Content, want) {
+			t.Fatalf("policy block missing %q:\n%s", want, block.Content)
+		}
+	}
+}
+
 func TestToolkit_ToolPolicy_ToolOverrideBeatsRisk(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

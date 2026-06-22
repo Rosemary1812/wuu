@@ -21,6 +21,8 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 		{command: "ls -la", cap: capability.CapabilityCommandBash, want: CommandPolicyAllow, wantName: "bash-readonly-listing"},
 		{command: "pwd", cap: capability.CapabilityCommandBash, want: CommandPolicyAllow, wantName: "bash-readonly-pwd"},
 		{command: "echo hello", cap: capability.CapabilityCommandBash, want: CommandPolicyAllow, wantName: "bash-readonly-echo"},
+		{command: "env", cap: capability.CapabilityCommandBash, want: CommandPolicyExplain, wantName: "bash-env-dump"},
+		{command: "printenv", cap: capability.CapabilityCommandBash, want: CommandPolicyExplain, wantName: "bash-printenv-dump"},
 
 		// Bash: git read-only.
 		{command: "git status", cap: capability.CapabilityCommandBash, want: CommandPolicyAllow, wantName: "bash-git-status"},
@@ -34,8 +36,8 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 		{command: "git add .", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-git-add"},
 		{command: "git commit -m \"x\"", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-git-commit"},
 		{command: "git push origin main", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-git-push"},
-		{command: "git checkout main", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-git-checkout"},
-		{command: "git merge feature", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-git-merge"},
+		{command: "git checkout main", cap: capability.CapabilityCommandBash, want: CommandPolicyExplain, wantName: "bash-git-checkout"},
+		{command: "git merge feature", cap: capability.CapabilityCommandBash, want: CommandPolicyExplain, wantName: "bash-git-merge"},
 
 		// Bash: tests.
 		{command: "npx vitest run", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-vitest"},
@@ -220,6 +222,52 @@ func TestToolkitAppliesDefaultCommandPolicyBeforeBashExecution(t *testing.T) {
 	}
 	if records[0].PolicyAction != ToolPolicyRequireApproval || !strings.Contains(records[0].PolicyReason, "bash-vitest") {
 		t.Fatalf("unexpected command policy telemetry: %+v", records[0])
+	}
+}
+
+func TestDefaultCommandPolicyFallbackRequiresApprovalForUnclassifiedBash(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-migrate",
+		Name:      "bash",
+		Arguments: `{"command":"python scripts/migrate.py"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_required") {
+		t.Fatalf("expected approval_required for unclassified bash command, got %v", err)
+	}
+
+	records := kit.ToolTelemetry()
+	if len(records) != 1 {
+		t.Fatalf("expected one telemetry record, got %d", len(records))
+	}
+	if records[0].PolicyAction != ToolPolicyRequireApproval || !strings.Contains(records[0].PolicyReason, "bash-unclassified-command") {
+		t.Fatalf("unexpected fallback command policy telemetry: %+v", records[0])
+	}
+}
+
+func TestWorkspaceWriteAllowsCommandPolicyAskForPackageInstall(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileWorkspaceWrite))
+
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "call-install",
+		Name:      "bash",
+		Arguments: `{"command":"npm install left-pad"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_required") {
+		t.Fatalf("expected approval_required for package install, got %v", err)
+	}
+	if strings.Contains(err.Error(), "permission_boundary_denied") {
+		t.Fatalf("package install should reach command approval before execution, got %v", err)
 	}
 }
 

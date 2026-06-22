@@ -431,10 +431,7 @@ func defaultPermissionPatterns(call providers.ToolCall) []string {
 
 func shellPermissionRequest(toolName, command string) ToolPermissionRequest {
 	command = strings.TrimSpace(command)
-	patterns := []string{command}
-	if command == "" {
-		patterns = []string{"*"}
-	}
+	patterns := shellPermissionPatterns(command)
 	return ToolPermissionRequest{
 		Permission: string(capability.CapabilityCommandBash),
 		Patterns:   patterns,
@@ -448,10 +445,7 @@ func shellPermissionRequest(toolName, command string) ToolPermissionRequest {
 
 func backgroundPermissionRequest(command string) ToolPermissionRequest {
 	command = strings.TrimSpace(command)
-	patterns := []string{command}
-	if command == "" {
-		patterns = []string{"*"}
-	}
+	patterns := shellPermissionPatterns(command)
 	return ToolPermissionRequest{
 		Permission: string(capability.CapabilityCommandBackground),
 		Patterns:   patterns,
@@ -481,7 +475,15 @@ func backgroundProcessPermissionRequest(processID string) ToolPermissionRequest 
 }
 
 func shellPermissionAlwaysPattern(command string) string {
-	fields := shellPermissionFields(command)
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "*"
+	}
+	subject, ok := shellPermissionCanonicalSubject(command)
+	if !ok {
+		return command
+	}
+	fields := strings.Fields(subject)
 	if len(fields) == 0 {
 		return "*"
 	}
@@ -492,17 +494,51 @@ func shellPermissionAlwaysPattern(command string) string {
 	return strings.Join(fields[:prefixLen], " ") + " *"
 }
 
-func shellPermissionFields(command string) []string {
-	fields := strings.Fields(strings.TrimSpace(command))
-	for len(fields) > 0 && looksLikeEnvAssignment(fields[0]) {
-		fields = fields[1:]
+func shellPermissionPatterns(command string) []string {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return []string{"*"}
 	}
-	return fields
+	patterns := []string{command}
+	if subject, ok := shellPermissionCanonicalSubject(command); ok && subject != command {
+		patterns = append(patterns, subject)
+	}
+	return patterns
+}
+
+func shellPermissionCanonicalSubject(command string) (string, bool) {
+	segments, ok := splitShellCommandSegmentsQuoted(command)
+	if !ok {
+		return "", false
+	}
+	var subject string
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		if subject != "" {
+			return "", false
+		}
+		fields, ok := splitShellFields(segment)
+		if !ok || shellFieldsUseUnsupportedWrapper(fields) {
+			return "", false
+		}
+		fields = normalizeShellCommandFields(fields)
+		if len(fields) == 0 {
+			return "", false
+		}
+		subject = strings.Join(fields, " ")
+	}
+	if subject == "" {
+		return "", false
+	}
+	return subject, true
 }
 
 func shellPermissionKeepsSecondToken(first, second string) bool {
 	switch first {
-	case "cargo", "go", "git", "make", "npm", "pnpm", "yarn", "bun", "deno", "python", "python3", "pip", "pip3", "uv":
+	case "cargo", "go", "git", "make", "npm", "npx", "pnpm", "yarn", "bun", "deno", "python", "python3", "pip", "pip3", "uv":
 		return second != ""
 	default:
 		return false
