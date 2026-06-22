@@ -3345,8 +3345,16 @@
    `.turn-reasoning-summary-text.is-streaming`, so the keyframes
    are shared between the process cluster and the reasoning fold. */
 @keyframes reasoning-shimmer {
-  from { transform: translateX(-50%); }
-  to   { transform: translateX(150%); }
+  /* Absolute px (not %) so every host — short "正在回复 56s" and
+     long "运行命令 · 搜索4项 · 查看 composer.css · 思考过程" alike —
+     moves the bright bar at the same 83 px/s. The % version had a
+     fixed 4.8s period, which read as a slow crawl on short rows
+     and a fast blur on long rows. The trade-off: short rows now
+     spend less of the cycle with the bar inside them, long rows
+     spend more — but the bar's actual speed matches across all
+     rows. */
+  from { transform: translateX(-200px); }
+  to   { transform: translateX(200px); }
 }
 
 .process-cluster-row.is-streaming,
