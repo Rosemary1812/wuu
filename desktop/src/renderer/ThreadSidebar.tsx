@@ -301,20 +301,24 @@ export function ScratchThreadSection({
           <MessageSquarePlus className="icon-xl" />
         </button>
       </div>
-      <div className="scratch-thread-list">
-        <ThreadRows
-          threads={threads}
-          activeID={activeID}
-          pendingThreadID={pendingThreadID}
-          archiveConfirmThreadID={archiveConfirmThreadID}
-          lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-          onSelect={onSelect}
-          onSelectChildAgent={onSelectChildAgent}
-          onTogglePinned={onToggleThreadPinned}
-          onArchive={onArchiveThread}
-          onClearArchiveConfirm={onClearArchiveConfirm}
-        />
-      </div>
+      {threads.length === 0 ? (
+        <div className="scratch-thread-empty-note">还没有对话</div>
+      ) : (
+        <div className="scratch-thread-list">
+          <ThreadRows
+            threads={threads}
+            activeID={activeID}
+            pendingThreadID={pendingThreadID}
+            archiveConfirmThreadID={archiveConfirmThreadID}
+            lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+            onSelect={onSelect}
+            onSelectChildAgent={onSelectChildAgent}
+            onTogglePinned={onToggleThreadPinned}
+            onArchive={onArchiveThread}
+            onClearArchiveConfirm={onClearArchiveConfirm}
+          />
+        </div>
+      )}
     </section>
   );
 }

@@ -222,21 +222,19 @@ export function AppSidebar({
           </section>
         ) : null}
 
-        {scratchThreads.length > 0 ? (
-          <ScratchThreadSection
-            threads={scratchThreads}
-            activeID={activeThreadID}
-            pendingThreadID={pendingThreadID}
-            archiveConfirmThreadID={archiveConfirmThreadID}
-            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-            onSelect={onSelectThread}
-            onSelectChildAgent={onSelectChildAgent}
-            onTogglePinned={onTogglePinned}
-            onArchive={onArchiveThread}
-            onClearArchiveConfirm={onClearArchiveConfirm}
-            onCreateScratchThread={onCreateScratchThread}
-          />
-        ) : null}
+        <ScratchThreadSection
+          threads={scratchThreads}
+          activeID={activeThreadID}
+          pendingThreadID={pendingThreadID}
+          archiveConfirmThreadID={archiveConfirmThreadID}
+          lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+          onSelect={onSelectThread}
+          onSelectChildAgent={onSelectChildAgent}
+          onTogglePinned={onTogglePinned}
+          onArchive={onArchiveThread}
+          onClearArchiveConfirm={onClearArchiveConfirm}
+          onCreateScratchThread={onCreateScratchThread}
+        />
 
         <section className="project-list" aria-label="项目" ref={projectListRef}>
           <div className="project-section-header" ref={projectMenuRef}>

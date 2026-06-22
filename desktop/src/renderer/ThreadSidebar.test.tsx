@@ -229,4 +229,11 @@ describe("ScratchThreadSection", () => {
     });
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
+
+  it("renders an empty hint when there are no scratch threads", () => {
+    renderSection({ onCreateScratchThread: vi.fn() });
+    expect(
+      container.querySelector(".scratch-thread-empty-note")?.textContent,
+    ).toBe("还没有对话");
+  });
 });
