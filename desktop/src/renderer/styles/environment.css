@@ -9,10 +9,6 @@
   width: min(var(--environment-panel-width), calc(100% - 32px));
   max-height: calc(100vh - 86px);
   min-height: 0;
-  /* Scroll the entire stack when EnvironmentPanel + query history together
-     exceed the window. Both children keep their natural card heights, so
-     the rounded white-card visual is preserved — only the stack scrolls. */
-  overflow-y: auto;
   pointer-events: none;
 }
 
@@ -32,20 +28,14 @@
 
 .environment-side-stack > .environment-panel {
   display: flex;
-  /* Keep EnvironmentPanel at its natural content height so the rounded
-     white-card visual is preserved. flex-shrink: 0 stops the parent stack
-     from squashing it when the total height exceeds the window; the stack
-     will scroll instead. */
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   overflow: hidden;
 }
 
 .environment-side-stack > .query-history-environment-slot {
   display: block;
-  /* Same reasoning as the panel above: keep the query history card at its
-     natural content height; let the parent stack scroll. */
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   align-self: stretch;
   overflow: visible;
 }
