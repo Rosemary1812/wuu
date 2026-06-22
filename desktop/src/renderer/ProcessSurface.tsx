@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type JSX,
@@ -12,6 +14,24 @@ import {
   type ToolActivityProcessSegment,
 } from "./ToolActivityHelpers";
 import { ToolActivityTimeline } from "./ToolActivity";
+
+/**
+ * Pixel threshold below which the scroll position is treated as "at the
+ * bottom" by the reasoning auto-follow logic. Smaller than the threshold
+ * means the user's eye is on the latest content and any new growth
+ * should snap them further down; above it we assume the user has
+ * scrolled up to read earlier reasoning and stop auto-following.
+ */
+const REASONING_AUTO_FOLLOW_BOTTOM_PX = 16;
+/**
+ * How long to wait after the fold opens before snapping the reasoning
+ * scroll container to the bottom. The fold body animates via
+ * `grid-template-rows 0fr → 1fr` (~220ms); waiting a touch longer
+ * gives the body height time to settle before we read `scrollHeight`,
+ * so the first snap lands on the actual final extent instead of a
+ * mid-transition value.
+ */
+const REASONING_FOLD_OPEN_SNAP_DELAY_MS = 280;
 
 /**
  * Unified render surface for the process region of a single turn.
@@ -210,17 +230,12 @@ export function ProcessSurface({
           ) : null}
           {hasReasoning && renderReasoningItem ? (
             <div className="process-surface-reasoning-list">
-              {reasoningItems.map((item) => (
-                <span
-                  key={item.id}
-                  className="process-surface-reasoning-item"
-                >
-                  {renderReasoningItem(
-                    item,
-                    streaming && item.status === "in_progress",
-                  )}
-                </span>
-              ))}
+              <ProcessSurfaceReasoningScroll
+                items={reasoningItems}
+                streaming={streaming}
+                renderReasoningItem={renderReasoningItem}
+                foldOpen={expanded}
+              />
             </div>
           ) : null}
         </div>
@@ -282,5 +297,150 @@ function ProcessSurfaceAnimatedCount({
     >
       {value}
     </span>
+  );
+}
+
+/**
+ * Reasoning items rendered inside a single scroll container so the
+ * fold body stays bounded as the model produces long deliberation
+ * trails. The container owns the auto-follow machinery: when the
+ * content height grows (token deltas) it snaps to the bottom unless
+ * the user has scrolled up to read earlier reasoning, in which case
+ * we leave their scroll position alone.
+ *
+ * Extracted from the standalone `ReasoningFold` so the same
+ * scroll-to-bottom behavior is available wherever reasoning appears —
+ * including inside the process cluster, where the reasoning used to
+ * render as plain streaming markdown with no scroll affordance.
+ *
+ * Lifted out so the parent `ProcessSurface` can keep one stable
+ * component identity across "reasoning alone" and "reasoning + tools"
+ * transitions; the cluster-flicker fix depends on the wrapper not
+ * remounting when items arrive, which this component enables by
+ * handling item growth internally instead of being unmounted in
+ * favor of a sibling component.
+ */
+function ProcessSurfaceReasoningScroll({
+  items,
+  streaming,
+  renderReasoningItem,
+  foldOpen,
+}: {
+  items: ThreadItem[];
+  streaming: boolean;
+  renderReasoningItem: (
+    item: ThreadItem,
+    isStreaming: boolean,
+  ) => JSX.Element | null;
+  foldOpen: boolean;
+}): JSX.Element {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const autoFollowRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  const rafRef = useRef<number | undefined>(undefined);
+
+  const snapToBottom = useCallback((): void => {
+    const node = scrollRef.current;
+    if (!node || !autoFollowRef.current) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
+    lastScrollTopRef.current = node.scrollTop;
+  }, []);
+
+  const scheduleFollowUp = useCallback((): void => {
+    const node = scrollRef.current;
+    if (!node || !autoFollowRef.current) {
+      return;
+    }
+    if (rafRef.current !== undefined) {
+      return;
+    }
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = undefined;
+      snapToBottom();
+    });
+  }, [snapToBottom]);
+
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    if (!node) {
+      return undefined;
+    }
+    const handleScroll = (): void => {
+      const distanceFromBottom = Math.max(
+        0,
+        node.scrollHeight - node.scrollTop - node.clientHeight,
+      );
+      const isScrollable = node.scrollHeight > node.clientHeight;
+      const scrolledUp = node.scrollTop < lastScrollTopRef.current;
+      lastScrollTopRef.current = node.scrollTop;
+      const atLatestView =
+        !isScrollable ||
+        distanceFromBottom <= REASONING_AUTO_FOLLOW_BOTTOM_PX;
+      if (atLatestView) {
+        autoFollowRef.current = true;
+      } else if (scrolledUp) {
+        autoFollowRef.current = false;
+      }
+    };
+    node.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      node.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleFollowUp();
+    });
+    resizeObserver.observe(node);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [scheduleFollowUp]);
+
+  // When the fold opens, re-arm auto-follow and snap to the bottom.
+  // The body's `grid-template-rows` transition takes ~220ms; waiting
+  // a touch longer gives the height time to settle before we read
+  // `scrollHeight`, so the first snap lands on the actual final
+  // extent instead of a mid-transition value.
+  useEffect(() => {
+    if (!foldOpen) {
+      return undefined;
+    }
+    autoFollowRef.current = true;
+    lastScrollTopRef.current = 0;
+    const timer = window.setTimeout(() => {
+      snapToBottom();
+    }, REASONING_FOLD_OPEN_SNAP_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [foldOpen, snapToBottom]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== undefined) {
+        window.cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="process-surface-reasoning-scroll" ref={scrollRef}>
+      {items.map((item) => (
+        <div key={item.id} className="process-surface-reasoning-item">
+          {renderReasoningItem(
+            item,
+            streaming && item.status === "in_progress",
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

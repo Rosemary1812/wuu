@@ -355,4 +355,143 @@ describe("ProcessSurface", () => {
     );
     expect(label?.textContent).toBe("思考过程");
   });
+
+  describe("reasoning scroll container", () => {
+    type ScrollLayout = {
+      scrollHeight: number;
+      clientHeight: number;
+      scrollTop: number;
+    };
+
+    function stubScrollLayout(
+      node: HTMLElement,
+      opts: Partial<ScrollLayout>,
+    ): ScrollLayout {
+      const layout: ScrollLayout = {
+        scrollHeight: opts.scrollHeight ?? 1000,
+        clientHeight: opts.clientHeight ?? 200,
+        scrollTop: opts.scrollTop ?? 0,
+      };
+      Object.defineProperty(node, "scrollHeight", {
+        configurable: true,
+        get: () => layout.scrollHeight,
+      });
+      Object.defineProperty(node, "clientHeight", {
+        configurable: true,
+        get: () => layout.clientHeight,
+      });
+      Object.defineProperty(node, "scrollTop", {
+        configurable: true,
+        get: () => layout.scrollTop,
+        set: (value) => {
+          layout.scrollTop = value;
+        },
+      });
+      return layout;
+    }
+
+    it("wraps reasoning items in a scroll container for bounded growth", () => {
+      const { container } = render({
+        processItems: [makeReasoning("reason-1", "thinking aloud", "in_progress")],
+        streaming: true,
+        renderReasoningItem: (item) => (
+          <span data-testid="reasoning-mock">{item.id}</span>
+        ),
+      });
+      const scroll = container.querySelector(
+        ".process-surface-reasoning-scroll",
+      );
+      expect(scroll).toBeTruthy();
+      const items = scroll?.querySelectorAll(
+        ".process-surface-reasoning-item",
+      );
+      expect(items?.length).toBe(1);
+      // The mock item is wrapped inside the reasoning item slot.
+      const mock = scroll?.querySelector('[data-testid="reasoning-mock"]');
+      expect(mock?.textContent).toBe("reason-1");
+    });
+
+    it("snaps the reasoning scroll container to the bottom when the fold opens", async () => {
+      const { container } = render({
+        processItems: [makeReasoning("reason-1", "thinking aloud", "completed")],
+        // streaming=true auto-opens the fold, which is the production
+        // entry path: the user sees the reasoning scroll snap to its
+        // tail the moment the surface mounts in its expanded state.
+        streaming: true,
+        renderReasoningItem: (item) => <span>{item.id}</span>,
+      });
+      const details = container.querySelector(
+        "details.process-surface-fold",
+      ) as HTMLElement | null;
+      expect(details).toBeTruthy();
+      const scroll = details?.querySelector(
+        ".process-surface-reasoning-scroll",
+      ) as HTMLElement | null;
+      expect(scroll).toBeTruthy();
+
+      // jsdom does not lay out real heights — mock the scroll geometry
+      // so snap-to-bottom has measurable values to read.
+      const layout = stubScrollLayout(scroll!, {
+        scrollHeight: 1000,
+        clientHeight: 200,
+      });
+
+      // The fold-open snap fires ~280ms after mount. Wait it out.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+
+      expect(layout.scrollTop).toBe(1000);
+    });
+
+    it("snaps again on every fold re-open so the user always lands on the latest reasoning", async () => {
+      const { container } = render({
+        processItems: [makeReasoning("reason-1", "thinking aloud", "completed")],
+        streaming: true,
+        renderReasoningItem: (item) => <span>{item.id}</span>,
+      });
+      const details = container.querySelector(
+        "details.process-surface-fold",
+      ) as HTMLDetailsElement | null;
+      const scroll = details?.querySelector(
+        ".process-surface-reasoning-scroll",
+      ) as HTMLElement | null;
+      const layout = stubScrollLayout(scroll!, {
+        scrollHeight: 1000,
+        clientHeight: 200,
+      });
+
+      // First snap (initial open).
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      expect(layout.scrollTop).toBe(1000);
+
+      // User scrolls up to read earlier reasoning.
+      act(() => {
+        scroll!.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
+      });
+      layout.scrollTop = 240;
+      act(() => {
+        scroll!.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
+      });
+
+      // User collapses then re-expands the fold; the scroll should
+      // snap back to the latest reasoning so they land on it instead
+      // of where they were when they collapsed.
+      details!.open = false;
+      act(() => {
+        details!.dispatchEvent(new Event("toggle", { bubbles: true }));
+      });
+      details!.open = true;
+      act(() => {
+        details!.dispatchEvent(new Event("toggle", { bubbles: true }));
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+
+      expect(layout.scrollTop).toBe(1000);
+    });
+  });
 });
