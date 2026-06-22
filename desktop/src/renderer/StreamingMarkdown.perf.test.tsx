@@ -11,12 +11,48 @@
  *
  * These thresholds are deliberately generous so CI machines under load
  * don't flake. The real-world budget is much tighter.
+ *
+ * The renderer is mocked so the perf measurement isolates the
+ * streaming layer's RAF/split/memo overhead from Streamdown's parse
+ * and Shiki's highlight work, both of which are already covered by
+ * their own tests in the upstream packages.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
+
+vi.mock("streamdown", async () => {
+  const React = await import("react");
+  return {
+    Streamdown: ({ children }: { children?: import("react").ReactNode }) =>
+      React.createElement("div", { "data-mock-streamdown": "true" }, children)
+  };
+});
+
+vi.mock("@streamdown/code", () => ({
+  createCodePlugin: () => ({
+    name: "shiki",
+    type: "code-highlighter",
+    getSupportedLanguages: () => [],
+    getThemes: () => ["github-light", "github-dark"],
+    highlight: () => null,
+    supportsLanguage: () => false
+  })
+}));
+
+vi.mock("@streamdown/mermaid", () => ({
+  createMermaidPlugin: () => ({
+    name: "mermaid",
+    type: "diagram",
+    language: "mermaid",
+    getMermaid: () => ({
+      initialize: () => undefined,
+      render: async () => ({ svg: "" })
+    })
+  })
+}));
 
 const sectionTemplate = `## 标题 N
 
