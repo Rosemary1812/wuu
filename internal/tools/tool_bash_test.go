@@ -97,6 +97,43 @@ func TestBashRunResolvesLocalNpxVerificationRunner(t *testing.T) {
 	}
 }
 
+func TestBashRunResolvesLocalNpxTypecheckRunner(t *testing.T) {
+	root := t.TempDir()
+	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "tsc")
+	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf 'local tsc %s\\n' \"$*\"\n")
+	if err := os.Chmod(runnerPath, 0o755); err != nil {
+		t.Fatalf("chmod runner: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"cd desktop && npx tsc --noEmit","scope":"targeted"}`,
+	})
+	if err != nil {
+		t.Fatalf("bash npx tsc: %v", err)
+	}
+	var parsed shellExecutionResult
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse bash result: %v\n%s", err, resp)
+	}
+	if parsed.RequestedCommand != "cd desktop && npx tsc --noEmit" {
+		t.Fatalf("requested command not preserved: %+v", parsed)
+	}
+	if parsed.Command != "cd desktop && ./node_modules/.bin/tsc --noEmit" || parsed.ResolvedCommand != parsed.Command {
+		t.Fatalf("npx tsc command was not resolved to local runner: %+v", parsed)
+	}
+	if parsed.Verification == nil || !parsed.Verification.Passed {
+		t.Fatalf("local tsc verification should pass: %+v", parsed.Verification)
+	}
+	if !strings.Contains(parsed.Output, "local tsc --noEmit") {
+		t.Fatalf("local tsc output missing: %+v", parsed)
+	}
+}
+
 func TestBashRunResolvesWrappedLocalNpxVerificationRunner(t *testing.T) {
 	root := t.TempDir()
 	runnerPath := filepath.Join(root, "node_modules", ".bin", "vitest")

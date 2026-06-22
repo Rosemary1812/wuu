@@ -41,10 +41,12 @@ func TestDefaultCommandPolicyRulesCoversRequiredBashPatterns(t *testing.T) {
 		{command: "npx vitest run", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-vitest"},
 		{command: "npx vitest run --reporter=verbose", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-vitest"},
 		{command: "npx jest", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-jest"},
+		{command: "npx tsc --noEmit", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-tsc"},
 		{command: "pytest -k smoke", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-pytest"},
 		{command: "go test ./...", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-go-test"},
 		{command: "cargo test --workspace", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-cargo-test"},
 		{command: "npm test", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-npm-test"},
+		{command: "npm run typecheck", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-npm-typecheck"},
 		{command: "npm run build", cap: capability.CapabilityCommandBash, want: CommandPolicyAsk, wantName: "bash-npm-build"},
 
 		// Bash: package install.
@@ -141,6 +143,12 @@ func TestShellPackageNetworkMutationRequiresCoveredCommandPolicyRule(t *testing.
 	}
 	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("timeout 10 npx vitest run") {
 		t.Fatal("wrapped npx vitest should be covered by the default command policy")
+	}
+	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("cd desktop && npx tsc --noEmit") {
+		t.Fatal("directory-scoped npx tsc should be covered by the default command policy")
+	}
+	if shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("cd desktop && npx tsc --noEmit 2>&1 | tail -30") {
+		t.Fatal("piped npx tsc should not be covered because it cannot be safely rewritten to a local runner")
 	}
 	if !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy("nice npm install left-pad") {
 		t.Fatal("wrapped npm install should be covered by the default command policy")

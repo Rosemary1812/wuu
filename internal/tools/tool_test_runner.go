@@ -626,7 +626,7 @@ func npxVerificationRunnerIndex(fields []string, npxIdx int) (int, bool) {
 
 func jsVerificationRunnerName(name string) bool {
 	switch jsRunnerBaseName(name) {
-	case "vitest", "jest", "mocha", "ava", "tap":
+	case "vitest", "jest", "mocha", "ava", "tap", "tsc":
 		return true
 	default:
 		return false

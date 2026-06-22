@@ -87,13 +87,14 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 		{Name: "bash-git-checkout", Capability: capability.CapabilityCommandBash, Pattern: "git checkout *", Action: CommandPolicyAsk, Reason: "git checkout switches the working tree"},
 		{Name: "bash-git-merge", Capability: capability.CapabilityCommandBash, Pattern: "git merge *", Action: CommandPolicyAsk, Reason: "git merge combines histories"},
 
-		// Test runners: ask. The legacy harness used to reject npx
-		// vitest inside run_shell and redirect to run_test. Under
-		// the bash-first surface bash is the only test entry point,
-		// and these patterns route the call to an approval request
-		// instead of a hard error so the user can opt in.
+		// Test and verification runners: ask. The legacy harness used
+		// to reject npx vitest inside run_shell and redirect to
+		// run_test. Under the bash-first surface bash is the only test
+		// entry point, and these patterns route the call to an approval
+		// request instead of a hard error so the user can opt in.
 		{Name: "bash-vitest", Capability: capability.CapabilityCommandBash, Pattern: "npx vitest *", Action: CommandPolicyAsk, Reason: "vitest test runner"},
 		{Name: "bash-jest", Capability: capability.CapabilityCommandBash, Pattern: "npx jest *", Action: CommandPolicyAsk, Reason: "jest test runner"},
+		{Name: "bash-tsc", Capability: capability.CapabilityCommandBash, Pattern: "npx tsc *", Action: CommandPolicyAsk, Reason: "TypeScript typecheck runner"},
 		{Name: "bash-pytest", Capability: capability.CapabilityCommandBash, Pattern: "pytest *", Action: CommandPolicyAsk, Reason: "pytest test runner"},
 		{Name: "bash-go-test", Capability: capability.CapabilityCommandBash, Pattern: "go test *", Action: CommandPolicyAsk, Reason: "go test runner"},
 		{Name: "bash-cargo-test", Capability: capability.CapabilityCommandBash, Pattern: "cargo test *", Action: CommandPolicyAsk, Reason: "cargo test runner"},
@@ -102,6 +103,7 @@ func DefaultCommandPolicyRules() []CommandPolicyRule {
 		{Name: "bash-go-build", Capability: capability.CapabilityCommandBash, Pattern: "go build *", Action: CommandPolicyAsk, Reason: "go build emits binaries"},
 		{Name: "bash-npm-build", Capability: capability.CapabilityCommandBash, Pattern: "npm run build *", Action: CommandPolicyAsk, Reason: "npm build runs the project build script"},
 		{Name: "bash-npm-test", Capability: capability.CapabilityCommandBash, Pattern: "npm test *", Action: CommandPolicyAsk, Reason: "npm test runs the project test script"},
+		{Name: "bash-npm-typecheck", Capability: capability.CapabilityCommandBash, Pattern: "npm run typecheck *", Action: CommandPolicyAsk, Reason: "npm typecheck runs the project typecheck script"},
 
 		// Package install: ask. Install commands can mutate the
 		// network, the lockfile, and the dependency graph; the

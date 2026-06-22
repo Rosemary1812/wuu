@@ -223,6 +223,9 @@ func shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(command string) 
 		if !shellFieldsLookLikePackageOrNetworkMutation(fields) {
 			continue
 		}
+		if shellCommandBaseName(fields[0]) == "npx" && !testCommandLooksLikeLocalRunnerVerification(segment) {
+			return false
+		}
 		decision, ok := DecideNamedCommandPolicy(DefaultCommandPolicyRules(), capability.CapabilityCommandBash, strings.Join(fields, " "))
 		if !ok || decision.Action == CommandPolicyDeny || decision.Action == CommandPolicyExplain {
 			return false
