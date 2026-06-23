@@ -84,108 +84,110 @@ export function SessionTabStrip({
 
   return (
     <div className="session-tab-strip" aria-label="已打开的工作对象">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        modifiers={[restrictToHorizontalAxis]}
-        onDragStart={startDrag}
-        onDragEnd={endDrag}
-        onDragCancel={cancelDrag}
-      >
-        <SortableContext
-          items={state.sessionTabs.map((tab) => tab.id)}
-          strategy={horizontalListSortingStrategy}
+      <div className="session-tab-list-shell">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToHorizontalAxis]}
+          onDragStart={startDrag}
+          onDragEnd={endDrag}
+          onDragCancel={cancelDrag}
         >
-          <div className="session-tab-scroll">
-            {state.sessionTabs.map((tab) => {
-              const active = tab.id === state.activeSessionTabID;
-              const tabThread =
-                tab.kind === "thread"
-                  ? threadForTab(state, tab.threadID)
-                  : undefined;
-              const running = isThreadRunning(tabThread);
-              const pendingSwitch =
-                pendingSwitchThreadID !== undefined &&
-                tab.kind === "thread" &&
-                pendingSwitchThreadID === tab.threadID;
-              const pendingCount =
-                tab.kind === "thread"
-                  ? pendingComposerMessageCount(
-                      pendingComposerMessagesForThread(
-                        pendingComposerMessagesByThread,
-                        tab.threadID,
-                      ),
-                    )
-                  : 0;
-              const unread =
-                !active &&
-                !running &&
-                !pendingSwitch &&
-                isThreadUnread(
-                  tabThread,
-                  tabThread ? state.lastViewedTurnByThreadID[tabThread.id] : undefined,
+          <SortableContext
+            items={state.sessionTabs.map((tab) => tab.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div className="session-tab-scroll">
+              {state.sessionTabs.map((tab) => {
+                const active = tab.id === state.activeSessionTabID;
+                const tabThread =
+                  tab.kind === "thread"
+                    ? threadForTab(state, tab.threadID)
+                    : undefined;
+                const running = isThreadRunning(tabThread);
+                const pendingSwitch =
+                  pendingSwitchThreadID !== undefined &&
+                  tab.kind === "thread" &&
+                  pendingSwitchThreadID === tab.threadID;
+                const pendingCount =
+                  tab.kind === "thread"
+                    ? pendingComposerMessageCount(
+                        pendingComposerMessagesForThread(
+                          pendingComposerMessagesByThread,
+                          tab.threadID,
+                        ),
+                      )
+                    : 0;
+                const unread =
+                  !active &&
+                  !running &&
+                  !pendingSwitch &&
+                  isThreadUnread(
+                    tabThread,
+                    tabThread ? state.lastViewedTurnByThreadID[tabThread.id] : undefined,
+                  );
+                const label = sessionTabLabel(tab, state);
+                const closeLabel =
+                  tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
+                return (
+                  <SortableSessionTab
+                    key={tab.id}
+                    id={tab.id}
+                    active={active}
+                    running={running}
+                    pendingSwitch={pendingSwitch}
+                    pendingCount={pendingCount}
+                    unread={unread}
+                    label={label}
+                    closeLabel={closeLabel}
+                    reorderable={state.sessionTabs.length > 1}
+                    onSelect={() => onSelect(tab.id)}
+                    onClose={() => onClose(tab.id)}
+                  />
                 );
-              const label = sessionTabLabel(tab, state);
-              const closeLabel =
-                tab.kind === "draft" ? "关闭新对话" : `关闭 ${label}`;
-              return (
-                <SortableSessionTab
-                  key={tab.id}
-                  id={tab.id}
-                  active={active}
-                  running={running}
-                  pendingSwitch={pendingSwitch}
-                  pendingCount={pendingCount}
-                  unread={unread}
-                  label={label}
-                  closeLabel={closeLabel}
-                  reorderable={state.sessionTabs.length > 1}
-                  onSelect={() => onSelect(tab.id)}
-                  onClose={() => onClose(tab.id)}
-                />
-              );
-            })}
-          </div>
-        </SortableContext>
-        <DragOverlay
-          dropAnimation={{
-            duration: 150,
-            easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-          }}
-        >
-          {draggingTab ? (
-            <SessionTabDragPreview
-              active={draggingTab.id === state.activeSessionTabID}
-              label={sessionTabLabel(draggingTab, state)}
-              pendingCount={
-                draggingTab.kind === "thread"
-                  ? pendingComposerMessageCount(
-                      pendingComposerMessagesForThread(
-                        pendingComposerMessagesByThread,
-                        draggingTab.threadID,
-                      ),
-                    )
-                  : 0
-              }
-              running={
-                draggingTab.kind === "thread"
-                  ? isThreadRunning(threadForTab(state, draggingTab.threadID))
-                  : false
-              }
-              unread={
-                draggingTab.id !== state.activeSessionTabID &&
-                draggingTab.kind === "thread" &&
-                !isThreadRunning(threadForTab(state, draggingTab.threadID)) &&
-                isThreadUnread(
-                  threadForTab(state, draggingTab.threadID),
-                  state.lastViewedTurnByThreadID[draggingTab.threadID],
-                )
-              }
-              width={draggingTabWidth}
-            />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+              })}
+            </div>
+          </SortableContext>
+          <DragOverlay
+            dropAnimation={{
+              duration: 150,
+              easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
+          >
+            {draggingTab ? (
+              <SessionTabDragPreview
+                active={draggingTab.id === state.activeSessionTabID}
+                label={sessionTabLabel(draggingTab, state)}
+                pendingCount={
+                  draggingTab.kind === "thread"
+                    ? pendingComposerMessageCount(
+                        pendingComposerMessagesForThread(
+                          pendingComposerMessagesByThread,
+                          draggingTab.threadID,
+                        ),
+                      )
+                    : 0
+                }
+                running={
+                  draggingTab.kind === "thread"
+                    ? isThreadRunning(threadForTab(state, draggingTab.threadID))
+                    : false
+                }
+                unread={
+                  draggingTab.id !== state.activeSessionTabID &&
+                  draggingTab.kind === "thread" &&
+                  !isThreadRunning(threadForTab(state, draggingTab.threadID)) &&
+                  isThreadUnread(
+                    threadForTab(state, draggingTab.threadID),
+                    state.lastViewedTurnByThreadID[draggingTab.threadID],
+                  )
+                }
+                width={draggingTabWidth}
+              />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
       <button
         className="icon-button workspace-panel-add session-tab-new"
         type="button"

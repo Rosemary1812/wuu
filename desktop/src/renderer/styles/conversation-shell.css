@@ -104,9 +104,17 @@
   overflow: hidden;
 }
 
+.session-tab-list-shell {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
 .session-tab-scroll {
   display: flex;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   flex: 1 1 0%;
   align-items: center;
   gap: 7px;

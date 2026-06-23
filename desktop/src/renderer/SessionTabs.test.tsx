@@ -188,6 +188,7 @@ describe("SessionTabStrip layout styles", () => {
     const titleBlockRule = cssRule(".title-block");
     const titleActionsRule = cssRule(".title-actions");
     const tabStripRule = cssRule(".session-tab-strip");
+    const tabListShellRule = cssRule(".session-tab-list-shell");
     const tabScrollRule = cssRule(".session-tab-scroll");
     const tabRule = cssRule(".session-tab");
     const closeRule = cssRule(".session-tab-close");
@@ -209,12 +210,45 @@ describe("SessionTabStrip layout styles", () => {
       "grid-template-columns: minmax(0, 1fr) max-content;",
     );
     expect(tabStripRule).toContain("overflow: hidden;");
+    expect(tabListShellRule).toContain("min-width: 0;");
+    expect(tabListShellRule).toContain("max-width: 100%;");
+    expect(tabListShellRule).toContain("overflow: hidden;");
+    expect(tabScrollRule).toContain("width: 100%;");
     expect(tabScrollRule).toContain("flex: 1 1 0%;");
+    expect(tabScrollRule).toContain("max-width: 100%;");
     expect(tabScrollRule).toContain("overflow-x: auto;");
     expect(tabRule).toContain("flex: 1 1 0%;");
     expect(tabRule).toContain("min-width: 56px;");
     expect(tabRule).toContain("max-width: 236px;");
     expect(closeRule).toContain("width: 24px;");
     expect(closeRule).toContain("flex: 0 0 auto;");
+  });
+
+  it("keeps drag internals inside the tab list column", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const threadA = makeThread("thread-a", "Thread A");
+    const threadB = makeThread("thread-b", "Thread B");
+    renderTabs({
+      ...initialState,
+      activeContext: context,
+      thread: threadA,
+      activeSessionTabID: threadSessionTabID(threadA.id),
+      sessionTabs: [
+        createThreadSessionTab(threadA, context),
+        createThreadSessionTab(threadB, context),
+      ],
+      threads: [threadA, threadB],
+    });
+
+    const strip = container.querySelector(".session-tab-strip");
+    const directChildren = Array.from(strip?.children ?? []);
+    expect(directChildren).toHaveLength(2);
+    expect(directChildren[0]?.classList.contains("session-tab-list-shell")).toBe(true);
+    expect(directChildren[0]?.querySelector(".session-tab-scroll")).not.toBeNull();
+    expect(directChildren[1]?.classList.contains("session-tab-new")).toBe(true);
   });
 });
