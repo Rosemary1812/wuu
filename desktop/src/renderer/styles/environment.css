@@ -148,7 +148,7 @@
   margin-bottom: 10px;
   padding: 3px 8px 13px;
   max-height: min(320px, calc(100vh - 360px));
-  min-height: clamp(96px, 22vh, 168px);
+  min-height: clamp(120px, 24vh, 220px);
   contain: layout paint;
 }
 
@@ -157,6 +157,7 @@
   width: 100%;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   gap: 8px;
 }
 
@@ -194,17 +195,17 @@
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
   line-height: 1.25;
-  animation: environment-plan-item-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: environment-plan-item-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .environment-plan-item:nth-child(1) { animation-delay: 0ms; }
-.environment-plan-item:nth-child(2) { animation-delay: 60ms; }
-.environment-plan-item:nth-child(3) { animation-delay: 120ms; }
-.environment-plan-item:nth-child(4) { animation-delay: 180ms; }
-.environment-plan-item:nth-child(5) { animation-delay: 240ms; }
-.environment-plan-item:nth-child(6) { animation-delay: 300ms; }
-.environment-plan-item:nth-child(7) { animation-delay: 360ms; }
-.environment-plan-item:nth-child(8) { animation-delay: 420ms; }
+.environment-plan-item:nth-child(2) { animation-delay: 40ms; }
+.environment-plan-item:nth-child(3) { animation-delay: 80ms; }
+.environment-plan-item:nth-child(4) { animation-delay: 120ms; }
+.environment-plan-item:nth-child(5) { animation-delay: 160ms; }
+.environment-plan-item:nth-child(6) { animation-delay: 200ms; }
+.environment-plan-item:nth-child(7) { animation-delay: 240ms; }
+.environment-plan-item:nth-child(8) { animation-delay: 280ms; }
 
 .environment-plan-item > span:last-child {
   min-width: 0;
