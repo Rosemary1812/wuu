@@ -52,7 +52,6 @@ type PermissionModeOption = {
   mode: PermissionMode;
   label: string;
   chipLabel: string;
-  short: string;
   icon: LucideIcon;
   chipTone: ChipTone;
   tone?: "danger";
@@ -63,7 +62,6 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "read_only",
     label: "只读",
     chipLabel: "只读",
-    short: "只允许读取、搜索和计划",
     icon: BookOpen,
     chipTone: "safe"
   },
@@ -71,7 +69,6 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "agent",
     label: "默认",
     chipLabel: "默认",
-    short: "工作区内执行，高风险操作会确认",
     icon: ShieldCheck,
     chipTone: "accent"
   },
@@ -79,7 +76,6 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "auto_review",
     label: "替我审批",
     chipLabel: "替我审批",
-    short: "同一工具边界，由审查器处理确认",
     icon: ShieldQuestion,
     chipTone: "review"
   },
@@ -87,7 +83,6 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    short: "跳过确认，移除工作区和网络边界",
     icon: ShieldAlert,
     chipTone: "danger",
     tone: "danger"
@@ -98,7 +93,6 @@ const CUSTOM_PERMISSION_MODE_OPTION: Omit<PermissionModeOption, "mode"> & { mode
   mode: "custom",
   label: "自定义权限",
   chipLabel: "自定义权限",
-  short: "当前三轴不匹配任何预设",
   icon: ShieldQuestion,
   chipTone: "review"
 };
@@ -494,7 +488,7 @@ export function AccessMenu({
       {hasOverrides ? (
         <div className="composer-menu-note">
           <strong>自定义权限</strong>
-          <span>当前三轴不匹配预设或包含能力规则；选择任一模式会改为该预设</span>
+          <span>当前设置不匹配任何预设；选择任一模式会改为该预设</span>
         </div>
       ) : null}
       {PERMISSION_MODE_OPTIONS.map((option) => (
@@ -503,7 +497,7 @@ export function AccessMenu({
           className={`permission-mode-option${option.tone === "danger" ? " danger" : ""}`}
           role="menuitemradio"
           aria-checked={activeMode === option.mode}
-          aria-label={`${option.label}：${option.short}`}
+          aria-label={option.label}
           type="button"
           disabled={disabled}
           onClick={() => onSelect(option.mode)}
