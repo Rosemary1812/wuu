@@ -30,8 +30,13 @@ var protectedToolResults = map[string]bool{
 // the context window, defeating the purpose of compaction.
 const maxCompactOutputChars = 80_000
 const (
-	compactSummaryMaxTokens      = 4096
-	compactPartialMinOutputChars = 200
+	compactSummaryMaxTokens       = 4096
+	compactPartialMinOutputChars  = 200
+	compactSummaryInputMaxTokens  = 80_000
+	compactSummaryInputMinTokens  = 4_000
+	compactSummaryInputFraction   = 0.5
+	compactPromptContentMaxChars  = 500
+	compactPromptToolArgsMaxChars = 200
 )
 
 const (
@@ -254,58 +259,94 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 	toSummarize := pruneOldToolResults(conversationForCompact[:keepStart])
 	toKeep := conversationForCompact[keepStart:]
 
-	for attempt := 0; ; attempt++ {
-		summaryInput := buildSummaryPrompt(toSummarize, previousSummary)
-		summaryReq := providers.ChatRequest{
-			Model: model,
-			Messages: []providers.ChatMessage{
-				{Role: "system", Content: "You summarize coding-agent conversations for context compaction. Follow the user's required format exactly. Do not call tools."},
-				{Role: "user", Content: summaryInput},
-			},
-			Temperature: 0.3,
-			MaxTokens:   compactSummaryMaxTokens,
-			ProviderOptions: map[string]any{
-				"textVerbosity": "low",
-			},
-		}
+	summary, err := summarizeCompactHistory(ctx, client, model, budget, toSummarize, previousSummary)
+	if err != nil {
+		return messages, err
+	}
+	if summary == "" {
+		return messages, nil
+	}
 
+	summaryDiscoveredTools := providers.MergeLoadableToolDefinitions(
+		previousSummaryDiscoveredTools,
+		providers.DiscoveredToolsFromMessages(conversationForCompact[:keepStart]),
+	)
+	compacted := providers.CloneChatMessages(systemPrefix)
+	compacted = append(compacted, providers.ChatMessage{
+		Role:            "system",
+		Content:         BuildSummaryContent(summary),
+		DiscoveredTools: summaryDiscoveredTools,
+	})
+	compacted = append(compacted, providers.CloneChatMessages(toKeep)...)
+	return compacted, nil
+}
+
+func summarizeCompactHistory(ctx context.Context, client providers.Client, model string, budget Budget, messages []providers.ChatMessage, previousSummary string) (string, error) {
+	if len(messages) == 0 {
+		return strings.TrimSpace(previousSummary), nil
+	}
+	inputBudget := compactSummaryInputBudgetForBudget(model, budget)
+	summary := strings.TrimSpace(previousSummary)
+	remaining := messages
+	for len(remaining) > 0 {
+		n := compactSummaryChunkSize(remaining, summary, inputBudget)
+		if n <= 0 {
+			n = 1
+		}
+		chunk := remaining[:n]
+		next, err := summarizeCompactChunk(ctx, client, model, chunk, summary)
+		if err != nil {
+			return "", err
+		}
+		summary = limitSummaryOutput(FormatSummary(next))
+		remaining = remaining[n:]
+	}
+	return summary, nil
+}
+
+func limitSummaryOutput(summary string) string {
+	if len(summary) <= maxCompactOutputChars {
+		return summary
+	}
+	cut := maxCompactOutputChars
+	for cut > 0 && summary[cut-1]&0xC0 == 0x80 {
+		cut--
+	}
+	return summary[:cut]
+}
+
+func summarizeCompactChunk(ctx context.Context, client providers.Client, model string, messages []providers.ChatMessage, previousSummary string) (string, error) {
+	toSummarize := messages
+	for attempt := 0; ; attempt++ {
+		summaryReq := compactSummaryRequest(model, buildSummaryPrompt(toSummarize, previousSummary))
 		resp, err := summarizeCompact(ctx, client, summaryReq)
 		if err != nil {
 			// If the summary request itself overflowed the model's
-			// context window, drop the oldest message from the slice
-			// being summarized and try again. This is the "compact-
-			// of-compact" backstop borrowed from Codex CLI.
+			// context window, drop the oldest message from this chunk and try
+			// again. The chunker prevents normal huge histories from reaching
+			// this path; this remains a backstop for provider-specific counting.
 			if providers.IsContextOverflow(err) && attempt < maxCompactRetries && len(toSummarize) > 1 {
 				toSummarize = toSummarize[1:]
 				continue
 			}
-			return messages, fmt.Errorf("compact summary failed: %w", err)
+			return "", fmt.Errorf("compact summary failed: %w", err)
 		}
+		return resp.Content, nil
+	}
+}
 
-		summary := FormatSummary(resp.Content)
-		if len(summary) > maxCompactOutputChars {
-			cut := maxCompactOutputChars
-			for cut > 0 && summary[cut-1]&0xC0 == 0x80 {
-				cut--
-			}
-			summary = summary[:cut]
-		}
-		if summary == "" {
-			return messages, nil
-		}
-
-		summaryDiscoveredTools := providers.MergeLoadableToolDefinitions(
-			previousSummaryDiscoveredTools,
-			providers.DiscoveredToolsFromMessages(conversationForCompact[:keepStart]),
-		)
-		compacted := providers.CloneChatMessages(systemPrefix)
-		compacted = append(compacted, providers.ChatMessage{
-			Role:            "system",
-			Content:         BuildSummaryContent(summary),
-			DiscoveredTools: summaryDiscoveredTools,
-		})
-		compacted = append(compacted, providers.CloneChatMessages(toKeep)...)
-		return compacted, nil
+func compactSummaryRequest(model, prompt string) providers.ChatRequest {
+	return providers.ChatRequest{
+		Model: model,
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "You summarize coding-agent conversations for context compaction. Follow the user's required format exactly. Do not call tools."},
+			{Role: "user", Content: prompt},
+		},
+		Temperature: 0.3,
+		MaxTokens:   compactSummaryMaxTokens,
+		ProviderOptions: map[string]any{
+			"textVerbosity": "low",
+		},
 	}
 }
 
@@ -519,6 +560,24 @@ func compactTailBudget(model string, maxContextTokens int) int {
 	return compactTailBudgetForBudget(model, Budget{ContextTokens: maxContextTokens})
 }
 
+func compactSummaryInputBudgetForBudget(model string, budget Budget) int {
+	usable := compactUsableInputWindow(model, budget)
+	if usable <= 0 {
+		usable = providers.ContextWindowFor(model) - providers.MaxOutputTokensFor(model)
+	}
+	if usable <= 0 {
+		return compactSummaryInputMinTokens
+	}
+	inputBudget := int(float64(usable) * compactSummaryInputFraction)
+	if inputBudget > compactSummaryInputMaxTokens {
+		return compactSummaryInputMaxTokens
+	}
+	if inputBudget < compactSummaryInputMinTokens {
+		return min(usable, compactSummaryInputMinTokens)
+	}
+	return inputBudget
+}
+
 func compactTailBudgetForBudget(model string, budget Budget) int {
 	usable := compactUsableInputWindow(model, budget)
 	tailBudget := int(float64(usable) * compactTailContextFraction)
@@ -561,6 +620,35 @@ func compactUsableInputWindow(model string, budget Budget) int {
 		return window
 	}
 	return max(0, window-outputReserve)
+}
+
+func compactSummaryChunkSize(messages []providers.ChatMessage, previousSummary string, inputBudget int) int {
+	if len(messages) <= 1 {
+		return len(messages)
+	}
+	if inputBudget <= 0 {
+		inputBudget = compactSummaryInputMinTokens
+	}
+	total := EstimateTokens(buildSummaryPrompt(nil, previousSummary))
+	keep := 0
+	for keep < len(messages) {
+		next := compactSummaryPromptMessageTokens(messages[keep])
+		if keep > 0 && total+next > inputBudget {
+			break
+		}
+		total += next
+		keep++
+	}
+	if keep == 0 {
+		return 1
+	}
+	return keep
+}
+
+func compactSummaryPromptMessageTokens(msg providers.ChatMessage) int {
+	var b strings.Builder
+	writeSummaryPromptMessage(&b, msg)
+	return EstimateTokens(b.String())
 }
 
 type compactTurn struct {
@@ -867,23 +955,27 @@ func buildSummaryPrompt(toSummarize []providers.ChatMessage, previousSummary str
 	}
 	b.WriteString("--- Conversation to summarize ---\n\n")
 	for _, msg := range toSummarize {
-		fmt.Fprintf(&b, "[%s]: %s\n", msg.Role, truncate(msg.Content, 500))
-		for _, image := range msg.Images {
-			mediaType := strings.TrimSpace(image.MediaType)
-			if mediaType == "" {
-				mediaType = "image"
-			}
-			fmt.Fprintf(&b, "  [image omitted: %s, %d base64 characters]\n", mediaType, len(strings.TrimSpace(image.Data)))
-		}
-		for _, tc := range msg.ToolCalls {
-			fmt.Fprintf(&b, "  -> tool_call: %s(%s)\n", tc.Name, truncate(tc.Arguments, 200))
-		}
-		if msg.ToolCallID != "" {
-			fmt.Fprintf(&b, "  (result for tool call %s)\n", msg.ToolCallID)
-		}
-		b.WriteString("\n")
+		writeSummaryPromptMessage(&b, msg)
 	}
 	return b.String()
+}
+
+func writeSummaryPromptMessage(b *strings.Builder, msg providers.ChatMessage) {
+	fmt.Fprintf(b, "[%s]: %s\n", msg.Role, truncate(msg.Content, compactPromptContentMaxChars))
+	for _, image := range msg.Images {
+		mediaType := strings.TrimSpace(image.MediaType)
+		if mediaType == "" {
+			mediaType = "image"
+		}
+		fmt.Fprintf(b, "  [image omitted: %s, %d base64 characters]\n", mediaType, len(strings.TrimSpace(image.Data)))
+	}
+	for _, tc := range msg.ToolCalls {
+		fmt.Fprintf(b, "  -> tool_call: %s(%s)\n", tc.Name, truncate(tc.Arguments, compactPromptToolArgsMaxChars))
+	}
+	if msg.ToolCallID != "" {
+		fmt.Fprintf(b, "  (result for tool call %s)\n", msg.ToolCallID)
+	}
+	b.WriteString("\n")
 }
 
 func isCJK(r rune) bool {

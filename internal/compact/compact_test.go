@@ -98,6 +98,17 @@ func (m *mockCompactClient) Chat(_ context.Context, req providers.ChatRequest) (
 	return providers.ChatResponse{Content: m.response}, nil
 }
 
+type chunkRecordingCompactClient struct {
+	prompts []string
+}
+
+func (c *chunkRecordingCompactClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	if len(req.Messages) >= 2 {
+		c.prompts = append(c.prompts, req.Messages[1].Content)
+	}
+	return providers.ChatResponse{Content: "summary chunk"}, nil
+}
+
 type partialStreamCompactClient struct {
 	events      []providers.StreamEvent
 	lastRequest providers.ChatRequest
@@ -370,6 +381,38 @@ func TestCompact_DefensiveTrimOnOverflow(t *testing.T) {
 	}
 	if result[0].Role != "system" {
 		t.Fatalf("expected system summary first, got %s", result[0].Role)
+	}
+}
+
+func TestCompact_ChunksSummaryInputForHugeHistory(t *testing.T) {
+	var messages []providers.ChatMessage
+	for i := 0; i < 70; i++ {
+		messages = append(messages,
+			providers.ChatMessage{Role: "user", Content: "investigate long running issue " + strings.Repeat("u", 900)},
+			providers.ChatMessage{Role: "assistant", Content: "analysis result " + strings.Repeat("a", 900)},
+		)
+	}
+
+	client := &chunkRecordingCompactClient{}
+	budget := Budget{ContextTokens: 20_000, OutputReserveTokens: 4_000}
+	result, err := CompactWithBudget(context.Background(), messages, client, "gpt-4", budget)
+	if err != nil {
+		t.Fatalf("CompactWithBudget: %v", err)
+	}
+	if len(client.prompts) < 2 {
+		t.Fatalf("expected huge summary input to be chunked, got %d compact request(s)", len(client.prompts))
+	}
+	inputBudget := compactSummaryInputBudgetForBudget("gpt-4", budget)
+	for i, prompt := range client.prompts {
+		if got := EstimateTokens(prompt); got > inputBudget {
+			t.Fatalf("chunk %d prompt estimate = %d, want <= %d", i, got, inputBudget)
+		}
+	}
+	if !strings.Contains(client.prompts[1], "Previous anchored summary") || !strings.Contains(client.prompts[1], "summary chunk") {
+		t.Fatalf("second chunk should carry anchored summary, got %q", client.prompts[1])
+	}
+	if len(result) == 0 || !IsConversationSummaryContent(result[0].Content) || !strings.Contains(result[0].Content, "summary chunk") {
+		t.Fatalf("expected compacted summary in result, got %+v", result)
 	}
 }
 
