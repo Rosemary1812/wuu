@@ -3589,13 +3589,11 @@
 
 .rich-table-wrap {
   max-width: 100%;
+  margin: 8px 0;
   overflow: auto;
-                                                              
-                                                               
-                                                              
-                                                             
-                                            
-  background: transparent;
+  background: var(--paper);
+  border: 1px solid var(--ink-overlay-6);
+  border-radius: var(--radius-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3608,24 +3606,20 @@
 
 .rich-table-wrap th,
 .rich-table-wrap td {
-                                                             
-                                                            
-                                                              
-                                               
-  padding: 10px 14px;
+  padding: 8px 14px;
   text-align: left;
   vertical-align: top;
-  border-bottom: 1px solid var(--ink-overlay-6);
+  border: 1px solid var(--ink-overlay-6);
 }
 
 .rich-table-wrap th {
-  background: var(--ink-overlay-4);
-  color: #42474d;
+  background: var(--surface-1);
+  color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
-.rich-table-wrap tr:last-child td {
-  border-bottom: 0;
+.rich-table-wrap tbody tr:nth-child(even) td {
+  background: var(--surface-1);
 }
 
 .rich-blockquote {
