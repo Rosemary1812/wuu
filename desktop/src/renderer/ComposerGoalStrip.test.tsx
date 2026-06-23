@@ -138,4 +138,95 @@ describe("ComposerGoalStrip", () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  describe("with elapsed timer", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-06-24T12:00:00Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function goalSummaryWithStartedAt(
+      text: string,
+      startedAt: string,
+    ): ComposerGoalSummary {
+      return {
+        id: "goal-1",
+        text,
+        status: "running",
+        started_at: startedAt,
+      };
+    }
+
+    it("renders mm:ss elapsed when started_at is within an hour", () => {
+      const startedAt = new Date("2026-06-24T11:58:55Z").toISOString();
+      renderStrip({
+        summary: goalSummaryWithStartedAt(
+          "Ship the composer goal strip",
+          startedAt,
+        ),
+      });
+
+      expect(
+        container.querySelector(".composer-goal-strip-elapsed")?.textContent,
+      ).toBe("01:05");
+    });
+
+    it("renders h:mm:ss elapsed when started_at is over an hour ago", () => {
+      const startedAt = new Date("2026-06-24T09:54:30Z").toISOString();
+      renderStrip({
+        summary: goalSummaryWithStartedAt(
+          "Ship the composer goal strip",
+          startedAt,
+        ),
+      });
+
+      expect(
+        container.querySelector(".composer-goal-strip-elapsed")?.textContent,
+      ).toBe("2:05:30");
+    });
+
+    it("does not render the elapsed chip when started_at is missing", () => {
+      renderStrip({ summary: goalSummary() });
+
+      expect(
+        container.querySelector(".composer-goal-strip-elapsed"),
+      ).toBeNull();
+    });
+
+    it("advances the displayed elapsed as time passes", () => {
+      const startedAt = new Date("2026-06-24T11:59:30Z").toISOString();
+      renderStrip({
+        summary: goalSummaryWithStartedAt("Ship", startedAt),
+      });
+
+      expect(
+        container.querySelector(".composer-goal-strip-elapsed")?.textContent,
+      ).toBe("00:30");
+
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      expect(
+        container.querySelector(".composer-goal-strip-elapsed")?.textContent,
+      ).toBe("00:31");
+    });
+
+    it("clamps negative drift (clock skew) to 00:00", () => {
+      // started_at is in the future relative to the fake system clock;
+      // formatElapsed should clamp at zero instead of going negative.
+      const startedAt = new Date("2026-06-24T12:00:30Z").toISOString();
+      renderStrip({
+        summary: goalSummaryWithStartedAt("Ship", startedAt),
+      });
+
+      expect(
+        container.querySelector(".composer-goal-strip-elapsed")?.textContent,
+      ).toBe("00:00");
+    });
+  });
 });

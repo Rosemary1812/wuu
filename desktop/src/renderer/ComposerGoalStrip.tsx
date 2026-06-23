@@ -5,10 +5,17 @@ import {
   Target,
   X
 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type { ComposerGoalSummary } from "../shared/protocol";
 
 const CANCEL_CONFIRM_WINDOW_MS = 3000;
+const ELAPSED_TICK_MS = 1000;
 
 export function ComposerGoalStrip({
   summary,
@@ -26,8 +33,27 @@ export function ComposerGoalStrip({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [busy, setBusy] = useState<null | "edit" | "cancel">(null);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
   const inputRef = useRef<HTMLInputElement | null>(null);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startedAtMs = useMemo(
+    () => parseStartedAt(summary?.started_at),
+    [summary?.started_at],
+  );
+
+  useEffect(() => {
+    if (startedAtMs == null) {
+      return;
+    }
+    setNow(Date.now());
+    const intervalID = setInterval(() => {
+      setNow(Date.now());
+    }, ELAPSED_TICK_MS);
+    return () => {
+      clearInterval(intervalID);
+    };
+  }, [startedAtMs]);
 
   useEffect(() => {
     if (!editing) {
@@ -65,6 +91,7 @@ export function ComposerGoalStrip({
   }
   const activeSummary = summary;
   const displayText = goalStripDisplayText(summary.text);
+  const elapsedElement = renderElapsed(startedAtMs, now);
 
   function clearConfirmTimer(): void {
     if (confirmTimerRef.current) {
@@ -159,6 +186,7 @@ export function ComposerGoalStrip({
           <Target className="icon" />
         </span>
         <span className="composer-goal-strip-label">Goal</span>
+        {elapsedElement}
         <input
           ref={inputRef}
           className="composer-goal-strip-input"
@@ -214,6 +242,7 @@ export function ComposerGoalStrip({
         <Target className="icon" />
       </span>
       <span className="composer-goal-strip-label">Goal</span>
+      {elapsedElement}
       <span className="composer-goal-strip-text" title={displayText}>
         {displayText}
       </span>
@@ -258,4 +287,63 @@ export function ComposerGoalStrip({
 function goalStripDisplayText(text: string): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0]?.trim() ?? "";
   return firstLine || "（无目标文本）";
+}
+
+// parseStartedAt converts the backend's RFC3339 timestamp into epoch ms.
+// Returns null when the value is missing or unparseable so the timer chip
+// stays hidden instead of showing "00:00" for goals that pre-date the
+// started_at field.
+function parseStartedAt(value: string | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// formatElapsed renders a positive-up elapsed counter. Under one hour it
+// uses mm:ss; one hour or more switches to h:mm:ss without zero padding
+// the hour so a 12-hour run reads "12:34:56" rather than "012:34:56".
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+  }
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
+function renderElapsed(
+  startedAtMs: number | null,
+  now: number,
+): JSX.Element | null {
+  if (startedAtMs == null) return null;
+  const elapsedMs = Math.max(0, now - startedAtMs);
+  return (
+    <span
+      className="composer-goal-strip-elapsed"
+      title="目标运行时间"
+      aria-label={`目标已运行 ${formatElapsedA11y(elapsedMs)}`}
+    >
+      {formatElapsed(elapsedMs)}
+    </span>
+  );
+}
+
+// formatElapsedA11y renders the elapsed as a Chinese-language phrase for
+// screen readers so the tabular "01:05" form doesn't get announced as
+// zero-one colon zero-five.
+function formatElapsedA11y(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours} 小时 ${minutes} 分 ${seconds} 秒`;
+  }
+  if (minutes > 0) {
+    return `${minutes} 分 ${seconds} 秒`;
+  }
+  return `${seconds} 秒`;
 }

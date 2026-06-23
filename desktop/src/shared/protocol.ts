@@ -866,6 +866,7 @@ export type ComposerGoalSummary = {
   text: string;
   status: string;
   step?: string;
+  started_at?: string;
   updated_at?: string;
 };
 

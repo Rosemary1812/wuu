@@ -313,7 +313,7 @@
 
 .composer-goal-strip {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto auto minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 7px;
   row-gap: 2px;
@@ -345,6 +345,23 @@
   letter-spacing: 0;
   line-height: 1;
   text-transform: uppercase;
+  user-select: none;
+}
+
+.composer-goal-strip-elapsed {
+  flex: 0 0 auto;
+  justify-self: start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ink-overlay-4);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
   user-select: none;
 }
 
