@@ -1,6 +1,7 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useImagePreview } from "./ImagePreview";
 
 type RichContentProps = {
   text?: string;
@@ -354,7 +355,31 @@ function RichImage({
   inline?: boolean;
 }): JSX.Element {
   const resolvedSource = resolveImageSource(source, cwd);
-  const image = <img className="rich-image" src={resolvedSource} alt={alt} title={imageTarget(source)} loading="lazy" />;
+  const { openPreview } = useImagePreview();
+  const titleText = imageTarget(source);
+  const handleActivate = (): void => {
+    openPreview({ src: resolvedSource, alt, title: titleText });
+  };
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleActivate();
+    }
+  };
+  const image = (
+    <img
+      className="rich-image"
+      src={resolvedSource}
+      alt={alt}
+      title={titleText}
+      loading="lazy"
+      role="button"
+      tabIndex={0}
+      aria-label={alt ? `放大查看：${alt}` : "放大查看图片"}
+      onClick={handleActivate}
+      onKeyDown={handleKeyDown}
+    />
+  );
   return inline ? <span className="rich-image-block inline">{image}</span> : <figure className="rich-image-block">{image}</figure>;
 }
 

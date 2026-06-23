@@ -8,6 +8,7 @@ import {
   X
 } from "lucide-react";
 import { type KeyboardEvent as ReactKeyboardEvent, useRef } from "react";
+import { useImagePreview } from "./ImagePreview";
 import { isComposerTextComposing } from "./ComposerSlashCommands";
 import {
   clipboardAttachmentFiles,
@@ -31,19 +32,48 @@ export function ComposerAttachmentStrip({
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
 }): JSX.Element | null {
+  const { openPreview } = useImagePreview();
   if (images.length === 0 && files.length === 0) {
     return null;
   }
   return (
     <div className="composer-attachments">
-      {images.map((image, index) => (
-        <div className="composer-image-attachment" key={image.id}>
-          <img src={imageSource(image)} alt={`Image ${index + 1}`} />
-          <button type="button" aria-label={`移除图片 ${index + 1}`} onClick={() => onRemoveImage(image.id)}>
-            <X className="icon-xs" />
-          </button>
-        </div>
-      ))}
+      {images.map((image, index) => {
+        const src = imageSource(image);
+        const label = `Image ${index + 1}`;
+        const handleOpen = (): void => {
+          openPreview({ src, alt: label, title: label });
+        };
+        const handleKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleOpen();
+          }
+        };
+        return (
+          <div className="composer-image-attachment" key={image.id}>
+            <img
+              src={src}
+              alt={label}
+              role="button"
+              tabIndex={0}
+              aria-label={`放大查看：${label}`}
+              onClick={handleOpen}
+              onKeyDown={handleKeyDown}
+            />
+            <button
+              type="button"
+              aria-label={`移除图片 ${index + 1}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemoveImage(image.id);
+              }}
+            >
+              <X className="icon-xs" />
+            </button>
+          </div>
+        );
+      })}
       {files.map((file, index) => (
         <div className="composer-file-attachment" key={file.id}>
           <FileText className="icon" aria-hidden="true" />

@@ -250,6 +250,7 @@ import {
 } from "./WorkspacePanels";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+import { ImagePreviewProvider } from "./ImagePreview";
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
@@ -4903,7 +4904,8 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className={shellClassName} style={shellStyle}>
+    <ImagePreviewProvider>
+      <div className={shellClassName} style={shellStyle}>
       <AppSidebar
         state={state}
         pinnedThreads={sidebarPinnedThreads}
@@ -5389,7 +5391,8 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
-    </div>
+      </div>
+    </ImagePreviewProvider>
   );
 }
 
