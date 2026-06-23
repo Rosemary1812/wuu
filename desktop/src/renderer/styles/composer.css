@@ -966,7 +966,7 @@
   background: var(--paper);
   backdrop-filter: none;
   padding: 5px;
-  width: 286px;
+  width: 176px;
 }
 
 .mode-menu {
@@ -1003,12 +1003,10 @@
 }
 
 .composer-context-menu .permission-mode-option {
-  height: 46px;
-  min-height: 46px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
+  height: 30px;
+  min-height: 30px;
+  justify-content: flex-start;
+  gap: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: 0 10px;
@@ -1032,12 +1030,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.permission-mode-option span {
-  color: var(--muted);
-  font-size: var(--font-caption);
-  line-height: 14px;
 }
 
 .permission-mode-option.danger strong {

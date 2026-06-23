@@ -509,7 +509,6 @@ export function AccessMenu({
           onClick={() => onSelect(option.mode)}
         >
           <strong>{option.label}</strong>
-          <span>{option.short}</span>
         </button>
       ))}
     </div>

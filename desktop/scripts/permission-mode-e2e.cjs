@@ -57,8 +57,12 @@ async function run() {
   assert.deepEqual(openState.optionLabels, ["只读", "默认", "替我审批", "完全访问"]);
   assert.equal(openState.checkedLabels.join(","), "默认", "Default mode should be marked as the current mode.");
   assert.ok(
-    openState.menuRect.width >= 260 && openState.menuRect.width <= 420,
-    `Permission menu should stay compact. Width=${openState.menuRect.width}`
+    openState.menuRect.width >= 170 && openState.menuRect.width <= 180,
+    `Permission menu should keep the compact preset width. Width=${openState.menuRect.width}`
+  );
+  assert.ok(
+    openState.optionRects.every((rect) => rect.height <= 34),
+    `Permission mode options should stay single-line and compact. Heights=${openState.optionRects.map((rect) => rect.height).join(",")}`
   );
   assert.ok(
     openState.optionRects.every((rect, index, rects) => index === 0 || rect.top >= rects[index - 1].top + rects[index - 1].height),
