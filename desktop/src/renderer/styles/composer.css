@@ -67,7 +67,7 @@
   z-index: 2;
   width: 100%;
   margin: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--conversation-dialog-radius, var(--radius-sm));
   background: var(--paper);
   box-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
   overflow: visible;
@@ -85,7 +85,7 @@
 
 .hero-composer-wrap .composer-shell {
   width: 100%;
-  border-radius: var(--radius-sm);
+  border-radius: var(--conversation-dialog-radius, var(--radius-sm));
   background: var(--paper);
   box-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
 }
@@ -93,14 +93,14 @@
 .composer {
   width: 100%;
   min-height: 128px;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--conversation-dialog-radius, var(--radius-sm)) var(--conversation-dialog-radius, var(--radius-sm)) 0 0;
   background: var(--paper);
   overflow: visible;
 }
 
 .hero-composer-wrap .composer {
   min-height: 136px;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--conversation-dialog-radius, var(--radius-sm)) var(--conversation-dialog-radius, var(--radius-sm)) 0 0;
 }
 
 .composer-attachments {
@@ -687,13 +687,13 @@
   gap: 12px;
   overflow: hidden;
   border-top: 1px solid var(--surface-3);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  border-radius: 0 0 var(--conversation-dialog-radius, var(--radius-sm)) var(--conversation-dialog-radius, var(--radius-sm));
   background: var(--surface-2);
   padding: 0 12px;
 }
 
 .hero-composer-wrap .composer-context-bar {
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  border-radius: 0 0 var(--conversation-dialog-radius, var(--radius-sm)) var(--conversation-dialog-radius, var(--radius-sm));
   background: var(--surface-2);
   padding: 0 24px;
 }

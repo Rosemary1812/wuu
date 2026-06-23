@@ -69,6 +69,16 @@ const TOKENS: Token[] = [
     defaultValue: 880,
   },
   {
+    key: "composer-radius",
+    cssVar: "--conversation-dialog-radius",
+    label: "输入框圆角",
+    min: 0,
+    max: 32,
+    step: 1,
+    unit: "px",
+    defaultValue: 8,
+  },
+  {
     key: "msg-font-size",
     cssVar: "--conversation-message-font-size",
     label: "正文字号",

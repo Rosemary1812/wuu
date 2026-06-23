@@ -18,6 +18,7 @@
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
   --conversation-dialog-width: var(--conversation-content-width);
+  --conversation-dialog-radius: var(--radius-sm);
   --conversation-message-font-size: 15.5px;
   --conversation-prose-line-height: 1.65;
   --conversation-prose-block-gap: 12px;
