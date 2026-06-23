@@ -177,6 +177,8 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 		"`goal_dir`",
 		"`goal_status`",
 		"`complete_goal`",
+		"independent workflow, subagent, or reviewer evidence",
+		"Do not self-certify",
 		"Entry point",
 		"`start_workflow`",
 		"defaults to `auto`",

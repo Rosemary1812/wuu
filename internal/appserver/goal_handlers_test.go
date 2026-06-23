@@ -20,14 +20,15 @@ import (
 func TestGoalSnapshotReturnsWorkflowAndThreadHarnessState(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	threadStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-1")
 
-	workflowStore := workflow.NewStore(rt.StateDir)
+	workflowStore := workflow.NewStore(threadStateDir)
 	run, err := workflowStore.CreateRun(workflow.Run{
 		ID:             "wf-1",
 		DefinitionName: "delivery",
 		Status:         workflow.RunStateRunning,
 		GoalID:         "wf-1",
-		GoalDir:        filepath.Join(rt.StateDir, "goals", "wf-1"),
+		GoalDir:        filepath.Join(threadStateDir, "goals", "wf-1"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRun: %v", err)
@@ -47,14 +48,14 @@ func TestGoalSnapshotReturnsWorkflowAndThreadHarnessState(t *testing.T) {
 		Name:      "review",
 		Role:      "reviewer",
 		GoalID:    "wf-1",
-		GoalDir:   filepath.Join(rt.StateDir, "goals", "wf-1"),
+		GoalDir:   filepath.Join(threadStateDir, "goals", "wf-1"),
 		Status:    harness.TaskStatusFailed,
 		Error:     "review failed",
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("UpsertTask: %v", err)
 	}
-	goalStore := goalrunner.NewStore(filepath.Join(rt.StateDir, "goals", "wf-1"))
+	goalStore := goalrunner.NewStore(filepath.Join(threadStateDir, "goals", "wf-1"))
 	if _, err := goalStore.Init(goalrunner.Spec{ID: "wf-1", Goal: "delivery goal"}); err != nil {
 		t.Fatalf("Init goal: %v", err)
 	}
@@ -540,6 +541,78 @@ func TestGoalActiveSummaryLeavesLongTextForRendererEllipsis(t *testing.T) {
 	}
 	if result.Summary.Text != longGoal {
 		t.Fatalf("expected untruncated summary text, got %d chars", len(result.Summary.Text))
+	}
+}
+
+func TestGoalActiveSummaryScopesToThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	firstStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-one")
+	secondStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-two")
+	first := goalrunner.NewStore(statepath.GoalDir(firstStateDir, "shared"))
+	if _, err := first.Init(goalrunner.Spec{ID: "shared", Goal: "first thread goal"}); err != nil {
+		t.Fatalf("Init first: %v", err)
+	}
+	second := goalrunner.NewStore(statepath.GoalDir(secondStateDir, "shared"))
+	if _, err := second.Init(goalrunner.Spec{ID: "shared", Goal: "second thread goal"}); err != nil {
+		t.Fatalf("Init second: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"sum","method":"goal/active-summary","params":{"thread_id":"thread-one"}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "sum")
+	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
+	if result.Summary == nil {
+		t.Fatalf("expected active summary, got %+v", result)
+	}
+	if result.Summary.Text != "first thread goal" || result.Summary.ThreadID != "thread-one" {
+		t.Fatalf("summary leaked across threads: %+v", result.Summary)
+	}
+}
+
+func TestGoalCancelScopesToThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+
+	firstStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-one")
+	secondStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-two")
+	first := goalrunner.NewStore(statepath.GoalDir(firstStateDir, "shared"))
+	if _, err := first.Init(goalrunner.Spec{ID: "shared", Goal: "first thread goal"}); err != nil {
+		t.Fatalf("Init first: %v", err)
+	}
+	second := goalrunner.NewStore(statepath.GoalDir(secondStateDir, "shared"))
+	if _, err := second.Init(goalrunner.Spec{ID: "shared", Goal: "second thread goal"}); err != nil {
+		t.Fatalf("Init second: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"shared","thread_id":"thread-one","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/cancel: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "cancel")
+	if msg["error"] != nil {
+		t.Fatalf("unexpected cancel error: %+v", msg["error"])
+	}
+	firstState, err := first.LoadState()
+	if err != nil {
+		t.Fatalf("Load first: %v", err)
+	}
+	secondState, err := second.LoadState()
+	if err != nil {
+		t.Fatalf("Load second: %v", err)
+	}
+	if firstState.Status != goalrunner.StatusCancelled {
+		t.Fatalf("first goal should be cancelled, got %s", firstState.Status)
+	}
+	if secondState.Status == goalrunner.StatusCancelled {
+		t.Fatalf("second goal should not be cancelled: %+v", secondState)
 	}
 }
 

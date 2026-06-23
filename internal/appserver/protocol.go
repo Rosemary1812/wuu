@@ -27,11 +27,11 @@ const (
 	MethodGoalWorktreeMerge    = "goal/worktree/merge"
 	MethodGoalApprovalResolve  = "goal/approval/resolve"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
-	// of the most-recently-updated non-terminal goal in the workspace.
-	// MethodGoalCancel marks that goal as cancelled; MethodGoalUpdateText
+	// of the most-recently-updated non-terminal goal in the requested thread
+	// scope. MethodGoalCancel marks that goal as cancelled; MethodGoalUpdateText
 	// rewrites its objective. The renderer only needs these three to drive
-	// the inline "current goal" strip in the composer; full goal state
-	// stays on the agent tool loop.
+	// the inline "current goal" strip in the composer; full goal state stays
+	// on the agent tool loop.
 	MethodGoalActiveSummary     = "goal/active-summary"
 	MethodGoalCancel            = "goal/cancel"
 	MethodGoalUpdateText        = "goal/update-text"
@@ -311,22 +311,26 @@ type GoalSnapshotResult struct {
 }
 
 // GoalActiveSummary is the composer-banner view of the most recently
-// updated non-terminal goal in the workspace. The handler filters
-// terminal statuses (completed, failed, cancelled) so the renderer can
-// treat a nil summary as "no active goal" without re-checking status.
+// updated non-terminal goal in one thread/session orchestration scope.
+// The handler filters terminal statuses (completed, failed, cancelled)
+// so the renderer can treat a nil summary as "no active goal" without
+// re-checking status.
 // Text is the first line of goal.Goal. The renderer owns visual ellipsis
 // so editing a long first line never persists a server-side truncation.
 // It intentionally omits task / step / approvals to keep the composer
 // surface quiet.
 type GoalActiveSummary struct {
 	ID        string `json:"id"`
+	ThreadID  string `json:"thread_id,omitempty"`
 	Text      string `json:"text"`
 	Status    string `json:"status"`
 	Step      string `json:"step,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
-type GoalActiveSummaryParams struct{}
+type GoalActiveSummaryParams struct {
+	ThreadID string `json:"thread_id,omitempty"`
+}
 
 type GoalActiveSummaryResult struct {
 	Summary *GoalActiveSummary `json:"summary,omitempty"`
@@ -334,11 +338,13 @@ type GoalActiveSummaryResult struct {
 
 type GoalCancelParams struct {
 	GoalID              string `json:"goal_id"`
+	ThreadID            string `json:"thread_id,omitempty"`
 	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
 }
 
 type GoalUpdateTextParams struct {
 	GoalID              string `json:"goal_id"`
+	ThreadID            string `json:"thread_id,omitempty"`
 	Text                string `json:"text"`
 	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
 }
@@ -393,6 +399,7 @@ type GoalWorktreeMergeResult struct {
 
 type GoalApprovalResolveParams struct {
 	GoalID              string `json:"goal_id"`
+	ThreadID            string `json:"thread_id,omitempty"`
 	ApprovalID          string `json:"approval_id"`
 	Approved            bool   `json:"approved,omitempty"`
 	Rejected            bool   `json:"rejected,omitempty"`

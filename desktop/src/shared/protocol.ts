@@ -825,13 +825,14 @@ export type SettingsUsageResponse = {
 };
 
 // ComposerGoalSummary is the composer-banner view of the most-recently
-// updated non-terminal goal in the workspace. The backend filters out
-// terminal goals (completed/failed/cancelled) so a null summary on the
-// renderer side means "no active goal" without re-checking status. Text
-// is the first line of goal.Goal; the renderer owns visual ellipsis so
-// editing a long first line never persists a server-side truncation.
+// updated non-terminal goal in the current thread/session scope. The backend
+// filters out terminal goals (completed/failed/cancelled) so a null summary on
+// the renderer side means "no active goal" without re-checking status. Text is
+// the first line of goal.Goal; the renderer owns visual ellipsis so editing a
+// long first line never persists a server-side truncation.
 export type ComposerGoalSummary = {
   id: string;
+  thread_id?: string;
   text: string;
   status: string;
   step?: string;
@@ -914,9 +915,13 @@ export type WuuDesktopApi = {
   // Composer goal banner surface. The renderer only needs a lightweight
   // summary plus explicit cancel/edit affordances; the full GoalSnapshot
   // and workflow/agent run detail stay on the agent tool loop.
-  getActiveGoalSummary: () => Promise<ComposerGoalSummary | null>;
-  cancelGoal: (goalId: string) => Promise<{ ok: boolean }>;
-  updateGoalText: (goalId: string, text: string) => Promise<{ ok: boolean }>;
+  getActiveGoalSummary: (threadId?: string) => Promise<ComposerGoalSummary | null>;
+  cancelGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
+  updateGoalText: (
+    goalId: string,
+    text: string,
+    threadId?: string
+  ) => Promise<{ ok: boolean }>;
 };
 
 declare global {

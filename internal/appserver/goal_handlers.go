@@ -22,7 +22,7 @@ func (s *Server) handleGoalSnapshot(req Request) error {
 		}
 	}
 
-	workflowStore, err := s.goalWorkflowStore()
+	workflowStore, err := s.goalWorkflowStore(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -147,7 +147,7 @@ func (s *Server) handleGoalApprovalResolve(req Request) error {
 	if !params.ConfirmUserApproved {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("goal approval resolve requires confirm_user_approved=true"))
 	}
-	store, err := s.goalStoreForID(params.GoalID)
+	store, err := s.goalStoreForID(params.GoalID, params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -170,7 +170,13 @@ func (s *Server) handleGoalApprovalResolve(req Request) error {
 // approvals, workflow phases) is intentionally omitted so the renderer
 // cannot rebuild the deleted right-side Goal panel from this surface.
 func (s *Server) handleGoalActiveSummary(req Request) error {
-	summary, err := s.findActiveGoalSummary()
+	var params GoalActiveSummaryParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal active summary params: %w", err))
+		}
+	}
+	summary, err := s.findActiveGoalSummary(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -190,7 +196,7 @@ func (s *Server) handleGoalCancel(req Request) error {
 	if !params.ConfirmUserApproved {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("goal cancel requires confirm_user_approved=true"))
 	}
-	store, err := s.goalStoreForID(params.GoalID)
+	store, err := s.goalStoreForID(params.GoalID, params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -224,7 +230,7 @@ func (s *Server) handleGoalUpdateText(req Request) error {
 	if text == "" {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("goal text is required"))
 	}
-	store, err := s.goalStoreForID(params.GoalID)
+	store, err := s.goalStoreForID(params.GoalID, params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -234,13 +240,14 @@ func (s *Server) handleGoalUpdateText(req Request) error {
 	return s.writeResponse(req.ID, GoalUpdateTextResult{OK: true}, nil)
 }
 
-// findActiveGoalSummary walks the workspace's goal directory and returns
-// the most recently updated non-terminal goal's lightweight summary. The
-// walk is bounded: missing or malformed goal subdirectories are skipped
-// rather than failing the whole call, since this powers a renderer banner
-// and a transient disk error should not blank the composer surface.
-func (s *Server) findActiveGoalSummary() (*GoalActiveSummary, error) {
-	stateDir, err := s.workspaceStateDir()
+// findActiveGoalSummary walks the thread's goal directory and returns the most
+// recently updated non-terminal goal's lightweight summary. With an empty
+// threadID it falls back to workspace-level state for CLI/headless callers.
+// The walk is bounded: missing or malformed goal subdirectories are skipped
+// rather than failing the whole call, since this powers a renderer banner and a
+// transient disk error should not blank the composer surface.
+func (s *Server) findActiveGoalSummary(threadID string) (*GoalActiveSummary, error) {
+	stateDir, err := s.goalOrchestrationStateDir(threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +289,7 @@ func (s *Server) findActiveGoalSummary() (*GoalActiveSummary, error) {
 	}
 	return &GoalActiveSummary{
 		ID:        best.ID,
+		ThreadID:  strings.TrimSpace(threadID),
 		Text:      goalSummaryText(best.Goal),
 		Status:    string(best.Status),
 		Step:      string(best.CurrentStep),
@@ -315,8 +323,8 @@ func goalSummaryText(goal string) string {
 	return goal
 }
 
-func (s *Server) goalWorkflowStore() (*workflow.Store, error) {
-	stateDir, err := s.workspaceStateDir()
+func (s *Server) goalWorkflowStore(threadID string) (*workflow.Store, error) {
+	stateDir, err := s.goalOrchestrationStateDir(threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,17 +339,20 @@ func (s *Server) goalHarnessStore(threadID string) (*harness.Store, error) {
 		}
 		return nil, nil
 	}
+	if err := validateGoalThreadID(threadID); err != nil {
+		return nil, err
+	}
 	if control := s.liveAgentControl(threadID); control != nil && control.HarnessStore() != nil {
 		return control.HarnessStore(), nil
 	}
-	stateDir, err := s.workspaceStateDir()
+	stateDir, err := s.goalOrchestrationStateDir(threadID)
 	if err != nil {
 		return nil, err
 	}
-	return harness.NewStore(filepath.Join(statepath.SessionArtifactDir(stateDir, threadID), "harness")), nil
+	return harness.NewStore(filepath.Join(stateDir, "harness")), nil
 }
 
-func (s *Server) goalStoreForID(goalID string) (*goalrunner.Store, error) {
+func (s *Server) goalStoreForID(goalID, threadID string) (*goalrunner.Store, error) {
 	goalID = strings.TrimSpace(goalID)
 	if goalID == "" {
 		return nil, fmt.Errorf("goal_id is required")
@@ -349,9 +360,35 @@ func (s *Server) goalStoreForID(goalID string) (*goalrunner.Store, error) {
 	if goalID == "." || goalID == ".." || filepath.Base(goalID) != goalID || strings.ContainsAny(goalID, `/\`) {
 		return nil, fmt.Errorf("goal_id must be a goal id, not a path")
 	}
-	stateDir, err := s.workspaceStateDir()
+	stateDir, err := s.goalOrchestrationStateDir(threadID)
 	if err != nil {
 		return nil, err
 	}
 	return goalrunner.NewStore(statepath.GoalDir(stateDir, goalID)), nil
+}
+
+func (s *Server) goalOrchestrationStateDir(threadID string) (string, error) {
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return "", err
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return stateDir, nil
+	}
+	if err := validateGoalThreadID(threadID); err != nil {
+		return "", err
+	}
+	return statepath.SessionArtifactDir(stateDir, threadID), nil
+}
+
+func validateGoalThreadID(threadID string) error {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil
+	}
+	if threadID == "." || threadID == ".." || filepath.Base(threadID) != threadID || strings.ContainsAny(threadID, `/\`) {
+		return fmt.Errorf("thread_id must be a session id, not a path")
+	}
+	return nil
 }

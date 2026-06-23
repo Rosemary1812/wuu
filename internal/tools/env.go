@@ -538,9 +538,31 @@ func (e *Env) ProcessWorkflowBody(def workflow.Definition, arguments string) str
 	})
 }
 
-// WorkflowStore returns a durable workflow store rooted in workspace state.
+// OrchestrationStateDir returns the state root for user-visible orchestration
+// artifacts. Interactive turns bind tools to a SessionID, so their Goals and
+// Workflow Runs live with that conversation. Headless or workspace-level tools
+// without a SessionID keep using workspace state.
+func (e *Env) OrchestrationStateDir() (string, error) {
+	if e == nil {
+		return "", fmt.Errorf("tool environment is required")
+	}
+	if sessionID := strings.TrimSpace(e.SessionID); sessionID != "" {
+		if sessionDir := strings.TrimSpace(e.SessionDir); sessionDir != "" {
+			return sessionDir, nil
+		}
+		stateDir, err := e.WorkspaceStateDir()
+		if err != nil {
+			return "", err
+		}
+		return statepath.SessionArtifactDir(stateDir, sessionID), nil
+	}
+	return e.WorkspaceStateDir()
+}
+
+// WorkflowStore returns a durable workflow store rooted in the current
+// orchestration scope.
 func (e *Env) WorkflowStore() (*workflow.Store, error) {
-	stateDir, err := e.WorkspaceStateDir()
+	stateDir, err := e.OrchestrationStateDir()
 	if err != nil {
 		return nil, err
 	}
@@ -550,10 +572,9 @@ func (e *Env) WorkflowStore() (*workflow.Store, error) {
 }
 
 // WorkflowGoalStore returns the goal store bound to one Workflow Run. Workflow
-// goals live under workspace state so multiple runs and CLI demos do not write
-// generated state into the project tree.
+// goals live in the same orchestration scope as the run they summarize.
 func (e *Env) WorkflowGoalStore(runID string) (*goalrunner.Store, error) {
-	stateDir, err := e.WorkspaceStateDir()
+	stateDir, err := e.OrchestrationStateDir()
 	if err != nil {
 		return nil, err
 	}

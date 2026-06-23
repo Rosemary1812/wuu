@@ -30,6 +30,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	exposeWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	kit.SetSessionID("thread-workflow")
+	threadStateDir := filepath.Join(stateDir, "sessions", "thread-workflow")
 	kit.SetWorkflows([]workflow.Definition{{
 		Name:        "feature-delivery",
 		Description: "Deliver a feature with planning and QA.",
@@ -132,10 +133,10 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if len(started.Phases) != 3 || started.Phases[0].Status != workflow.PhaseStateRunnable {
 		t.Fatalf("unexpected start phases: %+v", started.Phases)
 	}
-	if started.GoalID != started.RunID || started.GoalDir != filepath.Join(stateDir, "goals", started.RunID) {
+	if started.GoalID != started.RunID || started.GoalDir != filepath.Join(threadStateDir, "goals", started.RunID) {
 		t.Fatalf("workflow run missing goal binding: %+v", started)
 	}
-	storedRun, err := workflow.NewStore(stateDir).LoadRun(started.RunID)
+	storedRun, err := workflow.NewStore(threadStateDir).LoadRun(started.RunID)
 	if err != nil {
 		t.Fatalf("LoadRun: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if _, err := os.Stat(created.PlanPath); err != nil {
 		t.Fatalf("expected plan file: %v", err)
 	}
-	if created.GoalID != created.RunID || created.GoalDir != filepath.Join(stateDir, "goals", created.RunID) {
+	if created.GoalID != created.RunID || created.GoalDir != filepath.Join(threadStateDir, "goals", created.RunID) {
 		t.Fatalf("create_workflow missing goal binding: %+v", created)
 	}
 	createdGoalState, err := goalrunner.NewStore(created.GoalDir).LoadState()

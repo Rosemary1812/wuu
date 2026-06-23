@@ -112,12 +112,12 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:respond-server-request", id, result),
   rejectServerRequest: (id: string, message: string) =>
     ipcRenderer.invoke("wuu:reject-server-request", id, message),
-  getActiveGoalSummary: () =>
-    ipcRenderer.invoke("wuu:goal-active-summary"),
-  cancelGoal: (goalId: string) =>
-    ipcRenderer.invoke("wuu:goal-cancel", goalId),
-  updateGoalText: (goalId: string, text: string) =>
-    ipcRenderer.invoke("wuu:goal-update-text", goalId, text),
+  getActiveGoalSummary: (threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-active-summary", threadId),
+  cancelGoal: (goalId: string, threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-cancel", goalId, threadId),
+  updateGoalText: (goalId: string, text: string, threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-update-text", goalId, text, threadId),
   onServerEvent: (handler: (event: ServerEvent) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,

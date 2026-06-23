@@ -260,6 +260,7 @@ func (t *CompleteGoalTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "complete_goal",
 		Description: "Mark a Goal complete after the requested outcome is actually done and any needed workflow/subagent results have been integrated. " +
+			"For delegated or multi-agent work, inspect goal_status and require independent workflow, subagent, or reviewer evidence before completion; do not self-certify from the lead agent's own claim. " +
 			"Do not call this just because a subagent or workflow finished; complete only when the user-visible goal is closed.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -380,7 +381,7 @@ func (t *GoalStatusTool) Execute(_ context.Context, argsJSON string) (string, er
 			"next_steps":  goalToolNextSteps(state),
 		})
 	}
-	stateDir, err := t.env.WorkspaceStateDir()
+	stateDir, err := t.env.OrchestrationStateDir()
 	if err != nil {
 		return "", err
 	}
@@ -406,7 +407,7 @@ func (e *Env) GoalStore(goalID string) (*goalrunner.Store, error) {
 	if err := validateGoalToolID(goalID); err != nil {
 		return nil, err
 	}
-	stateDir, err := e.WorkspaceStateDir()
+	stateDir, err := e.OrchestrationStateDir()
 	if err != nil {
 		return nil, err
 	}

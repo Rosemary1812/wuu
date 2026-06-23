@@ -101,6 +101,16 @@ func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
 			t.Fatalf("start_goal description missing %q: %q", want, desc)
 		}
 	}
+
+	completeDesc := NewCompleteGoalTool(&Env{}).Definition().Description
+	for _, want := range []string{
+		"independent workflow, subagent, or reviewer evidence",
+		"do not self-certify",
+	} {
+		if !strings.Contains(completeDesc, want) {
+			t.Fatalf("complete_goal description missing %q: %q", want, completeDesc)
+		}
+	}
 }
 
 func TestStartWorkflowBindsExistingGoal(t *testing.T) {

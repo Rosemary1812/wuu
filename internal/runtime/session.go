@@ -620,6 +620,8 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
 					workerKit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.Permissions.PermissionProfile))
+					workerKit.SetSessionID(id)
+					workerKit.SetSessionDir(artifactDir)
 					if strings.TrimSpace(meta.AgentProfile) != "" {
 						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
 						if memErr != nil {

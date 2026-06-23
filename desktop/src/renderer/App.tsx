@@ -360,30 +360,6 @@ export function App(): JSX.Element {
     useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
-  const refreshGoalSummary = useCallback(async () => {
-    try {
-      setGoalSummary(await window.wuu.getActiveGoalSummary());
-    } catch {
-      setGoalSummary(null);
-    }
-  }, []);
-  const editGoalText = useCallback(
-    async (nextText: string) => {
-      if (!goalSummary) {
-        return;
-      }
-      await window.wuu.updateGoalText(goalSummary.id, nextText);
-      await refreshGoalSummary();
-    },
-    [goalSummary, refreshGoalSummary]
-  );
-  const cancelCurrentGoal = useCallback(async () => {
-    if (!goalSummary) {
-      return;
-    }
-    await window.wuu.cancelGoal(goalSummary.id);
-    await refreshGoalSummary();
-  }, [goalSummary, refreshGoalSummary]);
   const {
     sidebarWidth,
     sidebarCollapsed,
@@ -575,6 +551,50 @@ export function App(): JSX.Element {
   );
   const queuedMessages = activePendingComposerMessages.queued;
   const guideMessages = activePendingComposerMessages.guides;
+  const refreshGoalSummary = useCallback(
+    async (threadID = activeThreadID) => {
+      if (!threadID) {
+        setGoalSummary(null);
+        return;
+      }
+      try {
+        const summary = await window.wuu.getActiveGoalSummary(threadID);
+        if (activeThreadIDForState(appStateRef.current) === threadID) {
+          setGoalSummary(summary);
+        }
+      } catch {
+        if (activeThreadIDForState(appStateRef.current) === threadID) {
+          setGoalSummary(null);
+        }
+      }
+    },
+    [activeThreadID],
+  );
+  const editGoalText = useCallback(
+    async (nextText: string) => {
+      if (!goalSummary) {
+        return;
+      }
+      const threadID = goalSummary.thread_id ?? activeThreadID;
+      if (!threadID) {
+        return;
+      }
+      await window.wuu.updateGoalText(goalSummary.id, nextText, threadID);
+      await refreshGoalSummary(threadID);
+    },
+    [activeThreadID, goalSummary, refreshGoalSummary],
+  );
+  const cancelCurrentGoal = useCallback(async () => {
+    if (!goalSummary) {
+      return;
+    }
+    const threadID = goalSummary.thread_id ?? activeThreadID;
+    if (!threadID) {
+      return;
+    }
+    await window.wuu.cancelGoal(goalSummary.id, threadID);
+    await refreshGoalSummary(threadID);
+  }, [activeThreadID, goalSummary, refreshGoalSummary]);
   const [usageRange, setUsageRange] = useState<SettingsUsageRange>("all");
   const [settingsUsage, setSettingsUsage] = useState<SettingsUsageResponse | undefined>(
     undefined,
