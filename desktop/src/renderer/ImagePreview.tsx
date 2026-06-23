@@ -6,7 +6,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState
@@ -83,7 +82,6 @@ function ImagePreviewOverlay({
   const [loadStatus, setLoadStatus] = useState<"loading" | "loaded" | "error">("loading");
   const dragState = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const titleId = useId();
 
   useEffect(() => {
     setScale(1);
@@ -177,7 +175,7 @@ function ImagePreviewOverlay({
     dragState.current = null;
   };
 
-  const handleBackdropClick = (event: ReactUIEvent<HTMLDivElement>): void => {
+  const handleBackgroundClick = (event: ReactUIEvent<HTMLDivElement>): void => {
     if (event.target === event.currentTarget) {
       onClose();
     }
@@ -203,13 +201,10 @@ function ImagePreviewOverlay({
       className="image-preview-overlay"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={titleId}
-      onClick={handleBackdropClick}
+      aria-label="图片预览"
+      onClick={handleBackgroundClick}
     >
       <div className="image-preview-toolbar" onClick={(event) => event.stopPropagation()}>
-        <span id={titleId} className="image-preview-title">
-          {item.title?.trim() || item.alt?.trim() || "图片预览"}
-        </span>
         <div className="image-preview-toolbar-actions">
           <button
             type="button"
@@ -258,6 +253,7 @@ function ImagePreviewOverlay({
       <div
         className="image-preview-stage"
         style={{ cursor }}
+        onClick={handleBackgroundClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}

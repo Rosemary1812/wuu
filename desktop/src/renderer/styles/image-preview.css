@@ -22,7 +22,7 @@
 .image-preview-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   padding: 14px 18px;
   color: #f3f4f5;

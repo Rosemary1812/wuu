@@ -90,6 +90,45 @@ describe("ImagePreviewProvider", () => {
     });
     expect(overlayImage()?.getAttribute("src")).toContain("BBB");
   });
+
+  it("closes the preview when the non-image stage area is clicked", () => {
+    const probe = renderWithProbe();
+    act(() => {
+      probe.getAPI()?.openPreview({ src: "data:image/png;base64,AAA" });
+    });
+    const stage = container.querySelector(".image-preview-stage");
+    expect(stage).not.toBeNull();
+    act(() => {
+      (stage as HTMLElement).click();
+    });
+    expect(overlayRoot()).toBeNull();
+  });
+
+  it("does not close the preview when the image itself is clicked", () => {
+    const probe = renderWithProbe();
+    act(() => {
+      probe.getAPI()?.openPreview({ src: "data:image/png;base64,AAA" });
+    });
+    const image = overlayImage();
+    expect(image).not.toBeNull();
+    act(() => {
+      image?.click();
+    });
+    expect(overlayRoot()).not.toBeNull();
+  });
+
+  it("does not render the title or alt text in the toolbar", () => {
+    const probe = renderWithProbe();
+    act(() => {
+      probe.getAPI()?.openPreview({
+        src: "data:image/png;base64,AAA",
+        alt: "Should not show",
+        title: "Should not show"
+      });
+    });
+    expect(container.querySelector(".image-preview-title")).toBeNull();
+    expect(overlayRoot()?.textContent ?? "").not.toContain("Should not show");
+  });
 });
 
 describe("useImagePreview", () => {
