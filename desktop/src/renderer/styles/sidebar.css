@@ -360,12 +360,12 @@
   margin-top: 22px;
 }
 
-.scratch-thread-header {
+.sidebar-section-header {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
   height: 38px;
   align-items: center;
-  justify-content: space-between;
   padding: 0 6px 8px 12px;
 }
 
@@ -390,19 +390,14 @@
   padding: 2px 12px;
 }
 
-.project-section-header {
-  position: relative;
-  display: flex;
-  height: 38px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 6px 8px 12px;
-}
-
 .section-label {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-add-button {

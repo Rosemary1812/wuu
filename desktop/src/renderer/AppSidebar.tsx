@@ -237,7 +237,7 @@ export function AppSidebar({
         />
 
         <section className="project-list" aria-label="项目" ref={projectListRef}>
-          <div className="project-section-header" ref={projectMenuRef}>
+          <div className="sidebar-section-header project-section-header" ref={projectMenuRef}>
             <div className="section-label">项目</div>
             <button
               className="project-add-button"

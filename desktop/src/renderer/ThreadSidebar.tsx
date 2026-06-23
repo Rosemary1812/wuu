@@ -295,7 +295,7 @@ export function ScratchThreadSection({
 
   return (
     <section className="scratch-thread-section" aria-label="对话">
-      <div className="scratch-thread-header">
+      <div className="sidebar-section-header scratch-thread-header">
         <span className="section-label scratch-thread-label">对话</span>
         <button
           className="project-add-button"
