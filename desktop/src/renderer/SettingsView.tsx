@@ -1,10 +1,22 @@
-import { ArrowLeft, BarChart3, KeyRound, Plug, PlugZap, Plus, RefreshCw, Settings, SlidersHorizontal, X } from "lucide-react";
+import {
+  ArrowLeft,
+  BarChart3,
+  KeyRound,
+  Plug,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  Settings,
+  SlidersHorizontal,
+  X
+} from "lucide-react";
 import type { RuntimeAdvancedSettingsUpdate, SettingsUsageRange } from "../shared/protocol";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useState
@@ -290,6 +302,8 @@ export function SettingsView({
     "--sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
 
+  const pageMeta = settingsPageMeta(activePage);
+
   return (
     <div className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
       <aside className="settings-sidebar">
@@ -299,42 +313,18 @@ export function SettingsView({
           <span>返回应用</span>
         </button>
         <nav className="settings-nav" aria-label="设置">
-          <button
-            className={`settings-nav-item${activePage === "providers" ? " active" : ""}`}
-            type="button"
-            aria-current={activePage === "providers" ? "page" : undefined}
-            onClick={() => setActivePage("providers")}
-          >
-            <KeyRound className="icon-lg" />
-            <span>模型服务</span>
-          </button>
-          <button
-            className={`settings-nav-item${activePage === "general" ? " active" : ""}`}
-            type="button"
-            aria-current={activePage === "general" ? "page" : undefined}
-            onClick={() => setActivePage("general")}
-          >
-            <Settings className="icon-lg" />
-            <span>常规</span>
-          </button>
-          <button
-            className={`settings-nav-item${activePage === "advanced" ? " active" : ""}`}
-            type="button"
-            aria-current={activePage === "advanced" ? "page" : undefined}
-            onClick={() => setActivePage("advanced")}
-          >
-            <SlidersHorizontal className="icon-lg" />
-            <span>高级</span>
-          </button>
-          <button
-            className={`settings-nav-item${activePage === "usage" ? " active" : ""}`}
-            type="button"
-            aria-current={activePage === "usage" ? "page" : undefined}
-            onClick={() => setActivePage("usage")}
-          >
-            <BarChart3 className="icon-lg" />
-            <span>用量</span>
-          </button>
+          <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
+            模型服务
+          </SettingsNavItem>
+          <SettingsNavItem icon={<Settings className="icon-lg" />} active={activePage === "general"} onClick={() => setActivePage("general")}>
+            常规
+          </SettingsNavItem>
+          <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
+            高级
+          </SettingsNavItem>
+          <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
+            用量
+          </SettingsNavItem>
         </nav>
       </aside>
       <div
@@ -352,524 +342,109 @@ export function SettingsView({
       />
       <main className="settings-main">
         <div className="settings-page">
-          <h1>{settingsPageTitle(activePage)}</h1>
+          <header className="settings-page-header">
+            <div>
+              <h1 className="settings-page-title">{pageMeta.title}</h1>
+              <p className="settings-page-description">{pageMeta.description}</p>
+            </div>
+          </header>
 
           {activePage === "providers" ? (
-            <>
-              <section className="settings-section" data-testid="settings-providers">
-                <div>
-                  <h2>模型服务</h2>
-                  <p>管理 BYOK provider、模型名称、Base URL 和 API key。</p>
-                </div>
-                {providers.length > 0 ? (
-                  <div className="settings-provider-overview" data-testid="settings-provider-overview">
-                    {providers.map((provider) => (
-                      <button
-                        className={`settings-provider-button${!addingProvider && providerDraft === provider.name ? " active" : ""}`}
-                        type="button"
-                        key={provider.name}
-                        disabled={running}
-                        onClick={() => changeProvider(provider.name)}
-                      >
-                        <span>
-                          <strong>{providerServiceLabel(provider)}</strong>
-                          <small>{provider.name}</small>
-                        </span>
-                        <span>
-                          <small>{provider.model || "未选择模型"}</small>
-                          <small>{providerConnectionStatus(provider)}</small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <form className="settings-card" onSubmit={submit}>
-                  <div className="settings-card-subheader">
-                    <strong>Provider</strong>
-                    <small>{addingProvider ? "新增 OpenAI-compatible 服务" : "选择当前会话使用的服务"}</small>
-                  </div>
-                  <div className="settings-row">
-                    <span>
-                      <strong>模型服务</strong>
-                      <small>{addingProvider ? "添加一个新的 OpenAI-compatible 服务" : "选择当前会话使用的连接方式"}</small>
-                    </span>
-                    {addingProvider ? (
-                      <div className="settings-provider-control">
-                        <div className="settings-new-provider-label">新的模型服务</div>
-                        <button className="settings-inline-button" type="button" onClick={cancelAddingProvider} disabled={running}>
-                          <X className="icon" />
-                          <span>取消</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="settings-provider-control">
-                        {providers.length > 0 ? (
-                          <select value={providerDraft} onChange={(event) => changeProvider(event.target.value)} disabled={running}>
-                            {providers.map((provider) => (
-                              <option key={provider.name} value={provider.name}>
-                                {providerLabels.get(provider.name) ?? provider.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <div className="settings-new-provider-label">暂无模型服务</div>
-                        )}
-                        <button className="settings-inline-button" type="button" onClick={startAddingProvider} disabled={running}>
-                          <Plus className="icon" />
-                          <span>新增 OpenAI-compatible</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {addingProvider ? (
-                    <label className="settings-row">
-                      <span>
-                        <strong>服务标识</strong>
-                        <small>{providerNameTaken ? "这个名称已存在" : "写入配置的 provider 名称"}</small>
-                      </span>
-                      <input
-                        value={providerDraft}
-                        onChange={(event) => {
-                          setProviderDraft(event.target.value);
-                          setSaved(false);
-                        }}
-                        disabled={running}
-                      />
-                    </label>
-                  ) : selectedProvider ? (
-                    <div className="settings-row">
-                      <span>
-                        <strong>服务标识</strong>
-                        <small>{providerTypeLabel(selectedProvider)}</small>
-                      </span>
-                      <span className="settings-about-value">{selectedProvider.name}</span>
-                    </div>
-                  ) : null}
-                  <div className="settings-card-subheader">
-                    <strong>模型</strong>
-                    <small>选择默认 model 和可用参数档位</small>
-                  </div>
-                  <label className="settings-row">
-                    <span>
-                      <strong>模型名称</strong>
-                      <small>发送给模型服务的 model 名称</small>
-                    </span>
-                    <input
-                      value={modelDraft}
-                      onChange={(event) => {
-                        setModelDraft(event.target.value);
-                        setVariantDraft("");
-                        setSaved(false);
-                      }}
-                      disabled={running}
-                    />
-                  </label>
-                  <label className="settings-row">
-                    <span>
-                      <strong>思考强度</strong>
-                      <small>{variantOptions.length > 1 ? "当前模型支持的参数档位" : "当前模型没有可调参数档位"}</small>
-                    </span>
-                    <select
-                      value={variantDraft}
-                      onChange={(event) => {
-                        setVariantDraft(event.target.value);
-                        setSaved(false);
-                      }}
-                      disabled={running || variantOptions.length <= 1}
-                    >
-                      {variantOptions.map((variant) => (
-                        <option key={variant || "auto"} value={variant}>
-                          {variantLabel(variant)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="settings-card-subheader">
-                    <strong>连接</strong>
-                    <small>{connectionLocked ? "OAuth provider 的连接由登录状态管理" : "保存服务地址和本机密钥"}</small>
-                  </div>
-                  <label className="settings-row">
-                    <span>
-                      <strong>Base URL</strong>
-                      <small>{connectionLocked ? "由 OpenAI OAuth 管理" : "模型服务的 API 地址"}</small>
-                    </span>
-                    <input
-                      value={baseURLDraft}
-                      placeholder={connectionLocked ? "由 OpenAI OAuth 管理" : "https://api.openai.com/v1"}
-                      onChange={(event) => {
-                        setBaseURLDraft(event.target.value);
-                        setSaved(false);
-                      }}
-                      disabled={running || connectionLocked}
-                    />
-                  </label>
-                  <label className="settings-row">
-                    <span>
-                      <strong>API key</strong>
-                      <small>
-                        {connectionLocked
-                          ? "由 OpenAI OAuth 管理"
-                          : addingProvider
-                            ? "保存时写入这个服务"
-                            : selectedProvider?.api_key_configured
-                            ? "已配置，留空不修改"
-                            : "用于访问这个 Provider"}
-                      </small>
-                    </span>
-                    <input
-                      value={apiKeyDraft}
-                      type="password"
-                      autoComplete="new-password"
-                      placeholder={
-                        connectionLocked
-                          ? "不需要 API key"
-                          : addingProvider
-                            ? "输入 API key"
-                            : selectedProvider?.api_key_configured
-                            ? "留空保持当前密钥"
-                            : "输入 API key"
-                      }
-                      onChange={(event) => {
-                        setAPIKeyDraft(event.target.value);
-                        setSaved(false);
-                      }}
-                      disabled={running || connectionLocked}
-                    />
-                  </label>
-                  <div className="settings-card-footer">
-                    {error ? <div className="settings-error">{error}</div> : null}
-                    {saved ? <div className="settings-saved">已保存</div> : null}
-                    <button type="submit" disabled={disabled}>
-                      {addingProvider ? "添加服务" : "保存配置"}
-                    </button>
-                  </div>
-                </form>
-              </section>
-            </>
+            <SettingsProvidersPage
+              providers={providers}
+              providerLabels={providerLabels}
+              running={running}
+              providerDraft={providerDraft}
+              modelDraft={modelDraft}
+              variantDraft={variantDraft}
+              baseURLDraft={baseURLDraft}
+              apiKeyDraft={apiKeyDraft}
+              addingProvider={addingProvider}
+              error={error}
+              saved={saved}
+              selectedProvider={selectedProvider}
+              connectionLocked={connectionLocked}
+              variantOptions={variantOptions}
+              providerNameTaken={Boolean(providerNameTaken)}
+              onProviderChange={changeProvider}
+              onStartAddingProvider={startAddingProvider}
+              onCancelAddingProvider={cancelAddingProvider}
+              onProviderDraftChange={(value) => {
+                setProviderDraft(value);
+                setSaved(false);
+              }}
+              onModelDraftChange={(value) => {
+                setModelDraft(value);
+                setVariantDraft("");
+                setSaved(false);
+              }}
+              onVariantDraftChange={(value) => {
+                setVariantDraft(value);
+                setSaved(false);
+              }}
+              onBaseURLDraftChange={(value) => {
+                setBaseURLDraft(value);
+                setSaved(false);
+              }}
+              onAPIKeyDraftChange={(value) => {
+                setAPIKeyDraft(value);
+                setSaved(false);
+              }}
+              onSubmit={submit}
+              disabled={disabled}
+            />
           ) : activePage === "advanced" ? (
-            <section className="settings-section" data-testid="settings-advanced">
-              <div>
-                <h2>高级</h2>
-                <p>调整上下文窗口、自动压缩触发点和单轮运行预算。</p>
-              </div>
-              <form className="settings-card" onSubmit={submitAdvanced}>
-                <div className="settings-card-subheader">
-                  <strong>上下文与压缩</strong>
-                  <small>用于 BYOK 网关、模型别名和长会话预算控制</small>
-                </div>
-                <div className="settings-row">
-                  <span>
-                    <strong>自动压缩</strong>
-                    <small>接近可用上下文时自动整理旧历史；溢出恢复仍会保留</small>
-                  </span>
-                  <button
-                    className="settings-switch"
-                    type="button"
-                    role="switch"
-                    aria-checked={autoCompactDraft}
-                    disabled={running || !initialized}
-                    onClick={() => {
-                      setAutoCompactDraft((value) => !value);
-                      setAdvancedSaved(false);
-                    }}
-                  >
-                    <span className="settings-switch-thumb" aria-hidden="true" />
-                    <span className="sr-only">{autoCompactDraft ? "关闭自动压缩" : "打开自动压缩"}</span>
-                  </button>
-                </div>
-                <label className="settings-row">
-                  <span>
-                    <strong>压缩触发阈值</strong>
-                    <small>百分比；留空使用模型可用窗口，50 表示更早压缩</small>
-                  </span>
-                  <input
-                    value={compactThresholdDraft}
-                    inputMode="numeric"
-                    placeholder="自动"
-                    onChange={(event) => {
-                      setCompactThresholdDraft(event.target.value);
-                      setAdvancedSaved(false);
-                    }}
-                    disabled={running || !initialized}
-                  />
-                </label>
-                <label className="settings-row">
-                  <span>
-                    <strong>当前服务上下文窗口</strong>
-                    <small>token；用于自定义模型、网关别名或未收录新模型</small>
-                  </span>
-                  <input
-                    value={providerContextWindowDraft}
-                    inputMode="numeric"
-                    placeholder="自动识别"
-                    onChange={(event) => {
-                      setProviderContextWindowDraft(event.target.value);
-                      setAdvancedSaved(false);
-                    }}
-                    disabled={running || !initialized}
-                  />
-                </label>
-                <label className="settings-row">
-                  <span>
-                    <strong>未知模型窗口</strong>
-                    <small>token；当前 Provider 未覆盖且模型库未知时使用</small>
-                  </span>
-                  <input
-                    value={maxContextTokensDraft}
-                    inputMode="numeric"
-                    placeholder="自动"
-                    onChange={(event) => {
-                      setMaxContextTokensDraft(event.target.value);
-                      setAdvancedSaved(false);
-                    }}
-                    disabled={running || !initialized}
-                  />
-                </label>
-                <div className="settings-card-subheader">
-                  <strong>当前解析结果</strong>
-                  <small>{formatAdvancedRuntimeLabel(initialized)}</small>
-                </div>
-                <dl className="settings-about-list">
-                  <div className="settings-row">
-                    <span>
-                      <strong>上下文窗口</strong>
-                      <small>{advancedContextSourceLabel(initialized?.advanced_settings?.context_window_source)}</small>
-                    </span>
-                    <span className="settings-about-value">
-                      {formatTokenCount(initialized?.advanced_settings?.context_window_tokens ?? 0)}
-                    </span>
-                  </div>
-                  <div className="settings-row">
-                    <span>
-                      <strong>压缩触发</strong>
-                      <small>扣除输出预留后，主动整理旧历史的 token 点</small>
-                    </span>
-                    <span className="settings-about-value">
-                      {formatTokenCount(initialized?.advanced_settings?.compact_threshold_tokens ?? 0)}
-                    </span>
-                  </div>
-                  <div className="settings-row">
-                    <span>
-                      <strong>输出预留</strong>
-                      <small>为模型回答保留的 token 预算</small>
-                    </span>
-                    <span className="settings-about-value">
-                      {formatTokenCount(initialized?.advanced_settings?.output_reserve_tokens ?? 0)}
-                    </span>
-                  </div>
-                </dl>
-                <div className="settings-card-subheader">
-                  <strong>Agent 预算</strong>
-                  <small>控制单轮自动执行的边界</small>
-                </div>
-                <label className="settings-row">
-                  <span>
-                    <strong>最大步数</strong>
-                    <small>0 表示不设硬上限</small>
-                  </span>
-                  <input
-                    value={maxStepsDraft}
-                    inputMode="numeric"
-                    onChange={(event) => {
-                      setMaxStepsDraft(event.target.value);
-                      setAdvancedSaved(false);
-                    }}
-                    disabled={running || !initialized}
-                  />
-                </label>
-                <label className="settings-row">
-                  <span>
-                    <strong>Temperature</strong>
-                    <small>0 到 2；默认 0.2</small>
-                  </span>
-                  <input
-                    value={temperatureDraft}
-                    inputMode="decimal"
-                    onChange={(event) => {
-                      setTemperatureDraft(event.target.value);
-                      setAdvancedSaved(false);
-                    }}
-                    disabled={running || !initialized}
-                  />
-                </label>
-                <div className="settings-card-footer">
-                  {advancedError ? <div className="settings-error">{advancedError}</div> : null}
-                  {advancedSaved ? <div className="settings-saved">已保存</div> : null}
-                  <button type="submit" disabled={running || !initialized}>
-                    保存高级设置
-                  </button>
-                </div>
-              </form>
-            </section>
+            <SettingsAdvancedPage
+              initialized={initialized}
+              running={running}
+              autoCompact={autoCompactDraft}
+              compactThreshold={compactThresholdDraft}
+              providerContextWindow={providerContextWindowDraft}
+              maxContextTokens={maxContextTokensDraft}
+              maxSteps={maxStepsDraft}
+              temperature={temperatureDraft}
+              error={advancedError}
+              saved={advancedSaved}
+              onAutoCompactToggle={() => {
+                setAutoCompactDraft((value) => !value);
+                setAdvancedSaved(false);
+              }}
+              onCompactThresholdChange={(value) => {
+                setCompactThresholdDraft(value);
+                setAdvancedSaved(false);
+              }}
+              onProviderContextWindowChange={(value) => {
+                setProviderContextWindowDraft(value);
+                setAdvancedSaved(false);
+              }}
+              onMaxContextTokensChange={(value) => {
+                setMaxContextTokensDraft(value);
+                setAdvancedSaved(false);
+              }}
+              onMaxStepsChange={(value) => {
+                setMaxStepsDraft(value);
+                setAdvancedSaved(false);
+              }}
+              onTemperatureChange={(value) => {
+                setTemperatureDraft(value);
+                setAdvancedSaved(false);
+              }}
+              onSubmit={submitAdvanced}
+            />
           ) : activePage === "general" ? (
-            <>
-
-              {showDebugControlsSetting ? (
-                <section className="settings-section">
-                  <div>
-                    <h2>开发</h2>
-                    <p>控制开发时才需要的界面入口。</p>
-                  </div>
-                  <div className="settings-card">
-                    <div className="settings-row">
-                      <span>
-                        <strong>调试入口</strong>
-                        <small>显示启动动画、调试面板和开发样例入口</small>
-                      </span>
-                      <button
-                        className="settings-switch"
-                        type="button"
-                        role="switch"
-                        aria-checked={debugControlsEnabled}
-                        onClick={() => onDebugControlsChange(!debugControlsEnabled)}
-                      >
-                        <span className="settings-switch-thumb" aria-hidden="true" />
-                        <span className="sr-only">{debugControlsEnabled ? "关闭调试入口" : "打开调试入口"}</span>
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              ) : null}
-
-              <section className="settings-section" data-testid="settings-tool-surface">
-                <div>
-                  <h2>模型工具面</h2>
-                  <p>当前模型实际能看到的能力和文件编辑方式。</p>
-                </div>
-                <div className="settings-card">
-                  <dl className="settings-about-list">
-                    <div className="settings-row">
-                      <span>
-                        <strong>Profile</strong>
-                        <small>{formatSurfaceRuntime(initialized)}</small>
-                      </span>
-                      <span className="settings-about-value">
-                        {initialized?.tool_surface?.profile_name ?? initialized?.model_profile?.profile_name ?? "—"}
-                      </span>
-                    </div>
-                    <div className="settings-row">
-                      <span>
-                        <strong>编辑方式</strong>
-                        <small>{initialized?.tool_surface?.bash_first ? "终端操作默认走 bash" : "按模型工具面执行"}</small>
-                      </span>
-                      <span className="settings-about-value">
-                        {initialized?.tool_surface?.edit_primitive ?? initialized?.model_profile?.edit_primitive ?? "—"}
-                      </span>
-                    </div>
-                    <div className="settings-row">
-                      <span>
-                        <strong>可见能力</strong>
-                        <small>{formatToolSurfaceCounts(initialized)}</small>
-                      </span>
-                      <span className="settings-about-value">
-                        {formatToolSurfaceCapabilities(initialized)}
-                      </span>
-                    </div>
-                  </dl>
-                </div>
-              </section>
-
-              <section className="settings-section" data-testid="settings-mcp">
-                <div>
-                  <h2>MCP</h2>
-                  <p>外部 MCP 服务器连接状态。</p>
-                </div>
-                <div className="settings-card settings-mcp-list">
-                  {mcpLoading ? (
-                    <div className="settings-mcp-empty">加载中…</div>
-                  ) : mcpServers.length > 0 ? (
-                    mcpServers.map((server) => {
-                      const busy = mcpBusyServer === server.name;
-                      const connected = server.connected || server.state === "connected";
-                      return (
-                        <div className="settings-row settings-mcp-row" key={server.name}>
-                          <span>
-                            <strong>{server.name}</strong>
-                            <small>{formatMCPServerMeta(server)}</small>
-                            {server.error ? <small className="settings-mcp-error">{server.error}</small> : null}
-                          </span>
-                          <span className="settings-mcp-controls">
-                            <span className={`settings-status-pill ${mcpStateTone(server.state)}`}>
-                              {mcpStateLabel(server.state)}
-                            </span>
-                            <span className="settings-mcp-actions">
-                              <button
-                                className="settings-inline-button settings-icon-button"
-                                type="button"
-                                title="刷新"
-                                aria-label={`刷新 ${server.name}`}
-                                disabled={busy}
-                                onClick={() => void runMCPAction(server.name, "refresh")}
-                              >
-                                <RefreshCw size={15} aria-hidden="true" />
-                              </button>
-                              <button
-                                className="settings-inline-button settings-icon-button"
-                                type="button"
-                                title={connected ? "断开" : "连接"}
-                                aria-label={`${connected ? "断开" : "连接"} ${server.name}`}
-                                disabled={busy}
-                                onClick={() => void runMCPAction(server.name, connected ? "disconnect" : "connect")}
-                              >
-                                {connected ? (
-                                  <PlugZap size={15} aria-hidden="true" />
-                                ) : (
-                                  <Plug size={15} aria-hidden="true" />
-                                )}
-                              </button>
-                            </span>
-                          </span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="settings-mcp-empty">暂无 MCP 服务器</div>
-                  )}
-                  {mcpError ? <div className="settings-mcp-error settings-mcp-error-row">{mcpError}</div> : null}
-                </div>
-              </section>
-
-              <section className="settings-section" data-testid="settings-about">
-                <div>
-                  <h2>关于</h2>
-                  <p>wuu 桌面与核心的构建信息。报问题时带上这一段。</p>
-                </div>
-                <div className="settings-card">
-                  <dl className="settings-about-list">
-                    <div className="settings-row">
-                      <span>
-                        <strong>桌面端</strong>
-                        <small>Electron 客户端构建</small>
-                      </span>
-                      <span className="settings-about-value">
-                        {desktopBuild ? `v${desktopBuild.version} · ${formatBuildDate(desktopBuild.date)}` : "加载中…"}
-                      </span>
-                    </div>
-                    <div className="settings-row">
-                      <span>
-                        <strong>核心</strong>
-                        <small>wuu app-server 二进制构建</small>
-                      </span>
-                      <span className="settings-about-value">{formatCoreBuild(core)}</span>
-                    </div>
-                    <div className="settings-row">
-                      <span>
-                        <strong>App-server 协议</strong>
-                        <small>桌面与核心的 IPC 协议版本</small>
-                      </span>
-                      <span className="settings-about-value">{initialized?.protocol_version ?? "—"}</span>
-                    </div>
-                    <div className="settings-row">
-                      <span>
-                        <strong>扩展边界</strong>
-                        <small>MCP、Hooks、Plugins、Skills 和 Workflows 的运行时状态</small>
-                      </span>
-                      <span className="settings-about-value">{formatExtensionTrust(initialized?.extension_trust)}</span>
-                    </div>
-                  </dl>
-                </div>
-              </section>
-            </>
+            <SettingsGeneralPage
+              initialized={initialized}
+              desktopBuild={desktopBuild}
+              core={core}
+              showDebugControlsSetting={showDebugControlsSetting}
+              debugControlsEnabled={debugControlsEnabled}
+              mcpServers={mcpServers}
+              mcpLoading={mcpLoading}
+              mcpError={mcpError}
+              mcpBusyServer={mcpBusyServer}
+              onDebugControlsChange={onDebugControlsChange}
+              onMCPAction={runMCPAction}
+            />
           ) : (
             <SettingsUsagePage
               usage={usage}
@@ -883,18 +458,908 @@ export function SettingsView({
   );
 }
 
-function settingsPageTitle(page: SettingsPage): string {
-  switch (page) {
-    case "providers":
-      return "模型服务";
-    case "advanced":
-      return "高级";
-    case "general":
-      return "常规";
-    case "usage":
-      return "用量";
-  }
+/* -------------------------------------------------------------------------- */
+/*  Shared primitives                                                          */
+/* -------------------------------------------------------------------------- */
+
+function SettingsNavItem({
+  icon,
+  active,
+  onClick,
+  children
+}: {
+  icon: ReactNode;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      className={`settings-nav-item${active ? " active" : ""}`}
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+    >
+      {icon}
+      <span>{children}</span>
+    </button>
+  );
 }
+
+function SettingsSection({
+  title,
+  description,
+  testID,
+  children
+}: {
+  title: string;
+  description: string;
+  testID?: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <section className="settings-section" {...(testID ? { "data-testid": testID } : {})}>
+      <header className="settings-section-header">
+        <h2 className="settings-section-title">{title}</h2>
+        <p className="settings-section-description">{description}</p>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function SettingsCard({ children }: { children: ReactNode }): JSX.Element {
+  return <div className="settings-card">{children}</div>;
+}
+
+function SettingsRow({
+  title,
+  description,
+  children,
+  block = false
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  block?: boolean;
+}): JSX.Element {
+  return (
+    <div className="settings-row">
+      <div className="settings-row-label">
+        <span className="settings-row-label-title">{title}</span>
+        {description ? <span className="settings-row-label-description">{description}</span> : null}
+      </div>
+      <div className={block ? "settings-row-control-block" : "settings-row-control"}>{children}</div>
+    </div>
+  );
+}
+
+function SettingsCardFooter({
+  error,
+  saved,
+  submitLabel,
+  disabled,
+  children
+}: {
+  error: string;
+  saved: boolean;
+  submitLabel: string;
+  disabled: boolean;
+  children?: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="settings-card-footer">
+      {error ? <div className="settings-error">{error}</div> : null}
+      {saved && !error ? <div className="settings-saved">已保存</div> : null}
+      {children}
+      <button className="settings-button settings-button-primary" type="submit" disabled={disabled}>
+        {submitLabel}
+      </button>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Providers page                                                             */
+/* -------------------------------------------------------------------------- */
+
+function SettingsProvidersPage({
+  providers,
+  providerLabels,
+  running,
+  providerDraft,
+  modelDraft,
+  variantDraft,
+  baseURLDraft,
+  apiKeyDraft,
+  addingProvider,
+  error,
+  saved,
+  selectedProvider,
+  connectionLocked,
+  variantOptions,
+  providerNameTaken,
+  onProviderChange,
+  onStartAddingProvider,
+  onCancelAddingProvider,
+  onProviderDraftChange,
+  onModelDraftChange,
+  onVariantDraftChange,
+  onBaseURLDraftChange,
+  onAPIKeyDraftChange,
+  onSubmit,
+  disabled
+}: {
+  providers: ProviderSummary[];
+  providerLabels: Map<string, string>;
+  running: boolean;
+  providerDraft: string;
+  modelDraft: string;
+  variantDraft: string;
+  baseURLDraft: string;
+  apiKeyDraft: string;
+  addingProvider: boolean;
+  error: string;
+  saved: boolean;
+  selectedProvider: ProviderSummary | undefined;
+  connectionLocked: boolean;
+  variantOptions: string[];
+  providerNameTaken: boolean;
+  onProviderChange: (provider: string) => void;
+  onStartAddingProvider: () => void;
+  onCancelAddingProvider: () => void;
+  onProviderDraftChange: (value: string) => void;
+  onModelDraftChange: (value: string) => void;
+  onVariantDraftChange: (value: string) => void;
+  onBaseURLDraftChange: (value: string) => void;
+  onAPIKeyDraftChange: (value: string) => void;
+  onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
+  disabled: boolean;
+}): JSX.Element {
+  return (
+    <SettingsSection
+      title="模型服务"
+      description="管理 BYOK provider、模型名称、Base URL 和 API key。"
+      testID="settings-providers"
+    >
+      {providers.length > 0 ? (
+        <div className="settings-provider-overview" data-testid="settings-provider-overview">
+          {providers.map((provider) => (
+            <button
+              className={`settings-provider-button${!addingProvider && providerDraft === provider.name ? " active" : ""}`}
+              type="button"
+              key={provider.name}
+              disabled={running}
+              onClick={() => onProviderChange(provider.name)}
+            >
+              <strong>{providerServiceLabel(provider)}</strong>
+              <small>{provider.name}</small>
+              <small>{provider.model || "未选择模型"}</small>
+              <small>{providerConnectionStatus(provider)}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <form className="settings-card" onSubmit={onSubmit}>
+        <SettingsRow
+          title={addingProvider ? "新增 OpenAI-compatible 服务" : "选择当前会话使用的服务"}
+          description={addingProvider ? "添加一个新的 OpenAI-compatible 服务" : "切换 service 不会丢失 Base URL 和 API key。"}
+        >
+          <div className="settings-row-control-block">
+            {addingProvider ? (
+              <span className="settings-inline-flag">新的模型服务</span>
+            ) : providers.length > 0 ? (
+              <select
+                className="settings-select"
+                value={providerDraft}
+                onChange={(event) => onProviderChange(event.target.value)}
+                disabled={running}
+              >
+                {providers.map((provider) => (
+                  <option key={provider.name} value={provider.name}>
+                    {providerLabels.get(provider.name) ?? provider.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="settings-inline-flag">暂无模型服务</span>
+            )}
+            <button
+              className="settings-button"
+              type="button"
+              onClick={addingProvider ? onCancelAddingProvider : onStartAddingProvider}
+              disabled={running}
+            >
+              {addingProvider ? (
+                <>
+                  <X className="icon" />
+                  <span>取消</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="icon" />
+                  <span>新增 OpenAI-compatible</span>
+                </>
+              )}
+            </button>
+          </div>
+        </SettingsRow>
+        {addingProvider ? (
+          <SettingsRow
+            title="服务标识"
+            description={providerNameTaken ? "这个名称已存在" : "写入配置的 provider 名称"}
+          >
+            <input
+              className="settings-input"
+              value={providerDraft}
+              onChange={(event) => onProviderDraftChange(event.target.value)}
+              disabled={running}
+            />
+          </SettingsRow>
+        ) : selectedProvider ? (
+          <SettingsRow title="服务标识" description={providerTypeLabel(selectedProvider)}>
+            <span className="settings-row-control-value">{selectedProvider.name}</span>
+          </SettingsRow>
+        ) : null}
+        <SettingsRow
+          title="模型名称"
+          description="发送给模型服务的 model 名称"
+          block
+        >
+          <input
+            className="settings-input"
+            value={modelDraft}
+            onChange={(event) => onModelDraftChange(event.target.value)}
+            disabled={running}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="思考强度"
+          description={variantOptions.length > 1 ? "当前模型支持的参数档位" : "当前模型没有可调参数档位"}
+          block
+        >
+          <select
+            className="settings-select"
+            value={variantDraft}
+            onChange={(event) => onVariantDraftChange(event.target.value)}
+            disabled={running || variantOptions.length <= 1}
+          >
+            {variantOptions.map((variant) => (
+              <option key={variant || "auto"} value={variant}>
+                {variantLabel(variant)}
+              </option>
+            ))}
+          </select>
+        </SettingsRow>
+        <SettingsRow
+          title="Base URL"
+          description={connectionLocked ? "由 OpenAI OAuth 管理" : "模型服务的 API 地址"}
+          block
+        >
+          <input
+            className="settings-input"
+            value={baseURLDraft}
+            placeholder={connectionLocked ? "由 OpenAI OAuth 管理" : "https://api.openai.com/v1"}
+            onChange={(event) => onBaseURLDraftChange(event.target.value)}
+            disabled={running || connectionLocked}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="API key"
+          description={
+            connectionLocked
+              ? "由 OpenAI OAuth 管理"
+              : addingProvider
+                ? "保存时写入这个服务"
+                : selectedProvider?.api_key_configured
+                  ? "已配置，留空不修改"
+                  : "用于访问这个 Provider"
+          }
+          block
+        >
+          <input
+            className="settings-input"
+            value={apiKeyDraft}
+            type="password"
+            autoComplete="new-password"
+            placeholder={
+              connectionLocked
+                ? "不需要 API key"
+                : addingProvider
+                  ? "输入 API key"
+                  : selectedProvider?.api_key_configured
+                    ? "留空保持当前密钥"
+                    : "输入 API key"
+            }
+            onChange={(event) => onAPIKeyDraftChange(event.target.value)}
+            disabled={running || connectionLocked}
+          />
+        </SettingsRow>
+        <SettingsCardFooter
+          error={error}
+          saved={saved}
+          submitLabel={addingProvider ? "添加服务" : "保存配置"}
+          disabled={disabled}
+        />
+      </form>
+    </SettingsSection>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Advanced page                                                              */
+/* -------------------------------------------------------------------------- */
+
+function SettingsAdvancedPage({
+  initialized,
+  running,
+  autoCompact,
+  compactThreshold,
+  providerContextWindow,
+  maxContextTokens,
+  maxSteps,
+  temperature,
+  error,
+  saved,
+  onAutoCompactToggle,
+  onCompactThresholdChange,
+  onProviderContextWindowChange,
+  onMaxContextTokensChange,
+  onMaxStepsChange,
+  onTemperatureChange,
+  onSubmit
+}: {
+  initialized: InitializeResult | undefined;
+  running: boolean;
+  autoCompact: boolean;
+  compactThreshold: string;
+  providerContextWindow: string;
+  maxContextTokens: string;
+  maxSteps: string;
+  temperature: string;
+  error: string;
+  saved: boolean;
+  onAutoCompactToggle: () => void;
+  onCompactThresholdChange: (value: string) => void;
+  onProviderContextWindowChange: (value: string) => void;
+  onMaxContextTokensChange: (value: string) => void;
+  onMaxStepsChange: (value: string) => void;
+  onTemperatureChange: (value: string) => void;
+  onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
+}): JSX.Element {
+  return (
+    <SettingsSection
+      title="高级"
+      description="调整上下文窗口、自动压缩触发点和单轮运行预算。"
+      testID="settings-advanced"
+    >
+      <form className="settings-card" onSubmit={onSubmit}>
+        <SettingsRow
+          title="上下文与压缩"
+          description="用于 BYOK 网关、模型别名和长会话预算控制"
+          block
+        >
+          <span />
+        </SettingsRow>
+        <SettingsRow
+          title="自动压缩"
+          description="接近可用上下文时自动整理旧历史；溢出恢复仍会保留"
+        >
+          <button
+            className="settings-switch"
+            type="button"
+            role="switch"
+            aria-checked={autoCompact}
+            disabled={running || !initialized}
+            onClick={onAutoCompactToggle}
+          >
+            <span className="settings-switch-thumb" aria-hidden="true" />
+            <span className="sr-only">{autoCompact ? "关闭自动压缩" : "打开自动压缩"}</span>
+          </button>
+        </SettingsRow>
+        <SettingsRow
+          title="压缩触发阈值"
+          description="百分比；留空使用模型可用窗口，50 表示更早压缩"
+          block
+        >
+          <input
+            className="settings-input"
+            value={compactThreshold}
+            inputMode="numeric"
+            placeholder="自动"
+            onChange={(event) => onCompactThresholdChange(event.target.value)}
+            disabled={running || !initialized}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="当前服务上下文窗口"
+          description="token；用于自定义模型、网关别名或未收录新模型"
+          block
+        >
+          <input
+            className="settings-input"
+            value={providerContextWindow}
+            inputMode="numeric"
+            placeholder="自动识别"
+            onChange={(event) => onProviderContextWindowChange(event.target.value)}
+            disabled={running || !initialized}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="未知模型窗口"
+          description="token；当前 Provider 未覆盖且模型库未知时使用"
+          block
+        >
+          <input
+            className="settings-input"
+            value={maxContextTokens}
+            inputMode="numeric"
+            placeholder="自动"
+            onChange={(event) => onMaxContextTokensChange(event.target.value)}
+            disabled={running || !initialized}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="上下文窗口"
+          description={advancedContextSourceLabel(initialized?.advanced_settings?.context_window_source)}
+        >
+          <span className="settings-row-control-value">
+            {formatTokenCount(initialized?.advanced_settings?.context_window_tokens ?? 0)}
+          </span>
+        </SettingsRow>
+        <SettingsRow
+          title="压缩触发"
+          description="扣除输出预留后，主动整理旧历史的 token 点"
+        >
+          <span className="settings-row-control-value">
+            {formatTokenCount(initialized?.advanced_settings?.compact_threshold_tokens ?? 0)}
+          </span>
+        </SettingsRow>
+        <SettingsRow
+          title="输出预留"
+          description="为模型回答保留的 token 预算"
+        >
+          <span className="settings-row-control-value">
+            {formatTokenCount(initialized?.advanced_settings?.output_reserve_tokens ?? 0)}
+          </span>
+        </SettingsRow>
+        <SettingsRow
+          title="Agent 预算"
+          description="控制单轮自动执行的边界"
+          block
+        >
+          <span />
+        </SettingsRow>
+        <SettingsRow
+          title="最大步数"
+          description="0 表示不设硬上限"
+          block
+        >
+          <input
+            className="settings-input"
+            value={maxSteps}
+            inputMode="numeric"
+            onChange={(event) => onMaxStepsChange(event.target.value)}
+            disabled={running || !initialized}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Temperature"
+          description="0 到 2；默认 0.2"
+          block
+        >
+          <input
+            className="settings-input"
+            value={temperature}
+            inputMode="decimal"
+            onChange={(event) => onTemperatureChange(event.target.value)}
+            disabled={running || !initialized}
+          />
+        </SettingsRow>
+        <SettingsCardFooter
+          error={error}
+          saved={saved}
+          submitLabel="保存高级设置"
+          disabled={running || !initialized}
+        />
+      </form>
+    </SettingsSection>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  General page                                                               */
+/* -------------------------------------------------------------------------- */
+
+function SettingsGeneralPage({
+  initialized,
+  desktopBuild,
+  core,
+  showDebugControlsSetting,
+  debugControlsEnabled,
+  mcpServers,
+  mcpLoading,
+  mcpError,
+  mcpBusyServer,
+  onDebugControlsChange,
+  onMCPAction
+}: {
+  initialized: InitializeResult | undefined;
+  desktopBuild: DesktopBuildInfo | undefined;
+  core: InitializeResult["core"] | undefined;
+  showDebugControlsSetting: boolean;
+  debugControlsEnabled: boolean;
+  mcpServers: MCPServerStatus[];
+  mcpLoading: boolean;
+  mcpError: string;
+  mcpBusyServer: string;
+  onDebugControlsChange: (enabled: boolean) => void;
+  onMCPAction: (name: string, action: "connect" | "disconnect" | "refresh") => Promise<void>;
+}): JSX.Element {
+  return (
+    <>
+      {showDebugControlsSetting ? (
+        <SettingsSection
+          title="开发"
+          description="控制开发时才需要的界面入口。"
+        >
+          <SettingsCard>
+            <SettingsRow
+              title="调试入口"
+              description="显示启动动画、调试面板和开发样例入口"
+            >
+              <button
+                className="settings-switch"
+                type="button"
+                role="switch"
+                aria-checked={debugControlsEnabled}
+                onClick={() => onDebugControlsChange(!debugControlsEnabled)}
+              >
+                <span className="settings-switch-thumb" aria-hidden="true" />
+                <span className="sr-only">{debugControlsEnabled ? "关闭调试入口" : "打开调试入口"}</span>
+              </button>
+            </SettingsRow>
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
+
+      <SettingsSection
+        title="模型工具面"
+        description="当前模型实际能看到的能力和文件编辑方式。"
+        testID="settings-tool-surface"
+      >
+        <SettingsCard>
+          <SettingsRow
+            title="Profile"
+            description={formatSurfaceRuntime(initialized)}
+          >
+            <span className="settings-row-control-value">
+              {initialized?.tool_surface?.profile_name ?? initialized?.model_profile?.profile_name ?? "—"}
+            </span>
+          </SettingsRow>
+          <SettingsRow
+            title="编辑方式"
+            description={initialized?.tool_surface?.bash_first ? "终端操作默认走 bash" : "按模型工具面执行"}
+          >
+            <span className="settings-row-control-value">
+              {initialized?.tool_surface?.edit_primitive ?? initialized?.model_profile?.edit_primitive ?? "—"}
+            </span>
+          </SettingsRow>
+          <SettingsRow
+            title="可见能力"
+            description={formatToolSurfaceCounts(initialized)}
+            block
+          >
+            <span className="settings-row-control-value">
+              {formatToolSurfaceCapabilities(initialized)}
+            </span>
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
+        title="MCP"
+        description="外部 MCP 服务器连接状态。"
+        testID="settings-mcp"
+      >
+        <SettingsCard>
+          {mcpLoading ? (
+            <div className="settings-mcp-empty">加载中…</div>
+          ) : mcpServers.length > 0 ? (
+            mcpServers.map((server) => {
+              const busy = mcpBusyServer === server.name;
+              const connected = server.connected || server.state === "connected";
+              return (
+                <SettingsRow
+                  key={server.name}
+                  title={server.name}
+                  description={formatMCPServerMeta(server)}
+                >
+                  <span className="settings-row-control-value">
+                    <span className={`settings-status-pill ${mcpStateTone(server.state)}`}>
+                      {mcpStateLabel(server.state)}
+                    </span>
+                  </span>
+                  <button
+                    className="settings-button settings-icon-button"
+                    type="button"
+                    title="刷新"
+                    aria-label={`刷新 ${server.name}`}
+                    disabled={busy}
+                    onClick={() => void onMCPAction(server.name, "refresh")}
+                  >
+                    <RefreshCw size={15} aria-hidden="true" />
+                  </button>
+                  <button
+                    className="settings-button settings-icon-button"
+                    type="button"
+                    title={connected ? "断开" : "连接"}
+                    aria-label={`${connected ? "断开" : "连接"} ${server.name}`}
+                    disabled={busy}
+                    onClick={() => void onMCPAction(server.name, connected ? "disconnect" : "connect")}
+                  >
+                    {connected ? <PlugZap size={15} aria-hidden="true" /> : <Plug size={15} aria-hidden="true" />}
+                  </button>
+                  {server.error ? (
+                    <small className="settings-mcp-error">{server.error}</small>
+                  ) : null}
+                </SettingsRow>
+              );
+            })
+          ) : (
+            <div className="settings-mcp-empty">暂无 MCP 服务器</div>
+          )}
+          {mcpError ? <div className="settings-mcp-empty settings-mcp-error">{mcpError}</div> : null}
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
+        title="关于"
+        description="wuu 桌面与核心的构建信息。报问题时带上这一段。"
+        testID="settings-about"
+      >
+        <SettingsCard>
+          <SettingsRow
+            title="桌面端"
+            description="Electron 客户端构建"
+          >
+            <span className="settings-row-control-value">
+              {desktopBuild ? `v${desktopBuild.version} · ${formatBuildDate(desktopBuild.date)}` : "加载中…"}
+            </span>
+          </SettingsRow>
+          <SettingsRow
+            title="核心"
+            description="wuu app-server 二进制构建"
+          >
+            <span className="settings-row-control-value">{formatCoreBuild(core)}</span>
+          </SettingsRow>
+          <SettingsRow
+            title="App-server 协议"
+            description="桌面与核心的 IPC 协议版本"
+          >
+            <span className="settings-row-control-value">{initialized?.protocol_version ?? "—"}</span>
+          </SettingsRow>
+          <SettingsRow
+            title="扩展边界"
+            description="MCP、Hooks、Plugins、Skills 和 Workflows 的运行时状态"
+            block
+          >
+            <span className="settings-row-control-value">{formatExtensionTrust(initialized?.extension_trust)}</span>
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Usage page                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function SettingsUsagePage({
+  usage,
+  usageRange,
+  setUsageRange
+}: {
+  usage: SettingsUsageResponse | undefined;
+  usageRange: SettingsUsageRange;
+  setUsageRange: (range: SettingsUsageRange) => void;
+}): JSX.Element {
+  const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
+  const heatmap = usage ? buildCacheHeatmap(usage.days) : [];
+  return (
+    <>
+      <SettingsSection
+        title="本地用量"
+        description="显示当前桌面已加载会话的 token 统计。"
+        testID="settings-usage"
+      >
+        <div
+          className="settings-usage-range"
+          role="tablist"
+          aria-label="时间范围"
+        >
+          {ranges.map((range) => (
+            <button
+              key={range}
+              type="button"
+              role="tab"
+              aria-selected={usageRange === range}
+              data-range={range}
+              className={`settings-usage-range-button${usageRange === range ? " active" : ""}`}
+              onClick={() => setUsageRange(range)}
+            >
+              {formatUsageRange(range)}
+            </button>
+          ))}
+        </div>
+        {usage ? (
+          <div className="settings-usage-metrics">
+            <UsageMetric
+              label="上下文 token"
+              value={usage.metrics.context_tokens}
+              detail={`输入 ${formatTokenCount(usage.metrics.input_tokens)} · 缓存读取 ${formatTokenCount(usage.metrics.cache_read_tokens)}`}
+            />
+            <UsageMetric
+              label="输入 token"
+              value={usage.metrics.input_tokens}
+              detail={`${usage.metrics.turns} 轮主会话`}
+            />
+            <UsageMetric
+              label="输出 token"
+              value={usage.metrics.output_tokens}
+              detail={`${usage.metrics.agents} 个子任务`}
+            />
+            <UsageMetric
+              label="缓存命中率"
+              value={formatPercent(usage.metrics.cache_hit_rate)}
+              detail={`读取 ${formatTokenCount(usage.metrics.cache_read_tokens)} / 提示 ${formatTokenCount(usage.metrics.prompt_tokens)}`}
+            />
+            <UsageMetric
+              label="缓存写入"
+              value={usage.metrics.cache_creation_tokens}
+              detail="供后续请求复用"
+            />
+          </div>
+        ) : (
+          <div className="settings-empty">加载中…</div>
+        )}
+      </SettingsSection>
+
+      {usage ? (
+        <>
+          <SettingsSection
+            title="模型使用"
+            description="用过的模型服务、模型名称和缓存命中情况。"
+          >
+            <div className="settings-card">
+              {usage.model_breakdowns.length > 0 ? (
+                <div className="settings-usage-table-wrap">
+                  <table className="settings-usage-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">模型</th>
+                        <th scope="col" className="settings-usage-num">上下文</th>
+                        <th scope="col" className="settings-usage-num">缓存命中</th>
+                        <th scope="col" className="settings-usage-num">输入</th>
+                        <th scope="col" className="settings-usage-num">输出</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usage.model_breakdowns.map((b) => {
+                        const ctx = b.input_tokens + b.cache_read_tokens + b.output_tokens;
+                        const prompt = b.input_tokens + b.cache_read_tokens;
+                        const rate = prompt > 0 ? b.cache_read_tokens / prompt : undefined;
+                        return (
+                          <tr key={`${b.provider}\n${b.model}`}>
+                            <td>
+                              <strong>{b.provider || "(未知服务)"}</strong>
+                              <small>{b.model || "(未知模型)"}</small>
+                            </td>
+                            <td className="settings-usage-num">{formatTokenCount(ctx)}</td>
+                            <td className="settings-usage-num">
+                              <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
+                                {formatPercent(rate)}
+                              </span>
+                            </td>
+                            <td className="settings-usage-num">{formatTokenCount(b.input_tokens)}</td>
+                            <td className="settings-usage-num">{formatTokenCount(b.output_tokens)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="settings-empty">暂无用量记录</div>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="缓存命中热力图"
+            description="最近 12 周每天的缓存命中率。"
+          >
+            <div className="settings-card settings-cache-heatmap-card">
+              <div className="settings-cache-heatmap-summary">
+                <span className="settings-cache-heatmap-summary-value">
+                  {formatPercent(usage.metrics.cache_hit_rate)}
+                </span>
+                <span className="settings-cache-heatmap-summary-label">
+                  整体缓存命中率
+                </span>
+                <span className="settings-cache-heatmap-summary-detail">
+                  活跃 {usage.metrics.active_days} 天 · 读取 {formatTokenCount(usage.metrics.cache_read_tokens)} · 写入 {formatTokenCount(usage.metrics.cache_creation_tokens)}
+                </span>
+              </div>
+              <div className="settings-cache-heatmap" aria-label="缓存命中率热力图" role="grid">
+                {heatmap.map((day) => (
+                  <span
+                    className="settings-cache-heatmap-cell"
+                    data-level={day.level}
+                    key={day.date}
+                    role="gridcell"
+                    title={formatHeatmapTitle(day)}
+                    aria-label={formatHeatmapTitle(day)}
+                  />
+                ))}
+              </div>
+              <div className="settings-cache-heatmap-legend" aria-hidden="true">
+                <span>低</span>
+                {[0, 1, 2, 3, 4].map((level) => (
+                  <i data-level={level} key={level} />
+                ))}
+                <span>高</span>
+              </div>
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="最近记录"
+            description="主会话轮次的最近用量，按时间倒序。"
+          >
+            <div className="settings-card">
+              {usage.entries.length > 0 ? (
+                <div className="settings-usage-entries">
+                  {usage.entries.slice(0, 8).map((entry) => {
+                    const ctx = entry.input_tokens + entry.cache_read_tokens + entry.output_tokens;
+                    return (
+                      <div className="settings-usage-entry" key={entry.id}>
+                        <div className="settings-usage-entry-label">
+                          <strong>{entry.title}</strong>
+                          <small>{formatUsageEntryMeta(entry)}</small>
+                        </div>
+                        <span className="settings-usage-entry-value">{formatTokenCount(ctx)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="settings-empty">暂无用量记录</div>
+              )}
+            </div>
+          </SettingsSection>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function UsageMetric({ label, value, detail }: { label: string; value: number | string; detail: string }): JSX.Element {
+  return (
+    <div className="settings-usage-metric">
+      <span className="settings-usage-metric-label">{label}</span>
+      <strong className="settings-usage-metric-value">
+        {typeof value === "number" ? formatTokenCount(value) : value}
+      </strong>
+      <small className="settings-usage-metric-detail">{detail}</small>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Helpers (kept at module scope, no behavior change)                         */
+/* -------------------------------------------------------------------------- */
 
 type AdvancedDraft = {
   autoCompact: boolean;
@@ -904,6 +1369,31 @@ type AdvancedDraft = {
   maxSteps: string;
   temperature: string;
 };
+
+function settingsPageMeta(page: SettingsPage): { title: string; description: string } {
+  switch (page) {
+    case "providers":
+      return {
+        title: "模型服务",
+        description: "配置 BYOK provider、模型和连接信息；切换不会丢失现有设置。"
+      };
+    case "advanced":
+      return {
+        title: "高级",
+        description: "调整上下文窗口、压缩触发点和 Agent 单轮运行预算。"
+      };
+    case "general":
+      return {
+        title: "常规",
+        description: "查看模型工具面、MCP 服务器状态和构建信息。"
+      };
+    case "usage":
+      return {
+        title: "用量",
+        description: "本地会话的 token 消耗、缓存命中和模型使用情况。"
+      };
+  }
+}
 
 function parseAdvancedSettingsDraft(draft: AdvancedDraft): { settings: RuntimeAdvancedSettingsUpdate; error?: string } {
   const compactPercent = parseOptionalNumber(draft.compactThreshold, "压缩触发阈值");
@@ -1000,13 +1490,6 @@ function formatTemperatureDraft(value: number | undefined): string {
   return String(value);
 }
 
-function formatAdvancedRuntimeLabel(initialized: InitializeResult | undefined): string {
-  if (!initialized) {
-    return "未连接";
-  }
-  return `${initialized.provider} · ${initialized.model}`;
-}
-
 function advancedContextSourceLabel(source: string | undefined): string {
   switch (source) {
     case "provider_context_window":
@@ -1038,205 +1521,9 @@ function providerTypeLabel(provider: ProviderSummary): string {
   return provider.connection_locked ? "OAuth 管理的服务" : type;
 }
 
-function SettingsUsagePage({
-  usage,
-  usageRange,
-  setUsageRange,
-}: {
-  usage: SettingsUsageResponse | undefined;
-  usageRange: SettingsUsageRange;
-  setUsageRange: (range: SettingsUsageRange) => void;
-}): JSX.Element {
-  const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
-  const heatmap = usage ? buildCacheHeatmap(usage.days) : [];
-  return (
-    <>
-      <section className="settings-section" data-testid="settings-usage">
-        <div className="settings-usage-header">
-          <h2>本地用量</h2>
-          <p>显示当前桌面已加载会话的 token 统计。</p>
-        </div>
-        <div
-          className="settings-usage-range"
-          role="tablist"
-          aria-label="时间范围"
-        >
-          {ranges.map((range) => (
-            <button
-              key={range}
-              type="button"
-              role="tab"
-              aria-selected={usageRange === range}
-              data-range={range}
-              className={`settings-usage-range-button${usageRange === range ? " active" : ""}`}
-              onClick={() => setUsageRange(range)}
-            >
-              {formatUsageRange(range)}
-            </button>
-          ))}
-        </div>
-        {usage ? (
-          <div className="settings-usage-metrics">
-            <UsageMetric
-              label="上下文 token"
-              value={usage.metrics.context_tokens}
-              detail={`输入 ${formatTokenCount(usage.metrics.input_tokens)} · 缓存读取 ${formatTokenCount(usage.metrics.cache_read_tokens)}`}
-            />
-            <UsageMetric
-              label="输入 token"
-              value={usage.metrics.input_tokens}
-              detail={`${usage.metrics.turns} 轮主会话`}
-            />
-            <UsageMetric
-              label="输出 token"
-              value={usage.metrics.output_tokens}
-              detail={`${usage.metrics.agents} 个子任务`}
-            />
-            <UsageMetric
-              label="缓存命中率"
-              value={formatPercent(usage.metrics.cache_hit_rate)}
-              detail={`读取 ${formatTokenCount(usage.metrics.cache_read_tokens)} / 提示 ${formatTokenCount(usage.metrics.prompt_tokens)}`}
-            />
-            <UsageMetric
-              label="缓存写入"
-              value={usage.metrics.cache_creation_tokens}
-              detail="供后续请求复用"
-            />
-          </div>
-        ) : (
-          <div className="settings-usage-empty">加载中…</div>
-        )}
-      </section>
-
-      {usage && (
-        <>
-          <section className="settings-section">
-            <div>
-              <h2>模型使用</h2>
-              <p>用过的模型服务、模型名称和缓存命中情况。</p>
-            </div>
-            <div className="settings-card settings-usage-table-card">
-              {usage.model_breakdowns.length > 0 ? (
-                <table className="settings-usage-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">模型</th>
-                      <th scope="col" className="settings-usage-num">上下文</th>
-                      <th scope="col" className="settings-usage-num">缓存命中</th>
-                      <th scope="col" className="settings-usage-num">输入</th>
-                      <th scope="col" className="settings-usage-num">输出</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usage.model_breakdowns.map((b) => {
-                      const ctx = b.input_tokens + b.cache_read_tokens + b.output_tokens;
-                      const prompt = b.input_tokens + b.cache_read_tokens;
-                      const rate = prompt > 0 ? b.cache_read_tokens / prompt : undefined;
-                      return (
-                        <tr key={`${b.provider}\n${b.model}`}>
-                          <td>
-                            <strong>{b.provider || "(未知服务)"}</strong>
-                            <small>{b.model || "(未知模型)"}</small>
-                          </td>
-                          <td className="settings-usage-num">{formatTokenCount(ctx)}</td>
-                          <td className="settings-usage-num">
-                            <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
-                              {formatPercent(rate)}
-                            </span>
-                          </td>
-                          <td className="settings-usage-num">{formatTokenCount(b.input_tokens)}</td>
-                          <td className="settings-usage-num">{formatTokenCount(b.output_tokens)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="settings-usage-empty">暂无用量记录</div>
-              )}
-            </div>
-          </section>
-
-          <section className="settings-section">
-            <div>
-              <h2>缓存命中热力图</h2>
-              <p>最近 12 周每天的缓存命中率。</p>
-            </div>
-            <div className="settings-card settings-cache-heatmap-card">
-              <div className="settings-cache-heatmap-summary">
-                <strong>{formatPercent(usage.metrics.cache_hit_rate)}</strong>
-                <span>整体缓存命中率 · 活跃 {usage.metrics.active_days} 天</span>
-                <small>
-                  读取 {formatTokenCount(usage.metrics.cache_read_tokens)} · 写入 {formatTokenCount(usage.metrics.cache_creation_tokens)}
-                </small>
-              </div>
-              <div className="settings-cache-heatmap" aria-label="缓存命中率热力图" role="grid">
-                {heatmap.map((day) => (
-                  <span
-                    className="settings-cache-heatmap-cell"
-                    data-level={day.level}
-                    key={day.date}
-                    role="gridcell"
-                    title={formatHeatmapTitle(day)}
-                    aria-label={formatHeatmapTitle(day)}
-                  />
-                ))}
-              </div>
-              <div className="settings-cache-heatmap-legend" aria-hidden="true">
-                <span>低</span>
-                {[0, 1, 2, 3, 4].map((level) => (
-                  <i data-level={level} key={level} />
-                ))}
-                <span>高</span>
-              </div>
-            </div>
-          </section>
-
-          <section className="settings-section">
-            <div>
-              <h2>最近记录</h2>
-              <p>主会话轮次的最近用量,按时间倒序。</p>
-            </div>
-            <div className="settings-card">
-              {usage.entries.length > 0 ? (
-                <div className="settings-usage-entries">
-                  {usage.entries.slice(0, 8).map((entry) => {
-                    const ctx = entry.input_tokens + entry.cache_read_tokens + entry.output_tokens;
-                    return (
-                      <div className="settings-usage-entry" key={entry.id}>
-                        <span>
-                          <strong>{entry.title}</strong>
-                          <small>{formatUsageEntryMeta(entry)}</small>
-                        </span>
-                        <span className="settings-usage-entry-value">{formatTokenCount(ctx)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="settings-usage-empty">暂无用量记录</div>
-              )}
-            </div>
-          </section>
-        </>
-      )}
-    </>
-  );
-}
-
 type CacheHeatmapCell = SettingsUsageDay & {
   level: number;
 };
-
-function UsageMetric({ label, value, detail }: { label: string; value: number | string; detail: string }): JSX.Element {
-  return (
-    <div className="settings-usage-metric">
-      <span>{label}</span>
-      <strong>{typeof value === "number" ? formatTokenCount(value) : value}</strong>
-      <small>{detail}</small>
-    </div>
-  );
-}
 
 function formatTokenCount(value: number): string {
   return Math.max(0, value).toLocaleString();
