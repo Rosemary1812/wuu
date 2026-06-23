@@ -466,6 +466,9 @@ func TestGoalActiveSummaryReturnsMostRecentNonTerminalGoal(t *testing.T) {
 	if result.Summary.UpdatedAt == "" {
 		t.Fatalf("summary updated_at empty: %+v", result.Summary)
 	}
+	if result.Summary.StartedAt == "" {
+		t.Fatalf("summary started_at empty: %+v", result.Summary)
+	}
 }
 
 func TestGoalActiveSummarySkipsTerminalGoals(t *testing.T) {

@@ -349,14 +349,18 @@ type GoalSnapshotResult struct {
 // re-checking status.
 // Text is the first line of goal.Goal. The renderer owns visual ellipsis
 // so editing a long first line never persists a server-side truncation.
-// It intentionally omits task / step / approvals to keep the composer
-// surface quiet.
+// StartedAt is the canonical goal creation timestamp; the renderer uses
+// it as the baseline for an elapsed-time counter so the timer survives a
+// desktop reload instead of restarting from "first time the renderer saw
+// the goal". It intentionally omits task / step / approvals to keep the
+// composer surface quiet.
 type GoalActiveSummary struct {
 	ID        string `json:"id"`
 	ThreadID  string `json:"thread_id,omitempty"`
 	Text      string `json:"text"`
 	Status    string `json:"status"`
 	Step      string `json:"step,omitempty"`
+	StartedAt string `json:"started_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 

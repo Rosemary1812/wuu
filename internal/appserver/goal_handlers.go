@@ -166,9 +166,12 @@ func (s *Server) handleGoalApprovalResolve(req Request) error {
 
 // handleGoalActiveSummary returns the lightweight composer-banner view of
 // the most recently updated non-terminal goal. The renderer only needs id,
-// text (single-line), status, step, updated_at — full goal state (tasks,
-// approvals, workflow phases) is intentionally omitted so the renderer
-// cannot rebuild the deleted right-side Goal panel from this surface.
+// text (single-line), status, step, started_at, updated_at — full goal
+// state (tasks, approvals, workflow phases) is intentionally omitted so the
+// renderer cannot rebuild the deleted right-side Goal panel from this
+// surface. started_at feeds the composer banner's elapsed-time counter and
+// must come from the canonical goal creation timestamp so the timer survives
+// a desktop reload.
 func (s *Server) handleGoalActiveSummary(req Request) error {
 	var params GoalActiveSummaryParams
 	if len(req.Params) > 0 {
@@ -283,6 +286,10 @@ func (s *Server) findActiveGoalSummary(threadID string) (*GoalActiveSummary, err
 	if best == nil {
 		return nil, nil
 	}
+	started := ""
+	if !best.CreatedAt.IsZero() {
+		started = best.CreatedAt.UTC().Format(time.RFC3339)
+	}
 	updated := ""
 	if !best.UpdatedAt.IsZero() {
 		updated = best.UpdatedAt.UTC().Format(time.RFC3339)
@@ -293,6 +300,7 @@ func (s *Server) findActiveGoalSummary(threadID string) (*GoalActiveSummary, err
 		Text:      goalSummaryText(best.Goal),
 		Status:    string(best.Status),
 		Step:      string(best.CurrentStep),
+		StartedAt: started,
 		UpdatedAt: updated,
 	}, nil
 }
