@@ -95,7 +95,7 @@ export function AppSidebar({
    * scrollHeight check mirrors ConversationScrollState so a list that fits
    * inside the sidebar never paints a phantom scrollbar.
    */
-  const projectListRef = useRef<HTMLElement | null>(null);
+  const projectListRef = useRef<HTMLDivElement | null>(null);
   const sidebarScrollbarHideTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     const node = projectListRef.current;
@@ -236,7 +236,7 @@ export function AppSidebar({
           onCreateScratchThread={onCreateScratchThread}
         />
 
-        <section className="project-list" aria-label="项目" ref={projectListRef}>
+        <section className="project-section" aria-label="项目">
           <div className="sidebar-section-header project-section-header" ref={projectMenuRef}>
             <div className="section-label">项目</div>
             <button
@@ -261,29 +261,31 @@ export function AppSidebar({
               </div>
             ) : null}
           </div>
-          {state.projects.length === 0 ? (
-            <div className="project-empty-note">还没有项目</div>
-          ) : null}
-          <ProjectList
-            projects={state.projects}
-            activeID={state.activeProjectId}
-            pendingProjectID={pendingProjectID}
-            collapsedProjectIDs={collapsedProjectIDs}
-            collapsingProjectIDs={collapsingProjectIDs}
-            threads={state.threads}
-            activeThreadID={activeThreadID}
-            pendingThreadID={pendingThreadID}
-            archiveConfirmThreadID={archiveConfirmThreadID}
-            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-            onSelectProject={onOpenProject}
-            onToggleProjectCollapsed={onToggleProjectCollapsed}
-            onStartNewThread={onStartNewThreadForProject}
-            onSelectThread={onSelectThread}
-            onSelectChildAgent={onSelectChildAgent}
-            onToggleThreadPinned={onTogglePinned}
-            onArchiveThread={onArchiveThread}
-            onClearArchiveConfirm={onClearArchiveConfirm}
-          />
+          <div className="project-list" ref={projectListRef}>
+            {state.projects.length === 0 ? (
+              <div className="project-empty-note">还没有项目</div>
+            ) : null}
+            <ProjectList
+              projects={state.projects}
+              activeID={state.activeProjectId}
+              pendingProjectID={pendingProjectID}
+              collapsedProjectIDs={collapsedProjectIDs}
+              collapsingProjectIDs={collapsingProjectIDs}
+              threads={state.threads}
+              activeThreadID={activeThreadID}
+              pendingThreadID={pendingThreadID}
+              archiveConfirmThreadID={archiveConfirmThreadID}
+              lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+              onSelectProject={onOpenProject}
+              onToggleProjectCollapsed={onToggleProjectCollapsed}
+              onStartNewThread={onStartNewThreadForProject}
+              onSelectThread={onSelectThread}
+              onSelectChildAgent={onSelectChildAgent}
+              onToggleThreadPinned={onTogglePinned}
+              onArchiveThread={onArchiveThread}
+              onClearArchiveConfirm={onClearArchiveConfirm}
+            />
+          </div>
         </section>
         <div className="sidebar-settings">
           <button
