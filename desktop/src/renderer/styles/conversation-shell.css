@@ -103,7 +103,7 @@
 .session-tab-scroll {
   display: flex;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   align-items: center;
   gap: 7px;
   overflow-x: auto;
@@ -118,11 +118,12 @@
 .session-tab {
   display: flex;
   position: relative;
-  min-width: 118px;
+  min-width: 96px;
   max-width: 236px;
   height: 30px;
-  flex: 0 1 auto;
+  flex: 1 1 0%;
   align-items: center;
+  box-sizing: border-box;
   border: 1px solid var(--ink-overlay-8);
   border-radius: var(--radius-pill);
   background: var(--surface-2);

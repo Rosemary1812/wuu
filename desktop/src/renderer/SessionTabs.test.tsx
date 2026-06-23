@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,6 +14,20 @@ import { SessionTabStrip } from "./SessionTabs";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
+
+const conversationShellCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/conversation-shell.css"),
+  "utf8",
+);
+
+function cssRule(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = conversationShellCSS.match(
+    new RegExp(`^${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "m"),
+  );
+  expect(match).not.toBeNull();
+  return match?.[1] ?? "";
+}
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -161,5 +177,21 @@ describe("SessionTabStrip pending indicators", () => {
     expect(tabs[0]?.classList.contains("has-unread")).toBe(false);
     expect(tabs[1]?.classList.contains("has-unread")).toBe(false);
     expect(tabs[1]?.classList.contains("running")).toBe(true);
+  });
+});
+
+describe("SessionTabStrip layout styles", () => {
+  it("keeps crowded tabs equal width with stable close targets", () => {
+    const tabScrollRule = cssRule(".session-tab-scroll");
+    const tabRule = cssRule(".session-tab");
+    const closeRule = cssRule(".session-tab-close");
+
+    expect(tabScrollRule).toContain("flex: 1 1 0%;");
+    expect(tabScrollRule).toContain("overflow-x: auto;");
+    expect(tabRule).toContain("flex: 1 1 0%;");
+    expect(tabRule).toContain("min-width: 96px;");
+    expect(tabRule).toContain("max-width: 236px;");
+    expect(closeRule).toContain("width: 24px;");
+    expect(closeRule).toContain("flex: 0 0 auto;");
   });
 });
