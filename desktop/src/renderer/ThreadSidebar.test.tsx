@@ -281,4 +281,39 @@ describe("ScratchThreadSection", () => {
     });
     expect(container.querySelectorAll(".thread-row").length).toBe(12);
   });
+
+  it("does not render a collapse button while still at the initial visible count", () => {
+    const threads: Thread[] = Array.from({ length: 20 }, (_, i) =>
+      makeScratchThread(`scratch-${i}`)
+    );
+    renderSection({ onCreateScratchThread: vi.fn(), threads });
+    expect(container.querySelector(".thread-list-collapse-btn")).toBeNull();
+  });
+
+  it("renders a collapse button after expanding and resets to initial on click", () => {
+    const threads: Thread[] = Array.from({ length: 20 }, (_, i) =>
+      makeScratchThread(`scratch-${i}`)
+    );
+    renderSection({ onCreateScratchThread: vi.fn(), threads });
+    expect(container.querySelectorAll(".thread-row").length).toBe(8);
+    const showMore = container.querySelector(
+      ".thread-list-more"
+    ) as HTMLButtonElement | null;
+    act(() => {
+      showMore!.click();
+    });
+    // 8 + 10 = 18 visible after one expansion.
+    expect(container.querySelectorAll(".thread-row").length).toBe(18);
+    const collapse = container.querySelector(
+      ".thread-list-collapse-btn"
+    ) as HTMLButtonElement | null;
+    expect(collapse).not.toBeNull();
+    expect(collapse?.textContent ?? "").toContain("收起");
+    act(() => {
+      collapse!.click();
+    });
+    expect(container.querySelectorAll(".thread-row").length).toBe(8);
+    // Once reset, the collapse button disappears because nothing is expanded.
+    expect(container.querySelector(".thread-list-collapse-btn")).toBeNull();
+  });
 });

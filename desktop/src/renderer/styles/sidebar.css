@@ -687,9 +687,17 @@
   transform-origin: top;
 }
 
+.thread-list-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
 .thread-list-more {
   display: flex;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 28px;
   align-items: center;
   justify-content: space-between;
@@ -721,6 +729,33 @@
   color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
+}
+
+.thread-list-collapse-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  padding: 0 9px 0 8px;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.thread-list-collapse-btn:hover,
+.thread-list-collapse-btn:focus-visible {
+  outline: 0;
+  background: rgba(17, 19, 21, 0.05);
+  color: var(--ink);
 }
 
 .thread-row {

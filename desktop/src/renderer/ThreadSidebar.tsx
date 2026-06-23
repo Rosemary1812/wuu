@@ -72,6 +72,15 @@ export function ProjectList({
     }));
   }
 
+  function collapseProjectThreads(projectID: string): void {
+    setVisibleThreadCountsByProjectID((current) => {
+      if (!(projectID in current)) return current;
+      const next = { ...current };
+      delete next[projectID];
+      return next;
+    });
+  }
+
   return (
     <div className="projects">
       {projects.map((project) => {
@@ -124,6 +133,7 @@ export function ProjectList({
                   onArchive={onArchiveThread}
                   onClearArchiveConfirm={onClearArchiveConfirm}
                   onShowMore={() => showMoreProjectThreads(project.id)}
+                  onCollapse={() => collapseProjectThreads(project.id)}
                 />
               </div>
             ) : null}
@@ -146,7 +156,8 @@ function ThreadList({
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm,
-  onShowMore
+  onShowMore,
+  onCollapse
 }: {
   threads: Thread[];
   activeID?: string;
@@ -160,11 +171,14 @@ function ThreadList({
   onArchive: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   onShowMore: () => void;
+  onCollapse: () => void;
 }): JSX.Element {
   const visibleThreads = projectThreads(threads);
   const limitedThreads = limitedProjectThreads(visibleThreads, visibleCount, activeID, pendingThreadID);
   const hiddenCount = visibleThreads.length - limitedThreads.length;
   const showMoreCount = Math.min(PROJECT_THREAD_VISIBLE_INCREMENT, hiddenCount);
+  const expanded = visibleCount > PROJECT_THREAD_INITIAL_VISIBLE_COUNT;
+  const showFooter = hiddenCount > 0 || expanded;
   return (
     <div className="thread-list">
       <ThreadRows
@@ -179,11 +193,26 @@ function ThreadList({
         onArchive={onArchive}
         onClearArchiveConfirm={onClearArchiveConfirm}
       />
-      {hiddenCount > 0 ? (
-        <button className="thread-list-more" type="button" onClick={onShowMore}>
-          <span>{hiddenCount > PROJECT_THREAD_VISIBLE_INCREMENT ? `再显示 ${showMoreCount} 条` : `显示剩余 ${hiddenCount} 条`}</span>
-          <span className="thread-list-more-count">剩余 {hiddenCount} 条</span>
-        </button>
+      {showFooter ? (
+        <div className="thread-list-footer">
+          {hiddenCount > 0 ? (
+            <button className="thread-list-more" type="button" onClick={onShowMore}>
+              <span>{hiddenCount > PROJECT_THREAD_VISIBLE_INCREMENT ? `再显示 ${showMoreCount} 条` : `显示剩余 ${hiddenCount} 条`}</span>
+              <span className="thread-list-more-count">剩余 {hiddenCount} 条</span>
+            </button>
+          ) : null}
+          {expanded ? (
+            <button
+              className="thread-list-collapse-btn"
+              type="button"
+              onClick={onCollapse}
+              aria-label="收起已展开的会话"
+              title="收起"
+            >
+              收起
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -293,6 +322,10 @@ export function ScratchThreadSection({
     setVisibleCount((current) => current + PROJECT_THREAD_VISIBLE_INCREMENT);
   }
 
+  function collapseScratchThreads(): void {
+    setVisibleCount(PROJECT_THREAD_INITIAL_VISIBLE_COUNT);
+  }
+
   return (
     <section className="scratch-thread-section" aria-label="对话">
       <div className="sidebar-section-header scratch-thread-header">
@@ -324,6 +357,7 @@ export function ScratchThreadSection({
             onArchive={onArchiveThread}
             onClearArchiveConfirm={onClearArchiveConfirm}
             onShowMore={showMoreScratchThreads}
+            onCollapse={collapseScratchThreads}
           />
         </div>
       )}
