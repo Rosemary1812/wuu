@@ -50,11 +50,11 @@
 }
 
 .titlebar {
-  display: flex;
+  display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  column-gap: 16px;
   overflow: hidden;
   border-bottom: 1px solid var(--surface-3);
   padding: 0 24px;
@@ -71,7 +71,11 @@
 }
 
 .title-block {
-  flex: 1 1 0%;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
   overflow: hidden;
 }
 
@@ -92,11 +96,11 @@
 }
 
 .session-tab-strip {
-  display: flex;
+  display: grid;
   min-width: 0;
-  flex: 1 1 0%;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
   overflow: hidden;
 }
 
@@ -118,7 +122,7 @@
 .session-tab {
   display: flex;
   position: relative;
-  min-width: 96px;
+  min-width: 56px;
   max-width: 236px;
   height: 30px;
   flex: 1 1 0%;

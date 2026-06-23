@@ -184,6 +184,7 @@ describe("SessionTabStrip pending indicators", () => {
 
 describe("SessionTabStrip layout styles", () => {
   it("keeps crowded tabs equal width with stable close targets", () => {
+    const titlebarRule = cssRule(".titlebar");
     const titleBlockRule = cssRule(".title-block");
     const titleActionsRule = cssRule(".title-actions");
     const tabStripRule = cssRule(".session-tab-strip");
@@ -191,16 +192,27 @@ describe("SessionTabStrip layout styles", () => {
     const tabRule = cssRule(".session-tab");
     const closeRule = cssRule(".session-tab-close");
 
-    expect(titleBlockRule).toContain("flex: 1 1 0%;");
+    expect(titlebarRule).toContain("display: grid;");
+    expect(titlebarRule).toContain(
+      "grid-template-columns: minmax(0, 1fr) max-content;",
+    );
+    expect(titlebarRule).toContain("column-gap: 16px;");
+    expect(titleBlockRule).toContain("display: grid;");
+    expect(titleBlockRule).toContain(
+      "grid-template-columns: max-content minmax(0, 1fr);",
+    );
     expect(titleBlockRule).toContain("overflow: hidden;");
     expect(titleActionsRule).toContain("flex: 0 0 auto;");
     expect(titleActionsRule).toContain("min-width: max-content;");
-    expect(tabStripRule).toContain("flex: 1 1 0%;");
+    expect(tabStripRule).toContain("display: grid;");
+    expect(tabStripRule).toContain(
+      "grid-template-columns: minmax(0, 1fr) max-content;",
+    );
     expect(tabStripRule).toContain("overflow: hidden;");
     expect(tabScrollRule).toContain("flex: 1 1 0%;");
     expect(tabScrollRule).toContain("overflow-x: auto;");
     expect(tabRule).toContain("flex: 1 1 0%;");
-    expect(tabRule).toContain("min-width: 96px;");
+    expect(tabRule).toContain("min-width: 56px;");
     expect(tabRule).toContain("max-width: 236px;");
     expect(closeRule).toContain("width: 24px;");
     expect(closeRule).toContain("flex: 0 0 auto;");
