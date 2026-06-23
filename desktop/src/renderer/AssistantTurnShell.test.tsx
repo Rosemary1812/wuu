@@ -19,6 +19,8 @@
  *     defaults to collapsed, but the user can re-expand it (and the
  *     nested reasoning fold inside) manually.
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -30,6 +32,21 @@ import { streamTextKey, streamTextStore } from "./StreamText";
 
 let idCounter = 0;
 let mountedRoots: Root[] = [];
+
+const turnsCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/turns.css"),
+  "utf8",
+);
+
+function cssRule(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = turnsCSS.match(
+    new RegExp(`^${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "m"),
+  );
+  expect(match).not.toBeNull();
+  return match?.[1] ?? "";
+}
+
 function nextID(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter}`;
@@ -740,5 +757,16 @@ describe("AssistantTurnShell — answer region (rule 1 + rule 8)", () => {
 
     expect(processFold(container)).toBeNull();
     expect(container.querySelector(".turn-answer-body")).not.toBeNull();
+  });
+});
+
+describe("AssistantTurnShell — turn divider styles", () => {
+  it("keeps the user query and assistant reply separated even in the first turn", () => {
+    expect(cssRule(".turn > .assistant-turn-shell")).toContain(
+      "border-top: 1px solid var(--wuu-hairline);",
+    );
+    expect(turnsCSS).not.toMatch(
+      /\.turn:first-(?:of-type|child)\s*>\s*\.assistant-turn-shell/,
+    );
   });
 });
