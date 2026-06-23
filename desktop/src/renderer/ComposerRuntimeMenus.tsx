@@ -69,16 +69,16 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
   },
   {
     mode: "agent",
-    label: "Agent",
-    chipLabel: "Agent",
+    label: "默认",
+    chipLabel: "默认",
     short: "工作区内执行，高风险操作会确认",
     icon: ShieldCheck,
     chipTone: "accent"
   },
   {
     mode: "auto_review",
-    label: "自动审查",
-    chipLabel: "自动审查",
+    label: "替我审批",
+    chipLabel: "替我审批",
     short: "同一工具边界，由审查器处理确认",
     icon: ShieldQuestion,
     chipTone: "review"

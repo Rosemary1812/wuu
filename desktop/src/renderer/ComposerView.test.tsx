@@ -555,7 +555,7 @@ describe("Composer permission menu", () => {
     ).toBe(true);
   });
 
-  it("shows the Codex-shaped everyday permission modes in the composer menu", () => {
+  it("shows the everyday permission modes in the composer menu", () => {
     const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
@@ -565,7 +565,7 @@ describe("Composer permission menu", () => {
     });
 
     const chip = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"权限模式：Agent\"]",
+      "button[aria-label=\"权限模式：默认\"]",
     );
     expect(chip).not.toBeNull();
     expect(chip?.disabled).toBe(false);
@@ -575,7 +575,7 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(labels).toEqual(["只读", "Agent", "自动审查", "完全访问"]);
+    expect(labels).toEqual(["只读", "默认", "替我审批", "完全访问"]);
     expect(document.body.textContent).not.toContain("平衡");
     expect(document.body.textContent).not.toContain("严格");
 
@@ -584,7 +584,7 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(checkedLabels).toEqual(["Agent"]);
+    expect(checkedLabels).toEqual(["默认"]);
     expect(document.body.textContent).toContain("profile: workspace_write");
     expect(document.body.textContent).toContain("approval: on_request");
     expect(document.body.textContent).toContain("reviewer: user");
@@ -617,7 +617,7 @@ describe("Composer permission menu", () => {
     expect(document.body.textContent).toContain("approval: on_request");
   });
 
-  it("lets the user switch between read only, auto review, and full access", () => {
+  it("lets the user switch between read only, approve for me, and full access", () => {
     const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
@@ -641,15 +641,15 @@ describe("Composer permission menu", () => {
 
     expect(onSelectPermissionMode).toHaveBeenCalledWith("read_only");
 
-    const autoReviewOption = Array.from(
+    const approveForMeOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"]",
       ),
-    ).find((button) => button.textContent?.includes("自动审查"));
-    expect(autoReviewOption).not.toBeUndefined();
+    ).find((button) => button.textContent?.includes("替我审批"));
+    expect(approveForMeOption).not.toBeUndefined();
 
     act(() => {
-      autoReviewOption?.dispatchEvent(
+      approveForMeOption?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });

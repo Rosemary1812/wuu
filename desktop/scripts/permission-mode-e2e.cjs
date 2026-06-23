@@ -47,15 +47,15 @@ async function run() {
   await waitFor(win, () => Boolean(document.querySelector(".permission-chip")), 5000);
 
   const initial = await waitFor(win, permissionState, 3000);
-  assert.equal(initial.chipText, "Agent", "Initial agent permission mode should render as the default permission mode.");
+  assert.equal(initial.chipText, "默认", "Initial agent permission mode should render as the default permission mode.");
   assert.equal(initial.chipDisabled, false, "Permission mode chip should be clickable when no turn is running.");
   await capture(win, "permission-mode-initial.png");
 
   await openPermissionMenu(win);
   const openState = await waitFor(win, permissionStateWithOpenMenu, 3000);
   assert.equal(openState.optionLabels.length, 4, "Permission menu should expose four permission modes.");
-  assert.deepEqual(openState.optionLabels, ["只读", "Agent", "自动审查", "完全访问"]);
-  assert.equal(openState.checkedLabels.join(","), "Agent", "Agent mode should be marked as the current mode.");
+  assert.deepEqual(openState.optionLabels, ["只读", "默认", "替我审批", "完全访问"]);
+  assert.equal(openState.checkedLabels.join(","), "默认", "Default mode should be marked as the current mode.");
   assert.ok(
     openState.menuRect.width >= 260 && openState.menuRect.width <= 420,
     `Permission menu should stay compact. Width=${openState.menuRect.width}`
@@ -71,12 +71,12 @@ async function run() {
   await capture(win, "permission-mode-menu-open.png");
 
   await chooseMode(win, "只读", "read_only", "只读");
-  await chooseMode(win, "自动审查", "auto_review", "自动审查");
+  await chooseMode(win, "替我审批", "auto_review", "替我审批");
   await chooseMode(win, "完全访问", "full_access", "完全访问");
-  await chooseMode(win, "Agent", "agent", "Agent");
+  await chooseMode(win, "默认", "agent", "默认");
 
   const finalState = await waitFor(win, permissionState, 3000);
-  assert.equal(finalState.chipText, "Agent", "Returning to agent mode should update the chip label.");
+  assert.equal(finalState.chipText, "默认", "Returning to default mode should update the chip label.");
   assert.deepEqual(
     finalState.updatePermissionModes,
     ["read_only", "auto_review", "full_access", "agent"],
