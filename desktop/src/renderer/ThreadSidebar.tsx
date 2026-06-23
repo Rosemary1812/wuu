@@ -101,7 +101,7 @@ export function ProjectList({
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
             </button>
             <button
-              className="project-row-new-thread"
+              className="sidebar-row-icon-button project-row-new-thread"
               type="button"
               aria-label={`在 ${project.name} 中新建会话`}
               title="新建会话"
@@ -401,7 +401,7 @@ function ThreadRows({
               </button>
               <div className="thread-row-actions" aria-label="对话操作">
                 <button
-                  className={`thread-row-action ${thread.pinned ? "active" : ""}`}
+                  className={`sidebar-row-icon-button thread-row-action ${thread.pinned ? "active" : ""}`}
                   type="button"
                   aria-label={thread.pinned ? "取消置顶" : "置顶"}
                   title={thread.pinned ? "取消置顶" : "置顶"}
@@ -410,7 +410,7 @@ function ThreadRows({
                   <Pin className="icon-sm" />
                 </button>
                 <button
-                  className={`thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                  className={`sidebar-row-icon-button thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
                   type="button"
                   aria-label={archiveConfirming ? "确认归档" : "归档"}
                   title={archiveConfirming ? "再次点击归档" : "归档"}
