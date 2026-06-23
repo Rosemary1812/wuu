@@ -18,7 +18,7 @@
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
   --conversation-dialog-width: var(--conversation-content-width);
-  --conversation-dialog-radius: var(--radius-sm);
+  --conversation-dialog-radius: 18px;
   --conversation-message-font-size: 15.5px;
   --conversation-prose-line-height: 1.65;
   --conversation-prose-block-gap: 12px;
@@ -26,7 +26,6 @@
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 1.8;
   --conversation-process-control-color: #A4A4A5;
-  --conversation-shell-gap: 32px;
   --conversation-process-gap: 12px;
   --conversation-process-answer-gap: 12px;
   --conversation-answer-action-gap: 8px;

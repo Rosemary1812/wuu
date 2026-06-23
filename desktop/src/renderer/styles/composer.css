@@ -47,7 +47,7 @@
 .composer-stack {
   display: flex;
   width: min(
-    var(--conversation-content-width),
+    var(--conversation-dialog-width),
     calc(
       100% - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline) -
         var(--conversation-scrollbar-gutter)

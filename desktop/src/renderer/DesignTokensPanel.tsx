@@ -76,7 +76,7 @@ const TOKENS: Token[] = [
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 8,
+    defaultValue: 18,
   },
   {
     key: "msg-font-size",
@@ -86,7 +86,7 @@ const TOKENS: Token[] = [
     max: 20,
     step: 0.5,
     unit: "px",
-    defaultValue: 14.5,
+    defaultValue: 15.5,
   },
   {
     key: "prose-line-height",
@@ -96,7 +96,7 @@ const TOKENS: Token[] = [
     max: 2.2,
     step: 0.05,
     unit: "",
-    defaultValue: 1.9,
+    defaultValue: 1.65,
   },
   {
     key: "prose-block-gap",
@@ -106,7 +106,7 @@ const TOKENS: Token[] = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 15,
+    defaultValue: 12,
   },
   {
     key: "meta-line-height",
@@ -123,10 +123,10 @@ const TOKENS: Token[] = [
     cssVar: "--conversation-control-line-height",
     label: "控件行高",
     min: 1.2,
-    max: 1.7,
+    max: 2.2,
     step: 0.05,
     unit: "",
-    defaultValue: 1.55,
+    defaultValue: 1.8,
   },
   {
     key: "process-gap",
@@ -136,17 +136,17 @@ const TOKENS: Token[] = [
     max: 24,
     step: 1,
     unit: "px",
-    defaultValue: 11,
+    defaultValue: 12,
   },
   {
-    key: "shell-gap",
-    cssVar: "--conversation-shell-gap",
-    label: "Turn 内边距",
+    key: "message-element-gap",
+    cssVar: "--conversation-message-element-gap",
+    label: "消息块间距",
     min: 4,
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 32,
+    defaultValue: 20,
   },
   {
     key: "turn-gap",
@@ -156,7 +156,7 @@ const TOKENS: Token[] = [
     max: 48,
     step: 2,
     unit: "px",
-    defaultValue: 8,
+    defaultValue: 12,
   },
   {
     key: "flow-padding",
@@ -174,6 +174,21 @@ const STORAGE_KEY = "wuu:design-tokens";
 
 type Overrides = Record<string, number>;
 
+function normalizeOverrides(parsed: unknown): Overrides {
+  if (!parsed || typeof parsed !== "object") {
+    return {};
+  }
+  const source = parsed as Record<string, unknown>;
+  const normalized: Overrides = {};
+  for (const token of TOKENS) {
+    const value = source[token.key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      normalized[token.key] = value;
+    }
+  }
+  return normalized;
+}
+
 function loadOverrides(): Overrides {
   if (typeof window === "undefined" || !window.localStorage) {
     return {};
@@ -182,9 +197,7 @@ function loadOverrides(): Overrides {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      return parsed as Overrides;
-    }
+    return normalizeOverrides(parsed);
   } catch {
     /* ignore — corrupted localStorage shouldn't kill the panel */
   }
