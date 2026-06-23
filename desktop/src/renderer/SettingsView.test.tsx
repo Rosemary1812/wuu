@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SettingsView } from "./SettingsView";
+import { SettingsView, type SettingsPage } from "./SettingsView";
 import type {
   BuildInfoResult,
   InitializeResult,
+  RuntimeConnectionUpdate,
   SettingsUsageRange,
   SettingsUsageResponse,
   WuuDesktopApi
@@ -46,6 +47,12 @@ function installBuildInfoStub(info: BuildInfoResult): void {
   (window as unknown as GlobalWindow).wuu = stub as WuuDesktopApi;
 }
 
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function baseInitialized(overrides: Partial<InitializeResult> = {}): InitializeResult {
   return {
     protocol_version: "wuu-app-server/v0.1",
@@ -60,6 +67,8 @@ function renderSettings(props: {
   initialized: InitializeResult | undefined;
   usage?: SettingsUsageResponse;
   usageRange?: SettingsUsageRange;
+  initialPage?: SettingsPage;
+  onSave?: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
   const setUsageRange = vi.fn();
@@ -68,6 +77,7 @@ function renderSettings(props: {
     root!.render(
       <SettingsView
         initialized={props.initialized}
+        initialPage={props.initialPage ?? "general"}
         running={false}
         usage={props.usage}
         usageRange={usageRange}
@@ -79,7 +89,7 @@ function renderSettings(props: {
         sidebarMaxWidth={480}
         resizingSidebar={false}
         onBack={() => {}}
-        onSave={async () => {}}
+        onSave={props.onSave ?? (async () => {})}
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}
@@ -94,6 +104,103 @@ function renderSettings(props: {
     rootText: () => container.textContent ?? "",
   };
 }
+
+describe("SettingsView provider configuration", () => {
+  it("shows BYOK provider controls as a first-class settings page", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const { rootText } = renderSettings({
+      initialPage: "providers",
+      initialized: baseInitialized({
+        provider: "openrouter",
+        model: "openai/gpt-5.5",
+        providers: [
+          {
+            name: "openrouter",
+            type: "openai-compatible",
+            model: "openai/gpt-5.5",
+            base_url: "https://openrouter.ai/api/v1",
+            api_key_configured: true,
+          },
+        ],
+      }),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector("[data-testid=\"settings-providers\"]")).not.toBeNull();
+    expect(rootText()).toContain("模型服务");
+    expect(rootText()).toContain("openrouter");
+    expect(rootText()).toContain("Base URL");
+    expect(rootText()).toContain("API key 已配置");
+    expect(rootText()).toContain("新增 OpenAI-compatible");
+  });
+
+  it("submits a new OpenAI-compatible provider with editable connection fields", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      initialPage: "providers",
+      initialized: baseInitialized({
+        provider: "openai",
+        model: "gpt-5.5",
+        providers: [
+          {
+            name: "openai",
+            type: "openai",
+            model: "gpt-5.5",
+            base_url: "https://api.openai.com/v1",
+            api_key_configured: true,
+          },
+        ],
+      }),
+      onSave,
+    });
+    const addButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("新增 OpenAI-compatible"),
+    );
+    expect(addButton).not.toBeUndefined();
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const inputs = Array.from(container.querySelectorAll("input"));
+    expect(inputs.length).toBeGreaterThanOrEqual(4);
+    const [providerInput, modelInput, baseURLInput, apiKeyInput] = inputs;
+    await act(async () => {
+      setInputValue(providerInput, "openrouter");
+      setInputValue(modelInput, "openai/gpt-5.5");
+      setInputValue(baseURLInput, "https://openrouter.ai/api/v1");
+      setInputValue(apiKeyInput, "sk-test");
+    });
+
+    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("添加服务"),
+    ) as HTMLButtonElement | undefined;
+    expect(submitButton?.disabled).toBe(false);
+    await act(async () => {
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onSave).toHaveBeenCalledWith(
+      "openrouter",
+      "openai/gpt-5.5",
+      undefined,
+      {
+        base_url: "https://openrouter.ai/api/v1",
+        api_key: "sk-test",
+        create_provider: true,
+      },
+      "",
+    );
+  });
+});
 
 describe("SettingsView About section", () => {
   it("renders core and protocol version once initialized", async () => {

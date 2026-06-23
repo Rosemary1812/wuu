@@ -200,7 +200,7 @@ import {
   isCodexProvider,
   pullRequestUnavailableReason,
 } from "./RuntimeHelpers";
-import { SettingsView } from "./SettingsView";
+import { SettingsView, type SettingsPage } from "./SettingsView";
 import type { ComposerGoalSummary, SettingsUsageRange, SettingsUsageResponse } from "../shared/protocol";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
@@ -398,6 +398,8 @@ export function App(): JSX.Element {
   });
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialPage, setSettingsInitialPage] =
+    useState<SettingsPage>("providers");
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
@@ -1860,6 +1862,7 @@ export function App(): JSX.Element {
         }
         onOpenSettings={() => {
           closeProjectMenus();
+          setSettingsInitialPage("providers");
           setSettingsOpen(true);
         }}
         onOpenSkillsCatalog={openSkillsTab}
@@ -4770,9 +4773,8 @@ export function App(): JSX.Element {
   function handleNoticeAction(action: UserFacingErrorAction): void {
     switch (action.kind) {
       case "openSettings": {
+        setSettingsInitialPage(settingsPageFromNoticeFocus(action.payload?.focus));
         setSettingsOpen(true);
-        // payload.focus can be "providers" | "workspace" — the
-        // settings view will read this in a follow-up patch.
         return;
       }
       case "copyDebug": {
@@ -4842,6 +4844,7 @@ export function App(): JSX.Element {
     return (
       <SettingsView
         initialized={state.initialized}
+        initialPage={settingsInitialPage}
         running={anyThreadIsRunning}
         usage={settingsUsage}
         usageRange={usageRange}
@@ -4905,6 +4908,7 @@ export function App(): JSX.Element {
           setProjectMenuOpen(false);
           setRuntimeMenuOpen(false);
           setCodexRuntimeMenu(null);
+          setSettingsInitialPage("providers");
           setSettingsOpen(true);
         }}
       />
@@ -5453,6 +5457,13 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
     </div>
   );
 });
+
+function settingsPageFromNoticeFocus(focus: unknown): SettingsPage {
+  if (focus === "providers") {
+    return "providers";
+  }
+  return "general";
+}
 
 function ToolApprovalDialog({
   approval,

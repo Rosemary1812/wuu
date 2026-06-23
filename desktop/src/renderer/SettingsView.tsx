@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Plug, PlugZap, Plus, RefreshCw, Settings, X } from "lucide-react";
+import { ArrowLeft, BarChart3, KeyRound, Plug, PlugZap, Plus, RefreshCw, Settings, X } from "lucide-react";
 import type { SettingsUsageRange } from "../shared/protocol";
 import {
   type CSSProperties,
@@ -22,12 +22,13 @@ import type {
   SettingsUsageEntry,
   SettingsUsageResponse
 } from "../shared/protocol";
-import { providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
+import { normalizedVariantForProviderModel, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 
-type SettingsPage = "general" | "usage";
+export type SettingsPage = "providers" | "general" | "usage";
 
 export function SettingsView({
   initialized,
+  initialPage,
   running,
   usage,
   showDebugControlsSetting,
@@ -46,6 +47,7 @@ export function SettingsView({
   setUsageRange,
 }: {
   initialized?: InitializeResult;
+  initialPage?: SettingsPage;
   running: boolean;
   usage?: SettingsUsageResponse;
   usageRange: SettingsUsageRange;
@@ -73,11 +75,15 @@ export function SettingsView({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [desktopBuild, setDesktopBuild] = useState<DesktopBuildInfo | undefined>();
-  const [activePage, setActivePage] = useState<SettingsPage>("general");
+  const [activePage, setActivePage] = useState<SettingsPage>(initialPage ?? "providers");
   const [mcpServers, setMCPServers] = useState<MCPServerStatus[]>([]);
   const [mcpLoading, setMCPLoading] = useState(false);
   const [mcpError, setMCPError] = useState("");
   const [mcpBusyServer, setMCPBusyServer] = useState("");
+
+  useEffect(() => {
+    setActivePage(initialPage ?? "providers");
+  }, [initialPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +129,7 @@ export function SettingsView({
   const selectedBaseURL = selectedProvider?.base_url ?? "";
   const connectionLocked = !addingProvider && (selectedProvider?.connection_locked ?? false);
   const variantOptions = providerModelVariantOptions(selectedProvider, modelDraft, variantDraft);
+  const providerNameTaken = addingProvider && providers.some((item) => item.name === providerDraft.trim());
 
   useEffect(() => {
     setProviderDraft(initialized?.provider ?? "");
@@ -143,7 +150,7 @@ export function SettingsView({
     const summary = providers.find((item) => item.name === provider);
     if (summary) {
       setModelDraft(summary.model);
-      setVariantDraft(initialized?.variant ?? initialized?.effort ?? "");
+      setVariantDraft(normalizedVariantForProviderModel(initialized?.variant ?? initialized?.effort ?? "", summary, summary.model));
       setBaseURLDraft(summary.base_url ?? "");
       setAPIKeyDraft("");
     }
@@ -223,6 +230,7 @@ export function SettingsView({
   const disabled =
     running ||
     !providerDraft.trim() ||
+    providerNameTaken ||
     !modelDraft.trim() ||
     (!connectionLocked && !baseURLDraft.trim()) ||
     (addingProvider && !apiKeyDraft.trim()) ||
@@ -245,6 +253,15 @@ export function SettingsView({
           <span>返回应用</span>
         </button>
         <nav className="settings-nav" aria-label="设置">
+          <button
+            className={`settings-nav-item${activePage === "providers" ? " active" : ""}`}
+            type="button"
+            aria-current={activePage === "providers" ? "page" : undefined}
+            onClick={() => setActivePage("providers")}
+          >
+            <KeyRound className="icon-lg" />
+            <span>模型服务</span>
+          </button>
           <button
             className={`settings-nav-item${activePage === "general" ? " active" : ""}`}
             type="button"
@@ -280,16 +297,42 @@ export function SettingsView({
       />
       <main className="settings-main">
         <div className="settings-page">
-          <h1>{activePage === "general" ? "常规" : "用量"}</h1>
+          <h1>{settingsPageTitle(activePage)}</h1>
 
-          {activePage === "general" ? (
+          {activePage === "providers" ? (
             <>
-              <section className="settings-section">
+              <section className="settings-section" data-testid="settings-providers">
                 <div>
-                  <h2>模型</h2>
-                  <p>选择请求要发送到哪个模型服务，以及传给服务的模型名称。</p>
+                  <h2>模型服务</h2>
+                  <p>管理 BYOK provider、模型名称、Base URL 和 API key。</p>
                 </div>
+                {providers.length > 0 ? (
+                  <div className="settings-provider-overview" data-testid="settings-provider-overview">
+                    {providers.map((provider) => (
+                      <button
+                        className={`settings-provider-button${!addingProvider && providerDraft === provider.name ? " active" : ""}`}
+                        type="button"
+                        key={provider.name}
+                        disabled={running}
+                        onClick={() => changeProvider(provider.name)}
+                      >
+                        <span>
+                          <strong>{providerServiceLabel(provider)}</strong>
+                          <small>{provider.name}</small>
+                        </span>
+                        <span>
+                          <small>{provider.model || "未选择模型"}</small>
+                          <small>{providerConnectionStatus(provider)}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <form className="settings-card" onSubmit={submit}>
+                  <div className="settings-card-subheader">
+                    <strong>Provider</strong>
+                    <small>{addingProvider ? "新增 OpenAI-compatible 服务" : "选择当前会话使用的服务"}</small>
+                  </div>
                   <div className="settings-row">
                     <span>
                       <strong>模型服务</strong>
@@ -318,10 +361,38 @@ export function SettingsView({
                         )}
                         <button className="settings-inline-button" type="button" onClick={startAddingProvider} disabled={running}>
                           <Plus className="icon" />
-                          <span>添加</span>
+                          <span>新增 OpenAI-compatible</span>
                         </button>
                       </div>
                     )}
+                  </div>
+                  {addingProvider ? (
+                    <label className="settings-row">
+                      <span>
+                        <strong>服务标识</strong>
+                        <small>{providerNameTaken ? "这个名称已存在" : "写入配置的 provider 名称"}</small>
+                      </span>
+                      <input
+                        value={providerDraft}
+                        onChange={(event) => {
+                          setProviderDraft(event.target.value);
+                          setSaved(false);
+                        }}
+                        disabled={running}
+                      />
+                    </label>
+                  ) : selectedProvider ? (
+                    <div className="settings-row">
+                      <span>
+                        <strong>服务标识</strong>
+                        <small>{providerTypeLabel(selectedProvider)}</small>
+                      </span>
+                      <span className="settings-about-value">{selectedProvider.name}</span>
+                    </div>
+                  ) : null}
+                  <div className="settings-card-subheader">
+                    <strong>模型</strong>
+                    <small>选择默认 model 和可用参数档位</small>
                   </div>
                   <label className="settings-row">
                     <span>
@@ -358,6 +429,10 @@ export function SettingsView({
                       ))}
                     </select>
                   </label>
+                  <div className="settings-card-subheader">
+                    <strong>连接</strong>
+                    <small>{connectionLocked ? "OAuth provider 的连接由登录状态管理" : "保存服务地址和本机密钥"}</small>
+                  </div>
                   <label className="settings-row">
                     <span>
                       <strong>Base URL</strong>
@@ -410,11 +485,14 @@ export function SettingsView({
                     {error ? <div className="settings-error">{error}</div> : null}
                     {saved ? <div className="settings-saved">已保存</div> : null}
                     <button type="submit" disabled={disabled}>
-                      {addingProvider ? "添加" : "保存"}
+                      {addingProvider ? "添加服务" : "保存配置"}
                     </button>
                   </div>
                 </form>
               </section>
+            </>
+          ) : activePage === "general" ? (
+            <>
 
               {showDebugControlsSetting ? (
                 <section className="settings-section">
@@ -593,6 +671,29 @@ export function SettingsView({
       </main>
     </div>
   );
+}
+
+function settingsPageTitle(page: SettingsPage): string {
+  switch (page) {
+    case "providers":
+      return "模型服务";
+    case "general":
+      return "常规";
+    case "usage":
+      return "用量";
+  }
+}
+
+function providerConnectionStatus(provider: ProviderSummary): string {
+  if (provider.connection_locked) {
+    return "OAuth";
+  }
+  return provider.api_key_configured ? "API key 已配置" : "缺少 API key";
+}
+
+function providerTypeLabel(provider: ProviderSummary): string {
+  const type = provider.type.trim() || "openai-compatible";
+  return provider.connection_locked ? "OAuth 管理的服务" : type;
 }
 
 function SettingsUsagePage({
