@@ -214,6 +214,18 @@
   -webkit-app-region: drag;
 }
 
+.sidebar-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .primary-nav,
 .project-list {
   display: flex;
@@ -294,8 +306,7 @@
 .project-section {
   display: flex;
   min-width: 0;
-  min-height: 0;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
   margin-top: 22px;
@@ -303,11 +314,6 @@
 
 .project-list {
   min-height: 0;
-  flex: 1 1 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 
 .pinned-thread-section {
@@ -409,11 +415,12 @@
 
 .project-add-menu {
   position: absolute;
-  top: 3px;
-  left: calc(100% + 6px);
+  top: calc(100% + 2px);
+  right: 6px;
+  left: auto;
   z-index: 30;
   display: grid;
-  width: 244px;
+  width: min(244px, calc(100% - 18px));
   gap: 1px;
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);
@@ -421,8 +428,8 @@
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
-  transform-origin: top left;
-  --menu-enter-x: -4px;
+  transform-origin: top right;
+  --menu-enter-x: 0;
   --menu-enter-y: 0;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
