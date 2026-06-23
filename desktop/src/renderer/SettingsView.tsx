@@ -31,7 +31,6 @@ import type {
   ProviderSummary,
   RuntimeConnectionUpdate,
   SettingsUsageDay,
-  SettingsUsageEntry,
   SettingsUsageResponse
 } from "../shared/protocol";
 import { normalizedVariantForProviderModel, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
@@ -1167,6 +1166,7 @@ function SettingsUsagePage({
 }): JSX.Element {
   const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
   const heatmap = usage ? buildCacheHeatmap(usage.days) : [];
+  const heatmapWeeks = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
   return (
     <>
       <SettingsSection
@@ -1292,7 +1292,12 @@ function SettingsUsagePage({
                   活跃 {usage.metrics.active_days} 天 · 读取 {formatTokenCount(usage.metrics.cache_read_tokens)} · 写入 {formatTokenCount(usage.metrics.cache_creation_tokens)}
                 </span>
               </div>
-              <div className="settings-cache-heatmap" aria-label="缓存命中率热力图" role="grid">
+              <div
+                className="settings-cache-heatmap"
+                aria-label="缓存命中率热力图"
+                role="grid"
+                style={{ "--heatmap-cols": heatmapWeeks } as CSSProperties}
+              >
                 {heatmap.map((day) => (
                   <span
                     className="settings-cache-heatmap-cell"
@@ -1311,32 +1316,6 @@ function SettingsUsagePage({
                 ))}
                 <span>高</span>
               </div>
-            </div>
-          </SettingsSection>
-
-          <SettingsSection
-            title="最近记录"
-            description="主会话轮次的最近用量，按时间倒序。"
-          >
-            <div className="settings-card">
-              {usage.entries.length > 0 ? (
-                <div className="settings-usage-entries">
-                  {usage.entries.slice(0, 8).map((entry) => {
-                    const ctx = entry.input_tokens + entry.cache_read_tokens + entry.output_tokens;
-                    return (
-                      <div className="settings-usage-entry" key={entry.id}>
-                        <div className="settings-usage-entry-label">
-                          <strong>{entry.title}</strong>
-                          <small>{formatUsageEntryMeta(entry)}</small>
-                        </div>
-                        <span className="settings-usage-entry-value">{formatTokenCount(ctx)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="settings-empty">暂无用量记录</div>
-              )}
             </div>
           </SettingsSection>
         </>
@@ -1607,19 +1586,7 @@ function formatHeatmapTitle(day: CacheHeatmapCell): string {
   return `${day.date}：缓存命中 ${formatPercent(day.cache_hit_rate)}，读取 ${formatTokenCount(day.cache_read_tokens)}，写入 ${formatTokenCount(day.cache_creation_tokens)}`;
 }
 
-function formatUsageEntryMeta(entry: SettingsUsageEntry): string {
-  const kind = entry.source === "agent" ? "子任务" : "主会话";
-  const when = entry.at ? ` · ${formatEntryTime(entry.at)}` : "";
-  return `${entry.provider || "(未知服务)"} · ${entry.model || "(未知模型)"} · ${kind}${when}`;
-}
 
-function formatEntryTime(at: string): string {
-  const date = new Date(at);
-  if (Number.isNaN(date.getTime())) {
-    return at;
-  }
-  return date.toLocaleString();
-}
 
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());

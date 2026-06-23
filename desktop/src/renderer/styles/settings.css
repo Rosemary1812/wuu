@@ -852,23 +852,28 @@
 
 .settings-cache-heatmap {
   display: grid;
-  grid-auto-columns: 12px;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(7, 12px);
+  grid-template-columns: repeat(var(--heatmap-cols, 12), minmax(0, 1fr));
   gap: 4px;
-  max-width: 100%;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  width: 100%;
 }
 
-.settings-cache-heatmap-cell,
+.settings-cache-heatmap-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  background: var(--surface-2);
+  min-height: 0;
+  min-width: 0;
+  transition: background 140ms var(--menu-enter-easing);
+}
+
 .settings-cache-heatmap-legend i {
   width: 12px;
   height: 12px;
   border: 1px solid var(--hairline);
   border-radius: 3px;
   background: var(--surface-2);
-  transition: background 140ms var(--menu-enter-easing);
+  transition: border-color 140ms var(--menu-enter-easing);
 }
 
 .settings-cache-heatmap-cell:hover,

@@ -475,7 +475,7 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("缓存命中率");
     expect(rootText()).toContain("5%");
     expect(rootText()).toContain("OpenAI API");
-    expect(rootText()).toContain("测试会话");
+    expect(rootText()).not.toContain("最近记录");
     expect(container.querySelector(".settings-cache-heatmap")).not.toBeNull();
   });
 });
