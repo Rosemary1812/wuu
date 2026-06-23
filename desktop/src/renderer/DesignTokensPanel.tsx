@@ -45,7 +45,7 @@ const TOKENS: Token[] = [
     max: 1280,
     step: 16,
     unit: "px",
-    defaultValue: 880,
+    defaultValue: 864,
   },
   {
     key: "message-max-width",
@@ -55,7 +55,7 @@ const TOKENS: Token[] = [
     max: 1080,
     step: 16,
     unit: "px",
-    defaultValue: 672,
+    defaultValue: 656,
   },
   {
     // Derived from content-width; the slider here overrides the cascade.
@@ -66,7 +66,7 @@ const TOKENS: Token[] = [
     max: 1200,
     step: 20,
     unit: "px",
-    defaultValue: 880,
+    defaultValue: 740,
   },
   {
     key: "composer-radius",
@@ -86,7 +86,7 @@ const TOKENS: Token[] = [
     max: 20,
     step: 0.5,
     unit: "px",
-    defaultValue: 15.5,
+    defaultValue: 14.5,
   },
   {
     key: "prose-line-height",
@@ -96,7 +96,7 @@ const TOKENS: Token[] = [
     max: 2.2,
     step: 0.05,
     unit: "",
-    defaultValue: 1.65,
+    defaultValue: 1.9,
   },
   {
     key: "prose-block-gap",
@@ -106,7 +106,7 @@ const TOKENS: Token[] = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 12,
+    defaultValue: 10,
   },
   {
     key: "meta-line-height",
@@ -126,7 +126,7 @@ const TOKENS: Token[] = [
     max: 2.2,
     step: 0.05,
     unit: "",
-    defaultValue: 1.8,
+    defaultValue: 2,
   },
   {
     key: "process-gap",
@@ -136,7 +136,7 @@ const TOKENS: Token[] = [
     max: 24,
     step: 1,
     unit: "px",
-    defaultValue: 12,
+    defaultValue: 10,
   },
   {
     key: "message-element-gap",
@@ -146,17 +146,17 @@ const TOKENS: Token[] = [
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 20,
+    defaultValue: 10,
   },
   {
     key: "turn-gap",
     cssVar: "--conversation-turn-gap",
     label: "Turn 间距",
-    min: 8,
+    min: 0,
     max: 48,
-    step: 2,
+    step: 1,
     unit: "px",
-    defaultValue: 12,
+    defaultValue: 6,
   },
   {
     key: "flow-padding",
@@ -166,11 +166,11 @@ const TOKENS: Token[] = [
     max: 96,
     step: 4,
     unit: "px",
-    defaultValue: 60,
+    defaultValue: 68,
   },
 ];
 
-const STORAGE_KEY = "wuu:design-tokens";
+const STORAGE_KEY = "wuu:design-tokens:v2";
 
 type Overrides = Record<string, number>;
 
