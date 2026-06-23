@@ -410,7 +410,26 @@ function syncStreamItem(params: Record<string, unknown> | undefined): void {
   const retainTextStream =
     completed && (item.type === "agent_message" || item.type === "reasoning");
   if (typeof item.text === "string") {
-    streamTextStore.set(streamTextKey(turnID, item.id, "text"), item.text);
+    // For in-progress items, don't clobber the accumulated stream
+    // value with a snapshot that has less content than the deltas
+    // already produced. `item.text` here is usually the initial
+    // snapshot the back-end sends on `item/started`, which is empty
+    // for streaming reasoning and commentary. Overwriting with that
+    // empty string is what makes the fold body collapse mid-stream —
+    // the visible text drops to "" and then re-grows from the
+    // post-reset point, which the user describes as "only see
+    // content after [the reset]". We still let `item.text` seed an
+    // empty store (initial snapshot is non-empty in some flows), and
+    // we still overwrite when the item completes (the final text is
+    // authoritative). The guard only blocks the destructive path
+    // where deltas have produced more than the snapshot offers.
+    const textKey = streamTextKey(turnID, item.id, "text");
+    if (
+      completed ||
+      streamTextStore.get(textKey).length < item.text.length
+    ) {
+      streamTextStore.set(textKey, item.text);
+    }
   }
   if (typeof item.arguments === "string") {
     streamTextStore.set(
