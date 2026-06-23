@@ -93,10 +93,10 @@ export function AppSidebar({
    * Fade the middle sidebar scrollbar in while the user is actively scrolling
    * and out after 700ms of idle, matching the main conversation pane.
    */
-  const sidebarMainRef = useRef<HTMLDivElement | null>(null);
+  const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
   const sidebarScrollbarHideTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    const node = sidebarMainRef.current;
+    const node = sidebarScrollRef.current;
     if (!node) {
       return;
     }
@@ -131,82 +131,82 @@ export function AppSidebar({
     <aside className="sidebar">
       <div className="sidebar-content">
         <div className="traffic-spacer" />
-        <div className="sidebar-main" ref={sidebarMainRef}>
-          <nav className="primary-nav" aria-label="主导航">
-            <button
-              className="nav-item"
-              onClick={onStartNewThread}
-              disabled={!hasRuntimeContext}
-            >
-              <MessageSquarePlus className="icon-lg" />
-              <span>新对话</span>
-            </button>
-            <button
-              className="nav-item"
-              onClick={onOpenSkillsTab}
-              disabled={!hasRuntimeContext}
-            >
-              <Wrench className="icon-lg" />
-              <span>Skills</span>
-            </button>
-            <button
-              className="nav-item conversation-search-trigger"
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded={searchOpen}
-              onClick={onToggleConversationSearch}
-              disabled={!hasRuntimeContext}
-            >
-              <Search className="icon-lg" />
-              <span>搜索会话</span>
-            </button>
-            {debugFixturesVisible ? (
-              <div className="dev-fixture-nav" aria-label="开发调试会话">
-                <div className="dev-fixture-label">开发样例</div>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => onSeedConversationFixture("long")}
-                  disabled={!fixturesEnabled}
-                >
-                  <FileText className="icon" />
-                  <span>长对话</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => onSeedConversationFixture("rich")}
-                  disabled={!fixturesEnabled}
-                >
-                  <ListIcon className="icon" />
-                  <span>富内容</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => onSeedConversationFixture("running")}
-                  disabled={!fixturesEnabled}
-                >
-                  <Clock className="icon" />
-                  <span>运行中</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={() => onSeedConversationFixture("compact")}
-                  disabled={!fixturesEnabled}
-                >
-                  <Archive className="icon" />
-                  <span>上下文压缩</span>
-                </button>
-                <button
-                  className="nav-item dev-fixture-button"
-                  onClick={onSeedAgentTreeDemo}
-                  disabled={!fixturesEnabled}
-                >
-                  <CornerDownRight className="icon" />
-                  <span>子任务</span>
-                </button>
-              </div>
-            ) : null}
-          </nav>
+        <nav className="primary-nav" aria-label="主导航">
+          <button
+            className="nav-item"
+            onClick={onStartNewThread}
+            disabled={!hasRuntimeContext}
+          >
+            <MessageSquarePlus className="icon-lg" />
+            <span>新对话</span>
+          </button>
+          <button
+            className="nav-item"
+            onClick={onOpenSkillsTab}
+            disabled={!hasRuntimeContext}
+          >
+            <Wrench className="icon-lg" />
+            <span>Skills</span>
+          </button>
+          <button
+            className="nav-item conversation-search-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={searchOpen}
+            onClick={onToggleConversationSearch}
+            disabled={!hasRuntimeContext}
+          >
+            <Search className="icon-lg" />
+            <span>搜索会话</span>
+          </button>
+          {debugFixturesVisible ? (
+            <div className="dev-fixture-nav" aria-label="开发调试会话">
+              <div className="dev-fixture-label">开发样例</div>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("long")}
+                disabled={!fixturesEnabled}
+              >
+                <FileText className="icon" />
+                <span>长对话</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("rich")}
+                disabled={!fixturesEnabled}
+              >
+                <ListIcon className="icon" />
+                <span>富内容</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("running")}
+                disabled={!fixturesEnabled}
+              >
+                <Clock className="icon" />
+                <span>运行中</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={() => onSeedConversationFixture("compact")}
+                disabled={!fixturesEnabled}
+              >
+                <Archive className="icon" />
+                <span>上下文压缩</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={onSeedAgentTreeDemo}
+                disabled={!fixturesEnabled}
+              >
+                <CornerDownRight className="icon" />
+                <span>子任务</span>
+              </button>
+            </div>
+          ) : null}
+        </nav>
 
+        <div className="sidebar-main" ref={sidebarScrollRef}>
           {pinnedThreads.length > 0 ? (
             <section className="pinned-thread-section" aria-label="置顶">
               <div className="section-label pinned-thread-label">置顶</div>

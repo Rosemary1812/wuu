@@ -233,6 +233,10 @@
   gap: 8px;
 }
 
+.primary-nav {
+  flex: 0 0 auto;
+}
+
 .dev-fixture-nav {
   display: flex;
   flex-direction: column;
