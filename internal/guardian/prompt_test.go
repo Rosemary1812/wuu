@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -169,6 +170,15 @@ func TestBuildPrompt_RendersToolFields(t *testing.T) {
 		Destructive:          true,
 		PolicyReason:         "shell is high risk",
 		ClassificationReason: "executes external binaries",
+		Capability:           capability.CapabilityCommandBash,
+		CapabilityObject:     "git commit -m test",
+		CapabilityAction:     "execute",
+		CapabilityRule:       "bash-git-commit",
+		Permission:           "command.bash",
+		PermissionPatterns:   []string{"git commit *"},
+		PermissionAlways:     []string{"git commit *"},
+		PermissionRule:       "command.bash git commit *",
+		ModelNextAction:      "choose a lower-risk alternative",
 		ArgumentsPreview:     `{"command": "rm -rf build"}`,
 	}
 	out, err := BuildPrompt(req, Transcript{})
@@ -184,15 +194,49 @@ func TestBuildPrompt_RendersToolFields(t *testing.T) {
 		"Destructive: yes",
 		"shell is high risk",
 		"executes external binaries",
+		"Capability under review",
+		"command.bash",
+		"git commit -m test",
+		"Permission request under review",
+		"git commit *",
+		"choose a lower-risk alternative",
 		"rm -rf build",
 		"Decision framework",
-		"approve_for_session", // (sanity check we did not accidentally include the decision tokens)
-		// actually we don't want to assert this last one, removing
 	}
-	wantSubstrings = wantSubstrings[:len(wantSubstrings)-1]
 	for _, want := range wantSubstrings {
 		if !strings.Contains(out, want) {
 			t.Fatalf("prompt missing %q\n--- prompt ---\n%s", want, out)
+		}
+	}
+}
+
+func TestBuildPrompt_UsesRiskFrameworkInsteadOfHardPathBlocks(t *testing.T) {
+	req := tools.ToolApprovalReviewRequest{ToolName: "x", Kind: tools.ToolKindShell, Risk: tools.ToolRiskHigh}
+	out, err := BuildPrompt(req, Transcript{})
+	if err != nil {
+		t.Fatalf("BuildPrompt: %v", err)
+	}
+	wantSubstrings := []string{
+		"Do not deny solely because",
+		"specific local path outside",
+		"touches .git metadata",
+		"uses a powerful primitive such as rm -rf",
+		"Use the pre-classified risk as a hint, not as a floor",
+		"keep, lower, or raise the risk level",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(out, want) {
+			t.Fatalf("prompt missing %q\n--- prompt ---\n%s", want, out)
+		}
+	}
+	oldHardBlocks := []string{
+		"The action does not write outside the current workspace, touch .git metadata",
+		"Writing outside the workspace or to system paths (/etc, /usr, ~/.ssh, etc.).",
+		"Never demote to a level below the pre-classified value",
+	}
+	for _, old := range oldHardBlocks {
+		if strings.Contains(out, old) {
+			t.Fatalf("prompt still contains old hard block %q\n--- prompt ---\n%s", old, out)
 		}
 	}
 }
@@ -238,7 +282,13 @@ func TestBuildPrompt_TruncatesLongArguments(t *testing.T) {
 	}
 	// The arguments section should not exceed MaxActionChars + some
 	// headroom for the surrounding template text.
-	if strings.Count(out, "a") > MaxActionChars+200 {
-		t.Fatalf("arguments not truncated: %d a's in output", strings.Count(out, "a"))
+	start := strings.Index(out, "Arguments (truncated, render verbatim):")
+	end := strings.Index(out, "## Recent conversation")
+	if start < 0 || end < 0 || end <= start {
+		t.Fatalf("prompt missing arguments or transcript headings:\n%s", out)
+	}
+	argumentsSection := out[start:end]
+	if strings.Count(argumentsSection, "a") > MaxActionChars+100 {
+		t.Fatalf("arguments not truncated: %d a's in arguments section", strings.Count(argumentsSection, "a"))
 	}
 }
