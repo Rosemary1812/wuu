@@ -409,31 +409,6 @@ export function Composer({
   const content = (
     <div className="composer-stack">
       <div className="composer-shell">
-        <ComposerGoalStrip
-          summary={goalSummary ?? null}
-          disabled={readOnly || running}
-          onEdit={(nextText) => {
-            if (onEditGoal) {
-              return onEditGoal(nextText);
-            }
-            return undefined;
-          }}
-          onCancel={() => {
-            if (onCancelGoal) {
-              return onCancelGoal();
-            }
-            return undefined;
-          }}
-        />
-        <ComposerQueueStrip
-          guideMessages={guideMessages}
-          queuedMessages={queuedMessages}
-          onRemoveGuideMessage={onRemoveGuideMessage}
-          onRemoveQueuedMessage={onRemoveQueuedMessage}
-          onGuideQueuedMessage={onGuideQueuedMessage}
-          onEditGuideMessage={onEditGuideMessage}
-          onEditQueuedMessage={onEditQueuedMessage}
-        />
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
             {visibleSlashCommands.length > 0 ? (
@@ -475,209 +450,236 @@ export function Composer({
             )}
           </div>
         ) : null}
-        <div className="composer">
-          <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
-          <input
-            ref={attachmentInputRef}
-            className="composer-file-input"
-            type="file"
-            accept="image/*,application/pdf"
-            multiple
-            tabIndex={-1}
-            onChange={(event) => {
-              const selected = Array.from(event.currentTarget.files ?? []);
-              event.currentTarget.value = "";
-              if (selected.length > 0) {
-                onPasteAttachmentFiles(selected);
+        <div className="composer-frame">
+          <ComposerGoalStrip
+            summary={goalSummary ?? null}
+            disabled={readOnly || running}
+            onEdit={(nextText) => {
+              if (onEditGoal) {
+                return onEditGoal(nextText);
               }
+              return undefined;
+            }}
+            onCancel={() => {
+              if (onCancelGoal) {
+                return onCancelGoal();
+              }
+              return undefined;
             }}
           />
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "向 wuu 提问，或输入 / 选择命令"}
-            disabled={readOnly}
-            aria-readonly={readOnly}
-            aria-controls={slashMenuOpen ? slashMenuID : undefined}
-            aria-activedescendant={selectedSlashCommand ? `${slashMenuID}-${selectedSlashCommand.id}` : undefined}
-            aria-expanded={slashMenuOpen || undefined}
-            onChange={(event) => {
-              resetQueryHistoryNavigation();
-              setSlashDismissedValue("");
-              setPrompt(event.target.value);
-            }}
-            onPaste={(event) => {
-              if (readOnly) {
-                return;
-              }
-              const pasted = clipboardAttachmentFiles(event);
-              if (pasted.length === 0) {
-                return;
-              }
-              event.preventDefault();
-              onPasteAttachmentFiles(pasted);
-            }}
-            onBlur={() => {
-              if (slashMenuOpen) {
-                setSlashDismissedValue(prompt);
-              }
-            }}
-            onKeyDown={handleComposerKeyDown}
+          <ComposerQueueStrip
+            guideMessages={guideMessages}
+            queuedMessages={queuedMessages}
+            onRemoveGuideMessage={onRemoveGuideMessage}
+            onRemoveQueuedMessage={onRemoveQueuedMessage}
+            onGuideQueuedMessage={onGuideQueuedMessage}
+            onEditGuideMessage={onEditGuideMessage}
+            onEditQueuedMessage={onEditQueuedMessage}
           />
-          <div className="composer-bar">
-            <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
-              <Plus className="icon-xl" />
-            </button>
-            <button
-              className="composer-tool-button"
-              type="button"
-              aria-label="添加附件"
-              title="添加附件"
+          <div className="composer">
+            <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
+            <input
+              ref={attachmentInputRef}
+              className="composer-file-input"
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              tabIndex={-1}
+              onChange={(event) => {
+                const selected = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
+                if (selected.length > 0) {
+                  onPasteAttachmentFiles(selected);
+                }
+              }}
+            />
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "向 wuu 提问，或输入 / 选择命令"}
               disabled={readOnly}
-              onClick={() => attachmentInputRef.current?.click()}
-            >
-              <Paperclip aria-hidden="true" />
-            </button>
-            <button
-              className="composer-tool-button composer-slash-button"
-              type="button"
-              aria-label="打开斜杠命令"
-              title="输入 / 打开命令"
-              disabled={readOnly}
-              onClick={revealSlashCommands}
-            >
-              <Slash aria-hidden="true" />
-            </button>
-            <div className="permission-menu-anchor" ref={accessMenuRef}>
+              aria-readonly={readOnly}
+              aria-controls={slashMenuOpen ? slashMenuID : undefined}
+              aria-activedescendant={selectedSlashCommand ? `${slashMenuID}-${selectedSlashCommand.id}` : undefined}
+              aria-expanded={slashMenuOpen || undefined}
+              onChange={(event) => {
+                resetQueryHistoryNavigation();
+                setSlashDismissedValue("");
+                setPrompt(event.target.value);
+              }}
+              onPaste={(event) => {
+                if (readOnly) {
+                  return;
+                }
+                const pasted = clipboardAttachmentFiles(event);
+                if (pasted.length === 0) {
+                  return;
+                }
+                event.preventDefault();
+                onPasteAttachmentFiles(pasted);
+              }}
+              onBlur={() => {
+                if (slashMenuOpen) {
+                  setSlashDismissedValue(prompt);
+                }
+              }}
+              onKeyDown={handleComposerKeyDown}
+            />
+            <div className="composer-bar">
+              <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
+                <Plus className="icon-xl" />
+              </button>
               <button
-                className={`permission-chip tone-${permissionOption.chipTone}`}
+                className="composer-tool-button"
                 type="button"
-                aria-haspopup="menu"
-                aria-expanded={accessMenuOpen}
-                aria-label={`权限模式：${permissionChipLabel}`}
-                disabled={!initialized || readOnly || running}
-                onClick={onToggleAccessMenu}
+                aria-label="添加附件"
+                title="添加附件"
+                disabled={readOnly}
+                onClick={() => attachmentInputRef.current?.click()}
               >
-                <permissionOption.icon aria-hidden="true" />
-                <span>{permissionChipLabel}</span>
+                <Paperclip aria-hidden="true" />
+              </button>
+              <button
+                className="composer-tool-button composer-slash-button"
+                type="button"
+                aria-label="打开斜杠命令"
+                title="输入 / 打开命令"
+                disabled={readOnly}
+                onClick={revealSlashCommands}
+              >
+                <Slash aria-hidden="true" />
+              </button>
+              <div className="permission-menu-anchor" ref={accessMenuRef}>
+                <button
+                  className={`permission-chip tone-${permissionOption.chipTone}`}
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={accessMenuOpen}
+                  aria-label={`权限模式：${permissionChipLabel}`}
+                  disabled={!initialized || readOnly || running}
+                  onClick={onToggleAccessMenu}
+                >
+                  <permissionOption.icon aria-hidden="true" />
+                  <span>{permissionChipLabel}</span>
+                  <ChevronDown aria-hidden="true" />
+                </button>
+                {accessMenuOpen ? (
+                  <FloatingMenuPortal
+                    anchorRef={accessMenuRef}
+                    owner="composer-access"
+                    placement="above"
+                    align="left"
+                    offset={6}
+                    width={176}
+                  >
+                    <AccessMenu
+                      permissions={initialized?.permissions}
+                      policy={initialized?.tool_policy}
+                      disabled={!initialized || readOnly || running}
+                      onSelect={onSelectPermissionMode}
+                    />
+                  </FloatingMenuPortal>
+                ) : null}
+              </div>
+              <div className="composer-spacer" />
+              <ComposerTokenGauge
+                running={running}
+                tokensPerSecond={tokensPerSecond}
+                sampledAt={tokenSpeedSampledAt}
+                source={tokenSpeedSource}
+              />
+              {initialized ? (
+                <RuntimePicker
+                  variant={variant}
+                  initialized={initialized}
+                  state={codexModels}
+                  openMenu={codexRuntimeMenu}
+                  anchorRef={codexRuntimeRef}
+                  running={running}
+                  onToggleMenu={onToggleCodexRuntimeMenu}
+                  onSelectModel={onSelectRuntimeModel}
+                  onSelectEffort={onSelectRuntimeEffort}
+                />
+              ) : (
+                <>
+                  <button className="provider-pill" type="button" onClick={onOpenSettings}>
+                    provider
+                  </button>
+                  <button className="model-label" type="button" onClick={onOpenSettings}>
+                    model
+                  </button>
+                </>
+              )}
+              {statusText ? <span className="status-label">{statusText}</span> : null}
+              <button
+                className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
+                type="button"
+                onClick={running ? onInterrupt : submitComposer}
+                aria-label={running ? "停止" : "发送"}
+                title={running ? "停止" : "发送"}
+                disabled={!running && (readOnly || !hasDraft)}
+              >
+                {running ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
+              </button>
+            </div>
+          </div>
+          {contextBarVisible ? (
+            <div className="composer-context-bar" ref={menuRef}>
+              <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
+                {activeContext?.kind === "project" ? <Folder aria-hidden="true" /> : <FolderX aria-hidden="true" />}
+                <span>{contextLabel}</span>
                 <ChevronDown aria-hidden="true" />
               </button>
-              {accessMenuOpen ? (
-                <FloatingMenuPortal
-                  anchorRef={accessMenuRef}
-                  owner="composer-access"
-                  placement="above"
-                  align="left"
-                  offset={6}
-                  width={176}
+              {gitStatus?.is_repo && gitStatus.branch ? (
+                <button
+                  className="context-branch-chip"
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={branchMenuOpen}
+                  onClick={onToggleBranchMenu}
                 >
-                  <AccessMenu
-                    permissions={initialized?.permissions}
-                    policy={initialized?.tool_policy}
-                    disabled={!initialized || readOnly || running}
-                    onSelect={onSelectPermissionMode}
+                  <GitBranch aria-hidden="true" />
+                  <span>{gitStatus.branch}</span>
+                  {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
+                  <ChevronDown aria-hidden="true" />
+                </button>
+              ) : null}
+              {branchMenuOpen && gitStatus?.is_repo ? (
+                <FloatingMenuPortal
+                  anchorRef={menuRef}
+                  owner="composer-runtime"
+                  placement={menuPlacement}
+                  align="left"
+                  crossAxisOffset={304}
+                  width={300}
+                >
+                  <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
+                </FloatingMenuPortal>
+              ) : null}
+              {menuOpen ? (
+                <FloatingMenuPortal
+                  anchorRef={menuRef}
+                  owner="composer-runtime"
+                  placement={menuPlacement}
+                  align="left"
+                  crossAxisOffset={12}
+                  width={300}
+                >
+                  <ProjectPickerMenu
+                    projects={projects}
+                    activeContext={activeContext}
+                    query={projectFilter}
+                    setQuery={setProjectFilter}
+                    onSelectProject={onSelectProject}
+                    onSelectNoProject={onSelectNoProject}
+                    onCreateProject={onCreateProject}
+                    onOpenProject={onOpenProject}
                   />
                 </FloatingMenuPortal>
               ) : null}
             </div>
-            <div className="composer-spacer" />
-            <ComposerTokenGauge
-              running={running}
-              tokensPerSecond={tokensPerSecond}
-              sampledAt={tokenSpeedSampledAt}
-              source={tokenSpeedSource}
-            />
-            {initialized ? (
-              <RuntimePicker
-                variant={variant}
-                initialized={initialized}
-                state={codexModels}
-                openMenu={codexRuntimeMenu}
-                anchorRef={codexRuntimeRef}
-                running={running}
-                onToggleMenu={onToggleCodexRuntimeMenu}
-                onSelectModel={onSelectRuntimeModel}
-                onSelectEffort={onSelectRuntimeEffort}
-              />
-            ) : (
-              <>
-                <button className="provider-pill" type="button" onClick={onOpenSettings}>
-                  provider
-                </button>
-                <button className="model-label" type="button" onClick={onOpenSettings}>
-                  model
-                </button>
-              </>
-            )}
-            {statusText ? <span className="status-label">{statusText}</span> : null}
-            <button
-              className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
-              type="button"
-              onClick={running ? onInterrupt : submitComposer}
-              aria-label={running ? "停止" : "发送"}
-              title={running ? "停止" : "发送"}
-              disabled={!running && (readOnly || !hasDraft)}
-            >
-              {running ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
-            </button>
-          </div>
+          ) : null}
         </div>
-        {contextBarVisible ? (
-          <div className="composer-context-bar" ref={menuRef}>
-            <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
-              {activeContext?.kind === "project" ? <Folder aria-hidden="true" /> : <FolderX aria-hidden="true" />}
-              <span>{contextLabel}</span>
-              <ChevronDown aria-hidden="true" />
-            </button>
-            {gitStatus?.is_repo && gitStatus.branch ? (
-              <button
-                className="context-branch-chip"
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={branchMenuOpen}
-                onClick={onToggleBranchMenu}
-              >
-                <GitBranch aria-hidden="true" />
-                <span>{gitStatus.branch}</span>
-                {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
-                <ChevronDown aria-hidden="true" />
-              </button>
-            ) : null}
-            {branchMenuOpen && gitStatus?.is_repo ? (
-              <FloatingMenuPortal
-                anchorRef={menuRef}
-                owner="composer-runtime"
-                placement={menuPlacement}
-                align="left"
-                crossAxisOffset={304}
-                width={300}
-              >
-                <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
-              </FloatingMenuPortal>
-            ) : null}
-            {menuOpen ? (
-              <FloatingMenuPortal
-                anchorRef={menuRef}
-                owner="composer-runtime"
-                placement={menuPlacement}
-                align="left"
-                crossAxisOffset={12}
-                width={300}
-              >
-                <ProjectPickerMenu
-                  projects={projects}
-                  activeContext={activeContext}
-                  query={projectFilter}
-                  setQuery={setProjectFilter}
-                  onSelectProject={onSelectProject}
-                  onSelectNoProject={onSelectNoProject}
-                  onCreateProject={onCreateProject}
-                  onOpenProject={onOpenProject}
-                />
-              </FloatingMenuPortal>
-            ) : null}
-          </div>
-        ) : null}
       </div>
     </div>
   );

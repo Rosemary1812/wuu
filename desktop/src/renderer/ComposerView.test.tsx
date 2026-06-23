@@ -10,6 +10,7 @@ import {
   type ComposerVariant,
   type PermissionMode,
 } from "./ComposerView";
+import { ImagePreviewProvider } from "./ImagePreview";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import type {
   InitializeResult,
@@ -91,60 +92,62 @@ function renderComposer(props: {
   act(() => {
     root = createRoot(container);
     root.render(
-      <Composer
-        variant={props.variant}
-        prompt={props.prompt ?? ""}
-        setPrompt={props.setPrompt ?? (() => {})}
-        files={[]}
-        images={[]}
-        queuedMessages={props.queuedMessages ?? []}
-        guideMessages={props.guideMessages ?? []}
-        running={props.running ?? false}
-        status={props.status ?? "ready"}
-        readOnly={false}
-        initialized={initialized(props.toolPolicy, props.permissions)}
-        projects={[]}
-        activeContext={props.activeContext}
-        codexModels={codexModels}
-        codexRuntimeMenu={null}
-        codexRuntimeRef={createRef<HTMLDivElement>()}
-        menuOpen={false}
-        accessMenuOpen={props.accessMenuOpen ?? false}
-        branchMenuOpen={false}
-        menuRef={createRef<HTMLDivElement>()}
-        accessMenuRef={createRef<HTMLDivElement>()}
-        projectFilter=""
-        setProjectFilter={() => {}}
-        onToggleMenu={() => {}}
-        onToggleAccessMenu={() => {}}
-        onToggleCodexRuntimeMenu={() => {}}
-        onSelectRuntimeModel={() => {}}
-        onSelectRuntimeEffort={() => {}}
-        onSelectPermissionMode={onSelectPermissionMode}
-        onToggleBranchMenu={() => {}}
-        onOpenSettings={() => {}}
-        onOpenSkillsCatalog={() => {}}
-        onSelectProject={() => {}}
-        onSelectNoProject={() => {}}
-        onSelectGitBranch={() => {}}
-        onCreateProject={() => {}}
-        onOpenProject={() => {}}
-        onStartNewThread={() => {}}
-        onOpenWorkspaceTool={() => {}}
-        onPasteAttachmentFiles={() => {}}
-        onRemoveFile={() => {}}
-        onRemoveImage={() => {}}
-        onRemoveQueuedMessage={props.onRemoveQueuedMessage ?? (() => {})}
-        onRemoveGuideMessage={props.onRemoveGuideMessage ?? (() => {})}
-        onGuideQueuedMessage={props.onGuideQueuedMessage ?? (() => {})}
-        onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
-        onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
-        onSend={props.onSend ?? (() => {})}
-        onInterrupt={props.onInterrupt ?? (() => {})}
-        tokensPerSecond={props.tokensPerSecond ?? 0}
-        tokenSpeedSampledAt={props.tokenSpeedSampledAt}
-        tokenSpeedSource={props.tokenSpeedSource}
-      />,
+      <ImagePreviewProvider>
+        <Composer
+          variant={props.variant}
+          prompt={props.prompt ?? ""}
+          setPrompt={props.setPrompt ?? (() => {})}
+          files={[]}
+          images={[]}
+          queuedMessages={props.queuedMessages ?? []}
+          guideMessages={props.guideMessages ?? []}
+          running={props.running ?? false}
+          status={props.status ?? "ready"}
+          readOnly={false}
+          initialized={initialized(props.toolPolicy, props.permissions)}
+          projects={[]}
+          activeContext={props.activeContext}
+          codexModels={codexModels}
+          codexRuntimeMenu={null}
+          codexRuntimeRef={createRef<HTMLDivElement>()}
+          menuOpen={false}
+          accessMenuOpen={props.accessMenuOpen ?? false}
+          branchMenuOpen={false}
+          menuRef={createRef<HTMLDivElement>()}
+          accessMenuRef={createRef<HTMLDivElement>()}
+          projectFilter=""
+          setProjectFilter={() => {}}
+          onToggleMenu={() => {}}
+          onToggleAccessMenu={() => {}}
+          onToggleCodexRuntimeMenu={() => {}}
+          onSelectRuntimeModel={() => {}}
+          onSelectRuntimeEffort={() => {}}
+          onSelectPermissionMode={onSelectPermissionMode}
+          onToggleBranchMenu={() => {}}
+          onOpenSettings={() => {}}
+          onOpenSkillsCatalog={() => {}}
+          onSelectProject={() => {}}
+          onSelectNoProject={() => {}}
+          onSelectGitBranch={() => {}}
+          onCreateProject={() => {}}
+          onOpenProject={() => {}}
+          onStartNewThread={() => {}}
+          onOpenWorkspaceTool={() => {}}
+          onPasteAttachmentFiles={() => {}}
+          onRemoveFile={() => {}}
+          onRemoveImage={() => {}}
+          onRemoveQueuedMessage={props.onRemoveQueuedMessage ?? (() => {})}
+          onRemoveGuideMessage={props.onRemoveGuideMessage ?? (() => {})}
+          onGuideQueuedMessage={props.onGuideQueuedMessage ?? (() => {})}
+          onEditQueuedMessage={props.onEditQueuedMessage ?? (() => {})}
+          onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
+          onSend={props.onSend ?? (() => {})}
+          onInterrupt={props.onInterrupt ?? (() => {})}
+          tokensPerSecond={props.tokensPerSecond ?? 0}
+          tokenSpeedSampledAt={props.tokenSpeedSampledAt}
+          tokenSpeedSource={props.tokenSpeedSource}
+        />
+      </ImagePreviewProvider>,
     );
   });
   return { onSelectPermissionMode };
@@ -165,20 +168,22 @@ function renderSplitPaneComposer(props: {
   act(() => {
     root = createRoot(container);
     root.render(
-      <SplitPaneComposer
-        prompt={props.prompt ?? ""}
-        setPrompt={() => {}}
-        files={[]}
-        images={[]}
-        running={props.running ?? false}
-        readOnly={false}
-        status={props.status ?? "ready"}
-        onPasteAttachmentFiles={() => {}}
-        onRemoveFile={() => {}}
-        onRemoveImage={() => {}}
-        onSend={props.onSend ?? (() => {})}
-        onInterrupt={() => {}}
-      />,
+      <ImagePreviewProvider>
+        <SplitPaneComposer
+          prompt={props.prompt ?? ""}
+          setPrompt={() => {}}
+          files={[]}
+          images={[]}
+          running={props.running ?? false}
+          readOnly={false}
+          status={props.status ?? "ready"}
+          onPasteAttachmentFiles={() => {}}
+          onRemoveFile={() => {}}
+          onRemoveImage={() => {}}
+          onSend={props.onSend ?? (() => {})}
+          onInterrupt={() => {}}
+        />
+      </ImagePreviewProvider>,
     );
   });
 }
@@ -304,6 +309,41 @@ describe("Composer send control", () => {
 
     expect(container.querySelector(".composer-context-bar")).toBeNull();
     expect(container.querySelector(".context-project-button")).toBeNull();
+  });
+
+  it("keeps dock composer content inside the visual frame", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "follow up",
+    });
+
+    const shell = container.querySelector(".composer-shell");
+    const frame = container.querySelector(".composer-frame");
+    const composer = container.querySelector(".composer");
+
+    expect(shell).not.toBeNull();
+    expect(frame).not.toBeNull();
+    expect(composer).not.toBeNull();
+    expect(shell?.contains(frame)).toBe(true);
+    expect(frame?.contains(composer)).toBe(true);
+    expect(frame?.querySelector(".composer-context-bar")).toBeNull();
+  });
+
+  it("keeps the slash command menu outside the clipped visual frame", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "/",
+    });
+
+    const shell = container.querySelector(".composer-shell");
+    const frame = container.querySelector(".composer-frame");
+    const slashMenu = container.querySelector(".slash-command-menu");
+
+    expect(shell).not.toBeNull();
+    expect(frame).not.toBeNull();
+    expect(slashMenu).not.toBeNull();
+    expect(shell?.contains(slashMenu)).toBe(true);
+    expect(frame?.contains(slashMenu)).toBe(false);
   });
 
   it("keeps context chips in the hero composer before a session starts", () => {
