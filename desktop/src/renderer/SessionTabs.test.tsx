@@ -22,11 +22,13 @@ const conversationShellCSS = readFileSync(
 
 function cssRule(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = conversationShellCSS.match(
-    new RegExp(`^${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "m"),
+  const matches = Array.from(
+    conversationShellCSS.matchAll(
+      new RegExp(`^${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "gm"),
+    ),
   );
-  expect(match).not.toBeNull();
-  return match?.[1] ?? "";
+  expect(matches).not.toHaveLength(0);
+  return matches.at(-1)?.[1] ?? "";
 }
 
 beforeEach(() => {
@@ -182,10 +184,19 @@ describe("SessionTabStrip pending indicators", () => {
 
 describe("SessionTabStrip layout styles", () => {
   it("keeps crowded tabs equal width with stable close targets", () => {
+    const titleBlockRule = cssRule(".title-block");
+    const titleActionsRule = cssRule(".title-actions");
+    const tabStripRule = cssRule(".session-tab-strip");
     const tabScrollRule = cssRule(".session-tab-scroll");
     const tabRule = cssRule(".session-tab");
     const closeRule = cssRule(".session-tab-close");
 
+    expect(titleBlockRule).toContain("flex: 1 1 0%;");
+    expect(titleBlockRule).toContain("overflow: hidden;");
+    expect(titleActionsRule).toContain("flex: 0 0 auto;");
+    expect(titleActionsRule).toContain("min-width: max-content;");
+    expect(tabStripRule).toContain("flex: 1 1 0%;");
+    expect(tabStripRule).toContain("overflow: hidden;");
     expect(tabScrollRule).toContain("flex: 1 1 0%;");
     expect(tabScrollRule).toContain("overflow-x: auto;");
     expect(tabRule).toContain("flex: 1 1 0%;");

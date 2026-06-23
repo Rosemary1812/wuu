@@ -72,12 +72,13 @@
 }
 
 .title-block {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   overflow: hidden;
 }
 
 .title-actions {
   flex: 0 0 auto;
+  min-width: max-content;
 }
 
 .title-block h1 {
@@ -94,7 +95,7 @@
 .session-tab-strip {
   display: flex;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   align-items: center;
   gap: 8px;
   overflow: hidden;
