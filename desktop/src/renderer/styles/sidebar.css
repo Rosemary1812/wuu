@@ -1132,3 +1132,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.thread-row-context-menu-item:disabled {
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.thread-row-context-menu-item:disabled:hover {
+  background: transparent;
+}
+
+.thread-row-context-menu-separator {
+  height: 1px;
+  background: var(--menu-border);
+  margin: 4px 9px;
+  pointer-events: none;
+}

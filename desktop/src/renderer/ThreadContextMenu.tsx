@@ -9,15 +9,23 @@ import { useEffect, useRef } from "react";
  * clientX/clientY from a contextmenu event without computing offsets against
  * any parent container.
  */
-export type ThreadContextMenuItem = {
-  label: string;
-  /**
-   * Action to perform when the item is selected. The promise is intentionally
-   * not awaited so the menu closes immediately even if the action is slow
-   * (e.g. a clipboard write with feedback animation).
-   */
-  onSelect: () => void | Promise<void>;
-};
+export type ThreadContextMenuItem =
+  | {
+      /** Display label. */
+      label: string;
+      /**
+       * Action to perform when the item is selected. The promise is intentionally
+       * not awaited so the menu closes immediately even if the action is slow
+       * (e.g. a clipboard write with feedback animation).
+       */
+      onSelect: () => void | Promise<void>;
+      /** When true, the item is rendered disabled and clicks are ignored. */
+      disabled?: boolean;
+    }
+  | {
+      /** Render a horizontal divider between items. */
+      separator: true;
+    };
 
 export function ThreadContextMenu({
   x,
@@ -59,20 +67,33 @@ export function ThreadContextMenu({
       style={{ left: x, top: y }}
       data-testid="thread-row-context-menu"
     >
-      {items.map((item, idx) => (
-        <button
-          key={`${item.label}-${idx}`}
-          role="menuitem"
-          type="button"
-          className="thread-row-context-menu-item"
-          onClick={() => {
-            void item.onSelect();
-            onClose();
-          }}
-        >
-          <span>{item.label}</span>
-        </button>
-      ))}
+      {items.map((item, idx) => {
+        if ("separator" in item) {
+          return (
+            <div
+              key={`sep-${idx}`}
+              role="separator"
+              className="thread-row-context-menu-separator"
+            />
+          );
+        }
+        return (
+          <button
+            key={`item-${idx}-${item.label}`}
+            role="menuitem"
+            type="button"
+            className="thread-row-context-menu-item"
+            disabled={item.disabled}
+            onClick={() => {
+              if (item.disabled) return;
+              void item.onSelect();
+              onClose();
+            }}
+          >
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
