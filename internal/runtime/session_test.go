@@ -1436,6 +1436,72 @@ func TestNewSessionAppliesPermissionBoundary(t *testing.T) {
 	}
 }
 
+func TestNewThreadRuntimeWorkerReceivesCurrentPermissionContext(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	permissions, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
+	if err != nil {
+		t.Fatalf("ResolvePermissionModePreset: %v", err)
+	}
+	rt.Permissions = permissions
+	rt.ToolPolicy = config.ToolPolicyConfig{}
+	ConfigureToolkitPermissions(rt.Toolkit, rt.ToolPolicy, rt.Permissions)
+
+	client := &sessionRecordingClient{}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-read-only-worker")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "inspect_repo",
+		Prompt:      "inspect the repo",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	req := client.LastRequest()
+	var joined strings.Builder
+	for _, msg := range req.Messages {
+		joined.WriteString(msg.Content)
+		joined.WriteByte('\n')
+	}
+	content := joined.String()
+	if !strings.Contains(content, "permission_profile: read_only") ||
+		!strings.Contains(content, "boundary: read_only") {
+		t.Fatalf("worker request missing current permission context:\n%s", content)
+	}
+}
+
 func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	root := t.TempDir()
 	kit, err := tools.New(root)

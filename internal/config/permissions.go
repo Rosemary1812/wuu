@@ -1,6 +1,9 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	PermissionModeReadOnly   = "read_only"
@@ -81,6 +84,30 @@ func PermissionPresetForMode(mode string) (ResolvedPermissions, bool) {
 	default:
 		return ResolvedPermissions{}, false
 	}
+}
+
+func ResolvePermissionModePreset(mode string) (ResolvedPermissions, error) {
+	permissions, ok := PermissionPresetForMode(mode)
+	if !ok {
+		return ResolvedPermissions{}, fmt.Errorf("invalid permission mode %q", strings.TrimSpace(mode))
+	}
+	return permissions, nil
+}
+
+func ApplyPermissionModePreset(agent *AgentConfig, mode string) (ResolvedPermissions, error) {
+	if agent == nil {
+		return ResolvedPermissions{}, fmt.Errorf("agent config is required")
+	}
+	permissions, err := ResolvePermissionModePreset(mode)
+	if err != nil {
+		return ResolvedPermissions{}, err
+	}
+	agent.PermissionMode = permissions.Mode
+	agent.PermissionProfile = permissions.PermissionProfile
+	agent.ApprovalPolicy = permissions.ApprovalPolicy
+	agent.ApprovalsReviewer = permissions.ApprovalsReviewer
+	agent.ToolPolicy = ToolPolicyConfig{}
+	return permissions, nil
 }
 
 func ToolPolicyProfileForPermissionMode(mode string) string {

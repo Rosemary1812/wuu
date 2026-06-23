@@ -439,12 +439,14 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
 	}
 	if params.PermissionMode != nil {
-		permissions, _ := config.PermissionPresetForMode(*params.PermissionMode)
+		permissions, err := config.ResolvePermissionModePreset(*params.PermissionMode)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 		s.rt.Permissions = permissions
 		s.rt.ToolPolicy = config.ToolPolicyConfig{}
 		if s.rt.Toolkit != nil {
-			s.rt.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions))
-			s.rt.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
+			runtime.ConfigureToolkitPermissions(s.rt.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
 			s.installToolApprovalReviewer(s.rt.Toolkit)
 		}
 	}
@@ -608,8 +610,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 				if th.execRuntime.Toolkit != nil {
 					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
 					if s.rt != nil {
-						th.execRuntime.Toolkit.SetToolPolicy(runtime.ToolPolicyFromConfigAndPermissions(s.rt.ToolPolicy, s.rt.Permissions))
-						th.execRuntime.Toolkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.rt.Permissions.PermissionProfile))
+						runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
 						s.installToolApprovalReviewer(th.execRuntime.Toolkit)
 					}
 				}

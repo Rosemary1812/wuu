@@ -183,9 +183,8 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
 		kit.SetWorkflows(discoveredWorkflows)
-		kit.SetToolPolicy(ToolPolicyFromAgentConfig(cfg.Agent))
+		ConfigureToolkitPermissions(kit, cfg.Agent.ToolPolicy, permissions)
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
-		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled {
@@ -250,7 +249,7 @@ func NewSession(opts Options) (*Session, error) {
 				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
-				wkit, werr := tools.New(workerRoot)
+				wkit, werr := toolkit.CloneForRoot(workerRoot)
 				if werr != nil {
 					return nil, werr
 				}
@@ -265,9 +264,6 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
-				wkit.SetToolPolicy(ToolPolicyFromAgentConfig(cfg.Agent))
-				wkit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
-				wkit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
@@ -619,7 +615,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					workerKit.SetSkills(s.Skills)
 					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
-					workerKit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.Permissions.PermissionProfile))
+					ConfigureToolkitPermissions(workerKit, s.ToolPolicy, s.Permissions)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
 					if strings.TrimSpace(meta.AgentProfile) != "" {
@@ -648,7 +644,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		kit.SetSkills(s.Skills)
 		kit.SetWorkflows(s.Workflows)
 		kit.SetAgentControl(agentControl)
-		kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(s.Permissions.PermissionProfile))
+		ConfigureToolkitPermissions(kit, s.ToolPolicy, s.Permissions)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
@@ -1202,6 +1198,14 @@ func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
 
 func ToolPolicyFromAgentConfig(agent config.AgentConfig) tools.ToolPolicy {
 	return ToolPolicyFromConfigAndPermissions(agent.ToolPolicy, config.ResolveAgentPermissions(agent))
+}
+
+func ConfigureToolkitPermissions(kit *tools.Toolkit, toolPolicy config.ToolPolicyConfig, permissions config.ResolvedPermissions) {
+	if kit == nil {
+		return
+	}
+	kit.SetToolPolicy(ToolPolicyFromConfigAndPermissions(toolPolicy, permissions))
+	kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
 }
 
 func ToolPolicyFromConfigAndPermissions(in config.ToolPolicyConfig, permissions config.ResolvedPermissions) tools.ToolPolicy {

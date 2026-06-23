@@ -2,11 +2,46 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const cwd = process.env.WUU_PERMISSION_E2E_CWD || process.cwd();
 const runtimeContext = { kind: "no_project", cwd };
-let currentToolPolicy = { profile: "auto" };
+let currentToolPolicy = { profile: "agent" };
+let currentPermissions = permissionPreset("agent");
 const updateCalls = [];
 
 function provider(provider = "e2e", model = "mock-permission") {
   return { name: provider, type: "mock", model };
+}
+
+function permissionPreset(mode) {
+  switch (mode) {
+    case "read_only":
+      return {
+        mode: "read_only",
+        permission_profile: "read_only",
+        approval_policy: "on_request",
+        approvals_reviewer: "user"
+      };
+    case "auto_review":
+      return {
+        mode: "auto_review",
+        permission_profile: "workspace_write",
+        approval_policy: "on_request",
+        approvals_reviewer: "auto_review"
+      };
+    case "full_access":
+      return {
+        mode: "full_access",
+        permission_profile: "danger_full_access",
+        approval_policy: "never",
+        approvals_reviewer: "user"
+      };
+    case "agent":
+    default:
+      return {
+        mode: "agent",
+        permission_profile: "workspace_write",
+        approval_policy: "on_request",
+        approvals_reviewer: "user"
+      };
+  }
 }
 
 function projectList() {
@@ -77,6 +112,7 @@ contextBridge.exposeInMainWorld("wuu", {
     model: "mock-permission",
     workspace_root: cwd,
     tool_policy: currentToolPolicy,
+    permissions: currentPermissions,
     providers: [provider()]
   }),
   getBuildInfo: async () => ({
@@ -88,17 +124,18 @@ contextBridge.exposeInMainWorld("wuu", {
     model: "mock-permission",
     models: []
   }),
-  updateRuntimeSettings: async (providerName, model, effort, connection, variant, toolPolicyProfile) => {
+  updateRuntimeSettings: async (providerName, model, effort, connection, variant, permissionMode) => {
     updateCalls.push({
       provider: providerName,
       model,
       effort,
       connection,
       variant,
-      toolPolicyProfile
+      permissionMode
     });
-    if (toolPolicyProfile !== undefined) {
-      currentToolPolicy = { profile: toolPolicyProfile };
+    if (permissionMode !== undefined) {
+      currentPermissions = permissionPreset(permissionMode);
+      currentToolPolicy = { profile: permissionMode };
     }
     return {
       provider: providerName,
@@ -106,6 +143,7 @@ contextBridge.exposeInMainWorld("wuu", {
       effort,
       variant,
       tool_policy: currentToolPolicy,
+      permissions: currentPermissions,
       providers: [provider(providerName, model)]
     };
   },

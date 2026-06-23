@@ -367,6 +367,40 @@ func TestPermissionPresetsUseCodexStyleAxes(t *testing.T) {
 	}
 }
 
+func TestApplyPermissionModePresetRewritesAxesAndClearsToolPolicy(t *testing.T) {
+	agent := AgentConfig{
+		PermissionMode:    PermissionModeFullAccess,
+		PermissionProfile: PermissionProfileDangerFullAccess,
+		ApprovalPolicy:    ApprovalPolicyNever,
+		ApprovalsReviewer: ApprovalsReviewerUser,
+		ToolPolicy: ToolPolicyConfig{
+			Tools: map[string]string{"bash": "allow"},
+			Risks: map[string]string{"high": "deny"},
+		},
+	}
+
+	permissions, err := ApplyPermissionModePreset(&agent, PermissionModeReadOnly)
+	if err != nil {
+		t.Fatalf("ApplyPermissionModePreset: %v", err)
+	}
+	if permissions.Mode != PermissionModeReadOnly ||
+		agent.PermissionMode != PermissionModeReadOnly ||
+		agent.PermissionProfile != PermissionProfileReadOnly ||
+		agent.ApprovalPolicy != ApprovalPolicyOnRequest ||
+		agent.ApprovalsReviewer != ApprovalsReviewerUser {
+		t.Fatalf("read_only preset not applied: permissions=%+v agent=%+v", permissions, agent)
+	}
+	if agent.ToolPolicy.DefaultAction != "" || len(agent.ToolPolicy.Tools) != 0 || len(agent.ToolPolicy.Risks) != 0 {
+		t.Fatalf("permission preset should clear stale tool policy: %+v", agent.ToolPolicy)
+	}
+}
+
+func TestResolvePermissionModePresetRejectsInvalidMode(t *testing.T) {
+	if _, err := ResolvePermissionModePreset("not-a-mode"); err == nil {
+		t.Fatal("expected invalid permission mode error")
+	}
+}
+
 func TestAutoReviewKeepsAgentBoundaryAndOnlyChangesReviewer(t *testing.T) {
 	agent, ok := PermissionPresetForMode(PermissionModeAgent)
 	if !ok {

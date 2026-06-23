@@ -189,14 +189,8 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 		cfg.Agent.MaxSteps = opts.MaxTurns
 	}
 	if strings.TrimSpace(opts.PermissionMode) != "" {
-		if permissions, ok := config.PermissionPresetForMode(opts.PermissionMode); ok {
-			cfg.Agent.PermissionMode = permissions.Mode
-			cfg.Agent.PermissionProfile = permissions.PermissionProfile
-			cfg.Agent.ApprovalPolicy = permissions.ApprovalPolicy
-			cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
-			cfg.Agent.ToolPolicy = config.ToolPolicyConfig{}
-		} else {
-			return fmt.Errorf("invalid permission mode %q", opts.PermissionMode)
+		if _, err := config.ApplyPermissionModePreset(&cfg.Agent, opts.PermissionMode); err != nil {
+			return err
 		}
 	}
 	if err := applyToolPolicyOverrides(&cfg.Agent.ToolPolicy, opts.AllowTools, opts.DenyTools); err != nil {

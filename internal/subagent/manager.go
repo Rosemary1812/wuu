@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -32,6 +33,10 @@ type Manager struct {
 type ManagerOptions struct {
 	DefaultEffort          string
 	DefaultProviderOptions map[string]any
+}
+
+type toolContextBlockProvider interface {
+	ContextBlocks() []wuucontext.Block
 }
 
 // NewManager constructs a Manager backed by the given streaming LLM
@@ -235,6 +240,19 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		ProviderOptions: provideroptions.Clone(m.defaultProviderOptions),
 		OnUsage:         onUsage,
 		OnTokenUsage:    onTokenUsage,
+	}
+	if provider, ok := sa.toolkit.(toolContextBlockProvider); ok {
+		runner.BeforeRequest = func() []providers.ChatMessage {
+			blocks := provider.ContextBlocks()
+			if len(blocks) == 0 {
+				return nil
+			}
+			return []providers.ChatMessage{{
+				Role:    "user",
+				Name:    wuucontext.SystemReminderMessageName,
+				Content: wuucontext.FormatSystemReminderBlocks(blocks...),
+			}}
+		}
 	}
 
 	beforeStep := func() []providers.ChatMessage {

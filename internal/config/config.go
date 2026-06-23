@@ -940,7 +940,10 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		if err := validatePermissionMode(mode); err != nil {
 			return err
 		}
-		permissions, _ := PermissionPresetForMode(mode)
+		permissions, err := ResolvePermissionModePreset(mode)
+		if err != nil {
+			return err
+		}
 		agent, _ := raw["agent"].(map[string]any)
 		if agent == nil {
 			agent = make(map[string]any)
