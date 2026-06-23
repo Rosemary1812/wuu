@@ -278,14 +278,18 @@ func TestLoadFrom_AgentName(t *testing.T) {
 }
 
 func TestAgentConfig_ProfileMemoryEnabled(t *testing.T) {
-	if (AgentConfig{}).ProfileMemoryEnabled() {
-		t.Fatal("default ordinary session should not enable profile memory")
+	// Memory is now a single per-user global store. ProfileMemoryEnabled
+	// returns true unconditionally so every session — default or named —
+	// gets the durable memory attached. The flag is preserved for
+	// future config gating.
+	if !(AgentConfig{}).ProfileMemoryEnabled() {
+		t.Fatal("zero-value AgentConfig should enable global memory")
 	}
-	if (AgentConfig{Name: DefaultAgentName}).ProfileMemoryEnabled() {
-		t.Fatal("explicit default profile should not enable profile memory")
+	if !(AgentConfig{Name: DefaultAgentName}).ProfileMemoryEnabled() {
+		t.Fatal("explicit default profile should still enable global memory")
 	}
 	if !(AgentConfig{Name: "Mia"}).ProfileMemoryEnabled() {
-		t.Fatal("named agent profile should enable profile memory")
+		t.Fatal("named agent profile should enable global memory")
 	}
 }
 

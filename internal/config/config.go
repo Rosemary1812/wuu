@@ -802,8 +802,16 @@ func (a AgentConfig) ProfileName() string {
 	return DefaultAgentName
 }
 
+// ProfileMemoryEnabled reports whether the durable long-term memory store is
+// attached to a session. Memory is now a single global store under
+// statepath.GlobalMemoryDir(wuuHome) and is enabled for every session by
+// default, matching the Claude Code convention of one durable memory
+// document per user regardless of the agent profile name. The flag is kept
+// for downstream code that still wants to gate memory injection on a
+// feature toggle; the function returns true unconditionally until a
+// future config knob is introduced.
 func (a AgentConfig) ProfileMemoryEnabled() bool {
-	return a.ProfileName() != DefaultAgentName
+	return true
 }
 
 func isCodexSubscriptionProvider(providerType string) bool {

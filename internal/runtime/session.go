@@ -187,10 +187,13 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
-		if profileMemoryEnabled {
-			// Attach the durable profile memory store for named agents. Ordinary
-			// default sessions avoid saved profile memory so they can act as
-			// transient orchestration workspaces.
+		if profileMemoryEnabled && !cfg.Memory.Disable {
+			// Attach the global long-term memory store. With memory now a
+			// single per-user store (statepath.GlobalMemoryDir), the
+			// profileName dimension is ignored — every session shares the
+			// same store, matching the Claude Code convention. The escape
+			// hatch Memory.Disable=true still removes the store, so a user
+			// who wants a fully memoryless session keeps that option.
 			if memProvider, memErr := newProfileMemoryProvider(wuuHome, profileName); memErr == nil {
 				kit.SetMemory(memProvider)
 				profileMemoryProvider = memProvider
@@ -272,8 +275,11 @@ func NewSession(opts Options) (*Session, error) {
 						return nil, memErr
 					}
 					wkit.SetMemory(memProvider)
-				} else if profileMemoryProvider != nil {
-					wkit.SetMemory(profileMemoryProvider)
+				} else {
+					// Workers without an explicit AgentProfile are transient
+					// and stay memoryless — they must not inherit the parent
+					// session's global memory through CloneForRoot.
+					wkit.SetMemory(nil)
 				}
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
@@ -625,6 +631,11 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 							return nil, memErr
 						}
 						workerKit.SetMemory(memProvider)
+					} else {
+						// Workers without an explicit AgentProfile are transient
+						// and stay memoryless — they must not inherit the parent
+						// session's global memory through CloneForRoot.
+						workerKit.SetMemory(nil)
 					}
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
 					applyWorkerToolFilter(workerKit, wt)
@@ -1345,38 +1356,45 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 	return memory.Discover(rootDir, homeDir, memOpts)
 }
 
-func newProfileMemoryProvider(wuuHome, profileName string) (*memstore.FileProvider, error) {
-	name := strings.TrimSpace(profileName)
-	if name == "" || strings.EqualFold(name, config.DefaultAgentName) {
-		return nil, fmt.Errorf("profile memory requires a named agent profile")
-	}
-	if _, _, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
-		WuuHome: wuuHome,
-		Name:    name,
-		Source:  "agent",
-	}); err != nil {
-		return nil, err
-	}
-	profileStateDir, err := statepath.ProfileDir(wuuHome, name)
-	if err != nil {
-		return nil, fmt.Errorf("resolve profile state directory: %w", err)
-	}
-	return memstore.NewFileProvider(statepath.ProfileMemoryDir(profileStateDir))
+// newProfileMemoryProvider returns the durable long-term memory store for
+// the current user. The store is a single global directory under
+// statepath.GlobalMemoryDir(wuuHome) — independent of the agent profile
+// name — to match the Claude Code convention: one durable memory document
+// per user, with no profile-name dimension.
+//
+// The profileName argument is preserved on the function signature so
+// caller sites (worker subagents, refresh paths) compile unchanged, but
+// the directory is shared. The function does not require a workflow
+// profile registration; the file-backed store creates its directory
+// lazily.
+func newProfileMemoryProvider(wuuHome, _ string) (*memstore.FileProvider, error) {
+	return memstore.NewFileProvider(statepath.GlobalMemoryDir(wuuHome))
 }
 
+// buildProfileWorkerBasePrompt assembles a worker subagent's base system
+// prompt. A worker is only attached to the durable long-term memory store
+// when it was spawned with an explicit, non-default AgentProfile — workers
+// without an explicit profile stay memoryless to preserve the existing
+// worker isolation semantics (a transient worker must not inherit or
+// pollute the parent session's long-term memory).
+//
+// The global memory is now a single directory under
+// statepath.GlobalMemoryDir(wuuHome) shared by every session, so a worker
+// with an explicit profile still shares the same store as the main
+// session that spawned it; the gating here is about whether the worker
+// should be memory-bearing at all, not about which store to use.
 func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) (string, error) {
 	name := strings.TrimSpace(profileName)
 	var entries []memstore.Entry
-	profileMemoryEnabled := false
-	if name != "" && !strings.EqualFold(name, config.DefaultAgentName) {
+	enabled := name != "" && !strings.EqualFold(name, config.DefaultAgentName)
+	if enabled {
 		provider, err := newProfileMemoryProvider(wuuHome, name)
 		if err != nil {
 			return "", err
 		}
 		entries = recallProfileMemory(context.Background(), provider)
-		profileMemoryEnabled = true
 	}
-	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, entries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
+	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, entries, enabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {

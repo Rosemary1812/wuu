@@ -129,6 +129,16 @@ func ScheduledTasksLockPath(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "scheduled_tasks.lock")
 }
 
+// GlobalMemoryDir returns the user-level, single global directory for the
+// LLM-writable durable memory. Unlike ProfileMemoryDir, this directory is
+// not scoped to a named agent profile: every wuu session — default or
+// named — shares the same long-term store. This matches the Claude Code
+// convention of one durable memory document per user, with no
+// profile-name dimension.
+func GlobalMemoryDir(wuuHome string) string {
+	return filepath.Join(wuuHome, "memory")
+}
+
 // ProfileMemoryDir returns the profile-scoped directory for durable memory.
 // The file-backed store keeps an indexed log plus the human-facing MEMORY.md
 // document inside this directory; the directory is created lazily by the store.

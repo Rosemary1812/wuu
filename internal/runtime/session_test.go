@@ -243,7 +243,7 @@ func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	}
 }
 
-func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
+func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -271,8 +271,8 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	if rt.Toolkit == nil {
 		t.Fatal("expected toolkit")
 	}
-	if rt.Toolkit.Memory() != nil {
-		t.Fatalf("default profile should be memoryless, got %T", rt.Toolkit.Memory())
+	if rt.Toolkit.Memory() == nil {
+		t.Fatal("default profile should attach the global long-term memory store")
 	}
 	if rt.Toolkit.ActiveSurface().ProfileName == "" {
 		t.Fatal("expected runtime toolkit to install a model surface")
@@ -280,16 +280,16 @@ func TestNewSessionDefaultProfileIsMemoryless(t *testing.T) {
 	if !strings.Contains(rt.BaseSystemPrompt, "[Tool surface:") || !strings.Contains(rt.BaseSystemPrompt, "Terminal work") {
 		t.Fatalf("base system prompt should include compiled tool-surface fragment:\n%s", rt.BaseSystemPrompt)
 	}
-	if strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
-		t.Fatalf("default profile should not inject persistent memory:\n%s", rt.BaseSystemPrompt)
+	if !strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
+		t.Fatalf("default profile should inject the global memory snapshot:\n%s", rt.BaseSystemPrompt)
 	}
 	defs := make(map[string]bool)
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if defs[name] {
-			t.Fatalf("default profile should not expose %s", name)
+		if !defs[name] {
+			t.Fatalf("default profile should expose %s", name)
 		}
 	}
 }
@@ -900,11 +900,7 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	t.Setenv("WUU_HOME", wuuHome)
 	t.Setenv("TEST_WUU_KEY", "abc")
 
-	profileDir, err := statepath.ProfileDir(wuuHome, agentProfile)
-	if err != nil {
-		t.Fatalf("ProfileDir: %v", err)
-	}
-	provider, err := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileDir))
+	provider, err := memstore.NewFileProvider(statepath.GlobalMemoryDir(wuuHome))
 	if err != nil {
 		t.Fatalf("NewFileProvider: %v", err)
 	}
@@ -935,8 +931,8 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if rt.Toolkit.Memory() != nil {
-		t.Fatalf("ordinary root session should be memoryless, got %T", rt.Toolkit.Memory())
+	if rt.Toolkit.Memory() == nil {
+		t.Fatal("ordinary root session should attach the global long-term memory store")
 	}
 	client := &sessionRecordingClient{}
 	rt.WorkerClient = client
@@ -986,7 +982,7 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	}
 }
 
-func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
+func TestNewSessionUsesGlobalMemoryStore(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	wuuHome := filepath.Join(home, "state")
@@ -1007,7 +1003,6 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 					Model:     "gpt-test",
 				},
 			},
-			Agent: config.AgentConfig{Name: "Mia Agent"},
 			Memory: config.MemoryConfig{
 				MemoryCharLimit: 42,
 				UserCharLimit:   24,
@@ -1024,16 +1019,12 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 	if !ok {
 		t.Fatalf("memory provider = %T, want *FileProvider", rt.Toolkit.Memory())
 	}
-	profileDir, err := statepath.ProfileDir(wuuHome, "Mia Agent")
-	if err != nil {
-		t.Fatalf("ProfileDir: %v", err)
-	}
-	want := statepath.ProfileMemoryDir(profileDir)
+	want := statepath.GlobalMemoryDir(wuuHome)
 	if provider.Dir() != want {
 		t.Fatalf("memory dir = %q, want %q", provider.Dir(), want)
 	}
 	if strings.HasPrefix(provider.Dir(), rt.StateDir+string(os.PathSeparator)) {
-		t.Fatalf("memory dir should be profile-scoped, got workspace path %q", provider.Dir())
+		t.Fatalf("memory dir should be the global user store, got workspace path %q", provider.Dir())
 	}
 	memoryLimit, userLimit := rt.Toolkit.MemoryLimits()
 	if memoryLimit != 42 || userLimit != 24 {
@@ -1045,7 +1036,7 @@ func TestNewSessionUsesProfileMemoryStore(t *testing.T) {
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
 		if !defs[name] {
-			t.Fatalf("named profile should expose %s", name)
+			t.Fatalf("default session should expose %s", name)
 		}
 	}
 }
@@ -1058,11 +1049,7 @@ func TestNewSessionInjectsProfileMemorySnapshot(t *testing.T) {
 	t.Setenv("WUU_HOME", wuuHome)
 	t.Setenv("TEST_WUU_KEY", "abc")
 
-	profileDir, err := statepath.ProfileDir(wuuHome, agentName)
-	if err != nil {
-		t.Fatalf("ProfileDir: %v", err)
-	}
-	provider, err := memstore.NewFileProvider(statepath.ProfileMemoryDir(profileDir))
+	provider, err := memstore.NewFileProvider(statepath.GlobalMemoryDir(wuuHome))
 	if err != nil {
 		t.Fatalf("NewFileProvider: %v", err)
 	}
