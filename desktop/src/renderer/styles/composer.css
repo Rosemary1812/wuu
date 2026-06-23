@@ -2,7 +2,7 @@
   width: 100%;
   min-width: 0;
   overflow: visible;
-  padding: 16px 0 24px;
+  padding: 12px 0 8px;
   background: var(--paper);
 }
 
@@ -20,15 +20,6 @@
 
 .conversation-pane.environment-panel-reserved .dock-composer-wrap {
   transition-delay: var(--environment-flow-motion-delay);
-}
-
-.dock-composer-wrap::before {
-  position: absolute;
-  inset: 0 var(--conversation-scrollbar-gutter) 0 0;
-  z-index: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--paper) 24px, var(--paper) 100%);
-  content: "";
-  pointer-events: none;
 }
 
 .dock-composer-wrap .composer-stack {
@@ -69,7 +60,12 @@
   margin: 0;
   border-radius: var(--conversation-dialog-radius, var(--radius-sm));
   background: var(--paper);
-  box-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
+  /* Top hairline separates the shell from the scroll content above;
+   * the soft downward shadow gives the composer a grounded "card" feel
+   * without needing a wrap-level gradient fade. */
+  box-shadow:
+    0 -1px 0 var(--surface-3),
+    0 8px 24px rgba(20, 24, 28, 0.06);
   overflow: visible;
 }
 
