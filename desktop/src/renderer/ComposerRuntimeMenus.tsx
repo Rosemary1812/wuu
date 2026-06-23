@@ -168,13 +168,6 @@ export function permissionModeOption(mode: PermissionModeState): Omit<Permission
   return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[1];
 }
 
-function permissionAxisSummary(permissions?: PermissionSummary): string {
-  const profile = permissions?.permission_profile?.trim() || "workspace_write";
-  const approval = permissions?.approval_policy?.trim() || "on_request";
-  const reviewer = permissions?.approvals_reviewer?.trim() || "user";
-  return `profile: ${profile} / approval: ${approval} / reviewer: ${reviewer}`;
-}
-
 export function RuntimePicker({
   variant,
   initialized,
@@ -498,10 +491,6 @@ export function AccessMenu({
   const activeMode = hasOverrides ? undefined : mode;
   return (
     <div className="composer-context-menu access-menu" role="menu">
-      <div className="composer-menu-note">
-        <strong>权限边界</strong>
-        <span>{permissionAxisSummary(permissions)}</span>
-      </div>
       {hasOverrides ? (
         <div className="composer-menu-note">
           <strong>自定义权限</strong>

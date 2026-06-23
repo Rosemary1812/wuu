@@ -585,9 +585,9 @@ describe("Composer permission menu", () => {
       ),
     ).map((label) => label.textContent?.trim());
     expect(checkedLabels).toEqual(["默认"]);
-    expect(document.body.textContent).toContain("profile: workspace_write");
-    expect(document.body.textContent).toContain("approval: on_request");
-    expect(document.body.textContent).toContain("reviewer: user");
+    expect(document.body.textContent).not.toContain("profile:");
+    expect(document.body.textContent).not.toContain("approval:");
+    expect(document.body.textContent).not.toContain("reviewer:");
   });
 
   it("shows a custom state when explicit permission axes do not match the mode preset", () => {
@@ -614,7 +614,7 @@ describe("Composer permission menu", () => {
     ).map((label) => label.textContent?.trim());
     expect(checkedLabels).toEqual([]);
     expect(document.body.textContent).toContain("自定义权限");
-    expect(document.body.textContent).toContain("approval: on_request");
+    expect(document.body.textContent).not.toContain("approval:");
   });
 
   it("lets the user switch between read only, approve for me, and full access", () => {
