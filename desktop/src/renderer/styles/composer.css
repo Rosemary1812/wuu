@@ -2,7 +2,7 @@
   width: 100%;
   min-width: 0;
   overflow: visible;
-  padding: 16px 0 24px;
+  padding: 16px 0 0;
   background: var(--paper);
 }
 
@@ -24,9 +24,21 @@
 
 .dock-composer-wrap::before {
   position: absolute;
-  inset: 0 var(--conversation-scrollbar-gutter) 0 0;
+  top: 0;
+  bottom: 0;
+  /* Center horizontally in the wrap's content width (exclude the scrollbar gutter
+   * and align with the composer-stack's -scrollbar-gutter/2 visual centering). */
+  left: calc(50% - var(--conversation-scrollbar-gutter) / 2);
+  transform: translateX(-50%);
+  width: min(
+    var(--conversation-dialog-width),
+    calc(100% - var(--conversation-scrollbar-gutter))
+  );
   z-index: 0;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--paper) 24px, var(--paper) 100%);
+  /* Match the composer-shell's rounded corners so the fade's footprint stops at
+   * the shell boundary instead of leaking past it as a rectangular white strip. */
+  border-radius: var(--conversation-dialog-radius, var(--radius-sm));
   content: "";
   pointer-events: none;
 }
