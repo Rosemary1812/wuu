@@ -121,7 +121,7 @@ func (t *SemanticSearchTool) Execute(ctx context.Context, argsJSON string) (stri
 		searchRoot = resolved
 	}
 
-	result, err := semanticSearch(t.env.RootDir, searchRoot, args.Include, args.Query, terms)
+	result, err := semanticSearch(t.env.RootDir, searchRoot, args.Include, args.Query, terms, t.env.BypassToolHardProtections())
 	if err != nil {
 		return "", err
 	}
@@ -169,7 +169,7 @@ type semanticSearchLineMatch struct {
 	Terms   []string `json:"terms"`
 }
 
-func semanticSearch(rootDir, searchRoot, include, query string, terms []string) (semanticSearchResult, error) {
+func semanticSearch(rootDir, searchRoot, include, query string, terms []string, allowSensitive bool) (semanticSearchResult, error) {
 	var result semanticSearchResult
 	process := func(path string, info os.FileInfo) error {
 		if info == nil || info.IsDir() {
@@ -183,7 +183,7 @@ func semanticSearch(rootDir, searchRoot, include, query string, terms []string) 
 		if include != "" && !matchGlob(include, rel) {
 			return nil
 		}
-		if !semanticSearchFileCandidate(rel, info) || isBinaryFile(path) {
+		if !semanticSearchFileCandidate(rel, info, allowSensitive) || isBinaryFile(path) {
 			return nil
 		}
 		result.FilesScanned++
@@ -308,8 +308,8 @@ func semanticSearchFile(path, relPath, query string, terms []string) (semanticSe
 	}, true, nil
 }
 
-func semanticSearchFileCandidate(rel string, info os.FileInfo) bool {
-	if isSensitivePath(rel) || info.Size() > maxSemanticSearchFileBytes {
+func semanticSearchFileCandidate(rel string, info os.FileInfo, allowSensitive bool) bool {
+	if (!allowSensitive && isSensitivePath(rel)) || info.Size() > maxSemanticSearchFileBytes {
 		return false
 	}
 	base := strings.ToLower(filepath.Base(rel))

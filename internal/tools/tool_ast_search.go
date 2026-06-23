@@ -119,7 +119,7 @@ func (t *ASTSearchTool) Execute(ctx context.Context, argsJSON string) (string, e
 		searchRoot = resolved
 	}
 
-	matches, err := astSearch(t.env.RootDir, searchRoot, args.Include, args.Query, kind, limit)
+	matches, err := astSearch(t.env.RootDir, searchRoot, args.Include, args.Query, kind, limit, t.env.BypassToolHardProtections())
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +149,7 @@ type astSearchMatch struct {
 	ReadFileSuggestion string         `json:"read_file_suggestion,omitempty"`
 }
 
-func astSearch(rootDir, searchRoot, include, query, kind string, limit int) ([]astSearchMatch, error) {
+func astSearch(rootDir, searchRoot, include, query, kind string, limit int, allowSensitive bool) ([]astSearchMatch, error) {
 	var matches []astSearchMatch
 	process := func(path string, info os.FileInfo) error {
 		if info == nil || info.IsDir() {
@@ -166,7 +166,7 @@ func astSearch(rootDir, searchRoot, include, query, kind string, limit int) ([]a
 		if include != "" && !matchGlob(include, rel) {
 			return nil
 		}
-		if isSensitivePath(rel) || isBinaryFile(path) || info.Size() > maxReadFileSymbolScanBytes {
+		if (!allowSensitive && isSensitivePath(rel)) || isBinaryFile(path) || info.Size() > maxReadFileSymbolScanBytes {
 			return nil
 		}
 		language := astSearchLanguage(filepath.Ext(path))

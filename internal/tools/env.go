@@ -186,6 +186,10 @@ func (s *webEvidenceState) snapshot() []webEvidenceEntry {
 type Env struct {
 	RootDir  string
 	StateDir string
+	// PermissionProfile is the active runtime filesystem/approval profile.
+	// Tools use it to align hard runtime behavior with the selected product
+	// permission mode.
+	PermissionProfile string
 
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
@@ -293,8 +297,20 @@ func (e *Env) WebEvidenceEntries() []webEvidenceEntry {
 	return e.webState.snapshot()
 }
 
-// ResolvePath resolves a user-supplied relative or absolute path to
-// an absolute path within the workspace, preventing sandbox escapes.
+func (e *Env) BypassToolHardProtections() bool {
+	return e != nil && strings.TrimSpace(e.PermissionProfile) == PermissionProfileDangerFullAccess
+}
+
+func (e *Env) RedactToolOutput(text string) string {
+	if e.BypassToolHardProtections() {
+		return text
+	}
+	return redactToolOutput(text)
+}
+
+// ResolvePath resolves a user-supplied relative or absolute path. Normal
+// permission profiles constrain it to the workspace; full access returns the
+// resolved path without applying Wuu's workspace boundary.
 func (e *Env) ResolvePath(input string) (string, error) {
 	candidate := strings.TrimSpace(input)
 	if candidate == "" {
@@ -311,6 +327,9 @@ func (e *Env) ResolvePath(input string) (string, error) {
 	resolved, err := filepath.Abs(abs)
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	if e.BypassToolHardProtections() {
+		return resolved, nil
 	}
 
 	evalRoot := e.RootDir

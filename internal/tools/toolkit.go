@@ -139,6 +139,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	env := Env{
 		RootDir:             abs,
 		StateDir:            t.env.StateDir,
+		PermissionProfile:   t.env.PermissionProfile,
 		SessionID:           t.env.SessionID,
 		SessionDir:          t.env.SessionDir,
 		AgentID:             t.env.AgentID,
@@ -408,6 +409,13 @@ func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
 // The zero value leaves the legacy unrestricted behavior in place.
 func (t *Toolkit) SetPermissionBoundary(boundary PermissionBoundary) {
 	t.permissionBoundary = boundary
+	if t != nil && t.env != nil {
+		t.env.PermissionProfile = normalizePermissionBoundaryProfile(boundary.Profile)
+	}
+}
+
+func (t *Toolkit) bypassToolHardProtections() bool {
+	return t != nil && t.env != nil && t.env.BypassToolHardProtections()
 }
 
 // SetExtensionSurfacePolicy installs the runtime trust policy for extension

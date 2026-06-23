@@ -41,6 +41,9 @@ func isSensitivePath(path string) bool {
 }
 
 func rejectSensitiveToolPath(env *Env, toolName, action, absPath string) error {
+	if env.BypassToolHardProtections() {
+		return nil
+	}
 	displayPath := env.NormalizeDisplayPath(absPath)
 	if reason, ok := sensitivePathReason(displayPath); ok {
 		return fmt.Errorf("%s refuses to %s sensitive path %q (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", toolName, action, displayPath, reason)

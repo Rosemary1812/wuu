@@ -79,7 +79,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected by command policy.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected by command policy unless full access is active.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -113,26 +113,28 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("run_shell requires command")
 	}
-	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-		return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
-	}
-	if shellCommandUsesUnsupportedWrapper(args.Command) {
-		return "", errors.New("run_shell refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-	}
-	if shellCommandDumpsEnvironment(args.Command) {
-		return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
-	}
-	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-		return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
-	}
-	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("run_shell refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-	}
-	if testCommandLooksLikeLocalRunnerVerification(args.Command) {
-		return "", errors.New("run_shell refuses to execute package-runner verification commands directly because they can install packages when the runner is missing; use bash action=run for local verification so project-local test runners are resolved without downloads: error_kind=wrong_tool_for_verification model_next_action=\"retry with bash action=run using the same command\"")
-	}
-	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
-		return "", errors.New("run_shell refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
+	if !t.env.BypassToolHardProtections() {
+		if reason, ok := blockedShellGitCommandReason(args.Command); ok {
+			return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
+		}
+		if shellCommandUsesUnsupportedWrapper(args.Command) {
+			return "", errors.New("run_shell refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+		}
+		if shellCommandDumpsEnvironment(args.Command) {
+			return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
+		}
+		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+			return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
+		}
+		if shellCommandInvokesDestructiveCommand(args.Command) {
+			return "", errors.New("run_shell refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
+		}
+		if testCommandLooksLikeLocalRunnerVerification(args.Command) {
+			return "", errors.New("run_shell refuses to execute package-runner verification commands directly because they can install packages when the runner is missing; use bash action=run for local verification so project-local test runners are resolved without downloads: error_kind=wrong_tool_for_verification model_next_action=\"retry with bash action=run using the same command\"")
+		}
+		if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+			return "", errors.New("run_shell refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
+		}
 	}
 
 	timeout := args.TimeoutSeconds
@@ -147,7 +149,7 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if err != nil {
 		return "", err
 	}
-	result.Purpose = redactToolOutput(args.Purpose)
+	result.Purpose = t.env.RedactToolOutput(args.Purpose)
 	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
 	if fullLogRef != "" {
 		result.FullLogRef = fullLogRef
@@ -274,9 +276,9 @@ func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, t
 
 	stdoutText := stdout.String()
 	stderrText := stderr.String()
-	redactedStdout := redactToolOutput(stdoutText)
-	redactedStderr := redactToolOutput(stderrText)
-	redactedCommand := redactToolOutput(command)
+	redactedStdout := env.RedactToolOutput(stdoutText)
+	redactedStderr := env.RedactToolOutput(stderrText)
+	redactedCommand := env.RedactToolOutput(command)
 	output := redactedStdout + redactedStderr
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 	stdoutTail, stdoutTailTruncated := tailString(redactedStdout, maxShellTailBytes)
@@ -607,13 +609,13 @@ func parseShellGitSubcommand(fields []string) (string, []string, error) {
 			return "", nil, err
 		}
 	} else if allowedGitSubcommands[subcmd] {
-		if err := validateGitArgs(subcmd, remainingArgs); err != nil {
+		if err := validateGitArgs(subcmd, remainingArgs, false); err != nil {
 			return "", nil, err
 		}
 	} else {
 		return "", nil, fmt.Errorf("git shell subcommand %q is not allowed", subcmd)
 	}
-	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs); err != nil {
+	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs, false); err != nil {
 		return "", nil, err
 	}
 	return subcmd, remainingArgs, nil

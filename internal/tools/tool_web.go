@@ -92,6 +92,7 @@ func (t *WebFetchTool) Definition() providers.ToolDefinition {
 			"- HTML is automatically converted to readable text (scripts, nav, footer stripped)\n" +
 			"- JSON responses are pretty-printed\n" +
 			"- Content is truncated at 1MB\n" +
+			"- Local/private network targets are blocked unless full access is active\n" +
 			"- 30 second timeout",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -125,7 +126,7 @@ func (t *WebFetchTool) ValidateInput(argsJSON string) error {
 }
 
 func (t *WebFetchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	result, err := webFetchExecute(ctx, argsJSON)
+	result, err := webFetchExecute(ctx, argsJSON, t.env.BypassToolHardProtections())
 	if err == nil {
 		recordWebEvidenceResult(t.env, t.Name(), result)
 	}

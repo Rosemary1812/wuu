@@ -106,6 +106,34 @@ func TestStartRejectsInvalidCWD(t *testing.T) {
 	}
 }
 
+func TestStartAllowsOutsideWorkspaceWhenRequested(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := m.Start(context.Background(), StartOptions{
+		Command:               "pwd -P; sleep 1",
+		CWD:                   outside,
+		OwnerKind:             OwnerMainAgent,
+		OwnerID:               "main",
+		Lifecycle:             LifecycleSession,
+		AllowOutsideWorkspace: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = m.Stop(p.ID) }()
+
+	want := canonicalTestPath(t, outside)
+	got := canonicalTestPath(t, p.CWD)
+	if got != want {
+		t.Fatalf("cwd = %q, want %q", got, want)
+	}
+}
+
 func canonicalTestPath(t *testing.T, path string) string {
 	t.Helper()
 	if evaluated, err := filepath.EvalSymlinks(path); err == nil {

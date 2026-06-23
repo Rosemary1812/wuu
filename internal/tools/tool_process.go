@@ -85,11 +85,11 @@ func (t *StartProcessTool) PermissionRequests(argsJSON string) []ToolPermissionR
 
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "start_process", Description: "Start a managed background OS process in the workspace. Use this instead of run_shell or shell '&' for dev servers, watch modes, and other long-lived commands. Commands that dump environment variables or touch sensitive credential paths are rejected.",
+		Name: "start_process", Description: "Start a managed background OS process. Use this instead of run_shell or shell '&' for dev servers, watch modes, and other long-lived commands. Commands that dump environment variables or touch sensitive credential paths are rejected unless full access is active.",
 		InputSchema: objectSchema(
 			map[string]any{
 				"command":    stringSchema("Command to run. Do not append '&'; this tool already keeps the process in the background."),
-				"cwd":        stringSchema("Working directory. Defaults to the workspace root."),
+				"cwd":        stringSchema("Working directory. Defaults to the workspace root. Full access also allows absolute or outside-workspace paths."),
 				"owner_kind": stringEnumSchema("main_agent", "subagent"),
 				"owner_id":   stringSchema("Optional owner id. Defaults to the current agent/session id."),
 				"lifecycle":  stringEnumSchema("session", "managed"),
@@ -119,23 +119,25 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if args.Command == "" {
 		return "", errors.New("start_process requires command")
 	}
-	if shellCommandInvokesGit(args.Command) {
-		return "", errors.New("start_process refuses to execute git commands because git operations should be short-lived and non-interactive. Use bash action=run for normal git status/diff/log/add/commit workflows: error_kind=unsupported_tool_path model_next_action=\"retry with bash action=run for short-lived git\"")
-	}
-	if shellCommandUsesUnsupportedWrapper(args.Command) {
-		return "", errors.New("start_process refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-	}
-	if shellCommandDumpsEnvironment(args.Command) {
-		return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
-	}
-	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-		return "", errors.New("start_process refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
-	}
-	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("start_process refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-	}
-	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
-		return "", errors.New("start_process refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
+	if !t.env.BypassToolHardProtections() {
+		if shellCommandInvokesGit(args.Command) {
+			return "", errors.New("start_process refuses to execute git commands because git operations should be short-lived and non-interactive. Use bash action=run for normal git status/diff/log/add/commit workflows: error_kind=unsupported_tool_path model_next_action=\"retry with bash action=run for short-lived git\"")
+		}
+		if shellCommandUsesUnsupportedWrapper(args.Command) {
+			return "", errors.New("start_process refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+		}
+		if shellCommandDumpsEnvironment(args.Command) {
+			return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
+		}
+		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+			return "", errors.New("start_process refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
+		}
+		if shellCommandInvokesDestructiveCommand(args.Command) {
+			return "", errors.New("start_process refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
+		}
+		if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+			return "", errors.New("start_process refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
+		}
 	}
 	args.OwnerKind = defaultProcessOwnerKind(t.env, args.OwnerKind)
 	if strings.TrimSpace(args.OwnerID) == "" {
@@ -145,10 +147,10 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	if err != nil {
 		return "", err
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections()})
 	response := startProcessResponse{}
 	if p != nil {
-		response.Process = redactProcess(*p)
+		response.Process = redactProcess(t.env, *p)
 		response.Action = "start_process"
 		response.NextSuggestions = startProcessNextSuggestions(args.WaitMS)
 		if startErr == nil && args.WaitMS > 0 {
@@ -163,7 +165,7 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 				Wait:        wait,
 			})
 			if readErr != nil {
-				response.LastError = redactToolOutput(readErr.Error())
+				response.LastError = t.env.RedactToolOutput(readErr.Error())
 			} else {
 				process := snapshot.Process
 				detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
@@ -173,9 +175,9 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 						response.DetectedPreviewURLs = append([]string(nil), updated.PreviewURLs...)
 					}
 				}
-				response.Process = redactProcess(process)
+				response.Process = redactProcess(t.env, process)
 				response.Action = "start_process"
-				response.InitialOutput = redactToolOutput(snapshot.Output)
+				response.InitialOutput = t.env.RedactToolOutput(snapshot.Output)
 				response.InitialTruncated = snapshot.Truncated
 				response.InitialStartOffset = snapshot.StartOffset
 				response.InitialEndOffset = snapshot.EndOffset
@@ -253,7 +255,7 @@ func (t *ListProcessesTool) Execute(_ context.Context, _ string) (string, error)
 	}
 	redacted := make([]proc.Process, 0, len(ps))
 	for _, p := range ps {
-		redacted = append(redacted, redactProcess(p))
+		redacted = append(redacted, redactProcess(t.env, p))
 	}
 	return mustJSON(map[string]any{
 		"action":    "list_processes",
@@ -300,7 +302,7 @@ func (t *StopProcessTool) Execute(_ context.Context, argsJSON string) (string, e
 	if err != nil {
 		return "", err
 	}
-	redacted := redactProcessPtr(p)
+	redacted := redactProcessPtr(t.env, p)
 	if redacted != nil {
 		redacted.Action = "stop_process"
 	}
@@ -369,7 +371,7 @@ func (t *ReadProcessOutputTool) Execute(ctx context.Context, argsJSON string) (s
 	return mustJSON(map[string]any{
 		"action":                "read_process_output",
 		"process_id":            args.ProcessID,
-		"output":                redactToolOutput(snapshot.Output),
+		"output":                t.env.RedactToolOutput(snapshot.Output),
 		"detected_preview_urls": detectedPreviewURLs,
 		"truncated":             snapshot.Truncated,
 		"start_offset":          snapshot.StartOffset,
@@ -379,7 +381,7 @@ func (t *ReadProcessOutputTool) Execute(ctx context.Context, argsJSON string) (s
 		"duration_ms":           snapshot.Duration.Milliseconds(),
 		"status":                process.Status,
 		"exit_code":             process.ExitCode,
-		"process":               redactProcess(process),
+		"process":               redactProcess(t.env, process),
 	})
 }
 
@@ -430,20 +432,20 @@ func (t *WriteStdinTool) Execute(_ context.Context, argsJSON string) (string, er
 		"action":        "write_stdin",
 		"process_id":    args.ProcessID,
 		"bytes_written": len(args.Input),
-		"process":       redactProcessPtr(p),
+		"process":       redactProcessPtr(t.env, p),
 	})
 }
 
-func redactProcessPtr(p *proc.Process) *proc.Process {
+func redactProcessPtr(env *Env, p *proc.Process) *proc.Process {
 	if p == nil {
 		return nil
 	}
-	redacted := redactProcess(*p)
+	redacted := redactProcess(env, *p)
 	return &redacted
 }
 
-func redactProcess(p proc.Process) proc.Process {
-	p.Command = redactToolOutput(p.Command)
-	p.LastError = redactToolOutput(p.LastError)
+func redactProcess(env *Env, p proc.Process) proc.Process {
+	p.Command = env.RedactToolOutput(p.Command)
+	p.LastError = env.RedactToolOutput(p.LastError)
 	return p
 }

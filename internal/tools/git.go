@@ -439,11 +439,12 @@ var blockedCommitFlags = map[string]bool{
 }
 
 func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) {
-	invocation, err := parseGitInvocation(argsJSON)
+	allowSensitive := env.BypassToolHardProtections()
+	invocation, err := parseGitInvocation(argsJSON, allowSensitive)
 	if err != nil {
 		return "", err
 	}
-	if err := requireGitWriteConfirmation(invocation); err != nil {
+	if err := requireGitWriteConfirmation(invocation, allowSensitive); err != nil {
 		return "", err
 	}
 
@@ -456,7 +457,7 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	gitArgs := append([]string{"--no-optional-locks"}, subcmdParts...)
 	gitArgs = append(gitArgs, invocation.Args...)
 	if invocation.Subcommand == "add" {
-		pathspecs, err := normalizeExplicitGitPathspecs(invocation.Subcommand, invocation.Args, false)
+		pathspecs, err := normalizeExplicitGitPathspecs(invocation.Subcommand, invocation.Args, allowSensitive)
 		if err != nil {
 			return "", err
 		}
@@ -485,7 +486,7 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	return runGit(env, ctx, invocation.Subcommand, gitArgs)
 }
 
-func parseGitInvocation(argsJSON string) (gitInvocation, error) {
+func parseGitInvocation(argsJSON string, allowSensitive bool) (gitInvocation, error) {
 	var args struct {
 		Subcommand          string   `json:"subcommand"`
 		Args                []string `json:"args"`
@@ -523,13 +524,13 @@ func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 			return gitInvocation{}, err
 		}
 	} else if allowedGitSubcommands[subcmd] {
-		if err := validateGitArgs(subcmd, remainingArgs); err != nil {
+		if err := validateGitArgs(subcmd, remainingArgs, allowSensitive); err != nil {
 			return gitInvocation{}, err
 		}
 	} else {
 		return gitInvocation{}, fmt.Errorf("git subcommand %q is not allowed in restricted mode", args.Subcommand)
 	}
-	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs); err != nil {
+	if err := validateSensitiveGitContentArgs(subcmd, remainingArgs, allowSensitive); err != nil {
 		return gitInvocation{}, err
 	}
 
@@ -541,7 +542,10 @@ func parseGitInvocation(argsJSON string) (gitInvocation, error) {
 	}, nil
 }
 
-func requireGitWriteConfirmation(invocation gitInvocation) error {
+func requireGitWriteConfirmation(invocation gitInvocation, allowSensitive bool) error {
+	if allowSensitive {
+		return nil
+	}
 	switch invocation.Subcommand {
 	case "add":
 		if invocation.ConfirmUserApproved {
@@ -597,7 +601,7 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		}
 	}
 
-	output, redacted := sanitizeGitOutput(subcmd, stdout.String()+stderr.String())
+	output, redacted := sanitizeGitOutput(subcmd, stdout.String()+stderr.String(), env.BypassToolHardProtections())
 	trimmed, truncated := truncate(output, maxShellOutputBytes)
 
 	result := map[string]any{
@@ -745,7 +749,7 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 
 	staged, unstaged, untracked := parseGitPorcelain(stdout.String())
 
-	rawOutput, redacted := sanitizeGitOutput("status", stdout.String()+stderr.String())
+	rawOutput, redacted := sanitizeGitOutput("status", stdout.String()+stderr.String(), env.BypassToolHardProtections())
 	trimmed, truncated := truncate(rawOutput, maxShellOutputBytes)
 
 	result := map[string]any{
@@ -888,16 +892,16 @@ func validateGlobalGitArgs(subcmd string, args []string) error {
 
 // validateGitArgs runs subcommand-specific validation for non-policied
 // subcommands (commit, push, and everything else in allowedGitSubcommands).
-func validateGitArgs(subcmd string, args []string) error {
+func validateGitArgs(subcmd string, args []string, allowSensitive bool) error {
 	switch subcmd {
 	case "add":
-		_, err := normalizeExplicitGitPathspecs(subcmd, args, false)
+		_, err := normalizeExplicitGitPathspecs(subcmd, args, allowSensitive)
 		return err
 	case "restore --staged":
 		_, err := normalizeExplicitGitPathspecs(subcmd, args, true)
 		return err
 	case "commit":
-		return validateCommitArgs(args)
+		return validateCommitArgs(args, allowSensitive)
 	case "push":
 		return validatePushArgs(args)
 	case "cat-file":
@@ -1026,7 +1030,7 @@ func hasDangerousGlobalConfigArgs(args []string) bool {
 	return false
 }
 
-func validateCommitArgs(args []string) error {
+func validateCommitArgs(args []string, allowSensitive bool) error {
 	if len(args) == 0 {
 		return errors.New("git commit requires an explicit message via -m/--message or -F/--file")
 	}
@@ -1053,7 +1057,7 @@ func validateCommitArgs(args []string) error {
 			if i+1 >= len(args) {
 				return fmt.Errorf("git commit flag %q requires a message file", arg)
 			}
-			if err := validateCommitMessageFileArg(arg, args[i+1]); err != nil {
+			if err := validateCommitMessageFileArg(arg, args[i+1], allowSensitive); err != nil {
 				return err
 			}
 			messageSeen = true
@@ -1069,7 +1073,7 @@ func validateCommitArgs(args []string) error {
 			continue
 		}
 		if strings.HasPrefix(arg, "--file=") {
-			if err := validateCommitMessageFileArg("--file", strings.TrimPrefix(arg, "--file=")); err != nil {
+			if err := validateCommitMessageFileArg("--file", strings.TrimPrefix(arg, "--file="), allowSensitive); err != nil {
 				return err
 			}
 			messageSeen = true
@@ -1089,7 +1093,7 @@ func validateCommitArgs(args []string) error {
 	return nil
 }
 
-func validateCommitMessageFileArg(flag, raw string) error {
+func validateCommitMessageFileArg(flag, raw string, allowSensitive bool) error {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return fmt.Errorf("git commit flag %q requires a non-empty message file", flag)
@@ -1107,13 +1111,16 @@ func validateCommitMessageFileArg(flag, raw string) error {
 	if strings.ContainsAny(cleaned, "*?[") || strings.HasPrefix(cleaned, ":") || strings.Contains(cleaned, ":(") {
 		return fmt.Errorf("git commit flag %q requires a literal message file path, got %q", flag, value)
 	}
-	if reason, ok := sensitivePathReason(cleaned); ok {
+	if reason, ok := sensitivePathReason(cleaned); ok && !allowSensitive {
 		return fmt.Errorf("git commit refuses message file %q (%s). Ask the user for explicit secret handling before committing", cleaned, reason)
 	}
 	return nil
 }
 
 func rejectSensitiveStagePathspecs(env *Env, ctx context.Context, pathspecs []string) error {
+	if env.BypassToolHardProtections() {
+		return nil
+	}
 	paths, err := changedPathsForPathspecs(env, ctx, pathspecs)
 	if err != nil {
 		return err
@@ -1185,6 +1192,9 @@ func gitStatusSnapshot(env *Env, ctx context.Context) (staged, unstaged []fileEn
 }
 
 func rejectSensitiveStagedCommitPaths(env *Env, ctx context.Context) error {
+	if env.BypassToolHardProtections() {
+		return nil
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -1207,7 +1217,10 @@ func rejectSensitiveStagedCommitPaths(env *Env, ctx context.Context) error {
 	return nil
 }
 
-func validateSensitiveGitContentArgs(subcmd string, args []string) error {
+func validateSensitiveGitContentArgs(subcmd string, args []string, allowSensitive bool) error {
+	if allowSensitive {
+		return nil
+	}
 	if !gitSubcommandCanEmitFileContent(subcmd) {
 		return nil
 	}
@@ -1255,7 +1268,10 @@ func sensitiveGitPathCandidates(arg string) []string {
 	return candidates
 }
 
-func sanitizeGitOutput(subcmd, output string) (string, bool) {
+func sanitizeGitOutput(subcmd, output string, allowSensitive bool) (string, bool) {
+	if allowSensitive {
+		return output, false
+	}
 	redacted := false
 	if gitSubcommandMayReturnDiff(subcmd) {
 		var changed bool

@@ -103,11 +103,13 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		return "", errors.New("run_test requires command")
 	}
 	command := strings.TrimSpace(args.Command)
-	if shellCommandDumpsEnvironment(args.Command) {
-		return "", errors.New("run_test refuses to print process environment variables because they may contain secrets")
-	}
-	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-		return "", errors.New("run_test refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
+	if !t.env.BypassToolHardProtections() {
+		if shellCommandDumpsEnvironment(args.Command) {
+			return "", errors.New("run_test refuses to print process environment variables because they may contain secrets")
+		}
+		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+			return "", errors.New("run_test refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
+		}
 	}
 	resolved, err := resolveRunTestCommand(t.env.RootDir, args.Command)
 	if err != nil {
@@ -169,7 +171,7 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		"action":             "run",
 		"command":            shellResult.Command,
 		"scope":              scope,
-		"purpose":            redactToolOutput(args.Purpose),
+		"purpose":            t.env.RedactToolOutput(args.Purpose),
 		"classification":     classification,
 		"passed":             shellResult.ExitCode == 0 && !shellResult.TimedOut,
 		"exit_code":          shellResult.ExitCode,
@@ -190,7 +192,7 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		"next_suggestions": runTestNextSuggestions(shellResult, failureSummary),
 	}
 	if resolved.Changed {
-		result["requested_command"] = redactToolOutput(resolved.Requested)
+		result["requested_command"] = t.env.RedactToolOutput(resolved.Requested)
 		result["resolved_command"] = shellResult.Command
 	}
 	if fullLogRef != "" {

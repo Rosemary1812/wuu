@@ -157,7 +157,7 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 
 	switch opts.outputMode {
 	case "files_with_matches":
-		files, err := grepFilesWithMatches(t.env.RootDir, args.Pattern, searchRoot, args.Include, opts, limit)
+		files, err := grepFilesWithMatches(t.env, args.Pattern, searchRoot, args.Include, opts, limit)
 		if err != nil {
 			return "", err
 		}
@@ -189,9 +189,9 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return mustJSON(result)
 
 	default: // "content"
-		matches, err := grepWithRipgrep(t.env.RootDir, args.Pattern, searchRoot, args.Include, opts, limit)
+		matches, err := grepWithRipgrep(t.env, args.Pattern, searchRoot, args.Include, opts, limit)
 		if err != nil {
-			matches, err = grepWithFallback(t.env.RootDir, args.Pattern, searchRoot, args.Include, opts, limit)
+			matches, err = grepWithFallback(t.env, args.Pattern, searchRoot, args.Include, opts, limit)
 			if err != nil {
 				return "", err
 			}
@@ -368,7 +368,8 @@ func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool, r
 // Shared grep/glob implementation (extracted from old Toolkit methods)
 // ---------------------------------------------------------------------------
 
-func grepWithRipgrep(rootDir, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
+func grepWithRipgrep(env *Env, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
+	rootDir := env.RootDir
 	relSearchRoot, err := filepath.Rel(rootDir, searchRoot)
 	if err != nil {
 		return nil, err
@@ -414,7 +415,7 @@ func grepWithRipgrep(rootDir, pattern, searchRoot, include string, opts grepOpti
 		matches = append(matches, grepMatch{
 			File:    filepath.ToSlash(rel),
 			Line:    event.Data.LineNumber,
-			Content: grepMatchContentForPath(filepath.ToSlash(rel), strings.TrimRight(event.Data.Lines.Text, "\r\n")),
+			Content: grepMatchContentForPath(env, filepath.ToSlash(rel), strings.TrimRight(event.Data.Lines.Text, "\r\n")),
 		})
 		if len(matches) >= limit {
 			break
@@ -429,7 +430,8 @@ func grepWithRipgrep(rootDir, pattern, searchRoot, include string, opts grepOpti
 	return matches, nil
 }
 
-func grepWithFallback(rootDir, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
+func grepWithFallback(env *Env, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
+	rootDir := env.RootDir
 	compilePattern := pattern
 	if opts.ignoreCase {
 		compilePattern = "(?i)" + pattern
@@ -480,7 +482,7 @@ func grepWithFallback(rootDir, pattern, searchRoot, include string, opts grepOpt
 				matches = append(matches, grepMatch{
 					File:    rel,
 					Line:    lineNum,
-					Content: grepMatchContentForPath(rel, line),
+					Content: grepMatchContentForPath(env, rel, line),
 				})
 				if len(matches) >= limit {
 					break
@@ -504,8 +506,8 @@ func grepWithFallback(rootDir, pattern, searchRoot, include string, opts grepOpt
 	return matches, nil
 }
 
-func grepMatchContentForPath(path, content string) string {
-	if isSensitivePath(path) {
+func grepMatchContentForPath(env *Env, path, content string) string {
+	if !env.BypassToolHardProtections() && isSensitivePath(path) {
 		return "[REDACTED: sensitive file content]"
 	}
 	return content
@@ -585,7 +587,8 @@ func globWithFallback(rootDir, searchRoot, pattern string, limit int) ([]string,
 // grep output_mode: files_with_matches
 // ---------------------------------------------------------------------------
 
-func grepFilesWithMatches(rootDir, pattern, searchRoot, include string, opts grepOptions, limit int) ([]string, error) {
+func grepFilesWithMatches(env *Env, pattern, searchRoot, include string, opts grepOptions, limit int) ([]string, error) {
+	rootDir := env.RootDir
 	files, err := grepFilesWithMatchesRG(rootDir, pattern, searchRoot, include, opts, limit)
 	if err != nil {
 		return grepFilesWithMatchesFallback(rootDir, pattern, searchRoot, include, opts, limit)

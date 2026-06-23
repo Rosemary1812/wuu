@@ -119,7 +119,7 @@ func isBlockedIP(ip net.IP) bool {
 // validateFetchURL rejects URLs that target internal addresses or use
 // schemes other than http/https. Called on the original URL and on every
 // redirect target.
-func validateFetchURL(u *url.URL) error {
+func validateFetchURL(u *url.URL, allowInternal bool) error {
 	if u == nil {
 		return fmt.Errorf("blocked: missing URL")
 	}
@@ -130,7 +130,7 @@ func validateFetchURL(u *url.URL) error {
 	if host == "" {
 		return fmt.Errorf("blocked: missing host")
 	}
-	if ip := net.ParseIP(host); ip != nil && isBlockedIP(ip) {
+	if ip := net.ParseIP(host); ip != nil && !allowInternal && isBlockedIP(ip) {
 		return fmt.Errorf("blocked: internal address %s", ip)
 	}
 	return nil
@@ -139,6 +139,14 @@ func validateFetchURL(u *url.URL) error {
 // safeDialContext refuses connections to internal addresses. This catches
 // DNS rebinding and redirects whose host resolves to a private IP, which
 // validateFetchURL alone cannot detect.
+func guardedDialContext(allowInternal bool) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	if allowInternal {
+		return dialer.DialContext
+	}
+	return safeDialContext
+}
+
 func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -160,11 +168,11 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
 }
 
-func safeHTTPClient() *http.Client {
+func safeHTTPClient(allowInternal bool) *http.Client {
 	return &http.Client{
 		Timeout: webFetchTimeout,
 		Transport: &http.Transport{
-			DialContext:           safeDialContext,
+			DialContext:           guardedDialContext(allowInternal),
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 20 * time.Second,
 		},
@@ -172,7 +180,7 @@ func safeHTTPClient() *http.Client {
 			if len(via) >= 10 {
 				return fmt.Errorf("too many redirects")
 			}
-			return validateFetchURL(req.URL)
+			return validateFetchURL(req.URL, allowInternal)
 		},
 	}
 }
@@ -282,7 +290,7 @@ func duckDuckGoSearch(ctx context.Context, query string, maxResults int) ([]sear
 	req.Header.Set("Accept-Language", randomAcceptLang())
 	req.Header.Set("Accept-Encoding", "identity")
 
-	client := safeHTTPClient()
+	client := safeHTTPClient(false)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute search: %w", err)
@@ -396,7 +404,7 @@ func cleanDDGURL(raw string) string {
 // web_fetch
 // ---------------------------------------------------------------------------
 
-func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
+func webFetchExecute(ctx context.Context, argsJSON string, allowInternal bool) (string, error) {
 	var args struct {
 		URL            string            `json:"url"`
 		VersionHint    string            `json:"version_hint"`
@@ -421,7 +429,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 			"error":    fmt.Sprintf("invalid URL: %s", parseErr),
 		})
 	}
-	if err := validateFetchURL(parsed); err != nil {
+	if err := validateFetchURL(parsed, allowInternal); err != nil {
 		return mustJSON(map[string]any{
 			"action":   "web_fetch",
 			"url":      args.URL,
@@ -449,7 +457,7 @@ func webFetchExecute(ctx context.Context, argsJSON string) (string, error) {
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", randomAcceptLang())
 
-	client := safeHTTPClient()
+	client := safeHTTPClient(allowInternal)
 	resp, err := client.Do(req)
 	if err != nil {
 		return mustJSON(map[string]any{

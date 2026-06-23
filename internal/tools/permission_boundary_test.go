@@ -118,3 +118,76 @@ func TestPermissionBoundaryWorkspaceWriteBlocksDestructiveActions(t *testing.T) 
 		t.Fatalf("expected workspace_write boundary to block destructive shell, got %v", err)
 	}
 }
+
+func TestPermissionBoundaryFullAccessBypassesToolHardProtections(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("SECRET=visible\n"), 0o600); err != nil {
+		t.Fatalf("write env fixture: %v", err)
+	}
+	doomed := filepath.Join(root, "doomed.txt")
+	if err := os.WriteFile(doomed, []byte("remove me\n"), 0o644); err != nil {
+		t.Fatalf("write doomed fixture: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
+	if !ok {
+		t.Fatal("missing full_access policy")
+	}
+	kit.SetToolPolicy(policy)
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+
+	outsideFile := filepath.Join(outside, "outside.txt")
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"` + filepath.ToSlash(outsideFile) + `","content":"outside"}`,
+	}); err != nil {
+		t.Fatalf("full_access write_file should write outside workspace: %v", err)
+	}
+	if data, err := os.ReadFile(outsideFile); err != nil || string(data) != "outside" {
+		t.Fatalf("outside file = %q, err=%v", data, err)
+	}
+
+	readOut, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":".env"}`,
+	})
+	if err != nil {
+		t.Fatalf("full_access read_file should read sensitive path: %v", err)
+	}
+	if !strings.Contains(readOut, "SECRET=visible") {
+		t.Fatalf("full_access read_file should not redact sensitive content: %s", readOut)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"rm doomed.txt"}`,
+	}); err != nil {
+		t.Fatalf("full_access bash should execute destructive command: %v", err)
+	}
+	if _, err := os.Stat(doomed); !os.IsNotExist(err) {
+		t.Fatalf("destructive bash command should remove file, stat err=%v", err)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"env >/dev/null"}`,
+	}); err != nil {
+		t.Fatalf("full_access bash should execute environment dump command: %v", err)
+	}
+
+	secretOut, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"command":"printf %s API_KEY=full-access-visible"}`,
+	})
+	if err != nil {
+		t.Fatalf("full_access bash should return sensitive-looking output: %v", err)
+	}
+	if !strings.Contains(secretOut, "API_KEY=full-access-visible") || strings.Contains(secretOut, "[REDACTED]") {
+		t.Fatalf("full_access bash should not redact sensitive-looking output: %s", secretOut)
+	}
+}

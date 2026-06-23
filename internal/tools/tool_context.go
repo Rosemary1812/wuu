@@ -69,7 +69,7 @@ func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
 	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(t.toolPolicy.RiskActions))
 	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(t.toolPolicy.KindActions))
 	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(t.toolPolicy.ToolActions))
-	b.WriteString("note: permission_boundary is checked before command policy and approval; hard boundary denials cannot be fixed by setting approval flags. require_approval means ask the user; auto_classify means let auto mode decide before execution; do not set approval flags yourself unless the user explicitly approved that action.\n")
+	b.WriteString("note: permission_boundary is checked before command policy and approval. For read_only/workspace_write, hard boundary denials cannot be fixed by setting approval flags; for danger_full_access, Wuu's default hard guards are removed. require_approval means ask the user; auto_classify means let auto mode decide before execution; do not set approval flags yourself unless the user explicitly approved that action.\n")
 
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockToolPolicy,
@@ -100,7 +100,7 @@ func writePermissionBoundaryContext(b *strings.Builder, profile string) {
 	case PermissionProfileWorkspaceWrite:
 		b.WriteString("boundary: workspace_write allows workspace edits and approved routine commands, but blocks destructive runtime actions before approval; outside-workspace tool paths are rejected instead of escalated.\n")
 	case PermissionProfileDangerFullAccess:
-		b.WriteString("boundary: danger_full_access removes Wuu's permission boundary and ordinary approvals may be disabled; individual tools still enforce their own hard safety checks.\n")
+		b.WriteString("boundary: danger_full_access matches full-access semantics: Wuu removes its workspace, network, sensitive-path, and default command-policy hard guards; ordinary approvals may be disabled. Tool schemas, timeouts, output limits, explicit user/admin policy, and OS permissions still apply.\n")
 	default:
 		fmt.Fprintf(b, "boundary: unknown permission profile %s; stop and report the invalid runtime policy.\n", profile)
 	}

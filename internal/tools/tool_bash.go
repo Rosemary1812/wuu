@@ -145,7 +145,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"Use list_background, read_background, write_background, and stop_background to manage " +
 			"those processes through the same bash tool.\n\n" +
 			"The working directory defaults to the workspace root. Set cwd for action=run or " +
-			"action=start_background; cwd values are resolved inside the workspace root. " +
+			"action=start_background; cwd values are resolved inside the workspace root unless full access is active, where absolute and outside-workspace paths are allowed. " +
 			"Shell state does not persist between " +
 			"run calls.\n\n" +
 			"IMPORTANT: Avoid using bash to cat, head, tail, grep, find, sed, awk, or " +
@@ -159,7 +159,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy unless full access is active.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -187,7 +187,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"cwd": map[string]any{
 					"type":        "string",
-					"description": "Working directory for action=run or action=start_background. Defaults to the workspace root. Paths are resolved inside the workspace root.",
+					"description": "Working directory for action=run or action=start_background. Defaults to the workspace root. Paths are resolved inside the workspace root unless full access is active.",
 				},
 				"lifecycle": map[string]any{
 					"type":        "string",
@@ -294,23 +294,25 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("bash requires command")
 	}
-	if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-		return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
-	}
-	if shellCommandUsesUnsupportedWrapper(args.Command) {
-		return "", errors.New("bash refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-	}
-	if shellCommandDumpsEnvironment(args.Command) {
-		return "", errors.New("bash refuses to print process environment variables because they may contain secrets")
-	}
-	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-		return "", fmt.Errorf("bash refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
-	}
-	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("bash refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-	}
-	if shellCommandInvokesPackageOrNetworkMutation(args.Command) && !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(args.Command) {
-		return "", errors.New("bash refuses to execute package, network, or external mutation commands; use dedicated web tools or ask the user for explicit approval")
+	if !t.env.BypassToolHardProtections() {
+		if reason, ok := blockedShellGitCommandReason(args.Command); ok {
+			return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
+		}
+		if shellCommandUsesUnsupportedWrapper(args.Command) {
+			return "", errors.New("bash refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+		}
+		if shellCommandDumpsEnvironment(args.Command) {
+			return "", errors.New("bash refuses to print process environment variables because they may contain secrets")
+		}
+		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+			return "", fmt.Errorf("bash refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
+		}
+		if shellCommandInvokesDestructiveCommand(args.Command) {
+			return "", errors.New("bash refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
+		}
+		if shellCommandInvokesPackageOrNetworkMutation(args.Command) && !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(args.Command) {
+			return "", errors.New("bash refuses to execute package, network, or external mutation commands; use dedicated web tools or ask the user for explicit approval")
+		}
 	}
 
 	command := strings.TrimSpace(args.Command)
@@ -354,7 +356,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 	if err != nil {
 		return "", err
 	}
-	result.Purpose = redactToolOutput(args.Purpose)
+	result.Purpose = t.env.RedactToolOutput(args.Purpose)
 	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
 	if fullLogRef != "" {
 		result.FullLogRef = fullLogRef
@@ -366,7 +368,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		result.Verification = t.enrichVerificationResult(command, commandHash, revision, args, result)
 		result.NextSuggestions = result.Verification.NextSuggestions
 		if resolved.Changed {
-			result.RequestedCommand = redactToolOutput(resolved.Requested)
+			result.RequestedCommand = t.env.RedactToolOutput(resolved.Requested)
 			result.ResolvedCommand = result.Command
 		}
 	}
@@ -446,23 +448,25 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if strings.TrimSpace(args.Command) == "" {
 		return "", errors.New("bash requires command")
 	}
-	if shellCommandInvokesGit(args.Command) {
-		return "", errors.New("bash background mode refuses to execute git commands because git operations should be short-lived and non-interactive. Use action=run with a safe git shell command")
-	}
-	if shellCommandUsesUnsupportedWrapper(args.Command) {
-		return "", errors.New("bash background mode refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-	}
-	if shellCommandDumpsEnvironment(args.Command) {
-		return "", errors.New("bash background mode refuses to print process environment variables because they may contain secrets")
-	}
-	if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-		return "", errors.New("bash background mode refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
-	}
-	if shellCommandInvokesDestructiveCommand(args.Command) {
-		return "", errors.New("bash background mode refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-	}
-	if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
-		return "", errors.New("bash background mode refuses to execute package, network, or external mutation commands; use a bounded bash run or ask the user for explicit approval")
+	if !t.env.BypassToolHardProtections() {
+		if shellCommandInvokesGit(args.Command) {
+			return "", errors.New("bash background mode refuses to execute git commands because git operations should be short-lived and non-interactive. Use action=run with a safe git shell command")
+		}
+		if shellCommandUsesUnsupportedWrapper(args.Command) {
+			return "", errors.New("bash background mode refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
+		}
+		if shellCommandDumpsEnvironment(args.Command) {
+			return "", errors.New("bash background mode refuses to print process environment variables because they may contain secrets")
+		}
+		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
+			return "", errors.New("bash background mode refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
+		}
+		if shellCommandInvokesDestructiveCommand(args.Command) {
+			return "", errors.New("bash background mode refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
+		}
+		if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
+			return "", errors.New("bash background mode refuses to execute package, network, or external mutation commands; use a bounded bash run or ask the user for explicit approval")
+		}
 	}
 	args.OwnerKind = defaultProcessOwnerKind(t.env, args.OwnerKind)
 	if strings.TrimSpace(args.OwnerID) == "" {
@@ -472,10 +476,10 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if err != nil {
 		return "", err
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY})
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections()})
 	response := startProcessResponse{}
 	if p != nil {
-		response.Process = redactProcess(*p)
+		response.Process = redactProcess(t.env, *p)
 		response.Action = bashActionStartBackground
 		response.NextSuggestions = bashBackgroundNextSuggestions(args.WaitMS)
 		if startErr == nil && args.WaitMS > 0 {
@@ -490,7 +494,7 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 				Wait:        wait,
 			})
 			if readErr != nil {
-				response.LastError = redactToolOutput(readErr.Error())
+				response.LastError = t.env.RedactToolOutput(readErr.Error())
 			} else {
 				process := snapshot.Process
 				detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
@@ -500,9 +504,9 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 						response.DetectedPreviewURLs = append([]string(nil), updated.PreviewURLs...)
 					}
 				}
-				response.Process = redactProcess(process)
+				response.Process = redactProcess(t.env, process)
 				response.Action = bashActionStartBackground
-				response.InitialOutput = redactToolOutput(snapshot.Output)
+				response.InitialOutput = t.env.RedactToolOutput(snapshot.Output)
 				response.InitialTruncated = snapshot.Truncated
 				response.InitialStartOffset = snapshot.StartOffset
 				response.InitialEndOffset = snapshot.EndOffset
@@ -537,7 +541,7 @@ func (t *BashTool) executeListBackground() (string, error) {
 	}
 	redacted := make([]proc.Process, 0, len(ps))
 	for _, p := range ps {
-		redacted = append(redacted, redactProcess(p))
+		redacted = append(redacted, redactProcess(t.env, p))
 	}
 	return mustJSON(map[string]any{
 		"action":    bashActionListBackground,
@@ -568,7 +572,7 @@ func (t *BashTool) executeReadBackground(ctx context.Context, args bashArgs) (st
 	return mustJSON(map[string]any{
 		"action":                bashActionReadBackground,
 		"process_id":            args.ProcessID,
-		"output":                redactToolOutput(snapshot.Output),
+		"output":                t.env.RedactToolOutput(snapshot.Output),
 		"detected_preview_urls": detectedPreviewURLs,
 		"truncated":             snapshot.Truncated,
 		"start_offset":          snapshot.StartOffset,
@@ -578,7 +582,7 @@ func (t *BashTool) executeReadBackground(ctx context.Context, args bashArgs) (st
 		"duration_ms":           snapshot.Duration.Milliseconds(),
 		"status":                process.Status,
 		"exit_code":             process.ExitCode,
-		"process":               redactProcess(process),
+		"process":               redactProcess(t.env, process),
 	})
 }
 
@@ -595,7 +599,7 @@ func (t *BashTool) executeWriteStdin(args bashArgs) (string, error) {
 		"action":        bashActionWriteBackground,
 		"process_id":    args.ProcessID,
 		"bytes_written": len(args.Input),
-		"process":       redactProcessPtr(p),
+		"process":       redactProcessPtr(t.env, p),
 	})
 }
 
@@ -608,7 +612,7 @@ func (t *BashTool) executeStopBackground(args bashArgs) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	redacted := redactProcessPtr(p)
+	redacted := redactProcessPtr(t.env, p)
 	if redacted != nil {
 		redacted.Action = bashActionStopBackground
 	}

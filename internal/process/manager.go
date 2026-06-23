@@ -70,12 +70,13 @@ type Process struct {
 }
 
 type StartOptions struct {
-	Command   string
-	CWD       string
-	OwnerKind OwnerKind
-	OwnerID   string
-	Lifecycle Lifecycle
-	TTY       bool
+	Command               string
+	CWD                   string
+	OwnerKind             OwnerKind
+	OwnerID               string
+	Lifecycle             Lifecycle
+	TTY                   bool
+	AllowOutsideWorkspace bool
 }
 
 type Event struct {
@@ -174,7 +175,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	if opt.Lifecycle != LifecycleSession && opt.Lifecycle != LifecycleManaged {
 		return nil, errors.New("lifecycle must be session or managed")
 	}
-	cwd, err := resolveStartCWD(m.rootDir, opt.CWD)
+	cwd, err := resolveStartCWD(m.rootDir, opt.CWD, opt.AllowOutsideWorkspace)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +262,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	return p, nil
 }
 
-func resolveStartCWD(rootDir, cwd string) (string, error) {
+func resolveStartCWD(rootDir, cwd string, allowOutsideWorkspace bool) (string, error) {
 	root, err := filepath.Abs(rootDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace root %q: %w", rootDir, err)
@@ -292,6 +293,9 @@ func resolveStartCWD(rootDir, cwd string) (string, error) {
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("working directory %q is not a directory", evaluated)
+	}
+	if allowOutsideWorkspace {
+		return evaluated, nil
 	}
 	rel, err := filepath.Rel(root, evaluated)
 	if err != nil {

@@ -382,6 +382,67 @@ func TestDefaultCommandPolicyAskDoesNotOverrideExplicitDeny(t *testing.T) {
 	}
 }
 
+func TestFullAccessBypassesDefaultCommandPolicyDenyExplain(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
+	if !ok {
+		t.Fatal("missing full_access policy")
+	}
+	kit.SetToolPolicy(policy)
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+
+	for _, command := range []string{"env", "git checkout main"} {
+		t.Run(command, func(t *testing.T) {
+			info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
+			got := kit.applyDefaultCommandPolicyDecision(
+				providers.ToolCall{
+					Name:      "bash",
+					Arguments: `{"command":"` + command + `"}`,
+				},
+				info,
+				kit.toolPolicy.Decide(info),
+			)
+			if got.Action != ToolPolicyAllow {
+				t.Fatalf("full_access should bypass default command-policy hard block for %q, got %+v", command, got)
+			}
+		})
+	}
+}
+
+func TestFullAccessDefaultCommandPolicyBypassDoesNotOverrideExplicitDeny(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.SetToolPolicy(ToolPolicy{
+		Profile:        ToolPolicyProfileFullAccess,
+		ApprovalPolicy: ToolApprovalPolicyNever,
+		ToolActions: map[string]ToolPolicyAction{
+			"bash": ToolPolicyDeny,
+		},
+	})
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+
+	info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
+	got := kit.applyDefaultCommandPolicyDecision(
+		providers.ToolCall{
+			Name:      "bash",
+			Arguments: `{"command":"env"}`,
+		},
+		info,
+		kit.toolPolicy.Decide(info),
+	)
+
+	if got.Action != ToolPolicyDeny || got.Reason != "tool policy" {
+		t.Fatalf("explicit deny should not be softened by full_access command-policy bypass, got %+v", got)
+	}
+}
+
 func TestDefaultCommandPolicyRulesNamesAreUnique(t *testing.T) {
 	rules := DefaultCommandPolicyRules()
 	seen := map[string]struct{}{}

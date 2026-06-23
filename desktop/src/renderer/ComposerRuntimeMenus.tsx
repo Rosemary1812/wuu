@@ -87,7 +87,7 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    short: "跳过普通确认，仍保留工具硬保护",
+    short: "跳过确认，移除工作区和网络边界",
     icon: ShieldAlert,
     chipTone: "danger",
     tone: "danger"

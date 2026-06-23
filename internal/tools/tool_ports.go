@@ -134,7 +134,7 @@ func (t *ReportListeningPortsTool) Execute(_ context.Context, argsJSON string) (
 		out["process_id"] = processID
 	}
 	if updatedProcess != nil {
-		out["process"] = redactProcess(*updatedProcess)
+		out["process"] = redactProcess(t.env, *updatedProcess)
 	}
 	return mustJSON(out)
 }

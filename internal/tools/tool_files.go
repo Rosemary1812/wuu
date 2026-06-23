@@ -47,7 +47,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative file path in workspace, or a $SESSION_DIR/... artifact reference returned by a tool.",
+					"description": "File path. Relative paths resolve from the workspace root; full access also allows absolute or outside-workspace paths. $SESSION_DIR/... artifact references returned by tools are also supported.",
 				},
 				"offset": map[string]any{
 					"type":        "integer",
@@ -148,7 +148,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if err != nil {
 		return "", err
 	}
-	if reason, ok := sensitivePathReason(displayPath); ok && !managedArtifact {
+	if reason, ok := sensitivePathReason(displayPath); ok && !managedArtifact && !t.env.BypassToolHardProtections() {
 		return "", fmt.Errorf("read_file refuses to read sensitive path %q (%s). Use a safer metadata command or ask the user for explicit secret handling", displayPath, reason)
 	}
 
@@ -768,14 +768,14 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
 			"- Existing files larger than 32KB require overwrite_policy=\"explicit_user_requested\" or generated-file policy; use the scoped file editing tool exposed in this session for ordinary source edits\n" +
 			"- Set create_only=true when the file must not already exist\n" +
-			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
+			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected unless full access is active\n" +
 			"- Returns workspace_revision and a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative file path in workspace.",
+					"description": "File path. Relative paths resolve from the workspace root; full access also allows absolute or outside-workspace paths.",
 				},
 				"content": map[string]any{
 					"type":        "string",
@@ -1018,17 +1018,17 @@ func (t *ListFilesTool) IsConcurrencySafe() bool { return true }
 func (t *ListFilesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "list_files",
-		Description: "Lists entries under a directory in the workspace.\n\n" +
+		Description: "Lists entries under a directory.\n\n" +
 			"Usage:\n" +
 			"- Returns workspace_revision plus name, path, is_dir, and size for each entry\n" +
-			"- Defaults to workspace root when path is omitted\n" +
+			"- Defaults to workspace root when path is omitted; full access also allows absolute or outside-workspace paths\n" +
 			"- Truncated at 1000 entries for large directories",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative directory path, default is current workspace root.",
+					"description": "Directory path. Relative paths resolve from the workspace root; full access also allows absolute or outside-workspace paths.",
 				},
 			},
 		},
@@ -1073,7 +1073,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	for _, entry := range entries {
 		entryPath := filepath.Join(resolved, entry.Name())
 		displayPath := t.env.NormalizeDisplayPath(entryPath)
-		if _, ok := sensitivePathReason(displayPath); ok {
+		if _, ok := sensitivePathReason(displayPath); ok && !t.env.BypassToolHardProtections() {
 			omittedProtected++
 			continue
 		}
@@ -1147,14 +1147,14 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 			"- old_text and new_text must differ — identical values are rejected\n" +
 			"- Use empty new_text to delete a section\n" +
 			"- Prefer this over write_file for modifications — it only sends the diff\n" +
-			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected\n" +
+			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected unless full access is active\n" +
 			"- Returns workspace_revision and a structured diff showing what changed",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Relative file path in workspace.",
+					"description": "File path. Relative paths resolve from the workspace root; full access also allows absolute or outside-workspace paths.",
 				},
 				"old_text": map[string]any{
 					"type":        "string",

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -67,7 +69,7 @@ func TestValidateFetchURL(t *testing.T) {
 			}
 			continue
 		}
-		err = validateFetchURL(u)
+		err = validateFetchURL(u, false)
 		if (err != nil) != c.wantBlock {
 			t.Errorf("validateFetchURL(%q) = %v, wantBlock=%v", c.url, err, c.wantBlock)
 		}
@@ -83,7 +85,7 @@ func TestWebFetchExecuteBlocksInternal(t *testing.T) {
 		`{"url":"ftp://example.com/"}`,
 	}
 	for _, args := range cases {
-		out, err := webFetchExecute(context.Background(), args)
+		out, err := webFetchExecute(context.Background(), args, false)
 		if err != nil {
 			t.Errorf("webFetchExecute(%s) err: %v", args, err)
 			continue
@@ -140,7 +142,7 @@ func TestWebEvidenceVersionContext(t *testing.T) {
 }
 
 func TestWebFetchBlockedIncludesEvidence(t *testing.T) {
-	out, err := webFetchExecute(context.Background(), `{"url":"http://127.0.0.1/","package_context":{"name":"next","version":"15.2.1","ecosystem":"npm"}}`)
+	out, err := webFetchExecute(context.Background(), `{"url":"http://127.0.0.1/","package_context":{"name":"next","version":"15.2.1","ecosystem":"npm"}}`, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -248,11 +250,36 @@ func TestToolkitWebEvidenceContextBlockTracksMetadataOnly(t *testing.T) {
 func TestWebFetchExecuteBlocksResolvedInternal(t *testing.T) {
 	// A hostname that resolves to 127.0.0.1 should be caught at dial time.
 	// "localhost" resolves to loopback on every standard system.
-	out, err := webFetchExecute(context.Background(), `{"url":"http://localhost/"}`)
+	out, err := webFetchExecute(context.Background(), `{"url":"http://localhost/"}`, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if !strings.Contains(out, "internal address") && !strings.Contains(out, "blocked") {
 		t.Errorf("expected blocked result for localhost, got: %s", out)
+	}
+}
+
+func TestWebFetchFullAccessAllowsInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("full-access-local"))
+	}))
+	defer server.Close()
+
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+
+	out, err := kit.Execute(context.Background(), providers.ToolCall{
+		ID:        "fetch-local",
+		Name:      "web_fetch",
+		Arguments: `{"url":"` + server.URL + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("web_fetch: %v", err)
+	}
+	if strings.Contains(out, "blocked") || !strings.Contains(out, "full-access-local") {
+		t.Fatalf("full access should fetch local URL, got: %s", out)
 	}
 }

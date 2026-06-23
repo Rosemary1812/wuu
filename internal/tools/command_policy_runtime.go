@@ -164,6 +164,7 @@ func fallbackCommandPolicyDecision(prefix string, info ToolInfo) CommandPolicyDe
 }
 
 func (t *Toolkit) commandPolicyToolPolicyDecision(base ToolPolicyDecision, capabilityName capability.Capability, subject string, policyDecision CommandPolicyDecision) ToolPolicyDecision {
+	originalAction := base.Action
 	originalReason := strings.TrimSpace(base.Reason)
 	base.Reason = commandPolicyReason(policyDecision)
 	base.Capability = capabilityName
@@ -190,7 +191,14 @@ func (t *Toolkit) commandPolicyToolPolicyDecision(base ToolPolicyDecision, capab
 			base.Action = ToolPolicyRequireApproval
 		}
 	case CommandPolicyDeny, CommandPolicyExplain:
-		base.Action = ToolPolicyDeny
+		if t != nil && t.bypassToolHardProtections() && originalAction == ToolPolicyAllow {
+			base.Action = ToolPolicyAllow
+		} else {
+			base.Action = ToolPolicyDeny
+			if originalAction == ToolPolicyDeny && originalReason != "" {
+				base.Reason = originalReason
+			}
+		}
 	}
 	return base
 }

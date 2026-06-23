@@ -19,7 +19,7 @@ func (t *GitTool) IsReadOnly() bool        { return false } // commit, push are 
 func (t *GitTool) IsConcurrencySafe() bool { return false }
 
 func (t *GitTool) Classify(argsJSON string) ToolClassification {
-	invocation, err := parseGitInvocation(argsJSON)
+	invocation, err := parseGitInvocation(argsJSON, t.env.BypassToolHardProtections())
 	if err != nil {
 		return ToolClassification{
 			ReadOnly:        false,
@@ -82,12 +82,12 @@ func (t *GitTool) Classify(argsJSON string) ToolClassification {
 }
 
 func (t *GitTool) ValidateInput(argsJSON string) error {
-	_, err := parseGitInvocation(argsJSON)
+	_, err := parseGitInvocation(argsJSON, t.env.BypassToolHardProtections())
 	return err
 }
 
 func (t *GitTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
-	invocation, err := parseGitInvocation(argsJSON)
+	invocation, err := parseGitInvocation(argsJSON, t.env.BypassToolHardProtections())
 	if err != nil {
 		return nil
 	}
