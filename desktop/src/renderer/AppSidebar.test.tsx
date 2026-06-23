@@ -90,6 +90,7 @@ describe("AppSidebar layout", () => {
     const scrollRegion = container.querySelector(".sidebar-main");
 
     expect(primaryNav?.parentElement).toBe(content);
+    expect(scrollRegion?.classList.contains("scrollbar-hidden")).toBe(true);
     expect(scrollRegion?.contains(primaryNav)).toBe(false);
     expect(scrollRegion?.querySelector(".scratch-thread-section")).not.toBeNull();
     expect(scrollRegion?.querySelector(".project-section")).not.toBeNull();

@@ -11,15 +11,11 @@ import {
   Settings,
   Wrench,
 } from "lucide-react";
-import { useEffect, useRef, type RefObject } from "react";
+import type { RefObject } from "react";
 import type { Agent, Thread } from "../shared/protocol";
 import type { AppState } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { PinnedThreadList, ProjectList, ScratchThreadSection } from "./ThreadSidebar";
-
-// Matches ConversationScrollState.CONVERSATION_SCROLLBAR_HIDE_DELAY_MS so
-// the sidebar scrollbar feels identical to the main conversation pane.
-const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 700;
 
 export function AppSidebar({
   state,
@@ -88,44 +84,6 @@ export function AppSidebar({
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
-
-  /*
-   * Fade the middle sidebar scrollbar in while the user is actively scrolling
-   * and out after 700ms of idle, matching the main conversation pane.
-   */
-  const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
-  const sidebarScrollbarHideTimerRef = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    const node = sidebarScrollRef.current;
-    if (!node) {
-      return;
-    }
-    const scrollNode = node;
-    function showScrollbar(target: HTMLElement): void {
-      if (target.scrollHeight <= target.clientHeight) {
-        return;
-      }
-      target.classList.add("scrollbar-visible");
-      if (sidebarScrollbarHideTimerRef.current !== undefined) {
-        window.clearTimeout(sidebarScrollbarHideTimerRef.current);
-      }
-      sidebarScrollbarHideTimerRef.current = window.setTimeout(() => {
-        sidebarScrollbarHideTimerRef.current = undefined;
-        target.classList.remove("scrollbar-visible");
-      }, SIDEBAR_SCROLLBAR_HIDE_DELAY_MS);
-    }
-    function handleScroll(): void {
-      showScrollbar(scrollNode);
-    }
-    scrollNode.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      scrollNode.removeEventListener("scroll", handleScroll);
-      if (sidebarScrollbarHideTimerRef.current !== undefined) {
-        window.clearTimeout(sidebarScrollbarHideTimerRef.current);
-        sidebarScrollbarHideTimerRef.current = undefined;
-      }
-    };
-  }, []);
 
   return (
     <aside className="sidebar">
@@ -206,7 +164,7 @@ export function AppSidebar({
           ) : null}
         </nav>
 
-        <div className="sidebar-main" ref={sidebarScrollRef}>
+        <div className="sidebar-main scrollbar-hidden">
           {pinnedThreads.length > 0 ? (
             <section className="pinned-thread-section" aria-label="置顶">
               <div className="section-label pinned-thread-label">置顶</div>
