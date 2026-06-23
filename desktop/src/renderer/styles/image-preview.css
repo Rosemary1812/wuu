@@ -132,12 +132,14 @@
 }
 
 .rich-image,
-.composer-image-attachment img {
+.composer-image-attachment img,
+.message-image {
   cursor: zoom-in;
 }
 
 .rich-image:focus-visible,
-.composer-image-attachment img:focus-visible {
+.composer-image-attachment img:focus-visible,
+.message-image:focus-visible {
   outline: 2px solid var(--accent, #5b8def);
   outline-offset: 2px;
   border-radius: var(--radius-sm);

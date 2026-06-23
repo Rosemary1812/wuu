@@ -1,7 +1,8 @@
 import { AlertCircle, Check, Copy, FileText, GitFork, PencilLine, ThumbsDown, ThumbsUp, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
+import { useImagePreview } from "./ImagePreview";
 
 export function AgentMessageActions({ getText, onFork }: { getText: () => string; onFork?: () => void }): JSX.Element {
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
@@ -135,24 +136,50 @@ export function MessageImageGrid({
   /** When provided, each image gets a remove button (used inside the inline editor). */
   onRemove?: (index: number) => void;
 }): JSX.Element {
+  const { openPreview } = useImagePreview();
   return (
     <div className={`message-images${onRemove ? " message-images-editable" : ""}`}>
-      {images.map((image, index) => (
-        <div className="message-image-frame" key={`${image.media_type}-${index}`}>
-          <img className="message-image" src={imageSource(image)} alt={`Image ${index + 1}`} />
-          {onRemove ? (
-            <button
-              type="button"
-              className="message-image-remove"
-              aria-label={`移除图片 ${index + 1}`}
-              title="移除"
-              onClick={() => onRemove(index)}
-            >
-              <X size={12} aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
-      ))}
+      {images.map((image, index) => {
+        const src = imageSource(image);
+        const label = `图片 ${index + 1}`;
+        const handleOpen = (): void => {
+          openPreview({ src, alt: label, title: label });
+        };
+        const handleKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleOpen();
+          }
+        };
+        return (
+          <div className="message-image-frame" key={`${image.media_type}-${index}`}>
+            <img
+              className="message-image"
+              src={src}
+              alt={label}
+              role="button"
+              tabIndex={0}
+              aria-label={`放大查看：${label}`}
+              onClick={handleOpen}
+              onKeyDown={handleKeyDown}
+            />
+            {onRemove ? (
+              <button
+                type="button"
+                className="message-image-remove"
+                aria-label={`移除图片 ${index + 1}`}
+                title="移除"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(index);
+                }}
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
