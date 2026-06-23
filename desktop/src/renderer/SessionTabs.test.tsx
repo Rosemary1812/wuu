@@ -91,6 +91,7 @@ function renderTabs(state: AppState): void {
         canStartNewThread
         onSelect={() => {}}
         onClose={() => {}}
+        onCloseTabs={() => {}}
         onNewThread={() => {}}
         onReorder={() => {}}
       />,
@@ -250,5 +251,286 @@ describe("SessionTabStrip layout styles", () => {
     expect(directChildren[0]?.classList.contains("session-tab-list-shell")).toBe(true);
     expect(directChildren[0]?.querySelector(".session-tab-scroll")).not.toBeNull();
     expect(directChildren[1]?.classList.contains("session-tab-new")).toBe(true);
+  });
+});
+
+describe("SessionTabStrip right-click menu", () => {
+  type Captured = {
+    closed: string[];
+    closedBatches: string[][];
+  };
+
+  function makeCaptured(): Captured & {
+    onSelect: (id: string) => void;
+    onClose: (id: string) => void;
+    onCloseTabs: (ids: string[]) => void;
+  } {
+    const captured: Captured = { closed: [], closedBatches: [] };
+    return {
+      ...captured,
+      onSelect: () => {},
+      onClose: (id) => {
+        captured.closed.push(id);
+      },
+      onCloseTabs: (ids) => {
+        captured.closedBatches.push([...ids]);
+      },
+    };
+  }
+
+  function renderWith(state: AppState, captured: ReturnType<typeof makeCaptured>): void {
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <SessionTabStrip
+          state={state}
+          pendingComposerMessagesByThread={{}}
+          canStartNewThread
+          onSelect={captured.onSelect}
+          onClose={captured.onClose}
+          onCloseTabs={captured.onCloseTabs}
+          onNewThread={() => {}}
+          onReorder={() => {}}
+        />,
+      );
+    });
+  }
+
+  function rightClickTab(index: number): void {
+    act(() => {
+      const tabs = container.querySelectorAll(".session-tab");
+      const event = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 50,
+        clientY: 20,
+      });
+      tabs[index]?.dispatchEvent(event);
+    });
+  }
+
+  function getMenuItems(): HTMLButtonElement[] {
+    return Array.from(
+      container.querySelectorAll("[role='menuitem']"),
+    ) as HTMLButtonElement[];
+  }
+
+  function clickMenuItem(label: string): void {
+    act(() => {
+      const target = getMenuItems().find((item) => item.textContent === label);
+      target?.click();
+    });
+  }
+
+  function projectContext(): RuntimeContext {
+    return {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+  }
+
+  it("opens a menu with the close actions when a tab is right-clicked", () => {
+    const context = projectContext();
+    const threadA = makeThreadWithTurn("thread-a", "turn-a-1", "completed");
+    const threadB = makeThreadWithTurn("thread-b", "turn-b-1", "in_progress");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+
+    const menu = container.querySelector(".thread-row-context-menu");
+    expect(menu).not.toBeNull();
+    expect(
+      menu?.querySelector("[role='separator']"),
+    ).not.toBeNull();
+    expect(getMenuItems().map((item) => item.textContent)).toEqual([
+      "关闭",
+      "关闭其他",
+      "关闭未运行的",
+      "关闭全部",
+    ]);
+  });
+
+  it("calls onClose with the right-clicked tab for 'close'", () => {
+    const context = projectContext();
+    const threadA = makeThread("thread-a", "A");
+    const threadB = makeThread("thread-b", "B");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      captured,
+    );
+
+    rightClickTab(1);
+    clickMenuItem("关闭");
+
+    expect(captured.closed).toEqual([threadSessionTabID(threadB.id)]);
+    expect(captured.closedBatches).toEqual([]);
+    expect(container.querySelector(".thread-row-context-menu")).toBeNull();
+  });
+
+  it("calls onCloseTabs with every tab for 'close all'", () => {
+    const context = projectContext();
+    const threadA = makeThread("thread-a", "A");
+    const threadB = makeThread("thread-b", "B");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+    clickMenuItem("关闭全部");
+
+    expect(captured.closedBatches).toEqual([
+      [threadSessionTabID(threadA.id), threadSessionTabID(threadB.id)],
+    ]);
+  });
+
+  it("calls onCloseTabs with everything except the right-clicked tab for 'close others'", () => {
+    const context = projectContext();
+    const threadA = makeThread("thread-a", "A");
+    const threadB = makeThread("thread-b", "B");
+    const threadC = makeThread("thread-c", "C");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+          createThreadSessionTab(threadC, context),
+        ],
+        threads: [threadA, threadB, threadC],
+      },
+      captured,
+    );
+
+    rightClickTab(1);
+    clickMenuItem("关闭其他");
+
+    expect(captured.closedBatches).toEqual([
+      [threadSessionTabID(threadA.id), threadSessionTabID(threadC.id)],
+    ]);
+  });
+
+  it("only passes non-running thread tabs to 'close non-running'", () => {
+    const context = projectContext();
+    const threadA = makeThreadWithTurn("thread-a", "turn-a-1", "completed");
+    const threadB = makeThreadWithTurn("thread-b", "turn-b-1", "in_progress");
+    const threadC = makeThreadWithTurn("thread-c", "turn-c-1", "completed");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+          createThreadSessionTab(threadC, context),
+        ],
+        threads: [threadA, threadB, threadC],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+    clickMenuItem("关闭未运行的");
+
+    expect(captured.closedBatches).toEqual([
+      [threadSessionTabID(threadA.id), threadSessionTabID(threadC.id)],
+    ]);
+  });
+
+  it("disables 'close others' and 'close all' when only one tab is open", () => {
+    const context = projectContext();
+    const threadA = makeThread("thread-a", "A");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [createThreadSessionTab(threadA, context)],
+        threads: [threadA],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+
+    const items = getMenuItems();
+    const closeOthers = items.find((item) => item.textContent === "关闭其他");
+    const closeAll = items.find((item) => item.textContent === "关闭全部");
+    expect(closeOthers?.disabled).toBe(true);
+    expect(closeAll?.disabled).toBe(true);
+  });
+
+  it("disables 'close non-running' when every thread tab is running", () => {
+    const context = projectContext();
+    const threadA = makeThreadWithTurn("thread-a", "turn-a-1", "in_progress");
+    const threadB = makeThreadWithTurn("thread-b", "turn-b-1", "in_progress");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+
+    const closeNonRunning = getMenuItems().find(
+      (item) => item.textContent === "关闭未运行的",
+    );
+    expect(closeNonRunning?.disabled).toBe(true);
   });
 });

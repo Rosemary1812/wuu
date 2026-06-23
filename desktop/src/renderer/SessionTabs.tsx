@@ -17,19 +17,21 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, X } from "lucide-react";
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, useState } from "react";
 import {
   isThreadRunning,
   isThreadUnread,
   sessionTabLabel,
   threadForTab,
   type AppState,
+  type SessionTab,
 } from "./AppState";
 import {
   pendingComposerMessageCount,
   pendingComposerMessagesForThread,
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
+import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMenu";
 
 export function SessionTabStrip({
   state,
@@ -38,6 +40,7 @@ export function SessionTabStrip({
   canStartNewThread,
   onSelect,
   onClose,
+  onCloseTabs,
   onNewThread,
   onReorder,
 }: {
@@ -47,11 +50,15 @@ export function SessionTabStrip({
   canStartNewThread: boolean;
   onSelect: (tabID: string) => void;
   onClose: (tabID: string) => void;
+  onCloseTabs: (tabIDs: string[]) => void;
   onNewThread: () => void;
   onReorder: (activeID: string, overID: string) => void;
 }): JSX.Element {
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>();
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>();
+  const [tabContextMenu, setTabContextMenu] = useState<
+    { tabID: string; x: number; y: number } | undefined
+  >();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
@@ -80,6 +87,25 @@ export function SessionTabStrip({
   function finishDrag(): void {
     setDraggingTabID(undefined);
     setDraggingTabWidth(undefined);
+  }
+
+  function handleTabContextMenu(tabID: string, event: ReactMouseEvent): void {
+    // Prevent the browser's default context menu so the in-app menu is the
+    // only thing the user sees. dnd-kit's PointerSensor already filters
+    // non-primary mouse buttons, so right-click will not start a drag.
+    event.preventDefault();
+    event.stopPropagation();
+    setTabContextMenu({ tabID, x: event.clientX, y: event.clientY });
+  }
+
+  const runningTabIDs = new Set<string>();
+  for (const tab of state.sessionTabs) {
+    if (
+      tab.kind === "thread" &&
+      isThreadRunning(threadForTab(state, tab.threadID))
+    ) {
+      runningTabIDs.add(tab.id);
+    }
   }
 
   return (
@@ -143,6 +169,7 @@ export function SessionTabStrip({
                     reorderable={state.sessionTabs.length > 1}
                     onSelect={() => onSelect(tab.id)}
                     onClose={() => onClose(tab.id)}
+                    onContextMenu={(event) => handleTabContextMenu(tab.id, event)}
                   />
                 );
               })}
@@ -198,6 +225,20 @@ export function SessionTabStrip({
       >
         <Plus className="icon-lg" />
       </button>
+      {tabContextMenu ? (
+        <ThreadContextMenu
+          x={tabContextMenu.x}
+          y={tabContextMenu.y}
+          items={buildTabContextMenuItems({
+            tabs: state.sessionTabs,
+            runningTabIDs,
+            rightClickedTabID: tabContextMenu.tabID,
+            onClose,
+            onCloseTabs,
+          })}
+          onClose={() => setTabContextMenu(undefined)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -214,6 +255,7 @@ type SortableSessionTabProps = {
   reorderable: boolean;
   onSelect: () => void;
   onClose: () => void;
+  onContextMenu: (event: ReactMouseEvent) => void;
 };
 
 function SortableSessionTab({
@@ -228,6 +270,7 @@ function SortableSessionTab({
   reorderable,
   onSelect,
   onClose,
+  onContextMenu,
 }: SortableSessionTabProps): JSX.Element {
   const {
     attributes,
@@ -256,6 +299,7 @@ function SortableSessionTab({
       }${unread ? " has-unread" : ""}${pendingCount > 0 ? " has-pending" : ""}${reorderable ? " can-reorder" : ""}${isDragging ? " dragging" : ""}`}
       style={style}
       aria-grabbed={isDragging || undefined}
+      onContextMenu={onContextMenu}
     >
       <button
         ref={setActivatorNodeRef}
@@ -331,4 +375,47 @@ function SessionTabDragPreview({
       </div>
     </div>
   );
+}
+
+function buildTabContextMenuItems({
+  tabs,
+  runningTabIDs,
+  rightClickedTabID,
+  onClose,
+  onCloseTabs,
+}: {
+  tabs: SessionTab[];
+  runningTabIDs: Set<string>;
+  rightClickedTabID: string;
+  onClose: (tabID: string) => void;
+  onCloseTabs: (tabIDs: string[]) => void;
+}): ThreadContextMenuItem[] {
+  const allTabIDs = tabs.map((tab) => tab.id);
+  // Draft tabs have no thread and are never "running", so they count as
+  // non-running here. Callers that want to preserve drafts should not pick
+  // "关闭未运行的".
+  const nonRunningTabIDs = allTabIDs.filter((id) => !runningTabIDs.has(id));
+  return [
+    {
+      label: "关闭",
+      onSelect: () => onClose(rightClickedTabID),
+    },
+    {
+      label: "关闭其他",
+      disabled: allTabIDs.length <= 1,
+      onSelect: () =>
+        onCloseTabs(allTabIDs.filter((id) => id !== rightClickedTabID)),
+    },
+    { separator: true },
+    {
+      label: "关闭未运行的",
+      disabled: nonRunningTabIDs.length === 0,
+      onSelect: () => onCloseTabs(nonRunningTabIDs),
+    },
+    {
+      label: "关闭全部",
+      disabled: allTabIDs.length <= 1,
+      onSelect: () => onCloseTabs(allTabIDs),
+    },
+  ];
 }

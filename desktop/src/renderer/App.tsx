@@ -1956,6 +1956,7 @@ export function App(): JSX.Element {
         canStartNewThread={Boolean(state.activeContext)}
         onSelect={(tabID) => void selectSessionTab(tabID)}
         onClose={(tabID) => void closeSessionTab(tabID)}
+        onCloseTabs={(tabIDs) => void closeSessionTabs(tabIDs)}
         onNewThread={() => void startNewThread()}
         onReorder={reorderSessionTabs}
       />
@@ -3216,6 +3217,23 @@ export function App(): JSX.Element {
         ...current,
         status: error instanceof Error ? error.message : "load failed",
       }));
+    }
+  }
+
+  // closeSessionTabs closes a batch of tabs through the existing per-tab
+  // closeSessionTab path. The active tab is closed last so its fallback
+  // logic can pick a still-open sibling; if every sibling is also being
+  // closed, closeSessionTab will fall back to a fresh draft.
+  async function closeSessionTabs(tabIDs: string[]): Promise<void> {
+    if (tabIDs.length === 0) {
+      return;
+    }
+    const activeID = appStateRef.current.activeSessionTabID;
+    const orderedIDs = tabIDs.includes(activeID)
+      ? [...tabIDs.filter((id) => id !== activeID), activeID]
+      : tabIDs;
+    for (const tabID of orderedIDs) {
+      await closeSessionTab(tabID);
     }
   }
 
