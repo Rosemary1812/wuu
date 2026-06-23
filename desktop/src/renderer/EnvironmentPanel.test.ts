@@ -91,7 +91,7 @@ describe("buildBackgroundProcessItems", () => {
     ]);
   });
 
-  it("merges later process observations by process id", () => {
+  it("hides stopped process observations after they finish", () => {
     const started = {
       id: "proc-1",
       command: "npm run dev",
@@ -133,15 +133,7 @@ describe("buildBackgroundProcessItems", () => {
       ])
     );
 
-    expect(processes).toHaveLength(1);
-    expect(processes[0]).toMatchObject({
-      id: "proc-1",
-      command: "npm run dev",
-      cwd: "/repo",
-      lifecycle: "session",
-      status: "stopped",
-      updatedAt: "2026-01-01T00:00:02.000Z"
-    });
+    expect(processes).toEqual([]);
   });
 
   it("reads process observations from result action even when tool name changed", () => {
@@ -209,7 +201,7 @@ describe("buildBackgroundProcessItems", () => {
       ])
     );
 
-    expect(processes.map((process) => process.id)).toEqual(["proc-1", "proc-2"]);
+    expect(processes.map((process) => process.id)).toEqual(["proc-1"]);
     expect(processes[0]).toMatchObject({
       command: "npm run dev",
       lifecycle: "managed",
@@ -217,7 +209,7 @@ describe("buildBackgroundProcessItems", () => {
     });
   });
 
-  it("uses managed process snapshots as the latest status", () => {
+  it("uses managed process snapshots to hide stopped processes", () => {
     const started = {
       id: "proc-1",
       command: "npm run dev",
@@ -246,11 +238,25 @@ describe("buildBackgroundProcessItems", () => {
       ]
     );
 
+    expect(processes).toEqual([]);
+  });
+
+  it("keeps failed processes visible because they need attention", () => {
+    const failed = managedProcess({
+      id: "proc-failed",
+      status: "failed",
+      command: "npm run dev",
+      last_error: "exit status 1",
+      updated_at: "2026-01-01T00:00:03.000Z"
+    });
+
+    const processes = buildBackgroundProcessItems(threadWithItems([]), [failed]);
+
     expect(processes).toHaveLength(1);
     expect(processes[0]).toMatchObject({
-      id: "proc-1",
-      status: "stopped",
-      updatedAt: "2026-01-01T00:00:03.000Z"
+      id: "proc-failed",
+      status: "failed",
+      lastError: "exit status 1"
     });
   });
 

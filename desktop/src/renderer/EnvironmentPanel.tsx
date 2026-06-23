@@ -81,7 +81,7 @@ export function buildBackgroundProcessItems(
   for (const process of managedProcesses) {
     byID.set(process.id, processItemFromManagedProcess(process));
   }
-  return [...byID.values()].sort(compareBackgroundProcesses);
+  return [...byID.values()].filter(backgroundProcessShouldDisplay).sort(compareBackgroundProcesses);
 }
 
 export function backgroundProcessIsLive(process: BackgroundProcessItem): boolean {
@@ -90,6 +90,10 @@ export function backgroundProcessIsLive(process: BackgroundProcessItem): boolean
 
 export function backgroundProcessNeedsAttention(process: BackgroundProcessItem): boolean {
   return process.status === "failed";
+}
+
+function backgroundProcessShouldDisplay(process: BackgroundProcessItem): boolean {
+  return backgroundProcessIsLive(process) || backgroundProcessNeedsAttention(process);
 }
 
 export function EnvironmentPanel({
@@ -280,6 +284,13 @@ function EnvironmentBackgroundProcesses({
   onOpenPreview: (process: BackgroundProcessItem) => void;
 }): JSX.Element {
   const activeCount = processes.filter(backgroundProcessIsLive).length;
+  const failedCount = processes.filter(backgroundProcessNeedsAttention).length;
+  const countLabel =
+    activeCount > 0
+      ? `${activeCount} 个活跃`
+      : failedCount > 0
+        ? `${failedCount} 个失败`
+        : `${processes.length} 个任务`;
   return (
     <section className="environment-process-section" aria-label="后台任务">
       <div className="environment-process-heading">
@@ -287,7 +298,7 @@ function EnvironmentBackgroundProcesses({
           <Activity className="icon" />
           后台任务
         </span>
-        <span>{activeCount > 0 ? `${activeCount} 个活跃` : `${processes.length} 个最近任务`}</span>
+        <span>{countLabel}</span>
       </div>
       <div className="environment-process-list">
         {processes.map((process) => (
