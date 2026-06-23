@@ -18,6 +18,7 @@ const (
 	MethodInitialize           = "initialize"
 	MethodConfigRead           = "config/read"
 	MethodConfigModelUpdate    = "config/model/update"
+	MethodConfigAdvancedUpdate = "config/advanced/update"
 	MethodConfigCodexModels    = "config/codex/models"
 	MethodSkillList            = "skill/list"
 	MethodGoalSnapshot         = "goal/snapshot"
@@ -137,20 +138,21 @@ type CoreBuildInfo struct {
 }
 
 type InitializeResult struct {
-	ProtocolVersion string                `json:"protocol_version"`
-	Core            CoreBuildInfo         `json:"core"`
-	Provider        string                `json:"provider"`
-	Model           string                `json:"model"`
-	Effort          string                `json:"effort,omitempty"`
-	Variant         string                `json:"variant,omitempty"`
-	WorkspaceRoot   string                `json:"workspace_root"`
-	ToolPolicy      ToolPolicySummary     `json:"tool_policy"`
-	Permissions     PermissionSummary     `json:"permissions"`
-	ExtensionTrust  ExtensionTrustSummary `json:"extension_trust"`
-	ModelProfile    *ModelProfileSummary  `json:"model_profile,omitempty"`
-	ToolSurface     *ToolSurfaceSummary   `json:"tool_surface,omitempty"`
-	ModelRoles      []ModelRoleSummary    `json:"model_roles,omitempty"`
-	Providers       []ProviderSummary     `json:"providers,omitempty"`
+	ProtocolVersion  string                  `json:"protocol_version"`
+	Core             CoreBuildInfo           `json:"core"`
+	Provider         string                  `json:"provider"`
+	Model            string                  `json:"model"`
+	Effort           string                  `json:"effort,omitempty"`
+	Variant          string                  `json:"variant,omitempty"`
+	WorkspaceRoot    string                  `json:"workspace_root"`
+	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
+	Permissions      PermissionSummary       `json:"permissions"`
+	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
+	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
+	ToolSurface      *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
+	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
+	Providers        []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
 }
 
 type ModelProfileSummary struct {
@@ -164,20 +166,21 @@ type ModelProfileSummary struct {
 type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
-	Provider       string                `json:"provider"`
-	Model          string                `json:"model"`
-	Effort         string                `json:"effort,omitempty"`
-	Variant        string                `json:"variant,omitempty"`
-	ConfigPath     string                `json:"config_path"`
-	WorkspaceRoot  string                `json:"workspace_root"`
-	SessionDir     string                `json:"session_dir"`
-	ToolPolicy     ToolPolicySummary     `json:"tool_policy"`
-	Permissions    PermissionSummary     `json:"permissions"`
-	ExtensionTrust ExtensionTrustSummary `json:"extension_trust"`
-	ModelProfile   *ModelProfileSummary  `json:"model_profile,omitempty"`
-	ToolSurface    *ToolSurfaceSummary   `json:"tool_surface,omitempty"`
-	ModelRoles     []ModelRoleSummary    `json:"model_roles,omitempty"`
-	Providers      []ProviderSummary     `json:"providers,omitempty"`
+	Provider         string                  `json:"provider"`
+	Model            string                  `json:"model"`
+	Effort           string                  `json:"effort,omitempty"`
+	Variant          string                  `json:"variant,omitempty"`
+	ConfigPath       string                  `json:"config_path"`
+	WorkspaceRoot    string                  `json:"workspace_root"`
+	SessionDir       string                  `json:"session_dir"`
+	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
+	Permissions      PermissionSummary       `json:"permissions"`
+	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
+	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
+	ToolSurface      *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
+	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
+	Providers        []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
 }
 
 type ToolPolicySummary struct {
@@ -250,17 +253,46 @@ type ConfigModelUpdateParams struct {
 }
 
 type ConfigModelUpdateResult struct {
-	Provider       string                `json:"provider"`
-	Model          string                `json:"model"`
-	Effort         string                `json:"effort,omitempty"`
-	Variant        string                `json:"variant,omitempty"`
-	ToolPolicy     ToolPolicySummary     `json:"tool_policy"`
-	Permissions    PermissionSummary     `json:"permissions"`
-	ExtensionTrust ExtensionTrustSummary `json:"extension_trust"`
-	ModelProfile   *ModelProfileSummary  `json:"model_profile,omitempty"`
-	ToolSurface    *ToolSurfaceSummary   `json:"tool_surface,omitempty"`
-	ModelRoles     []ModelRoleSummary    `json:"model_roles,omitempty"`
-	Providers      []ProviderSummary     `json:"providers,omitempty"`
+	Provider         string                  `json:"provider"`
+	Model            string                  `json:"model"`
+	Effort           string                  `json:"effort,omitempty"`
+	Variant          string                  `json:"variant,omitempty"`
+	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
+	Permissions      PermissionSummary       `json:"permissions"`
+	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
+	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
+	ToolSurface      *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
+	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
+	Providers        []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
+}
+
+type ConfigAdvancedUpdateParams struct {
+	MaxSteps              *int     `json:"max_steps,omitempty"`
+	MaxContextTokens      *int     `json:"max_context_tokens,omitempty"`
+	Temperature           *float64 `json:"temperature,omitempty"`
+	CompactThresholdPct   *float64 `json:"compact_threshold_pct,omitempty"`
+	DisableAutoCompact    *bool    `json:"disable_auto_compact,omitempty"`
+	ProviderContextWindow *int     `json:"provider_context_window,omitempty"`
+}
+
+type ConfigAdvancedUpdateResult struct {
+	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
+	Providers        []ProviderSummary       `json:"providers,omitempty"`
+}
+
+type AdvancedSettingsSummary struct {
+	MaxSteps               int     `json:"max_steps"`
+	MaxContextTokens       int     `json:"max_context_tokens"`
+	Temperature            float64 `json:"temperature"`
+	CompactThresholdPct    float64 `json:"compact_threshold_pct,omitempty"`
+	DisableAutoCompact     bool    `json:"disable_auto_compact"`
+	ProviderContextWindow  int     `json:"provider_context_window,omitempty"`
+	ContextWindowTokens    int     `json:"context_window_tokens,omitempty"`
+	ContextWindowSource    string  `json:"context_window_source,omitempty"`
+	InputLimitTokens       int     `json:"input_limit_tokens,omitempty"`
+	OutputReserveTokens    int     `json:"output_reserve_tokens,omitempty"`
+	CompactThresholdTokens int     `json:"compact_threshold_tokens,omitempty"`
 }
 
 type ConfigCodexModelsParams struct {

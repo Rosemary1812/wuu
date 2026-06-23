@@ -1033,6 +1033,84 @@ func TestConfig_DisableAutoCompactDefaultsFalse(t *testing.T) {
 	}
 }
 
+func TestConfig_CompactThresholdPct(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://x",
+      "api_key": "k",
+      "model": "test"
+    }
+  },
+  "agent": {
+    "compact_threshold_pct": 0.5
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.CompactThresholdPct != 0.5 {
+		t.Fatalf("CompactThresholdPct = %v, want 0.5", cfg.Agent.CompactThresholdPct)
+	}
+}
+
+func TestUpdateAdvancedRuntimePersistsAgentAndProviderSettings(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://x",
+      "api_key": "k",
+      "model": "test"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	maxSteps := 12
+	maxContext := 256000
+	temperature := 0.4
+	compactPct := 0.5
+	disableAutoCompact := true
+	providerContext := 512000
+	if err := UpdateAdvancedRuntime(configPath, "main", AdvancedRuntimeUpdate{
+		MaxSteps:              &maxSteps,
+		MaxContextTokens:      &maxContext,
+		Temperature:           &temperature,
+		CompactThresholdPct:   &compactPct,
+		DisableAutoCompact:    &disableAutoCompact,
+		ProviderContextWindow: &providerContext,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.MaxSteps != maxSteps ||
+		cfg.Agent.MaxContextTokens != maxContext ||
+		cfg.Agent.Temperature != temperature ||
+		cfg.Agent.CompactThresholdPct != compactPct ||
+		!cfg.Agent.DisableAutoCompact {
+		t.Fatalf("advanced agent settings not persisted: %+v", cfg.Agent)
+	}
+	if cfg.Providers["main"].ContextWindow != providerContext {
+		t.Fatalf("provider context_window = %d, want %d", cfg.Providers["main"].ContextWindow, providerContext)
+	}
+}
+
 func TestConfig_ExperimentalCoordinatorMode(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

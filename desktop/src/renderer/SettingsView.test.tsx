@@ -5,6 +5,7 @@ import { SettingsView, type SettingsPage } from "./SettingsView";
 import type {
   BuildInfoResult,
   InitializeResult,
+  RuntimeAdvancedSettingsUpdate,
   RuntimeConnectionUpdate,
   SettingsUsageRange,
   SettingsUsageResponse,
@@ -69,6 +70,7 @@ function renderSettings(props: {
   usageRange?: SettingsUsageRange;
   initialPage?: SettingsPage;
   onSave?: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
+  onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
   const setUsageRange = vi.fn();
@@ -90,6 +92,7 @@ function renderSettings(props: {
         resizingSidebar={false}
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
+        onAdvancedSave={props.onAdvancedSave ?? (async () => {})}
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}
@@ -199,6 +202,70 @@ describe("SettingsView provider configuration", () => {
       },
       "",
     );
+  });
+});
+
+describe("SettingsView advanced settings", () => {
+  it("renders and saves BYOK context and compaction controls", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onAdvancedSave = vi.fn().mockResolvedValue(undefined);
+    const { rootText } = renderSettings({
+      initialPage: "advanced",
+      initialized: baseInitialized({
+        provider: "openrouter",
+        model: "openai/gpt-5.5",
+        advanced_settings: {
+          max_steps: 0,
+          max_context_tokens: 0,
+          temperature: 0.2,
+          disable_auto_compact: false,
+          context_window_tokens: 400000,
+          context_window_source: "built_in_registry",
+          output_reserve_tokens: 128000,
+          compact_threshold_tokens: 272000,
+        },
+      }),
+      onAdvancedSave,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector("[data-testid=\"settings-advanced\"]")).not.toBeNull();
+    expect(rootText()).toContain("压缩触发阈值");
+    expect(rootText()).toContain("当前服务上下文窗口");
+    expect(rootText()).toContain("400,000");
+
+    const inputs = Array.from(container.querySelectorAll("input"));
+    expect(inputs.length).toBeGreaterThanOrEqual(5);
+    const [compactThreshold, providerContextWindow, maxContextTokens, maxSteps, temperature] = inputs;
+    await act(async () => {
+      setInputValue(compactThreshold, "50");
+      setInputValue(providerContextWindow, "512000");
+      setInputValue(maxContextTokens, "256000");
+      setInputValue(maxSteps, "12");
+      setInputValue(temperature, "0.4");
+    });
+
+    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("保存高级设置"),
+    ) as HTMLButtonElement | undefined;
+    expect(submitButton?.disabled).toBe(false);
+    await act(async () => {
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onAdvancedSave).toHaveBeenCalledWith({
+      disable_auto_compact: false,
+      compact_threshold_pct: 0.5,
+      provider_context_window: 512000,
+      max_context_tokens: 256000,
+      max_steps: 12,
+      temperature: 0.4,
+    });
   });
 });
 

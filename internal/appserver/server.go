@@ -161,6 +161,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigRead(req)
 	case MethodConfigModelUpdate:
 		return s.handleConfigModelUpdate(req)
+	case MethodConfigAdvancedUpdate:
+		return s.handleConfigAdvancedUpdate(req)
 	case MethodConfigCodexModels:
 		return s.handleConfigCodexModels(ctx, req)
 	case MethodSkillList:

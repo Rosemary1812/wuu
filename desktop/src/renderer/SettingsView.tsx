@@ -1,5 +1,5 @@
-import { ArrowLeft, BarChart3, KeyRound, Plug, PlugZap, Plus, RefreshCw, Settings, X } from "lucide-react";
-import type { SettingsUsageRange } from "../shared/protocol";
+import { ArrowLeft, BarChart3, KeyRound, Plug, PlugZap, Plus, RefreshCw, Settings, SlidersHorizontal, X } from "lucide-react";
+import type { RuntimeAdvancedSettingsUpdate, SettingsUsageRange } from "../shared/protocol";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -24,7 +24,7 @@ import type {
 } from "../shared/protocol";
 import { normalizedVariantForProviderModel, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 
-export type SettingsPage = "providers" | "general" | "usage";
+export type SettingsPage = "providers" | "advanced" | "general" | "usage";
 
 export function SettingsView({
   initialized,
@@ -39,6 +39,7 @@ export function SettingsView({
   resizingSidebar,
   onBack,
   onSave,
+  onAdvancedSave,
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,
@@ -60,6 +61,7 @@ export function SettingsView({
   resizingSidebar: boolean;
   onBack: () => void;
   onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
+  onAdvancedSave: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -80,6 +82,14 @@ export function SettingsView({
   const [mcpLoading, setMCPLoading] = useState(false);
   const [mcpError, setMCPError] = useState("");
   const [mcpBusyServer, setMCPBusyServer] = useState("");
+  const [autoCompactDraft, setAutoCompactDraft] = useState(true);
+  const [compactThresholdDraft, setCompactThresholdDraft] = useState("");
+  const [providerContextWindowDraft, setProviderContextWindowDraft] = useState("");
+  const [maxContextTokensDraft, setMaxContextTokensDraft] = useState("");
+  const [maxStepsDraft, setMaxStepsDraft] = useState("0");
+  const [temperatureDraft, setTemperatureDraft] = useState("0.2");
+  const [advancedError, setAdvancedError] = useState("");
+  const [advancedSaved, setAdvancedSaved] = useState(false);
 
   useEffect(() => {
     setActivePage(initialPage ?? "providers");
@@ -142,6 +152,18 @@ export function SettingsView({
     setError("");
     setSaved(false);
   }, [initialized?.provider, initialized?.model, initialized?.variant, initialized?.effort, initialized?.providers]);
+
+  useEffect(() => {
+    const advanced = initialized?.advanced_settings;
+    setAutoCompactDraft(!(advanced?.disable_auto_compact ?? false));
+    setCompactThresholdDraft(formatPercentDraft(advanced?.compact_threshold_pct));
+    setProviderContextWindowDraft(formatOptionalNumberDraft(advanced?.provider_context_window));
+    setMaxContextTokensDraft(formatOptionalNumberDraft(advanced?.max_context_tokens));
+    setMaxStepsDraft(String(advanced?.max_steps ?? 0));
+    setTemperatureDraft(formatTemperatureDraft(advanced?.temperature));
+    setAdvancedError("");
+    setAdvancedSaved(false);
+  }, [initialized?.advanced_settings, initialized?.provider, initialized?.model]);
 
   function changeProvider(provider: string): void {
     setAddingProvider(false);
@@ -227,6 +249,30 @@ export function SettingsView({
     }
   }
 
+  async function submitAdvanced(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setAdvancedError("");
+    setAdvancedSaved(false);
+    const update = parseAdvancedSettingsDraft({
+      autoCompact: autoCompactDraft,
+      compactThreshold: compactThresholdDraft,
+      providerContextWindow: providerContextWindowDraft,
+      maxContextTokens: maxContextTokensDraft,
+      maxSteps: maxStepsDraft,
+      temperature: temperatureDraft,
+    });
+    if (update.error) {
+      setAdvancedError(update.error);
+      return;
+    }
+    try {
+      await onAdvancedSave(update.settings);
+      setAdvancedSaved(true);
+    } catch (saveError) {
+      setAdvancedError(saveError instanceof Error ? saveError.message : "保存失败");
+    }
+  }
+
   const disabled =
     running ||
     !providerDraft.trim() ||
@@ -270,6 +316,15 @@ export function SettingsView({
           >
             <Settings className="icon-lg" />
             <span>常规</span>
+          </button>
+          <button
+            className={`settings-nav-item${activePage === "advanced" ? " active" : ""}`}
+            type="button"
+            aria-current={activePage === "advanced" ? "page" : undefined}
+            onClick={() => setActivePage("advanced")}
+          >
+            <SlidersHorizontal className="icon-lg" />
+            <span>高级</span>
           </button>
           <button
             className={`settings-nav-item${activePage === "usage" ? " active" : ""}`}
@@ -491,6 +546,161 @@ export function SettingsView({
                 </form>
               </section>
             </>
+          ) : activePage === "advanced" ? (
+            <section className="settings-section" data-testid="settings-advanced">
+              <div>
+                <h2>高级</h2>
+                <p>调整上下文窗口、自动压缩触发点和单轮运行预算。</p>
+              </div>
+              <form className="settings-card" onSubmit={submitAdvanced}>
+                <div className="settings-card-subheader">
+                  <strong>上下文与压缩</strong>
+                  <small>用于 BYOK 网关、模型别名和长会话预算控制</small>
+                </div>
+                <div className="settings-row">
+                  <span>
+                    <strong>自动压缩</strong>
+                    <small>接近可用上下文时自动整理旧历史；溢出恢复仍会保留</small>
+                  </span>
+                  <button
+                    className="settings-switch"
+                    type="button"
+                    role="switch"
+                    aria-checked={autoCompactDraft}
+                    disabled={running || !initialized}
+                    onClick={() => {
+                      setAutoCompactDraft((value) => !value);
+                      setAdvancedSaved(false);
+                    }}
+                  >
+                    <span className="settings-switch-thumb" aria-hidden="true" />
+                    <span className="sr-only">{autoCompactDraft ? "关闭自动压缩" : "打开自动压缩"}</span>
+                  </button>
+                </div>
+                <label className="settings-row">
+                  <span>
+                    <strong>压缩触发阈值</strong>
+                    <small>百分比；留空使用模型可用窗口，50 表示更早压缩</small>
+                  </span>
+                  <input
+                    value={compactThresholdDraft}
+                    inputMode="numeric"
+                    placeholder="自动"
+                    onChange={(event) => {
+                      setCompactThresholdDraft(event.target.value);
+                      setAdvancedSaved(false);
+                    }}
+                    disabled={running || !initialized}
+                  />
+                </label>
+                <label className="settings-row">
+                  <span>
+                    <strong>当前服务上下文窗口</strong>
+                    <small>token；用于自定义模型、网关别名或未收录新模型</small>
+                  </span>
+                  <input
+                    value={providerContextWindowDraft}
+                    inputMode="numeric"
+                    placeholder="自动识别"
+                    onChange={(event) => {
+                      setProviderContextWindowDraft(event.target.value);
+                      setAdvancedSaved(false);
+                    }}
+                    disabled={running || !initialized}
+                  />
+                </label>
+                <label className="settings-row">
+                  <span>
+                    <strong>未知模型窗口</strong>
+                    <small>token；当前 Provider 未覆盖且模型库未知时使用</small>
+                  </span>
+                  <input
+                    value={maxContextTokensDraft}
+                    inputMode="numeric"
+                    placeholder="自动"
+                    onChange={(event) => {
+                      setMaxContextTokensDraft(event.target.value);
+                      setAdvancedSaved(false);
+                    }}
+                    disabled={running || !initialized}
+                  />
+                </label>
+                <div className="settings-card-subheader">
+                  <strong>当前解析结果</strong>
+                  <small>{formatAdvancedRuntimeLabel(initialized)}</small>
+                </div>
+                <dl className="settings-about-list">
+                  <div className="settings-row">
+                    <span>
+                      <strong>上下文窗口</strong>
+                      <small>{advancedContextSourceLabel(initialized?.advanced_settings?.context_window_source)}</small>
+                    </span>
+                    <span className="settings-about-value">
+                      {formatTokenCount(initialized?.advanced_settings?.context_window_tokens ?? 0)}
+                    </span>
+                  </div>
+                  <div className="settings-row">
+                    <span>
+                      <strong>压缩触发</strong>
+                      <small>扣除输出预留后，主动整理旧历史的 token 点</small>
+                    </span>
+                    <span className="settings-about-value">
+                      {formatTokenCount(initialized?.advanced_settings?.compact_threshold_tokens ?? 0)}
+                    </span>
+                  </div>
+                  <div className="settings-row">
+                    <span>
+                      <strong>输出预留</strong>
+                      <small>为模型回答保留的 token 预算</small>
+                    </span>
+                    <span className="settings-about-value">
+                      {formatTokenCount(initialized?.advanced_settings?.output_reserve_tokens ?? 0)}
+                    </span>
+                  </div>
+                </dl>
+                <div className="settings-card-subheader">
+                  <strong>Agent 预算</strong>
+                  <small>控制单轮自动执行的边界</small>
+                </div>
+                <label className="settings-row">
+                  <span>
+                    <strong>最大步数</strong>
+                    <small>0 表示不设硬上限</small>
+                  </span>
+                  <input
+                    value={maxStepsDraft}
+                    inputMode="numeric"
+                    onChange={(event) => {
+                      setMaxStepsDraft(event.target.value);
+                      setAdvancedSaved(false);
+                    }}
+                    disabled={running || !initialized}
+                  />
+                </label>
+                <label className="settings-row">
+                  <span>
+                    <strong>Temperature</strong>
+                    <small>0 到 2；默认 0.2</small>
+                  </span>
+                  <input
+                    value={temperatureDraft}
+                    inputMode="decimal"
+                    onChange={(event) => {
+                      setTemperatureDraft(event.target.value);
+                      setAdvancedSaved(false);
+                    }}
+                    disabled={running || !initialized}
+                  />
+                </label>
+                <div className="settings-card-footer">
+                  {advancedError ? <div className="settings-error">{advancedError}</div> : null}
+                  {advancedSaved ? <div className="settings-saved">已保存</div> : null}
+                  <button type="submit" disabled={running || !initialized}>
+                    保存高级设置
+                  </button>
+                </div>
+              </form>
+            </section>
           ) : activePage === "general" ? (
             <>
 
@@ -677,10 +887,142 @@ function settingsPageTitle(page: SettingsPage): string {
   switch (page) {
     case "providers":
       return "模型服务";
+    case "advanced":
+      return "高级";
     case "general":
       return "常规";
     case "usage":
       return "用量";
+  }
+}
+
+type AdvancedDraft = {
+  autoCompact: boolean;
+  compactThreshold: string;
+  providerContextWindow: string;
+  maxContextTokens: string;
+  maxSteps: string;
+  temperature: string;
+};
+
+function parseAdvancedSettingsDraft(draft: AdvancedDraft): { settings: RuntimeAdvancedSettingsUpdate; error?: string } {
+  const compactPercent = parseOptionalNumber(draft.compactThreshold, "压缩触发阈值");
+  if (compactPercent.error) {
+    return { settings: {}, error: compactPercent.error };
+  }
+  if (compactPercent.value < 0 || compactPercent.value >= 100) {
+    return { settings: {}, error: "压缩触发阈值必须小于 100" };
+  }
+  const providerContextWindow = parseOptionalInteger(draft.providerContextWindow, "当前服务上下文窗口");
+  if (providerContextWindow.error) {
+    return { settings: {}, error: providerContextWindow.error };
+  }
+  const maxContextTokens = parseOptionalInteger(draft.maxContextTokens, "未知模型窗口");
+  if (maxContextTokens.error) {
+    return { settings: {}, error: maxContextTokens.error };
+  }
+  const maxSteps = parseOptionalInteger(draft.maxSteps, "最大步数");
+  if (maxSteps.error) {
+    return { settings: {}, error: maxSteps.error };
+  }
+  const temperature = parseRequiredNumber(draft.temperature, "Temperature");
+  if (temperature.error) {
+    return { settings: {}, error: temperature.error };
+  }
+  if (temperature.value < 0 || temperature.value > 2) {
+    return { settings: {}, error: "Temperature 必须在 0 到 2 之间" };
+  }
+  return {
+    settings: {
+      disable_auto_compact: !draft.autoCompact,
+      compact_threshold_pct: compactPercent.value > 0 ? compactPercent.value / 100 : 0,
+      provider_context_window: providerContextWindow.value,
+      max_context_tokens: maxContextTokens.value,
+      max_steps: maxSteps.value,
+      temperature: temperature.value,
+    },
+  };
+}
+
+function parseOptionalInteger(raw: string, label: string): { value: number; error?: string } {
+  const parsed = parseOptionalNumber(raw, label);
+  if (parsed.error) {
+    return parsed;
+  }
+  if (!Number.isInteger(parsed.value)) {
+    return { value: 0, error: `${label} 必须是整数` };
+  }
+  return parsed;
+}
+
+function parseOptionalNumber(raw: string, label: string): { value: number; error?: string } {
+  const value = raw.trim();
+  if (value === "") {
+    return { value: 0 };
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { value: 0, error: `${label} 必须是非负数字` };
+  }
+  return { value: parsed };
+}
+
+function parseRequiredNumber(raw: string, label: string): { value: number; error?: string } {
+  const value = raw.trim();
+  if (value === "") {
+    return { value: 0, error: `${label} 不能为空` };
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return { value: 0, error: `${label} 必须是数字` };
+  }
+  return { value: parsed };
+}
+
+function formatPercentDraft(value: number | undefined): string {
+  if (!value || !Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+  return String(Math.round(value * 100));
+}
+
+function formatOptionalNumberDraft(value: number | undefined): string {
+  if (!value || !Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+  return String(value);
+}
+
+function formatTemperatureDraft(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "0.2";
+  }
+  return String(value);
+}
+
+function formatAdvancedRuntimeLabel(initialized: InitializeResult | undefined): string {
+  if (!initialized) {
+    return "未连接";
+  }
+  return `${initialized.provider} · ${initialized.model}`;
+}
+
+function advancedContextSourceLabel(source: string | undefined): string {
+  switch (source) {
+    case "provider_context_window":
+      return "来自当前服务覆盖";
+    case "provider_model_limit":
+      return "来自模型配置";
+    case "agent_max_context_tokens":
+      return "来自未知模型窗口";
+    case "built_in_registry":
+      return "来自内置模型库";
+    case "unknown":
+    case "":
+    case undefined:
+      return "未识别，主动压缩只依赖服务错误恢复";
+    default:
+      return source;
   }
 }
 

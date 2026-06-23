@@ -59,6 +59,8 @@ const api: WuuDesktopApi = {
       variant,
       permissionMode,
     ),
+  updateAdvancedSettings: (settings) =>
+    ipcRenderer.invoke("wuu:config-advanced-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   getSettingsUsage: (range?: SettingsUsageRange) =>
     ipcRenderer.invoke("wuu:settings-usage", range),

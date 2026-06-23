@@ -640,6 +640,63 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
+func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"disable_auto_compact":true,"provider_context_window":512000}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/advanced/update: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ConfigAdvancedUpdateResult](t, responseByID(t, msgs, "1")["result"])
+	if result.AdvancedSettings.MaxSteps != 12 ||
+		result.AdvancedSettings.MaxContextTokens != 256000 ||
+		result.AdvancedSettings.Temperature != 0.4 ||
+		result.AdvancedSettings.CompactThresholdPct != 0.5 ||
+		!result.AdvancedSettings.DisableAutoCompact ||
+		result.AdvancedSettings.ProviderContextWindow != 512000 {
+		t.Fatalf("unexpected advanced settings result: %+v", result.AdvancedSettings)
+	}
+	if rt.StreamRunner.MaxSteps != 12 ||
+		rt.StreamRunner.Temperature != 0.4 ||
+		rt.StreamRunner.CompactThresholdPct != 0.5 ||
+		!rt.StreamRunner.DisableAutoCompact ||
+		rt.StreamRunner.ContextWindowOverride != 512000 {
+		t.Fatalf("runtime advanced settings not updated: %+v", rt.StreamRunner)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	for _, want := range []string{
+		`"max_steps": 12`,
+		`"max_context_tokens": 256000`,
+		`"compact_threshold_pct": 0.5`,
+		`"disable_auto_compact": true`,
+		`"context_window": 512000`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("config missing %s: %s", want, data)
+		}
+	}
+}
+
 func TestServerConfigModelUpdateRejectsToolPolicyProfile(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	kit, err := tools.New(rt.RootDir)

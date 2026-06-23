@@ -227,6 +227,10 @@ type AgentConfig struct {
 	MaxSteps         int     `json:"max_steps"`
 	MaxContextTokens int     `json:"max_context_tokens"`
 	Temperature      float64 `json:"temperature"`
+	// CompactThresholdPct overrides the default usable-window trigger for
+	// proactive compaction. Zero means auto; custom values are fractions in
+	// (0,1), for example 0.5 for 50%.
+	CompactThresholdPct float64 `json:"compact_threshold_pct,omitempty"`
 	// SystemPrompt is a legacy user-customized prompt field. It is appended
 	// after wuu's built-in base prompt instead of replacing it.
 	SystemPrompt string `json:"system_prompt,omitempty"`
@@ -312,6 +316,15 @@ type ToolPolicyConfig struct {
 	Tools         map[string]string `json:"tools,omitempty"`
 	Kinds         map[string]string `json:"kinds,omitempty"`
 	Risks         map[string]string `json:"risks,omitempty"`
+}
+
+type AdvancedRuntimeUpdate struct {
+	MaxSteps              *int
+	MaxContextTokens      *int
+	Temperature           *float64
+	CompactThresholdPct   *float64
+	DisableAutoCompact    *bool
+	ProviderContextWindow *int
 }
 
 // Load reads config with priority: .wuu.json, wuu.json, ~/.config/wuu/config.json.
@@ -429,6 +442,9 @@ func (c Config) Validate() error {
 		if provider.Model == "" {
 			return fmt.Errorf("providers.%s.model is required", name)
 		}
+		if provider.ContextWindow < 0 {
+			return fmt.Errorf("providers.%s.context_window cannot be negative", name)
+		}
 		for modelID, model := range provider.Models {
 			if strings.TrimSpace(modelID) == "" {
 				return fmt.Errorf("providers.%s.models contains an empty model id", name)
@@ -482,8 +498,14 @@ func (c Config) Validate() error {
 	if c.Agent.MaxSteps < 0 {
 		return errors.New("agent.max_steps cannot be negative (use 0 for unlimited)")
 	}
+	if c.Agent.MaxContextTokens < 0 {
+		return errors.New("agent.max_context_tokens cannot be negative (use 0 for auto)")
+	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return errors.New("agent.temperature must be in [0,2]")
+	}
+	if c.Agent.CompactThresholdPct < 0 || c.Agent.CompactThresholdPct >= 1 {
+		return errors.New("agent.compact_threshold_pct must be in [0,1)")
 	}
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
@@ -858,6 +880,100 @@ func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, a
 // and persists its editable runtime fields.
 func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
 	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, true)
+}
+
+// UpdateAdvancedRuntime changes low-level runtime knobs without switching the
+// selected provider/model. Zero values mean "auto/default" for numeric knobs.
+func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRuntimeUpdate) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	agent, _ := raw["agent"].(map[string]any)
+	if agent == nil {
+		agent = make(map[string]any)
+		raw["agent"] = agent
+	}
+	setOptionalInt(agent, "max_steps", update.MaxSteps)
+	setOptionalInt(agent, "max_context_tokens", update.MaxContextTokens)
+	setOptionalFloat(agent, "temperature", update.Temperature, 0.2)
+	setOptionalFloat(agent, "compact_threshold_pct", update.CompactThresholdPct, 0)
+	setOptionalBool(agent, "disable_auto_compact", update.DisableAutoCompact)
+	if len(agent) == 0 {
+		delete(raw, "agent")
+	}
+
+	if update.ProviderContextWindow != nil {
+		providers, _ := raw["providers"].(map[string]any)
+		if providers == nil {
+			return errors.New("providers is required")
+		}
+		name := strings.TrimSpace(providerName)
+		if name == "" {
+			name, _ = raw["default_provider"].(string)
+			name = strings.TrimSpace(name)
+		}
+		if name == "" {
+			return errors.New("provider is required")
+		}
+		provider, _ := providers[name].(map[string]any)
+		if provider == nil {
+			return fmt.Errorf("provider %q not found", name)
+		}
+		setOptionalInt(provider, "context_window", update.ProviderContextWindow)
+	}
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		return err
+	}
+	applyDefaults(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, append(out, '\n'), 0644)
+}
+
+func setOptionalInt(target map[string]any, key string, value *int) {
+	if value == nil {
+		return
+	}
+	if *value <= 0 {
+		delete(target, key)
+		return
+	}
+	target[key] = *value
+}
+
+func setOptionalFloat(target map[string]any, key string, value *float64, defaultValue float64) {
+	if value == nil {
+		return
+	}
+	if *value <= 0 || *value == defaultValue {
+		delete(target, key)
+		return
+	}
+	target[key] = *value
+}
+
+func setOptionalBool(target map[string]any, key string, value *bool) {
+	if value == nil {
+		return
+	}
+	if !*value {
+		delete(target, key)
+		return
+	}
+	target[key] = true
 }
 
 func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string, createProvider bool) error {

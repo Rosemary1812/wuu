@@ -71,6 +71,9 @@ type Runner struct {
 	// OutputReserveTokens pins the output budget used for compact threshold
 	// math without forcing a request max_tokens value.
 	OutputReserveTokens int
+	// CompactThresholdPct lets callers compact earlier than the default
+	// usable-window calculation. Zero means auto.
+	CompactThresholdPct float64
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -130,6 +133,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		MaxContextTokens:    maxCtx,
 		MaxInputTokens:      r.MaxInputTokens,
 		OutputReserveTokens: r.OutputReserveTokens,
+		CompactThresholdPct: r.CompactThresholdPct,
 		OnUsage:             onUsage,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return compact.CompactWithBudget(ctx, messages, r.Client, r.Model, compact.Budget{

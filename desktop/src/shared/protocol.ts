@@ -66,6 +66,21 @@ export type InitializeResult = {
   extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
+  advanced_settings?: AdvancedSettingsSummary;
+};
+
+export type AdvancedSettingsSummary = {
+  max_steps: number;
+  max_context_tokens: number;
+  temperature: number;
+  compact_threshold_pct?: number;
+  disable_auto_compact: boolean;
+  provider_context_window?: number;
+  context_window_tokens?: number;
+  context_window_source?: string;
+  input_limit_tokens?: number;
+  output_reserve_tokens?: number;
+  compact_threshold_tokens?: number;
 };
 
 export type ToolPolicySummary = {
@@ -144,6 +159,7 @@ export type ConfigModelUpdateResult = {
   extension_trust?: ExtensionTrustSummary;
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
+  advanced_settings?: AdvancedSettingsSummary;
 };
 
 export type ProviderSummary = {
@@ -312,6 +328,20 @@ export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
   create_provider?: boolean;
+};
+
+export type RuntimeAdvancedSettingsUpdate = {
+  max_steps?: number;
+  max_context_tokens?: number;
+  temperature?: number;
+  compact_threshold_pct?: number;
+  disable_auto_compact?: boolean;
+  provider_context_window?: number;
+};
+
+export type ConfigAdvancedUpdateResult = {
+  advanced_settings: AdvancedSettingsSummary;
+  providers?: ProviderSummary[];
 };
 
 export type CodexModelSummary = {
@@ -870,6 +900,9 @@ export type WuuDesktopApi = {
     variant?: string,
     permissionMode?: string
   ) => Promise<ConfigModelUpdateResult>;
+  updateAdvancedSettings: (
+    settings: RuntimeAdvancedSettingsUpdate
+  ) => Promise<ConfigAdvancedUpdateResult>;
   listManagedProcesses: () => Promise<ManagedProcessListResult>;
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listMCPServers: () => Promise<MCPListResult>;

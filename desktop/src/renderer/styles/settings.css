@@ -218,6 +218,22 @@
   font-weight: var(--weight-medium);
 }
 
+.settings-about-list {
+  margin: 0;
+  padding: 0;
+}
+
+.settings-about-value {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-row input,
 .settings-row select {
   width: 100%;

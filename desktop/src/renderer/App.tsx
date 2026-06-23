@@ -48,6 +48,7 @@ import type {
   PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
+  RuntimeAdvancedSettingsUpdate,
   RuntimeConnectionUpdate,
   RuntimeContext,
   ServerEvent,
@@ -4620,6 +4621,7 @@ export function App(): JSX.Element {
               permissions: updated.permissions ?? current.initialized.permissions,
               extension_trust: updated.extension_trust ?? current.initialized.extension_trust,
               providers: updated.providers ?? current.initialized.providers,
+              advanced_settings: updated.advanced_settings ?? current.initialized.advanced_settings,
             }
           : current.initialized;
         const updateThreadModel = (thread: Thread): Thread => ({
@@ -4645,6 +4647,40 @@ export function App(): JSX.Element {
           error instanceof Error
             ? error.message
             : "update runtime settings failed",
+      }));
+      throw error;
+    }
+  }
+
+  async function updateAdvancedSettings(
+    settings: RuntimeAdvancedSettingsUpdate,
+  ): Promise<void> {
+    if (!state.initialized || anyThreadIsRunning) {
+      return;
+    }
+    try {
+      const updated = await window.wuu.updateAdvancedSettings(settings);
+      setState((current) => {
+        const initialized = current.initialized
+          ? {
+              ...current.initialized,
+              advanced_settings: updated.advanced_settings,
+              providers: updated.providers ?? current.initialized.providers,
+            }
+          : current.initialized;
+        return {
+          ...current,
+          initialized,
+          status: current.status === "ready" ? current.status : "ready",
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : "update advanced settings failed",
       }));
       throw error;
     }
@@ -4857,6 +4893,7 @@ export function App(): JSX.Element {
         resizingSidebar={resizingSidebar}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
+        onAdvancedSave={updateAdvancedSettings}
         onDebugControlsChange={setDebugControlsEnabled}
         onSidebarResizeStart={startSettingsSidebarResize}
         onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}

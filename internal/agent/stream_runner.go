@@ -64,6 +64,9 @@ type StreamRunner struct {
 	// OutputReserveTokens lets callers pass a provider/model output limit
 	// for compact threshold math without forcing a request max_tokens value.
 	OutputReserveTokens int
+	// CompactThresholdPct lets callers compact earlier than the default
+	// usable-window calculation. Zero means auto.
+	CompactThresholdPct float64
 
 	// DisableAutoCompact turns off the proactive fill-rate trigger.
 	// The reactive context-overflow recovery still runs. Off by default.
@@ -211,6 +214,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		MaxContextTokens:    maxCtx,
 		MaxInputTokens:      r.MaxInputTokens,
 		OutputReserveTokens: r.OutputReserveTokens,
+		CompactThresholdPct: r.CompactThresholdPct,
 		BeforeStep:          beforeStep,
 		BeforeRequest:       r.BeforeRequest,
 		OnRequestContext: func(info RequestContextInfo) {

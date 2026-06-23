@@ -35,38 +35,40 @@ func (s *Server) handleInitialize(req Request) error {
 			Date:    core.Date,
 			Dirty:   core.Dirty,
 		},
-		Provider:       s.rt.ProviderName,
-		Model:          s.rt.Model,
-		Effort:         s.currentDisplayEffort(),
-		Variant:        s.currentVariant(),
-		WorkspaceRoot:  s.rt.RootDir,
-		ToolPolicy:     s.currentToolPolicySummary(),
-		Permissions:    s.currentPermissionSummary(),
-		ExtensionTrust: s.currentExtensionTrustSummary(),
-		ModelProfile:   modelProfile,
-		ToolSurface:    toolSurface,
-		ModelRoles:     s.currentModelRoleSummaries(),
-		Providers:      s.providerSummaries(),
+		Provider:         s.rt.ProviderName,
+		Model:            s.rt.Model,
+		Effort:           s.currentDisplayEffort(),
+		Variant:          s.currentVariant(),
+		WorkspaceRoot:    s.rt.RootDir,
+		ToolPolicy:       s.currentToolPolicySummary(),
+		Permissions:      s.currentPermissionSummary(),
+		ExtensionTrust:   s.currentExtensionTrustSummary(),
+		ModelProfile:     modelProfile,
+		ToolSurface:      toolSurface,
+		ModelRoles:       s.currentModelRoleSummaries(),
+		Providers:        s.providerSummaries(),
+		AdvancedSettings: s.currentAdvancedSettingsSummary(),
 	}, nil)
 }
 
 func (s *Server) handleConfigRead(req Request) error {
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigReadResult{
-		Provider:       s.rt.ProviderName,
-		Model:          s.rt.Model,
-		Effort:         s.currentDisplayEffort(),
-		Variant:        s.currentVariant(),
-		ConfigPath:     s.rt.ConfigPath,
-		WorkspaceRoot:  s.rt.RootDir,
-		SessionDir:     s.rt.SessionDir,
-		ToolPolicy:     s.currentToolPolicySummary(),
-		Permissions:    s.currentPermissionSummary(),
-		ExtensionTrust: s.currentExtensionTrustSummary(),
-		ModelProfile:   modelProfile,
-		ToolSurface:    toolSurface,
-		ModelRoles:     s.currentModelRoleSummaries(),
-		Providers:      s.providerSummaries(),
+		Provider:         s.rt.ProviderName,
+		Model:            s.rt.Model,
+		Effort:           s.currentDisplayEffort(),
+		Variant:          s.currentVariant(),
+		ConfigPath:       s.rt.ConfigPath,
+		WorkspaceRoot:    s.rt.RootDir,
+		SessionDir:       s.rt.SessionDir,
+		ToolPolicy:       s.currentToolPolicySummary(),
+		Permissions:      s.currentPermissionSummary(),
+		ExtensionTrust:   s.currentExtensionTrustSummary(),
+		ModelProfile:     modelProfile,
+		ToolSurface:      toolSurface,
+		ModelRoles:       s.currentModelRoleSummaries(),
+		Providers:        s.providerSummaries(),
+		AdvancedSettings: s.currentAdvancedSettingsSummary(),
 	}, nil)
 }
 
@@ -174,6 +176,57 @@ func (s *Server) currentPermissionSummary() PermissionSummary {
 	}
 }
 
+func (s *Server) currentAdvancedSettingsSummary() AdvancedSettingsSummary {
+	if s == nil || s.rt == nil {
+		return AdvancedSettingsSummary{}
+	}
+	summary := AdvancedSettingsSummary{}
+	if s.rt.StreamRunner != nil {
+		summary.MaxSteps = s.rt.StreamRunner.MaxSteps
+		summary.Temperature = s.rt.StreamRunner.Temperature
+		summary.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+		summary.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
+	}
+	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
+		summary.MaxSteps = cfg.Agent.MaxSteps
+		summary.MaxContextTokens = cfg.Agent.MaxContextTokens
+		summary.Temperature = cfg.Agent.Temperature
+		summary.CompactThresholdPct = cfg.Agent.CompactThresholdPct
+		summary.DisableAutoCompact = cfg.Agent.DisableAutoCompact
+		if provider, _, err := cfg.ResolveProvider(s.rt.ProviderName); err == nil {
+			summary.ProviderContextWindow = provider.ContextWindow
+		}
+	}
+	budget := s.rt.ModelBudget
+	summary.ContextWindowTokens = budget.ContextWindowTokens
+	summary.ContextWindowSource = string(budget.ContextWindowSource)
+	summary.InputLimitTokens = budget.InputLimitTokens
+	summary.OutputReserveTokens = budget.OutputReserveTokens
+	summary.CompactThresholdTokens = advancedCompactThresholdTokens(budget, summary.CompactThresholdPct)
+	return summary
+}
+
+func advancedCompactThresholdTokens(budget modelbudget.Budget, pct float64) int {
+	if pct <= 0 || pct >= 1 {
+		return budget.CompactThresholdTokens
+	}
+	baseWindow := budget.ContextWindowTokens
+	if baseWindow <= 0 || (budget.InputLimitTokens > 0 && budget.InputLimitTokens < baseWindow) {
+		baseWindow = budget.InputLimitTokens
+	}
+	if baseWindow <= 0 {
+		return 0
+	}
+	threshold := int(float64(baseWindow) * pct)
+	if budget.ContextWindowTokens > 0 {
+		outputReserved := budget.ContextWindowTokens - budget.OutputReserveTokens
+		if outputReserved > 0 && outputReserved < threshold {
+			threshold = outputReserved
+		}
+	}
+	return threshold
+}
+
 func (s *Server) currentModelSurfaceSummaries() (*ModelProfileSummary, *ToolSurfaceSummary) {
 	if s == nil || s.rt == nil || s.rt.Toolkit == nil {
 		return nil, nil
@@ -261,6 +314,60 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (s *Server) handleConfigAdvancedUpdate(req Request) error {
+	var params ConfigAdvancedUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot change advanced settings while a turn is running"))
+	}
+	if s.rt == nil {
+		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
+	}
+	if err := config.UpdateAdvancedRuntime(s.rt.ConfigPath, s.rt.ProviderName, config.AdvancedRuntimeUpdate{
+		MaxSteps:              params.MaxSteps,
+		MaxContextTokens:      params.MaxContextTokens,
+		Temperature:           params.Temperature,
+		CompactThresholdPct:   params.CompactThresholdPct,
+		DisableAutoCompact:    params.DisableAutoCompact,
+		ProviderContextWindow: params.ProviderContextWindow,
+	}); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	cfg, _, err := config.LoadPath(s.rt.ConfigPath)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(s.rt.ProviderName)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
+	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, s.rt.Model)
+	apiModel := modelcatalog.APIModel(ruleProviderCfg, s.rt.Model)
+	modelBudget := runtime.ResolveModelBudget(s.rt.Model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
+	s.rt.ModelBudget = modelBudget
+	if s.rt.StreamRunner != nil {
+		s.rt.StreamRunner.MaxSteps = cfg.Agent.MaxSteps
+		s.rt.StreamRunner.Temperature = cfg.Agent.Temperature
+		s.rt.StreamRunner.CompactThresholdPct = cfg.Agent.CompactThresholdPct
+		s.rt.StreamRunner.DisableAutoCompact = cfg.Agent.DisableAutoCompact
+		s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
+		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
+		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
+	}
+	s.updateIdleThreadAdvancedRuntime()
+	if s.rt.Toolkit != nil {
+		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
+	}
+	return s.writeResponse(req.ID, ConfigAdvancedUpdateResult{
+		AdvancedSettings: s.currentAdvancedSettingsSummary(),
+		Providers:        s.providerSummaries(),
+	}, nil)
 }
 
 func (s *Server) handleConfigModelUpdate(req Request) error {
@@ -470,17 +577,18 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
-		Provider:       resolvedName,
-		Model:          model,
-		Effort:         effort,
-		Variant:        selection.Variant,
-		ToolPolicy:     s.currentToolPolicySummary(),
-		Permissions:    s.currentPermissionSummary(),
-		ExtensionTrust: s.currentExtensionTrustSummary(),
-		ModelProfile:   modelProfile,
-		ToolSurface:    toolSurface,
-		ModelRoles:     s.currentModelRoleSummaries(),
-		Providers:      s.providerSummaries(),
+		Provider:         resolvedName,
+		Model:            model,
+		Effort:           effort,
+		Variant:          selection.Variant,
+		ToolPolicy:       s.currentToolPolicySummary(),
+		Permissions:      s.currentPermissionSummary(),
+		ExtensionTrust:   s.currentExtensionTrustSummary(),
+		ModelProfile:     modelProfile,
+		ToolSurface:      toolSurface,
+		ModelRoles:       s.currentModelRoleSummaries(),
+		Providers:        s.providerSummaries(),
+		AdvancedSettings: s.currentAdvancedSettingsSummary(),
 	}, nil)
 }
 
@@ -605,6 +713,10 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
 					th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 					th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
+					th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+					th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
+					th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
+					th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
 				}
 				th.execRuntime.ModelBudget = s.rt.ModelBudget
 				if th.execRuntime.Toolkit != nil {
@@ -614,6 +726,29 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 						s.installToolApprovalReviewer(th.execRuntime.Toolkit)
 					}
 				}
+			}
+		}
+		th.mu.Unlock()
+	}
+}
+
+func (s *Server) updateIdleThreadAdvancedRuntime() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		if !th.running && th.execRuntime != nil {
+			if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
+				th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
+				th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
+				th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+				th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
+				th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
+				th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+				th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
+			}
+			if s.rt != nil {
+				th.execRuntime.ModelBudget = s.rt.ModelBudget
 			}
 		}
 		th.mu.Unlock()

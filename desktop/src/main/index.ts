@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   ComposerGoalSummary,
+  ConfigAdvancedUpdateResult,
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   GitCommitParams,
@@ -25,6 +26,7 @@ import type {
   ManagedProcessListResult,
   ManagedProcessStopResult,
   ServerEvent,
+  RuntimeAdvancedSettingsUpdate,
   SettingsUsageQuery,
   SettingsUsageRange,
   SettingsUsageResponse,
@@ -325,6 +327,14 @@ app.whenReady().then(() => {
           ? {}
           : { permission_mode: permissionMode }),
       }),
+  );
+  ipcMain.handle(
+    "wuu:config-advanced-update",
+    (_event, settings: RuntimeAdvancedSettingsUpdate) =>
+      appServerClientPool.request<ConfigAdvancedUpdateResult>(
+        "config/advanced/update",
+        settings ?? {},
+      ),
   );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));
   ipcMain.handle(
