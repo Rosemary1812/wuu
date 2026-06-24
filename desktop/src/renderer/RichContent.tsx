@@ -2,6 +2,7 @@ import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useImagePreview } from "./ImagePreview";
+import { MessageCopyButton } from "./MessageActions";
 
 type RichContentProps = {
   text?: string;
@@ -257,10 +258,11 @@ function markdownComponents(
         if (language === "mermaid" && renderMermaid) {
           return <MermaidDiagram code={reactNodeText(child.props.children).replace(/\n$/, "")} />;
         }
+        const code = reactNodeText(child.props.children).replace(/\n$/, "");
         return (
-          <pre className="rich-code" data-language={language || undefined}>
+          <RichCodeBlock code={code} language={language}>
             {children}
-          </pre>
+          </RichCodeBlock>
         );
       }
       return <pre className="rich-code">{children}</pre>;
@@ -291,6 +293,35 @@ function markdownComponents(
       return <hr className="rich-rule" />;
     }
   };
+}
+
+function RichCodeBlock({
+  code,
+  language,
+  children
+}: {
+  code: string;
+  language: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="rich-code-block">
+      <div className="rich-code-header">
+        {language ? <span className="rich-code-language">{language}</span> : null}
+        <MessageCopyButton
+          getText={() => code}
+          className="rich-code-copy"
+          iconSize={13}
+          idleLabel="复制代码"
+          copiedLabel="已复制代码"
+          failedLabel="复制失败"
+        />
+      </div>
+      <pre className="rich-code">
+        {children}
+      </pre>
+    </div>
+  );
 }
 
 function renderMarkdownText(

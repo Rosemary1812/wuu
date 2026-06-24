@@ -40,15 +40,21 @@ export function AgentMessageActions({ getText, onFork }: { getText: () => string
 export function MessageCopyButton({
   getText,
   className = "",
-  iconSize = 14
+  iconSize = 14,
+  idleLabel = "复制消息",
+  copiedLabel = "已复制消息",
+  failedLabel = "复制失败"
 }: {
   getText: () => string;
   className?: string;
   iconSize?: number;
+  idleLabel?: string;
+  copiedLabel?: string;
+  failedLabel?: string;
 }): JSX.Element {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const resetTimerRef = useRef<number | undefined>(undefined);
-  const label = copyState === "copied" ? "已复制消息" : copyState === "failed" ? "复制失败" : "复制消息";
+  const label = copyState === "copied" ? copiedLabel : copyState === "failed" ? failedLabel : idleLabel;
 
   useEffect(() => {
     return () => {

@@ -3576,15 +3576,76 @@
   font: inherit;
 }
 
-.rich-code[data-language]::before {
-  content: attr(data-language);
-  display: block;
-  margin: -4px 0 8px;
-  color: var(--ink-muted);
+.rich-code-block {
+  margin: 8px 0;
+  background: #f3f3f0;
+  border: 1px solid var(--ink-overlay-6);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.rich-code-block > .rich-code {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.rich-code-header {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--ink-overlay-6);
+  background: rgba(255, 255, 255, 0.5);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.rich-code-language {
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.rich-code-copy {
+  --message-copy-rest-transform: none;
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.55;
+  pointer-events: auto;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.rich-code-block:hover .rich-code-copy,
+.rich-code-copy:hover,
+.rich-code-copy:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+}
+
+.rich-code-copy.copied,
+.rich-code-copy.failed {
+  opacity: 1;
+}
+
+.rich-code-copy.copied {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.rich-code-copy.failed {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .rich-table-wrap {
