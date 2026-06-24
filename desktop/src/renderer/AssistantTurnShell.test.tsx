@@ -577,6 +577,28 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(folds[0]).not.toBeNull();
   });
 
+  it("keeps reasoning fold expansion local to that reasoning block", async () => {
+    const first = makeReasoning("first deliberation");
+    const second = makeReasoning("second deliberation");
+    const turn = makeTurn("completed", [
+      first,
+      makeCommentary("visible process boundary"),
+      second,
+      makeFinalAnswer("short answer"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const folds = reasoningFolds(container);
+    expect(folds).toHaveLength(2);
+    expect(folds[0].open).toBe(false);
+    expect(folds[1].open).toBe(false);
+
+    await openReasoningFold(folds[0]);
+
+    expect(folds[0].open).toBe(true);
+    expect(folds[1].open).toBe(false);
+  });
+
   it("treats opening a reasoning fold as a request for the latest output", async () => {
     const turn = makeTurn("completed", [
       makeReasoning("long internal deliberation"),
@@ -854,6 +876,9 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
 
     act(() => {
       layout.scrollTop = 240;
+      scroll.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: -80 }),
+      );
       scroll.dispatchEvent(new UIEvent("scroll", { bubbles: true }));
     });
 
@@ -868,6 +893,34 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     });
 
     expect(layout.scrollTop).toBe(240);
+  });
+
+  it("does not bubble reasoning scroll intent to the surrounding conversation", async () => {
+    const turn = makeTurn("completed", [
+      makeReasoning("long internal deliberation ".repeat(50)),
+      makeFinalAnswer("short answer"),
+    ]);
+    const { container } = renderShell(turn);
+    const fold = reasoningFolds(container)[0];
+    const scroll = reasoningScroll(fold);
+    stubScrollLayout(scroll, {
+      scrollHeight: 1000,
+      clientHeight: 200,
+    });
+    await openReasoningFold(fold);
+
+    let bubbledWheelEvents = 0;
+    container.addEventListener("wheel", () => {
+      bubbledWheelEvents += 1;
+    });
+
+    act(() => {
+      scroll.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: -80 }),
+      );
+    });
+
+    expect(bubbledWheelEvents).toBe(0);
   });
 });
 

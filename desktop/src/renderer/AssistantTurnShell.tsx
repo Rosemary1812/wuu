@@ -3,7 +3,6 @@ import {
   type SyntheticEvent,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -26,9 +25,11 @@ import {
 } from "./TurnViewHelpers";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
+import {
+  AUTO_FOLLOW_NESTED_SCROLL_ATTR,
+  useAutoFollowScrollContainer,
+} from "./AutoFollowScroll";
 
-const REASONING_AUTO_SCROLL_THRESHOLD_PX = 16;
-const REASONING_SCROLLBAR_HIDE_DELAY_MS = 700;
 /**
  * How long to wait after a turn completes (turn.status → completed)
  * before auto-collapsing the process fold. Decouples the "turn is
@@ -482,147 +483,26 @@ function ReasoningFold({
   const textClass = `turn-reasoning-summary-text${
     streaming ? " is-streaming" : ""
   }`;
-  const reasoningScrollRef = useRef<HTMLDivElement | null>(null);
-  const reasoningAutoFollowRef = useRef(true);
-  const lastReasoningScrollTopRef = useRef(0);
-  const reasoningScrollFrameRef = useRef<number | undefined>(undefined);
-  const reasoningScrollbarHideTimerRef = useRef<number | undefined>(undefined);
-
-  const showReasoningScrollbar = useCallback((node: HTMLElement): void => {
-    if (node.scrollHeight <= node.clientHeight) {
-      return;
-    }
-    node.classList.add("scrollbar-visible");
-    if (reasoningScrollbarHideTimerRef.current !== undefined) {
-      window.clearTimeout(reasoningScrollbarHideTimerRef.current);
-    }
-    reasoningScrollbarHideTimerRef.current = window.setTimeout(() => {
-      reasoningScrollbarHideTimerRef.current = undefined;
-      node.classList.remove("scrollbar-visible");
-    }, REASONING_SCROLLBAR_HIDE_DELAY_MS);
-  }, []);
-
-  const scrollReasoningToBottom = useCallback((): void => {
-    const node = reasoningScrollRef.current;
-    if (!node || !reasoningAutoFollowRef.current) {
-      return;
-    }
-    node.scrollTop = node.scrollHeight;
-    lastReasoningScrollTopRef.current = node.scrollTop;
-    showReasoningScrollbar(node);
-  }, [showReasoningScrollbar]);
-
-  const scheduleReasoningScroll = useCallback((): void => {
-    if (!reasoningAutoFollowRef.current) {
-      return;
-    }
-    const node = reasoningScrollRef.current;
-    if (!node) {
-      return;
-    }
-    const distanceFromBottom = Math.max(
-      0,
-      node.scrollHeight - node.scrollTop - node.clientHeight,
-    );
-    const userMovedAway =
-      node.scrollHeight > node.clientHeight &&
-      distanceFromBottom > REASONING_AUTO_SCROLL_THRESHOLD_PX &&
-      node.scrollTop < lastReasoningScrollTopRef.current;
-    if (userMovedAway) {
-      lastReasoningScrollTopRef.current = node.scrollTop;
-      reasoningAutoFollowRef.current = false;
-      return;
-    }
-    if (reasoningScrollFrameRef.current !== undefined) {
-      return;
-    }
-    reasoningScrollFrameRef.current = window.requestAnimationFrame(() => {
-      reasoningScrollFrameRef.current = undefined;
-      scrollReasoningToBottom();
-    });
-  }, [scrollReasoningToBottom]);
-
-  const handleReasoningScrollNode = useCallback(
-    (node: HTMLElement): void => {
-      showReasoningScrollbar(node);
-      const distanceFromBottom = Math.max(
-        0,
-        node.scrollHeight - node.scrollTop - node.clientHeight,
-      );
-      const isScrollable = node.scrollHeight > node.clientHeight;
-      const scrolledUp = node.scrollTop < lastReasoningScrollTopRef.current;
-      lastReasoningScrollTopRef.current = node.scrollTop;
-      const atLatestView =
-        !isScrollable ||
-        distanceFromBottom <= REASONING_AUTO_SCROLL_THRESHOLD_PX;
-      if (atLatestView) {
-        reasoningAutoFollowRef.current = true;
-      } else if (scrolledUp) {
-        reasoningAutoFollowRef.current = false;
-      }
-    },
-    [showReasoningScrollbar],
-  );
-
-  useLayoutEffect(() => {
-    const node = reasoningScrollRef.current;
-    if (!node) {
-      return undefined;
-    }
-    const handleScroll = (): void => {
-      handleReasoningScrollNode(node);
-    };
-    node.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      node.removeEventListener("scroll", handleScroll);
-    };
-  }, [handleReasoningScrollNode]);
-
-  useLayoutEffect(() => {
-    const node = reasoningScrollRef.current;
-    if (!node || typeof ResizeObserver === "undefined") {
-      return undefined;
-    }
-    const content = node.firstElementChild;
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleReasoningScroll();
-    });
-    resizeObserver.observe(node);
-    if (content instanceof HTMLElement) {
-      resizeObserver.observe(content);
-    }
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [scheduleReasoningScroll]);
+  const [open, setOpen] = useState(false);
+  const reasoningScroll = useAutoFollowScrollContainer();
 
   const handleReasoningStreamFrame = useCallback((): void => {
     onStreamFrame();
-    scheduleReasoningScroll();
-  }, [onStreamFrame, scheduleReasoningScroll]);
-
-  useEffect(() => {
-    return () => {
-      if (reasoningScrollFrameRef.current !== undefined) {
-        window.cancelAnimationFrame(reasoningScrollFrameRef.current);
-      }
-      if (reasoningScrollbarHideTimerRef.current !== undefined) {
-        window.clearTimeout(reasoningScrollbarHideTimerRef.current);
-      }
-    };
-  }, []);
+    reasoningScroll.scheduleScrollToBottom();
+  }, [onStreamFrame, reasoningScroll]);
 
   // When the user opens this fold, land at the latest reasoning. After
   // that, keep following only while the user stays near the bottom.
-  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+  const handleToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>) => {
     const details = event.currentTarget;
-    if (!details.open) return;
+    const nextOpen = details.open;
+    setOpen(nextOpen);
+    if (!nextOpen) return;
     const body = details.querySelector(
       ".turn-reasoning-body",
     ) as HTMLElement | null;
     if (!body) return;
     onRequestLatest?.();
-    reasoningAutoFollowRef.current = true;
     let settled = false;
     const snapToBottom = (transitionEvent?: Event) => {
       const propertyName = (transitionEvent as TransitionEvent | undefined)
@@ -633,16 +513,17 @@ function ReasoningFold({
       if (settled) return;
       settled = true;
       body.removeEventListener("transitionend", snapToBottom);
-      scrollReasoningToBottom();
+      reasoningScroll.scrollToBottom({ force: true, revealScrollbar: true });
     };
     body.addEventListener("transitionend", snapToBottom);
     // Fallback when transitionend never fires (reduced motion, or the
     // grid already settled before the listener attached).
     window.setTimeout(snapToBottom, 280);
-  };
+  }, [onRequestLatest, reasoningScroll]);
   return (
     <details
       className="turn-reasoning-fold"
+      open={open}
       onToggle={handleToggle}
     >
       <summary className="turn-reasoning-summary">
@@ -656,7 +537,8 @@ function ReasoningFold({
         <div className="turn-reasoning-body-inner">
           <div
             className="turn-reasoning-scroll"
-            ref={reasoningScrollRef}
+            ref={reasoningScroll.scrollRef}
+            {...{ [AUTO_FOLLOW_NESTED_SCROLL_ATTR]: "true" }}
           >
             <ThreadItemView
               turnID={turnID}

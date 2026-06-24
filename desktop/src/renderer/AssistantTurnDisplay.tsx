@@ -1,7 +1,6 @@
 import { type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { streamFieldValue } from "./ThreadItemText";
-import { ToolActivityTimeline } from "./ToolActivity";
 import { readableToolActivityCommand } from "./ToolActivityHelpers";
 
 /**
@@ -34,9 +33,6 @@ export type TurnEntry = {
   streaming: boolean;
   kind: TurnEntryKind;
   count?: number;
-  /** Used only for `kind: "activity"` entries to hint the underlying
-   *  ToolActivityTimeline whether to fold itself once idle. */
-  collapseWhenIdle?: boolean;
 };
 
 export type TurnEntryKind =
@@ -173,10 +169,6 @@ export function buildAssistantTurnDisplay(
         streaming: isInProgress && !allSettled,
         kind: "activity",
         count: group.length,
-        // Collapsing hint for the underlying ToolActivityTimeline; the
-        // fold decides its own default, but this lets the row fold
-        // itself when it has a following agent message.
-        collapseWhenIdle: agentMessageWithTextFollows(turn, nextIndex - 1),
       });
       index = nextIndex - 1;
       continue;
@@ -338,21 +330,4 @@ function compactProcessPreview(raw: string | undefined): string | undefined {
   }
   const previewMax = 120;
   return text.length > previewMax ? `${text.slice(0, previewMax)}…` : text;
-}
-
-function agentMessageWithTextFollows(turn: Turn, itemIndex: number): boolean {
-  for (let index = itemIndex + 1; index < turn.items.length; index++) {
-    const item = turn.items[index];
-    if (item.type === "user_message") {
-      return false;
-    }
-    if (item.type !== "agent_message") {
-      continue;
-    }
-    if (streamFieldValue(turn.id, item, "text").trim().length === 0) {
-      continue;
-    }
-    return true;
-  }
-  return false;
 }

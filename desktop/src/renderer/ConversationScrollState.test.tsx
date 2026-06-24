@@ -210,9 +210,11 @@ describe("useConversationScrollState — userScrolledAway", () => {
     setScrollTop(500);
     fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
-    // 8px from the bottom — well within the 16px band.
+    // A layout/programmatic scroll leaves the viewport 8px from the
+    // bottom — well within the 16px band. This is still the latest
+    // view, so the pill should hide.
     setScrollTop(2000 - 600 - 8);
-    fireUserScroll();
+    fireScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
   });
 

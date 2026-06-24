@@ -10,7 +10,7 @@
  * These tests pin the markup contract: which class is added, what the
  * host reads as, and which child element holds the sweep. The CSS
  * itself is verified by visual review against the existing
- * `.process-cluster-row.is-streaming` and
+ * `.process-surface-row.is-streaming` and
  * `.turn-reasoning-summary-text.is-streaming` rules, which share the
  * same keyframes and overlay technique.
  */

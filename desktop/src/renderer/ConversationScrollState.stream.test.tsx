@@ -23,6 +23,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useConversationScrollState } from "./ConversationScrollState";
 import type { Turn } from "../shared/protocol";
+import { AUTO_FOLLOW_NESTED_SCROLL_ATTR } from "./AutoFollowScroll";
 
 function makeLongTurns(): Turn[] {
   return [
@@ -102,6 +103,10 @@ function Probe({
       "data-user-scrolled-away": handle.userScrolledAway ? "true" : "false",
     },
     createElement("div", { "data-testid": "scroll-content" }),
+    createElement("div", {
+      [AUTO_FOLLOW_NESTED_SCROLL_ATTR]: "true",
+      "data-testid": "nested-scroll",
+    }),
   );
 }
 
@@ -253,6 +258,14 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
   }
 
+  function nestedScrollNode(): HTMLElement {
+    const nested = container.querySelector(
+      "[data-testid='nested-scroll']",
+    ) as HTMLElement | null;
+    if (!nested) throw new Error("nested scroll node not rendered");
+    return nested;
+  }
+
   it("stays pinned to the bottom across 120 fast stream ticks", () => {
     // Start: 2000px of content in a 600px viewport. We are at the
     // bottom (scrollTop = 1400).
@@ -390,6 +403,28 @@ describe("useConversationScrollState — high-frequency stream", () => {
 
     expect(layout.scrollTop).toBe(2000 - 600 - 80);
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
+  it("does not treat nested reasoning scroll as leaving the conversation bottom", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1400);
+
+    act(() => {
+      nestedScrollNode().dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: -80 }),
+      );
+      // Simulate a worst-case scroll-chain/clamp where the outer
+      // conversation receives a scroll event after the nested scroller
+      // hits its top. The nested wheel must not count as conversation
+      // scroll-away intent, so the outer container re-anchors.
+      layout!.scrollTop = 1180;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("keeps following when layout shrink clamps the viewport to the new bottom", () => {

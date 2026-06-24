@@ -99,7 +99,7 @@ export function ContextCompactionNotice({
   status?: ThreadItemStatus;
 }): JSX.Element {
   // in_progress reuses the same shimmer overlay pattern as the "code"
-  // surfaces (`.process-cluster-row.is-streaming` and
+  // surfaces (`.process-surface-row.is-streaming` and
   // `.turn-reasoning-summary-text.is-streaming`): the shared
   // `reasoning-shimmer` keyframes drive the sweep. The host itself is
   // a centered label flanked by two fading dividers — no Archive icon,

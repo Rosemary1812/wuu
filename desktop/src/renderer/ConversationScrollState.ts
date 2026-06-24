@@ -9,42 +9,31 @@ import {
 } from "react";
 import type { Turn } from "../shared/protocol";
 import type { ConversationPaneID } from "./AppState";
+import {
+  AUTO_FOLLOW_BOTTOM_THRESHOLD_PX,
+  AUTO_FOLLOW_SCROLLBAR_HIDE_DELAY_MS,
+  SCROLL_AWAY_KEYS,
+  USER_SCROLL_AWAY_INTENT_WINDOW_MS,
+  atLatestScrollView,
+  clampScrollTop,
+  eventTargetsNestedAutoFollowScroll,
+  observeAutoFollowResizeTargets,
+  setAutoFollowOverflowAnchor,
+} from "./AutoFollowScroll";
 
 // Tight threshold so the conversation only re-engages auto-follow when the
 // user is effectively parked at the bottom. The previous 48px band let one
 // mouse-wheel notch land inside the band and silently re-arm auto-follow,
 // which made slow scroll-up get yanked back to the bottom mid-gesture.
-const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 16;
-const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
-const CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS = 300;
-const CONVERSATION_SCROLL_AWAY_KEYS = new Set([
-  "ArrowUp",
-  "PageUp",
-  "Home",
-]);
+const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = AUTO_FOLLOW_BOTTOM_THRESHOLD_PX;
+const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = AUTO_FOLLOW_SCROLLBAR_HIDE_DELAY_MS;
+const CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS =
+  USER_SCROLL_AWAY_INTENT_WINDOW_MS;
 
 type ConversationScrollSnapshot = {
   scrollTop: number;
   autoFollow: boolean;
 };
-
-function maxScrollTop(node: HTMLElement): number {
-  return Math.max(0, node.scrollHeight - node.clientHeight);
-}
-
-function clampScrollTop(node: HTMLElement, top: number): number {
-  return Math.max(0, Math.min(top, maxScrollTop(node)));
-}
-
-function conversationResizeTargets(node: HTMLElement): HTMLElement[] {
-  const targets = [node];
-  for (const child of Array.from(node.children)) {
-    if (child instanceof HTMLElement) {
-      targets.push(child);
-    }
-  }
-  return targets;
-}
 
 export function useConversationScrollState({
   activeThreadID,
@@ -206,6 +195,7 @@ export function useConversationScrollState({
     const nextAutoFollow =
       node.scrollHeight <= node.clientHeight ? true : autoFollow;
     setAutoFollow(nextAutoFollow);
+    setAutoFollowOverflowAnchor(node, nextAutoFollow);
     rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
     if (options.revealScrollbar) {
       showConversationScrollbar(node);
@@ -245,6 +235,7 @@ export function useConversationScrollState({
     setAutoFollow(true);
     const node = conversationViewport();
     if (node) {
+      setAutoFollowOverflowAnchor(node, true);
       rememberActiveThreadScrollSnapshot(node, true);
     }
   }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
@@ -253,6 +244,7 @@ export function useConversationScrollState({
     setAutoFollow(false);
     const node = conversationViewport();
     if (node) {
+      setAutoFollowOverflowAnchor(node, false);
       rememberActiveThreadScrollSnapshot(node, false);
     }
   }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
@@ -300,25 +292,28 @@ export function useConversationScrollState({
     // the viewport is still at the latest content. Those must keep
     // auto-follow armed; otherwise the next streaming or settle frame will
     // stop sticking to the bottom even though the user never scrolled away.
-    const distanceFromBottom = Math.max(
-      0,
-      node.scrollHeight - node.scrollTop - node.clientHeight
-    );
-    const isScrollable = node.scrollHeight > node.clientHeight;
     const scrolledUp = node.scrollTop < lastConversationScrollTopRef.current;
     const userScrollAwayIntent = userScrollAwayIntentRef.current;
     lastConversationScrollTopRef.current = clampScrollTop(node, node.scrollTop);
 
-    const atLatestView =
-      !isScrollable ||
-      distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
+    const atLatestView = atLatestScrollView(
+      node,
+      CONVERSATION_AUTO_SCROLL_THRESHOLD_PX
+    );
     let nextAutoFollow = conversationAutoFollowRef.current;
     if (scrolledUp && userScrollAwayIntent) {
       nextAutoFollow = false;
       setAutoFollow(false);
+      setAutoFollowOverflowAnchor(node, false);
     } else if (atLatestView) {
       nextAutoFollow = true;
       setAutoFollow(true);
+      setAutoFollowOverflowAnchor(node, true);
+    } else if (conversationAutoFollowRef.current && !userScrollAwayIntent) {
+      nextAutoFollow = true;
+      applyProgrammaticScroll(node, node.scrollHeight, true, {
+        revealScrollbar: true
+      });
     }
     rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
   }
@@ -351,19 +346,41 @@ export function useConversationScrollState({
       return undefined;
     }
     const handleWheel = (event: WheelEvent): void => {
+      if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
+        return;
+      }
       if (event.deltaY < 0) {
         markUserScrollAwayIntent();
       }
     };
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
+        return;
+      }
+      if (event.target === node) {
+        markUserScrollAwayIntent();
+      }
+    };
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (CONVERSATION_SCROLL_AWAY_KEYS.has(event.key)) {
+      if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
+        return;
+      }
+      if (SCROLL_AWAY_KEYS.has(event.key)) {
         markUserScrollAwayIntent();
       }
     };
     const handleTouchStart = (event: TouchEvent): void => {
+      if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
+        touchLastYRef.current = undefined;
+        return;
+      }
       touchLastYRef.current = event.touches[0]?.clientY;
     };
     const handleTouchMove = (event: TouchEvent): void => {
+      if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
+        touchLastYRef.current = undefined;
+        return;
+      }
       const currentY = event.touches[0]?.clientY;
       const previousY = touchLastYRef.current;
       if (currentY !== undefined && previousY !== undefined && currentY > previousY) {
@@ -375,6 +392,7 @@ export function useConversationScrollState({
       touchLastYRef.current = undefined;
     };
     node.addEventListener("wheel", handleWheel, { passive: true });
+    node.addEventListener("pointerdown", handlePointerDown);
     node.addEventListener("touchstart", handleTouchStart, { passive: true });
     node.addEventListener("touchmove", handleTouchMove, { passive: true });
     node.addEventListener("touchend", handleTouchEnd);
@@ -382,6 +400,7 @@ export function useConversationScrollState({
     node.addEventListener("keydown", handleKeyDown);
     return () => {
       node.removeEventListener("wheel", handleWheel);
+      node.removeEventListener("pointerdown", handlePointerDown);
       node.removeEventListener("touchstart", handleTouchStart);
       node.removeEventListener("touchmove", handleTouchMove);
       node.removeEventListener("touchend", handleTouchEnd);
@@ -403,9 +422,7 @@ export function useConversationScrollState({
     const resizeObserver = new ResizeObserver(() => {
       scheduleStreamScroll();
     });
-    for (const target of conversationResizeTargets(node)) {
-      resizeObserver.observe(target);
-    }
+    observeAutoFollowResizeTargets(node, resizeObserver);
     return () => {
       resizeObserver.disconnect();
     };
