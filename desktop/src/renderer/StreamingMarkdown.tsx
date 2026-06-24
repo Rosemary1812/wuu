@@ -363,9 +363,8 @@ export function StreamingMarkdown({
       data-stream-state={phase}
     >
       {split.blocks.map((block, index) => (
-        // Wrap each stable block so settled, off-screen messages can skip
-        // layout/paint without remounting markdown content. Live streams opt
-        // out in CSS so bottom auto-follow never sees placeholder heights.
+        // Keep stable blocks keyed separately so settled text does not remount
+        // into one large markdown tree when streaming ends.
         <div className="streaming-markdown-block" key={index}>
           <MemoMarkdownContent
             text={block}

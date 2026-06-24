@@ -4,11 +4,25 @@ import type { InputFile, InputImage } from "../shared/protocol";
 import { imageSource } from "./ComposerMessages";
 import { useImagePreview } from "./ImagePreview";
 
-export function AgentMessageActions({ getText, onFork }: { getText: () => string; onFork?: () => void }): JSX.Element {
+export function AgentMessageActions({
+  getText,
+  onFork,
+  hidden = false,
+}: {
+  getText: () => string;
+  onFork?: () => void;
+  hidden?: boolean;
+}): JSX.Element {
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
 
   return (
-    <div className="message-actions agent-message-actions" aria-label="助手消息操作">
+    <div
+      className={`message-actions agent-message-actions${
+        hidden ? " action-slot-placeholder" : ""
+      }`}
+      aria-hidden={hidden || undefined}
+      aria-label={hidden ? undefined : "助手消息操作"}
+    >
       <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
       <button
         className="message-action-button"

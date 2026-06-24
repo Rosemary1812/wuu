@@ -178,17 +178,13 @@ export function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
-          {reserveActionSlot && actionsVisible ? (
+          {reserveActionSlot ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
+              hidden={!actionsVisible}
               onFork={
                 onForkMessage ? () => onForkMessage(turnID, item.id) : undefined
               }
-            />
-          ) : reserveActionSlot ? (
-            <div
-              className="message-actions agent-message-actions action-slot-placeholder"
-              aria-hidden="true"
             />
           ) : null}
         </article>

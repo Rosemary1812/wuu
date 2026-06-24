@@ -722,6 +722,7 @@
 
 .action-slot-placeholder {
   visibility: hidden;
+  pointer-events: none;
 }
 
 .message-actions .message-action-button {
@@ -811,16 +812,6 @@
                                                                  
                                                               
                                               
-.streaming-markdown-block {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
-}
-
-.streaming-markdown[data-stream-state="streaming"] .streaming-markdown-block {
-  content-visibility: visible;
-  contain-intrinsic-size: none;
-}
-
                                                                     
                                                                           
 .stream-cursor {

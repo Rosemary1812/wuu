@@ -1060,11 +1060,12 @@ describe("AssistantTurnShell — turn divider styles", () => {
     expect(liveTurnRule).toContain("content-visibility: visible;");
     expect(liveTurnRule).toContain("contain-intrinsic-size: none;");
 
-    const liveMarkdownBlockRule = cssRule(
+    expect(turnsCSS).not.toMatch(
+      /\.streaming-markdown-block\s*\{[\s\S]*?content-visibility:/,
+    );
+    expect(turnsCSS).not.toContain(
       '.streaming-markdown[data-stream-state="streaming"] .streaming-markdown-block',
     );
-    expect(liveMarkdownBlockRule).toContain("content-visibility: visible;");
-    expect(liveMarkdownBlockRule).toContain("contain-intrinsic-size: none;");
 
     expect(cssRule(".activity-timeline-item")).not.toContain("animation:");
     expect(turnsCSS).not.toContain("activity-timeline-item-in");
