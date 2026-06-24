@@ -387,5 +387,14 @@ button:disabled {
  */
 .rich-content strong,
 .rich-content b {
-  font-weight: normal;
+  /*
+   * Inherit the surrounding paragraph weight rather than hardcoding
+   * `normal` (400). The turn body is `font-weight: 480`, so a hardcoded
+   * `normal` made bold render LIGHTER than the surrounding text — the
+   * opposite of emphasis and visually inconsistent. `inherit` collapses
+   * bold into the surrounding weight, preserving the "no font-weight
+   * emphasis" design while keeping DOM semantics (selection, a11y,
+   * copy-paste) intact.
+   */
+  font-weight: inherit;
 }
