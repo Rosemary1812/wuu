@@ -446,7 +446,7 @@ function EntryRenderer({
     );
   }
   if (item.type === "context_compaction") {
-    return <ContextCompactionNotice text={item.text} />;
+    return <ContextCompactionNotice text={item.text} status={item.status} />;
   }
   if (item.type === "error") {
     return (
@@ -535,7 +535,13 @@ function ProcessClusterRow({
   }
 
   return (
-    <details className={`process-cluster-fold${failed ? " failed" : ""}`}>
+    // Default `open` so tool_call details stay visible after a 2nd
+    // tool_call clusters the entry. Previously the body was collapsed by
+    // default, which folded the per-tool timeline into a hidden section
+    // and read as the tool_call line "disappearing" once the cluster
+    // formed (even though the React subtree remounted cleanly). Users
+    // can still click the summary to collapse manually.
+    <details open className={`process-cluster-fold${failed ? " failed" : ""}`}>
       <summary className={className}>
         {summary}
         <ChevronRight
