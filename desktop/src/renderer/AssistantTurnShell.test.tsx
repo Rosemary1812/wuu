@@ -412,6 +412,26 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(processFoldOpen(container)).toBe(true);
     expect(container.textContent).toContain("streaming unknown");
   });
+
+  it("shows the live process preview only when the process fold is collapsed", () => {
+    const turn = makeTurn("in_progress", [
+      makeCommentary("settled commentary preview"),
+    ]);
+    const { container } = renderShell(turn);
+
+    expect(processFoldOpen(container)).toBe(true);
+    expect(container.textContent).toContain("settled commentary preview");
+    expect(container.querySelector(".turn-process-preview")).toBeNull();
+
+    const toggle = container.querySelector<HTMLElement>(".turn-process-toggle");
+    expect(toggle).not.toBeNull();
+    act(() => {
+      toggle?.click();
+    });
+
+    expect(processFoldOpen(container)).toBe(false);
+    expect(container.querySelector(".turn-process-preview")).not.toBeNull();
+  });
 });
 
 describe("AssistantTurnShell — reasoning fold (rule 3)", () => {

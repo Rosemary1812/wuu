@@ -258,7 +258,8 @@ function TurnProcessFold({
   }, []);
 
   const hasDetails = entries.length > 0;
-  const hasPreview = Boolean(latestPreview);
+  const visiblePreview = expanded ? undefined : latestPreview;
+  const hasPreview = Boolean(visiblePreview);
 
   const toggleContent = (
     <>
@@ -277,13 +278,13 @@ function TurnProcessFold({
       </span>
       {hasPreview ? (
         <span
-          className={`turn-process-preview turn-process-preview-${latestPreview?.kind ?? "process"}${
+          className={`turn-process-preview turn-process-preview-${visiblePreview?.kind ?? "process"}${
             turn.status === "in_progress" ? " is-live" : ""
           }`}
         >
           <span className="turn-process-live-dot" aria-hidden />
           <LightweightStreamingText
-            text={latestPreview?.text ?? ""}
+            text={visiblePreview?.text ?? ""}
             live={turn.status === "in_progress"}
             className="turn-process-preview-text"
           />
