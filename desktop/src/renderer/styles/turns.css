@@ -3477,7 +3477,7 @@
  * Chat messages don't surface Markdown headings as h1-h6 — chat is a
  * linear stream, not a document. A `# foo` reads as a bold paragraph
  * that picks up the surrounding message rhythm, so the eye stays on
- * the conversation column instead of bouncing between 14.5px body
+ * the conversation column instead of bouncing between 14px body
  * text and an 18px heading. `**bold**` still renders as true inline
  * bold for the few cases that genuinely need emphasis.
  */
