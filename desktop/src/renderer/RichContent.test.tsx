@@ -75,4 +75,20 @@ describe("RichContent code block", () => {
     expect(writeTextMock).toHaveBeenCalledTimes(1);
     expect(writeTextMock).toHaveBeenCalledWith("console.log('hi');");
   });
+
+  it("the copy button stays clickable (pointer-events not 'none')", () => {
+    render(<RichContent text={"```typescript\nconst x = 1;\n```"} />);
+
+    const copyButton = container.querySelector(".rich-code-copy") as HTMLElement | null;
+    expect(copyButton).not.toBeNull();
+    // The base .message-copy-button class sets pointer-events: none so the
+    // user-message copy button stays hidden until its parent is hovered.
+    // .rich-code-copy sits on its own (no .user-message-block-with-actions
+    // parent), so it must explicitly opt back in — otherwise real mouse
+    // clicks pass through to the <pre> underneath and the button silently
+    // does nothing. (Programmatic .click() bypasses pointer-events, which
+    // is why the previous test did not catch this regression.)
+    const style = window.getComputedStyle(copyButton as HTMLElement);
+    expect(style.pointerEvents).not.toBe("none");
+  });
 });

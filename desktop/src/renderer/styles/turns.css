@@ -3619,6 +3619,7 @@
   background: none;
   box-shadow: none;
   opacity: 0.5;
+  pointer-events: auto;
   transition:
     color 120ms ease,
     opacity 120ms ease;
