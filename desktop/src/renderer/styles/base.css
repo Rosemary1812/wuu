@@ -372,3 +372,16 @@ button:disabled {
   height: var(--icon-size-xl);
   flex: 0 0 auto;
 }
+
+/*
+ * A message body has no bold. `**bold**`, `<strong>`, and `<b>` all
+ * render at the surrounding paragraph weight, so the only path to
+ * emphasis in a chat turn is structural (inline code, lists, links)
+ * — never weight. This scopes strictly to agent_message, reasoning,
+ * and commentary output; UI chrome (notices, buttons, labels) keeps
+ * its own bold for hierarchy.
+ */
+.rich-content strong,
+.rich-content b {
+  font-weight: normal;
+}
