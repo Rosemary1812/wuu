@@ -355,6 +355,19 @@ type TokenUsage struct {
 	// (prompt_tokens_details.cached_tokens) on models that support
 	// prompt caching.
 	CacheReadTokens int
+	// CacheCreationUnknown is true when the provider's response did not
+	// meaningfully report CacheCreationTokens. Some anthropic-compatible
+	// backends (notably minimax's api.minimaxi.com) omit
+	// cache_creation_input_tokens from their response entirely while
+	// still serving cache_read_input_tokens, so the CacheCreationTokens
+	// value above stays at zero and reads as "wuu didn't create any
+	// cache" in UI even when the provider caches implicitly. Downstream
+	// code should render this as N/A instead of a literal zero so users
+	// don't chase a non-existent regression. The flag is stamped by the
+	// provider client based on endpoint detection; the default value
+	// (false) is correct for native Anthropic endpoints where a zero
+	// CacheCreationTokens means "no cache written this turn".
+	CacheCreationUnknown bool
 }
 
 // PlanStep is one item in an update_plan snapshot.

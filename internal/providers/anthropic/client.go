@@ -64,6 +64,55 @@ type ClientConfig struct {
 	StreamConfig *providers.StreamTransportConfig
 }
 
+// cacheCreationOmittingHostSubstrings lists host fragments whose
+// anthropic-compatible response is known to omit
+// cache_creation_input_tokens. The match is a case-insensitive substring
+// against the full base URL, so prefer the unique host fragment over a
+// broad keyword. Keep this list conservative — a false positive masks a
+// genuine "0 cache created" value behind an N/A flag.
+var cacheCreationOmittingHostSubstrings = []string{
+	// minimax's anthropic-compatible endpoint never returns
+	// cache_creation_input_tokens even when it serves
+	// cache_read_input_tokens. Verified against the production endpoint
+	// 2026-06-24: 664 lines in ~/.wuu/log/debug.log mention minimax, 0
+	// mention cache_creation_input_tokens. Without this stamp the UI
+	// reads CacheCreationTokens=0 as "wuu created no cache" even
+	// though the provider is hitting 90%+ cache_read rate.
+	"api.minimaxi.com",
+}
+
+// isCacheCreationOmittingEndpoint reports whether the configured base
+// URL corresponds to an anthropic-compatible backend whose response
+// omits cache_creation_input_tokens. Callers stamp the result onto
+// providers.TokenUsage.CacheCreationUnknown so downstream UI can render
+// the value as N/A instead of a literal zero.
+func isCacheCreationOmittingEndpoint(baseURL string) bool {
+	u := strings.ToLower(strings.TrimSpace(baseURL))
+	if u == "" {
+		return false
+	}
+	for _, frag := range cacheCreationOmittingHostSubstrings {
+		if strings.Contains(u, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+// stampCacheCreationFlag sets CacheCreationUnknown on usage when the
+// configured endpoint is known to omit the cache_creation field.
+// Callers should invoke this once after the final usage values are
+// populated, before constructing a StreamEvent or returning a
+// non-streaming response. Safe to call repeatedly.
+func (c *Client) stampCacheCreationFlag(usage *providers.TokenUsage) {
+	if usage == nil {
+		return
+	}
+	if isCacheCreationOmittingEndpoint(c.baseURL) {
+		usage.CacheCreationUnknown = true
+	}
+}
+
 // Client sends tool-enabled chat requests to Anthropic APIs.
 type Client struct {
 	baseURL      string
@@ -203,6 +252,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 			CacheCreationTokens: parsed.Usage.CacheCreationTokens,
 			CacheReadTokens:     parsed.Usage.CacheReadTokens,
 		}
+		c.stampCacheCreationFlag(resp.Usage)
 	}
 	return resp, nil
 }
@@ -875,6 +925,7 @@ func (c *Client) handleSSEEvent(
 			usage.InputTokens = p.Message.Usage.InputTokens
 			usage.CacheCreationTokens = p.Message.Usage.CacheCreationTokens
 			usage.CacheReadTokens = p.Message.Usage.CacheReadTokens
+			c.stampCacheCreationFlag(usage)
 		}
 	case "content_block_start":
 		var p contentBlockStartPayload
@@ -955,7 +1006,7 @@ func (c *Client) handleSSEEvent(
 				usageUpdated = true
 			}
 			if usageUpdated {
-				ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens}}
+				ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown}}
 			}
 			if p.Delta.StopReason != "" {
 				*stopReason = strings.ToLower(p.Delta.StopReason)
@@ -968,7 +1019,7 @@ func (c *Client) handleSSEEvent(
 		truncated := *stopReason == "max_tokens"
 		ch <- providers.StreamEvent{
 			Type:         providers.EventDone,
-			Usage:        &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens},
+			Usage:        &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown},
 			StopReason:   *stopReason,
 			FinishReason: providers.NormalizeFinishReason(*stopReason, truncated, false),
 			Truncated:    truncated,

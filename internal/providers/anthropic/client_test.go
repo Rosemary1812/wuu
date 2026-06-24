@@ -1847,3 +1847,68 @@ func TestStreamChat_RejectsInvalidMessageSequenceBeforeRequest(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestIsCacheCreationOmittingEndpoint(t *testing.T) {
+	cases := []struct {
+		name    string
+		baseURL string
+		want    bool
+	}{
+		{"minimax production endpoint", "https://api.minimaxi.com/anthropic", true},
+		{"minimax with trailing slash", "https://api.minimaxi.com/anthropic/", true},
+		{"minimax case insensitive", "https://API.MINIMAXI.COM/anthropic", true},
+		{"anthropic native", "https://api.anthropic.com", false},
+		{"anthropic staging", "https://api-staging.anthropic.com", false},
+		{"empty", "", false},
+		{"localhost", "http://localhost:8080", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCacheCreationOmittingEndpoint(tc.baseURL); got != tc.want {
+				t.Errorf("isCacheCreationOmittingEndpoint(%q) = %v, want %v", tc.baseURL, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStampCacheCreationFlag(t *testing.T) {
+	t.Run("minimax endpoint forces unknown", func(t *testing.T) {
+		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+		usage := &providers.TokenUsage{CacheCreationTokens: 12345}
+		client.stampCacheCreationFlag(usage)
+		if !usage.CacheCreationUnknown {
+			t.Errorf("expected CacheCreationUnknown=true for minimax endpoint, got false (CacheCreationTokens=%d)", usage.CacheCreationTokens)
+		}
+	})
+	t.Run("minimax forces unknown even when field present in payload", func(t *testing.T) {
+		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+		usage := &providers.TokenUsage{CacheCreationTokens: 0}
+		usage.CacheCreationUnknown = false
+		client.stampCacheCreationFlag(usage)
+		if !usage.CacheCreationUnknown {
+			t.Error("expected stamp to override false to true for minimax endpoint")
+		}
+	})
+	t.Run("anthropic native leaves flag at default", func(t *testing.T) {
+		client := &Client{baseURL: "https://api.anthropic.com"}
+		usage := &providers.TokenUsage{CacheCreationTokens: 12345}
+		client.stampCacheCreationFlag(usage)
+		if usage.CacheCreationUnknown {
+			t.Error("expected CacheCreationUnknown=false for native anthropic endpoint")
+		}
+	})
+	t.Run("nil usage does not panic", func(t *testing.T) {
+		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+		client.stampCacheCreationFlag(nil)
+	})
+	t.Run("repeated stamps are idempotent", func(t *testing.T) {
+		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+		usage := &providers.TokenUsage{}
+		client.stampCacheCreationFlag(usage)
+		client.stampCacheCreationFlag(usage)
+		client.stampCacheCreationFlag(usage)
+		if !usage.CacheCreationUnknown {
+			t.Error("expected flag to remain true after repeated stamps")
+		}
+	})
+}
