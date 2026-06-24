@@ -3657,13 +3657,20 @@
   color: var(--danger);
 }
 
+/*
+ * Notion-style inline table.
+ *
+ * No outer card frame, no vertical borders, no zebra stripes. The
+ * only structure is a thin hairline between rows; the header gets a
+ * slightly stronger bottom hairline and a muted text color so it
+ * reads as a label without relying on font weight (chat messages
+ * strip weight emphasis — see base.css `.rich-content strong`).
+ * A soft row hover tint helps scanning long tables.
+ */
 .rich-table-wrap {
   max-width: 100%;
   margin: 8px 0;
   overflow: auto;
-  background: var(--paper);
-  border: 1px solid var(--ink-overlay-6);
-  border-radius: var(--radius-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3676,19 +3683,29 @@
 
 .rich-table-wrap th,
 .rich-table-wrap td {
-  padding: 8px 14px;
+  padding: 10px 14px;
   text-align: left;
   vertical-align: top;
-  border: 1px solid var(--ink-overlay-6);
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
 }
 
-.rich-table-wrap th {
-  background: var(--surface-1);
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
+.rich-table-wrap thead th {
+  color: var(--ink-soft);
+  border-bottom-color: var(--hairline-strong);
 }
 
-.rich-table-wrap tbody tr:nth-child(even) td {
+/* Drop the bottom border on the final row so the table breathes. */
+.rich-table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Soft row hover for scanning long tables. */
+.rich-table-wrap tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.rich-table-wrap tbody tr:hover td {
   background: var(--surface-1);
 }
 
