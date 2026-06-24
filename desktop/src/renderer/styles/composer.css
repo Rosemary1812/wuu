@@ -58,9 +58,8 @@
   margin: 0 auto;
 }
 
-.hero-composer-wrap .composer-stack {
-  width: 100%;
-}
+/* Hero (welcome) composer inherits the same dialog width as the dock composer
+   so the input box stays the same width whether or not a turn has been sent. */
 
 .composer-shell {
   position: relative;
