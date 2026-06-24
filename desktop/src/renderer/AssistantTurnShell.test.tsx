@@ -460,7 +460,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
 
     const clusters = processClusterFolds(container);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].hasAttribute("open")).toBe(true);
+    expect(clusters[0].hasAttribute("open")).toBe(false);
     const row = clusters[0].querySelector(".process-cluster-row");
     expect(row?.classList.contains("is-streaming")).toBe(true);
     const label = clusters[0].querySelector(".process-cluster-reasoning-label");
@@ -520,7 +520,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(reasoningFolds(container)).toHaveLength(0);
     const clusters = processClusterFolds(container);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].hasAttribute("open")).toBe(true);
+    expect(clusters[0].hasAttribute("open")).toBe(false);
     expect(clusters[0].textContent).toContain("思考过程");
   });
 
