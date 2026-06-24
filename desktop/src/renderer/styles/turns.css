@@ -5,6 +5,7 @@
   flex-direction: column;
   gap: var(--conversation-turn-gap);
   font-family: var(--conversation-message-font-family);
+  font-weight: 480;
   margin-bottom: 48px;
 }
 
@@ -195,7 +196,8 @@
 .turn-process-entry-commentary {
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
-  font-weight: 400;
+  /* inherit from .turn so commentary tracks the message weight tuning */
+  font-weight: inherit;
   line-height: var(--conversation-prose-line-height);
 }
 
@@ -2915,7 +2917,8 @@
 .turn-process-entry-commentary {
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
-  font-weight: 400;
+  /* inherit from .turn so commentary tracks the message weight tuning */
+  font-weight: inherit;
   line-height: var(--conversation-prose-line-height);
 }
 
