@@ -30,40 +30,22 @@ const REASONING_FOLD_OPEN_SNAP_DELAY_MS = 280;
 /**
  * Unified render surface for the process region of a single turn.
  *
- * Motivation (the "process cluster flicker"): the prior architecture
- * dispatched a single in-flight tool call to <ToolActivityTimeline> and
- * the moment a second process item arrived to a brand-new
- * <ProcessClusterRow>. The two components share no DOM, so React
- * unmounted the first card and remounted a fresh cluster on a single
- * frame. The new cluster mounted with `is-streaming` instantly flipping
- * the text to `color: transparent` + `background-clip: text`, which
- * read as a one-frame flicker before the shimmer gradient sweep
- * "re-illuminated" the glyphs.
- *
- * ProcessSurface fixes the unmount/remount by owning the entire
- * process-region lifecycle. From the first tool call to the final
- * settled state, the caller passes a flat `processItems` list and a
- * `streaming` flag; the surface decides internally whether to render a
- * flat row (single tool) or a fold (multiple items, reasoning, or
- * both). The same React component instance is reused across every
- * transition, so React never has to swap DOM trees.
- *
- * The shimmer pattern (an overlay element rather than
- * `color: transparent`) is wired in via the `is-streaming` class on
- * the row. Commit 4 of the redesign adds the matching CSS; the class
- * names below are stable so the CSS pass is independent.
+ * The caller passes every process item for the current group as a flat
+ * list. This component keeps one root node across single-tool,
+ * multi-tool, reasoning, streaming, and settled states, so the visible
+ * gray process row does not remount when the group changes shape.
  */
 type ProcessSurfaceProps = {
   /**
    * Flat list of every process-region item for this turn. Order is the
    * wire order. The surface filters by type internally; the caller does
-   * not have to pre-cluster.
+   * not have to split tools from reasoning first.
    */
   processItems: ThreadItem[];
   /**
    * True while any process item is still receiving deltas. Drives the
-   * shimmer overlay and the auto-expand-while-running transition. The
-   * caller flips this atomically with `turn.status`.
+   * shimmer overlay while the fold stays compact until the user opens it.
+   * The caller flips this atomically with `turn.status`.
    */
   streaming: boolean;
   /**
@@ -110,34 +92,34 @@ export function ProcessSurface({
     streaming &&
     reasoningItems.some((item) => item.status === "in_progress");
 
-  // Expand/collapse state. While streaming, the fold auto-opens so the
-  // user can see what is running. Once the user clicks the summary we
-  // stop auto-controlling their choice for the rest of the surface's
-  // lifetime. Initial value matches streaming, so the first render
-  // already reflects the auto-expand decision without an extra
-  // setState round-trip.
-  const [expanded, setExpanded] = useState(streaming && hasDetails);
-  const userInteractedRef = useRef(false);
+  // Details are opt-in. The running row itself should stay compact by
+  // default; expanding it is a user request to inspect the process trail.
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (!hasDetails) {
       setExpanded(false);
-      return;
     }
-    if (!userInteractedRef.current) {
-      // No user interaction yet — keep the fold in sync with streaming.
-      setExpanded(streaming);
-    }
-  }, [streaming, hasDetails]);
+  }, [hasDetails]);
 
   const handleToggle = (
     event: SyntheticEvent<HTMLDetailsElement>,
   ): void => {
-    userInteractedRef.current = true;
+    if (!hasDetails) {
+      event.currentTarget.open = false;
+      setExpanded(false);
+      return;
+    }
     const open = event.currentTarget.open;
     setExpanded(open);
     if (open) {
       onRequestLatest?.();
+    }
+  };
+
+  const handleSummaryClick = (event: SyntheticEvent<HTMLElement>): void => {
+    if (!hasDetails) {
+      event.preventDefault();
     }
   };
 
@@ -184,61 +166,57 @@ export function ProcessSurface({
       </div>
     ) : null;
 
-  if (!hasDetails) {
-    // Single tool call with no reasoning: no fold needed, render the
-    // summary inline. There is no expandable body, so a native <details>
-    // would just add an inert disclosure triangle. The root <div
-    // class="process-surface"> is the stable identity that survives the
-    // 1-tool → 2-tool transition above.
-    return (
-      <div className={className}>
-        <article className="process-surface-inline">{summaryLine}</article>
-      </div>
-    );
-  }
-
   return (
     <div className={className}>
       <details
-        className={`process-surface-fold${expanded ? " expanded" : " collapsed"}${
+        className={`process-surface-fold${hasDetails ? " has-details" : " no-details"}${
+          expanded ? " expanded" : " collapsed"
+        }${
           failed ? " failed" : ""
         }`}
-        open={expanded}
+        open={hasDetails && expanded}
         onToggle={handleToggle}
       >
         <summary
           className={`process-surface-row${streaming ? " is-streaming" : ""}${
             failed ? " failed" : ""
           }`}
+          onClick={handleSummaryClick}
         >
           {summaryLine}
-          <ChevronRight
-            className="process-surface-chevron icon-xs"
-            aria-hidden
-          />
+          {hasDetails ? (
+            <ChevronRight
+              className="process-surface-chevron icon-xs"
+              aria-hidden
+            />
+          ) : null}
         </summary>
-        {errorBlock}
-        <div className="process-surface-body">
-          {hasMultipleTools ? (
-            <div className="process-surface-tool-list">
-              <ToolActivityTimeline
-                items={toolItems}
-                revealItems={streaming}
-                streaming={streaming}
-              />
+        {hasDetails ? (
+          <>
+            {errorBlock}
+            <div className="process-surface-body">
+              {hasMultipleTools ? (
+                <div className="process-surface-tool-list">
+                  <ToolActivityTimeline
+                    items={toolItems}
+                    revealItems={streaming}
+                    streaming={streaming}
+                  />
+                </div>
+              ) : null}
+              {hasReasoning && renderReasoningItem ? (
+                <div className="process-surface-reasoning-list">
+                  <ProcessSurfaceReasoningScroll
+                    items={reasoningItems}
+                    streaming={streaming}
+                    renderReasoningItem={renderReasoningItem}
+                    foldOpen={expanded}
+                  />
+                </div>
+              ) : null}
             </div>
-          ) : null}
-          {hasReasoning && renderReasoningItem ? (
-            <div className="process-surface-reasoning-list">
-              <ProcessSurfaceReasoningScroll
-                items={reasoningItems}
-                streaming={streaming}
-                renderReasoningItem={renderReasoningItem}
-                foldOpen={expanded}
-              />
-            </div>
-          ) : null}
-        </div>
+          </>
+        ) : null}
       </details>
     </div>
   );
@@ -308,17 +286,8 @@ function ProcessSurfaceAnimatedCount({
  * the user has scrolled up to read earlier reasoning, in which case
  * we leave their scroll position alone.
  *
- * Extracted from the standalone `ReasoningFold` so the same
- * scroll-to-bottom behavior is available wherever reasoning appears —
- * including inside the process cluster, where the reasoning used to
- * render as plain streaming markdown with no scroll affordance.
- *
- * Lifted out so the parent `ProcessSurface` can keep one stable
- * component identity across "reasoning alone" and "reasoning + tools"
- * transitions; the cluster-flicker fix depends on the wrapper not
- * remounting when items arrive, which this component enables by
- * handling item growth internally instead of being unmounted in
- * favor of a sibling component.
+ * Shared by grouped reasoning/tool rows so the parent ProcessSurface
+ * keeps one stable component identity while the reasoning content grows.
  */
 function ProcessSurfaceReasoningScroll({
   items,

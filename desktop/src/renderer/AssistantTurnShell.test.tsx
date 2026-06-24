@@ -510,13 +510,10 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(reasoningSummaryText(folds[0])).toBe("正在思考");
   });
 
-  it("marks a live process cluster as actively thinking", () => {
-    // Consecutive reasoning items collapse into one process cluster, and
-    // the whole row sweeps once it's running — the gradient is sized to
-    // the row itself, so a single bright stop moves from the first tool
-    // segment across the separators, the thinking label, and the chevron
-    // area as one continuous bar. The individual reasoning records live
-    // inside the expandable body.
+  it("marks a live process group as actively thinking", () => {
+    // Consecutive reasoning items render as one process surface, and
+    // the compact row sweeps once it's running. The individual reasoning
+    // records stay behind an explicit user-opened body.
     const settledA = makeReasoning("earlier deliberation, finished");
     const settledB = makeReasoning("next deliberation, finished");
     const streamingNow = makeStreamingReasoning("thinking right now");
@@ -528,12 +525,12 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     ]);
     const { container } = renderShell(turn);
 
-    const clusters = processSurfaceFolds(container);
-    expect(clusters).toHaveLength(1);
-    expect(clusters[0].hasAttribute("open")).toBe(true);
-    const row = clusters[0].querySelector(".process-surface-row");
+    const groups = processSurfaceFolds(container);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hasAttribute("open")).toBe(false);
+    const row = groups[0].querySelector(".process-surface-row");
     expect(row?.classList.contains("is-streaming")).toBe(true);
-    const label = clusters[0].querySelector(".process-surface-reasoning-label");
+    const label = groups[0].querySelector(".process-surface-reasoning-label");
     expect(label?.textContent).toBe("正在思考");
   });
 
@@ -616,7 +613,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(latestRequests).toBeGreaterThan(0);
   });
 
-  it("groups consecutive reasoning records into one process cluster", () => {
+  it("groups consecutive reasoning records into one process surface", () => {
     // Multi-segment reasoning is a single top-level process row. The
     // user can expand that row to read the underlying reasoning trail.
     const turn = makeTurn("completed", [
@@ -627,13 +624,13 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     const { container } = renderShell(turn);
 
     expect(reasoningFolds(container)).toHaveLength(0);
-    const clusters = processSurfaceFolds(container);
-    expect(clusters).toHaveLength(1);
-    expect(clusters[0].hasAttribute("open")).toBe(false);
-    expect(clusters[0].textContent).toContain("思考过程");
+    const groups = processSurfaceFolds(container);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hasAttribute("open")).toBe(false);
+    expect(groups[0].textContent).toContain("思考过程");
   });
 
-  it("treats opening a process cluster as a request for the latest output", () => {
+  it("treats opening a process surface as a request for the latest output", () => {
     const turn = makeTurn("completed", [
       makeReasoning("step one"),
       makeReasoning("step two"),
@@ -645,11 +642,11 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
         latestRequests += 1;
       },
     });
-    const cluster = processSurfaceFolds(container)[0];
+    const group = processSurfaceFolds(container)[0];
 
     act(() => {
-      cluster.open = true;
-      cluster.dispatchEvent(new Event("toggle", { bubbles: true }));
+      group.open = true;
+      group.dispatchEvent(new Event("toggle", { bubbles: true }));
     });
 
     expect(latestRequests).toBe(1);
@@ -670,10 +667,10 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(true);
-    const clusters = processSurfaceRows(container);
-    expect(clusters).toHaveLength(1);
-    expect(clusters[0].textContent).toContain("搜索");
-    expect(clusters[0].textContent).toContain("正在思考");
+    const groups = processSurfaceRows(container);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].textContent).toContain("搜索");
+    expect(groups[0].textContent).toContain("正在思考");
     const folds = reasoningFolds(container);
     expect(folds).toHaveLength(1);
     expect(reasoningSummaryText(folds[0])).toBe("正在思考");
@@ -685,7 +682,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
         ),
       ),
     ).toEqual([
-      "turn-process-entry-process_cluster",
+      "turn-process-entry-process_group",
       "turn-process-entry-commentary",
       "turn-process-entry-process",
     ]);
@@ -693,7 +690,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(container.textContent).toContain("found the file");
   });
 
-  it("keeps one process surface when a post-commentary tool row grows into a cluster", () => {
+  it("keeps one process surface when a post-commentary tool row grows into a group", () => {
     const commentary = makeCommentary("finished commentary");
     const tool: ThreadItem = {
       ...makeReadFileTool("src/App.tsx"),
@@ -727,13 +724,13 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     ]);
     const { container } = renderShell(turn);
 
-    const clusters = container.querySelectorAll(".process-surface-fold");
-    expect(clusters).toHaveLength(1);
-    expect(clusters[0].querySelector(".process-surface-count")?.textContent).toBe(
+    const groups = container.querySelectorAll(".process-surface-fold");
+    expect(groups).toHaveLength(1);
+    expect(groups[0].querySelector(".process-surface-count")?.textContent).toBe(
       "2",
     );
-    expect(clusters[0].textContent).toContain("查看 2 个文件");
-    expect(clusters[0].querySelectorAll(".activity-group")).toHaveLength(2);
+    expect(groups[0].textContent).toContain("查看 2 个文件");
+    expect(groups[0].querySelectorAll(".activity-group")).toHaveLength(2);
   });
 
   it("snaps the reasoning scroll container to the bottom when the fold opens", async () => {

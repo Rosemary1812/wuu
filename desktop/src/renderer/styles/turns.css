@@ -3274,12 +3274,10 @@
 
 .process-surface,
 .process-surface-fold,
-.process-surface-inline,
 .process-surface-row {
   min-width: 0;
 }
 
-.process-surface-inline,
 .process-surface-row {
   display: inline-flex;
   max-width: 100%;
@@ -3357,7 +3355,6 @@
   animation: process-surface-count-jump 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.process-surface.is-streaming.no-details .process-surface-inline,
 .process-surface-row.is-streaming,
 .turn-reasoning-summary-text.is-streaming {
   position: relative;
@@ -3365,7 +3362,6 @@
   overflow: hidden;
 }
 
-.process-surface.is-streaming.no-details .process-surface-inline::after,
 .process-surface-row.is-streaming::after,
 .turn-reasoning-summary-text.is-streaming::after {
   content: "";
@@ -3396,7 +3392,6 @@
     animation: none;
   }
 
-  .process-surface.is-streaming.no-details .process-surface-inline::after,
   .process-surface-row.is-streaming::after,
   .turn-reasoning-summary-text.is-streaming::after {
     animation: none;
@@ -3404,9 +3399,17 @@
   }
 }
 
-.process-surface.failed .process-surface-inline,
 .process-surface-row.failed {
   color: var(--danger);
+}
+
+.process-surface-fold.no-details > .process-surface-row {
+  cursor: default;
+}
+
+.process-surface-fold.no-details > .process-surface-row:hover,
+.process-surface-fold.no-details > .process-surface-row:focus-visible {
+  text-decoration: none;
 }
 
 .process-surface-chevron {

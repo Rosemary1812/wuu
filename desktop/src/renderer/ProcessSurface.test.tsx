@@ -2,12 +2,9 @@
  * Tests for `ProcessSurface`.
  *
  * The headline assertion of this file is "same DOM node from first tool
- * call to final settle". The old architecture unmounted
- * <ToolActivityTimeline> and remounted a brand-new <ProcessClusterRow>
- * the moment the cluster condition became true, which read as a single-
- * frame visual jump (the "process cluster flicker"). ProcessSurface
- * owns the entire 1 → N → settled lifecycle in a single component, so
- * the assertion below is the regression guard for that fix.
+ * call to final settle". ProcessSurface owns the entire 1 → N → settled
+ * lifecycle in a single component, so the assertion below guards the
+ * gray process row against remounting mid-stream.
  */
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -99,6 +96,17 @@ function unmount(): void {
   }
 }
 
+function setProcessFoldOpen(
+  details: HTMLDetailsElement | null,
+  open: boolean,
+): void {
+  act(() => {
+    if (!details) return;
+    details.open = open;
+    details.dispatchEvent(new Event("toggle", { bubbles: true }));
+  });
+}
+
 afterEach(() => {
   unmount();
 });
@@ -110,7 +118,9 @@ describe("ProcessSurface", () => {
       streaming: true,
     });
     const surfaceBefore = initialContainer.querySelector(".process-surface");
+    const rowBefore = initialContainer.querySelector(".process-surface-row");
     expect(surfaceBefore).toBeTruthy();
+    expect(rowBefore).toBeTruthy();
 
     rerender({
       processItems: [
@@ -120,27 +130,33 @@ describe("ProcessSurface", () => {
       streaming: true,
     });
     const surfaceAfter = initialContainer.querySelector(".process-surface");
+    const rowAfter = initialContainer.querySelector(".process-surface-row");
 
     // Same DOM node, not just same selector — proves React reused the
-    // component instance instead of unmounting and remounting. This is
-    // the regression guard for the cluster flicker.
+    // component instance instead of unmounting and remounting.
     expect(surfaceAfter).toBe(surfaceBefore);
+    expect(rowAfter).toBe(rowBefore);
   });
 
-  it("renders a flat article for a single in-progress tool with no fold", () => {
+  it("renders one compact row for a single in-progress tool with no body", () => {
     const { container } = render({
       processItems: [makeReadFile("tool-1", "a.ts", "in_progress")],
       streaming: true,
     });
-    expect(container.querySelector("details.process-surface-fold")).toBeNull();
+    const details = container.querySelector("details.process-surface-fold");
+    expect(details).toBeTruthy();
+    expect(details?.classList.contains("no-details")).toBe(true);
+    expect(details?.hasAttribute("open")).toBe(false);
+    expect(container.querySelector(".process-surface-body")).toBeNull();
     const surface = container.querySelector("div.process-surface");
     expect(surface).toBeTruthy();
     expect(surface?.classList.contains("is-streaming")).toBe(true);
-    const article = container.querySelector("article.process-surface-inline");
-    expect(article).toBeTruthy();
+    const row = container.querySelector(".process-surface-row");
+    expect(row).toBeTruthy();
+    expect(container.querySelector(".process-surface-chevron")).toBeNull();
   });
 
-  it("opens a fold when there are multiple tools", () => {
+  it("renders a collapsed fold when there are multiple tools", () => {
     const { container } = render({
       processItems: [
         makeReadFile("tool-1", "a.ts", "completed"),
@@ -150,7 +166,7 @@ describe("ProcessSurface", () => {
     });
     const details = container.querySelector("details.process-surface-fold");
     expect(details).toBeTruthy();
-    expect(details?.hasAttribute("open")).toBe(true);
+    expect(details?.hasAttribute("open")).toBe(false);
   });
 
   it("applies is-streaming class on the row while the surface is streaming", () => {
@@ -177,7 +193,7 @@ describe("ProcessSurface", () => {
     expect(row?.classList.contains("is-streaming")).toBe(false);
   });
 
-  it("auto-expands the fold when streaming starts and the user has not interacted", () => {
+  it("keeps the fold collapsed when streaming starts", () => {
     const { container } = render({
       processItems: [
         makeReadFile("tool-1", "a.ts", "completed"),
@@ -200,7 +216,7 @@ describe("ProcessSurface", () => {
     const detailsAfter = container.querySelector(
       "details.process-surface-fold",
     );
-    expect(detailsAfter?.hasAttribute("open")).toBe(true);
+    expect(detailsAfter?.hasAttribute("open")).toBe(false);
   });
 
   it("renders the reasoning summary segment with '思考过程' when settled", () => {
@@ -242,15 +258,11 @@ describe("ProcessSurface", () => {
     const details = container.querySelector(
       "details.process-surface-fold",
     ) as HTMLDetailsElement | null;
-    expect(details?.open).toBe(true);
-
-    // User clicks the summary to collapse.
-    act(() => {
-      if (!details) return;
-      details.open = false;
-      details.dispatchEvent(new Event("toggle"));
-    });
     expect(details?.open).toBe(false);
+
+    // User clicks the summary to expand.
+    setProcessFoldOpen(details, true);
+    expect(details?.open).toBe(true);
 
     // Streaming flips off; the fold should NOT auto-reopen or
     // auto-collapse, because the user has interacted.
@@ -264,7 +276,7 @@ describe("ProcessSurface", () => {
     const detailsAfter = container.querySelector(
       "details.process-surface-fold",
     ) as HTMLDetailsElement | null;
-    expect(detailsAfter?.open).toBe(false);
+    expect(detailsAfter?.open).toBe(true);
   });
 
   it("renders a count segment for multiple files of the same kind", () => {
@@ -414,15 +426,12 @@ describe("ProcessSurface", () => {
     it("snaps the reasoning scroll container to the bottom when the fold opens", async () => {
       const { container } = render({
         processItems: [makeReasoning("reason-1", "thinking aloud", "completed")],
-        // streaming=true auto-opens the fold, which is the production
-        // entry path: the user sees the reasoning scroll snap to its
-        // tail the moment the surface mounts in its expanded state.
         streaming: true,
         renderReasoningItem: (item) => <span>{item.id}</span>,
       });
       const details = container.querySelector(
         "details.process-surface-fold",
-      ) as HTMLElement | null;
+      ) as HTMLDetailsElement | null;
       expect(details).toBeTruthy();
       const scroll = details?.querySelector(
         ".process-surface-reasoning-scroll",
@@ -436,7 +445,9 @@ describe("ProcessSurface", () => {
         clientHeight: 200,
       });
 
-      // The fold-open snap fires ~280ms after mount. Wait it out.
+      setProcessFoldOpen(details, true);
+
+      // The fold-open snap fires ~280ms after opening. Wait it out.
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 320));
       });
@@ -461,7 +472,8 @@ describe("ProcessSurface", () => {
         clientHeight: 200,
       });
 
-      // First snap (initial open).
+      // First snap.
+      setProcessFoldOpen(details, true);
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 320));
       });
@@ -479,14 +491,8 @@ describe("ProcessSurface", () => {
       // User collapses then re-expands the fold; the scroll should
       // snap back to the latest reasoning so they land on it instead
       // of where they were when they collapsed.
-      details!.open = false;
-      act(() => {
-        details!.dispatchEvent(new Event("toggle", { bubbles: true }));
-      });
-      details!.open = true;
-      act(() => {
-        details!.dispatchEvent(new Event("toggle", { bubbles: true }));
-      });
+      setProcessFoldOpen(details, false);
+      setProcessFoldOpen(details, true);
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 320));
       });

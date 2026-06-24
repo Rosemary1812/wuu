@@ -40,7 +40,7 @@ export type TurnEntryKind =
   | "answer"
   | "activity"
   | "process"
-  | "process_cluster";
+  | "process_group";
 
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
@@ -218,15 +218,15 @@ export function buildAssistantTurnDisplay(
   }
 
   return {
-    entries: clusterProcessEntries(entries),
+    entries: groupProcessEntries(entries),
     hasAnswer,
     missingReplyMessage,
     latestProcessPreview,
   };
 }
 
-function clusterProcessEntries(entries: TurnEntry[]): TurnEntry[] {
-  const clustered: TurnEntry[] = [];
+function groupProcessEntries(entries: TurnEntry[]): TurnEntry[] {
+  const grouped: TurnEntry[] = [];
   let pending: TurnEntry[] = [];
 
   const flushPending = (): void => {
@@ -235,40 +235,40 @@ function clusterProcessEntries(entries: TurnEntry[]): TurnEntry[] {
     }
     const items = pending.flatMap((entry) => entry.items ?? [entry.item]);
     const hasActivity = pending.some((entry) => entry.kind === "activity");
-    const shouldCluster =
+    const shouldGroup =
       items.length > 1 && (hasActivity || pending.length > 1);
-    if (!shouldCluster) {
-      clustered.push(...pending);
+    if (!shouldGroup) {
+      grouped.push(...pending);
       pending = [];
       return;
     }
     const first = pending[0];
-    clustered.push({
+    grouped.push({
       key: first.key,
       item: first.item,
       items,
       position: "process",
       settled: pending.every((entry) => entry.settled),
       streaming: pending.some((entry) => entry.streaming),
-      kind: "process_cluster",
+      kind: "process_group",
       count: items.length,
     });
     pending = [];
   };
 
   for (const entry of entries) {
-    if (isProcessClusterCandidate(entry)) {
+    if (isProcessGroupCandidate(entry)) {
       pending.push(entry);
       continue;
     }
     flushPending();
-    clustered.push(entry);
+    grouped.push(entry);
   }
   flushPending();
-  return clustered;
+  return grouped;
 }
 
-function isProcessClusterCandidate(entry: TurnEntry): boolean {
+function isProcessGroupCandidate(entry: TurnEntry): boolean {
   if (entry.position !== "process") {
     return false;
   }

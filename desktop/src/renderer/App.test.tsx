@@ -217,7 +217,7 @@ describe("assistant turn entries layout", () => {
     const toolA = makeToolCall("read_file");
     const toolB = makeToolCall("grep");
 
-    // in_progress: adjacent tool activity is one process cluster with count=2.
+    // in_progress: adjacent tool activity is one process group with count=2.
     const inProgressTurn = makeTurn({
       status: "in_progress",
       items: [toolA, toolB],
@@ -230,7 +230,7 @@ describe("assistant turn entries layout", () => {
     expect(inProgressDisplay).toBeDefined();
     expect(answerItemIDs(inProgressDisplay)).toEqual([]);
     const processEntries = inProgressDisplay?.entries.filter(
-      (e) => e.kind === "process_cluster",
+      (e) => e.kind === "process_group",
     );
     expect(processEntries).toHaveLength(1);
     expect(processEntries?.[0]?.count).toBe(2);
@@ -257,7 +257,7 @@ describe("assistant turn entries layout", () => {
     expect(completedDisplay).toBeDefined();
     expect(answerItemIDs(completedDisplay)).toEqual([]);
     const completedProcess = completedDisplay?.entries.filter(
-      (e) => e.kind === "process_cluster",
+      (e) => e.kind === "process_group",
     );
     expect(completedProcess).toHaveLength(1);
     expect(completedProcess?.[0]?.count).toBe(2);

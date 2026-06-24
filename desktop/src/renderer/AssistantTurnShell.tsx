@@ -386,7 +386,7 @@ function EntryRenderer({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
-  if (kind === "activity" || kind === "process_cluster") {
+  if (kind === "activity" || kind === "process_group") {
     return (
       <ProcessSurface
         processItems={entry.items ?? [item]}
