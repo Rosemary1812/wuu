@@ -3544,7 +3544,7 @@
   color: var(--ink);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.92em;
-  padding: 1px 6px;
+  padding: 2px 6px;
   line-height: 1.45;
   white-space: break-spaces;
   vertical-align: 1px;
@@ -3717,7 +3717,7 @@
                                                                   
   border-left: 2px solid var(--ink-overlay-18);
   color: #596067;
-  padding: 2px 0 2px 12px;
+  padding: 2px 0 2px 16px;
 }
 
 .rich-rule {
@@ -3725,7 +3725,7 @@
   height: 1px;
   border: 0;
   background: #e4e5e1;
-  margin: 4px 0;
+  margin: 8px 0;
 }
 
 .rich-mermaid {

@@ -25,7 +25,7 @@
     "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
   --conversation-prose-line-height: 1.9;
-  --conversation-prose-block-gap: 10px;
+  --conversation-prose-block-gap: 12px;
   --conversation-message-element-gap: 10px;
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 2;
