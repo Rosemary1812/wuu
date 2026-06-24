@@ -17,6 +17,19 @@ import type { ConversationPaneID } from "./AppState";
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 16;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
 
+type ConversationScrollSnapshot = {
+  scrollTop: number;
+  autoFollow: boolean;
+};
+
+function maxScrollTop(node: HTMLElement): number {
+  return Math.max(0, node.scrollHeight - node.clientHeight);
+}
+
+function clampScrollTop(node: HTMLElement, top: number): number {
+  return Math.max(0, Math.min(top, maxScrollTop(node)));
+}
+
 export function useConversationScrollState({
   activeThreadID,
   activePane,
@@ -84,6 +97,10 @@ export function useConversationScrollState({
     }
   }, []);
   const lastConversationScrollTopRef = useRef(0);
+  const programmaticScrollTopRef = useRef<number | undefined>(undefined);
+  const threadScrollSnapshotsRef = useRef(
+    new Map<string, ConversationScrollSnapshot>()
+  );
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
 
@@ -112,25 +129,66 @@ export function useConversationScrollState({
     }, CONVERSATION_SCROLLBAR_HIDE_DELAY_MS);
   }
 
+  function rememberThreadScrollSnapshot(
+    threadID: string,
+    node: HTMLElement,
+    autoFollow: boolean
+  ): void {
+    threadScrollSnapshotsRef.current.set(threadID, {
+      scrollTop: clampScrollTop(node, node.scrollTop),
+      autoFollow: node.scrollHeight <= node.clientHeight ? true : autoFollow
+    });
+  }
+
+  function rememberActiveThreadScrollSnapshot(
+    node: HTMLElement,
+    autoFollow: boolean
+  ): void {
+    if (!activeThreadID) {
+      return;
+    }
+    rememberThreadScrollSnapshot(activeThreadID, node, autoFollow);
+  }
+
+  function applyProgrammaticScroll(
+    node: HTMLElement,
+    top: number,
+    autoFollow: boolean,
+    options: { revealScrollbar?: boolean } = {}
+  ): void {
+    node.scrollTop = top;
+    const actualTop = clampScrollTop(node, node.scrollTop);
+    if (Math.abs(node.scrollTop - actualTop) > 1) {
+      node.scrollTop = actualTop;
+    }
+    programmaticScrollTopRef.current = actualTop;
+    lastConversationScrollTopRef.current = actualTop;
+    const nextAutoFollow =
+      node.scrollHeight <= node.clientHeight ? true : autoFollow;
+    setAutoFollow(nextAutoFollow);
+    rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
+    if (options.revealScrollbar) {
+      showConversationScrollbar(node);
+    }
+  }
+
   const scrollConversationToBottom = useCallback(
     (options: { force?: boolean } = {}): void => {
       const node = conversationViewport();
       if (!node || (!options.force && !conversationAutoFollowRef.current)) {
         return;
       }
-      node.scrollTop = node.scrollHeight;
-      showConversationScrollbar(node);
-      // Do NOT re-arm auto-follow here. The browser fires a scroll event after
-      // the programmatic assignment, which runs handleConversationScroll and
-      // re-engages auto-follow when distanceFromBottom is within the band.
-      // Re-arming here caused a feedback loop where any successful
-      // programmatic scroll silently re-enabled auto-follow even when the
-      // user had explicitly scrolled up.
+      applyProgrammaticScroll(node, node.scrollHeight, true, {
+        revealScrollbar: true
+      });
     },
-    [activePane, splitConversation]
+    [activePane, activeThreadID, setAutoFollow, splitConversation]
   );
 
   const scheduleStreamScroll = useCallback((): void => {
+    if (!activeThreadID) {
+      return;
+    }
     if (!conversationAutoFollowRef.current) {
       return;
     }
@@ -145,11 +203,19 @@ export function useConversationScrollState({
 
   const enableConversationAutoFollow = useCallback((): void => {
     setAutoFollow(true);
-  }, [setAutoFollow]);
+    const node = conversationViewport();
+    if (node) {
+      rememberActiveThreadScrollSnapshot(node, true);
+    }
+  }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
 
   const disableConversationAutoFollow = useCallback((): void => {
     setAutoFollow(false);
-  }, [setAutoFollow]);
+    const node = conversationViewport();
+    if (node) {
+      rememberActiveThreadScrollSnapshot(node, false);
+    }
+  }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
 
   function handleConversationScroll(scrolledNode?: HTMLElement): void {
     const node = scrolledNode ?? conversationViewport();
@@ -157,6 +223,22 @@ export function useConversationScrollState({
       return;
     }
     showConversationScrollbar(node);
+
+    const programmaticTop = programmaticScrollTopRef.current;
+    if (programmaticTop !== undefined) {
+      programmaticScrollTopRef.current = undefined;
+      if (Math.abs(node.scrollTop - programmaticTop) <= 1) {
+        lastConversationScrollTopRef.current = clampScrollTop(
+          node,
+          node.scrollTop
+        );
+        rememberActiveThreadScrollSnapshot(
+          node,
+          conversationAutoFollowRef.current
+        );
+        return;
+      }
+    }
 
     // Position-driven userScrolledAway (drives the "Jump to latest" pill)
     // and direction-driven auto-follow.
@@ -183,22 +265,39 @@ export function useConversationScrollState({
     );
     const isScrollable = node.scrollHeight > node.clientHeight;
     const scrolledUp = node.scrollTop < lastConversationScrollTopRef.current;
-    lastConversationScrollTopRef.current = node.scrollTop;
+    lastConversationScrollTopRef.current = clampScrollTop(node, node.scrollTop);
 
     const atLatestView =
       !isScrollable ||
       distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
+    let nextAutoFollow = conversationAutoFollowRef.current;
     if (!scrolledUp && atLatestView) {
+      nextAutoFollow = true;
       setAutoFollow(true);
     } else if (scrolledUp) {
+      nextAutoFollow = false;
       setAutoFollow(false);
     }
+    rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
   }
 
   useLayoutEffect(() => {
-    setAutoFollow(true);
-    scrollConversationToBottom({ force: true });
-  }, [activeThreadID, scrollConversationToBottom, setAutoFollow]);
+    const node = conversationViewport();
+    if (!activeThreadID || !node) {
+      programmaticScrollTopRef.current = undefined;
+      lastConversationScrollTopRef.current = 0;
+      setAutoFollow(true);
+      return undefined;
+    }
+
+    const snapshot = threadScrollSnapshotsRef.current.get(activeThreadID);
+    if (snapshot && !snapshot.autoFollow) {
+      applyProgrammaticScroll(node, snapshot.scrollTop, false);
+    } else {
+      applyProgrammaticScroll(node, node.scrollHeight, true);
+    }
+    return undefined;
+  }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
 
   useEffect(() => {
     scheduleStreamScroll();

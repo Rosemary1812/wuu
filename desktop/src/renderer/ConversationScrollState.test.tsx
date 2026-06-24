@@ -61,10 +61,33 @@ function stubLayout(node: HTMLElement, opts: Partial<StubbedLayout>): StubbedLay
     configurable: true,
     get: () => layout.scrollTop,
     set: (v: number) => {
-      layout.scrollTop = v;
+      const max = Math.max(0, layout.scrollHeight - layout.clientHeight);
+      layout.scrollTop = Math.max(0, Math.min(v, max));
     },
   });
   return layout;
+}
+
+function Probe({ activeThreadID }: { activeThreadID?: string }): ReactNode {
+  const h = useConversationScrollState({
+    activeThreadID,
+    activePane: "primary",
+    splitConversation: false,
+    primaryTurns: makeLongTurns(),
+    secondaryTurns: undefined,
+    emptyConversation: false,
+    previewingLaunch: false,
+    showingWorkspaceMode: false,
+    initialized: true,
+  });
+  return createElement("div", {
+    ref: (node: HTMLDivElement | null) => {
+      h.conversationScrollRef.current = node;
+    },
+    onScroll: () => h.handleConversationScroll(),
+    "data-testid": "scroll-container",
+    "data-user-scrolled-away": h.userScrolledAway ? "true" : "false",
+  });
 }
 
 describe("useConversationScrollState — userScrolledAway", () => {
@@ -92,32 +115,15 @@ describe("useConversationScrollState — userScrolledAway", () => {
     scrollHeight: number;
     clientHeight: number;
     initialScrollTop: number;
+    activeThreadID?: string;
   }): HTMLDivElement {
-    function Probe(): ReactNode {
-      const h = useConversationScrollState({
-        activeThreadID: "thread-1",
-        activePane: "primary",
-        splitConversation: false,
-        primaryTurns: makeLongTurns(),
-        secondaryTurns: undefined,
-        emptyConversation: false,
-        previewingLaunch: false,
-        showingWorkspaceMode: false,
-        initialized: true,
-      });
-      return createElement("div", {
-        ref: (node: HTMLDivElement | null) => {
-          h.conversationScrollRef.current = node;
-        },
-        onScroll: () => h.handleConversationScroll(),
-        "data-testid": "scroll-container",
-        "data-user-scrolled-away": h.userScrolledAway ? "true" : "false",
-      });
-    }
-
     act(() => {
       root = createRoot(container);
-      root.render(createElement(Probe));
+      root.render(
+        createElement(Probe, {
+          activeThreadID: opts.activeThreadID ?? "thread-1",
+        }),
+      );
     });
 
     const node = container.querySelector(
@@ -135,6 +141,13 @@ describe("useConversationScrollState — userScrolledAway", () => {
       scrollTop: opts.initialScrollTop,
     });
     return node;
+  }
+
+  function switchThread(activeThreadID?: string): void {
+    if (!root) throw new Error("not mounted");
+    act(() => {
+      root!.render(createElement(Probe, { activeThreadID }));
+    });
   }
 
   function fireScroll(): void {
@@ -227,5 +240,79 @@ describe("useConversationScrollState — userScrolledAway", () => {
     mount({ scrollHeight: 200, clientHeight: 600, initialScrollTop: 0 });
     fireScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("does not treat session-switch clamping as a user scroll-up", () => {
+    mount({
+      activeThreadID: "thread-long",
+      scrollHeight: 2400,
+      clientHeight: 600,
+      initialScrollTop: 2400 - 600,
+    });
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+
+    if (!layout) throw new Error("not mounted");
+    layout.scrollHeight = 900;
+    switchThread("thread-short");
+    expect(layout.scrollTop).toBe(300);
+
+    // Chromium fires a scroll event after the programmatic bottom snap.
+    // This is a downward clamp from the old thread's 1800px position to
+    // the short thread's 300px max, not user intent, so auto-follow stays on.
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("restores a thread's saved away-from-bottom position when switching back", () => {
+    mount({
+      activeThreadID: "thread-a",
+      scrollHeight: 2400,
+      clientHeight: 600,
+      initialScrollTop: 2400 - 600,
+    });
+    fireScroll();
+
+    setScrollTop(520);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
+
+    if (!layout) throw new Error("not mounted");
+    layout.scrollHeight = 1200;
+    switchThread("thread-b");
+    expect(layout.scrollTop).toBe(600);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+
+    layout.scrollHeight = 2400;
+    switchThread("thread-a");
+    expect(layout.scrollTop).toBe(520);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
+  it("keeps a thread's scroll snapshot while a non-conversation tab is active", () => {
+    mount({
+      activeThreadID: "thread-a",
+      scrollHeight: 2200,
+      clientHeight: 600,
+      initialScrollTop: 2200 - 600,
+    });
+    fireScroll();
+
+    setScrollTop(480);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
+
+    switchThread(undefined);
+    if (!layout) throw new Error("not mounted");
+    layout.scrollTop = 0;
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+
+    switchThread("thread-a");
+    expect(layout.scrollTop).toBe(480);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
   });
 });
