@@ -9,6 +9,11 @@
   margin-bottom: 48px;
 }
 
+.turn[data-turn-status="in_progress"] {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
                                                                 
                                                              
                                                                   
@@ -811,6 +816,11 @@
   contain-intrinsic-size: auto 200px;
 }
 
+.streaming-markdown[data-stream-state="streaming"] .streaming-markdown-block {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
                                                                     
                                                                           
 .stream-cursor {
@@ -868,18 +878,6 @@
     transition: none;
   }
 }
-@keyframes activity-timeline-item-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes turn-text-sweep {
   0% {
     background-position: 160% 50%;
@@ -3011,9 +3009,6 @@
 
 .activity-timeline-item {
   min-width: 0;
-  animation: activity-timeline-item-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: min(calc(var(--activity-index, 0) * 18ms), 100ms);
-  transform-origin: 50% 0;
 }
 
 .activity-group {
@@ -3357,9 +3352,7 @@
   animation: process-surface-count-jump 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.process-surface-row.is-streaming,
 .process-surface-row.is-live-gray,
-.turn-reasoning-summary-text.is-streaming,
 .turn-reasoning-summary-text.is-live-gray,
 .turn-process-preview.is-live,
 .context-compaction-compacting-text {
@@ -3368,9 +3361,7 @@
   overflow: hidden;
 }
 
-.process-surface-row.is-streaming::after,
 .process-surface-row.is-live-gray::after,
-.turn-reasoning-summary-text.is-streaming::after,
 .turn-reasoning-summary-text.is-live-gray::after,
 .turn-process-preview.is-live::after,
 .context-compaction-compacting-text::after {
@@ -3402,9 +3393,7 @@
     animation: none;
   }
 
-  .process-surface-row.is-streaming::after,
   .process-surface-row.is-live-gray::after,
-  .turn-reasoning-summary-text.is-streaming::after,
   .turn-reasoning-summary-text.is-live-gray::after,
   .turn-process-preview.is-live::after,
   .context-compaction-compacting-text::after {

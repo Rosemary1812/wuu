@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ThreadItem } from "../shared/protocol";
 import { LightweightStreamingText } from "./LightweightStreamingText";
 import {
@@ -64,11 +64,10 @@ export function ToolActivityTimeline({
       className="activity-timeline"
       data-pending-count={Math.max(0, items.length - visibleCount)}
     >
-      {items.slice(0, visibleCount).map((item, index) => (
+      {items.slice(0, visibleCount).map((item) => (
         <div
           className="activity-timeline-item"
           key={item.id}
-          style={{ "--activity-index": index } as CSSProperties}
         >
           <ToolActivityRow items={[item]} streaming={streaming} />
         </div>

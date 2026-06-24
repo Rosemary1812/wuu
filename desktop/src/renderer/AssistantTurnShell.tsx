@@ -48,7 +48,6 @@ export function AssistantTurnShell({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
-  onRequestLatest,
   onCollapseComplete,
   onNoticeAction,
 }: {
@@ -59,7 +58,6 @@ export function AssistantTurnShell({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
-  onRequestLatest?: () => void;
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -100,7 +98,6 @@ export function AssistantTurnShell({
     latestAgentMessageID,
     onStreamFrame,
     onForkMessage,
-    onRequestLatest,
     onCollapseComplete,
     onNoticeAction,
   };
@@ -150,7 +147,6 @@ function TurnProcessFold({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
-  onRequestLatest,
   onCollapseComplete,
   onNoticeAction,
 }: {
@@ -163,7 +159,6 @@ function TurnProcessFold({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
-  onRequestLatest?: () => void;
   /**
    * Fires once the fold has finished collapsing so the conversation
    * scroll container can re-anchor `scrollTop = scrollHeight`. The
@@ -176,12 +171,13 @@ function TurnProcessFold({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
-  const [settled, setSettled] = useState(turn.status !== "in_progress");
+  const settledRef = useRef(turn.status !== "in_progress");
   // Tracks whether the user has manually toggled the fold during the
   // current turn. If so, the auto-collapse on turn completion is
   // suppressed — the user has expressed their own intent for the
   // fold state, and we shouldn't override it.
   const userToggledRef = useRef(false);
+  const autoCollapsePendingRef = useRef(false);
   const previousExpanded = useRef(expanded);
   const detailsID = `${turn.id}-process-fold`;
 
@@ -217,19 +213,24 @@ function TurnProcessFold({
   // intent for the fold state.
   useEffect(() => {
     if (turn.status === "in_progress") {
-      setSettled(false);
+      settledRef.current = false;
       userToggledRef.current = false;
+      autoCollapsePendingRef.current = false;
       return;
     }
-    if (settled || userToggledRef.current) {
+    if (settledRef.current || userToggledRef.current) {
       return;
     }
-    setSettled(true);
+    settledRef.current = true;
     const collapseTimer = window.setTimeout(() => {
+      if (userToggledRef.current) {
+        return;
+      }
+      autoCollapsePendingRef.current = true;
       setExpanded(false);
     }, PROCESS_FOLD_SETTLING_DELAY_MS);
     return () => window.clearTimeout(collapseTimer);
-  }, [turn.status, settled]);
+  }, [turn.status]);
 
   // Watch the expanded → collapsed transition and fire the callback
   // once the CSS transition has settled (slightly longer than
@@ -240,8 +241,12 @@ function TurnProcessFold({
   // user perceives as the scroll bar jumping upward at turn-settle.
   useEffect(() => {
     if (previousExpanded.current && !expanded) {
+      const autoCollapse = autoCollapsePendingRef.current;
+      autoCollapsePendingRef.current = false;
       const timeoutId = window.setTimeout(() => {
-        onCollapseComplete?.();
+        if (autoCollapse) {
+          onCollapseComplete?.();
+        }
       }, 440);
       previousExpanded.current = expanded;
       return () => window.clearTimeout(timeoutId);
@@ -256,15 +261,17 @@ function TurnProcessFold({
   // the timer.
   const handleToggle = useCallback(() => {
     userToggledRef.current = true;
-    if (!expanded) {
-      onRequestLatest?.();
-    }
+    autoCollapsePendingRef.current = false;
     setExpanded((prev) => !prev);
-  }, [expanded, onRequestLatest]);
+  }, []);
 
   const hasDetails = entries.length > 0;
   const visiblePreview = expanded ? undefined : latestPreview;
   const hasPreview = Boolean(visiblePreview);
+  const activeGrayEntryKey =
+    turn.status === "in_progress"
+      ? latestActiveGrayProcessEntryKey(entries)
+      : undefined;
 
   const toggleContent = (
     <>
@@ -345,13 +352,13 @@ return (
                   <EntryRenderer
                     key={entry.key}
                     entry={entry}
+                    activeGray={entry.key === activeGrayEntryKey}
                     turn={turn}
                     cwd={cwd}
                     actionableAgentMessageID={actionableAgentMessageID}
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
                     onForkMessage={onForkMessage}
-                    onRequestLatest={onRequestLatest}
                     onNoticeAction={onNoticeAction}
                   />
                 </div>
@@ -364,25 +371,40 @@ return (
   );
 }
 
+function latestActiveGrayProcessEntryKey(entries: TurnEntry[]): string | undefined {
+  const latest = entries[entries.length - 1];
+  if (!latest || !isGrayProcessEntry(latest)) {
+    return undefined;
+  }
+  return latest.key;
+}
+
+function isGrayProcessEntry(entry: TurnEntry): boolean {
+  if (entry.kind === "activity" || entry.kind === "process_group") {
+    return true;
+  }
+  return entry.item.type === "reasoning";
+}
+
 function EntryRenderer({
   entry,
+  activeGray,
   turn,
   cwd,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
-  onRequestLatest,
   onNoticeAction,
 }: {
   entry: TurnEntry;
+  activeGray?: boolean;
   turn: Turn;
   cwd?: string;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
-  onRequestLatest?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
@@ -391,8 +413,7 @@ function EntryRenderer({
       <ProcessSurface
         processItems={entry.items ?? [item]}
         streaming={streaming}
-        active={turn.status === "in_progress"}
-        onRequestLatest={onRequestLatest}
+        active={activeGray}
         renderReasoningItem={(processItem, isStreaming) => (
           <ThreadItemView
             turnID={turn.id}
@@ -418,11 +439,11 @@ function EntryRenderer({
       <ReasoningFold
         item={item}
         streaming={streaming}
+        activeGray={activeGray}
         turnID={turn.id}
         turnStatus={turn.status}
         cwd={cwd}
         onStreamFrame={onStreamFrame}
-        onRequestLatest={onRequestLatest}
         onNoticeAction={onNoticeAction}
       />
     );
@@ -460,28 +481,28 @@ function EntryRenderer({
 function ReasoningFold({
   item,
   streaming,
+  activeGray,
   turnID,
   turnStatus,
   cwd,
   onStreamFrame,
-  onRequestLatest,
   onNoticeAction,
 }: {
   item: ThreadItem;
   streaming: boolean;
+  activeGray?: boolean;
   turnID: string;
   turnStatus: Turn["status"];
   cwd?: string;
   onStreamFrame: () => void;
-  onRequestLatest?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const label = streaming ? "正在思考" : "查看思考过程";
-  // Any visible gray process label sweeps while the turn is still
-  // running. The label text still reflects this item's own state.
-  const activeGrayText = turnStatus === "in_progress";
+  // Only the latest visible gray process label sweeps while the turn
+  // is still running. The label text still reflects this item's own
+  // state.
   const textClass = `turn-reasoning-summary-text${
-    activeGrayText ? " is-live-gray" : ""
+    activeGray ? " is-live-gray" : ""
   }${streaming ? " is-streaming" : ""}`;
   const [open, setOpen] = useState(false);
   const reasoningScroll = useAutoFollowScrollContainer();
@@ -502,7 +523,6 @@ function ReasoningFold({
       ".turn-reasoning-body",
     ) as HTMLElement | null;
     if (!body) return;
-    onRequestLatest?.();
     let settled = false;
     const snapToBottom = (transitionEvent?: Event) => {
       const propertyName = (transitionEvent as TransitionEvent | undefined)
@@ -519,7 +539,7 @@ function ReasoningFold({
     // Fallback when transitionend never fires (reduced motion, or the
     // grid already settled before the listener attached).
     window.setTimeout(snapToBottom, 280);
-  }, [onRequestLatest, reasoningScroll]);
+  }, [reasoningScroll]);
   return (
     <details
       className="turn-reasoning-fold"

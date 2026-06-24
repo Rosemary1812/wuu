@@ -21,7 +21,6 @@ export function TurnView({
   cwd,
   latestAgentMessageID,
   onStreamFrame,
-  onRequestLatest,
   onForkMessage,
   onEditMessage,
   editingMessage,
@@ -34,7 +33,6 @@ export function TurnView({
   cwd?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
-  onRequestLatest?: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
   editingMessage?: { turnID: string; itemID: string; submitting: boolean };
@@ -97,7 +95,12 @@ export function TurnView({
   const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
 
   return (
-    <section className="turn" id={turnAnchorID(turn.id)} data-turn-id={turn.id}>
+    <section
+      className="turn"
+      id={turnAnchorID(turn.id)}
+      data-turn-id={turn.id}
+      data-turn-status={turn.status}
+    >
       {userItems.map((item) => renderThreadItem(item, false))}
       {assistantDisplay ? (
         <AssistantTurnShell
@@ -107,7 +110,6 @@ export function TurnView({
           actionableAgentMessageID={actionableAgentMessageID}
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
-          onRequestLatest={onRequestLatest}
           onForkMessage={onForkMessage}
           onCollapseComplete={onCollapseComplete}
           onNoticeAction={onNoticeAction}

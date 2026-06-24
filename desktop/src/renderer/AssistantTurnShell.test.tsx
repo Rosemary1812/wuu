@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
@@ -140,7 +140,7 @@ type RenderOptions = {
   // the items we pass in. For shell-level structural assertions we
   // just emit a placeholder so the shell picks the right entry kind.
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
-  onRequestLatest?: () => void;
+  onCollapseComplete?: () => void;
 };
 
 function defaultItemRenderer(
@@ -177,7 +177,7 @@ function renderShell(
         turn,
         display,
         onStreamFrame: () => {},
-        onRequestLatest: options.onRequestLatest,
+        onCollapseComplete: options.onCollapseComplete,
         onNoticeAction: () => {},
       }),
     );
@@ -205,7 +205,7 @@ function rerenderShell(
         turn,
         display,
         onStreamFrame: () => {},
-        onRequestLatest: options.onRequestLatest,
+        onCollapseComplete: options.onCollapseComplete,
         onNoticeAction: () => {},
       }),
     );
@@ -387,6 +387,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   act(() => {
     for (const root of mountedRoots) {
       root.unmount();
@@ -482,15 +483,16 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(streamTextStore.get(key)).toBe("finished commentary");
   });
 
-  it("treats opening the process fold as a request for the latest output", () => {
+  it("keeps manual process fold toggles local to the fold", () => {
+    vi.useFakeTimers();
     const turn = makeTurn("completed", [
       makeCommentary("checking"),
       makeFinalAnswer("done"),
     ]);
-    let latestRequests = 0;
+    let collapseCompletions = 0;
     const { container } = renderShell(turn, {
-      onRequestLatest: () => {
-        latestRequests += 1;
+      onCollapseComplete: () => {
+        collapseCompletions += 1;
       },
     });
     const toggle = container.querySelector<HTMLElement>(".turn-process-toggle");
@@ -501,7 +503,51 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     });
 
     expect(processFoldOpen(container)).toBe(true);
-    expect(latestRequests).toBeGreaterThan(0);
+
+    act(() => {
+      toggle?.click();
+    });
+    expect(processFoldOpen(container)).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(collapseCompletions).toBe(0);
+  });
+
+  it("reports collapse completion only for the automatic settle collapse", () => {
+    vi.useFakeTimers();
+    const commentary = makeCommentary("checking");
+    const initialTurn = makeTurn("in_progress", [commentary]);
+    let collapseCompletions = 0;
+    const { container, root } = renderShell(initialTurn, {
+      onCollapseComplete: () => {
+        collapseCompletions += 1;
+      },
+    });
+    expect(processFoldOpen(container)).toBe(true);
+
+    rerenderShell(
+      root,
+      makeTurn("completed", [commentary, makeFinalAnswer("done")]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(processFoldOpen(container)).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(440);
+    });
+
+    expect(collapseCompletions).toBe(1);
   });
 });
 
@@ -531,7 +577,22 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(reasoningSummaryText(folds[0])).toBe("正在思考");
   });
 
-  it("sweeps a settled reasoning label while the turn is still running", () => {
+  it("sweeps the latest settled reasoning label while the turn is still running", () => {
+    const turn = makeTurn("in_progress", [
+      makeCommentary("continuing with the next step"),
+      makeReasoning("already thought this through"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const folds = reasoningFolds(container);
+    expect(folds).toHaveLength(1);
+    const label = folds[0].querySelector(".turn-reasoning-summary-text");
+    expect(label?.textContent).toBe("查看思考过程");
+    expect(label?.classList.contains("is-live-gray")).toBe(true);
+    expect(label?.classList.contains("is-streaming")).toBe(false);
+  });
+
+  it("does not sweep an older reasoning label after commentary becomes latest", () => {
     const turn = makeTurn("in_progress", [
       makeReasoning("already thought this through"),
       makeCommentary("continuing with the next step"),
@@ -542,7 +603,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(folds).toHaveLength(1);
     const label = folds[0].querySelector(".turn-reasoning-summary-text");
     expect(label?.textContent).toBe("查看思考过程");
-    expect(label?.classList.contains("is-live-gray")).toBe(true);
+    expect(label?.classList.contains("is-live-gray")).toBe(false);
     expect(label?.classList.contains("is-streaming")).toBe(false);
   });
 
@@ -570,7 +631,22 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(label?.textContent).toBe("正在思考");
   });
 
-  it("sweeps settled process rows while the turn is still running", () => {
+  it("sweeps the latest settled process row while the turn is still running", () => {
+    const turn = makeTurn("in_progress", [
+      makeCommentary("before the settled row"),
+      makeReadFileTool("src/App.tsx"),
+      makeReasoning("settled reasoning"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const rows = processSurfaceRows(container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].classList.contains("is-live-gray")).toBe(true);
+    expect(rows[0].classList.contains("is-streaming")).toBe(false);
+    expect(rows[0].textContent).toContain("思考过程");
+  });
+
+  it("does not sweep older process rows after commentary becomes latest", () => {
     const turn = makeTurn("in_progress", [
       makeReadFileTool("src/App.tsx"),
       makeReasoning("settled reasoning"),
@@ -580,7 +656,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
 
     const rows = processSurfaceRows(container);
     expect(rows).toHaveLength(1);
-    expect(rows[0].classList.contains("is-live-gray")).toBe(true);
+    expect(rows[0].classList.contains("is-live-gray")).toBe(false);
     expect(rows[0].classList.contains("is-streaming")).toBe(false);
     expect(rows[0].textContent).toContain("思考过程");
   });
@@ -647,23 +723,6 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(folds[1].open).toBe(false);
   });
 
-  it("treats opening a reasoning fold as a request for the latest output", async () => {
-    const turn = makeTurn("completed", [
-      makeReasoning("long internal deliberation"),
-      makeFinalAnswer("short answer"),
-    ]);
-    let latestRequests = 0;
-    const { container } = renderShell(turn, {
-      onRequestLatest: () => {
-        latestRequests += 1;
-      },
-    });
-
-    await openReasoningFold(reasoningFolds(container)[0]);
-
-    expect(latestRequests).toBeGreaterThan(0);
-  });
-
   it("groups consecutive reasoning records into one process surface", () => {
     // Multi-segment reasoning is a single top-level process row. The
     // user can expand that row to read the underlying reasoning trail.
@@ -679,28 +738,6 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].hasAttribute("open")).toBe(false);
     expect(groups[0].textContent).toContain("思考过程");
-  });
-
-  it("treats opening a process surface as a request for the latest output", () => {
-    const turn = makeTurn("completed", [
-      makeReasoning("step one"),
-      makeReasoning("step two"),
-      makeFinalAnswer("answer"),
-    ]);
-    let latestRequests = 0;
-    const { container } = renderShell(turn, {
-      onRequestLatest: () => {
-        latestRequests += 1;
-      },
-    });
-    const group = processSurfaceFolds(container)[0];
-
-    act(() => {
-      group.open = true;
-      group.dispatchEvent(new Event("toggle", { bubbles: true }));
-    });
-
-    expect(latestRequests).toBe(1);
   });
 
   it("groups adjacent reasoning and tool activity without crossing commentary", () => {
@@ -1012,5 +1049,24 @@ describe("AssistantTurnShell — turn divider styles", () => {
     expect(turnsCSS).toContain(".turn-process-preview.is-live");
     expect(turnsCSS).toContain(".context-compaction-compacting-text::after");
     expect(turnsCSS).toContain("animation: live-gray-shimmer 4.8s linear infinite;");
+    expect(turnsCSS).not.toContain(".process-surface-row.is-streaming::after");
+    expect(turnsCSS).not.toContain(
+      ".turn-reasoning-summary-text.is-streaming::after",
+    );
+  });
+
+  it("keeps live bottom content on real layout instead of placeholder layout", () => {
+    const liveTurnRule = cssRule('.turn[data-turn-status="in_progress"]');
+    expect(liveTurnRule).toContain("content-visibility: visible;");
+    expect(liveTurnRule).toContain("contain-intrinsic-size: none;");
+
+    const liveMarkdownBlockRule = cssRule(
+      '.streaming-markdown[data-stream-state="streaming"] .streaming-markdown-block',
+    );
+    expect(liveMarkdownBlockRule).toContain("content-visibility: visible;");
+    expect(liveMarkdownBlockRule).toContain("contain-intrinsic-size: none;");
+
+    expect(cssRule(".activity-timeline-item")).not.toContain("animation:");
+    expect(turnsCSS).not.toContain("activity-timeline-item-in");
   });
 });

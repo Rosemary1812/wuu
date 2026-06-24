@@ -363,12 +363,9 @@ export function StreamingMarkdown({
       data-stream-state={phase}
     >
       {split.blocks.map((block, index) => (
-        // Wrap each stable block in a `.streaming-markdown-block` so the
-        // off-screen content-visibility optimization (see turns.css) can
-        // skip layout/paint for blocks the user has scrolled past. The
-        // wrapper carries the React list key; the inner memoized
-        // MarkdownContent keeps the existing block-level memoization
-        // contract intact.
+        // Wrap each stable block so settled, off-screen messages can skip
+        // layout/paint without remounting markdown content. Live streams opt
+        // out in CSS so bottom auto-follow never sees placeholder heights.
         <div className="streaming-markdown-block" key={index}>
           <MemoMarkdownContent
             text={block}
