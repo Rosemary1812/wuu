@@ -390,6 +390,48 @@ func TestBuildAnthropicRequest_SmooshesSystemReminderIntoToolResult(t *testing.T
 	}
 }
 
+func TestBuildAnthropicRequest_ReplaysInvalidToolArgumentsWithErrorResult(t *testing.T) {
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "update plan"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{
+				{ID: "call_plan", Name: "update_plan", Arguments: `{"plan": `},
+			}},
+			{Role: "tool", ToolCallID: "call_plan", Name: "update_plan", Content: `{"error":"invalid tool arguments: unexpected EOF","ok":false}`},
+		},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if len(payload.Messages) != 3 {
+		t.Fatalf("expected user, assistant, tool result messages, got %+v", payload.Messages)
+	}
+	assistant := payload.Messages[1]
+	if assistant.Role != "assistant" || len(assistant.Content) != 1 {
+		t.Fatalf("expected assistant tool_use, got %+v", assistant)
+	}
+	toolUse := assistant.Content[0]
+	if toolUse.Type != "tool_use" || toolUse.ID != "call_plan" || toolUse.Name != "update_plan" {
+		t.Fatalf("unexpected tool_use block: %+v", toolUse)
+	}
+	input, ok := toolUse.Input.(map[string]any)
+	if !ok || len(input) != 0 {
+		t.Fatalf("expected invalid arguments to replay as empty Anthropic input object, got %#v", toolUse.Input)
+	}
+	result := payload.Messages[2]
+	if result.Role != "user" || len(result.Content) != 1 {
+		t.Fatalf("expected tool result message, got %+v", result)
+	}
+	if result.Content[0].Type != "tool_result" || result.Content[0].ToolUseID != "call_plan" {
+		t.Fatalf("unexpected tool_result block: %+v", result.Content[0])
+	}
+	content, ok := result.Content[0].Content.(string)
+	if !ok || !strings.Contains(content, "invalid tool arguments") {
+		t.Fatalf("expected invalid tool arguments result, got %#v", result.Content[0].Content)
+	}
+}
+
 func TestBuildAnthropicRequest_CacheBoundaryKeepsSystemReminderAfterToolResult(t *testing.T) {
 	reminder := wuucontext.FormatSystemReminder(wuucontext.EnvInfo{
 		CWD:       "/tmp/project",

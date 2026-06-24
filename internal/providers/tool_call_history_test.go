@@ -40,12 +40,9 @@ func TestValidateAssistantToolCalls_rejectsDuplicateID(t *testing.T) {
 	}
 }
 
-func TestValidateAssistantToolCalls_rejectsInvalidArgumentsJSON(t *testing.T) {
+func TestValidateAssistantToolCalls_allowsRawFunctionArguments(t *testing.T) {
 	err := ValidateAssistantToolCalls([]ToolCall{{ID: "call_1", Name: "update_plan", Arguments: `{"plan": `}})
-	if err == nil {
-		t.Fatal("expected invalid arguments error")
-	}
-	if !strings.Contains(err.Error(), "invalid arguments JSON") {
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -105,7 +102,7 @@ func TestRepairToolCallHistory_missingOutputInserted(t *testing.T) {
 	}
 }
 
-func TestRepairToolCallHistory_dropsRecoverableInvalidToolArguments(t *testing.T) {
+func TestRepairToolCallHistory_keepsRecoverableInvalidToolArguments(t *testing.T) {
 	msgs := []ChatMessage{
 		{Role: "user", Content: "continue"},
 		{
@@ -129,14 +126,41 @@ func TestRepairToolCallHistory_dropsRecoverableInvalidToolArguments(t *testing.T
 	if err != nil {
 		t.Fatalf("RepairAndValidateToolCallHistory: %v", err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 messages, got %d: %+v", len(got), roles(got))
+	if len(got) != 4 {
+		t.Fatalf("expected 4 messages, got %d: %+v", len(got), roles(got))
 	}
-	if len(got[1].ToolCalls) != 0 {
-		t.Fatalf("expected invalid tool call to be removed, got %+v", got[1].ToolCalls)
+	if len(got[1].ToolCalls) != 1 {
+		t.Fatalf("expected invalid tool call to be retained, got %+v", got[1].ToolCalls)
 	}
-	if got[1].Content != "I will update the plan." || got[2].Content != "continue again" {
+	if got[2].ToolCallID != "call_plan" || got[3].Content != "continue again" {
 		t.Fatalf("unexpected repaired messages: %+v", got)
+	}
+}
+
+func TestRepairToolCallHistory_synthesizesInvalidToolArgumentsOutput(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "continue"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{{
+				ID:        "call_plan",
+				Name:      "update_plan",
+				Arguments: `{"plan": `,
+			}},
+		},
+	}
+	got, err := RepairAndValidateToolCallHistory(msgs)
+	if err != nil {
+		t.Fatalf("RepairAndValidateToolCallHistory: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected synthetic result, got %d messages: %+v", len(got), roles(got))
+	}
+	if got[2].Role != "tool" || got[2].ToolCallID != "call_plan" {
+		t.Fatalf("expected synthetic tool result, got %+v", got[2])
+	}
+	if !strings.Contains(got[2].Content, "invalid tool arguments") {
+		t.Fatalf("expected invalid arguments content, got %q", got[2].Content)
 	}
 }
 

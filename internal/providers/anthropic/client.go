@@ -1181,7 +1181,11 @@ func mapMessage(msg providers.ChatMessage, toolSearchEnabled bool) (anthropicMes
 			if raw == "" {
 				input = map[string]any{}
 			} else if err := json.Unmarshal([]byte(raw), &input); err != nil {
-				return anthropicMessage{}, fmt.Errorf("parse tool call arguments for %s: %w", call.Name, err)
+				// PrepareMessagesForModelRequest only allows invalid JSON
+				// here when the paired tool_result tells the model the
+				// arguments were invalid. Anthropic still requires an
+				// object-shaped tool_use input for replay.
+				input = map[string]any{}
 			}
 			blocks = append(blocks, anthropicBlock{Type: "tool_use", ID: call.ID, Name: call.Name, Input: input})
 		}

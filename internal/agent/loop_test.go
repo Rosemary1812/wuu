@@ -1035,30 +1035,44 @@ func TestRunToolLoop_RejectsDuplicateProviderToolCallIDs(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_RejectsProviderToolCallInvalidArguments(t *testing.T) {
+func TestRunToolLoop_ReturnsInvalidToolArgumentsToModel(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{
 		{ID: "call_1", Name: "update_plan", Arguments: `{"plan": `},
-	}}}}
+	}}, {Content: "recovered"}}}
 	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "update_plan"}}}
+	tools.err = errors.New("invalid tool arguments: unexpected EOF")
 	var persisted []providers.ChatMessage
-	_, err := RunToolLoop(context.Background(), nil, LoopConfig{
+	result, err := RunToolLoop(context.Background(), nil, LoopConfig{
 		Model: "m",
 		Tools: tools,
 		OnMessage: func(msg providers.ChatMessage) {
 			persisted = append(persisted, msg)
 		},
 	}, step)
-	if err == nil {
-		t.Fatal("expected invalid tool arguments error")
+	if err != nil {
+		t.Fatalf("RunToolLoop: %v", err)
 	}
-	if !strings.Contains(err.Error(), "provider returned invalid tool_calls") {
-		t.Fatalf("unexpected error: %v", err)
+	if result.Content != "recovered" {
+		t.Fatalf("unexpected result content: %q", result.Content)
 	}
-	if len(persisted) != 0 {
-		t.Fatalf("invalid tool call should not be persisted, got %+v", persisted)
+	if len(persisted) != 3 {
+		t.Fatalf("expected assistant, tool, final assistant messages, got %+v", persisted)
 	}
-	if calls := tools.recordedCalls(); len(calls) != 0 {
-		t.Fatalf("invalid tool call should not execute, got %+v", calls)
+	if len(persisted[0].ToolCalls) != 1 || persisted[0].ToolCalls[0].Arguments != `{"plan": ` {
+		t.Fatalf("invalid tool call should be persisted for pairing, got %+v", persisted[0])
+	}
+	if persisted[1].Role != "tool" || persisted[1].ToolCallID != "call_1" || !strings.Contains(persisted[1].Content, "invalid tool arguments") {
+		t.Fatalf("expected invalid tool arguments result, got %+v", persisted[1])
+	}
+	if calls := tools.recordedCalls(); len(calls) != 1 {
+		t.Fatalf("invalid tool call should execute through tool error path, got %+v", calls)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected model retry after tool error, got %d calls", len(step.calls))
+	}
+	retryMessages := step.calls[1].Messages
+	if len(retryMessages) != 2 || len(retryMessages[0].ToolCalls) != 1 || retryMessages[1].ToolCallID != "call_1" {
+		t.Fatalf("retry should include paired invalid tool call and error result, got %+v", retryMessages)
 	}
 }
 

@@ -7,7 +7,9 @@ import (
 )
 
 // ValidateAssistantToolCalls rejects malformed provider tool-call metadata
-// before it reaches the shared history machinery.
+// before it reaches the shared history machinery. Function-call arguments stay
+// as provider-emitted strings here; individual tools parse them and return
+// model-visible errors when the JSON is invalid.
 func ValidateAssistantToolCalls(calls []ToolCall) error {
 	seen := make(map[string]struct{}, len(calls))
 	for i, call := range calls {
@@ -18,9 +20,6 @@ func ValidateAssistantToolCalls(calls []ToolCall) error {
 			return fmt.Errorf("tool_call %d: duplicate id %q", i, call.ID)
 		}
 		seen[call.ID] = struct{}{}
-		if err := validateToolCallArguments(call); err != nil {
-			return fmt.Errorf("tool_call %d: %w", i, err)
-		}
 	}
 	return nil
 }
@@ -72,18 +71,6 @@ func RepairToolCallHistory(msgs []ChatMessage) []ChatMessage {
 		if msg.Role == "tool" {
 			continue
 		}
-		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
-			validCalls := make([]ToolCall, 0, len(msg.ToolCalls))
-			for _, tc := range msg.ToolCalls {
-				result, hasResult := toolResults[tc.ID]
-				if hasResult && recoverableInvalidToolArguments(tc, result) {
-					delete(toolResults, tc.ID)
-					continue
-				}
-				validCalls = append(validCalls, tc)
-			}
-			msg.ToolCalls = validCalls
-		}
 		out = append(out, msg)
 
 		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
@@ -105,12 +92,16 @@ func RepairToolCallHistory(msgs []ChatMessage) []ChatMessage {
 				ordered = append(ordered, tm)
 				delete(toolResults, tc.ID)
 			} else {
+				content := `{"error":"aborted"}`
+				if err := validateToolCallArguments(tc); err != nil {
+					content = invalidToolArgumentsContent(err)
+				}
 				ordered = append(ordered, ChatMessage{
 					Role:           "tool",
 					Name:           tc.Name,
 					ToolCallID:     tc.ID,
 					ToolResultKind: tc.Kind,
-					Content:        `{"error":"aborted"}`,
+					Content:        content,
 				})
 			}
 		}
@@ -132,11 +123,15 @@ func validateToolCallArguments(call ToolCall) error {
 	return nil
 }
 
-func recoverableInvalidToolArguments(call ToolCall, result ChatMessage) bool {
-	if validateToolCallArguments(call) == nil {
-		return false
+func invalidToolArgumentsContent(err error) string {
+	payload, marshalErr := json.Marshal(map[string]any{
+		"error": "invalid tool arguments: " + err.Error(),
+		"ok":    false,
+	})
+	if marshalErr != nil {
+		return `{"error":"invalid tool arguments","ok":false}`
 	}
-	return isInvalidToolArgumentsResult(result.Content)
+	return string(payload)
 }
 
 func isInvalidToolArgumentsResult(content string) bool {
@@ -166,6 +161,14 @@ func RepairAndValidateToolCallHistory(msgs []ChatMessage) ([]ChatMessage, error)
 // should be used to repair sequences instead).
 func ValidateToolCallHistory(msgs []ChatMessage) error {
 	declaredToolCalls := make(map[string]int, 8)
+	toolResults := make(map[string]ChatMessage, 8)
+	for _, msg := range msgs {
+		if msg.Role == "tool" && msg.ToolCallID != "" {
+			if _, exists := toolResults[msg.ToolCallID]; !exists {
+				toolResults[msg.ToolCallID] = msg
+			}
+		}
+	}
 	for i, msg := range msgs {
 		switch msg.Role {
 		case "system":
@@ -179,6 +182,12 @@ func ValidateToolCallHistory(msgs []ChatMessage) error {
 			for _, tc := range msg.ToolCalls {
 				if prev, ok := declaredToolCalls[tc.ID]; ok {
 					return fmt.Errorf("message %d: tool_call id %q already declared in message %d", i, tc.ID, prev)
+				}
+				if err := validateToolCallArguments(tc); err != nil {
+					result, ok := toolResults[tc.ID]
+					if !ok || !isInvalidToolArgumentsResult(result.Content) {
+						return fmt.Errorf("message %d: invalid assistant tool_calls: tool_call %q: %w", i, tc.ID, err)
+					}
 				}
 				declaredToolCalls[tc.ID] = i
 			}
