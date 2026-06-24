@@ -3616,12 +3616,10 @@
   --message-copy-rest-transform: none;
   width: 24px;
   height: 24px;
-  border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 1px 2px var(--ink-overlay-8);
+  background: none;
+  box-shadow: none;
   opacity: 0.5;
   transition:
-    background-color 120ms ease,
     color 120ms ease,
     opacity 120ms ease;
 }
@@ -3630,7 +3628,6 @@
 .rich-code-copy:hover,
 .rich-code-copy:focus-visible {
   opacity: 1;
-  background: var(--paper);
 }
 
 .rich-code-copy.copied,
@@ -3639,12 +3636,10 @@
 }
 
 .rich-code-copy.copied {
-  background: var(--success-soft);
   color: var(--success);
 }
 
 .rich-code-copy.failed {
-  background: var(--danger-soft);
   color: var(--danger);
 }
 
