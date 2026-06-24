@@ -183,6 +183,7 @@ export function StreamingMarkdown({
     visibleRef.current = text.length;
     setVisibleLength(text.length);
     settledNotifiedRef.current = false;
+    onFrameRef.current?.();
   }, []);
 
   // The frame loop. Advances `visible` toward the target at a rate

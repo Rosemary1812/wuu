@@ -21,6 +21,7 @@ export function TurnView({
   cwd,
   latestAgentMessageID,
   onStreamFrame,
+  onRequestLatest,
   onForkMessage,
   onEditMessage,
   editingMessage,
@@ -33,6 +34,7 @@ export function TurnView({
   cwd?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
+  onRequestLatest?: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
   editingMessage?: { turnID: string; itemID: string; submitting: boolean };
@@ -105,6 +107,7 @@ export function TurnView({
           actionableAgentMessageID={actionableAgentMessageID}
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
+          onRequestLatest={onRequestLatest}
           onForkMessage={onForkMessage}
           onCollapseComplete={onCollapseComplete}
           onNoticeAction={onNoticeAction}

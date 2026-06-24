@@ -157,6 +157,14 @@ describe("useConversationScrollState — userScrolledAway", () => {
     });
   }
 
+  function fireUserScroll(): void {
+    if (!scrollNode) throw new Error("not mounted");
+    act(() => {
+      scrollNode!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -80 }));
+      scrollNode!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+  }
+
   function setScrollTop(top: number): void {
     if (!layout) throw new Error("not mounted");
     layout.scrollTop = top;
@@ -178,7 +186,7 @@ describe("useConversationScrollState — userScrolledAway", () => {
     // is now 900, well outside the 16px bottom band, so the pill
     // must show.
     setScrollTop(500);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
@@ -187,12 +195,12 @@ describe("useConversationScrollState — userScrolledAway", () => {
     fireScroll();
 
     setScrollTop(500);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
 
     // Park the user at the very bottom of the conversation.
     setScrollTop(2000 - 600); // distanceFromBottom = 0
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
@@ -200,11 +208,11 @@ describe("useConversationScrollState — userScrolledAway", () => {
     mount({ scrollHeight: 2000, clientHeight: 600, initialScrollTop: 2000 - 600 });
     fireScroll();
     setScrollTop(500);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
     // 8px from the bottom — well within the 16px band.
     setScrollTop(2000 - 600 - 8);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
@@ -221,13 +229,13 @@ describe("useConversationScrollState — userScrolledAway", () => {
 
     // Wheel up 8px — well inside the old 16px band. Pill must show.
     setScrollTop(2000 - 600 - 8);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
 
     // Scroll back to the bottom: scrolledUp is false and we're parked
     // at the latest view, so auto-follow re-engages and the pill hides.
     setScrollTop(2000 - 600);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
@@ -274,7 +282,7 @@ describe("useConversationScrollState — userScrolledAway", () => {
     fireScroll();
 
     setScrollTop(520);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
 
     if (!layout) throw new Error("not mounted");
@@ -301,7 +309,7 @@ describe("useConversationScrollState — userScrolledAway", () => {
     fireScroll();
 
     setScrollTop(480);
-    fireScroll();
+    fireUserScroll();
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
 
     switchThread(undefined);

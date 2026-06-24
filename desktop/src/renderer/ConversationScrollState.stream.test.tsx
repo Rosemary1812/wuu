@@ -245,6 +245,14 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
   }
 
+  function fireUserScroll(): void {
+    if (!node) throw new Error("not mounted");
+    act(() => {
+      node!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -80 }));
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+  }
+
   it("stays pinned to the bottom across 120 fast stream ticks", () => {
     // Start: 2000px of content in a 600px viewport. We are at the
     // bottom (scrollTop = 1400).
@@ -320,19 +328,15 @@ describe("useConversationScrollState — high-frequency stream", () => {
     // show and auto-follow must drop.
     act(() => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 8;
-      if (node) {
-        node.dispatchEvent(new Event("scroll", { bubbles: false }));
-      }
     });
+    fireUserScroll();
     expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
 
     // Wheel up another 9px (17px total). State stays away-from-latest.
     act(() => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 17;
-      if (node) {
-        node.dispatchEvent(new Event("scroll", { bubbles: false }));
-      }
     });
+    fireUserScroll();
     expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
@@ -374,8 +378,8 @@ describe("useConversationScrollState — high-frequency stream", () => {
 
     act(() => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 80;
-      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
     });
+    fireUserScroll();
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
@@ -386,5 +390,31 @@ describe("useConversationScrollState — high-frequency stream", () => {
 
     expect(layout.scrollTop).toBe(2000 - 600 - 80);
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
+  it("keeps following when layout shrink clamps the viewport to the new bottom", () => {
+    mount({ scrollHeight: 2200, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1600);
+
+    act(() => {
+      // A completed process fold can shrink above the viewport. Chromium
+      // clamps scrollTop from the old max to the new max and emits a scroll
+      // event even though the user did not scroll up.
+      layout!.scrollHeight = 1700;
+      layout!.scrollTop = 1100;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+
+    act(() => {
+      layout!.scrollHeight += 120;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 });

@@ -126,6 +126,27 @@ describe("StreamingMarkdown", () => {
     expect(surface.textContent).toContain("Hello world");
   });
 
+  it("notifies a frame when non-live text snaps to its final length", async () => {
+    const key = streamTextKey("turn", "s4", "text");
+    streamTextStore.seed(key, "Hello world after completion");
+    let frameCount = 0;
+    mount({
+      streamKey: key,
+      initialText: "",
+      isLive: false,
+      phase: "final_answer",
+      onFrame: () => {
+        frameCount += 1;
+      },
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(frameCount).toBeGreaterThan(0);
+  });
+
   it("keeps the cursor span in the DOM with .is-gone after the fade-out completes", async () => {
     const key = streamTextKey("turn", "s5", "text");
     streamTextStore.seed(key, "Hello world");

@@ -140,6 +140,7 @@ type RenderOptions = {
   // the items we pass in. For shell-level structural assertions we
   // just emit a placeholder so the shell picks the right entry kind.
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
+  onRequestLatest?: () => void;
 };
 
 function defaultItemRenderer(
@@ -176,6 +177,7 @@ function renderShell(
         turn,
         display,
         onStreamFrame: () => {},
+        onRequestLatest: options.onRequestLatest,
         onNoticeAction: () => {},
       }),
     );
@@ -432,6 +434,28 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(processFoldOpen(container)).toBe(false);
     expect(container.querySelector(".turn-process-preview")).not.toBeNull();
   });
+
+  it("treats opening the process fold as a request for the latest output", () => {
+    const turn = makeTurn("completed", [
+      makeCommentary("checking"),
+      makeFinalAnswer("done"),
+    ]);
+    let latestRequests = 0;
+    const { container } = renderShell(turn, {
+      onRequestLatest: () => {
+        latestRequests += 1;
+      },
+    });
+    const toggle = container.querySelector<HTMLElement>(".turn-process-toggle");
+    expect(processFoldOpen(container)).toBe(false);
+
+    act(() => {
+      toggle?.click();
+    });
+
+    expect(processFoldOpen(container)).toBe(true);
+    expect(latestRequests).toBeGreaterThan(0);
+  });
 });
 
 describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
@@ -527,6 +551,23 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(folds[0]).not.toBeNull();
   });
 
+  it("treats opening a reasoning fold as a request for the latest output", async () => {
+    const turn = makeTurn("completed", [
+      makeReasoning("long internal deliberation"),
+      makeFinalAnswer("short answer"),
+    ]);
+    let latestRequests = 0;
+    const { container } = renderShell(turn, {
+      onRequestLatest: () => {
+        latestRequests += 1;
+      },
+    });
+
+    await openReasoningFold(reasoningFolds(container)[0]);
+
+    expect(latestRequests).toBeGreaterThan(0);
+  });
+
   it("groups consecutive reasoning records into one process cluster", () => {
     // Multi-segment reasoning is a single top-level process row. The
     // user can expand that row to read the underlying reasoning trail.
@@ -542,6 +583,28 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(clusters).toHaveLength(1);
     expect(clusters[0].hasAttribute("open")).toBe(false);
     expect(clusters[0].textContent).toContain("思考过程");
+  });
+
+  it("treats opening a process cluster as a request for the latest output", () => {
+    const turn = makeTurn("completed", [
+      makeReasoning("step one"),
+      makeReasoning("step two"),
+      makeFinalAnswer("answer"),
+    ]);
+    let latestRequests = 0;
+    const { container } = renderShell(turn, {
+      onRequestLatest: () => {
+        latestRequests += 1;
+      },
+    });
+    const cluster = processClusterFolds(container)[0];
+
+    act(() => {
+      cluster.open = true;
+      cluster.dispatchEvent(new Event("toggle", { bubbles: true }));
+    });
+
+    expect(latestRequests).toBe(1);
   });
 
   it("groups adjacent reasoning and tool activity without crossing commentary", () => {

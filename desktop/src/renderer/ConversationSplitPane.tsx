@@ -36,6 +36,7 @@ export function ConversationSplitPane({
   onCancelEditMessage,
   onSubmitEditMessage,
   onStreamFrame,
+  onRequestLatest,
   onNoticeAction,
 }: {
   pane: ConversationPaneID;
@@ -69,6 +70,7 @@ export function ConversationSplitPane({
     files: InputFile[],
   ) => void;
   onStreamFrame: () => void;
+  onRequestLatest: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const paneTurns = thread.turns ?? [];
@@ -120,6 +122,7 @@ export function ConversationSplitPane({
               cwd={thread.cwd ?? activeContextCwd}
               latestAgentMessageID={paneLatestAgentMessageID}
               onStreamFrame={onStreamFrame}
+              onRequestLatest={onRequestLatest}
               onForkMessage={onForkMessage}
               onEditMessage={
                 onEditMessage

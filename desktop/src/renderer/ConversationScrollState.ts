@@ -16,6 +16,12 @@ import type { ConversationPaneID } from "./AppState";
 // which made slow scroll-up get yanked back to the bottom mid-gesture.
 const CONVERSATION_AUTO_SCROLL_THRESHOLD_PX = 16;
 const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = 700;
+const CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS = 300;
+const CONVERSATION_SCROLL_AWAY_KEYS = new Set([
+  "ArrowUp",
+  "PageUp",
+  "Home",
+]);
 
 type ConversationScrollSnapshot = {
   scrollTop: number;
@@ -108,6 +114,9 @@ export function useConversationScrollState({
   }, []);
   const lastConversationScrollTopRef = useRef(0);
   const programmaticScrollTopRef = useRef<number | undefined>(undefined);
+  const userScrollAwayIntentRef = useRef(false);
+  const userScrollAwayIntentTimerRef = useRef<number | undefined>(undefined);
+  const touchLastYRef = useRef<number | undefined>(undefined);
   const threadScrollSnapshotsRef = useRef(
     new Map<string, ConversationScrollSnapshot>()
   );
@@ -160,12 +169,33 @@ export function useConversationScrollState({
     rememberThreadScrollSnapshot(activeThreadID, node, autoFollow);
   }
 
+  const clearUserScrollAwayIntent = useCallback((): void => {
+    userScrollAwayIntentRef.current = false;
+    touchLastYRef.current = undefined;
+    if (userScrollAwayIntentTimerRef.current !== undefined) {
+      window.clearTimeout(userScrollAwayIntentTimerRef.current);
+      userScrollAwayIntentTimerRef.current = undefined;
+    }
+  }, []);
+
+  const markUserScrollAwayIntent = useCallback((): void => {
+    userScrollAwayIntentRef.current = true;
+    if (userScrollAwayIntentTimerRef.current !== undefined) {
+      window.clearTimeout(userScrollAwayIntentTimerRef.current);
+    }
+    userScrollAwayIntentTimerRef.current = window.setTimeout(() => {
+      userScrollAwayIntentRef.current = false;
+      userScrollAwayIntentTimerRef.current = undefined;
+    }, CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS);
+  }, []);
+
   function applyProgrammaticScroll(
     node: HTMLElement,
     top: number,
     autoFollow: boolean,
     options: { revealScrollbar?: boolean } = {}
   ): void {
+    clearUserScrollAwayIntent();
     node.scrollTop = top;
     const actualTop = clampScrollTop(node, node.scrollTop);
     if (Math.abs(node.scrollTop - actualTop) > 1) {
@@ -251,7 +281,7 @@ export function useConversationScrollState({
     }
 
     // Position-driven userScrolledAway (drives the "Jump to latest" pill)
-    // and direction-driven auto-follow.
+    // and intent-driven auto-follow.
     //
     // The previous logic re-armed auto-follow whenever the user landed
     // inside the bottom band (distanceFromBottom <= 16px), regardless of
@@ -263,30 +293,32 @@ export function useConversationScrollState({
     // any time something triggered `scheduleStreamScroll` while the user
     // was inside the band.
     //
-    // User intent overrides position: any upward scroll disarms
-    // auto-follow, regardless of how small the delta is. Auto-follow
-    // re-engages only when the user is at the bottom AND not actively
-    // scrolling up (i.e. they have settled or scrolled down to land).
-    // The pill still relies on position so it stays hidden when there
-    // is nothing below the fold to jump to.
+    // User intent overrides position: any user-initiated upward scroll
+    // disarms auto-follow, regardless of how small the delta is. But
+    // layout-driven scrollTop clamps (for example a completed process fold
+    // shrinking above the viewport) can also move scrollTop upward while
+    // the viewport is still at the latest content. Those must keep
+    // auto-follow armed; otherwise the next streaming or settle frame will
+    // stop sticking to the bottom even though the user never scrolled away.
     const distanceFromBottom = Math.max(
       0,
       node.scrollHeight - node.scrollTop - node.clientHeight
     );
     const isScrollable = node.scrollHeight > node.clientHeight;
     const scrolledUp = node.scrollTop < lastConversationScrollTopRef.current;
+    const userScrollAwayIntent = userScrollAwayIntentRef.current;
     lastConversationScrollTopRef.current = clampScrollTop(node, node.scrollTop);
 
     const atLatestView =
       !isScrollable ||
       distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
     let nextAutoFollow = conversationAutoFollowRef.current;
-    if (!scrolledUp && atLatestView) {
-      nextAutoFollow = true;
-      setAutoFollow(true);
-    } else if (scrolledUp) {
+    if (scrolledUp && userScrollAwayIntent) {
       nextAutoFollow = false;
       setAutoFollow(false);
+    } else if (atLatestView) {
+      nextAutoFollow = true;
+      setAutoFollow(true);
     }
     rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
   }
@@ -312,6 +344,56 @@ export function useConversationScrollState({
   useEffect(() => {
     scheduleStreamScroll();
   }, [primaryTurns, secondaryTurns, scheduleStreamScroll]);
+
+  useLayoutEffect(() => {
+    const node = conversationViewport();
+    if (!node) {
+      return undefined;
+    }
+    const handleWheel = (event: WheelEvent): void => {
+      if (event.deltaY < 0) {
+        markUserScrollAwayIntent();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (CONVERSATION_SCROLL_AWAY_KEYS.has(event.key)) {
+        markUserScrollAwayIntent();
+      }
+    };
+    const handleTouchStart = (event: TouchEvent): void => {
+      touchLastYRef.current = event.touches[0]?.clientY;
+    };
+    const handleTouchMove = (event: TouchEvent): void => {
+      const currentY = event.touches[0]?.clientY;
+      const previousY = touchLastYRef.current;
+      if (currentY !== undefined && previousY !== undefined && currentY > previousY) {
+        markUserScrollAwayIntent();
+      }
+      touchLastYRef.current = currentY;
+    };
+    const handleTouchEnd = (): void => {
+      touchLastYRef.current = undefined;
+    };
+    node.addEventListener("wheel", handleWheel, { passive: true });
+    node.addEventListener("touchstart", handleTouchStart, { passive: true });
+    node.addEventListener("touchmove", handleTouchMove, { passive: true });
+    node.addEventListener("touchend", handleTouchEnd);
+    node.addEventListener("touchcancel", handleTouchEnd);
+    node.addEventListener("keydown", handleKeyDown);
+    return () => {
+      node.removeEventListener("wheel", handleWheel);
+      node.removeEventListener("touchstart", handleTouchStart);
+      node.removeEventListener("touchmove", handleTouchMove);
+      node.removeEventListener("touchend", handleTouchEnd);
+      node.removeEventListener("touchcancel", handleTouchEnd);
+      node.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    activePane,
+    activeThreadID,
+    markUserScrollAwayIntent,
+    splitConversation
+  ]);
 
   useLayoutEffect(() => {
     const node = conversationViewport();
@@ -397,8 +479,9 @@ export function useConversationScrollState({
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
       }
+      clearUserScrollAwayIntent();
     };
-  }, []);
+  }, [clearUserScrollAwayIntent]);
 
   return {
     conversationScrollRef,

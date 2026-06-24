@@ -1120,6 +1120,9 @@ export function App(): JSX.Element {
     enableConversationAutoFollow();
     scheduleStreamScroll();
   }, [enableConversationAutoFollow, scheduleStreamScroll]);
+  const handleRequestLatest = useCallback(() => {
+    scrollConversationToBottom({ force: true });
+  }, [scrollConversationToBottom]);
   const canEditCachedThreadMessage = useStableCallback((thread: Thread) =>
     canShowHistoryEditButton(thread),
   );
@@ -1942,6 +1945,7 @@ export function App(): JSX.Element {
           void submitEditedThreadMessageFromHistory(thread, turnID, item, text, images, files, pane)
         }
         onStreamFrame={scheduleStreamScroll}
+        onRequestLatest={handleRequestLatest}
         onNoticeAction={handleNoticeAction}
       />
     );
@@ -5271,6 +5275,7 @@ export function App(): JSX.Element {
                 conversationGridVisible={conversationGridVisible}
                 historyMessageEdit={historyMessageEdit}
                 onStreamFrame={scheduleStreamScroll}
+                onRequestLatest={handleRequestLatest}
                 onCollapseComplete={handleTurnCollapseComplete}
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
@@ -5422,6 +5427,7 @@ type CachedConversationPanesProps = {
   conversationGridVisible: boolean;
   historyMessageEdit?: HistoryMessageEditState;
   onStreamFrame: () => void;
+  onRequestLatest: () => void;
   onCollapseComplete: () => void;
   canEditThreadMessage: (thread: Thread) => boolean;
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
@@ -5446,6 +5452,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   conversationGridVisible,
   historyMessageEdit,
   onStreamFrame,
+  onRequestLatest,
   onCollapseComplete,
   canEditThreadMessage,
   onForkMessage,
@@ -5480,6 +5487,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   cwd={thread.cwd ?? activeContextCwd}
                   latestAgentMessageID={threadLatestAgentMessageID}
                   onStreamFrame={onStreamFrame}
+                  onRequestLatest={onRequestLatest}
                   onCollapseComplete={onCollapseComplete}
                   onForkMessage={(turnID, itemID) =>
                     onForkMessage(thread, turnID, itemID)

@@ -51,6 +51,7 @@ export function AssistantTurnShell({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onRequestLatest,
   onCollapseComplete,
   onNoticeAction,
 }: {
@@ -61,6 +62,7 @@ export function AssistantTurnShell({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onRequestLatest?: () => void;
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -101,6 +103,7 @@ export function AssistantTurnShell({
     latestAgentMessageID,
     onStreamFrame,
     onForkMessage,
+    onRequestLatest,
     onCollapseComplete,
     onNoticeAction,
   };
@@ -150,6 +153,7 @@ function TurnProcessFold({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onRequestLatest,
   onCollapseComplete,
   onNoticeAction,
 }: {
@@ -162,6 +166,7 @@ function TurnProcessFold({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onRequestLatest?: () => void;
   /**
    * Fires once the fold has finished collapsing so the conversation
    * scroll container can re-anchor `scrollTop = scrollHeight`. The
@@ -254,8 +259,11 @@ function TurnProcessFold({
   // the timer.
   const handleToggle = useCallback(() => {
     userToggledRef.current = true;
+    if (!expanded) {
+      onRequestLatest?.();
+    }
     setExpanded((prev) => !prev);
-  }, []);
+  }, [expanded, onRequestLatest]);
 
   const hasDetails = entries.length > 0;
   const visiblePreview = expanded ? undefined : latestPreview;
@@ -346,6 +354,7 @@ return (
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
                     onForkMessage={onForkMessage}
+                    onRequestLatest={onRequestLatest}
                     onNoticeAction={onNoticeAction}
                   />
                 </div>
@@ -366,6 +375,7 @@ function EntryRenderer({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
+  onRequestLatest,
   onNoticeAction,
 }: {
   entry: TurnEntry;
@@ -375,6 +385,7 @@ function EntryRenderer({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
+  onRequestLatest?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
@@ -385,6 +396,7 @@ function EntryRenderer({
         turn={turn}
         cwd={cwd}
         onStreamFrame={onStreamFrame}
+        onRequestLatest={onRequestLatest}
         onNoticeAction={onNoticeAction}
       />
     );
@@ -426,6 +438,7 @@ function EntryRenderer({
         turnStatus={turn.status}
         cwd={cwd}
         onStreamFrame={onStreamFrame}
+        onRequestLatest={onRequestLatest}
         onNoticeAction={onNoticeAction}
       />
     );
@@ -465,12 +478,14 @@ function ProcessClusterRow({
   turn,
   cwd,
   onStreamFrame,
+  onRequestLatest,
   onNoticeAction,
 }: {
   entry: TurnEntry;
   turn: Turn;
   cwd?: string;
   onStreamFrame: () => void;
+  onRequestLatest?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const items = entry.items ?? [entry.item];
@@ -535,8 +550,17 @@ function ProcessClusterRow({
     );
   }
 
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>): void => {
+    if (event.currentTarget.open) {
+      onRequestLatest?.();
+    }
+  };
+
   return (
-    <details className={`process-cluster-fold${failed ? " failed" : ""}`}>
+    <details
+      className={`process-cluster-fold${failed ? " failed" : ""}`}
+      onToggle={handleToggle}
+    >
       <summary className={className}>
         {summary}
         <ChevronRight
@@ -634,6 +658,7 @@ function ReasoningFold({
   turnStatus,
   cwd,
   onStreamFrame,
+  onRequestLatest,
   onNoticeAction,
 }: {
   item: ThreadItem;
@@ -642,6 +667,7 @@ function ReasoningFold({
   turnStatus: Turn["status"];
   cwd?: string;
   onStreamFrame: () => void;
+  onRequestLatest?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const label = streaming ? "正在思考" : "查看思考过程";
@@ -791,6 +817,7 @@ function ReasoningFold({
       ".turn-reasoning-body",
     ) as HTMLElement | null;
     if (!body) return;
+    onRequestLatest?.();
     reasoningAutoFollowRef.current = true;
     let settled = false;
     const snapToBottom = (transitionEvent?: Event) => {
