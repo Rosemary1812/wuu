@@ -36,6 +36,17 @@ function makeLongTurns(): Turn[] {
   ];
 }
 
+function makeLongTurnsSnapshot(version: number): Turn[] {
+  return [
+    {
+      id: "turn-1",
+      items: [],
+      items_view: "full",
+      status: version % 2 === 0 ? "in_progress" : "completed",
+    },
+  ];
+}
+
 type StubbedLayout = {
   scrollHeight: number;
   clientHeight: number;
@@ -76,15 +87,17 @@ type HookHandle = ReturnType<typeof useConversationScrollState> & {
 };
 
 function Probe({
+  turns,
   onReady
 }: {
+  turns?: Turn[];
   onReady: (handle: HookHandle, node: HTMLDivElement) => void;
 }): ReactNode {
   const handle = useConversationScrollState({
     activeThreadID: "thread-1",
     activePane: "primary",
     splitConversation: false,
-    primaryTurns: makeLongTurns(),
+    primaryTurns: turns ?? makeLongTurns(),
     secondaryTurns: undefined,
     emptyConversation: false,
     previewingLaunch: false,
@@ -204,11 +217,13 @@ describe("useConversationScrollState — high-frequency stream", () => {
   function mount(opts: {
     scrollHeight: number;
     clientHeight: number;
+    turns?: Turn[];
   }): void {
     act(() => {
       root = createRoot(container);
       root.render(
         createElement(Probe, {
+          turns: opts.turns,
           onReady: (h, n) => {
             handle = h;
             node = n;
@@ -222,6 +237,21 @@ describe("useConversationScrollState — high-frequency stream", () => {
       clientHeight: opts.clientHeight,
       // Land at the bottom of the initial scroll area.
       scrollTop: opts.scrollHeight - opts.clientHeight,
+    });
+  }
+
+  function rerenderTurns(turns: Turn[]): void {
+    if (!root) throw new Error("not mounted");
+    act(() => {
+      root!.render(
+        createElement(Probe, {
+          turns,
+          onReady: (h, n) => {
+            handle = h;
+            node = n;
+          },
+        }),
+      );
     });
   }
 
@@ -315,6 +345,47 @@ describe("useConversationScrollState — high-frequency stream", () => {
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
     expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("re-anchors during the turn snapshot commit before the next animation frame", () => {
+    mount({
+      scrollHeight: 2000,
+      clientHeight: 600,
+      turns: makeLongTurnsSnapshot(0),
+    });
+    if (!layout || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    // New non-token content, such as a gray process row after commentary,
+    // grows the layout as part of the React commit. Waiting until the next
+    // RAF lets the browser paint one frame at the old scrollTop.
+    layout.scrollHeight += 96;
+    rerenderTurns(makeLongTurnsSnapshot(1));
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("does not re-anchor a turn snapshot commit after the user scrolls away", () => {
+    mount({
+      scrollHeight: 2000,
+      clientHeight: 600,
+      turns: makeLongTurnsSnapshot(0),
+    });
+    if (!layout || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => {
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 120;
+    });
+    fireUserScroll();
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    layout.scrollHeight += 96;
+    rerenderTurns(makeLongTurnsSnapshot(1));
+
+    expect(layout.scrollTop).toBe(2000 - 600 - 120);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("disengages auto-follow the moment the user scrolls up — no 16px dead zone", () => {

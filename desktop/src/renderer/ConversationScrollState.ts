@@ -336,9 +336,14 @@ export function useConversationScrollState({
     return undefined;
   }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
 
-  useEffect(() => {
-    scheduleStreamScroll();
-  }, [primaryTurns, secondaryTurns, scheduleStreamScroll]);
+  useLayoutEffect(() => {
+    if (!activeThreadID) {
+      return;
+    }
+    // Turn snapshots can add non-token content (for example a gray process
+    // row). Re-anchor before paint so the bottom never flashes at old scrollTop.
+    scrollConversationToBottom();
+  }, [activeThreadID, primaryTurns, secondaryTurns, scrollConversationToBottom]);
 
   useLayoutEffect(() => {
     const node = conversationViewport();
