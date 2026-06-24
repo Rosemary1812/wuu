@@ -364,7 +364,26 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		}
 		nonSystemSeen++
 		if shouldMarkAnthropicStableBoundary(req.CacheHint, nonSystemSeen) {
-			cacheBoundary = &anthropicCacheBoundary{MessageIndex: destIdx, BlockEnd: destBlockEnd}
+			// Pre-compute the boundary source message's last cacheable
+			// block in absolute payload coordinates. mapped.Content has
+			// just been appended to payload.Messages[destIdx].Content,
+			// so the source's blocks occupy the trailing
+			// [destBlockEnd-len(mapped.Content), destBlockEnd) range.
+			// Translating mapped's source-side last-cacheable index into
+			// payload coordinates lets markAnthropicBoundaryForCache
+			// walk strictly within source's blocks instead of spilling
+			// into earlier source messages that share the same merged
+			// payload slot.
+			srcLastCacheable := lastCacheableBlockIndex(mapped.Content)
+			payloadIdx := -1
+			if srcLastCacheable >= 0 {
+				payloadIdx = destBlockEnd - len(mapped.Content) + srcLastCacheable
+			}
+			cacheBoundary = &anthropicCacheBoundary{
+				MessageIndex:                  destIdx,
+				BlockEnd:                      destBlockEnd,
+				SourceLastCacheablePayloadIdx: payloadIdx,
+			}
 		}
 	}
 	providers.DebugLogf("buildAnthropicRequest: %d input msgs → %d merged msgs", len(req.Messages), len(payload.Messages))
@@ -654,6 +673,31 @@ func stableToolPrefixLength(defs []providers.ToolDefinition) int {
 type anthropicCacheBoundary struct {
 	MessageIndex int
 	BlockEnd     int
+	// SourceLastCacheablePayloadIdx is the absolute index inside
+	// payload.Messages[MessageIndex].Content of the last cacheable block
+	// that belongs to the boundary source message. Computed after merge
+	// so markAnthropicBoundaryForCache can walk backward strictly within
+	// the boundary source's block range instead of spilling into
+	// earlier source messages that happen to share the same merged
+	// payload slot (typical when worker mailbox text is merged into the
+	// same user message as the trailing tool_result). Set to -1 when the
+	// boundary source message has no cacheable block (all image /
+	// audio / thinking), in which case the caller falls back to the
+	// stable-prefix loop.
+	SourceLastCacheablePayloadIdx int
+}
+
+// lastCacheableBlockIndex returns the index of the last block in blocks
+// that anthropicBlockSupportsCache accepts, or -1 when none qualify.
+// Used at the boundary capture site to pre-compute where the boundary
+// source message's last cacheable block lands in the merged payload.
+func lastCacheableBlockIndex(blocks []anthropicBlock) int {
+	for i := len(blocks) - 1; i >= 0; i-- {
+		if anthropicBlockSupportsCache(&blocks[i]) {
+			return i
+		}
+	}
+	return -1
 }
 
 func shouldMarkAnthropicStableBoundary(hint *providers.CacheHint, nonSystemSeen int) bool {
@@ -704,8 +748,39 @@ func markAnthropicMessageForCache(msg *anthropicMessage) bool {
 
 func markAnthropicBoundaryForCache(messages []anthropicMessage, boundary anthropicCacheBoundary) bool {
 	msgIdx := boundary.MessageIndex
+	if msgIdx < 0 || msgIdx >= len(messages) {
+		return false
+	}
+
+	// When the capture site pre-computed the boundary source message's
+	// last cacheable block (typical case: source has at least one
+	// text / tool_use / tool_result block), mark exactly that block.
+	// The pre-computed index points inside the merged payload's content
+	// at the trailing position the boundary source message occupies, so
+	// we never mark an earlier source message's block — fixing the
+	// walk-backward spill that hit worker mailbox + image-tail boundary
+	// configurations.
+	if boundary.SourceLastCacheablePayloadIdx >= 0 {
+		if boundary.SourceLastCacheablePayloadIdx < len(messages[msgIdx].Content) {
+			block := &messages[msgIdx].Content[boundary.SourceLastCacheablePayloadIdx]
+			if anthropicBlockSupportsCache(block) {
+				block.CacheControl = ephemeralCacheControl()
+				return true
+			}
+		}
+		// Source index was set but the block isn't cacheable (caller
+		// raced past merge boundary) — fall through to legacy
+		// walk-backward so we still anchor somewhere useful.
+	}
+
+	// Legacy walk-backward fallback. SourceLastCacheablePayloadIdx is
+	// -1 when the boundary source message is entirely uncacheable
+	// (e.g. a single image block) or when callers haven't been
+	// updated to pre-compute the index. The stable-prefix loop in
+	// applyAnthropicCacheHint catches the false return and picks an
+	// anchor in the same range.
 	blockIdx := boundary.BlockEnd - 1
-	if msgIdx < 0 || msgIdx >= len(messages) || blockIdx < 0 {
+	if blockIdx < 0 {
 		return false
 	}
 	if blockIdx >= len(messages[msgIdx].Content) {

@@ -1912,3 +1912,124 @@ func TestStampCacheCreationFlag(t *testing.T) {
 		}
 	})
 }
+
+func TestLastCacheableBlockIndex(t *testing.T) {
+	t.Run("empty blocks returns -1", func(t *testing.T) {
+		if got := lastCacheableBlockIndex(nil); got != -1 {
+			t.Errorf("lastCacheableBlockIndex(nil) = %d, want -1", got)
+		}
+		if got := lastCacheableBlockIndex([]anthropicBlock{}); got != -1 {
+			t.Errorf("lastCacheableBlockIndex([]) = %d, want -1", got)
+		}
+	})
+	t.Run("all cacheable returns last index", func(t *testing.T) {
+		blocks := []anthropicBlock{
+			{Type: "text", Text: "a"},
+			{Type: "text", Text: "b"},
+			{Type: "text", Text: "c"},
+		}
+		if got := lastCacheableBlockIndex(blocks); got != 2 {
+			t.Errorf("got %d, want 2", got)
+		}
+	})
+	t.Run("text after image returns text index", func(t *testing.T) {
+		blocks := []anthropicBlock{
+			{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: "image/png", Data: "..."}},
+			{Type: "text", Text: "tail"},
+		}
+		if got := lastCacheableBlockIndex(blocks); got != 1 {
+			t.Errorf("got %d, want 1", got)
+		}
+	})
+	t.Run("all uncacheable returns -1", func(t *testing.T) {
+		blocks := []anthropicBlock{
+			{Type: "image"},
+			{Type: "audio"},
+			{Type: "thinking"},
+		}
+		if got := lastCacheableBlockIndex(blocks); got != -1 {
+			t.Errorf("got %d, want -1", got)
+		}
+	})
+	t.Run("mixed with tool_use picks tool_use index", func(t *testing.T) {
+		blocks := []anthropicBlock{
+			{Type: "image"},
+			{Type: "tool_use", ID: "x", Name: "Read"},
+		}
+		if got := lastCacheableBlockIndex(blocks); got != 1 {
+			t.Errorf("got %d, want 1", got)
+		}
+	})
+}
+
+func TestMarkAnthropicBoundaryForCache_UsesPreComputedSourceIndex(t *testing.T) {
+	// Source scenario:
+	//   s0: user "hi"                        (merged into messages[0])
+	//   s1: assistant tool_call              (messages[1])
+	//   s2: user tool_result                 (merged into messages[2])
+	//   s3: user mailbox_text                (merged into messages[2])
+	//   s4: user [text_a, image_b]           (merged into messages[2])
+	//
+	// After merge, messages[2].Content holds all of s2+s3+s4 blocks. The
+	// boundary is at s4 (nonSystemSeen hits StablePrefixMessages=5).
+	// SourceLastCacheablePayloadIdx is pre-computed to point at s4's
+	// text_a (the last cacheable block within s4). Without the fix, the
+	// walk-backward would land on s3's mailbox_text, leaving s4's image_b
+	// permanently uncached.
+	messages := []anthropicMessage{
+		{Role: "user", Content: []anthropicBlock{{Type: "text", Text: "hi"}}},
+		{Role: "assistant", Content: []anthropicBlock{{Type: "tool_use", ID: "call-1", Name: "Read"}}},
+		{Role: "user", Content: []anthropicBlock{
+			{Type: "tool_result", ToolUseID: "call-1", Content: "result-1"},
+			{Type: "text", Text: "mailbox"},
+			{Type: "text", Text: "text_a"},
+			{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: "image/png", Data: "x"}},
+		}},
+	}
+	// s4 occupies indices [2, 4) in messages[2].Content (text_a at 2,
+	// image at 3). Last cacheable in s4 is text_a at payload index 2.
+	boundary := anthropicCacheBoundary{
+		MessageIndex:                  2,
+		BlockEnd:                      4,
+		SourceLastCacheablePayloadIdx: 2,
+	}
+	if !markAnthropicBoundaryForCache(messages, boundary) {
+		t.Fatal("expected markAnthropicBoundaryForCache to return true")
+	}
+	marked := messages[2].Content[2]
+	if marked.CacheControl == nil || marked.CacheControl.Type != "ephemeral" {
+		t.Errorf("expected CacheControl=ephemeral on s4 text_a, got %+v", marked.CacheControl)
+	}
+	// mailbox_text (s3) must NOT be marked.
+	if messages[2].Content[1].CacheControl != nil {
+		t.Errorf("expected s3 mailbox_text to be untouched, got %+v", messages[2].Content[1].CacheControl)
+	}
+}
+
+func TestMarkAnthropicBoundaryForCache_LegacyFallbackWhenSourceEmpty(t *testing.T) {
+	// Boundary source message has no cacheable blocks. The pre-computed
+	// index is -1, so we fall back to the legacy walk-backward which
+	// marks the nearest preceding cacheable block (mailbox_text in this
+	// case, since s4 contributes only an image).
+	messages := []anthropicMessage{
+		{Role: "user", Content: []anthropicBlock{{Type: "text", Text: "hi"}}},
+		{Role: "assistant", Content: []anthropicBlock{{Type: "tool_use", ID: "c1", Name: "Read"}}},
+		{Role: "user", Content: []anthropicBlock{
+			{Type: "tool_result", ToolUseID: "c1", Content: "r"},
+			{Type: "text", Text: "mailbox"},
+			{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: "image/png", Data: "x"}},
+		}},
+	}
+	boundary := anthropicCacheBoundary{
+		MessageIndex:                  2,
+		BlockEnd:                      3,
+		SourceLastCacheablePayloadIdx: -1,
+	}
+	if !markAnthropicBoundaryForCache(messages, boundary) {
+		t.Fatal("expected legacy fallback to find a cacheable block")
+	}
+	marked := messages[2].Content[1]
+	if marked.CacheControl == nil || marked.CacheControl.Type != "ephemeral" {
+		t.Errorf("expected CacheControl=ephemeral on mailbox_text, got %+v", marked.CacheControl)
+	}
+}
