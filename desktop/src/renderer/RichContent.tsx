@@ -217,22 +217,22 @@ function markdownComponents(
       return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p")}</p>;
     },
     h1({ children }) {
-      return <h1 className="rich-heading rich-heading-1">{renderMarkdownText(children, renderText, "h1")}</h1>;
+      return <p className="rich-heading">{renderMarkdownText(children, renderText, "h1")}</p>;
     },
     h2({ children }) {
-      return <h2 className="rich-heading rich-heading-2">{renderMarkdownText(children, renderText, "h2")}</h2>;
+      return <p className="rich-heading">{renderMarkdownText(children, renderText, "h2")}</p>;
     },
     h3({ children }) {
-      return <h3 className="rich-heading rich-heading-3">{renderMarkdownText(children, renderText, "h3")}</h3>;
+      return <p className="rich-heading">{renderMarkdownText(children, renderText, "h3")}</p>;
     },
     h4({ children }) {
-      return <h4 className="rich-heading rich-heading-4">{renderMarkdownText(children, renderText, "h4")}</h4>;
+      return <p className="rich-heading">{renderMarkdownText(children, renderText, "h4")}</p>;
     },
     h5({ children }) {
-      return <h5 className="rich-heading rich-heading-5">{renderMarkdownText(children, renderText, "h5")}</h5>;
+      return <p className="rich-heading">{renderMarkdownText(children, renderText, "h5")}</p>;
     },
     h6({ children }) {
-      return <h6 className="rich-heading rich-heading-6">{renderMarkdownText(children, renderText, "h6")}</h6>;
+      return <p className="rich-heading">{renderMarkdownText(children, renderText, "h6")}</p>;
     },
     a({ href, title, children }) {
       const safeHref = safeMarkdownHref(href);

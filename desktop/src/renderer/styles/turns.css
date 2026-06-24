@@ -3452,34 +3452,22 @@
   white-space: normal;
 }
 
+/*
+ * Chat messages don't surface Markdown headings as h1-h6 — chat is a
+ * linear stream, not a document. A `# foo` reads as a bold paragraph
+ * that picks up the surrounding message rhythm, so the eye stays on
+ * the conversation column instead of bouncing between 14.5px body
+ * text and an 18px heading. `**bold**` still renders as true inline
+ * bold for the few cases that genuinely need emphasis.
+ */
 .rich-heading {
-                                                             
-                                                                   
-                                                                
-                                                                
   margin: 0;
   color: var(--ink);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
-  line-height: 1.3;
-}
-
-.rich-heading-1 {
-                                                                   
-                                                                
-                                                     
-  font-size: 18px;
-}
-
-.rich-heading-2 {
-  font-size: 16px;
-}
-
-.rich-heading-3,
-.rich-heading-4,
-.rich-heading-5,
-.rich-heading-6 {
-  font-size: 15px;
+  line-height: var(--conversation-prose-line-height, inherit);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .rich-paragraph {
