@@ -143,15 +143,16 @@
    * The default state hides the thumb (transparent + track transparent) but
    * still claims its gutter (scrollbar-gutter: stable) so layout never
    * shifts. .scrollbar-visible (added by JS on scroll) or :hover paints
-   * the thumb at the three opacity tiers. */
+   * the thumb at the three opacity tiers. Alpha tuned low so the thumb
+   * reads as a quiet hint rather than a chrome element. */
   --scrollbar-width: 10px;
   --scrollbar-radius: var(--radius-pill);
   --scrollbar-track-bg: transparent;
-  --scrollbar-thumb: rgba(82, 88, 94, 0.32);
-  --scrollbar-thumb-hover: rgba(56, 88, 118, 0.48);
-  --scrollbar-thumb-active: rgba(38, 70, 98, 0.64);
+  --scrollbar-thumb: rgba(82, 88, 94, 0.18);
+  --scrollbar-thumb-hover: rgba(56, 88, 118, 0.30);
+  --scrollbar-thumb-active: rgba(38, 70, 98, 0.45);
   --scrollbar-thin-width: 6px;
-  --scrollbar-thin-thumb: rgba(32, 36, 39, 0.22);
+  --scrollbar-thin-thumb: rgba(32, 36, 39, 0.14);
 
   --turn-warning-border: var(--warning-border);
   --turn-warning-bg: var(--warning-soft);
