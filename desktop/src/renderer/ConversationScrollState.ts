@@ -30,6 +30,16 @@ function clampScrollTop(node: HTMLElement, top: number): number {
   return Math.max(0, Math.min(top, maxScrollTop(node)));
 }
 
+function conversationResizeTargets(node: HTMLElement): HTMLElement[] {
+  const targets = [node];
+  for (const child of Array.from(node.children)) {
+    if (child instanceof HTMLElement) {
+      targets.push(child);
+    }
+  }
+  return targets;
+}
+
 export function useConversationScrollState({
   activeThreadID,
   activePane,
@@ -302,6 +312,33 @@ export function useConversationScrollState({
   useEffect(() => {
     scheduleStreamScroll();
   }, [primaryTurns, secondaryTurns, scheduleStreamScroll]);
+
+  useLayoutEffect(() => {
+    const node = conversationViewport();
+    if (!node || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleStreamScroll();
+    });
+    for (const target of conversationResizeTargets(node)) {
+      resizeObserver.observe(target);
+    }
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [
+    activePane,
+    activeThreadID,
+    emptyConversation,
+    initialized,
+    previewingLaunch,
+    primaryTurns,
+    secondaryTurns,
+    scheduleStreamScroll,
+    showingWorkspaceMode,
+    splitConversation
+  ]);
 
   useLayoutEffect(() => {
     const node = dockComposerNode;
