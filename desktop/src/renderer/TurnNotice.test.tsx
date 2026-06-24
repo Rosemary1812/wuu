@@ -3,16 +3,14 @@
  *
  * The component now branches on `status`:
  *   - `in_progress` renders the centered-label + fading-divider + shared
- *     `reasoning-shimmer` overlay host.
+ *     live-gray sweep host.
  *   - everything else (the established completed / failed states) keeps
  *     the icon + copy layout from the original implementation.
  *
  * These tests pin the markup contract: which class is added, what the
  * host reads as, and which child element holds the sweep. The CSS
- * itself is verified by visual review against the existing
- * `.process-surface-row.is-streaming` and
- * `.turn-reasoning-summary-text.is-streaming` rules, which share the
- * same keyframes and overlay technique.
+ * itself is verified by visual review against the shared live-gray
+ * selector group in `turns.css`.
  */
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";

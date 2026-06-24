@@ -3246,21 +3246,19 @@
   }
 }
 
-/* The whole process-surface row sweeps while it's running. We use
+/* Visible gray process labels sweep while the turn is running. We use
    a `::after` overlay with `mix-blend-mode: lighten` instead of
-   painting the row itself: this keeps the row at full opacity
+   painting the text itself: this keeps the label at full opacity
    (no `color: transparent`) so there is no one-frame flash the
-   moment `is-streaming` flips on, and the overlay covers the
-   chevron and the rest of the row's children naturally without a
-   dedicated color override.
+   moment the live state flips on, and the overlay covers chevrons,
+   counts, and preview text naturally without a dedicated color
+   override.
 
    The overlay slides a transform translate from -50% to 150% of
    the host's own width, so the bright bar always traverses the
    whole row in lockstep with its width — top to bottom of any
-   text appended during streaming. The same overlay also covers
-   `.turn-reasoning-summary-text.is-streaming`, so the keyframes
-   are shared between the process surface and the reasoning fold. */
-@keyframes reasoning-shimmer {
+   text appended during streaming. */
+@keyframes live-gray-shimmer {
   /* Absolute px (not %) so every host — short "正在回复 56s" and
      long "运行命令 · 搜索4项 · 查看 composer.css · 思考过程" alike —
      moves the bright bar at the same 83 px/s. The % version had a
@@ -3357,14 +3355,22 @@
 }
 
 .process-surface-row.is-streaming,
-.turn-reasoning-summary-text.is-streaming {
+.process-surface-row.is-live-gray,
+.turn-reasoning-summary-text.is-streaming,
+.turn-reasoning-summary-text.is-live-gray,
+.turn-process-preview.is-live,
+.context-compaction-compacting-text {
   position: relative;
   isolation: isolate;
   overflow: hidden;
 }
 
 .process-surface-row.is-streaming::after,
-.turn-reasoning-summary-text.is-streaming::after {
+.process-surface-row.is-live-gray::after,
+.turn-reasoning-summary-text.is-streaming::after,
+.turn-reasoning-summary-text.is-live-gray::after,
+.turn-process-preview.is-live::after,
+.context-compaction-compacting-text::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -3384,7 +3390,7 @@
      row text in place, instead of trying to clip to the ::after's
      own (empty) text glyphs) */
   mix-blend-mode: lighten;
-  animation: reasoning-shimmer 4.8s linear infinite;
+  animation: live-gray-shimmer 4.8s linear infinite;
   z-index: 1;
 }
 
@@ -3394,7 +3400,11 @@
   }
 
   .process-surface-row.is-streaming::after,
-  .turn-reasoning-summary-text.is-streaming::after {
+  .process-surface-row.is-live-gray::after,
+  .turn-reasoning-summary-text.is-streaming::after,
+  .turn-reasoning-summary-text.is-live-gray::after,
+  .turn-process-preview.is-live::after,
+  .context-compaction-compacting-text::after {
     animation: none;
     transform: translateX(50%);
   }
@@ -4096,14 +4106,12 @@ pre {
 }
 
 /* in_progress variant: a centered label flanked by two fading dividers
-   with a `reasoning-shimmer` sweep on the label. The host flips from
+   with the shared live-gray sweep on the label. The host flips from
    the default `display: grid` (icon + copy) to a single-row flex
    layout, drops the left border, and grows the dividers from
-   `::before` / `::after`. The shimmer overlay reuses the same
-   `reasoning-shimmer` keyframes and gradient that drive
-   `.process-surface-row.is-streaming` and
-   `.turn-reasoning-summary-text.is-streaming`, so the visual language
-   for "still working" stays unified across tool, reasoning, and
+   `::before` / `::after`. The shimmer overlay lives in the shared
+   live-gray selector group above, so the visual language for "still
+   working" stays unified across tool, reasoning, preview, and
    compaction surfaces. */
 .turn-notice.context-compaction-notice.is-compacting {
   display: flex;
@@ -4131,33 +4139,6 @@ pre {
   color: var(--ink-muted);
   line-height: 1.4;
   white-space: nowrap;
-}
-
-.context-compaction-compacting-text::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    transparent 40%,
-    rgba(255, 255, 255, 0.5) 47%,
-    #ffffff 50%,
-    rgba(255, 255, 255, 0.5) 53%,
-    transparent 60%,
-    transparent 100%
-  );
-  mix-blend-mode: lighten;
-  animation: reasoning-shimmer 4.8s linear infinite;
-  z-index: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .context-compaction-compacting-text::after {
-    animation: none;
-    transform: translateX(50%);
-  }
 }
 
 .turn-notice.context-compaction-notice .turn-notice-copy strong {

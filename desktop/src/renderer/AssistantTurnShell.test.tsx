@@ -531,6 +531,21 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(reasoningSummaryText(folds[0])).toBe("正在思考");
   });
 
+  it("sweeps a settled reasoning label while the turn is still running", () => {
+    const turn = makeTurn("in_progress", [
+      makeReasoning("already thought this through"),
+      makeCommentary("continuing with the next step"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const folds = reasoningFolds(container);
+    expect(folds).toHaveLength(1);
+    const label = folds[0].querySelector(".turn-reasoning-summary-text");
+    expect(label?.textContent).toBe("查看思考过程");
+    expect(label?.classList.contains("is-live-gray")).toBe(true);
+    expect(label?.classList.contains("is-streaming")).toBe(false);
+  });
+
   it("marks a live process group as actively thinking", () => {
     // Consecutive reasoning items render as one process surface, and
     // the compact row sweeps once it's running. The individual reasoning
@@ -553,6 +568,21 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(row?.classList.contains("is-streaming")).toBe(true);
     const label = groups[0].querySelector(".process-surface-reasoning-label");
     expect(label?.textContent).toBe("正在思考");
+  });
+
+  it("sweeps settled process rows while the turn is still running", () => {
+    const turn = makeTurn("in_progress", [
+      makeReadFileTool("src/App.tsx"),
+      makeReasoning("settled reasoning"),
+      makeCommentary("continuing after the settled row"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const rows = processSurfaceRows(container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].classList.contains("is-live-gray")).toBe(true);
+    expect(rows[0].classList.contains("is-streaming")).toBe(false);
+    expect(rows[0].textContent).toContain("思考过程");
   });
 
   it("keeps the reasoning fold closed even when the outer process fold is open", () => {
@@ -974,5 +1004,13 @@ describe("AssistantTurnShell — turn divider styles", () => {
     expect(turnsCSS).not.toMatch(
       /\.turn:first-(?:of-type|child)\s*>\s*\.assistant-turn-shell/,
     );
+  });
+
+  it("shares the live gray sweep across process rows, reasoning labels, previews, and compaction", () => {
+    expect(turnsCSS).toContain(".process-surface-row.is-live-gray");
+    expect(turnsCSS).toContain(".turn-reasoning-summary-text.is-live-gray");
+    expect(turnsCSS).toContain(".turn-process-preview.is-live");
+    expect(turnsCSS).toContain(".context-compaction-compacting-text::after");
+    expect(turnsCSS).toContain("animation: live-gray-shimmer 4.8s linear infinite;");
   });
 });

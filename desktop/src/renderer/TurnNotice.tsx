@@ -98,13 +98,11 @@ export function ContextCompactionNotice({
   text?: string;
   status?: ThreadItemStatus;
 }): JSX.Element {
-  // in_progress reuses the same shimmer overlay pattern as the "code"
-  // surfaces (`.process-surface-row.is-streaming` and
-  // `.turn-reasoning-summary-text.is-streaming`): the shared
-  // `reasoning-shimmer` keyframes drive the sweep. The host itself is
-  // a centered label flanked by two fading dividers — no Archive icon,
-  // no detail copy. When the item flips to completed the host swaps to
-  // the established icon + copy layout.
+  // in_progress reuses the shared live-gray sweep used by active
+  // process rows, reasoning labels, and previews. The host itself is a
+  // centered label flanked by two fading dividers — no Archive icon, no
+  // detail copy. When the item flips to completed the host swaps to the
+  // established icon + copy layout.
   if (status === "in_progress") {
     return (
       <aside

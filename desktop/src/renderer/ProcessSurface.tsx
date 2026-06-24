@@ -44,10 +44,16 @@ type ProcessSurfaceProps = {
   processItems: ThreadItem[];
   /**
    * True while any process item is still receiving deltas. Drives the
-   * shimmer overlay while the fold stays compact until the user opens it.
-   * The caller flips this atomically with `turn.status`.
+   * tool/reasoning reveal behavior while the fold stays compact until
+   * the user opens it.
    */
   streaming: boolean;
+  /**
+   * True while the surrounding turn is still running. This is visual
+   * only: active gray process labels keep sweeping even when an earlier
+   * process item has already settled.
+   */
+  active?: boolean;
   /**
    * Optional render hook for reasoning items in the expanded body.
    * The surface is decoupled from the reasoning fold's scroll and
@@ -75,6 +81,7 @@ function isToolActivityItem(item: ThreadItem): boolean {
 export function ProcessSurface({
   processItems,
   streaming,
+  active,
   renderReasoningItem,
   onRequestLatest,
 }: ProcessSurfaceProps): JSX.Element {
@@ -91,6 +98,7 @@ export function ProcessSurface({
   const reasoningStreaming =
     streaming &&
     reasoningItems.some((item) => item.status === "in_progress");
+  const activeGrayText = active ?? streaming;
 
   // Details are opt-in. The running row itself should stay compact by
   // default; expanding it is a user request to inspect the process trail.
@@ -178,9 +186,9 @@ export function ProcessSurface({
         onToggle={handleToggle}
       >
         <summary
-          className={`process-surface-row${streaming ? " is-streaming" : ""}${
-            failed ? " failed" : ""
-          }`}
+          className={`process-surface-row${
+            activeGrayText ? " is-live-gray" : ""
+          }${streaming ? " is-streaming" : ""}${failed ? " failed" : ""}`}
           onClick={handleSummaryClick}
         >
           {summaryLine}

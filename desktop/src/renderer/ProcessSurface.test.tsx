@@ -193,6 +193,22 @@ describe("ProcessSurface", () => {
     expect(row?.classList.contains("is-streaming")).toBe(false);
   });
 
+  it("sweeps an active settled row without marking its contents streaming", () => {
+    const { container } = render({
+      processItems: [
+        makeReadFile("tool-1", "a.ts", "completed"),
+        makeReasoning("reason-1", "settled thinking", "completed"),
+      ],
+      streaming: false,
+      active: true,
+    });
+    const row = container.querySelector(".process-surface-row");
+    expect(row?.classList.contains("is-live-gray")).toBe(true);
+    expect(row?.classList.contains("is-streaming")).toBe(false);
+    const label = container.querySelector(".process-surface-reasoning-label");
+    expect(label?.textContent).toBe("思考过程");
+  });
+
   it("keeps the fold collapsed when streaming starts", () => {
     const { container } = render({
       processItems: [
