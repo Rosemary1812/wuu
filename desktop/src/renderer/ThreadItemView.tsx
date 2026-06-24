@@ -210,7 +210,7 @@ export function ThreadItemView({
     case "collab_agent_tool_call":
       return <ToolActivityRow items={[item]} />;
     case "context_compaction":
-      return <ContextCompactionNotice text={item.text} />;
+      return <ContextCompactionNotice text={item.text} status={item.status} />;
     case "error":
       return (
         <TurnNotice

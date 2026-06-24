@@ -1,5 +1,5 @@
 import { AlertCircle, Archive, Info, ShieldCheck, Square } from "lucide-react";
-import type { Turn } from "../shared/protocol";
+import type { ThreadItemStatus, Turn } from "../shared/protocol";
 import {
   isCancellationMessage,
   userFacingErrorForMessage,
@@ -93,12 +93,38 @@ export function TurnNotice({
 
 export function ContextCompactionNotice({
   text,
+  status,
 }: {
   text?: string;
+  status?: ThreadItemStatus;
 }): JSX.Element {
+  // in_progress reuses the same shimmer overlay pattern as the "code"
+  // surfaces (`.process-cluster-row.is-streaming` and
+  // `.turn-reasoning-summary-text.is-streaming`): the shared
+  // `reasoning-shimmer` keyframes drive the sweep. The host itself is
+  // a centered label flanked by two fading dividers — no Archive icon,
+  // no detail copy. When the item flips to completed the host swaps to
+  // the established icon + copy layout.
+  if (status === "in_progress") {
+    return (
+      <aside
+        className="turn-notice context-compaction-notice is-compacting"
+        role="status"
+        aria-live="polite"
+      >
+        <span className="context-compaction-compacting-text">
+          正在自动压缩上下文
+        </span>
+      </aside>
+    );
+  }
   const detail = contextCompactionDetail(text);
   return (
-    <aside className="turn-notice context-compaction-notice" role="status">
+    <aside
+      className="turn-notice context-compaction-notice"
+      role="status"
+      aria-live="polite"
+    >
       <span className="turn-notice-icon" aria-hidden="true">
         <Archive className="icon-sm" />
       </span>
