@@ -252,7 +252,7 @@ function clusterProcessEntries(entries: TurnEntry[]): TurnEntry[] {
     }
     const first = pending[0];
     clustered.push({
-      key: `${first.key}-process-cluster`,
+      key: first.key,
       item: first.item,
       items,
       position: "process",

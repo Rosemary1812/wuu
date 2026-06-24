@@ -186,6 +186,32 @@ function renderShell(
   return { container, root };
 }
 
+function rerenderShell(
+  root: Root,
+  turn: Turn,
+  options: RenderOptions = {},
+): void {
+  const display = buildAssistantTurnDisplay(
+    turn,
+    undefined,
+    options.itemRenderer ?? defaultItemRenderer,
+  );
+  if (!display) {
+    throw new Error("expected a display");
+  }
+  act(() => {
+    root.render(
+      createElement(AssistantTurnShell, {
+        turn,
+        display,
+        onStreamFrame: () => {},
+        onRequestLatest: options.onRequestLatest,
+        onNoticeAction: () => {},
+      }),
+    );
+  });
+}
+
 function processFold(container: HTMLElement): HTMLDivElement | null {
   return container.querySelector("div.turn-process-fold");
 }
@@ -210,12 +236,12 @@ function reasoningFolds(container: HTMLElement): HTMLDetailsElement[] {
   return Array.from(container.querySelectorAll("details.turn-reasoning-fold"));
 }
 
-function processClusterFolds(container: HTMLElement): HTMLDetailsElement[] {
-  return Array.from(container.querySelectorAll("details.process-cluster-fold"));
+function processSurfaceFolds(container: HTMLElement): HTMLDetailsElement[] {
+  return Array.from(container.querySelectorAll("details.process-surface-fold"));
 }
 
-function processClusterRows(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll(".process-cluster-row"));
+function processSurfaceRows(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll(".process-surface-row"));
 }
 
 function reasoningSummaryText(fold: HTMLDetailsElement): string {
@@ -502,12 +528,12 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     ]);
     const { container } = renderShell(turn);
 
-    const clusters = processClusterFolds(container);
+    const clusters = processSurfaceFolds(container);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].hasAttribute("open")).toBe(false);
-    const row = clusters[0].querySelector(".process-cluster-row");
+    expect(clusters[0].hasAttribute("open")).toBe(true);
+    const row = clusters[0].querySelector(".process-surface-row");
     expect(row?.classList.contains("is-streaming")).toBe(true);
-    const label = clusters[0].querySelector(".process-cluster-reasoning-label");
+    const label = clusters[0].querySelector(".process-surface-reasoning-label");
     expect(label?.textContent).toBe("正在思考");
   });
 
@@ -579,7 +605,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     const { container } = renderShell(turn);
 
     expect(reasoningFolds(container)).toHaveLength(0);
-    const clusters = processClusterFolds(container);
+    const clusters = processSurfaceFolds(container);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].hasAttribute("open")).toBe(false);
     expect(clusters[0].textContent).toContain("思考过程");
@@ -597,7 +623,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
         latestRequests += 1;
       },
     });
-    const cluster = processClusterFolds(container)[0];
+    const cluster = processSurfaceFolds(container)[0];
 
     act(() => {
       cluster.open = true;
@@ -622,7 +648,7 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(true);
-    const clusters = processClusterRows(container);
+    const clusters = processSurfaceRows(container);
     expect(clusters).toHaveLength(1);
     expect(clusters[0].textContent).toContain("搜索");
     expect(clusters[0].textContent).toContain("正在思考");
@@ -645,6 +671,32 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     expect(container.textContent).toContain("found the file");
   });
 
+  it("keeps one process surface when a post-commentary tool row grows into a cluster", () => {
+    const commentary = makeCommentary("finished commentary");
+    const tool: ThreadItem = {
+      ...makeReadFileTool("src/App.tsx"),
+      status: "in_progress",
+    };
+    const firstTurn = makeTurn("in_progress", [commentary, tool]);
+    const { container, root } = renderShell(firstTurn);
+
+    const surfaceBefore = container.querySelector(".process-surface");
+    expect(surfaceBefore).toBeTruthy();
+    expect(surfaceBefore?.textContent).toContain("查看 App.tsx");
+
+    const reasoning = makeStreamingReasoning("checking the result");
+    const secondTurn = makeTurn("in_progress", [
+      commentary,
+      { ...tool, status: "completed" },
+      reasoning,
+    ]);
+    rerenderShell(root, secondTurn);
+
+    const surfaceAfter = container.querySelector(".process-surface");
+    expect(surfaceAfter).toBe(surfaceBefore);
+    expect(surfaceAfter?.textContent).toContain("正在思考");
+  });
+
   it("groups consecutive tool activity into one count row with details", () => {
     const turn = makeTurn("completed", [
       makeReadFileTool("src/App.tsx"),
@@ -653,9 +705,9 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     ]);
     const { container } = renderShell(turn);
 
-    const clusters = processClusterFolds(container);
+    const clusters = container.querySelectorAll(".process-surface-fold");
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].querySelector(".process-cluster-count")?.textContent).toBe(
+    expect(clusters[0].querySelector(".process-surface-count")?.textContent).toBe(
       "2",
     );
     expect(clusters[0].textContent).toContain("查看 2 个文件");

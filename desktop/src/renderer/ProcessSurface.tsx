@@ -84,6 +84,7 @@ type ProcessSurfaceProps = {
     item: ThreadItem,
     streaming: boolean,
   ) => JSX.Element | null;
+  onRequestLatest?: () => void;
 };
 
 const TOOL_ACTIVITY_ITEM_TYPES = new Set<string>([
@@ -99,6 +100,7 @@ export function ProcessSurface({
   processItems,
   streaming,
   renderReasoningItem,
+  onRequestLatest,
 }: ProcessSurfaceProps): JSX.Element {
   const toolItems = processItems.filter(isToolActivityItem);
   const reasoningItems = processItems.filter(
@@ -138,7 +140,11 @@ export function ProcessSurface({
     event: SyntheticEvent<HTMLDetailsElement>,
   ): void => {
     userInteractedRef.current = true;
-    setExpanded(event.currentTarget.open);
+    const open = event.currentTarget.open;
+    setExpanded(open);
+    if (open) {
+      onRequestLatest?.();
+    }
   };
 
   const className = `process-surface${

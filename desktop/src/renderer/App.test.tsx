@@ -217,7 +217,7 @@ describe("assistant turn entries layout", () => {
     const toolA = makeToolCall("read_file");
     const toolB = makeToolCall("grep");
 
-    // in_progress: activity is one grouped entry with count=2.
+    // in_progress: adjacent tool activity is one process cluster with count=2.
     const inProgressTurn = makeTurn({
       status: "in_progress",
       items: [toolA, toolB],
@@ -229,12 +229,12 @@ describe("assistant turn entries layout", () => {
     );
     expect(inProgressDisplay).toBeDefined();
     expect(answerItemIDs(inProgressDisplay)).toEqual([]);
-    const activityEntries = inProgressDisplay?.entries.filter(
-      (e) => e.kind === "activity",
+    const processEntries = inProgressDisplay?.entries.filter(
+      (e) => e.kind === "process_cluster",
     );
-    expect(activityEntries).toHaveLength(1);
-    expect(activityEntries?.[0]?.count).toBe(2);
-    expect(activityItemIDs(inProgressDisplay)).toEqual([toolA.id]);
+    expect(processEntries).toHaveLength(1);
+    expect(processEntries?.[0]?.count).toBe(2);
+    expect(processItemIDs(inProgressDisplay)).toEqual([toolA.id]);
     expect(inProgressDisplay?.hasAnswer).toBe(false);
     expect(inProgressDisplay?.missingReplyMessage).toBeUndefined();
     // Both tools lack arguments (pure-tool fixture), so under unified
@@ -256,12 +256,12 @@ describe("assistant turn entries layout", () => {
     );
     expect(completedDisplay).toBeDefined();
     expect(answerItemIDs(completedDisplay)).toEqual([]);
-    const completedActivity = completedDisplay?.entries.filter(
-      (e) => e.kind === "activity",
+    const completedProcess = completedDisplay?.entries.filter(
+      (e) => e.kind === "process_cluster",
     );
-    expect(completedActivity).toHaveLength(1);
-    expect(completedActivity?.[0]?.count).toBe(2);
-    expect(activityItemIDs(completedDisplay)).toEqual([toolA.id]);
+    expect(completedProcess).toHaveLength(1);
+    expect(completedProcess?.[0]?.count).toBe(2);
+    expect(processItemIDs(completedDisplay)).toEqual([toolA.id]);
     expect(completedDisplay?.hasAnswer).toBe(false);
     expect(completedDisplay?.missingReplyMessage).toBeUndefined();
     expect(completedDisplay?.latestProcessPreview?.text).toBeUndefined();
