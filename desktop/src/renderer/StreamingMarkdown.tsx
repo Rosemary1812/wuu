@@ -317,12 +317,21 @@ export function StreamingMarkdown({
   // The cursor appears for all live assistant text. Commentary and final
   // answers share the same visual treatment so a later phase resolution does
   // not cause a typography or affordance jump.
-  const showCursor = cursorState !== "gone";
+  // Always render the cursor span so the fold body height stays stable
+  // when the cursor transitions through fading -> gone. Removing the
+  // cursor from DOM shrinks scrollHeight by ~1 line (1.05em), which
+  // clamps scrollTop in ConversationScrollState and creates a visible
+  // UP shift that combines with the next item's auto-follow re-anchor
+  // into a V-shape jitter. Visibility is controlled via the .is-gone
+  // CSS class (see turns.css) instead.
+  const showCursor = true;
   const cursorClassName =
-    CURSOR_CLASS_NAME + (cursorState === "fading" ? " is-fading" : "");
+    CURSOR_CLASS_NAME +
+    (cursorState === "fading" ? " is-fading" : "") +
+    (cursorState === "gone" ? " is-gone" : "");
   const cursorTextRenderer = useMemo(
-    () => showCursor ? createCursorTextRenderer(cursorClassName) : undefined,
-    [cursorClassName, showCursor]
+    () => createCursorTextRenderer(cursorClassName),
+    [cursorClassName]
   );
   // Mermaid is expensive; defer until the stream settles.
   const renderMermaid = phase === "settled";

@@ -126,7 +126,7 @@ describe("StreamingMarkdown", () => {
     expect(surface.textContent).toContain("Hello world");
   });
 
-  it("removes the cursor from the DOM after the fade-out completes", async () => {
+  it("keeps the cursor span in the DOM with .is-gone after the fade-out completes", async () => {
     const key = streamTextKey("turn", "s5", "text");
     streamTextStore.seed(key, "Hello world");
     mount({ streamKey: key, initialText: "Hello world", isLive: false, phase: "final_answer" });
@@ -137,7 +137,15 @@ describe("StreamingMarkdown", () => {
     });
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
-    expect(surface.querySelector(".stream-cursor")).toBeNull();
+    const cursor = surface.querySelector(".stream-cursor");
+    // Cursor must stay in the DOM with .is-gone so the fold body height
+    // doesn't collapse when the cursor transitions out of view. Removing
+    // the span would shrink scrollHeight by ~1 line (1.05em), clamp
+    // scrollTop, and produce a V-shape scroll jitter when the next item
+    // arrives (FoldCollapseAutoFollow reproduction).
+    expect(cursor).not.toBeNull();
+    expect(cursor?.classList.contains("is-gone")).toBe(true);
+    expect(cursor?.classList.contains("is-fading")).toBe(false);
   });
 
   it("notifies once when isLive flips off and the cursor is caught up", async () => {
