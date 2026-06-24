@@ -420,7 +420,7 @@ export function useConversationScrollState({
       return undefined;
     }
     const resizeObserver = new ResizeObserver(() => {
-      scheduleStreamScroll();
+      scrollConversationToBottom();
     });
     observeAutoFollowResizeTargets(node, resizeObserver);
     return () => {
@@ -434,7 +434,7 @@ export function useConversationScrollState({
     previewingLaunch,
     primaryTurns,
     secondaryTurns,
-    scheduleStreamScroll,
+    scrollConversationToBottom,
     showingWorkspaceMode,
     splitConversation
   ]);

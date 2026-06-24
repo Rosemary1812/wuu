@@ -299,7 +299,7 @@ describe("useConversationScrollState — high-frequency stream", () => {
     }
   });
 
-  it("keeps following when streamed content grows after the stream frame", () => {
+  it("re-anchors immediately when streamed content grows after the stream frame", () => {
     mount({ scrollHeight: 2000, clientHeight: 600 });
     if (!layout || !node) throw new Error("not mounted");
     flushScheduledScroll();
@@ -312,7 +312,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.scrollHeight += 120;
       flushResizeObservers();
     });
-    flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
     expect(node.dataset.userScrolledAway ?? "false").toBe("false");

@@ -284,13 +284,13 @@ export function useAutoFollowScrollContainer({
       return undefined;
     }
     const resizeObserver = new ResizeObserver(() => {
-      scheduleScrollToBottom();
+      scrollToBottom();
     });
     observeAutoFollowResizeTargets(node, resizeObserver);
     return () => {
       resizeObserver.disconnect();
     };
-  }, [observeKey, scheduleScrollToBottom]);
+  }, [observeKey, scrollToBottom]);
 
   useEffect(() => {
     if (!open) {
