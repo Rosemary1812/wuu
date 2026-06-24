@@ -394,6 +394,9 @@ afterEach(() => {
   });
   mountedRoots = [];
   for (let index = 1; index <= idCounter; index += 1) {
+    streamTextStore.clearItem("turn-1", `commentary-${index}`);
+    streamTextStore.clearItem("turn-1", `final-${index}`);
+    streamTextStore.clearItem("turn-1", `live-agent-${index}`);
     streamTextStore.clearItem("turn-1", `reasoning-${index}`);
     streamTextStore.clearItem("turn-1", `reasoning-live-${index}`);
   }
@@ -459,6 +462,24 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
 
     expect(processFoldOpen(container)).toBe(false);
     expect(container.querySelector(".turn-process-preview")).not.toBeNull();
+  });
+
+  it("keeps completed commentary visible when the item snapshot is briefly empty", async () => {
+    const commentary = makeCommentary("");
+    const key = streamTextKey("turn-1", commentary.id, "text");
+    streamTextStore.set(key, "finished commentary");
+    const turn = makeTurn("in_progress", [commentary]);
+    const { container, root } = renderShell(turn);
+
+    expect(container.textContent).toContain("finished commentary");
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    rerenderShell(root, turn);
+
+    expect(container.textContent).toContain("finished commentary");
+    expect(streamTextStore.get(key)).toBe("finished commentary");
   });
 
   it("treats opening the process fold as a request for the latest output", () => {

@@ -125,7 +125,12 @@ export function StreamingMarkdown({
   const phase: StreamPhase = isLive ? "streaming" : "settled";
 
   /* ------------------------- Visible character cursor -------------------- */
-  const [visibleLength, setVisibleLength] = useState<number>(initialText.length);
+  const initialVisibleLength = isLive
+    ? Math.min(initialText.length, targetText.length)
+    : targetText.length;
+  const [visibleLength, setVisibleLength] = useState<number>(
+    initialVisibleLength,
+  );
 
   /* --------------------- Cursor lifecycle (shown -> fading -> gone) ------- */
   const [cursorState, setCursorState] = useState<"shown" | "fading" | "gone">("shown");
@@ -164,12 +169,6 @@ export function StreamingMarkdown({
     settledNotifiedRef.current = true;
     onSettledRef.current?.();
   }, []);
-
-  // If `isLive` arrives after the cursor has already caught up, there is
-  // no animation frame left to trigger the callback.
-  useEffect(() => {
-    trySettle();
-  }, [isLive, renderedText, trySettle]);
 
   /* --------------------------- Sync / RAF loop --------------------------- */
   // Snap visible to text length without animation. Used when the surface
@@ -243,6 +242,7 @@ export function StreamingMarkdown({
     // Non-live surfaces render the latest text without animation.
     if (!isLiveRef.current) {
       syncImmediate(renderedTextRef.current);
+      trySettle();
       return undefined;
     }
     const text = renderedTextRef.current;
@@ -281,7 +281,6 @@ export function StreamingMarkdown({
     if (visibleRef.current < text.length) {
       syncImmediate(text);
     }
-    settledNotifiedRef.current = false;
     trySettle();
   }, [isLive, syncImmediate, trySettle]);
 

@@ -174,7 +174,6 @@ export function ThreadItemView({
               turnID={turnID}
               item={item}
               cwd={cwd}
-              streaming={streaming}
               pendingCompanionReasoning={pendingCompanionReasoning}
               onStreamFrame={onStreamFrame}
             />
@@ -201,7 +200,6 @@ export function ThreadItemView({
           <ReasoningContent
             turnID={turnID}
             item={item}
-            streaming={streaming}
             onStreamFrame={onStreamFrame}
           />
         </article>
@@ -453,14 +451,12 @@ function AgentMessageContent({
   turnID,
   item,
   cwd,
-  streaming,
   pendingCompanionReasoning,
   onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
   cwd?: string;
-  streaming: boolean;
   /**
    * True when the turn has a reasoning block that the model just finished
    * writing. The first answer item waits a short beat so the reasoning
@@ -499,17 +495,6 @@ function AgentMessageContent({
     };
   }, [pendingCompanionReasoning]);
 
-  // When the item completes, drop the buffered stream immediately. Doing
-  // this here (instead of inside StreamingMarkdown's onSettled callback)
-  // means the store is cleared even if the component is about to unmount
-  // and the callback never fires. The store entry is no longer needed
-  // for rendering, since the final text lives on `item.text`.
-  useEffect(() => {
-    if (!isLive) {
-      streamTextStore.clearItem(turnID, item.id);
-    }
-  }, [turnID, item.id, isLive]);
-
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
 
   return (
@@ -536,24 +521,14 @@ function AgentMessageContent({
 function ReasoningContent({
   turnID,
   item,
-  streaming,
   onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
-  streaming: boolean;
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const isLive = item.status === "in_progress";
-
-  // Same clear-on-settle pattern as AgentMessageContent — we own the
-  // lifecycle instead of relying on the StreamingMarkdown callback.
-  useEffect(() => {
-    if (!isLive) {
-      streamTextStore.clearItem(turnID, item.id);
-    }
-  }, [turnID, item.id, isLive]);
 
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
 
