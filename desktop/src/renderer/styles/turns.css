@@ -3577,6 +3577,7 @@
 }
 
 .rich-code-block {
+  position: relative;
   margin: 8px 0;
   background: #f3f3f0;
   border: 1px solid var(--ink-overlay-6);
@@ -3589,36 +3590,36 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-
-.rich-code-header {
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 8px 0 12px;
-  border-bottom: 1px solid var(--ink-overlay-6);
-  background: rgba(255, 255, 255, 0.5);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding-top: 28px;
 }
 
 .rich-code-language {
-  font-size: var(--font-xs);
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  z-index: 1;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 10px;
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--ink-muted);
+  pointer-events: none;
+  user-select: none;
 }
 
 .rich-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
   --message-copy-rest-transform: none;
-  margin-left: auto;
   width: 24px;
   height: 24px;
   border-radius: var(--radius-pill);
-  background: transparent;
-  box-shadow: none;
-  opacity: 0.55;
-  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 2px var(--ink-overlay-8);
+  opacity: 0.5;
   transition:
     background-color 120ms ease,
     color 120ms ease,
@@ -3629,8 +3630,7 @@
 .rich-code-copy:hover,
 .rich-code-copy:focus-visible {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--ink);
+  background: var(--paper);
 }
 
 .rich-code-copy.copied,

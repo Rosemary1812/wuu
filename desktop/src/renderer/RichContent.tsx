@@ -306,20 +306,18 @@ function RichCodeBlock({
 }): JSX.Element {
   return (
     <div className="rich-code-block">
-      <div className="rich-code-header">
-        {language ? <span className="rich-code-language">{language}</span> : null}
-        <MessageCopyButton
-          getText={() => code}
-          className="rich-code-copy"
-          iconSize={13}
-          idleLabel="复制代码"
-          copiedLabel="已复制代码"
-          failedLabel="复制失败"
-        />
-      </div>
       <pre className="rich-code">
         {children}
       </pre>
+      {language ? <span className="rich-code-language">{language}</span> : null}
+      <MessageCopyButton
+        getText={() => code}
+        className="rich-code-copy"
+        iconSize={13}
+        idleLabel="复制代码"
+        copiedLabel="已复制代码"
+        failedLabel="复制失败"
+      />
     </div>
   );
 }
