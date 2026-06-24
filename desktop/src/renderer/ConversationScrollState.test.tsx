@@ -195,6 +195,29 @@ describe("useConversationScrollState — userScrolledAway", () => {
     expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
+  it("disengages auto-follow on any user scroll-up — no dead zone at the bottom", () => {
+    // Regression gate for the universal scroll-up "resistance" bug:
+    // even a single wheel-up that lands inside the old 16px bottom
+    // band must immediately take auto-follow off, so the next
+    // scheduleStreamScroll (stream tick, fold re-anchor, etc.) cannot
+    // yank the user back to the bottom mid-gesture.
+    mount({ scrollHeight: 2000, clientHeight: 600, initialScrollTop: 2000 - 600 });
+    // Prime lastRef at the max position.
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+
+    // Wheel up 8px — well inside the old 16px band. Pill must show.
+    setScrollTop(2000 - 600 - 8);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
+
+    // Scroll back to the bottom: scrolledUp is false and we're parked
+    // at the latest view, so auto-follow re-engages and the pill hides.
+    setScrollTop(2000 - 600);
+    fireScroll();
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
   it("does not let a stale direction cue keep the pill visible on a non-scrollable viewport", () => {
     // Reproduce the original bug: a short thread whose useLayoutEffect
     // cannot fire a scroll event because scrollTop cannot change. The

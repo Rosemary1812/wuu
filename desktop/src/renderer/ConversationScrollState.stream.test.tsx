@@ -189,13 +189,18 @@ describe("useConversationScrollState — high-frequency stream", () => {
     }
   });
 
-  it("survives a sub-frame stream tick that lands scrollTop exactly at the threshold edge", () => {
-    // Edge case: scrollTop ends at exactly CONVERSATION_AUTO_SCROLL_THRESHOLD_PX
-    // from the bottom (16px). The pill must hide and auto-follow must
-    // stay engaged.
+  it("disengages auto-follow the moment the user scrolls up — no 16px dead zone", () => {
+    // Regression gate for the scroll-up "resistance" bug: any wheel-up
+    // from the bottom must take auto-follow off immediately, including
+    // deltas well inside the old 16px threshold band. Re-arming only
+    // on a downward / settled scroll is what makes the scroll feel
+    // responsive instead of springing back the moment something
+    // triggers `scheduleStreamScroll`.
     mount({ scrollHeight: 2000, clientHeight: 600 });
     if (!layout || !handle || !node) throw new Error("not mounted");
 
+    // Park at the bottom and dispatch a scroll event so lastRef is
+    // primed to the max position.
     act(() => {
       handle!.scheduleStreamScroll();
       if (node) {
@@ -205,17 +210,17 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
     expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
 
-    // Drop scrollTop exactly to 16px above the bottom.
+    // Wheel up 8px — well inside the old 16px band. The pill must
+    // show and auto-follow must drop.
     act(() => {
-      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 16;
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 8;
       if (node) {
         node.dispatchEvent(new Event("scroll", { bubbles: false }));
       }
     });
-    // 16px is the inclusive threshold, so the pill must still hide.
-    expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
+    expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
 
-    // One more pixel up and the pill should now show.
+    // Wheel up another 9px (17px total). State stays away-from-latest.
     act(() => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 17;
       if (node) {
@@ -223,5 +228,43 @@ describe("useConversationScrollState — high-frequency stream", () => {
       }
     });
     expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
+  it("programmatic scroll-to-bottom keeps auto-follow engaged", () => {
+    // Companion case to the dead-zone regression: a stream tick (or
+    // fold re-anchor) that lands scrollTop at the max must keep
+    // auto-follow on. The previous threshold-edge test conflated the
+    // two cases; this one isolates the programmatic-scroll path.
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+
+    // Prime the scroll-event handler at the bottom.
+    act(() => {
+      handle!.scheduleStreamScroll();
+      if (node) {
+        node.scrollTop = node.scrollHeight;
+        node.dispatchEvent(new Event("scroll", { bubbles: false }));
+      }
+    });
+    expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
+
+    // 60 fast stream ticks, each one bumping scrollHeight and
+    // re-anchoring scrollTop = scrollHeight. None of them should
+    // ever flip userScrolledAway to true.
+    for (let tick = 0; tick < 60; tick += 1) {
+      act(() => {
+        layout!.scrollHeight += 8;
+        handle!.scheduleStreamScroll();
+      });
+      act(() => {
+        if (node) {
+          node.scrollTop = node.scrollHeight;
+          node.dispatchEvent(new Event("scroll", { bubbles: false }));
+        }
+      });
+      const bottom = layout.scrollHeight - layout.clientHeight;
+      expect(layout.scrollTop).toBe(bottom);
+      expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
+    }
   });
 });

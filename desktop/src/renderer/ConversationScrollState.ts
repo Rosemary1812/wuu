@@ -158,21 +158,25 @@ export function useConversationScrollState({
     }
     showConversationScrollbar(node);
 
-    // Position-driven userScrolledAway (drives the "Jump to latest" pill).
+    // Position-driven userScrolledAway (drives the "Jump to latest" pill)
+    // and direction-driven auto-follow.
     //
-    // We do not infer "scrolled away" purely from the scroll direction. If
-    // the conversation fits inside the viewport (scrollHeight <= clientHeight)
-    // there is nothing below the fold to jump to, so the pill must stay
-    // hidden even if a stale lastConversationScrollTopRef would otherwise
-    // claim the user once scrolled up. Similarly, if the user is parked
-    // inside the bottom band, they are already at the latest message —
-    // hide the pill.
+    // The previous logic re-armed auto-follow whenever the user landed
+    // inside the bottom band (distanceFromBottom <= 16px), regardless of
+    // scroll direction. That created a dead zone: any wheel-up landing
+    // inside the band left auto-follow engaged, so the next stream tick
+    // (or `onCollapseComplete` re-anchor after a fold shrink) yanked
+    // scrollTop back to scrollHeight and the user felt the scroll as
+    // "resistant" — most visibly during model output but universally
+    // any time something triggered `scheduleStreamScroll` while the user
+    // was inside the band.
     //
-    // The direction-sensitive check (drop auto-follow the moment scrollTop
-    // decreases) is preserved for the *programmatic* auto-follow decision,
-    // so a slow wheel-up does not get silently yanked back to the bottom by
-    // the next stream tick. The two are now independent: userScrolledAway is
-    // about the pill; setAutoFollow is about the stream-follow behaviour.
+    // User intent overrides position: any upward scroll disarms
+    // auto-follow, regardless of how small the delta is. Auto-follow
+    // re-engages only when the user is at the bottom AND not actively
+    // scrolling up (i.e. they have settled or scrolled down to land).
+    // The pill still relies on position so it stays hidden when there
+    // is nothing below the fold to jump to.
     const distanceFromBottom = Math.max(
       0,
       node.scrollHeight - node.scrollTop - node.clientHeight
@@ -184,7 +188,7 @@ export function useConversationScrollState({
     const atLatestView =
       !isScrollable ||
       distanceFromBottom <= CONVERSATION_AUTO_SCROLL_THRESHOLD_PX;
-    if (atLatestView) {
+    if (!scrolledUp && atLatestView) {
       setAutoFollow(true);
     } else if (scrolledUp) {
       setAutoFollow(false);
