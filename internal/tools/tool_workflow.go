@@ -813,7 +813,7 @@ func initializeWorkflowGoalStatus(store *goalrunner.Store, state goalrunner.Stat
 			Summary:    message,
 			ReportPath: run.FinalReportPath,
 			CreatedAt:  createdAt,
-			NextSteps:  []string{"inspect goal_status and complete the broader goal only when the user-visible objective is done"},
+			NextSteps:  []string{"inspect get_goal and call update_goal with status complete only when the user-visible objective is done"},
 		})
 	case workflow.RunStateCancelled:
 		if !workflowRunOwnsGoal(run, state) {

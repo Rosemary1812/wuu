@@ -34,8 +34,8 @@ func TestActorStatusOwnership(t *testing.T) {
 	if err := ValidateActorTransition(ActorModel, StatusActive, StatusComplete); err != nil {
 		t.Fatalf("model complete should be allowed: %v", err)
 	}
-	if err := ValidateActorTransition(ActorModel, StatusActive, StatusBlocked); err == nil {
-		t.Fatal("model should not set blocked directly")
+	if err := ValidateActorTransition(ActorModel, StatusActive, StatusBlocked); err != nil {
+		t.Fatalf("model blocked should be allowed: %v", err)
 	}
 	if err := ValidateActorTransition(ActorModel, StatusActive, StatusPaused); err == nil {
 		t.Fatal("model should not pause goals")

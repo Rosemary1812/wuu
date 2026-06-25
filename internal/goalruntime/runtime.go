@@ -87,6 +87,10 @@ func (r *Runtime) SetUserStatus(status Status, now time.Time) (Goal, error) {
 	return r.setStatus(ActorUser, status, now)
 }
 
+func (r *Runtime) SetModelStatus(status Status, now time.Time) (Goal, error) {
+	return r.setStatus(ActorModel, status, now)
+}
+
 func (r *Runtime) SetSystemStatus(status Status, now time.Time) (Goal, error) {
 	return r.setStatus(ActorSystem, status, now)
 }

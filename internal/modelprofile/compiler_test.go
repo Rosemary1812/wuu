@@ -111,7 +111,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 		"grep", "glob", "ast_search", "semantic_search",
 		"web_search", "web_fetch",
 		"spawn_agent", "session_memory",
-		"update_plan", "start_goal", "list_workflows",
+		"update_plan", "create_goal", "get_goal", "update_goal", "list_workflows",
 		"schedule_cron", "load_skill",
 		"report_listening_ports",
 	}

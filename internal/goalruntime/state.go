@@ -233,7 +233,7 @@ func validateActorOwnsStatus(actor Actor, to Status) error {
 	switch actor {
 	case ActorModel:
 		switch to {
-		case StatusComplete:
+		case StatusComplete, StatusBlocked:
 			return nil
 		default:
 			return fmt.Errorf("model cannot set goal runtime status %s", to)

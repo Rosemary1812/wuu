@@ -225,10 +225,9 @@ func (t *Toolkit) rebuildRegistry() {
 		// back to the full conversation via this tool).
 		NewThreadGetTool(e),
 		// Goals
-		NewStartGoalTool(e),
+		NewCreateGoalTool(e),
 		NewUpdateGoalTool(e),
-		NewCompleteGoalTool(e),
-		NewGoalStatusTool(e),
+		NewGetGoalTool(e),
 		// Workflows
 		NewListWorkflowsTool(e),
 		NewLoadWorkflowTool(e),

@@ -783,7 +783,7 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 		"Skill path:",
 		"load_skill",
 		"Goal path:",
-		"start_goal",
+		"create_goal",
 		"spans multiple workflow runs, sub-agent tasks, approvals, retries, or later resumption",
 		"Workflow path:",
 		"load_workflow and start_workflow with driver=auto",
@@ -813,7 +813,7 @@ func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
 		"Before claiming durable work is complete",
-		"goal_status",
+		"get_goal",
 		"workflow_status",
 		"await_agents output",
 		"A completed workflow or child task is evidence for a broader Goal, not automatic completion",

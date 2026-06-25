@@ -2002,7 +2002,13 @@ func TestServerTurnStartAccountsActiveGoalUsage(t *testing.T) {
 		t.Fatalf("thread/start: %v", err)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	// This test verifies first-turn accounting only; read-only blocks the
+	// post-completion Goal continuation from racing TempDir cleanup.
+	th.ReadOnly = true
+	th.mu.Unlock()
+	threadRuntime, err := srv.ensureThreadRuntime(th)
 	if err != nil {
 		t.Fatalf("ensureThreadRuntime: %v", err)
 	}

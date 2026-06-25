@@ -285,10 +285,9 @@ func addMemoryTools(b *surfaceBuilder) {
 
 func addPlanningTools(b *surfaceBuilder) {
 	b.addVisible("update_plan", capability.CapabilityPlan)
-	b.addVisible("start_goal", capability.CapabilityGoal)
+	b.addVisible("create_goal", capability.CapabilityGoal)
+	b.addVisible("get_goal", capability.CapabilityGoal)
 	b.addVisible("update_goal", capability.CapabilityGoal)
-	b.addVisible("complete_goal", capability.CapabilityGoal)
-	b.addVisible("goal_status", capability.CapabilityGoal)
 }
 
 func addWorkflowTools(b *surfaceBuilder) {

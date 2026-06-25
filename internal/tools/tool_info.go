@@ -230,7 +230,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindMemory
 	case "load_skill":
 		return ToolKindSkill
-	case "start_goal", "update_goal", "complete_goal", "goal_status":
+	case "create_goal", "get_goal", "update_goal":
 		return ToolKindGoal
 	case "list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status":
 		return ToolKindWorkflow

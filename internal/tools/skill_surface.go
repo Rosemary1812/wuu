@@ -79,7 +79,7 @@ func isKnownSurfaceSkillTool(name string) bool {
 		"tool_search", "load_skill",
 		"web_fetch", "web_search",
 		"read_memory", "write_memory", "session_memory",
-		"update_plan", "start_goal", "update_goal", "complete_goal", "goal_status",
+		"update_plan", "create_goal", "get_goal", "update_goal",
 		"report_listening_ports",
 		"schedule_cron", "cancel_cron", "list_cron",
 		"list_workflows", "load_workflow", "save_workflow", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
