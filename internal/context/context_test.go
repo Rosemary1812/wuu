@@ -208,3 +208,24 @@ func TestIsAgentNotificationDetectsNamedAndLegacyHandoffs(t *testing.T) {
 		})
 	}
 }
+
+func TestIsGoalContinuationDetectsInternalContinuation(t *testing.T) {
+	cases := []struct {
+		name    string
+		msgName string
+		content string
+		want    bool
+	}{
+		{name: "named", msgName: GoalContinuationMessageName, content: "anything", want: true},
+		{name: "envelope", content: "<goal_continuation>\nkeep going\n</goal_continuation>", want: true},
+		{name: "normal user text", content: "please continue", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsGoalContinuation(tc.msgName, tc.content); got != tc.want {
+				t.Fatalf("IsGoalContinuation() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

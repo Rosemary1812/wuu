@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/insight"
@@ -440,6 +442,10 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage) {
+	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, history, nil)
+}
+
+func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, requestOnly []providers.ChatMessage) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -457,6 +463,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
 	}
 	baseBeforeStep := runner.BeforeStep
+	baseBeforeRequest := runner.BeforeRequest
 	baseOnRequestContext := runner.OnRequestContext
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
@@ -540,8 +547,20 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 		}
 		return messages
 	}
+	requestOnlyContext := cloneHistory(requestOnly)
+	runner.BeforeRequest = func() []providers.ChatMessage {
+		var messages []providers.ChatMessage
+		if baseBeforeRequest != nil {
+			messages = append(messages, baseBeforeRequest()...)
+		}
+		if len(requestOnlyContext) > 0 {
+			messages = append(messages, cloneHistory(requestOnlyContext)...)
+		}
+		return messages
+	}
 	defer func() {
 		runner.BeforeStep = baseBeforeStep
+		runner.BeforeRequest = baseBeforeRequest
 		runner.OnRequestContext = baseOnRequestContext
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
@@ -660,6 +679,7 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
+	s.kickGoalContinuation(th.ID)
 }
 
 func goalUsageDeltaForTurn(turn Turn, completedAt time.Time, res agent.LoopResult) goalruntime.UsageDelta {
@@ -976,6 +996,12 @@ func (s *Server) hasQueuedUserTurns(threadID string) bool {
 	return len(s.pendingQueuedTurns[threadID]) > 0
 }
 
+func (s *Server) hasQueuedUserWork(threadID string) bool {
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	return len(s.pendingQueuedTurns[threadID]) > 0 || s.drainingQueuedTurns[threadID]
+}
+
 func (s *Server) discardQueuedUserTurns(threadID string) {
 	s.queuedTurnMu.Lock()
 	defer s.queuedTurnMu.Unlock()
@@ -1153,6 +1179,149 @@ func (s *Server) clearAgentCompletionDrain(threadID string) {
 	s.agentCompletionMu.Lock()
 	defer s.agentCompletionMu.Unlock()
 	delete(s.drainingAgentCompletionTurns, threadID)
+}
+
+func (s *Server) hasQueuedAgentCompletionWork(threadID string) bool {
+	s.agentCompletionMu.Lock()
+	defer s.agentCompletionMu.Unlock()
+	return len(s.pendingAgentCompletionTurns[threadID]) > 0 || s.drainingAgentCompletionTurns[threadID]
+}
+
+func (s *Server) kickGoalContinuation(threadID string) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+
+	s.goalContinuationMu.Lock()
+	if s.drainingGoalContinuation[threadID] {
+		s.goalContinuationMu.Unlock()
+		return
+	}
+	if s.drainingGoalContinuation == nil {
+		s.drainingGoalContinuation = make(map[string]bool)
+	}
+	s.drainingGoalContinuation[threadID] = true
+	s.goalContinuationMu.Unlock()
+
+	go s.drainGoalContinuation(threadID)
+}
+
+func (s *Server) drainGoalContinuation(threadID string) {
+	started, err := s.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		providers.DebugLogf("start goal continuation turn for thread %q: %v", threadID, err)
+	}
+	s.clearGoalContinuationDrain(threadID)
+	if started {
+		return
+	}
+}
+
+func (s *Server) clearGoalContinuationDrain(threadID string) {
+	s.goalContinuationMu.Lock()
+	defer s.goalContinuationMu.Unlock()
+	delete(s.drainingGoalContinuation, threadID)
+}
+
+func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string) (bool, error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return false, errors.New("thread_id is required")
+	}
+	th := s.thread(threadID)
+	if th == nil {
+		return false, fmt.Errorf("thread %q not found", threadID)
+	}
+	threadRuntime, err := s.ensureThreadRuntime(th)
+	if err != nil {
+		return false, err
+	}
+	if threadRuntime == nil || threadRuntime.GoalRuntime == nil {
+		return false, nil
+	}
+
+	input := s.goalContinuationInput(th, threadID)
+	decision, err := threadRuntime.GoalRuntime.DecideContinuation(input)
+	if err != nil {
+		return false, err
+	}
+	if !decision.Allowed {
+		return false, nil
+	}
+	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !goal.CanAutoContinue() {
+		return false, nil
+	}
+
+	turnID := session.NewID()
+	turnCtx, cancel := context.WithCancel(ctx)
+	now := time.Now().UTC()
+
+	th.mu.Lock()
+	if th.running || th.ReadOnly {
+		th.mu.Unlock()
+		cancel()
+		return false, nil
+	}
+	if s.hasQueuedUserWork(threadID) || s.hasQueuedAgentCompletionWork(threadID) {
+		th.mu.Unlock()
+		cancel()
+		return false, nil
+	}
+	history := cloneHistory(th.History)
+	th.cancel = cancel
+	turn := th.startInternalTurnLocked(turnID, now)
+	th.mu.Unlock()
+
+	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+		ThreadID: threadID,
+		Turn:     turn,
+	})
+	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, history, []providers.ChatMessage{goalContinuationMessage(goal)})
+	return true, nil
+}
+
+func (s *Server) goalContinuationInput(th *threadState, threadID string) goalruntime.ContinuationInput {
+	var running, readOnly bool
+	if th != nil {
+		th.mu.Lock()
+		running = th.running
+		readOnly = th.ReadOnly
+		th.mu.Unlock()
+	}
+	return goalruntime.ContinuationInput{
+		ThreadIdle:      !running,
+		ActiveTurn:      running,
+		QueuedUserWork:  s.hasQueuedUserWork(threadID),
+		QueuedAgentWork: s.hasQueuedAgentCompletionWork(threadID),
+		ReadOnly:        readOnly,
+	}
+}
+
+func goalContinuationMessage(goal goalruntime.Goal) providers.ChatMessage {
+	content := fmt.Sprintf(`<goal_continuation>
+Continue working toward the active thread goal.
+Objective: %s
+Status: %s
+Tokens used: %d
+Token budget: %d
+Time used seconds: %d
+Goal turns: %d
+
+Make concrete progress toward the objective. Do not mark the goal complete unless the objective is actually achieved. If the same blocker prevents progress for multiple continuation turns, use the goal status rules instead of pretending the work is complete.
+</goal_continuation>`, goal.Objective, goal.Status, goal.TokensUsed, goal.TokenBudget, goal.TimeUsedSeconds, goal.GoalTurns)
+	return providers.ChatMessage{
+		Role:    "user",
+		Name:    wuucontext.GoalContinuationMessageName,
+		Content: content,
+	}
 }
 
 func combineAgentCompletionMessages(turns []agentCompletionTurn) providers.ChatMessage {

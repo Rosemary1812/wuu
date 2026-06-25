@@ -14,6 +14,7 @@ type ContinuationInput struct {
 	ThreadIdle          bool
 	ActiveTurn          bool
 	QueuedUserWork      bool
+	QueuedAgentWork     bool
 	ReadOnly            bool
 	PlanMode            bool
 	UnsafeProtocolState bool
@@ -32,6 +33,7 @@ const (
 	ContinuationBlockedNotIdle             ContinuationBlockReason = "not_idle"
 	ContinuationBlockedBusy                ContinuationBlockReason = "busy"
 	ContinuationBlockedQueuedUserWork      ContinuationBlockReason = "queued_user_work"
+	ContinuationBlockedQueuedAgentWork     ContinuationBlockReason = "queued_agent_work"
 	ContinuationBlockedReadOnly            ContinuationBlockReason = "read_only"
 	ContinuationBlockedPlanMode            ContinuationBlockReason = "plan_mode"
 	ContinuationBlockedUnsafeProtocolState ContinuationBlockReason = "unsafe_protocol_state"
@@ -143,6 +145,9 @@ func DecideContinuation(goal Goal, input ContinuationInput) ContinuationDecision
 	}
 	if input.QueuedUserWork {
 		return blockedContinuation(goal.Status, ContinuationBlockedQueuedUserWork)
+	}
+	if input.QueuedAgentWork {
+		return blockedContinuation(goal.Status, ContinuationBlockedQueuedAgentWork)
 	}
 	if input.ReadOnly {
 		return blockedContinuation(goal.Status, ContinuationBlockedReadOnly)

@@ -83,6 +83,9 @@ type Server struct {
 	pendingQueuedTurns  map[string][]queuedTurn
 	drainingQueuedTurns map[string]bool
 
+	goalContinuationMu       sync.Mutex
+	drainingGoalContinuation map[string]bool
+
 	codexModelsMu   sync.Mutex
 	codexModelCache map[string]map[string]config.ProviderModelConfig
 
@@ -110,6 +113,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingAgentCompletionTurns: make(map[string]bool),
 		pendingQueuedTurns:           make(map[string][]queuedTurn),
 		drainingQueuedTurns:          make(map[string]bool),
+		drainingGoalContinuation:     make(map[string]bool),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 
 		guardianBreaker: guardian.NewRejectionCircuitBreaker(),

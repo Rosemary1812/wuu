@@ -84,6 +84,26 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 	return turn
 }
 
+func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Turn {
+	th.currentTurn = turnID
+	th.running = true
+	th.UpdatedAt = now
+	th.pendingSteers = nil
+	th.nextItemIndex = 0
+	th.activeAgentItemID = ""
+	th.activeReasoningItemID = ""
+	th.toolItems = make(map[string]string)
+
+	turn := Turn{
+		ID:        turnID,
+		ItemsView: TurnItemsViewFull,
+		Status:    TurnStatusInProgress,
+		StartedAt: &now,
+	}
+	th.Turns = append(th.Turns, turn)
+	return turn
+}
+
 func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	if th.running && th.currentTurn != "" {
 		turn := th.ensureTurnLocked(th.currentTurn, now)

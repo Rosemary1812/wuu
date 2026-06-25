@@ -1,8 +1,9 @@
 # Goal Runtime v2 Plan
 
 Status: staged implementation. The design is not complete; the initial
-state model, JSON store, and continuation decision runtime live in
-`internal/goalruntime`; each `ThreadRuntime` now owns one GoalRuntime instance.
+state model, JSON store, continuation decision runtime, usage accounting, and
+idle app-server continuation path live in the Go core/app-server runtime. Each
+`ThreadRuntime` now owns one GoalRuntime instance.
 
 This document records the intended Goal redesign before the runtime work starts.
 It exists to keep future changes pointed at the same product model instead of
@@ -32,8 +33,13 @@ Wuu already has useful Goal pieces:
   thread-scoped JSON store. It also has a runtime owner that can decide
   whether an active Goal is allowed to continue and can account usage only when
   the current Goal is active. It is attached to `internal/runtime.ThreadRuntime`,
-  and app-server turns now account active Goal usage when a turn stops. It is
-  not yet wired into idle auto-continuation or app-server turn start.
+  and app-server turns now account active Goal usage when a turn stops.
+- `internal/appserver` can now start an internal continuation turn after a
+  successful turn completes, after queued user work and agent-completion work
+  have had priority. The continuation prompt is injected through request-only
+  context, not persisted as a fake user message. Budget-limited, paused,
+  blocked, complete, cancelled, read-only, busy, queued-user, and queued-agent
+  states stop automatic continuation.
 - `internal/goal` stores durable Goal state in `state.json`, `events.jsonl`,
   artifacts, and markdown views.
 - `internal/tools/tool_goal.go` exposes `start_goal`, `update_goal`,
@@ -56,10 +62,10 @@ approvals, worktrees, verification policies, retry policy, progress, decisions,
 failures, artifacts, modified files, and test results. That is valuable as an
 execution ledger, but it is not the missing continuation loop.
 
-The main gap: after a model turn reaches a final answer, Wuu completes the
-turn, drains queued user turns or agent-completion turns, and stops. If no
-workflow, subagent, cron trigger, or later user message is active, an unfinished
-Goal does not cause the core runtime to start a continuation turn.
+The main remaining gap: the new thread-scoped GoalRuntime is not yet the only
+model-facing Goal contract. Existing Goal tools still expose the older durable
+ledger shape, and the desktop surface has not yet been updated to show the v2
+runtime state, stop reasons, and user controls.
 
 Current model-visible semantics are also too broad for the v2 product model:
 
@@ -153,12 +159,14 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 4. Add accounting.
    Attribute token usage, elapsed time, and turn counts to the active Goal.
    Enforce budget-limited and usage-limited stop conditions before adding
-   open-ended continuation.
+   open-ended continuation. Done for app-server turns.
 
 5. Add the idle continuation gate.
    Implement a shared internal path that starts a model turn only when the
    thread is idle and no user/client work is waiting. The injected context
-   should be internal steering, not a fake user message.
+   should be internal steering, not a fake user message. Done for successful
+   app-server turns, queued user work, queued agent-completion work,
+   read-only/busy state, and active-status gating.
 
 6. Tighten model-facing tools and guidance.
    Prefer a small contract such as `get_goal`, `create_goal`, and

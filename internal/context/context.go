@@ -27,6 +27,10 @@ const SystemReminderMessageName = "wuu_system_reminder"
 // They are model-visible user-role messages, but they are not user intent.
 const AgentNotificationMessageName = "wuu_agent_notification"
 
+// GoalContinuationMessageName marks internal active-goal continuation prompts.
+// They are request-only steering, not durable user intent.
+const GoalContinuationMessageName = "wuu_goal_continuation"
+
 // EnvInfo holds the dynamic environment snapshot for one turn.
 type EnvInfo struct {
 	CWD       string
@@ -259,6 +263,17 @@ func IsAgentNotification(name, content string) bool {
 		return false
 	}
 	return isSubagentNotificationContent(envelope.Content)
+}
+
+// IsGoalContinuation reports whether the message is an internal active-goal
+// continuation prompt.
+func IsGoalContinuation(name, content string) bool {
+	if strings.TrimSpace(name) == GoalContinuationMessageName {
+		return true
+	}
+	trimmed := strings.TrimSpace(content)
+	return strings.HasPrefix(trimmed, "<goal_continuation>") &&
+		strings.HasSuffix(trimmed, "</goal_continuation>")
 }
 
 func isSubagentNotificationContent(content string) bool {

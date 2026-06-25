@@ -2013,6 +2013,146 @@ func TestServerTurnStartAccountsActiveGoalUsage(t *testing.T) {
 	}
 }
 
+func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{
+				Content: "first turn done",
+				Usage:   &providers.TokenUsage{InputTokens: 2, OutputTokens: 3},
+			},
+			{
+				Content: "goal continuation done",
+				Usage:   &providers.TokenUsage{InputTokens: 2, OutputTokens: 3},
+			},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:    threadID,
+		GoalID:      "goal-auto",
+		Objective:   "finish the idle continuation loop",
+		TokenBudget: 10,
+	}); err != nil {
+		t.Fatalf("create goal runtime: %v", err)
+	}
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "start goal work"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+	time.Sleep(50 * time.Millisecond)
+	if got := turnCompletedCountForThread(t, out, threadID); got != 2 {
+		t.Fatalf("expected budget-limited goal to stop after 2 completed turns, got %d", got)
+	}
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("expected initial turn plus one goal continuation request, got %d", len(requests))
+	}
+	var continuation providers.ChatMessage
+	for _, msg := range requests[1].Messages {
+		if msg.Role == "user" && msg.Name == wuucontext.GoalContinuationMessageName {
+			continuation = msg
+			break
+		}
+	}
+	if continuation.Content == "" {
+		t.Fatalf("second request missing goal continuation message: %+v", requests[1].Messages)
+	}
+	if !strings.Contains(continuation.Content, "finish the idle continuation loop") ||
+		!strings.Contains(continuation.Content, "<goal_continuation>") {
+		t.Fatalf("unexpected goal continuation content:\n%s", continuation.Content)
+	}
+
+	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	userMessages := 0
+	for _, msg := range persisted {
+		if msg.Name == wuucontext.GoalContinuationMessageName || wuucontext.IsGoalContinuation(msg.Name, msg.Content) {
+			t.Fatalf("goal continuation should not be persisted: %+v", persisted)
+		}
+		if msg.Role == "user" {
+			userMessages++
+		}
+	}
+	if userMessages != 1 {
+		t.Fatalf("persisted history should contain only the real user prompt, got %+v", persisted)
+	}
+
+	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal: %v", err)
+	}
+	if goal.TokensUsed != 10 || goal.GoalTurns != 2 || goal.Status != goalruntime.StatusBudgetLimited {
+		t.Fatalf("unexpected goal after continuation: %+v", goal)
+	}
+}
+
+func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:  threadID,
+		GoalID:    "goal-queued",
+		Objective: "do not skip queued user work",
+	}); err != nil {
+		t.Fatalf("create goal runtime: %v", err)
+	}
+	srv.enqueueQueuedUserTurn(threadID, queuedTurn{
+		id:  "queued-1",
+		msg: providers.ChatMessage{Role: "user", Content: "queued work"},
+	})
+
+	started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		t.Fatalf("startGoalContinuationTurn: %v", err)
+	}
+	if started {
+		t.Fatal("goal continuation should not start while queued user work exists")
+	}
+	client.mu.Lock()
+	requestCount := len(client.requests)
+	client.mu.Unlock()
+	if requestCount != 0 {
+		t.Fatalf("expected no provider request, got %d", requestCount)
+	}
+}
+
 func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
 	client := newBlockingStreamClient("done")
 	rt := newTestRuntime(t, &fakeClient{})

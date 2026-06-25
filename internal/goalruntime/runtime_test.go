@@ -45,6 +45,11 @@ func TestRuntimeDecideContinuationRejectsUnsafeConditions(t *testing.T) {
 			want:  ContinuationBlockedQueuedUserWork,
 		},
 		{
+			name:  "queued agent work",
+			input: ContinuationInput{ThreadIdle: true, QueuedAgentWork: true},
+			want:  ContinuationBlockedQueuedAgentWork,
+		},
+		{
 			name:  "read only",
 			input: ContinuationInput{ThreadIdle: true, ReadOnly: true},
 			want:  ContinuationBlockedReadOnly,
