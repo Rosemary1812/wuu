@@ -1970,6 +1970,9 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	if first.GoalRuntime == nil || second.GoalRuntime == nil {
 		t.Fatal("thread runtimes must include goal runtime")
 	}
+	if first.Toolkit.GoalRuntime() != first.GoalRuntime || second.Toolkit.GoalRuntime() != second.GoalRuntime {
+		t.Fatal("thread toolkits must be attached to their thread goal runtime")
+	}
 	if first.GoalRuntime == second.GoalRuntime {
 		t.Fatal("thread runtimes must not share goal runtime instances")
 	}

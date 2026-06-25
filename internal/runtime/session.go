@@ -662,6 +662,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		ConfigureToolkitPermissions(kit, s.ToolPolicy, s.Permissions)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
+		kit.SetGoalRuntime(goalRuntime)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", s.RootDir)
 	}

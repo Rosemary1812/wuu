@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
@@ -142,6 +143,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		PermissionProfile:   t.env.PermissionProfile,
 		SessionID:           t.env.SessionID,
 		SessionDir:          t.env.SessionDir,
+		GoalRuntime:         t.env.GoalRuntime,
 		AgentID:             t.env.AgentID,
 		AgentPath:           t.env.AgentPath,
 		ProcessMgr:          t.env.ProcessMgr,
@@ -360,6 +362,19 @@ func (t *Toolkit) SessionDir() string {
 		return ""
 	}
 	return t.env.SessionDir
+}
+
+// SetGoalRuntime attaches the thread-scoped active Goal runtime.
+func (t *Toolkit) SetGoalRuntime(runtime *goalruntime.Runtime) {
+	t.env.GoalRuntime = runtime
+}
+
+// GoalRuntime returns the thread-scoped active Goal runtime, if any.
+func (t *Toolkit) GoalRuntime() *goalruntime.Runtime {
+	if t == nil || t.env == nil {
+		return nil
+	}
+	return t.env.GoalRuntime
 }
 
 // SetAgentIdentity sets the current agent identity for relative agent-path

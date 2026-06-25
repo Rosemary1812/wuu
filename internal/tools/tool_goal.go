@@ -10,6 +10,7 @@ import (
 	"time"
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -27,7 +28,8 @@ func (t *StartGoalTool) IsConcurrencySafe() bool { return false }
 func (t *StartGoalTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "start_goal",
-		Description: "Start a durable user-visible Goal for work that needs explicit progress tracking, multiple workflow runs, subagents, approvals, retries, or later resumption. " +
+		Description: "Start the thread's active durable user-visible Goal. In app-server threads this creates the runtime Goal that can auto-continue while active, and also keeps durable evidence for workflow/subagent coordination. " +
+			"Use this for work that needs explicit progress tracking, multiple workflow runs, subagents, approvals, retries, or later resumption. " +
 			"Do not call this for tiny one-shot edits, ordinary local investigation, or one self-contained workflow run; start_workflow creates a Goal binding for that run. " +
 			"If the user-level Goal is broader than one workflow or child task, pass the returned goal_id and goal_dir to start_workflow and workflow-bound spawn_agent calls, then call complete_goal only when the user-visible outcome is done.",
 		InputSchema: map[string]any{
@@ -58,6 +60,10 @@ func (t *StartGoalTool) Definition() providers.ToolDefinition {
 					"description": "Optional immediate next steps for resumption.",
 					"items":       map[string]any{"type": "string"},
 				},
+				"token_budget": map[string]any{
+					"type":        "integer",
+					"description": "Optional runtime token budget for automatic continuation. Omit for no explicit token budget.",
+				},
 			},
 			"required": []string{"goal"},
 		},
@@ -72,6 +78,7 @@ func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, err
 		TriggerType   string   `json:"trigger_type"`
 		TriggerSource string   `json:"trigger_source"`
 		NextSteps     []string `json:"next_steps"`
+		TokenBudget   int      `json:"token_budget"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -79,6 +86,9 @@ func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, err
 	objective := strings.TrimSpace(args.Goal)
 	if objective == "" {
 		return "", errors.New("start_goal requires goal")
+	}
+	if args.TokenBudget < 0 {
+		return "", errors.New("token_budget cannot be negative")
 	}
 	goalID := strings.TrimSpace(args.GoalID)
 	if goalID == "" {
@@ -94,6 +104,10 @@ func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, err
 	if _, err := store.LoadState(); err == nil {
 		return "", fmt.Errorf("goal %q already exists; use goal_status or update_goal", goalID)
 	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	runtimeGoal, hasRuntimeGoal, err := t.startRuntimeGoal(goalID, objective, args.TokenBudget)
+	if err != nil {
 		return "", err
 	}
 	triggerType := strings.TrimSpace(args.TriggerType)
@@ -115,17 +129,20 @@ func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, err
 		AssignedAgent: "lead",
 	})
 	if err != nil {
+		t.clearStartedRuntimeGoal(hasRuntimeGoal)
 		return "", err
 	}
 	state, err = store.SetStatus(goalrunner.StatusRunning, goalrunner.StepInit, "Goal started.")
 	if err != nil {
+		t.clearStartedRuntimeGoal(hasRuntimeGoal)
 		return "", err
 	}
 	state, err = setGoalNextSteps(store, state, args.NextSteps)
 	if err != nil {
+		t.clearStartedRuntimeGoal(hasRuntimeGoal)
 		return "", err
 	}
-	return goalToolStateResult("start_goal", store, state)
+	return goalToolStateResult("start_goal", store, state, runtimeGoal)
 }
 
 type UpdateGoalTool struct{ env *Env }
@@ -139,14 +156,15 @@ func (t *UpdateGoalTool) IsConcurrencySafe() bool { return false }
 func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "update_goal",
-		Description: "Record meaningful Goal progress, a decision, a blocker, or a status change. Use this when the update should survive context compaction or coordinate workflow/subagent work. " +
+		Description: "Record meaningful Goal progress, a decision, or a blocker. Use this when the update should survive context compaction or coordinate workflow/subagent work. " +
+			"In app-server threads, kind=status is only for reporting a repeated blocker; the runtime decides when the Goal becomes blocked. " +
 			"Do not use it as a scratchpad for every small thought; use update_plan for short local task lists.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Goal id returned by start_goal or start_workflow.",
+					"description": "Goal id returned by start_goal or start_workflow. Omit to update the current active thread Goal.",
 				},
 				"goal_dir": map[string]any{
 					"type":        "string",
@@ -155,7 +173,7 @@ func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 				"kind": map[string]any{
 					"type":        "string",
 					"enum":        []string{"progress", "decision", "failure", "status"},
-					"description": "Update kind. Defaults to progress.",
+					"description": "Update kind. Defaults to progress. Use kind=status only with status=blocked.",
 				},
 				"message": map[string]any{
 					"type":        "string",
@@ -168,8 +186,8 @@ func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 				},
 				"status": map[string]any{
 					"type":        "string",
-					"enum":        []string{"pending", "running", "blocked", "needs_human", "failed", "cancelled"},
-					"description": "Required when kind=status; ignored for progress and decision. Use complete_goal for completed.",
+					"enum":        []string{"blocked"},
+					"description": "Required when kind=status. The model can only report a blocker; user/system owns pause, cancel, and limit states. Use complete_goal for completed.",
 				},
 				"reason": map[string]any{
 					"type":        "string",
@@ -181,7 +199,7 @@ func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 					"items":       map[string]any{"type": "string"},
 				},
 			},
-			"required": []string{"goal_id", "message"},
+			"required": []string{"message"},
 		},
 	}
 }
@@ -204,7 +222,15 @@ func (t *UpdateGoalTool) Execute(_ context.Context, argsJSON string) (string, er
 	if message == "" {
 		return "", errors.New("update_goal requires message")
 	}
-	store, state, err := t.env.ResolveGoalStore(args.GoalID, args.GoalDir)
+	goalID, err := t.goalIDForArgs(args.GoalID, args.GoalDir)
+	if err != nil {
+		return "", err
+	}
+	store, state, err := t.env.ResolveGoalStore(goalID, args.GoalDir)
+	if err != nil {
+		return "", err
+	}
+	runtimeGoal, hasRuntimeGoal, err := currentRuntimeGoalForTool(t.env, state.ID)
 	if err != nil {
 		return "", err
 	}
@@ -230,6 +256,19 @@ func (t *UpdateGoalTool) Execute(_ context.Context, argsJSON string) (string, er
 			Message: firstGoalToolText(args.Reason, message),
 		})
 	case "status":
+		if hasRuntimeGoal {
+			if strings.TrimSpace(args.Status) != string(goalruntime.StatusBlocked) {
+				return "", errors.New("update_goal kind=status can only report status=blocked for the active thread Goal")
+			}
+			var blocked bool
+			runtimeGoal, blocked, err = t.env.GoalRuntime.RecordBlocker(message, time.Now().UTC())
+			if err == nil && blocked {
+				state, err = store.SetStatus(goalrunner.StatusBlocked, step, message)
+			} else if err == nil {
+				state, err = store.AddProgress(step, "Blocker observed: "+message)
+			}
+			break
+		}
 		status, ok := parseGoalStatus(args.Status)
 		if !ok || status == goalrunner.StatusCompleted {
 			return "", errors.New("update_goal kind=status requires status pending, running, blocked, needs_human, failed, or cancelled")
@@ -244,6 +283,9 @@ func (t *UpdateGoalTool) Execute(_ context.Context, argsJSON string) (string, er
 	state, err = setGoalNextSteps(store, state, args.NextSteps)
 	if err != nil {
 		return "", err
+	}
+	if hasRuntimeGoal {
+		return goalToolStateResult("update_goal", store, state, runtimeGoal)
 	}
 	return goalToolStateResult("update_goal", store, state)
 }
@@ -267,7 +309,7 @@ func (t *CompleteGoalTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Goal id returned by start_goal or start_workflow.",
+					"description": "Goal id returned by start_goal or start_workflow. Omit to complete the current active thread Goal.",
 				},
 				"goal_dir": map[string]any{
 					"type":        "string",
@@ -282,7 +324,7 @@ func (t *CompleteGoalTool) Definition() providers.ToolDefinition {
 					"description": "Optional final artifact path or report path.",
 				},
 			},
-			"required": []string{"goal_id", "summary"},
+			"required": []string{"summary"},
 		},
 	}
 }
@@ -301,9 +343,23 @@ func (t *CompleteGoalTool) Execute(_ context.Context, argsJSON string) (string, 
 	if summary == "" {
 		return "", errors.New("complete_goal requires summary")
 	}
-	store, state, err := t.env.ResolveGoalStore(args.GoalID, args.GoalDir)
+	goalID, err := t.goalIDForArgs(args.GoalID, args.GoalDir)
 	if err != nil {
 		return "", err
+	}
+	store, state, err := t.env.ResolveGoalStore(goalID, args.GoalDir)
+	if err != nil {
+		return "", err
+	}
+	runtimeGoal, hasRuntimeGoal, err := currentRuntimeGoalForTool(t.env, state.ID)
+	if err != nil {
+		return "", err
+	}
+	if hasRuntimeGoal {
+		runtimeGoal, err = t.env.GoalRuntime.Complete(time.Now().UTC())
+		if err != nil {
+			return "", err
+		}
 	}
 	state, err = store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, summary)
 	if err != nil {
@@ -322,6 +378,9 @@ func (t *CompleteGoalTool) Execute(_ context.Context, argsJSON string) (string, 
 	})
 	if err := store.SaveState(state); err != nil {
 		return "", err
+	}
+	if hasRuntimeGoal {
+		return goalToolStateResult("complete_goal", store, state, runtimeGoal)
 	}
 	return goalToolStateResult("complete_goal", store, state)
 }
@@ -371,7 +430,7 @@ func (t *GoalStatusTool) Execute(_ context.Context, argsJSON string) (string, er
 		if err != nil {
 			return "", err
 		}
-		return mustJSON(map[string]any{
+		result := map[string]any{
 			"action":      "goal_status",
 			"goal":        state,
 			"goal_id":     state.ID,
@@ -379,7 +438,13 @@ func (t *GoalStatusTool) Execute(_ context.Context, argsJSON string) (string, er
 			"state_path":  filepath.Join(store.Dir(), "state.json"),
 			"event_count": len(events),
 			"next_steps":  goalToolNextSteps(state),
-		})
+		}
+		if runtimeGoal, ok, err := currentGoalRuntime(t.env); err != nil {
+			return "", err
+		} else if ok && runtimeGoal.GoalID == state.ID {
+			result["runtime_goal"] = runtimeGoal
+		}
+		return mustJSON(result)
 	}
 	stateDir, err := t.env.OrchestrationStateDir()
 	if err != nil {
@@ -395,11 +460,17 @@ func (t *GoalStatusTool) Execute(_ context.Context, argsJSON string) (string, er
 		WorkflowStore: workflowStore,
 		HarnessStore:  harnessStore,
 	})
-	return mustJSON(map[string]any{
+	result := map[string]any{
 		"action":     "goal_status",
 		"snapshot":   snapshot,
 		"next_steps": []string{"Use start_goal for a new durable objective, update_goal for progress or blockers, complete_goal when the user-visible goal is done."},
-	})
+	}
+	if runtimeGoal, ok, err := currentGoalRuntime(t.env); err != nil {
+		return "", err
+	} else if ok {
+		result["runtime_goal"] = runtimeGoal
+	}
+	return mustJSON(result)
 }
 
 func (e *Env) GoalStore(goalID string) (*goalrunner.Store, error) {
@@ -438,6 +509,85 @@ func (e *Env) ResolveGoalStore(goalID, goalDir string) (*goalrunner.Store, goalr
 		return nil, goalrunner.State{}, fmt.Errorf("goal_id %q does not match state id %q", goalID, state.ID)
 	}
 	return store, state, nil
+}
+
+func (t *StartGoalTool) startRuntimeGoal(goalID, objective string, tokenBudget int) (goalruntime.Goal, bool, error) {
+	if t == nil || t.env == nil || t.env.GoalRuntime == nil {
+		return goalruntime.Goal{}, false, nil
+	}
+	threadID := strings.TrimSpace(t.env.SessionID)
+	if threadID == "" {
+		return goalruntime.Goal{}, false, errors.New("thread session_id is required for runtime goal")
+	}
+	goal, err := t.env.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:    threadID,
+		GoalID:      goalID,
+		Objective:   objective,
+		TokenBudget: tokenBudget,
+	})
+	if err != nil {
+		return goalruntime.Goal{}, false, err
+	}
+	return goal, true, nil
+}
+
+func (t *StartGoalTool) clearStartedRuntimeGoal(started bool) {
+	if !started || t == nil || t.env == nil || t.env.GoalRuntime == nil {
+		return
+	}
+	_ = t.env.GoalRuntime.Clear()
+}
+
+func (t *UpdateGoalTool) goalIDForArgs(goalID, goalDir string) (string, error) {
+	return goalIDForToolArgs(t.env, goalID, goalDir)
+}
+
+func (t *CompleteGoalTool) goalIDForArgs(goalID, goalDir string) (string, error) {
+	return goalIDForToolArgs(t.env, goalID, goalDir)
+}
+
+func goalIDForToolArgs(env *Env, goalID, goalDir string) (string, error) {
+	goalID = strings.TrimSpace(goalID)
+	if goalID != "" || strings.TrimSpace(goalDir) != "" {
+		return goalID, nil
+	}
+	goal, ok, err := currentGoalRuntime(env)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return goal.GoalID, nil
+	}
+	return "", errors.New("goal_id or goal_dir is required")
+}
+
+func currentRuntimeGoalForTool(env *Env, goalID string) (goalruntime.Goal, bool, error) {
+	goal, ok, err := currentGoalRuntime(env)
+	if err != nil || !ok {
+		return goalruntime.Goal{}, false, err
+	}
+	if goalruntime.IsTerminalStatus(goal.Status) {
+		return goalruntime.Goal{}, false, nil
+	}
+	goalID = strings.TrimSpace(goalID)
+	if goalID != "" && goal.GoalID != goalID {
+		return goalruntime.Goal{}, false, fmt.Errorf("active thread goal %q does not match requested goal %q", goal.GoalID, goalID)
+	}
+	return goal, true, nil
+}
+
+func currentGoalRuntime(env *Env) (goalruntime.Goal, bool, error) {
+	if env == nil || env.GoalRuntime == nil {
+		return goalruntime.Goal{}, false, nil
+	}
+	goal, err := env.GoalRuntime.CurrentGoal()
+	if errors.Is(err, os.ErrNotExist) {
+		return goalruntime.Goal{}, false, nil
+	}
+	if err != nil {
+		return goalruntime.Goal{}, false, err
+	}
+	return goal, true, nil
 }
 
 func validateGoalToolID(goalID string) error {
@@ -510,8 +660,8 @@ func setGoalNextSteps(store *goalrunner.Store, state goalrunner.State, steps []s
 	return state, nil
 }
 
-func goalToolStateResult(action string, store *goalrunner.Store, state goalrunner.State) (string, error) {
-	return mustJSON(map[string]any{
+func goalToolStateResult(action string, store *goalrunner.Store, state goalrunner.State, runtimeGoals ...goalruntime.Goal) (string, error) {
+	result := map[string]any{
 		"action":     action,
 		"goal_id":    state.ID,
 		"goal_dir":   store.Dir(),
@@ -519,7 +669,11 @@ func goalToolStateResult(action string, store *goalrunner.Store, state goalrunne
 		"status":     state.Status,
 		"step":       state.CurrentStep,
 		"next_steps": goalToolNextSteps(state),
-	})
+	}
+	if len(runtimeGoals) > 0 && strings.TrimSpace(runtimeGoals[0].GoalID) != "" {
+		result["runtime_goal"] = runtimeGoals[0]
+	}
+	return mustJSON(result)
 }
 
 func goalToolNextSteps(state goalrunner.State) []string {

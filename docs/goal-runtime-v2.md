@@ -40,6 +40,10 @@ Wuu already has useful Goal pieces:
   context, not persisted as a fake user message. Budget-limited, paused,
   blocked, complete, cancelled, read-only, busy, queued-user, and queued-agent
   states stop automatic continuation.
+- The model-visible `start_goal`, `update_goal`, `complete_goal`, and
+  `goal_status` tools now attach to the thread GoalRuntime when one is
+  available. The older durable Goal ledger remains as workflow/subagent
+  evidence, while the runtime Goal is the source for auto-continuation status.
 - `internal/goal` stores durable Goal state in `state.json`, `events.jsonl`,
   artifacts, and markdown views.
 - `internal/tools/tool_goal.go` exposes `start_goal`, `update_goal`,
@@ -62,20 +66,26 @@ approvals, worktrees, verification policies, retry policy, progress, decisions,
 failures, artifacts, modified files, and test results. That is valuable as an
 execution ledger, but it is not the missing continuation loop.
 
-The main remaining gap: the new thread-scoped GoalRuntime is not yet the only
-model-facing Goal contract. Existing Goal tools still expose the older durable
-ledger shape, and the desktop surface has not yet been updated to show the v2
-runtime state, stop reasons, and user controls.
+The main remaining gap: the desktop surface has not yet been updated to show
+the v2 runtime state, stop reasons, and user controls. The older durable Goal
+ledger also still exists as a broad evidence model, so future work should keep
+clarifying which fields belong to runtime state and which belong to execution
+evidence.
 
-Current model-visible semantics are also too broad for the v2 product model:
+Current model-visible semantics have been narrowed, but the old evidence model
+is still visible:
 
-- `update_goal` can write progress, decisions, failures, and status changes.
-- `complete_goal` can mark completion with a summary, but runtime does not
-  enforce evidence, accounting, or active-goal ownership.
-- `goal_status` reads a workspace/system snapshot, not a thread-owned active
-  objective with budget and usage.
+- `update_goal` can still write progress, decisions, and failures into the
+  durable ledger. In app-server threads, model-owned status changes are limited
+  to blocker reporting; the runtime applies the blocked threshold.
+- `complete_goal` now completes the active runtime Goal when one exists, but
+  prompts and UI still need to keep teaching that completion requires the
+  original user-visible objective to be actually done.
+- `goal_status` now includes the runtime Goal when one exists, while still
+  exposing the broader workspace/system snapshot.
 
-These are useful capabilities, but they do not prove a closed Goal runtime.
+These capabilities are now part of the closed loop, but the UI and older
+evidence fields still need cleanup.
 
 ## Target Model
 
@@ -171,8 +181,11 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 6. Tighten model-facing tools and guidance.
    Prefer a small contract such as `get_goal`, `create_goal`, and
    `update_goal(status=complete|blocked)`, or keep existing names only if their
-   semantics are narrowed to the same contract. Prompt guidance must describe
-   runtime-owned Goals and the blocked/complete rules.
+   semantics are narrowed to the same contract. Existing names are now wired to
+   GoalRuntime in app-server threads: `start_goal` creates the active runtime
+   Goal, `complete_goal` completes it, and `update_goal(status=blocked)` records
+   blocker audits instead of letting the model directly force a blocked state.
+   Prompt guidance still needs to be audited against this narrower contract.
 
 7. Reconnect workflows and subagents as evidence producers.
    Keep workflow/subagent Goal updates, but make them write progress, reports,

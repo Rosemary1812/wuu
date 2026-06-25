@@ -11,6 +11,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -195,6 +196,7 @@ type Env struct {
 	// Tools check for nil and return a clear error rather than panic.
 	SessionID    string
 	SessionDir   string // absolute session artifact path for result budgeting
+	GoalRuntime  *goalruntime.Runtime
 	AgentID      string
 	AgentPath    string
 	ProcessMgr   *proc.Manager

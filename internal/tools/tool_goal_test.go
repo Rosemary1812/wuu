@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
@@ -83,6 +84,99 @@ func TestGoalToolsLifecycle(t *testing.T) {
 	}
 	if status.Goal.ID != "goal-tools" || status.Goal.Status != string(goalrunner.StatusCompleted) || status.Goal.FinalArtifact != "reports/goal-tools.md" || status.EventCount == 0 {
 		t.Fatalf("unexpected goal_status result: %+v", status)
+	}
+}
+
+func TestGoalToolsUseThreadGoalRuntime(t *testing.T) {
+	env := &Env{
+		RootDir:     t.TempDir(),
+		StateDir:    filepath.Join(t.TempDir(), "state"),
+		SessionID:   "thread-goal-tools",
+		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
+	}
+
+	startedRaw, err := NewStartGoalTool(env).Execute(context.Background(), `{"goal":"Ship runtime-backed goal tools","goal_id":"runtime-goal","token_budget":42}`)
+	if err != nil {
+		t.Fatalf("start_goal: %v", err)
+	}
+	var started struct {
+		GoalID      string           `json:"goal_id"`
+		RuntimeGoal goalruntime.Goal `json:"runtime_goal"`
+	}
+	if err := json.Unmarshal([]byte(startedRaw), &started); err != nil {
+		t.Fatalf("parse start_goal: %v\n%s", err, startedRaw)
+	}
+	if started.GoalID != "runtime-goal" || started.RuntimeGoal.GoalID != "runtime-goal" || started.RuntimeGoal.TokenBudget != 42 {
+		t.Fatalf("unexpected runtime-backed start_goal result: %+v", started)
+	}
+	loaded, err := env.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal after start: %v", err)
+	}
+	if loaded.ThreadID != "thread-goal-tools" || loaded.Status != goalruntime.StatusActive {
+		t.Fatalf("unexpected runtime goal after start: %+v", loaded)
+	}
+
+	statusRaw, err := NewGoalStatusTool(env).Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("goal_status: %v", err)
+	}
+	var status struct {
+		RuntimeGoal goalruntime.Goal `json:"runtime_goal"`
+	}
+	if err := json.Unmarshal([]byte(statusRaw), &status); err != nil {
+		t.Fatalf("parse goal_status: %v\n%s", err, statusRaw)
+	}
+	if status.RuntimeGoal.GoalID != "runtime-goal" || status.RuntimeGoal.Status != goalruntime.StatusActive {
+		t.Fatalf("goal_status missing runtime goal: %+v", status)
+	}
+
+	completeRaw, err := NewCompleteGoalTool(env).Execute(context.Background(), `{"summary":"Runtime-backed goal tools are complete."}`)
+	if err != nil {
+		t.Fatalf("complete_goal without goal_id: %v", err)
+	}
+	var completed struct {
+		Status      string           `json:"status"`
+		RuntimeGoal goalruntime.Goal `json:"runtime_goal"`
+	}
+	if err := json.Unmarshal([]byte(completeRaw), &completed); err != nil {
+		t.Fatalf("parse complete_goal: %v\n%s", err, completeRaw)
+	}
+	if completed.Status != string(goalrunner.StatusCompleted) || completed.RuntimeGoal.Status != goalruntime.StatusComplete {
+		t.Fatalf("unexpected complete_goal result: %+v", completed)
+	}
+}
+
+func TestUpdateGoalRecordsRuntimeBlockerThreshold(t *testing.T) {
+	env := &Env{
+		RootDir:     t.TempDir(),
+		StateDir:    filepath.Join(t.TempDir(), "state"),
+		SessionID:   "thread-goal-blocked",
+		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
+	}
+	if _, err := NewStartGoalTool(env).Execute(context.Background(), `{"goal":"Handle repeated blocker","goal_id":"blocked-runtime-goal"}`); err != nil {
+		t.Fatalf("start_goal: %v", err)
+	}
+
+	var updated struct {
+		Status      string           `json:"status"`
+		RuntimeGoal goalruntime.Goal `json:"runtime_goal"`
+	}
+	for i := 0; i < goalruntime.RequiredBlockerTurns; i++ {
+		raw, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"kind":"status","status":"blocked","message":"needs credentials"}`)
+		if err != nil {
+			t.Fatalf("update_goal blocker %d: %v", i, err)
+		}
+		if err := json.Unmarshal([]byte(raw), &updated); err != nil {
+			t.Fatalf("parse update_goal %d: %v\n%s", i, err, raw)
+		}
+	}
+	if updated.RuntimeGoal.Status != goalruntime.StatusBlocked ||
+		updated.RuntimeGoal.BlockerAudit.ConsecutiveTurns != goalruntime.RequiredBlockerTurns {
+		t.Fatalf("runtime goal should block after repeated blocker: %+v", updated.RuntimeGoal)
+	}
+	if updated.Status != string(goalrunner.StatusBlocked) {
+		t.Fatalf("durable goal status = %q, want blocked", updated.Status)
 	}
 }
 
