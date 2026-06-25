@@ -103,21 +103,21 @@ func TestRuntimeDecideContinuationRejectsNonActiveGoal(t *testing.T) {
 func TestRuntimeAccountingAndBlockerPersistence(t *testing.T) {
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	runtime := newTestRuntime(t)
-	if _, err := runtime.Create(Spec{ThreadID: "thread-1", GoalID: "goal-1", Objective: "ship runtime", TokenBudget: 10}); err != nil {
+	if _, err := runtime.Create(Spec{ThreadID: "thread-1", GoalID: "goal-1", Objective: "ship runtime"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	goal, err := runtime.AccountUsage(UsageDelta{Tokens: 10, Turns: 1}, now)
 	if err != nil {
 		t.Fatalf("AccountUsage: %v", err)
 	}
-	if goal.Status != StatusBudgetLimited {
-		t.Fatalf("Status = %s, want budget_limited", goal.Status)
+	if goal.Status != StatusActive {
+		t.Fatalf("Status = %s, want active", goal.Status)
 	}
 	loaded, err := runtime.CurrentGoal()
 	if err != nil {
 		t.Fatalf("CurrentGoal: %v", err)
 	}
-	if loaded.Status != StatusBudgetLimited || loaded.TokensUsed != 10 {
+	if loaded.Status != StatusActive || loaded.TokensUsed != 10 {
 		t.Fatalf("usage not persisted: %+v", loaded)
 	}
 

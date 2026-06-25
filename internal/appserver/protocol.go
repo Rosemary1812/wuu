@@ -366,7 +366,6 @@ type GoalActiveSummary struct {
 	StopReason              string `json:"stop_reason,omitempty"`
 	RecentProgress          string `json:"recent_progress,omitempty"`
 	TokensUsed              int    `json:"tokens_used,omitempty"`
-	TokenBudget             int    `json:"token_budget,omitempty"`
 	TimeUsedSeconds         int64  `json:"time_used_seconds,omitempty"`
 	GoalTurns               int    `json:"goal_turns,omitempty"`
 	Blocker                 string `json:"blocker,omitempty"`

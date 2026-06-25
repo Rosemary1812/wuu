@@ -15,13 +15,12 @@ const (
 type Status string
 
 const (
-	StatusActive        Status = "active"
-	StatusPaused        Status = "paused"
-	StatusBlocked       Status = "blocked"
-	StatusUsageLimited  Status = "usage_limited"
-	StatusBudgetLimited Status = "budget_limited"
-	StatusComplete      Status = "complete"
-	StatusCancelled     Status = "cancelled"
+	StatusActive       Status = "active"
+	StatusPaused       Status = "paused"
+	StatusBlocked      Status = "blocked"
+	StatusUsageLimited Status = "usage_limited"
+	StatusComplete     Status = "complete"
+	StatusCancelled    Status = "cancelled"
 )
 
 type Actor string
@@ -38,7 +37,6 @@ type Goal struct {
 	GoalID          string       `json:"goal_id"`
 	Objective       string       `json:"objective"`
 	Status          Status       `json:"status"`
-	TokenBudget     int          `json:"token_budget,omitempty"`
 	TokensUsed      int          `json:"tokens_used,omitempty"`
 	TimeUsedSeconds int64        `json:"time_used_seconds,omitempty"`
 	GoalTurns       int          `json:"goal_turns,omitempty"`
@@ -55,10 +53,9 @@ type BlockerAudit struct {
 }
 
 type Spec struct {
-	ThreadID    string
-	GoalID      string
-	Objective   string
-	TokenBudget int
+	ThreadID  string
+	GoalID    string
+	Objective string
 }
 
 type UsageDelta struct {
@@ -80,9 +77,6 @@ func NewGoal(spec Spec, now time.Time) (Goal, error) {
 	if objective == "" {
 		return Goal{}, errors.New("objective is required")
 	}
-	if spec.TokenBudget < 0 {
-		return Goal{}, errors.New("token_budget cannot be negative")
-	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -92,7 +86,6 @@ func NewGoal(spec Spec, now time.Time) (Goal, error) {
 		GoalID:        goalID,
 		Objective:     objective,
 		Status:        StatusActive,
-		TokenBudget:   spec.TokenBudget,
 		CreatedAt:     now.UTC(),
 		UpdatedAt:     now.UTC(),
 	}, nil
@@ -108,7 +101,6 @@ func IsKnownStatus(status Status) bool {
 		StatusPaused,
 		StatusBlocked,
 		StatusUsageLimited,
-		StatusBudgetLimited,
 		StatusComplete,
 		StatusCancelled:
 		return true
@@ -204,9 +196,6 @@ func (g Goal) AccountUsage(delta UsageDelta, now time.Time) (Goal, error) {
 	g.TimeUsedSeconds += int64(delta.Elapsed / time.Second)
 	g.GoalTurns += delta.Turns
 	g.UpdatedAt = now.UTC()
-	if g.Status == StatusActive && g.TokenBudget > 0 && g.TokensUsed >= g.TokenBudget {
-		g.Status = StatusBudgetLimited
-	}
 	return g, nil
 }
 
@@ -258,7 +247,7 @@ func validateActorOwnsStatus(actor Actor, to Status) error {
 		}
 	case ActorSystem:
 		switch to {
-		case StatusActive, StatusPaused, StatusBlocked, StatusUsageLimited, StatusBudgetLimited, StatusComplete, StatusCancelled:
+		case StatusActive, StatusPaused, StatusBlocked, StatusUsageLimited, StatusComplete, StatusCancelled:
 			return nil
 		default:
 			return fmt.Errorf("system cannot set goal runtime status %s", to)
@@ -274,12 +263,11 @@ func normalizeBlocker(message string) string {
 
 var goalTransitions = map[Status]map[Status]bool{
 	StatusActive: {
-		StatusPaused:        true,
-		StatusBlocked:       true,
-		StatusUsageLimited:  true,
-		StatusBudgetLimited: true,
-		StatusComplete:      true,
-		StatusCancelled:     true,
+		StatusPaused:       true,
+		StatusBlocked:      true,
+		StatusUsageLimited: true,
+		StatusComplete:     true,
+		StatusCancelled:    true,
 	},
 	StatusPaused: {
 		StatusActive:    true,
@@ -290,10 +278,6 @@ var goalTransitions = map[Status]map[Status]bool{
 		StatusCancelled: true,
 	},
 	StatusUsageLimited: {
-		StatusActive:    true,
-		StatusCancelled: true,
-	},
-	StatusBudgetLimited: {
 		StatusActive:    true,
 		StatusCancelled: true,
 	},

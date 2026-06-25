@@ -41,30 +41,45 @@ type fakeClient struct {
 	err       error
 	responses []providers.ChatResponse
 	response  providers.ChatResponse
+	onChat    func(call int, req providers.ChatRequest)
 }
 
 func (f *fakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
+	call := len(f.requests)
+	onChat := f.onChat
 	if len(f.errs) > 0 {
 		err := f.errs[0]
 		f.errs = f.errs[1:]
 		f.mu.Unlock()
+		if onChat != nil {
+			onChat(call, req)
+		}
 		return providers.ChatResponse{}, err
 	}
 	if f.err != nil {
 		err := f.err
 		f.mu.Unlock()
+		if onChat != nil {
+			onChat(call, req)
+		}
 		return providers.ChatResponse{}, err
 	}
 	if len(f.responses) > 0 {
 		res := f.responses[0]
 		f.responses = f.responses[1:]
 		f.mu.Unlock()
+		if onChat != nil {
+			onChat(call, req)
+		}
 		return res, nil
 	}
 	res := f.response
 	f.mu.Unlock()
+	if onChat != nil {
+		onChat(call, req)
+	}
 	return res, nil
 }
 
@@ -1992,10 +2007,9 @@ func TestServerTurnStartAccountsActiveGoalUsage(t *testing.T) {
 		t.Fatalf("ensureThreadRuntime: %v", err)
 	}
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
-		ThreadID:    threadID,
-		GoalID:      "goal-usage",
-		Objective:   "account active goal usage",
-		TokenBudget: 15,
+		ThreadID:  threadID,
+		GoalID:    "goal-usage",
+		Objective: "account active goal usage",
 	}); err != nil {
 		t.Fatalf("create goal runtime: %v", err)
 	}
@@ -2021,12 +2035,13 @@ func TestServerTurnStartAccountsActiveGoalUsage(t *testing.T) {
 	if goal.TokensUsed != 15 || goal.GoalTurns != 1 {
 		t.Fatalf("unexpected accounted goal usage: %+v", goal)
 	}
-	if goal.Status != goalruntime.StatusBudgetLimited {
-		t.Fatalf("goal status = %s, want budget_limited", goal.Status)
+	if goal.Status != goalruntime.StatusActive {
+		t.Fatalf("goal status = %s, want active", goal.Status)
 	}
 }
 
 func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
+	var threadRuntime *runtime.ThreadRuntime
 	client := &fakeClient{
 		responses: []providers.ChatResponse{
 			{
@@ -2038,6 +2053,11 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 				Usage:   &providers.TokenUsage{InputTokens: 2, OutputTokens: 3},
 			},
 		},
+		onChat: func(call int, _ providers.ChatRequest) {
+			if call == 2 && threadRuntime != nil {
+				_, _ = threadRuntime.GoalRuntime.Complete(time.Now().UTC())
+			}
+		},
 	}
 	rt := newTestRuntime(t, client)
 	out := &lockedBuffer{}
@@ -2047,15 +2067,15 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 		t.Fatalf("thread/start: %v", err)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	var err error
+	threadRuntime, err = srv.ensureThreadRuntime(srv.thread(threadID))
 	if err != nil {
 		t.Fatalf("ensureThreadRuntime: %v", err)
 	}
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
-		ThreadID:    threadID,
-		GoalID:      "goal-auto",
-		Objective:   "finish the idle continuation loop",
-		TokenBudget: 10,
+		ThreadID:  threadID,
+		GoalID:    "goal-auto",
+		Objective: "finish the idle continuation loop",
 	}); err != nil {
 		t.Fatalf("create goal runtime: %v", err)
 	}
@@ -2075,7 +2095,7 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	waitForTurnCompletedCountForThread(t, out, threadID, 2)
 	time.Sleep(50 * time.Millisecond)
 	if got := turnCompletedCountForThread(t, out, threadID); got != 2 {
-		t.Fatalf("expected budget-limited goal to stop after 2 completed turns, got %d", got)
+		t.Fatalf("expected completed goal to stop after 2 completed turns, got %d", got)
 	}
 
 	client.mu.Lock()
@@ -2120,7 +2140,7 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentGoal: %v", err)
 	}
-	if goal.TokensUsed != 10 || goal.GoalTurns != 2 || goal.Status != goalruntime.StatusBudgetLimited {
+	if goal.TokensUsed != 5 || goal.GoalTurns != 1 || goal.Status != goalruntime.StatusComplete {
 		t.Fatalf("unexpected goal after continuation: %+v", goal)
 	}
 }
@@ -2195,14 +2215,6 @@ func TestServerGoalContinuationSkipsNonActiveGoals(t *testing.T) {
 				return err
 			},
 			status: goalruntime.StatusUsageLimited,
-		},
-		{
-			name: "budget limited",
-			apply: func(runtime *goalruntime.Runtime) error {
-				_, err := runtime.SetSystemStatus(goalruntime.StatusBudgetLimited, time.Now().UTC())
-				return err
-			},
-			status: goalruntime.StatusBudgetLimited,
 		},
 		{
 			name: "complete",
@@ -3954,10 +3966,20 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 }
 
 func TestServerThreadResumeKicksActiveGoalContinuation(t *testing.T) {
-	client := &fakeClient{response: providers.ChatResponse{
-		Content: "continued after resume",
-		Usage:   &providers.TokenUsage{InputTokens: 1, OutputTokens: 1},
-	}}
+	var threadRuntime *runtime.ThreadRuntime
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{
+				Content: "continued after resume",
+				Usage:   &providers.TokenUsage{InputTokens: 1, OutputTokens: 1},
+			},
+		},
+		onChat: func(call int, _ providers.ChatRequest) {
+			if call == 1 && threadRuntime != nil {
+				_, _ = threadRuntime.GoalRuntime.Complete(time.Now().UTC())
+			}
+		},
+	}
 	rt := newTestRuntime(t, client)
 	sessionID := "20260523-000002-goal-resume"
 	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
@@ -3970,15 +3992,14 @@ func TestServerThreadResumeKicksActiveGoalContinuation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write session: %v", err)
 	}
-	threadRuntime, err := rt.NewThreadRuntime(sessionID)
+	threadRuntime, err = rt.NewThreadRuntime(sessionID)
 	if err != nil {
 		t.Fatalf("NewThreadRuntime: %v", err)
 	}
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
-		ThreadID:    sessionID,
-		GoalID:      "resume-goal",
-		Objective:   "continue after thread resume",
-		TokenBudget: 1,
+		ThreadID:  sessionID,
+		GoalID:    "resume-goal",
+		Objective: "continue after thread resume",
 	}); err != nil {
 		t.Fatalf("create goal: %v", err)
 	}
@@ -4004,7 +4025,7 @@ func TestServerThreadResumeKicksActiveGoalContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load goal: %v", err)
 	}
-	if goal.Status != goalruntime.StatusBudgetLimited || goal.GoalTurns != 1 {
+	if goal.Status != goalruntime.StatusComplete {
 		t.Fatalf("unexpected goal after resume continuation: %+v", goal)
 	}
 }

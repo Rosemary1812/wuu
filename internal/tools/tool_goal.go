@@ -41,10 +41,6 @@ func (t *StartGoalTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Optional stable id. Omit unless a caller needs a predictable id.",
 				},
-				"token_budget": map[string]any{
-					"type":        "integer",
-					"description": "Optional runtime token budget for automatic continuation. Omit for no explicit token budget.",
-				},
 			},
 			"required": []string{"goal"},
 		},
@@ -53,9 +49,8 @@ func (t *StartGoalTool) Definition() providers.ToolDefinition {
 
 func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Goal        string `json:"goal"`
-		GoalID      string `json:"goal_id"`
-		TokenBudget int    `json:"token_budget"`
+		Goal   string `json:"goal"`
+		GoalID string `json:"goal_id"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -64,9 +59,6 @@ func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, err
 	if objective == "" {
 		return "", errors.New("start_goal requires goal")
 	}
-	if args.TokenBudget < 0 {
-		return "", errors.New("token_budget cannot be negative")
-	}
 	goalID := strings.TrimSpace(args.GoalID)
 	if goalID == "" {
 		goalID = "goal-" + session.NewID()
@@ -74,7 +66,7 @@ func (t *StartGoalTool) Execute(_ context.Context, argsJSON string) (string, err
 	if err := validateGoalToolID(goalID); err != nil {
 		return "", err
 	}
-	runtimeGoal, err := t.startRuntimeGoal(goalID, objective, args.TokenBudget)
+	runtimeGoal, err := t.startRuntimeGoal(goalID, objective)
 	if err != nil {
 		return "", err
 	}
@@ -93,7 +85,7 @@ func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "update_goal",
 		Description: "Report a real blocker for the active runtime Goal. The runtime applies the repeated-blocker threshold before the Goal becomes blocked. " +
-			"Do not use this for progress notes, decisions, failures, pause, cancel, budget, or completion; use complete_goal only when the objective is actually done.",
+			"Do not use this for progress notes, decisions, failures, pause, cancel, usage limits, or completion; use complete_goal only when the objective is actually done.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -220,7 +212,7 @@ func (t *GoalStatusTool) IsConcurrencySafe() bool { return true }
 func (t *GoalStatusTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "goal_status",
-		Description: "Read the current thread runtime Goal, including status, usage, blocker audit, and budget.",
+		Description: "Read the current thread runtime Goal, including status, usage, and blocker audit.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -295,7 +287,7 @@ func (e *Env) ResolveGoalStore(goalID, goalDir string) (*goalrunner.Store, goalr
 	return store, state, nil
 }
 
-func (t *StartGoalTool) startRuntimeGoal(goalID, objective string, tokenBudget int) (goalruntime.Goal, error) {
+func (t *StartGoalTool) startRuntimeGoal(goalID, objective string) (goalruntime.Goal, error) {
 	if t == nil || t.env == nil || t.env.GoalRuntime == nil {
 		return goalruntime.Goal{}, errors.New("start_goal requires a thread runtime goal store")
 	}
@@ -304,10 +296,9 @@ func (t *StartGoalTool) startRuntimeGoal(goalID, objective string, tokenBudget i
 		return goalruntime.Goal{}, errors.New("thread session_id is required for runtime goal")
 	}
 	goal, err := t.env.GoalRuntime.Create(goalruntime.Spec{
-		ThreadID:    threadID,
-		GoalID:      goalID,
-		Objective:   objective,
-		TokenBudget: tokenBudget,
+		ThreadID:  threadID,
+		GoalID:    goalID,
+		Objective: objective,
 	})
 	if err != nil {
 		return goalruntime.Goal{}, err

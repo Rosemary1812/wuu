@@ -207,9 +207,6 @@ func validateGoalForSave(goal Goal) error {
 	if !IsKnownStatus(goal.Status) {
 		return fmt.Errorf("unknown goal runtime status: %s", goal.Status)
 	}
-	if goal.TokenBudget < 0 {
-		return errors.New("goal token_budget cannot be negative")
-	}
 	if goal.TokensUsed < 0 {
 		return errors.New("goal tokens_used cannot be negative")
 	}

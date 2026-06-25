@@ -461,10 +461,9 @@ func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
 		t.Fatalf("ensureThreadRuntime: %v", err)
 	}
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
-		ThreadID:    threadID,
-		GoalID:      "runtime-goal",
-		Objective:   "runtime objective",
-		TokenBudget: 25,
+		ThreadID:  threadID,
+		GoalID:    "runtime-goal",
+		Objective: "runtime objective",
 	}); err != nil {
 		t.Fatalf("Create runtime goal: %v", err)
 	}
@@ -483,7 +482,7 @@ func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
 	if result.Summary.ID != "runtime-goal" || result.Summary.Text != "runtime objective" || result.Summary.Status != string(goalruntime.StatusActive) {
 		t.Fatalf("unexpected runtime summary: %+v", result.Summary)
 	}
-	if result.Summary.TokensUsed != 7 || result.Summary.TokenBudget != 25 || result.Summary.GoalTurns != 2 {
+	if result.Summary.TokensUsed != 7 || result.Summary.GoalTurns != 2 {
 		t.Fatalf("runtime usage missing from summary: %+v", result.Summary)
 	}
 	if result.Summary.RecentProgress != "" || result.Summary.Step != "" {

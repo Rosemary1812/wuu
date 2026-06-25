@@ -9,10 +9,9 @@ import (
 func TestNewGoalDefaultsActive(t *testing.T) {
 	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 	goal, err := NewGoal(Spec{
-		ThreadID:    "thread-1",
-		GoalID:      "goal-1",
-		Objective:   "  ship goal runtime  ",
-		TokenBudget: 100,
+		ThreadID:  "thread-1",
+		GoalID:    "goal-1",
+		Objective: "  ship goal runtime  ",
 	}, now)
 	if err != nil {
 		t.Fatalf("NewGoal: %v", err)
@@ -47,11 +46,11 @@ func TestActorStatusOwnership(t *testing.T) {
 	if err := ValidateActorTransition(ActorUser, StatusPaused, StatusActive); err != nil {
 		t.Fatalf("user resume should be allowed: %v", err)
 	}
-	if err := ValidateActorTransition(ActorUser, StatusActive, StatusBudgetLimited); err == nil {
-		t.Fatal("user should not set budget_limited directly")
+	if err := ValidateActorTransition(ActorUser, StatusActive, StatusUsageLimited); err == nil {
+		t.Fatal("user should not set usage_limited directly")
 	}
-	if err := ValidateActorTransition(ActorSystem, StatusActive, StatusBudgetLimited); err != nil {
-		t.Fatalf("system budget limit should be allowed: %v", err)
+	if err := ValidateActorTransition(ActorSystem, StatusActive, StatusUsageLimited); err != nil {
+		t.Fatalf("system usage limit should be allowed: %v", err)
 	}
 }
 
@@ -60,7 +59,6 @@ func TestTerminalStatusesDoNotAutoContinue(t *testing.T) {
 		StatusPaused,
 		StatusBlocked,
 		StatusUsageLimited,
-		StatusBudgetLimited,
 		StatusComplete,
 		StatusCancelled,
 	} {
@@ -75,18 +73,14 @@ func TestTerminalStatusesDoNotAutoContinue(t *testing.T) {
 	if !IsTerminalStatus(StatusCancelled) {
 		t.Fatal("cancelled should be terminal")
 	}
-	if IsTerminalStatus(StatusBudgetLimited) {
-		t.Fatal("budget_limited should be stopped but resumable, not terminal")
-	}
 }
 
-func TestAccountUsageStopsAtBudget(t *testing.T) {
+func TestAccountUsageRecordsTokensWithoutStopping(t *testing.T) {
 	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 	goal, err := NewGoal(Spec{
-		ThreadID:    "thread-1",
-		GoalID:      "goal-1",
-		Objective:   "ship goal runtime",
-		TokenBudget: 10,
+		ThreadID:  "thread-1",
+		GoalID:    "goal-1",
+		Objective: "ship goal runtime",
 	}, now)
 	if err != nil {
 		t.Fatalf("NewGoal: %v", err)
@@ -105,11 +99,11 @@ func TestAccountUsageStopsAtBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AccountUsage second: %v", err)
 	}
-	if goal.Status != StatusBudgetLimited {
-		t.Fatalf("Status after crossing budget = %s, want budget_limited", goal.Status)
+	if goal.Status != StatusActive {
+		t.Fatalf("Status after token accounting = %s, want active", goal.Status)
 	}
-	if goal.CanAutoContinue() {
-		t.Fatal("budget-limited goal should not auto-continue")
+	if goal.TokensUsed != 10 || goal.TimeUsedSeconds != 3 || goal.GoalTurns != 2 {
+		t.Fatalf("unexpected usage after second account: %+v", goal)
 	}
 }
 

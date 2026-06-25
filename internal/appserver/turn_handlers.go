@@ -1347,12 +1347,11 @@ Continue working toward the active thread goal.
 Objective: %s
 Status: %s
 Tokens used: %d
-Token budget: %d
 Time used seconds: %d
 Goal turns: %d
 
 Make concrete progress toward the objective. Do not mark the goal complete unless the objective is actually achieved. If the same blocker prevents progress for multiple continuation turns, use the goal status rules instead of pretending the work is complete.
-</goal_continuation>`, goal.Objective, goal.Status, goal.TokensUsed, goal.TokenBudget, goal.TimeUsedSeconds, goal.GoalTurns)
+</goal_continuation>`, goal.Objective, goal.Status, goal.TokensUsed, goal.TimeUsedSeconds, goal.GoalTurns)
 	return providers.ChatMessage{
 		Role:    "user",
 		Name:    wuucontext.GoalContinuationMessageName,

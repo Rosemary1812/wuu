@@ -22,7 +22,7 @@ func TestGoalToolsLifecycle(t *testing.T) {
 		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
 	}
 
-	startedRaw, err := NewStartGoalTool(env).Execute(context.Background(), `{"goal":"Ship goal tools","goal_id":"goal-tools","token_budget":42}`)
+	startedRaw, err := NewStartGoalTool(env).Execute(context.Background(), `{"goal":"Ship goal tools","goal_id":"goal-tools"}`)
 	if err != nil {
 		t.Fatalf("start_goal: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestGoalToolsLifecycle(t *testing.T) {
 	if err := json.Unmarshal([]byte(startedRaw), &started); err != nil {
 		t.Fatalf("parse start_goal: %v\n%s", err, startedRaw)
 	}
-	if started.GoalID != "goal-tools" || started.Status != string(goalruntime.StatusActive) || started.RuntimeGoal.TokenBudget != 42 {
+	if started.GoalID != "goal-tools" || started.Status != string(goalruntime.StatusActive) {
 		t.Fatalf("unexpected start_goal result: %+v", started)
 	}
 	if _, err := os.Stat(filepath.Join(env.RootDir, ".goal")); !os.IsNotExist(err) {
@@ -167,7 +167,7 @@ func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
 			t.Fatalf("start_goal description missing %q: %q", want, desc)
 		}
 	}
-	assertToolSchemaOmits(t, startDef, "task", "trigger_type", "trigger_source", "next_steps", "goal_dir")
+	assertToolSchemaOmits(t, startDef, "task", "trigger_type", "trigger_source", "next_steps", "goal_dir", "token_budget")
 
 	completeDef := NewCompleteGoalTool(&Env{}).Definition()
 	completeDesc := completeDef.Description

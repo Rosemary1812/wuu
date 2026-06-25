@@ -442,8 +442,6 @@ function goalStatusText(summary: ComposerGoalSummary): string {
       return "已暂停";
     case "blocked":
       return "已阻塞";
-    case "budget_limited":
-      return "预算受限";
     case "usage_limited":
       return "用量受限";
     case "needs_human":
@@ -467,15 +465,7 @@ function goalUsageText(summary: ComposerGoalSummary): string {
   if ((summary.goal_turns ?? 0) > 0) {
     parts.push(`${summary.goal_turns} 轮`);
   }
-  if ((summary.token_budget ?? 0) > 0) {
-    const used = Math.max(0, summary.tokens_used ?? 0);
-    const budget = Math.max(0, summary.token_budget ?? 0);
-    const percent =
-      budget > 0 ? Math.min(999, Math.round((used / budget) * 100)) : 0;
-    parts.push(
-      `${formatCompactNumber(used)} / ${formatCompactNumber(budget)} tokens (${percent}%)`,
-    );
-  } else if ((summary.tokens_used ?? 0) > 0) {
+  if ((summary.tokens_used ?? 0) > 0) {
     parts.push(`${formatCompactNumber(summary.tokens_used ?? 0)} tokens`);
   }
   if ((summary.time_used_seconds ?? 0) > 0) {

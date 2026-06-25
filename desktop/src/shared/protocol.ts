@@ -869,7 +869,6 @@ export type ComposerGoalSummary = {
   stop_reason?: string;
   recent_progress?: string;
   tokens_used?: number;
-  token_budget?: number;
   time_used_seconds?: number;
   goal_turns?: number;
   blocker?: string;

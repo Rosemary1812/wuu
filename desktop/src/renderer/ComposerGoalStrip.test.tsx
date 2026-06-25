@@ -101,14 +101,13 @@ describe("ComposerGoalStrip", () => {
         blocker: "等待用户选择策略",
         blocker_consecutive_turns: 3,
         tokens_used: 1250,
-        token_budget: 5000,
         goal_turns: 2,
         time_used_seconds: 75,
       },
     });
 
     expect(container.querySelector(".composer-goal-strip-detail")?.textContent).toBe(
-      "已阻塞 | 等待用户选择策略 (3 次) | 2 轮 / 1,250 / 5,000 tokens (25%) / 1 分 15 秒",
+      "已阻塞 | 等待用户选择策略 (3 次) | 2 轮 / 1,250 tokens / 1 分 15 秒",
     );
   });
 
