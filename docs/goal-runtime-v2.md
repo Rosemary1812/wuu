@@ -1,9 +1,10 @@
 # Goal Runtime v2 Plan
 
 Status: staged implementation. The design is not complete; the initial
-state model, JSON store, continuation decision runtime, usage accounting, and
-idle app-server continuation path live in the Go core/app-server runtime. Each
-`ThreadRuntime` now owns one GoalRuntime instance.
+state model, JSON store, continuation decision runtime, usage accounting,
+idle app-server continuation path, model-facing tool wiring, app-server user
+controls, and desktop composer control surface now exist. Each `ThreadRuntime`
+owns one GoalRuntime instance.
 
 This document records the intended Goal redesign before the runtime work starts.
 It exists to keep future changes pointed at the same product model instead of
@@ -62,8 +63,9 @@ Wuu already has useful Goal pieces:
 - `internal/appserver/goal_handlers.go` exposes Goal snapshots, worktree
   review/cleanup/rollback/merge, approval resolution, active summary, cancel,
   and text update endpoints.
-- `desktop/src/renderer/ComposerGoalStrip.tsx` shows a lightweight composer
-  banner with edit and cancel controls.
+- `desktop/src/renderer/ComposerGoalStrip.tsx` shows the thread runtime Goal
+  in the composer surface with status/progress/usage detail and pause, resume,
+  edit, clear, and cancel controls backed by app-server IPC.
 
 The current design is closer to a durable task ledger than to a thread-level
 runtime objective. Its state model includes task-run concepts such as steps,
@@ -71,11 +73,10 @@ approvals, worktrees, verification policies, retry policy, progress, decisions,
 failures, artifacts, modified files, and test results. That is valuable as an
 execution ledger, but it is not the missing continuation loop.
 
-The main remaining gap: the desktop surface has not yet been updated to show
-the v2 runtime state, stop reasons, and user controls. The older durable Goal
-ledger also still exists as a broad evidence model, so future work should keep
-clarifying which fields belong to runtime state and which belong to execution
-evidence.
+The main remaining gap is end-to-end product-path verification and cleanup of
+the old evidence model boundary. The older durable Goal ledger still exists as
+a broad evidence model, so future work should keep clarifying which fields
+belong to runtime state and which belong to execution evidence.
 
 Current model-visible semantics have been narrowed, but the old evidence model
 is still visible:
@@ -200,7 +201,9 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 8. Expand app-server and desktop controls.
    The UI should show active Goal text, status, elapsed time, recent progress,
    and stop reason. User controls should cover pause, resume, edit, clear or
-   cancel, without moving Goal logic into Electron.
+   cancel, without moving Goal logic into Electron. Done for the composer
+   surface and app-server IPC; larger Goal history/detail surfaces still need a
+   separate product decision.
 
 9. Verify through the real product path.
    Unit tests should cover transitions and accounting. Integration or protocol
