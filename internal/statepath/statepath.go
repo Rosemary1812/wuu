@@ -119,6 +119,11 @@ func SessionArtifactDir(workspaceStateDir, sessionID string) string {
 	return filepath.Join(workspaceStateDir, "sessions", sessionID)
 }
 
+// ThreadGoalRuntimePath returns the thread-scoped Goal runtime state file.
+func ThreadGoalRuntimePath(workspaceStateDir, sessionID string) string {
+	return filepath.Join(SessionArtifactDir(workspaceStateDir, sessionID), "goal_runtime.json")
+}
+
 // ScheduledTasksPath returns the workspace-scoped durable scheduled task file.
 func ScheduledTasksPath(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "scheduled_tasks.json")

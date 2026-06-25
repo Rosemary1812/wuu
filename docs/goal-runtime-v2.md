@@ -1,7 +1,7 @@
 # Goal Runtime v2 Plan
 
 Status: staged implementation. The design is not complete; the initial
-unwired state model lives in `internal/goalruntime`.
+unwired state model and JSON store live in `internal/goalruntime`.
 
 This document records the intended Goal redesign before the runtime work starts.
 It exists to keep future changes pointed at the same product model instead of
@@ -27,8 +27,8 @@ continue with another turn.
 Wuu already has useful Goal pieces:
 
 - `internal/goalruntime` defines the initial Goal v2 runtime state model,
-  status ownership rules, budget accounting, and blocked-audit threshold. It is
-  not yet wired into thread/session runtime.
+  status ownership rules, budget accounting, blocked-audit threshold, and
+  thread-scoped JSON store. It is not yet wired into thread/session runtime.
 - `internal/goal` stores durable Goal state in `state.json`, `events.jsonl`,
   artifacts, and markdown views.
 - `internal/tools/tool_goal.go` exposes `start_goal`, `update_goal`,
