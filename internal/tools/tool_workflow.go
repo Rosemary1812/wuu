@@ -357,7 +357,7 @@ func (t *StartWorkflowTool) Definition() providers.ToolDefinition {
 		Name: "start_workflow",
 		Description: "Start a workflow run. Prefer this over choosing run_workflow/create_workflow yourself: driver=auto sends saved script definitions or ad hoc scripts to the script path, and markdown definitions or ad hoc plans to the agent-managed path. " +
 			"The returned driver field tells you whether the script or the agent controls phases, worker spawns, awaits, and synthesis. " +
-			"Omit goal_id and goal_dir for a self-contained workflow; start_workflow creates a Goal binding for that run. Pass goal_id and goal_dir only when binding the run to a broader user-visible Goal. " +
+			"Omit goal_id and goal_dir for a self-contained workflow; start_workflow creates workflow evidence state for that run. Pass goal_id and goal_dir only when binding to existing workflow evidence state. " +
 			"Use run_workflow or create_workflow directly only when the task explicitly requires that path.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -381,11 +381,11 @@ func (t *StartWorkflowTool) Definition() providers.ToolDefinition {
 				},
 				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Optional existing Goal id from start_goal. Pass with goal_dir to bind this workflow to the broader user-visible Goal.",
+					"description": "Optional existing workflow evidence Goal id returned by start_workflow or run_workflow. Pass with goal_dir to bind this workflow to that evidence state.",
 				},
 				"goal_dir": map[string]any{
 					"type":        "string",
-					"description": "Optional existing Goal directory from start_goal.",
+					"description": "Optional existing workflow evidence Goal directory returned by start_workflow or run_workflow.",
 				},
 				"script": map[string]any{
 					"type":        "string",
@@ -509,11 +509,11 @@ func (t *RunWorkflowTool) Definition() providers.ToolDefinition {
 				},
 				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Optional existing Goal id from start_goal. Pass with goal_dir to bind this workflow to the broader user-visible Goal.",
+					"description": "Optional existing workflow evidence Goal id returned by start_workflow or run_workflow. Pass with goal_dir to bind this workflow to that evidence state.",
 				},
 				"goal_dir": map[string]any{
 					"type":        "string",
-					"description": "Optional existing Goal directory from start_goal.",
+					"description": "Optional existing workflow evidence Goal directory returned by start_workflow or run_workflow.",
 				},
 				"background": map[string]any{
 					"type":        "boolean",
@@ -982,11 +982,11 @@ func (t *CreateWorkflowTool) Definition() providers.ToolDefinition {
 				},
 				"goal_id": map[string]any{
 					"type":        "string",
-					"description": "Optional existing Goal id from start_goal. Pass with goal_dir to bind this workflow to the broader user-visible Goal.",
+					"description": "Optional existing workflow evidence Goal id returned by start_workflow or run_workflow. Pass with goal_dir to bind this workflow to that evidence state.",
 				},
 				"goal_dir": map[string]any{
 					"type":        "string",
-					"description": "Optional existing Goal directory from start_goal.",
+					"description": "Optional existing workflow evidence Goal directory returned by start_workflow or run_workflow.",
 				},
 			},
 		},

@@ -5465,8 +5465,8 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "owned files/modules", "Fresh subagents"},
 			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
-			"goal_id":       {"start_goal", "start_workflow", "durable goal state"},
-			"goal_dir":      {"start_goal", "start_workflow", "Goal- or workflow-bound"},
+			"goal_id":       {"workflow evidence Goal id", "start_workflow", "run_workflow"},
+			"goal_dir":      {"workflow evidence Goal directory", "start_workflow", "run_workflow"},
 		} {
 			prop, _ := props[field].(map[string]any)
 			desc, _ := prop["description"].(string)

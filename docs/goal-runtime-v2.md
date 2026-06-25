@@ -47,21 +47,23 @@ Wuu already has useful Goal pieces:
   stops the Goal as `blocked`; provider context overflow stops it as
   `usage_limited`. User interrupts remain turn-level stops and do not
   mislabel the Goal as blocked.
-- `goal/active-summary` now prefers the thread GoalRuntime over the older
-  durable ledger and includes runtime status, stop reason, usage, blocker, and
-  recent ledger progress. App-server user controls can pause, resume, edit,
-  cancel, or clear the runtime Goal while keeping legacy ledger evidence from
-  reappearing as a fake active Goal.
+- `goal/active-summary` now reads the thread GoalRuntime only. It includes
+  runtime status, stop reason, usage, and blocker state. App-server user
+  controls pause, resume, edit, cancel, or clear the runtime Goal without
+  falling back to older ledger state.
 - The model-visible `start_goal`, `update_goal`, `complete_goal`, and
-  `goal_status` tools now attach to the thread GoalRuntime when one is
-  available. The older durable Goal ledger remains as workflow/subagent
-  evidence, while the runtime Goal is the source for auto-continuation status.
+  `goal_status` tools now use the thread GoalRuntime directly. `start_goal`
+  creates only runtime state, `goal_status` reads only runtime state,
+  `complete_goal` completes only the active runtime Goal, and
+  `update_goal(status=blocked)` records blocker audits only on the runtime
+  Goal. The older durable Goal ledger remains as workflow/subagent evidence,
+  not as a model-facing active Goal lifecycle.
 - `internal/goal` stores durable Goal state in `state.json`, `events.jsonl`,
   artifacts, and markdown views.
 - `internal/tools/tool_goal.go` exposes `start_goal`, `update_goal`,
   `complete_goal`, and `goal_status`.
-- `internal/tools/tool_workflow.go` can create a workflow-owned Goal or bind a
-  workflow run to a broader Goal.
+- `internal/tools/tool_workflow.go` can create workflow-owned evidence state
+  or bind a workflow run to existing workflow evidence state.
 - `internal/tools/tool_agents.go` and `internal/goal/agentcontrol_sink.go` let
   subagent reports update Goal state.
 - `internal/runtime/session.go` can create scheduled Goal state for cron-driven
@@ -79,11 +81,10 @@ approvals, worktrees, verification policies, retry policy, progress, decisions,
 failures, artifacts, modified files, and test results. That is valuable as an
 execution ledger, but it is not the missing continuation loop.
 
-The main remaining gap is cleanup of the old evidence model boundary and
-broader product-path verification beyond app-server unit tests. The older
-durable Goal ledger still exists as a broad evidence model, so future work
-should keep clarifying which fields belong to runtime state and which belong to
-execution evidence.
+The main remaining gap is broader product-path verification beyond app-server
+unit tests. The older durable Goal ledger still exists as a workflow/subagent
+evidence model, so future work should keep its fields out of active Goal
+runtime and model-facing lifecycle tools.
 
 The app-server path now has product-path tests for positive idle
 auto-continuation, thread-resume continuation, and negative gates for queued
@@ -93,21 +94,17 @@ budget-limited, usage-limited, complete, and cancelled Goals. Wuu currently has
 review/subagent threads are represented as read-only threads in the app-server
 gate.
 
-Current model-visible semantics have been narrowed, but the old evidence model
-is still visible:
+Current model-visible semantics are now runtime-only:
 
-- `update_goal` can still write progress, decisions, and failures into the
-  durable ledger. Model-owned status changes are limited to blocker reporting;
-  when a runtime Goal exists, the runtime applies the repeated-blocker
-  threshold before the Goal becomes blocked.
-- `complete_goal` now completes the active runtime Goal when one exists, but
-  prompt/tool guidance still needs to keep teaching that completion requires
-  the original user-visible objective to be actually done.
-- `goal_status` now includes the runtime Goal when one exists, while still
-  exposing the broader workspace/system snapshot.
+- `start_goal` requires a thread GoalRuntime and creates no `.goal` directory
+  or legacy ledger entry.
+- `update_goal` only accepts `status=blocked` and only records the
+  repeated-blocker audit on the active runtime Goal.
+- `complete_goal` only completes the active runtime Goal.
+- `goal_status` only reads the current runtime Goal.
 
-These capabilities are now part of the closed loop, but the older evidence
-fields still need cleanup.
+The old evidence model is still present for workflow and subagent reports, but
+it is not the source of active Goal state.
 
 ## Target Model
 
@@ -153,8 +150,9 @@ The intended loop is:
 3. GoalRuntime records the active Goal for that thread.
 4. A user turn or automatic continuation turn runs through the normal model and
    tool loop.
-5. Turn lifecycle hooks account for token/time usage; tools can write durable
-   progress and evidence into the ledger.
+5. Turn lifecycle hooks account for token/time usage. Workflow and subagent
+   tools may write durable evidence, but model-facing Goal tools only mutate
+   runtime Goal state.
 6. The turn reaches final, error, or interrupt.
 7. Runtime marks the thread idle after queued user/client work is considered.
 8. If the Goal is still active and the thread is safe to use, GoalRuntime
@@ -206,15 +204,13 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 
 6. Tighten model-facing tools and guidance.
    Prefer a small contract such as create/read/complete/block, or keep existing
-   names only if their semantics are narrowed to the same contract. Existing
-   names are now wired to GoalRuntime in app-server threads: `start_goal`
-   creates the active runtime Goal, `goal_status` reads it, `complete_goal`
-   completes it, and `update_goal(status=blocked)` records blocker audits
-   instead of letting the model directly force arbitrary status changes.
-   Outside runtime-backed threads, `update_goal(kind=status)` is also limited
-   to `status=blocked` so the older durable ledger cannot be used as a fake
-   stop/complete path. Prompt guidance and tool descriptions now describe this
-   narrower contract.
+   names only if their semantics are narrowed to the same contract. Done:
+   existing names are runtime-only in model-facing use. `start_goal` creates
+   the active runtime Goal, `goal_status` reads it, `complete_goal` completes
+   it, and `update_goal(status=blocked)` records blocker audits instead of
+   letting the model write progress, decisions, failures, or arbitrary status
+   changes into the older ledger. Prompt guidance and tool descriptions now
+   describe this narrower contract.
 
 7. Reconnect workflows and subagents as evidence producers.
    Keep workflow/subagent Goal updates, but make them write progress, reports,
