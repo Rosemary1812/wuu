@@ -157,7 +157,7 @@ func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "update_goal",
 		Description: "Record meaningful Goal progress, a decision, or a blocker. Use this when the update should survive context compaction or coordinate workflow/subagent work. " +
-			"In app-server threads, kind=status is only for reporting a repeated blocker; the runtime decides when the Goal becomes blocked. " +
+			"kind=status is only for reporting a blocker; when a runtime Goal exists, the runtime decides when repeated blockers become blocked. " +
 			"Do not use it as a scratchpad for every small thought; use update_plan for short local task lists.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -256,10 +256,10 @@ func (t *UpdateGoalTool) Execute(_ context.Context, argsJSON string) (string, er
 			Message: firstGoalToolText(args.Reason, message),
 		})
 	case "status":
+		if strings.TrimSpace(args.Status) != string(goalruntime.StatusBlocked) {
+			return "", errors.New("update_goal kind=status can only report status=blocked; user/system owns pause, cancel, limit, failed, and other terminal states")
+		}
 		if hasRuntimeGoal {
-			if strings.TrimSpace(args.Status) != string(goalruntime.StatusBlocked) {
-				return "", errors.New("update_goal kind=status can only report status=blocked for the active thread Goal")
-			}
 			var blocked bool
 			runtimeGoal, blocked, err = t.env.GoalRuntime.RecordBlocker(message, time.Now().UTC())
 			if err == nil && blocked {
@@ -270,8 +270,8 @@ func (t *UpdateGoalTool) Execute(_ context.Context, argsJSON string) (string, er
 			break
 		}
 		status, ok := parseGoalStatus(args.Status)
-		if !ok || status == goalrunner.StatusCompleted {
-			return "", errors.New("update_goal kind=status requires status pending, running, blocked, needs_human, failed, or cancelled")
+		if !ok || status != goalrunner.StatusBlocked {
+			return "", errors.New("update_goal kind=status requires status=blocked")
 		}
 		state, err = store.SetStatus(status, step, message)
 	default:
@@ -618,7 +618,7 @@ func parseGoalStep(raw string, fallback goalrunner.Step) goalrunner.Step {
 
 func parseGoalStatus(raw string) (goalrunner.Status, bool) {
 	switch goalrunner.Status(strings.TrimSpace(raw)) {
-	case goalrunner.StatusPending, goalrunner.StatusRunning, goalrunner.StatusBlocked, goalrunner.StatusNeedsHuman, goalrunner.StatusCompleted, goalrunner.StatusFailed, goalrunner.StatusCancelled:
+	case goalrunner.StatusBlocked:
 		return goalrunner.Status(strings.TrimSpace(raw)), true
 	default:
 		return "", false

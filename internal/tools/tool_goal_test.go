@@ -87,6 +87,30 @@ func TestGoalToolsLifecycle(t *testing.T) {
 	}
 }
 
+func TestUpdateGoalLegacyStatusOnlyReportsBlocked(t *testing.T) {
+	env := &Env{RootDir: t.TempDir(), StateDir: filepath.Join(t.TempDir(), "state")}
+	if _, err := NewStartGoalTool(env).Execute(context.Background(), `{"goal":"Keep legacy status narrow","goal_id":"legacy-status"}`); err != nil {
+		t.Fatalf("start_goal: %v", err)
+	}
+
+	if _, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"goal_id":"legacy-status","kind":"status","status":"failed","message":"pretend failure"}`); err == nil {
+		t.Fatal("update_goal should not let the model set failed status")
+	}
+	raw, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"goal_id":"legacy-status","kind":"status","status":"blocked","message":"needs credentials"}`)
+	if err != nil {
+		t.Fatalf("update_goal blocked: %v", err)
+	}
+	var updated struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(raw), &updated); err != nil {
+		t.Fatalf("parse update_goal: %v\n%s", err, raw)
+	}
+	if updated.Status != string(goalrunner.StatusBlocked) {
+		t.Fatalf("status = %q, want blocked", updated.Status)
+	}
+}
+
 func TestGoalToolsUseThreadGoalRuntime(t *testing.T) {
 	env := &Env{
 		RootDir:     t.TempDir(),
@@ -203,6 +227,16 @@ func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
 	} {
 		if !strings.Contains(completeDesc, want) {
 			t.Fatalf("complete_goal description missing %q: %q", want, completeDesc)
+		}
+	}
+
+	updateDesc := NewUpdateGoalTool(&Env{}).Definition().Description
+	for _, want := range []string{
+		"kind=status is only for reporting a blocker",
+		"runtime decides when repeated blockers become blocked",
+	} {
+		if !strings.Contains(updateDesc, want) {
+			t.Fatalf("update_goal description missing %q: %q", want, updateDesc)
 		}
 	}
 }

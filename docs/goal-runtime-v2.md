@@ -89,8 +89,9 @@ Current model-visible semantics have been narrowed, but the old evidence model
 is still visible:
 
 - `update_goal` can still write progress, decisions, and failures into the
-  durable ledger. In app-server threads, model-owned status changes are limited
-  to blocker reporting; the runtime applies the blocked threshold.
+  durable ledger. Model-owned status changes are limited to blocker reporting;
+  when a runtime Goal exists, the runtime applies the repeated-blocker
+  threshold before the Goal becomes blocked.
 - `complete_goal` now completes the active runtime Goal when one exists, but
   prompts and UI still need to keep teaching that completion requires the
   original user-visible objective to be actually done.
@@ -197,7 +198,10 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
    semantics are narrowed to the same contract. Existing names are now wired to
    GoalRuntime in app-server threads: `start_goal` creates the active runtime
    Goal, `complete_goal` completes it, and `update_goal(status=blocked)` records
-   blocker audits instead of letting the model directly force a blocked state.
+   blocker audits instead of letting the model directly force arbitrary status
+   changes. Outside runtime-backed threads, `update_goal(kind=status)` is also
+   limited to `status=blocked` so the older durable ledger cannot be used as a
+   fake stop/complete path.
    Prompt guidance still needs to be audited against this narrower contract.
 
 7. Reconnect workflows and subagents as evidence producers.
