@@ -78,6 +78,13 @@ the old evidence model boundary. The older durable Goal ledger still exists as
 a broad evidence model, so future work should keep clarifying which fields
 belong to runtime state and which belong to execution evidence.
 
+The app-server path now has product-path tests for positive idle
+auto-continuation plus negative gates for queued user work, queued agent
+completion work, read-only threads, paused, blocked, budget-limited,
+usage-limited, complete, and cancelled Goals. Wuu currently has `update_plan`
+as a planning tool, not a separate thread Plan mode; review/subagent threads
+are represented as read-only threads in the app-server gate.
+
 Current model-visible semantics have been narrowed, but the old evidence model
 is still visible:
 
@@ -294,7 +301,8 @@ Required negative coverage:
 - completed Goal does not continue
 - blocked Goal does not continue
 - budget-limited or usage-limited Goal does not continue
-- Plan/review mode does not continue
+- Plan/review mode does not continue; in current Wuu this is represented by
+  read-only review/subagent threads rather than a separate thread mode
 - provider tool-call/result ordering stays valid after continuation steering
 
 The implementation is not complete until these paths are backed by current

@@ -2153,6 +2153,155 @@ func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
 	}
 }
 
+func TestServerGoalContinuationSkipsNonActiveGoals(t *testing.T) {
+	tests := []struct {
+		name   string
+		apply  func(*goalruntime.Runtime) error
+		status goalruntime.Status
+	}{
+		{
+			name: "paused",
+			apply: func(runtime *goalruntime.Runtime) error {
+				_, err := runtime.SetUserStatus(goalruntime.StatusPaused, time.Now().UTC())
+				return err
+			},
+			status: goalruntime.StatusPaused,
+		},
+		{
+			name: "blocked",
+			apply: func(runtime *goalruntime.Runtime) error {
+				_, err := runtime.SetSystemStatus(goalruntime.StatusBlocked, time.Now().UTC())
+				return err
+			},
+			status: goalruntime.StatusBlocked,
+		},
+		{
+			name: "usage limited",
+			apply: func(runtime *goalruntime.Runtime) error {
+				_, err := runtime.SetSystemStatus(goalruntime.StatusUsageLimited, time.Now().UTC())
+				return err
+			},
+			status: goalruntime.StatusUsageLimited,
+		},
+		{
+			name: "budget limited",
+			apply: func(runtime *goalruntime.Runtime) error {
+				_, err := runtime.SetSystemStatus(goalruntime.StatusBudgetLimited, time.Now().UTC())
+				return err
+			},
+			status: goalruntime.StatusBudgetLimited,
+		},
+		{
+			name: "complete",
+			apply: func(runtime *goalruntime.Runtime) error {
+				_, err := runtime.Complete(time.Now().UTC())
+				return err
+			},
+			status: goalruntime.StatusComplete,
+		},
+		{
+			name: "cancelled",
+			apply: func(runtime *goalruntime.Runtime) error {
+				_, err := runtime.SetUserStatus(goalruntime.StatusCancelled, time.Now().UTC())
+				return err
+			},
+			status: goalruntime.StatusCancelled,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+			srv, _, threadID, threadRuntime := startThreadWithRuntimeGoal(t, client, "goal-"+strings.ReplaceAll(tt.name, " ", "-"))
+			if err := tt.apply(threadRuntime.GoalRuntime); err != nil {
+				t.Fatalf("set goal status: %v", err)
+			}
+
+			started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+			if err != nil {
+				t.Fatalf("startGoalContinuationTurn: %v", err)
+			}
+			if started {
+				t.Fatalf("%s goal continuation should not start", tt.status)
+			}
+			assertFakeClientRequestCount(t, client, 0)
+		})
+	}
+}
+
+func TestServerGoalContinuationSkipsReadOnlyThread(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+	srv, _, threadID, _ := startThreadWithRuntimeGoal(t, client, "goal-read-only")
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatalf("thread %q not found", threadID)
+	}
+	th.mu.Lock()
+	th.ReadOnly = true
+	th.mu.Unlock()
+
+	started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		t.Fatalf("startGoalContinuationTurn: %v", err)
+	}
+	if started {
+		t.Fatal("goal continuation should not start for a read-only thread")
+	}
+	assertFakeClientRequestCount(t, client, 0)
+}
+
+func TestServerGoalContinuationSkipsQueuedAgentCompletionWork(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
+	srv, _, threadID, _ := startThreadWithRuntimeGoal(t, client, "goal-agent-queued")
+	srv.prependPendingAgentCompletionTurns(threadID, []agentCompletionTurn{{
+		agentID:  "agent-1",
+		resultID: "result-1",
+		msg:      providers.ChatMessage{Role: "user", Content: "agent completed work"},
+	}})
+
+	started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		t.Fatalf("startGoalContinuationTurn: %v", err)
+	}
+	if started {
+		t.Fatal("goal continuation should not start while agent-completion work exists")
+	}
+	assertFakeClientRequestCount(t, client, 0)
+}
+
+func startThreadWithRuntimeGoal(t *testing.T, client *fakeClient, goalID string) (*Server, *lockedBuffer, string, *runtime.ThreadRuntime) {
+	t.Helper()
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:  threadID,
+		GoalID:    goalID,
+		Objective: "continue only when safe",
+	}); err != nil {
+		t.Fatalf("create goal runtime: %v", err)
+	}
+	return srv, out, threadID, threadRuntime
+}
+
+func assertFakeClientRequestCount(t *testing.T, client *fakeClient, want int) {
+	t.Helper()
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if got := len(client.requests); got != want {
+		t.Fatalf("provider request count = %d, want %d", got, want)
+	}
+}
+
 func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
 	client := newBlockingStreamClient("done")
 	rt := newTestRuntime(t, &fakeClient{})
