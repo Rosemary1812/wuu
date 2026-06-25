@@ -185,6 +185,12 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleGoalApprovalResolve(req)
 	case MethodGoalActiveSummary:
 		return s.handleGoalActiveSummary(req)
+	case MethodGoalPause:
+		return s.handleGoalPause(req)
+	case MethodGoalResume:
+		return s.handleGoalResume(req)
+	case MethodGoalClear:
+		return s.handleGoalClear(req)
 	case MethodGoalCancel:
 		return s.handleGoalCancel(req)
 	case MethodGoalUpdateText:

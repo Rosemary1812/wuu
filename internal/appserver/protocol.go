@@ -29,11 +29,12 @@ const (
 	MethodGoalApprovalResolve  = "goal/approval/resolve"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
 	// of the most-recently-updated non-terminal goal in the requested thread
-	// scope. MethodGoalCancel marks that goal as cancelled; MethodGoalUpdateText
-	// rewrites its objective. The renderer only needs these three to drive
-	// the inline "current goal" strip in the composer; full goal state stays
-	// on the agent tool loop.
+	// scope. The mutation methods are user-owned controls for the active
+	// runtime Goal; full workflow/agent detail stays on the agent tool loop.
 	MethodGoalActiveSummary     = "goal/active-summary"
+	MethodGoalPause             = "goal/pause"
+	MethodGoalResume            = "goal/resume"
+	MethodGoalClear             = "goal/clear"
 	MethodGoalCancel            = "goal/cancel"
 	MethodGoalUpdateText        = "goal/update-text"
 	MethodThreadStart           = "thread/start"
@@ -355,13 +356,25 @@ type GoalSnapshotResult struct {
 // the goal". It intentionally omits task / step / approvals to keep the
 // composer surface quiet.
 type GoalActiveSummary struct {
-	ID        string `json:"id"`
-	ThreadID  string `json:"thread_id,omitempty"`
-	Text      string `json:"text"`
-	Status    string `json:"status"`
-	Step      string `json:"step,omitempty"`
-	StartedAt string `json:"started_at,omitempty"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+	ID                      string `json:"id"`
+	ThreadID                string `json:"thread_id,omitempty"`
+	Text                    string `json:"text"`
+	Status                  string `json:"status"`
+	Step                    string `json:"step,omitempty"`
+	StartedAt               string `json:"started_at,omitempty"`
+	UpdatedAt               string `json:"updated_at,omitempty"`
+	StopReason              string `json:"stop_reason,omitempty"`
+	RecentProgress          string `json:"recent_progress,omitempty"`
+	TokensUsed              int    `json:"tokens_used,omitempty"`
+	TokenBudget             int    `json:"token_budget,omitempty"`
+	TimeUsedSeconds         int64  `json:"time_used_seconds,omitempty"`
+	GoalTurns               int    `json:"goal_turns,omitempty"`
+	Blocker                 string `json:"blocker,omitempty"`
+	BlockerConsecutiveTurns int    `json:"blocker_consecutive_turns,omitempty"`
+	CanPause                bool   `json:"can_pause,omitempty"`
+	CanResume               bool   `json:"can_resume,omitempty"`
+	CanCancel               bool   `json:"can_cancel,omitempty"`
+	CanClear                bool   `json:"can_clear,omitempty"`
 }
 
 type GoalActiveSummaryParams struct {
@@ -378,6 +391,24 @@ type GoalCancelParams struct {
 	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
 }
 
+type GoalPauseParams struct {
+	GoalID              string `json:"goal_id"`
+	ThreadID            string `json:"thread_id,omitempty"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
+type GoalResumeParams struct {
+	GoalID              string `json:"goal_id"`
+	ThreadID            string `json:"thread_id,omitempty"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
+type GoalClearParams struct {
+	GoalID              string `json:"goal_id"`
+	ThreadID            string `json:"thread_id,omitempty"`
+	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
+}
+
 type GoalUpdateTextParams struct {
 	GoalID              string `json:"goal_id"`
 	ThreadID            string `json:"thread_id,omitempty"`
@@ -386,6 +417,18 @@ type GoalUpdateTextParams struct {
 }
 
 type GoalCancelResult struct {
+	OK bool `json:"ok"`
+}
+
+type GoalPauseResult struct {
+	OK bool `json:"ok"`
+}
+
+type GoalResumeResult struct {
+	OK bool `json:"ok"`
+}
+
+type GoalClearResult struct {
 	OK bool `json:"ok"`
 }
 

@@ -171,6 +171,22 @@ func (g Goal) Complete(now time.Time) (Goal, error) {
 	return g.SetStatus(ActorModel, StatusComplete, now)
 }
 
+func (g Goal) EditObjective(objective string, now time.Time) (Goal, error) {
+	objective = strings.TrimSpace(objective)
+	if objective == "" {
+		return Goal{}, errors.New("objective is required")
+	}
+	if IsTerminalStatus(g.Status) {
+		return Goal{}, fmt.Errorf("cannot edit terminal goal: %s", g.Status)
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	g.Objective = objective
+	g.UpdatedAt = now.UTC()
+	return g, nil
+}
+
 func (g Goal) AccountUsage(delta UsageDelta, now time.Time) (Goal, error) {
 	if delta.Tokens < 0 {
 		return Goal{}, errors.New("usage tokens cannot be negative")

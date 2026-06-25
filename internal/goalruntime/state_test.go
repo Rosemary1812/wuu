@@ -113,6 +113,32 @@ func TestAccountUsageStopsAtBudget(t *testing.T) {
 	}
 }
 
+func TestEditObjectiveRequiresUnfinishedGoal(t *testing.T) {
+	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
+	goal, err := NewGoal(Spec{
+		ThreadID:  "thread-1",
+		GoalID:    "goal-1",
+		Objective: "ship goal runtime",
+	}, now)
+	if err != nil {
+		t.Fatalf("NewGoal: %v", err)
+	}
+	goal, err = goal.EditObjective("  ship goal runtime controls  ", now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("EditObjective: %v", err)
+	}
+	if goal.Objective != "ship goal runtime controls" {
+		t.Fatalf("Objective = %q", goal.Objective)
+	}
+	goal, err = goal.SetStatus(ActorModel, StatusComplete, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("SetStatus complete: %v", err)
+	}
+	if _, err := goal.EditObjective("too late", now.Add(3*time.Minute)); err == nil {
+		t.Fatal("editing a terminal goal should fail")
+	}
+}
+
 func TestRecordBlockerRequiresConsecutiveSameBlocker(t *testing.T) {
 	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 	goal, err := NewGoal(Spec{

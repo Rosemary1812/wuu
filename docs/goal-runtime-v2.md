@@ -40,6 +40,11 @@ Wuu already has useful Goal pieces:
   context, not persisted as a fake user message. Budget-limited, paused,
   blocked, complete, cancelled, read-only, busy, queued-user, and queued-agent
   states stop automatic continuation.
+- `goal/active-summary` now prefers the thread GoalRuntime over the older
+  durable ledger and includes runtime status, stop reason, usage, blocker, and
+  recent ledger progress. App-server user controls can pause, resume, edit,
+  cancel, or clear the runtime Goal while keeping legacy ledger evidence from
+  reappearing as a fake active Goal.
 - The model-visible `start_goal`, `update_goal`, `complete_goal`, and
   `goal_status` tools now attach to the thread GoalRuntime when one is
   available. The older durable Goal ledger remains as workflow/subagent

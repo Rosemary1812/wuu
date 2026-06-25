@@ -74,6 +74,15 @@ func (r *Runtime) Complete(now time.Time) (Goal, error) {
 	})
 }
 
+func (r *Runtime) EditObjective(objective string, now time.Time) (Goal, error) {
+	if r == nil || r.store == nil {
+		return Goal{}, errors.New("goal runtime store is required")
+	}
+	return r.store.Update(func(goal Goal) (Goal, error) {
+		return goal.EditObjective(objective, now)
+	})
+}
+
 func (r *Runtime) SetUserStatus(status Status, now time.Time) (Goal, error) {
 	return r.setStatus(ActorUser, status, now)
 }

@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/workflow"
@@ -471,6 +473,62 @@ func TestGoalActiveSummaryReturnsMostRecentNonTerminalGoal(t *testing.T) {
 	}
 }
 
+func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:    threadID,
+		GoalID:      "runtime-goal",
+		Objective:   "runtime objective",
+		TokenBudget: 25,
+	}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.AccountUsage(goalruntime.UsageDelta{Tokens: 7, Turns: 2}, time.Now().UTC()); err != nil {
+		t.Fatalf("AccountUsage: %v", err)
+	}
+	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-goal"))
+	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-goal", Goal: "legacy text"}); err != nil {
+		t.Fatalf("Init legacy goal: %v", err)
+	}
+	if _, err := legacy.AddProgress(goalrunner.StepExecution, "latest progress"); err != nil {
+		t.Fatalf("AddProgress legacy: %v", err)
+	}
+
+	raw := `{"id":"sum-runtime","method":"goal/active-summary","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "sum-runtime")
+	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
+	if result.Summary == nil {
+		t.Fatalf("expected runtime summary, got %+v", result)
+	}
+	if result.Summary.ID != "runtime-goal" || result.Summary.Text != "runtime objective" || result.Summary.Status != string(goalruntime.StatusActive) {
+		t.Fatalf("unexpected runtime summary: %+v", result.Summary)
+	}
+	if result.Summary.TokensUsed != 7 || result.Summary.TokenBudget != 25 || result.Summary.GoalTurns != 2 {
+		t.Fatalf("runtime usage missing from summary: %+v", result.Summary)
+	}
+	if result.Summary.RecentProgress != "latest progress" || result.Summary.Step != string(goalrunner.StepExecution) {
+		t.Fatalf("legacy progress missing from runtime summary: %+v", result.Summary)
+	}
+	if !result.Summary.CanPause || result.Summary.CanResume {
+		t.Fatalf("unexpected runtime controls: %+v", result.Summary)
+	}
+}
+
 func TestGoalActiveSummarySkipsTerminalGoals(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
@@ -684,6 +742,131 @@ func TestGoalCancelMarksRunningGoalCancelled(t *testing.T) {
 	}
 }
 
+func TestGoalCancelUpdatesRuntimeGoal(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{ThreadID: threadID, GoalID: "runtime-cancel", Objective: "cancel me"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
+	}
+	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-cancel"))
+	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-cancel", Goal: "cancel me"}); err != nil {
+		t.Fatalf("Init legacy goal: %v", err)
+	}
+
+	raw := `{"id":"cancel-runtime","method":"goal/cancel","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-cancel","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/cancel: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "cancel-runtime")
+	if msg["error"] != nil {
+		t.Fatalf("unexpected cancel error: %+v", msg["error"])
+	}
+	runtimeGoal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal: %v", err)
+	}
+	if runtimeGoal.Status != goalruntime.StatusCancelled {
+		t.Fatalf("runtime goal should be cancelled: %+v", runtimeGoal)
+	}
+	legacyState, err := legacy.LoadState()
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if legacyState.Status != goalrunner.StatusCancelled {
+		t.Fatalf("legacy goal should be cancelled: %+v", legacyState)
+	}
+
+	raw = `{"id":"sum-after-cancel","method":"goal/active-summary","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/active-summary after cancel: %v", err)
+	}
+	result := remarshal[GoalActiveSummaryResult](t, responseByID(t, parseOutput(t, out.String()), "sum-after-cancel")["result"])
+	if result.Summary != nil {
+		t.Fatalf("cancelled runtime goal should hide summary, got %+v", result.Summary)
+	}
+}
+
+func TestGoalPauseResumeClearRuntimeGoal(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{ThreadID: threadID, GoalID: "runtime-controls", Objective: "control me"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
+	}
+	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-controls"))
+	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-controls", Goal: "control me"}); err != nil {
+		t.Fatalf("Init legacy goal: %v", err)
+	}
+
+	pauseRaw := `{"id":"pause","method":"goal/pause","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-controls","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(pauseRaw)); err != nil {
+		t.Fatalf("goal/pause: %v", err)
+	}
+	paused, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal paused: %v", err)
+	}
+	if paused.Status != goalruntime.StatusPaused {
+		t.Fatalf("goal should be paused: %+v", paused)
+	}
+	sumRaw := `{"id":"sum-paused","method":"goal/active-summary","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(sumRaw)); err != nil {
+		t.Fatalf("goal/active-summary paused: %v", err)
+	}
+	pausedSummary := remarshal[GoalActiveSummaryResult](t, responseByID(t, parseOutput(t, out.String()), "sum-paused")["result"])
+	if pausedSummary.Summary == nil || pausedSummary.Summary.Status != string(goalruntime.StatusPaused) || !pausedSummary.Summary.CanResume || pausedSummary.Summary.StopReason != "paused" {
+		t.Fatalf("unexpected paused summary: %+v", pausedSummary.Summary)
+	}
+
+	resumeRaw := `{"id":"resume","method":"goal/resume","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-controls","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(resumeRaw)); err != nil {
+		t.Fatalf("goal/resume: %v", err)
+	}
+	resumed, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal resumed: %v", err)
+	}
+	if resumed.Status != goalruntime.StatusActive {
+		t.Fatalf("goal should be active after resume: %+v", resumed)
+	}
+
+	clearRaw := `{"id":"clear","method":"goal/clear","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-controls","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(clearRaw)); err != nil {
+		t.Fatalf("goal/clear: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.CurrentGoal(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("goal should be cleared, got err=%v", err)
+	}
+	legacyState, err := legacy.LoadState()
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if legacyState.Status != goalrunner.StatusCancelled {
+		t.Fatalf("legacy goal should be cancelled after clear: %+v", legacyState)
+	}
+}
+
 func TestGoalCancelRefusesTerminalGoal(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
@@ -803,5 +986,51 @@ func TestGoalUpdateTextRewritesGoalAndEmitsEvent(t *testing.T) {
 	}
 	if !foundEdit {
 		t.Fatalf("expected goal_text_updated event, got %+v", events)
+	}
+}
+
+func TestGoalUpdateTextUpdatesRuntimeGoal(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{ThreadID: threadID, GoalID: "runtime-edit", Objective: "old runtime goal"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
+	}
+	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-edit"))
+	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-edit", Goal: "old legacy goal"}); err != nil {
+		t.Fatalf("Init legacy goal: %v", err)
+	}
+
+	raw := `{"id":"upd-runtime","method":"goal/update-text","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-edit","text":"new runtime goal","confirm_user_approved":true}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/update-text: %v", err)
+	}
+	msg := responseByID(t, parseOutput(t, out.String()), "upd-runtime")
+	if msg["error"] != nil {
+		t.Fatalf("unexpected update error: %+v", msg["error"])
+	}
+	runtimeGoal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal: %v", err)
+	}
+	if runtimeGoal.Objective != "new runtime goal" {
+		t.Fatalf("runtime objective not updated: %+v", runtimeGoal)
+	}
+	legacyState, err := legacy.LoadState()
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if legacyState.Goal != "new runtime goal" {
+		t.Fatalf("legacy goal text not updated: %+v", legacyState)
 	}
 }

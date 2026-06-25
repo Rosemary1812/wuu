@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/workflow"
@@ -186,6 +188,88 @@ func (s *Server) handleGoalActiveSummary(req Request) error {
 	return s.writeResponse(req.ID, GoalActiveSummaryResult{Summary: summary}, nil)
 }
 
+func (s *Server) handleGoalPause(req Request) error {
+	var params GoalPauseParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal pause params: %w", err))
+		}
+	}
+	if !params.ConfirmUserApproved {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal pause requires confirm_user_approved=true"))
+	}
+	runtimeGoal, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if runtime == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("active runtime goal not found"))
+	}
+	if _, err := runtime.SetUserStatus(goalruntime.StatusPaused, time.Now().UTC()); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if err := s.syncLegacyGoalStatusIfPresent(runtimeGoal.GoalID, params.ThreadID, goalrunner.StatusRunning, "paused from composer banner"); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, GoalPauseResult{OK: true}, nil)
+}
+
+func (s *Server) handleGoalResume(req Request) error {
+	var params GoalResumeParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal resume params: %w", err))
+		}
+	}
+	if !params.ConfirmUserApproved {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal resume requires confirm_user_approved=true"))
+	}
+	runtimeGoal, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if runtime == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("active runtime goal not found"))
+	}
+	if _, err := runtime.SetUserStatus(goalruntime.StatusActive, time.Now().UTC()); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if err := s.syncLegacyGoalStatusIfPresent(runtimeGoal.GoalID, params.ThreadID, goalrunner.StatusRunning, "resumed from composer banner"); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, GoalResumeResult{OK: true}, nil)
+}
+
+func (s *Server) handleGoalClear(req Request) error {
+	var params GoalClearParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal clear params: %w", err))
+		}
+	}
+	if !params.ConfirmUserApproved {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal clear requires confirm_user_approved=true"))
+	}
+	runtimeGoal, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	goalID := strings.TrimSpace(params.GoalID)
+	if runtime != nil {
+		goalID = runtimeGoal.GoalID
+		if err := runtime.Clear(); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+	if goalID == "" {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("goal_id is required"))
+	}
+	if err := s.syncLegacyGoalStatusIfPresent(goalID, params.ThreadID, goalrunner.StatusCancelled, "cleared from composer banner"); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, GoalClearResult{OK: true}, nil)
+}
+
 // handleGoalCancel marks the named goal as cancelled. Terminal-status
 // goals (completed/failed/cancelled) refuse the request to keep the
 // renderer's banner from racing against a finished goal.
@@ -198,6 +282,19 @@ func (s *Server) handleGoalCancel(req Request) error {
 	}
 	if !params.ConfirmUserApproved {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("goal cancel requires confirm_user_approved=true"))
+	}
+	runtimeGoal, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if runtime != nil {
+		if _, err := runtime.SetUserStatus(goalruntime.StatusCancelled, time.Now().UTC()); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if err := s.syncLegacyGoalStatusIfPresent(runtimeGoal.GoalID, params.ThreadID, goalrunner.StatusCancelled, "cancelled from composer banner"); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		return s.writeResponse(req.ID, GoalCancelResult{OK: true}, nil)
 	}
 	store, err := s.goalStoreForID(params.GoalID, params.ThreadID)
 	if err != nil {
@@ -233,6 +330,19 @@ func (s *Server) handleGoalUpdateText(req Request) error {
 	if text == "" {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("goal text is required"))
 	}
+	runtimeGoal, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if runtime != nil {
+		if _, err := runtime.EditObjective(text, time.Now().UTC()); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if err := s.syncLegacyGoalTextIfPresent(runtimeGoal.GoalID, params.ThreadID, text); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		return s.writeResponse(req.ID, GoalUpdateTextResult{OK: true}, nil)
+	}
 	store, err := s.goalStoreForID(params.GoalID, params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -250,6 +360,17 @@ func (s *Server) handleGoalUpdateText(req Request) error {
 // rather than failing the whole call, since this powers a renderer banner and a
 // transient disk error should not blank the composer surface.
 func (s *Server) findActiveGoalSummary(threadID string) (*GoalActiveSummary, error) {
+	runtimeGoal, foundRuntimeGoal, err := s.currentRuntimeGoal(threadID)
+	if err != nil {
+		return nil, err
+	}
+	if foundRuntimeGoal {
+		if goalruntime.IsTerminalStatus(runtimeGoal.Status) {
+			return nil, nil
+		}
+		return s.runtimeGoalSummary(runtimeGoal, threadID)
+	}
+
 	stateDir, err := s.goalOrchestrationStateDir(threadID)
 	if err != nil {
 		return nil, err
@@ -295,14 +416,93 @@ func (s *Server) findActiveGoalSummary(threadID string) (*GoalActiveSummary, err
 		updated = best.UpdatedAt.UTC().Format(time.RFC3339)
 	}
 	return &GoalActiveSummary{
-		ID:        best.ID,
-		ThreadID:  strings.TrimSpace(threadID),
-		Text:      goalSummaryText(best.Goal),
-		Status:    string(best.Status),
-		Step:      string(best.CurrentStep),
-		StartedAt: started,
-		UpdatedAt: updated,
+		ID:             best.ID,
+		ThreadID:       strings.TrimSpace(threadID),
+		Text:           goalSummaryText(best.Goal),
+		Status:         string(best.Status),
+		Step:           string(best.CurrentStep),
+		StartedAt:      started,
+		UpdatedAt:      updated,
+		StopReason:     legacyGoalStopReason(best.Status),
+		RecentProgress: latestGoalProgress(*best),
+		CanCancel:      true,
+		CanClear:       true,
 	}, nil
+}
+
+func (s *Server) runtimeGoalSummary(goal goalruntime.Goal, threadID string) (*GoalActiveSummary, error) {
+	step := ""
+	recentProgress := ""
+	if state, ok, err := s.loadLegacyGoalStateIfPresent(goal.GoalID, threadID); err != nil {
+		return nil, err
+	} else if ok {
+		step = string(state.CurrentStep)
+		recentProgress = latestGoalProgress(state)
+	}
+	started := ""
+	if !goal.CreatedAt.IsZero() {
+		started = goal.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	updated := ""
+	if !goal.UpdatedAt.IsZero() {
+		updated = goal.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	return &GoalActiveSummary{
+		ID:                      goal.GoalID,
+		ThreadID:                strings.TrimSpace(threadID),
+		Text:                    goalSummaryText(goal.Objective),
+		Status:                  string(goal.Status),
+		Step:                    step,
+		StartedAt:               started,
+		UpdatedAt:               updated,
+		StopReason:              runtimeGoalStopReason(goal.Status),
+		RecentProgress:          recentProgress,
+		TokensUsed:              goal.TokensUsed,
+		TokenBudget:             goal.TokenBudget,
+		TimeUsedSeconds:         goal.TimeUsedSeconds,
+		GoalTurns:               goal.GoalTurns,
+		Blocker:                 goal.BlockerAudit.Message,
+		BlockerConsecutiveTurns: goal.BlockerAudit.ConsecutiveTurns,
+		CanPause:                goal.Status == goalruntime.StatusActive,
+		CanResume:               goal.Status == goalruntime.StatusPaused || goal.Status == goalruntime.StatusBlocked || goal.Status == goalruntime.StatusBudgetLimited || goal.Status == goalruntime.StatusUsageLimited,
+		CanCancel:               !goalruntime.IsTerminalStatus(goal.Status),
+		CanClear:                !goalruntime.IsTerminalStatus(goal.Status),
+	}, nil
+}
+
+func runtimeGoalStopReason(status goalruntime.Status) string {
+	switch status {
+	case goalruntime.StatusPaused:
+		return "paused"
+	case goalruntime.StatusBlocked:
+		return "blocked"
+	case goalruntime.StatusBudgetLimited:
+		return "budget_limited"
+	case goalruntime.StatusUsageLimited:
+		return "usage_limited"
+	default:
+		return ""
+	}
+}
+
+func legacyGoalStopReason(status goalrunner.Status) string {
+	switch status {
+	case goalrunner.StatusBlocked:
+		return "blocked"
+	case goalrunner.StatusNeedsHuman:
+		return "needs_human"
+	default:
+		return ""
+	}
+}
+
+func latestGoalProgress(state goalrunner.State) string {
+	for i := len(state.Progress) - 1; i >= 0; i-- {
+		if message := strings.TrimSpace(state.Progress[i].Message); message != "" {
+			return message
+		}
+	}
+	return ""
 }
 
 // goalStatusIsTerminal reports whether a goal status can no longer change.
@@ -373,6 +573,112 @@ func (s *Server) goalStoreForID(goalID, threadID string) (*goalrunner.Store, err
 		return nil, err
 	}
 	return goalrunner.NewStore(statepath.GoalDir(stateDir, goalID)), nil
+}
+
+func (s *Server) runtimeGoalForControl(goalID, threadID string) (goalruntime.Goal, *goalruntime.Runtime, error) {
+	runtimeGoal, found, err := s.currentRuntimeGoal(threadID)
+	if err != nil || !found {
+		return goalruntime.Goal{}, nil, err
+	}
+	goalID = strings.TrimSpace(goalID)
+	if goalID != "" && runtimeGoal.GoalID != goalID {
+		return goalruntime.Goal{}, nil, fmt.Errorf("active runtime goal %q does not match requested goal %q", runtimeGoal.GoalID, goalID)
+	}
+	runtime, ok, err := s.goalRuntimeForThread(threadID)
+	if err != nil {
+		return goalruntime.Goal{}, nil, err
+	}
+	if !ok {
+		return goalruntime.Goal{}, nil, nil
+	}
+	return runtimeGoal, runtime, nil
+}
+
+func (s *Server) currentRuntimeGoal(threadID string) (goalruntime.Goal, bool, error) {
+	runtime, ok, err := s.goalRuntimeForThread(threadID)
+	if err != nil || !ok {
+		return goalruntime.Goal{}, false, err
+	}
+	goal, err := runtime.CurrentGoal()
+	if errors.Is(err, os.ErrNotExist) {
+		return goalruntime.Goal{}, false, nil
+	}
+	if err != nil {
+		return goalruntime.Goal{}, false, err
+	}
+	return goal, true, nil
+}
+
+func (s *Server) goalRuntimeForThread(threadID string) (*goalruntime.Runtime, bool, error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil, false, nil
+	}
+	if err := validateGoalThreadID(threadID); err != nil {
+		return nil, false, err
+	}
+	if th := s.thread(threadID); th != nil {
+		threadRuntime, err := s.ensureThreadRuntime(th)
+		if err != nil {
+			return nil, false, err
+		}
+		if threadRuntime != nil && threadRuntime.GoalRuntime != nil {
+			return threadRuntime.GoalRuntime, true, nil
+		}
+	}
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return nil, false, err
+	}
+	return goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(stateDir, threadID))), true, nil
+}
+
+func (s *Server) loadLegacyGoalStateIfPresent(goalID, threadID string) (goalrunner.State, bool, error) {
+	store, err := s.goalStoreForID(goalID, threadID)
+	if err != nil {
+		return goalrunner.State{}, false, err
+	}
+	state, err := store.LoadState()
+	if errors.Is(err, os.ErrNotExist) {
+		return goalrunner.State{}, false, nil
+	}
+	if err != nil {
+		return goalrunner.State{}, false, err
+	}
+	return state, true, nil
+}
+
+func (s *Server) syncLegacyGoalStatusIfPresent(goalID, threadID string, status goalrunner.Status, message string) error {
+	store, err := s.goalStoreForID(goalID, threadID)
+	if err != nil {
+		return err
+	}
+	state, err := store.LoadState()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if goalStatusIsTerminal(state.Status) {
+		return nil
+	}
+	_, err = store.SetStatus(status, state.CurrentStep, message)
+	return err
+}
+
+func (s *Server) syncLegacyGoalTextIfPresent(goalID, threadID, text string) error {
+	store, err := s.goalStoreForID(goalID, threadID)
+	if err != nil {
+		return err
+	}
+	if _, err := store.LoadState(); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	_, err = store.UpdateText(text)
+	return err
 }
 
 func (s *Server) goalOrchestrationStateDir(threadID string) (string, error) {
