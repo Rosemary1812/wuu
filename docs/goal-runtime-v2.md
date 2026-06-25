@@ -30,9 +30,9 @@ Wuu already has useful Goal pieces:
 - `internal/goalruntime` defines the initial Goal v2 runtime state model,
   status ownership rules, budget accounting, blocked-audit threshold, and
   thread-scoped JSON store. It also has an unwired runtime owner that can decide
-  whether an active Goal is allowed to continue. It is attached to
-  `internal/runtime.ThreadRuntime`, but not yet wired into turn lifecycle hooks
-  or app-server turn start.
+  whether an active Goal is allowed to continue and can account usage only when
+  the current Goal is active. It is attached to `internal/runtime.ThreadRuntime`,
+  but not yet wired into turn lifecycle hooks or app-server turn start.
 - `internal/goal` stores durable Goal state in `state.json`, `events.jsonl`,
   artifacts, and markdown views.
 - `internal/tools/tool_goal.go` exposes `start_goal`, `update_goal`,

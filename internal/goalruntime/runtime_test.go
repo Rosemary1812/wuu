@@ -133,6 +133,35 @@ func TestRuntimeAccountingAndBlockerPersistence(t *testing.T) {
 	}
 }
 
+func TestRuntimeAccountActiveUsageSkipsMissingAndInactiveGoal(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	runtime := newTestRuntime(t)
+	_, accounted, err := runtime.AccountActiveUsage(UsageDelta{Tokens: 5, Turns: 1}, now)
+	if err != nil {
+		t.Fatalf("AccountActiveUsage missing: %v", err)
+	}
+	if accounted {
+		t.Fatal("missing goal should not be accounted")
+	}
+
+	if _, err := runtime.Create(Spec{ThreadID: "thread-1", GoalID: "goal-1", Objective: "ship runtime"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := runtime.SetUserStatus(StatusPaused, now); err != nil {
+		t.Fatalf("SetUserStatus paused: %v", err)
+	}
+	goal, accounted, err := runtime.AccountActiveUsage(UsageDelta{Tokens: 5, Turns: 1}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("AccountActiveUsage paused: %v", err)
+	}
+	if accounted {
+		t.Fatal("paused goal should not be accounted")
+	}
+	if goal.TokensUsed != 0 || goal.Status != StatusPaused {
+		t.Fatalf("paused goal changed unexpectedly: %+v", goal)
+	}
+}
+
 func TestRuntimeCompleteAndClear(t *testing.T) {
 	runtime := newTestRuntime(t)
 	if _, err := runtime.Create(Spec{ThreadID: "thread-1", GoalID: "goal-1", Objective: "ship runtime"}); err != nil {

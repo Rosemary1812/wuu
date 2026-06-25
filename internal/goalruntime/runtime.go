@@ -89,6 +89,24 @@ func (r *Runtime) AccountUsage(delta UsageDelta, now time.Time) (Goal, error) {
 	})
 }
 
+func (r *Runtime) AccountActiveUsage(delta UsageDelta, now time.Time) (Goal, bool, error) {
+	if r == nil || r.store == nil {
+		return Goal{}, false, errors.New("goal runtime store is required")
+	}
+	var accounted bool
+	goal, err := r.store.Update(func(goal Goal) (Goal, error) {
+		if goal.Status != StatusActive {
+			return goal, nil
+		}
+		accounted = true
+		return goal.AccountUsage(delta, now)
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return Goal{}, false, nil
+	}
+	return goal, accounted, err
+}
+
 func (r *Runtime) RecordBlocker(message string, now time.Time) (Goal, bool, error) {
 	if r == nil || r.store == nil {
 		return Goal{}, false, errors.New("goal runtime store is required")
