@@ -1,14 +1,14 @@
 # Goal Runtime v2 Plan
 
-Status: staged implementation. The design is not complete; the initial
-state model, JSON store, continuation decision runtime, usage accounting,
-idle app-server continuation path, model-facing tool wiring, app-server user
+Status: core closed loop implemented for app-server threads. The runtime state
+model, JSON store, continuation decision owner, usage accounting, idle and
+thread-resume continuation paths, model-facing tool wiring, app-server user
 controls, desktop composer control surface, and turn-error stop handling now
 exist. Each `ThreadRuntime` owns one GoalRuntime instance.
 
-This document records the intended Goal redesign before the runtime work starts.
-It exists to keep future changes pointed at the same product model instead of
-adding local patches around the current Goal store.
+This document records the Goal redesign and current implementation state. Keep
+future changes pointed at the same product model instead of adding local patches
+around the older Goal ledger.
 
 ## User Outcome
 
@@ -17,7 +17,7 @@ one of these states is true:
 
 - the objective is actually complete
 - the user pauses, cancels, clears, or edits the Goal
-- the Goal reaches a token, time, or usage limit
+- the Goal reaches a token budget or provider usage/context limit
 - the same real blocker has repeated enough times that the Goal is genuinely
   blocked
 
@@ -79,10 +79,11 @@ approvals, worktrees, verification policies, retry policy, progress, decisions,
 failures, artifacts, modified files, and test results. That is valuable as an
 execution ledger, but it is not the missing continuation loop.
 
-The main remaining gap is broader end-to-end product-path verification and
-cleanup of the old evidence model boundary. The older durable Goal ledger still
-exists as a broad evidence model, so future work should keep clarifying which
-fields belong to runtime state and which belong to execution evidence.
+The main remaining gap is cleanup of the old evidence model boundary and
+broader product-path verification beyond app-server unit tests. The older
+durable Goal ledger still exists as a broad evidence model, so future work
+should keep clarifying which fields belong to runtime state and which belong to
+execution evidence.
 
 The app-server path now has product-path tests for positive idle
 auto-continuation, thread-resume continuation, and negative gates for queued
@@ -100,13 +101,13 @@ is still visible:
   when a runtime Goal exists, the runtime applies the repeated-blocker
   threshold before the Goal becomes blocked.
 - `complete_goal` now completes the active runtime Goal when one exists, but
-  prompts and UI still need to keep teaching that completion requires the
-  original user-visible objective to be actually done.
+  prompt/tool guidance still needs to keep teaching that completion requires
+  the original user-visible objective to be actually done.
 - `goal_status` now includes the runtime Goal when one exists, while still
   exposing the broader workspace/system snapshot.
 
-These capabilities are now part of the closed loop, but the UI and older
-evidence fields still need cleanup.
+These capabilities are now part of the closed loop, but the older evidence
+fields still need cleanup.
 
 ## Target Model
 
@@ -152,7 +153,8 @@ The intended loop is:
 3. GoalRuntime records the active Goal for that thread.
 4. A user turn or automatic continuation turn runs through the normal model and
    tool loop.
-5. Turn lifecycle hooks account for token/time usage and tool progress.
+5. Turn lifecycle hooks account for token/time usage; tools can write durable
+   progress and evidence into the ledger.
 6. The turn reaches final, error, or interrupt.
 7. Runtime marks the thread idle after queued user/client work is considered.
 8. If the Goal is still active and the thread is safe to use, GoalRuntime
@@ -167,7 +169,7 @@ The continuation gate must reject automatic work when:
 - the thread is read-only or otherwise unavailable
 - the current mode is Plan/review or another non-execution mode
 - the Goal is not active
-- token, time, usage, or loop limits are exceeded
+- the Goal is already budget-limited or usage-limited
 - provider/tool protocol state is not safe for another turn
 
 This gate belongs in Go core/app-server runtime, not Electron renderer or main.
@@ -184,8 +186,9 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 
 3. Add a GoalRuntime foundation in Go core.
    It should be attached to thread/session runtime lifecycle, not to desktop.
-   It needs hooks for turn start, tool finish, turn stop, turn error/abort,
-   thread resume, and thread idle.
+   It now covers thread runtime construction, turn stop/error, thread idle, and
+   thread resume. Tool progress remains durable ledger evidence rather than a
+   separate GoalRuntime lifecycle hook.
 
 4. Add accounting.
    Attribute token usage, elapsed time, and turn counts to the active Goal.
@@ -301,15 +304,16 @@ When adapting these ideas to Wuu, inspect the Wuu app-server turn path first:
 
 ## Verification Plan
 
-Required positive coverage:
+Current positive coverage:
 
 - create an active thread Goal
 - run a model turn that ends without completing the Goal
 - observe the thread become idle
-- observe GoalRuntime start a continuation turn through the same app-server or
-  `wuu exec --json` path users rely on
+- observe GoalRuntime start a continuation turn through the app-server path
+- resume a persisted thread with an active runtime Goal and observe
+  continuation through the same gate
 
-Required negative coverage:
+Current negative coverage:
 
 - queued user/client work prevents automatic Goal continuation
 - paused Goal does not continue
@@ -318,7 +322,12 @@ Required negative coverage:
 - budget-limited or usage-limited Goal does not continue
 - Plan/review mode does not continue; in current Wuu this is represented by
   read-only review/subagent threads rather than a separate thread mode
-- provider tool-call/result ordering stays valid after continuation steering
 
-The implementation is not complete until these paths are backed by current
-code and tests or protocol probes.
+Remaining verification to add outside this document:
+
+- a real desktop or app-server protocol probe that exercises the same path
+  outside unit tests
+- a continuation-specific protocol check that provider tool-call/result ordering
+  stays valid after continuation steering
+- any future `wuu exec --json` Goal path, if exec grows thread-level runtime
+  Goal continuation rather than remaining a one-shot automation entrypoint
