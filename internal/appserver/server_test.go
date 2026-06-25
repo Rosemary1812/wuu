@@ -20,6 +20,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
@@ -1957,6 +1958,58 @@ func TestServerTurnStartForwardsStreamingUsage(t *testing.T) {
 	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
 	if completed.InputTokens != 8 || completed.OutputTokens != 4 {
 		t.Fatalf("unexpected completed usage: %+v", completed)
+	}
+}
+
+func TestServerTurnStartAccountsActiveGoalUsage(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = usageStreamClient{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "goal turn done"},
+		{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 4, CacheReadTokens: 3}},
+	}}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:    threadID,
+		GoalID:      "goal-usage",
+		Objective:   "account active goal usage",
+		TokenBudget: 15,
+	}); err != nil {
+		t.Fatalf("create goal runtime: %v", err)
+	}
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "continue goal"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForMethod(t, out, NotificationTurnCompleted)
+
+	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("CurrentGoal: %v", err)
+	}
+	if goal.TokensUsed != 15 || goal.GoalTurns != 1 {
+		t.Fatalf("unexpected accounted goal usage: %+v", goal)
+	}
+	if goal.Status != goalruntime.StatusBudgetLimited {
+		t.Fatalf("goal status = %s, want budget_limited", goal.Status)
 	}
 }
 

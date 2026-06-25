@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -605,6 +606,21 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	if err == nil {
 		titleHistory = cloneHistory(th.History)
 	}
+	accountingTurn := th.ensureTurnLocked(turnID, now)
+	goalUsageDelta := goalUsageDeltaForTurn(accountingTurn, now, res)
+	th.mu.Unlock()
+
+	if accountErr := accountActiveGoalTurn(threadRuntime, goalUsageDelta, now); accountErr != nil {
+		if err != nil {
+			err = errors.Join(err, accountErr)
+		} else {
+			err = accountErr
+			status = TurnStatusFailed
+			titleHistory = nil
+		}
+	}
+
+	th.mu.Lock()
 	turn := th.completeTurnLocked(turnID, status, err, now, string(res.FinishReason), res.StopReason, res.Truncated)
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
@@ -644,6 +660,28 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	go s.generateThreadTitle(th.ID, titleHistory)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
+}
+
+func goalUsageDeltaForTurn(turn Turn, completedAt time.Time, res agent.LoopResult) goalruntime.UsageDelta {
+	elapsed := time.Duration(0)
+	if turn.StartedAt != nil && completedAt.After(*turn.StartedAt) {
+		elapsed = completedAt.Sub(*turn.StartedAt)
+	}
+	return goalruntime.UsageDelta{
+		Tokens:  res.InputTokens + res.CacheReadTokens + res.OutputTokens,
+		Elapsed: elapsed,
+		Turns:   1,
+	}
+}
+
+func accountActiveGoalTurn(threadRuntime *runtime.ThreadRuntime, delta goalruntime.UsageDelta, completedAt time.Time) error {
+	if threadRuntime == nil || threadRuntime.GoalRuntime == nil {
+		return nil
+	}
+	if _, _, err := threadRuntime.GoalRuntime.AccountActiveUsage(delta, completedAt); err != nil {
+		return fmt.Errorf("account active goal usage: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord) (string, error) {
@@ -1391,7 +1429,7 @@ func aggregateUsageRows(rows []insight.TokenUsageRow, titleByID map[string]strin
 	metrics := SettingsUsageMetrics{}
 	type dayBucket struct {
 		input, output, cacheRead, cacheCreation int
-		turns                                    int
+		turns                                   int
 	}
 	daysByDate := make(map[string]*dayBucket)
 
