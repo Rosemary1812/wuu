@@ -37,6 +37,8 @@ import (
 type fakeClient struct {
 	mu        sync.Mutex
 	requests  []providers.ChatRequest
+	errs      []error
+	err       error
 	responses []providers.ChatResponse
 	response  providers.ChatResponse
 }
@@ -44,6 +46,17 @@ type fakeClient struct {
 func (f *fakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		f.mu.Unlock()
+		return providers.ChatResponse{}, err
+	}
+	if f.err != nil {
+		err := f.err
+		f.mu.Unlock()
+		return providers.ChatResponse{}, err
+	}
 	if len(f.responses) > 0 {
 		res := f.responses[0]
 		f.responses = f.responses[1:]
@@ -2269,6 +2282,73 @@ func TestServerGoalContinuationSkipsQueuedAgentCompletionWork(t *testing.T) {
 	assertFakeClientRequestCount(t, client, 0)
 }
 
+func TestServerTurnErrorStopsActiveGoal(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus goalruntime.Status
+		wantReason string
+	}{
+		{
+			name:       "provider error blocks goal",
+			err:        fmt.Errorf("provider failed"),
+			wantStatus: goalruntime.StatusBlocked,
+			wantReason: "blocked",
+		},
+		{
+			name: "context overflow usage limits goal",
+			err: &providers.HTTPError{
+				StatusCode:      http.StatusBadRequest,
+				Body:            "context_length_exceeded",
+				ContextOverflow: true,
+			},
+			wantStatus: goalruntime.StatusUsageLimited,
+			wantReason: "usage_limited",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &fakeClient{err: tt.err}
+			srv, out, threadID, threadRuntime := startThreadWithRuntimeGoal(t, client, "goal-error-"+strings.ReplaceAll(tt.name, " ", "-"))
+			startReq := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"continue the goal"}}`, threadID)
+			if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+				t.Fatalf("turn/start: %v", err)
+			}
+			waitForMethod(t, out, NotificationTurnError)
+
+			goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+			if err != nil {
+				t.Fatalf("load goal: %v", err)
+			}
+			if goal.Status != tt.wantStatus {
+				t.Fatalf("goal status = %s, want %s", goal.Status, tt.wantStatus)
+			}
+			if goal.GoalTurns != 1 {
+				t.Fatalf("goal turns = %d, want 1", goal.GoalTurns)
+			}
+
+			summaryReq := fmt.Sprintf(`{"id":"summary","method":"goal/active-summary","params":{"thread_id":%q}}`, threadID)
+			if err := srv.handleLine(context.Background(), []byte(summaryReq)); err != nil {
+				t.Fatalf("goal/active-summary: %v", err)
+			}
+			result := remarshal[GoalActiveSummaryResult](t, responseByID(t, parseOutput(t, out.String()), "summary")["result"])
+			if result.Summary == nil {
+				t.Fatal("expected active goal summary")
+			}
+			if result.Summary.Status != string(tt.wantStatus) || result.Summary.StopReason != tt.wantReason {
+				t.Fatalf("summary = %+v, want status %s stop reason %q", result.Summary, tt.wantStatus, tt.wantReason)
+			}
+
+			requestsAtError := fakeClientRequestCount(client)
+			time.Sleep(50 * time.Millisecond)
+			if got := fakeClientRequestCount(client); got != requestsAtError {
+				t.Fatalf("provider request count grew after turn error: before=%d after=%d", requestsAtError, got)
+			}
+		})
+	}
+}
+
 func startThreadWithRuntimeGoal(t *testing.T, client *fakeClient, goalID string) (*Server, *lockedBuffer, string, *runtime.ThreadRuntime) {
 	t.Helper()
 	rt := newTestRuntime(t, client)
@@ -2295,11 +2375,15 @@ func startThreadWithRuntimeGoal(t *testing.T, client *fakeClient, goalID string)
 
 func assertFakeClientRequestCount(t *testing.T, client *fakeClient, want int) {
 	t.Helper()
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	if got := len(client.requests); got != want {
+	if got := fakeClientRequestCount(client); got != want {
 		t.Fatalf("provider request count = %d, want %d", got, want)
 	}
+}
+
+func fakeClientRequestCount(client *fakeClient) int {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return len(client.requests)
 }
 
 func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {

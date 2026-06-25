@@ -3,8 +3,8 @@
 Status: staged implementation. The design is not complete; the initial
 state model, JSON store, continuation decision runtime, usage accounting,
 idle app-server continuation path, model-facing tool wiring, app-server user
-controls, and desktop composer control surface now exist. Each `ThreadRuntime`
-owns one GoalRuntime instance.
+controls, desktop composer control surface, and turn-error stop handling now
+exist. Each `ThreadRuntime` owns one GoalRuntime instance.
 
 This document records the intended Goal redesign before the runtime work starts.
 It exists to keep future changes pointed at the same product model instead of
@@ -41,6 +41,11 @@ Wuu already has useful Goal pieces:
   context, not persisted as a fake user message. Budget-limited, paused,
   blocked, complete, cancelled, read-only, busy, queued-user, and queued-agent
   states stop automatic continuation.
+- App-server failed turns now account active Goal usage before status
+  convergence. If the active turn fails while the Goal is still active, runtime
+  stops the Goal as `blocked`; provider context overflow stops it as
+  `usage_limited`. User interrupts remain turn-level stops and do not
+  mislabel the Goal as blocked.
 - `goal/active-summary` now prefers the thread GoalRuntime over the older
   durable ledger and includes runtime status, stop reason, usage, blocker, and
   recent ledger progress. App-server user controls can pause, resume, edit,
@@ -73,10 +78,10 @@ approvals, worktrees, verification policies, retry policy, progress, decisions,
 failures, artifacts, modified files, and test results. That is valuable as an
 execution ledger, but it is not the missing continuation loop.
 
-The main remaining gap is end-to-end product-path verification and cleanup of
-the old evidence model boundary. The older durable Goal ledger still exists as
-a broad evidence model, so future work should keep clarifying which fields
-belong to runtime state and which belong to execution evidence.
+The main remaining gap is broader end-to-end product-path verification and
+cleanup of the old evidence model boundary. The older durable Goal ledger still
+exists as a broad evidence model, so future work should keep clarifying which
+fields belong to runtime state and which belong to execution evidence.
 
 The app-server path now has product-path tests for positive idle
 auto-continuation plus negative gates for queued user work, queued agent
@@ -183,7 +188,9 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 4. Add accounting.
    Attribute token usage, elapsed time, and turn counts to the active Goal.
    Enforce budget-limited and usage-limited stop conditions before adding
-   open-ended continuation. Done for app-server turns.
+   open-ended continuation. Done for app-server successful and failed turns;
+   failed turns now stop active Goals as blocked or usage-limited after
+   accounting.
 
 5. Add the idle continuation gate.
    Implement a shared internal path that starts a model turn only when the
@@ -219,7 +226,8 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
 9. Verify through the real product path.
    Unit tests should cover transitions and accounting. Integration or protocol
    probes should prove active Goal auto-continuation and negative cases such as
-   paused Goal, queued user work, completed Goal, and budget-limited Goal.
+   paused Goal, queued user work, completed Goal, budget-limited Goal, and
+   turn-error stop convergence.
 
 ## Codex Reference Map
 

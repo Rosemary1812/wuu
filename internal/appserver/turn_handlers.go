@@ -638,6 +638,15 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			titleHistory = nil
 		}
 	}
+	if stopErr := stopActiveGoalAfterTurnError(threadRuntime, err, now); stopErr != nil {
+		if err != nil {
+			err = errors.Join(err, stopErr)
+		} else {
+			err = stopErr
+			status = TurnStatusFailed
+			titleHistory = nil
+		}
+	}
 
 	th.mu.Lock()
 	turn := th.completeTurnLocked(turnID, status, err, now, string(res.FinishReason), res.StopReason, res.Truncated)
@@ -700,6 +709,33 @@ func accountActiveGoalTurn(threadRuntime *runtime.ThreadRuntime, delta goalrunti
 	}
 	if _, _, err := threadRuntime.GoalRuntime.AccountActiveUsage(delta, completedAt); err != nil {
 		return fmt.Errorf("account active goal usage: %w", err)
+	}
+	return nil
+}
+
+func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr error, completedAt time.Time) error {
+	if threadRuntime == nil || threadRuntime.GoalRuntime == nil || turnErr == nil {
+		return nil
+	}
+	if errors.Is(turnErr, context.Canceled) {
+		return nil
+	}
+	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load active goal after turn error: %w", err)
+	}
+	if goal.Status != goalruntime.StatusActive {
+		return nil
+	}
+	status := goalruntime.StatusBlocked
+	if providers.IsContextOverflow(turnErr) {
+		status = goalruntime.StatusUsageLimited
+	}
+	if _, err := threadRuntime.GoalRuntime.SetSystemStatus(status, completedAt); err != nil {
+		return fmt.Errorf("stop active goal after turn error: %w", err)
 	}
 	return nil
 }
