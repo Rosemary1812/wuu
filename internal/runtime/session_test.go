@@ -1967,4 +1967,15 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	if first.AgentControl.SessionID() != "thread-a" || second.AgentControl.SessionID() != "thread-b" {
 		t.Fatalf("unexpected agent control sessions: first=%q second=%q", first.AgentControl.SessionID(), second.AgentControl.SessionID())
 	}
+	if first.GoalRuntime == nil || second.GoalRuntime == nil {
+		t.Fatal("thread runtimes must include goal runtime")
+	}
+	if first.GoalRuntime == second.GoalRuntime {
+		t.Fatal("thread runtimes must not share goal runtime instances")
+	}
+	firstGoalPath := statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-a")
+	secondGoalPath := statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-b")
+	if first.GoalRuntime.Store().Path() != firstGoalPath || second.GoalRuntime.Store().Path() != secondGoalPath {
+		t.Fatalf("unexpected goal runtime paths: first=%q second=%q", first.GoalRuntime.Store().Path(), second.GoalRuntime.Store().Path())
+	}
 }

@@ -18,6 +18,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memory"
@@ -98,6 +99,7 @@ type ThreadRuntime struct {
 	StreamRunner *agent.StreamRunner
 	Toolkit      *tools.Toolkit
 	AgentControl *agentcontrol.AgentControl
+	GoalRuntime  *goalruntime.Runtime
 	ModelBudget  modelbudget.Budget
 }
 
@@ -558,6 +560,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		}
 	}
 	artifactDir := statepath.SessionArtifactDir(stateDir, id)
+	goalRuntime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(stateDir, id)))
 
 	var (
 		kit          *tools.Toolkit
@@ -682,6 +685,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		StreamRunner: runner,
 		Toolkit:      kit,
 		AgentControl: agentControl,
+		GoalRuntime:  goalRuntime,
 		ModelBudget:  s.ModelBudget,
 	}, nil
 }
