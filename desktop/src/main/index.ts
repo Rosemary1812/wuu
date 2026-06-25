@@ -510,16 +510,37 @@ app.whenReady().then(() => {
     },
   );
   // Composer goal banner surface. The renderer only needs a lightweight
-  // summary plus explicit cancel/edit affordances; the full GoalSnapshot
-  // and workflow/agent run detail stay on the agent tool loop.
+  // summary plus explicit runtime controls; the full GoalSnapshot and
+  // workflow/agent run detail stay on the agent tool loop.
   ipcMain.handle("wuu:goal-active-summary", async (_event, threadID?: string) => {
     const result = await appServerClientPool.request<{
       summary?: ComposerGoalSummary | null;
     }>("goal/active-summary", { thread_id: threadID });
     return result.summary ?? null;
   });
+  ipcMain.handle("wuu:goal-pause", (_event, goalID: string, threadID?: string) =>
+    appServerClientPool.request<{ ok: boolean }>("goal/pause", {
+      goal_id: goalID,
+      thread_id: threadID,
+      confirm_user_approved: true,
+    }),
+  );
+  ipcMain.handle("wuu:goal-resume", (_event, goalID: string, threadID?: string) =>
+    appServerClientPool.request<{ ok: boolean }>("goal/resume", {
+      goal_id: goalID,
+      thread_id: threadID,
+      confirm_user_approved: true,
+    }),
+  );
   ipcMain.handle("wuu:goal-cancel", (_event, goalID: string, threadID?: string) =>
     appServerClientPool.request<{ ok: boolean }>("goal/cancel", {
+      goal_id: goalID,
+      thread_id: threadID,
+      confirm_user_approved: true,
+    }),
+  );
+  ipcMain.handle("wuu:goal-clear", (_event, goalID: string, threadID?: string) =>
+    appServerClientPool.request<{ ok: boolean }>("goal/clear", {
       goal_id: goalID,
       thread_id: threadID,
       confirm_user_approved: true,

@@ -1,8 +1,11 @@
 import {
   Check,
   Loader2,
+  Pause,
   Pencil,
+  Play,
   Target,
+  Trash2,
   X
 } from "lucide-react";
 import {
@@ -14,24 +17,34 @@ import {
 } from "react";
 import type { ComposerGoalSummary } from "../shared/protocol";
 
-const CANCEL_CONFIRM_WINDOW_MS = 3000;
+const ACTION_CONFIRM_WINDOW_MS = 3000;
 const ELAPSED_TICK_MS = 1000;
+
+type GoalBusyAction = "edit" | "pause" | "resume" | "cancel" | "clear";
+type ConfirmableGoalAction = "cancel" | "clear";
 
 export function ComposerGoalStrip({
   summary,
   disabled,
   onEdit,
-  onCancel
+  onPause,
+  onResume,
+  onCancel,
+  onClear
 }: {
   summary: ComposerGoalSummary | null;
   disabled?: boolean;
   onEdit: (nextText: string) => void | Promise<void>;
+  onPause: () => void | Promise<void>;
+  onResume: () => void | Promise<void>;
   onCancel: () => void | Promise<void>;
+  onClear: () => void | Promise<void>;
 }): JSX.Element | null {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
-  const [busy, setBusy] = useState<null | "edit" | "cancel">(null);
+  const [confirmingAction, setConfirmingAction] =
+    useState<ConfirmableGoalAction | null>(null);
+  const [busy, setBusy] = useState<GoalBusyAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -72,7 +85,7 @@ export function ComposerGoalStrip({
   useEffect(() => {
     setEditing(false);
     setDraft(summary?.text ?? "");
-    setConfirmingCancel(false);
+    setConfirmingAction(null);
     setBusy(null);
     setError(null);
     clearConfirmTimer();
@@ -91,7 +104,12 @@ export function ComposerGoalStrip({
   }
   const activeSummary = summary;
   const displayText = goalStripDisplayText(summary.text);
+  const detailText = goalStripDetailText(summary);
   const elapsedElement = renderElapsed(startedAtMs, now);
+  const canPause = summary.can_pause === true;
+  const canResume = summary.can_resume === true;
+  const canCancel = summary.can_cancel !== false;
+  const canClear = summary.can_clear === true;
 
   function clearConfirmTimer(): void {
     if (confirmTimerRef.current) {
@@ -100,11 +118,24 @@ export function ComposerGoalStrip({
     }
   }
 
+  function resetConfirmation(): void {
+    setConfirmingAction(null);
+    clearConfirmTimer();
+  }
+
+  function startConfirmation(action: ConfirmableGoalAction): void {
+    setConfirmingAction(action);
+    clearConfirmTimer();
+    confirmTimerRef.current = setTimeout(() => {
+      setConfirmingAction(null);
+      confirmTimerRef.current = null;
+    }, ACTION_CONFIRM_WINDOW_MS);
+  }
+
   function handleStartEdit(): void {
     if (disabled || busy) return;
     setError(null);
-    setConfirmingCancel(false);
-    clearConfirmTimer();
+    resetConfirmation();
     setEditing(true);
   }
 
@@ -114,26 +145,41 @@ export function ComposerGoalStrip({
     setError(null);
   }
 
-  function handleCancelGoal(): void {
+  function handlePauseGoal(): void {
+    runAction("pause", onPause, "暂停目标失败");
+  }
+
+  function handleResumeGoal(): void {
+    runAction("resume", onResume, "继续目标失败");
+  }
+
+  function handleConfirmableGoalAction(action: ConfirmableGoalAction): void {
     if (disabled || busy) return;
     setError(null);
-    if (!confirmingCancel) {
-      setConfirmingCancel(true);
-      clearConfirmTimer();
-      confirmTimerRef.current = setTimeout(() => {
-        setConfirmingCancel(false);
-        confirmTimerRef.current = null;
-      }, CANCEL_CONFIRM_WINDOW_MS);
+    if (confirmingAction !== action) {
+      startConfirmation(action);
       return;
     }
-    clearConfirmTimer();
-    setConfirmingCancel(false);
-    setBusy("cancel");
+    resetConfirmation();
+    const operation = action === "cancel" ? onCancel : onClear;
+    const failureMessage = action === "cancel" ? "取消目标失败" : "清除目标失败";
+    runAction(action, operation, failureMessage);
+  }
+
+  function runAction(
+    action: GoalBusyAction,
+    operation: () => void | Promise<void>,
+    failureMessage: string,
+  ): void {
+    if (disabled || busy) return;
+    setError(null);
+    resetConfirmation();
+    setBusy(action);
     void (async () => {
       try {
-        await onCancel();
+        await operation();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "取消目标失败");
+        setError(cause instanceof Error ? cause.message : failureMessage);
       } finally {
         setBusy(null);
       }
@@ -207,7 +253,10 @@ export function ComposerGoalStrip({
             onClick={() => void handleSubmitEdit()}
           >
             {busy === "edit" ? (
-              <Loader2 className="icon-sm composer-goal-strip-spin" aria-hidden="true" />
+              <Loader2
+                className="icon-sm composer-goal-strip-spin"
+                aria-hidden="true"
+              />
             ) : (
               <Check className="icon-sm" aria-hidden="true" />
             )}
@@ -234,7 +283,11 @@ export function ComposerGoalStrip({
 
   return (
     <div
-      className={`composer-goal-strip${confirmingCancel ? " confirming-cancel" : ""}`}
+      className={
+        `composer-goal-strip${
+          confirmingAction ? ` confirming-${confirmingAction}` : ""
+        }`
+      }
       role="status"
       aria-live="polite"
     >
@@ -243,10 +296,55 @@ export function ComposerGoalStrip({
       </span>
       <span className="composer-goal-strip-label">Goal</span>
       {elapsedElement}
-      <span className="composer-goal-strip-text" title={displayText}>
-        {displayText}
+      <span className="composer-goal-strip-main">
+        <span className="composer-goal-strip-text" title={displayText}>
+          {displayText}
+        </span>
+        {detailText ? (
+          <span className="composer-goal-strip-detail" title={detailText}>
+            {detailText}
+          </span>
+        ) : null}
       </span>
       <div className="composer-goal-strip-actions">
+        {canPause ? (
+          <button
+            className="composer-goal-strip-action"
+            type="button"
+            aria-label="暂停目标"
+            title="暂停目标"
+            disabled={disabled || busy !== null}
+            onClick={handlePauseGoal}
+          >
+            {busy === "pause" ? (
+              <Loader2
+                className="icon-sm composer-goal-strip-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Pause className="icon-sm" aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
+        {canResume ? (
+          <button
+            className="composer-goal-strip-action"
+            type="button"
+            aria-label="继续目标"
+            title="继续目标"
+            disabled={disabled || busy !== null}
+            onClick={handleResumeGoal}
+          >
+            {busy === "resume" ? (
+              <Loader2
+                className="icon-sm composer-goal-strip-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Play className="icon-sm" aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
         <button
           className="composer-goal-strip-action"
           type="button"
@@ -257,23 +355,56 @@ export function ComposerGoalStrip({
         >
           <Pencil className="icon-sm" aria-hidden="true" />
         </button>
-        <button
-          className={`composer-goal-strip-action${confirmingCancel ? " danger" : ""}`}
-          type="button"
-          aria-label={confirmingCancel ? "再次点击确认取消目标" : "取消目标"}
-          title={confirmingCancel ? "再次点击确认" : "取消目标"}
-          disabled={disabled || busy !== null}
-          onClick={handleCancelGoal}
-        >
-          {busy === "cancel" ? (
-            <Loader2
-              className="icon-sm composer-goal-strip-spin"
-              aria-hidden="true"
-            />
-          ) : (
-            <X className="icon-sm" aria-hidden="true" />
-          )}
-        </button>
+        {canClear ? (
+          <button
+            className={
+              `composer-goal-strip-action${
+                confirmingAction === "clear" ? " danger" : ""
+              }`
+            }
+            type="button"
+            aria-label={
+              confirmingAction === "clear" ? "再次点击确认清除目标" : "清除目标"
+            }
+            title={confirmingAction === "clear" ? "再次点击确认" : "清除目标"}
+            disabled={disabled || busy !== null}
+            onClick={() => handleConfirmableGoalAction("clear")}
+          >
+            {busy === "clear" ? (
+              <Loader2
+                className="icon-sm composer-goal-strip-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Trash2 className="icon-sm" aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
+        {canCancel ? (
+          <button
+            className={
+              `composer-goal-strip-action${
+                confirmingAction === "cancel" ? " danger" : ""
+              }`
+            }
+            type="button"
+            aria-label={
+              confirmingAction === "cancel" ? "再次点击确认取消目标" : "取消目标"
+            }
+            title={confirmingAction === "cancel" ? "再次点击确认" : "取消目标"}
+            disabled={disabled || busy !== null}
+            onClick={() => handleConfirmableGoalAction("cancel")}
+          >
+            {busy === "cancel" ? (
+              <Loader2
+                className="icon-sm composer-goal-strip-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <X className="icon-sm" aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
       </div>
       {error ? (
         <span className="composer-goal-strip-error" role="alert">
@@ -287,6 +418,88 @@ export function ComposerGoalStrip({
 function goalStripDisplayText(text: string): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0]?.trim() ?? "";
   return firstLine || "（无目标文本）";
+}
+
+function goalStripDetailText(summary: ComposerGoalSummary): string {
+  const parts = [
+    goalStatusText(summary),
+    goalProgressText(summary),
+    goalUsageText(summary),
+  ].filter((part) => part.length > 0);
+  return parts.join(" | ");
+}
+
+function goalStatusText(summary: ComposerGoalSummary): string {
+  const raw = (summary.stop_reason || summary.status || "")
+    .trim()
+    .toLowerCase();
+  switch (raw) {
+    case "":
+    case "active":
+    case "running":
+      return "";
+    case "paused":
+      return "已暂停";
+    case "blocked":
+      return "已阻塞";
+    case "budget_limited":
+      return "预算受限";
+    case "usage_limited":
+      return "用量受限";
+    case "needs_human":
+      return "等待人工";
+    default:
+      return raw;
+  }
+}
+
+function goalProgressText(summary: ComposerGoalSummary): string {
+  const blocker = summary.blocker?.trim() ?? "";
+  if (blocker) {
+    const turns = summary.blocker_consecutive_turns ?? 0;
+    return turns > 1 ? `${blocker} (${turns} 次)` : blocker;
+  }
+  return summary.recent_progress?.trim() ?? "";
+}
+
+function goalUsageText(summary: ComposerGoalSummary): string {
+  const parts: string[] = [];
+  if ((summary.goal_turns ?? 0) > 0) {
+    parts.push(`${summary.goal_turns} 轮`);
+  }
+  if ((summary.token_budget ?? 0) > 0) {
+    const used = Math.max(0, summary.tokens_used ?? 0);
+    const budget = Math.max(0, summary.token_budget ?? 0);
+    const percent =
+      budget > 0 ? Math.min(999, Math.round((used / budget) * 100)) : 0;
+    parts.push(
+      `${formatCompactNumber(used)} / ${formatCompactNumber(budget)} tokens (${percent}%)`,
+    );
+  } else if ((summary.tokens_used ?? 0) > 0) {
+    parts.push(`${formatCompactNumber(summary.tokens_used ?? 0)} tokens`);
+  }
+  if ((summary.time_used_seconds ?? 0) > 0) {
+    parts.push(formatGoalDuration(summary.time_used_seconds ?? 0));
+  }
+  return parts.join(" / ");
+}
+
+function formatCompactNumber(value: number): string {
+  return Math.max(0, value).toLocaleString("en-US");
+}
+
+function formatGoalDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  if (hours > 0) {
+    return `${hours} 小时 ${minutes} 分`;
+  }
+  if (minutes > 0) {
+    return `${minutes} 分 ${remainingSeconds} 秒`;
+  }
+  return `${remainingSeconds} 秒`;
 }
 
 // parseStartedAt converts the backend's RFC3339 timestamp into epoch ms.

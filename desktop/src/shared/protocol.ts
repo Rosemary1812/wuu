@@ -854,12 +854,10 @@ export type SettingsUsageResponse = {
   entries: SettingsUsageEntry[];
 };
 
-// ComposerGoalSummary is the composer-banner view of the most-recently
-// updated non-terminal goal in the current thread/session scope. The backend
-// filters out terminal goals (completed/failed/cancelled) so a null summary on
-// the renderer side means "no active goal" without re-checking status. Text is
-// the first line of goal.Goal; the renderer owns visual ellipsis so editing a
-// long first line never persists a server-side truncation.
+// ComposerGoalSummary is the composer-banner view of the current thread goal.
+// The backend owns runtime status, control availability, and progress text so
+// the renderer can stay a thin control surface instead of rebuilding goal
+// orchestration state.
 export type ComposerGoalSummary = {
   id: string;
   thread_id?: string;
@@ -868,6 +866,18 @@ export type ComposerGoalSummary = {
   step?: string;
   started_at?: string;
   updated_at?: string;
+  stop_reason?: string;
+  recent_progress?: string;
+  tokens_used?: number;
+  token_budget?: number;
+  time_used_seconds?: number;
+  goal_turns?: number;
+  blocker?: string;
+  blocker_consecutive_turns?: number;
+  can_pause?: boolean;
+  can_resume?: boolean;
+  can_cancel?: boolean;
+  can_clear?: boolean;
 };
 
 export type WuuDesktopApi = {
@@ -947,10 +957,13 @@ export type WuuDesktopApi = {
   revealSession: (threadId: string) => Promise<void>;
   getSettingsUsage: (range?: SettingsUsageRange) => Promise<SettingsUsageResponse>;
   // Composer goal banner surface. The renderer only needs a lightweight
-  // summary plus explicit cancel/edit affordances; the full GoalSnapshot
-  // and workflow/agent run detail stay on the agent tool loop.
+  // summary plus explicit runtime controls; the full GoalSnapshot and
+  // workflow/agent run detail stay on the agent tool loop.
   getActiveGoalSummary: (threadId?: string) => Promise<ComposerGoalSummary | null>;
+  pauseGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
+  resumeGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   cancelGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
+  clearGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   updateGoalText: (
     goalId: string,
     text: string,

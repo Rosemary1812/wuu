@@ -116,8 +116,14 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:reject-server-request", id, message),
   getActiveGoalSummary: (threadId?: string) =>
     ipcRenderer.invoke("wuu:goal-active-summary", threadId),
+  pauseGoal: (goalId: string, threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-pause", goalId, threadId),
+  resumeGoal: (goalId: string, threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-resume", goalId, threadId),
   cancelGoal: (goalId: string, threadId?: string) =>
     ipcRenderer.invoke("wuu:goal-cancel", goalId, threadId),
+  clearGoal: (goalId: string, threadId?: string) =>
+    ipcRenderer.invoke("wuu:goal-clear", goalId, threadId),
   updateGoalText: (goalId: string, text: string, threadId?: string) =>
     ipcRenderer.invoke("wuu:goal-update-text", goalId, text, threadId),
   onServerEvent: (handler: (event: ServerEvent) => void) => {

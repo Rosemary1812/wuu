@@ -23,7 +23,10 @@ afterEach(() => {
 function renderStrip(props: {
   summary: ComposerGoalSummary | null;
   onEdit?: (text: string) => void | Promise<void>;
+  onPause?: () => void | Promise<void>;
+  onResume?: () => void | Promise<void>;
   onCancel?: () => void | Promise<void>;
+  onClear?: () => void | Promise<void>;
   disabled?: boolean;
 }): void {
   act(() => {
@@ -33,7 +36,10 @@ function renderStrip(props: {
         summary={props.summary}
         disabled={props.disabled}
         onEdit={props.onEdit ?? (() => {})}
+        onPause={props.onPause ?? (() => {})}
+        onResume={props.onResume ?? (() => {})}
         onCancel={props.onCancel ?? (() => {})}
+        onClear={props.onClear ?? (() => {})}
       />,
     );
   });
@@ -44,6 +50,9 @@ function goalSummary(text = "Ship the composer goal strip"): ComposerGoalSummary
     id: "goal-1",
     text,
     status: "running",
+    can_pause: true,
+    can_cancel: true,
+    can_clear: true,
   };
 }
 
@@ -71,12 +80,77 @@ describe("ComposerGoalStrip", () => {
     expect(strip).not.toBeNull();
     expect(container.querySelector(".composer-goal-strip-label")?.textContent).toBe("Goal");
     expect(container.querySelector(".composer-goal-strip-text")?.textContent).toBe("first line");
-    expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(2);
+    expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(4);
+    expect(container.querySelector("button[aria-label=\"暂停目标\"]")).not.toBeNull();
+    expect(container.querySelector("button[aria-label=\"编辑目标\"]")).not.toBeNull();
+    expect(container.querySelector("button[aria-label=\"清除目标\"]")).not.toBeNull();
+    expect(container.querySelector("button[aria-label=\"取消目标\"]")).not.toBeNull();
     expect(
       Array.from(container.querySelectorAll(".composer-goal-strip-action")).map(
         (button) => button.textContent,
       ),
-    ).toEqual(["", ""]);
+    ).toEqual(["", "", "", ""]);
+  });
+
+  it("renders runtime detail text from status, progress, and usage", () => {
+    renderStrip({
+      summary: {
+        ...goalSummary("ship runtime loop"),
+        status: "blocked",
+        stop_reason: "blocked",
+        blocker: "等待用户选择策略",
+        blocker_consecutive_turns: 3,
+        tokens_used: 1250,
+        token_budget: 5000,
+        goal_turns: 2,
+        time_used_seconds: 75,
+      },
+    });
+
+    expect(container.querySelector(".composer-goal-strip-detail")?.textContent).toBe(
+      "已阻塞 | 等待用户选择策略 (3 次) | 2 轮 / 1,250 / 5,000 tokens (25%) / 1 分 15 秒",
+    );
+  });
+
+  it("pauses and resumes through runtime controls", async () => {
+    const onPause = vi.fn().mockResolvedValue(undefined);
+    const onResume = vi.fn().mockResolvedValue(undefined);
+    renderStrip({ summary: goalSummary(), onPause, onResume });
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>("button[aria-label=\"暂停目标\"]")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(onPause).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root?.render(
+        <ComposerGoalStrip
+          summary={{
+            ...goalSummary(),
+            status: "paused",
+            stop_reason: "paused",
+            can_pause: false,
+            can_resume: true,
+          }}
+          onEdit={() => {}}
+          onPause={onPause}
+          onResume={onResume}
+          onCancel={() => {}}
+          onClear={() => {}}
+        />,
+      );
+    });
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>("button[aria-label=\"继续目标\"]")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(onResume).toHaveBeenCalledTimes(1);
   });
 
   it("edits the goal inline and waits for save before leaving edit mode", async () => {
@@ -139,6 +213,37 @@ describe("ComposerGoalStrip", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it("requires a second click before clearing the active goal", async () => {
+    const onClear = vi.fn().mockResolvedValue(undefined);
+    renderStrip({ summary: goalSummary(), onClear });
+
+    const clearButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"清除目标\"]",
+    );
+    expect(clearButton).not.toBeNull();
+
+    act(() => {
+      clearButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(onClear).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        "button[aria-label=\"再次点击确认清除目标\"]",
+      ),
+    ).not.toBeNull();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          "button[aria-label=\"再次点击确认清除目标\"]",
+        )
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
   describe("with elapsed timer", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -158,6 +263,9 @@ describe("ComposerGoalStrip", () => {
         text,
         status: "running",
         started_at: startedAt,
+        can_pause: true,
+        can_cancel: true,
+        can_clear: true,
       };
     }
 

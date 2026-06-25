@@ -151,7 +151,10 @@ export function Composer({
   onInterrupt,
   goalSummary,
   onEditGoal,
+  onPauseGoal,
+  onResumeGoal,
   onCancelGoal,
+  onClearGoal,
   tokensPerSecond,
   tokenSpeedSampledAt,
   tokenSpeedSource,
@@ -212,7 +215,10 @@ export function Composer({
   onInterrupt: () => void;
   goalSummary?: ComposerGoalSummary | null;
   onEditGoal?: (nextText: string) => void | Promise<void>;
+  onPauseGoal?: () => void | Promise<void>;
+  onResumeGoal?: () => void | Promise<void>;
   onCancelGoal?: () => void | Promise<void>;
+  onClearGoal?: () => void | Promise<void>;
   tokensPerSecond: number;
   tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
@@ -460,9 +466,27 @@ export function Composer({
               }
               return undefined;
             }}
+            onPause={() => {
+              if (onPauseGoal) {
+                return onPauseGoal();
+              }
+              return undefined;
+            }}
+            onResume={() => {
+              if (onResumeGoal) {
+                return onResumeGoal();
+              }
+              return undefined;
+            }}
             onCancel={() => {
               if (onCancelGoal) {
                 return onCancelGoal();
+              }
+              return undefined;
+            }}
+            onClear={() => {
+              if (onClearGoal) {
+                return onClearGoal();
               }
               return undefined;
             }}
