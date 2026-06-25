@@ -193,16 +193,16 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
    read-only/busy state, and active-status gating.
 
 6. Tighten model-facing tools and guidance.
-   Prefer a small contract such as `get_goal`, `create_goal`, and
-   `update_goal(status=complete|blocked)`, or keep existing names only if their
-   semantics are narrowed to the same contract. Existing names are now wired to
-   GoalRuntime in app-server threads: `start_goal` creates the active runtime
-   Goal, `complete_goal` completes it, and `update_goal(status=blocked)` records
-   blocker audits instead of letting the model directly force arbitrary status
-   changes. Outside runtime-backed threads, `update_goal(kind=status)` is also
-   limited to `status=blocked` so the older durable ledger cannot be used as a
-   fake stop/complete path.
-   Prompt guidance still needs to be audited against this narrower contract.
+   Prefer a small contract such as create/read/complete/block, or keep existing
+   names only if their semantics are narrowed to the same contract. Existing
+   names are now wired to GoalRuntime in app-server threads: `start_goal`
+   creates the active runtime Goal, `goal_status` reads it, `complete_goal`
+   completes it, and `update_goal(status=blocked)` records blocker audits
+   instead of letting the model directly force arbitrary status changes.
+   Outside runtime-backed threads, `update_goal(kind=status)` is also limited
+   to `status=blocked` so the older durable ledger cannot be used as a fake
+   stop/complete path. Prompt guidance and tool descriptions now describe this
+   narrower contract.
 
 7. Reconnect workflows and subagents as evidence producers.
    Keep workflow/subagent Goal updates, but make them write progress, reports,
