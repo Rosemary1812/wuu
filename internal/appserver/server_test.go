@@ -3953,6 +3953,62 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestServerThreadResumeKicksActiveGoalContinuation(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{
+		Content: "continued after resume",
+		Usage:   &providers.TokenUsage{InputTokens: 1, OutputTokens: 1},
+	}}
+	rt := newTestRuntime(t, client)
+	sessionID := "20260523-000002-goal-resume"
+	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, sess.ID), []providers.ChatMessage{
+		{Role: "user", Content: "start the goal"},
+		{Role: "assistant", Content: "working"},
+	}); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+	threadRuntime, err := rt.NewThreadRuntime(sessionID)
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:    sessionID,
+		GoalID:      "resume-goal",
+		Objective:   "continue after thread resume",
+		TokenBudget: 1,
+	}); err != nil {
+		t.Fatalf("create goal: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	payload := map[string]any{
+		"id":     "1",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: sessionID},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	waitForTurnCompletedForThread(t, out, sessionID)
+	assertFakeClientRequestCount(t, client, 1)
+	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if err != nil {
+		t.Fatalf("load goal: %v", err)
+	}
+	if goal.Status != goalruntime.StatusBudgetLimited || goal.GoalTurns != 1 {
+		t.Fatalf("unexpected goal after resume continuation: %+v", goal)
+	}
+}
+
 func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260523-000010-payloads", rt.RootDir)

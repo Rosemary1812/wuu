@@ -37,10 +37,11 @@ Wuu already has useful Goal pieces:
   and app-server turns now account active Goal usage when a turn stops.
 - `internal/appserver` can now start an internal continuation turn after a
   successful turn completes, after queued user work and agent-completion work
-  have had priority. The continuation prompt is injected through request-only
-  context, not persisted as a fake user message. Budget-limited, paused,
-  blocked, complete, cancelled, read-only, busy, queued-user, and queued-agent
-  states stop automatic continuation.
+  have had priority, and after a persisted thread with an active runtime Goal
+  is resumed. The continuation prompt is injected through request-only context,
+  not persisted as a fake user message. Budget-limited, paused, blocked,
+  complete, cancelled, read-only, busy, queued-user, and queued-agent states
+  stop automatic continuation.
 - App-server failed turns now account active Goal usage before status
   convergence. If the active turn fails while the Goal is still active, runtime
   stops the Goal as `blocked`; provider context overflow stops it as
@@ -84,11 +85,12 @@ exists as a broad evidence model, so future work should keep clarifying which
 fields belong to runtime state and which belong to execution evidence.
 
 The app-server path now has product-path tests for positive idle
-auto-continuation plus negative gates for queued user work, queued agent
-completion work, read-only threads, paused, blocked, budget-limited,
-usage-limited, complete, and cancelled Goals. Wuu currently has `update_plan`
-as a planning tool, not a separate thread Plan mode; review/subagent threads
-are represented as read-only threads in the app-server gate.
+auto-continuation, thread-resume continuation, and negative gates for queued
+user work, queued agent completion work, read-only threads, paused, blocked,
+budget-limited, usage-limited, complete, and cancelled Goals. Wuu currently has
+`update_plan` as a planning tool, not a separate thread Plan mode;
+review/subagent threads are represented as read-only threads in the app-server
+gate.
 
 Current model-visible semantics have been narrowed, but the old evidence model
 is still visible:
@@ -197,7 +199,7 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
    thread is idle and no user/client work is waiting. The injected context
    should be internal steering, not a fake user message. Done for successful
    app-server turns, queued user work, queued agent-completion work,
-   read-only/busy state, and active-status gating.
+   read-only/busy state, active-status gating, and thread resume.
 
 6. Tighten model-facing tools and guidance.
    Prefer a small contract such as create/read/complete/block, or keep existing
@@ -227,7 +229,8 @@ This gate belongs in Go core/app-server runtime, not Electron renderer or main.
    Unit tests should cover transitions and accounting. Integration or protocol
    probes should prove active Goal auto-continuation and negative cases such as
    paused Goal, queued user work, completed Goal, budget-limited Goal, and
-   turn-error stop convergence.
+   turn-error stop convergence. App-server tests now also cover continuation
+   after `thread/resume`.
 
 ## Codex Reference Map
 

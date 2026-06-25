@@ -100,13 +100,7 @@ func (s *Server) handleThreadResume(req Request) error {
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		result := ThreadResumeResult{Thread: thread}
-		if err := s.writeResponse(req.ID, result, nil); err != nil {
-			return err
-		}
-		return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
-			Thread: thread,
-		})
+		return s.writeThreadResumeResult(req, thread)
 	}
 	path, err := session.Load(s.rt.SessionDir, id)
 	if err != nil {
@@ -117,13 +111,7 @@ func (s *Server) handleThreadResume(req Request) error {
 		if !ok {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		result := ThreadResumeResult{Thread: thread}
-		if err := s.writeResponse(req.ID, result, nil); err != nil {
-			return err
-		}
-		return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
-			Thread: thread,
-		})
+		return s.writeThreadResumeResult(req, thread)
 	}
 	history, err := loadChatMessages(path)
 	if err != nil {
@@ -158,13 +146,23 @@ func (s *Server) handleThreadResume(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	return s.writeThreadResumeResult(req, thread)
+}
+
+func (s *Server) writeThreadResumeResult(req Request, thread Thread) error {
 	result := ThreadResumeResult{Thread: thread}
 	if err := s.writeResponse(req.ID, result, nil); err != nil {
 		return err
 	}
-	return s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
+	if err := s.writeNotification(NotificationThreadResumed, ThreadResumedNotification{
 		Thread: thread,
-	})
+	}); err != nil {
+		return err
+	}
+	if s.thread(thread.ID) != nil {
+		s.kickGoalContinuation(thread.ID)
+	}
+	return nil
 }
 
 type forkSourceThread struct {
