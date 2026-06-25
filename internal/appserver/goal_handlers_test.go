@@ -421,25 +421,16 @@ func remarshalGoalHandlerRaw(t *testing.T, value any) []byte {
 	return data
 }
 
-func TestGoalActiveSummaryReturnsMostRecentNonTerminalGoal(t *testing.T) {
+func TestGoalActiveSummaryIgnoresLegacyGoalLedger(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	stateDir := rt.StateDir
-	older := goalrunner.NewStore(statepath.GoalDir(stateDir, "older"))
-	if _, err := older.Init(goalrunner.Spec{ID: "older", Goal: "older goal"}); err != nil {
-		t.Fatalf("Init older: %v", err)
+	legacy := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "legacy"))
+	if _, err := legacy.Init(goalrunner.Spec{ID: "legacy", Goal: "legacy goal"}); err != nil {
+		t.Fatalf("Init legacy: %v", err)
 	}
-	if _, err := older.AddProgress(goalrunner.StepResearch, "older progress"); err != nil {
-		t.Fatalf("AddProgress older: %v", err)
-	}
-	time.Sleep(20 * time.Millisecond)
-	newer := goalrunner.NewStore(statepath.GoalDir(stateDir, "newer"))
-	if _, err := newer.Init(goalrunner.Spec{ID: "newer", Goal: "newer goal"}); err != nil {
-		t.Fatalf("Init newer: %v", err)
-	}
-	if _, err := newer.AddProgress(goalrunner.StepExecution, "newer progress"); err != nil {
-		t.Fatalf("AddProgress newer: %v", err)
+	if _, err := legacy.AddProgress(goalrunner.StepExecution, "legacy progress"); err != nil {
+		t.Fatalf("AddProgress legacy: %v", err)
 	}
 
 	out := &lockedBuffer{}
@@ -450,26 +441,8 @@ func TestGoalActiveSummaryReturnsMostRecentNonTerminalGoal(t *testing.T) {
 	msgs := parseOutput(t, out.String())
 	msg := responseByID(t, msgs, "sum")
 	result := remarshal[GoalActiveSummaryResult](t, msg["result"])
-	if result.Summary == nil {
-		t.Fatalf("expected active summary, got %+v", result)
-	}
-	if result.Summary.ID != "newer" {
-		t.Fatalf("expected most-recent active goal id=newer, got %+v", result.Summary)
-	}
-	if result.Summary.Text != "newer goal" {
-		t.Fatalf("summary text mismatch: %+v", result.Summary)
-	}
-	if result.Summary.Status != string(goalrunner.StatusRunning) {
-		t.Fatalf("summary status mismatch: %+v", result.Summary)
-	}
-	if result.Summary.Step != string(goalrunner.StepExecution) {
-		t.Fatalf("summary step mismatch: %+v", result.Summary)
-	}
-	if result.Summary.UpdatedAt == "" {
-		t.Fatalf("summary updated_at empty: %+v", result.Summary)
-	}
-	if result.Summary.StartedAt == "" {
-		t.Fatalf("summary started_at empty: %+v", result.Summary)
+	if result.Summary != nil {
+		t.Fatalf("legacy ledger must not drive active summary: %+v", result.Summary)
 	}
 }
 
@@ -498,14 +471,6 @@ func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
 	if _, err := threadRuntime.GoalRuntime.AccountUsage(goalruntime.UsageDelta{Tokens: 7, Turns: 2}, time.Now().UTC()); err != nil {
 		t.Fatalf("AccountUsage: %v", err)
 	}
-	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-goal"))
-	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-goal", Goal: "legacy text"}); err != nil {
-		t.Fatalf("Init legacy goal: %v", err)
-	}
-	if _, err := legacy.AddProgress(goalrunner.StepExecution, "latest progress"); err != nil {
-		t.Fatalf("AddProgress legacy: %v", err)
-	}
-
 	raw := `{"id":"sum-runtime","method":"goal/active-summary","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `}}`
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/active-summary: %v", err)
@@ -521,8 +486,8 @@ func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
 	if result.Summary.TokensUsed != 7 || result.Summary.TokenBudget != 25 || result.Summary.GoalTurns != 2 {
 		t.Fatalf("runtime usage missing from summary: %+v", result.Summary)
 	}
-	if result.Summary.RecentProgress != "latest progress" || result.Summary.Step != string(goalrunner.StepExecution) {
-		t.Fatalf("legacy progress missing from runtime summary: %+v", result.Summary)
+	if result.Summary.RecentProgress != "" || result.Summary.Step != "" {
+		t.Fatalf("runtime summary should not borrow legacy progress: %+v", result.Summary)
 	}
 	if !result.Summary.CanPause || result.Summary.CanResume {
 		t.Fatalf("unexpected runtime controls: %+v", result.Summary)
@@ -533,17 +498,18 @@ func TestGoalActiveSummarySkipsTerminalGoals(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "done"))
-	if _, err := store.Init(goalrunner.Spec{ID: "done", Goal: "done goal"}); err != nil {
-		t.Fatalf("Init done: %v", err)
+	runtime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-done")))
+	if _, err := runtime.Create(goalruntime.Spec{ThreadID: "thread-done", GoalID: "done", Objective: "done goal"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
 	}
-	if _, err := store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, "done"); err != nil {
-		t.Fatalf("SetStatus done: %v", err)
+	if _, err := runtime.Complete(time.Now().UTC()); err != nil {
+		t.Fatalf("Complete runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+	raw := `{"id":"sum","method":"goal/active-summary","params":{"thread_id":"thread-done"}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/active-summary: %v", err)
 	}
 	msgs := parseOutput(t, out.String())
@@ -558,14 +524,15 @@ func TestGoalActiveSummaryCollapsesMultilineText(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "multi"))
-	if _, err := store.Init(goalrunner.Spec{ID: "multi", Goal: "first line\nsecond line\nthird"}); err != nil {
-		t.Fatalf("Init multi: %v", err)
+	runtime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-multi")))
+	if _, err := runtime.Create(goalruntime.Spec{ThreadID: "thread-multi", GoalID: "multi", Objective: "first line\nsecond line\nthird"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+	raw := `{"id":"sum","method":"goal/active-summary","params":{"thread_id":"thread-multi"}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/active-summary: %v", err)
 	}
 	msgs := parseOutput(t, out.String())
@@ -584,14 +551,15 @@ func TestGoalActiveSummaryLeavesLongTextForRendererEllipsis(t *testing.T) {
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
 	longGoal := strings.Repeat("a", 320)
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "long"))
-	if _, err := store.Init(goalrunner.Spec{ID: "long", Goal: longGoal}); err != nil {
-		t.Fatalf("Init long: %v", err)
+	runtime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-long")))
+	if _, err := runtime.Create(goalruntime.Spec{ThreadID: "thread-long", GoalID: "long", Objective: longGoal}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"sum","method":"goal/active-summary"}`)); err != nil {
+	raw := `{"id":"sum","method":"goal/active-summary","params":{"thread_id":"thread-long"}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/active-summary: %v", err)
 	}
 	msgs := parseOutput(t, out.String())
@@ -609,15 +577,13 @@ func TestGoalActiveSummaryScopesToThread(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	firstStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-one")
-	secondStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-two")
-	first := goalrunner.NewStore(statepath.GoalDir(firstStateDir, "shared"))
-	if _, err := first.Init(goalrunner.Spec{ID: "shared", Goal: "first thread goal"}); err != nil {
-		t.Fatalf("Init first: %v", err)
+	firstRuntime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-one")))
+	if _, err := firstRuntime.Create(goalruntime.Spec{ThreadID: "thread-one", GoalID: "shared", Objective: "first thread goal"}); err != nil {
+		t.Fatalf("Create first runtime goal: %v", err)
 	}
-	second := goalrunner.NewStore(statepath.GoalDir(secondStateDir, "shared"))
-	if _, err := second.Init(goalrunner.Spec{ID: "shared", Goal: "second thread goal"}); err != nil {
-		t.Fatalf("Init second: %v", err)
+	secondRuntime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-two")))
+	if _, err := secondRuntime.Create(goalruntime.Spec{ThreadID: "thread-two", GoalID: "shared", Objective: "second thread goal"}); err != nil {
+		t.Fatalf("Create second runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
@@ -640,15 +606,13 @@ func TestGoalCancelScopesToThread(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	firstStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-one")
-	secondStateDir := statepath.SessionArtifactDir(rt.StateDir, "thread-two")
-	first := goalrunner.NewStore(statepath.GoalDir(firstStateDir, "shared"))
-	if _, err := first.Init(goalrunner.Spec{ID: "shared", Goal: "first thread goal"}); err != nil {
-		t.Fatalf("Init first: %v", err)
+	first := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-one")))
+	if _, err := first.Create(goalruntime.Spec{ThreadID: "thread-one", GoalID: "shared", Objective: "first thread goal"}); err != nil {
+		t.Fatalf("Create first runtime goal: %v", err)
 	}
-	second := goalrunner.NewStore(statepath.GoalDir(secondStateDir, "shared"))
-	if _, err := second.Init(goalrunner.Spec{ID: "shared", Goal: "second thread goal"}); err != nil {
-		t.Fatalf("Init second: %v", err)
+	second := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-two")))
+	if _, err := second.Create(goalruntime.Spec{ThreadID: "thread-two", GoalID: "shared", Objective: "second thread goal"}); err != nil {
+		t.Fatalf("Create second runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
@@ -661,18 +625,18 @@ func TestGoalCancelScopesToThread(t *testing.T) {
 	if msg["error"] != nil {
 		t.Fatalf("unexpected cancel error: %+v", msg["error"])
 	}
-	firstState, err := first.LoadState()
+	firstState, err := first.CurrentGoal()
 	if err != nil {
-		t.Fatalf("Load first: %v", err)
+		t.Fatalf("CurrentGoal first: %v", err)
 	}
-	secondState, err := second.LoadState()
+	secondState, err := second.CurrentGoal()
 	if err != nil {
-		t.Fatalf("Load second: %v", err)
+		t.Fatalf("CurrentGoal second: %v", err)
 	}
-	if firstState.Status != goalrunner.StatusCancelled {
+	if firstState.Status != goalruntime.StatusCancelled {
 		t.Fatalf("first goal should be cancelled, got %s", firstState.Status)
 	}
-	if secondState.Status == goalrunner.StatusCancelled {
+	if secondState.Status == goalruntime.StatusCancelled {
 		t.Fatalf("second goal should not be cancelled: %+v", secondState)
 	}
 }
@@ -681,14 +645,14 @@ func TestGoalCancelRequiresConfirmation(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
-	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
-		t.Fatalf("Init live: %v", err)
+	runtime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-live")))
+	if _, err := runtime.Create(goalruntime.Spec{ThreadID: "thread-live", GoalID: "live", Objective: "live goal"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"live"}}`
+	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"live","thread_id":"thread-live"}}`
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/cancel: %v", err)
 	}
@@ -697,16 +661,16 @@ func TestGoalCancelRequiresConfirmation(t *testing.T) {
 	if msg["error"] == nil {
 		t.Fatalf("expected error when confirm_user_approved missing, got %+v", msg)
 	}
-	state, err := store.LoadState()
+	state, err := runtime.CurrentGoal()
 	if err != nil {
-		t.Fatalf("LoadState: %v", err)
+		t.Fatalf("CurrentGoal: %v", err)
 	}
-	if state.Status == goalrunner.StatusCancelled {
+	if state.Status == goalruntime.StatusCancelled {
 		t.Fatalf("goal must not be cancelled without confirmation: %+v", state.Status)
 	}
 }
 
-func TestGoalCancelMarksRunningGoalCancelled(t *testing.T) {
+func TestGoalCancelRequiresRuntimeGoal(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
@@ -726,19 +690,15 @@ func TestGoalCancelMarksRunningGoalCancelled(t *testing.T) {
 	}
 	msgs := parseOutput(t, out.String())
 	msg := responseByID(t, msgs, "cancel")
-	if msg["error"] != nil {
-		t.Fatalf("unexpected error: %+v", msg["error"])
-	}
-	result := remarshal[GoalCancelResult](t, msg["result"])
-	if !result.OK {
-		t.Fatalf("expected OK result, got %+v", result)
+	if msg["error"] == nil {
+		t.Fatalf("expected missing runtime goal error, got %+v", msg)
 	}
 	state, err := store.LoadState()
 	if err != nil {
 		t.Fatalf("LoadState: %v", err)
 	}
-	if state.Status != goalrunner.StatusCancelled {
-		t.Fatalf("expected status=cancelled, got %s", state.Status)
+	if state.Status == goalrunner.StatusCancelled {
+		t.Fatalf("legacy ledger must not be cancelled by goal/cancel: %+v", state)
 	}
 }
 
@@ -759,11 +719,6 @@ func TestGoalCancelUpdatesRuntimeGoal(t *testing.T) {
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{ThreadID: threadID, GoalID: "runtime-cancel", Objective: "cancel me"}); err != nil {
 		t.Fatalf("Create runtime goal: %v", err)
 	}
-	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-cancel"))
-	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-cancel", Goal: "cancel me"}); err != nil {
-		t.Fatalf("Init legacy goal: %v", err)
-	}
-
 	raw := `{"id":"cancel-runtime","method":"goal/cancel","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-cancel","confirm_user_approved":true}}`
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/cancel: %v", err)
@@ -778,13 +733,6 @@ func TestGoalCancelUpdatesRuntimeGoal(t *testing.T) {
 	}
 	if runtimeGoal.Status != goalruntime.StatusCancelled {
 		t.Fatalf("runtime goal should be cancelled: %+v", runtimeGoal)
-	}
-	legacyState, err := legacy.LoadState()
-	if err != nil {
-		t.Fatalf("Load legacy: %v", err)
-	}
-	if legacyState.Status != goalrunner.StatusCancelled {
-		t.Fatalf("legacy goal should be cancelled: %+v", legacyState)
 	}
 
 	raw = `{"id":"sum-after-cancel","method":"goal/active-summary","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `}}`
@@ -813,10 +761,6 @@ func TestGoalPauseResumeClearRuntimeGoal(t *testing.T) {
 	}
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{ThreadID: threadID, GoalID: "runtime-controls", Objective: "control me"}); err != nil {
 		t.Fatalf("Create runtime goal: %v", err)
-	}
-	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-controls"))
-	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-controls", Goal: "control me"}); err != nil {
-		t.Fatalf("Init legacy goal: %v", err)
 	}
 
 	pauseRaw := `{"id":"pause","method":"goal/pause","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-controls","confirm_user_approved":true}}`
@@ -858,30 +802,23 @@ func TestGoalPauseResumeClearRuntimeGoal(t *testing.T) {
 	if _, err := threadRuntime.GoalRuntime.CurrentGoal(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("goal should be cleared, got err=%v", err)
 	}
-	legacyState, err := legacy.LoadState()
-	if err != nil {
-		t.Fatalf("Load legacy: %v", err)
-	}
-	if legacyState.Status != goalrunner.StatusCancelled {
-		t.Fatalf("legacy goal should be cancelled after clear: %+v", legacyState)
-	}
 }
 
 func TestGoalCancelRefusesTerminalGoal(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "done"))
-	if _, err := store.Init(goalrunner.Spec{ID: "done", Goal: "done goal"}); err != nil {
-		t.Fatalf("Init done: %v", err)
+	runtime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-done")))
+	if _, err := runtime.Create(goalruntime.Spec{ThreadID: "thread-done", GoalID: "done", Objective: "done goal"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
 	}
-	if _, err := store.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, ""); err != nil {
-		t.Fatalf("SetStatus done: %v", err)
+	if _, err := runtime.Complete(time.Now().UTC()); err != nil {
+		t.Fatalf("Complete runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"done","confirm_user_approved":true}}`
+	raw := `{"id":"cancel","method":"goal/cancel","params":{"goal_id":"done","thread_id":"thread-done","confirm_user_approved":true}}`
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/cancel: %v", err)
 	}
@@ -896,14 +833,14 @@ func TestGoalUpdateTextRequiresConfirmation(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
-	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
-		t.Fatalf("Init live: %v", err)
+	runtime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, "thread-live")))
+	if _, err := runtime.Create(goalruntime.Spec{ThreadID: "thread-live", GoalID: "live", Objective: "live goal"}); err != nil {
+		t.Fatalf("Create runtime goal: %v", err)
 	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	raw := `{"id":"upd","method":"goal/update-text","params":{"goal_id":"live","text":"new goal"}}`
+	raw := `{"id":"upd","method":"goal/update-text","params":{"goal_id":"live","thread_id":"thread-live","text":"new goal"}}`
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("goal/update-text: %v", err)
 	}
@@ -912,23 +849,18 @@ func TestGoalUpdateTextRequiresConfirmation(t *testing.T) {
 	if msg["error"] == nil {
 		t.Fatalf("expected error when confirm_user_approved missing, got %+v", msg)
 	}
-	state, err := store.LoadState()
+	state, err := runtime.CurrentGoal()
 	if err != nil {
-		t.Fatalf("LoadState: %v", err)
+		t.Fatalf("CurrentGoal: %v", err)
 	}
-	if state.Goal != "live goal" {
-		t.Fatalf("goal text must not change without confirmation, got %q", state.Goal)
+	if state.Objective != "live goal" {
+		t.Fatalf("goal text must not change without confirmation, got %q", state.Objective)
 	}
 }
 
 func TestGoalUpdateTextRejectsEmptyText(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
-
-	store := goalrunner.NewStore(statepath.GoalDir(rt.StateDir, "live"))
-	if _, err := store.Init(goalrunner.Spec{ID: "live", Goal: "live goal"}); err != nil {
-		t.Fatalf("Init live: %v", err)
-	}
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
@@ -943,7 +875,7 @@ func TestGoalUpdateTextRejectsEmptyText(t *testing.T) {
 	}
 }
 
-func TestGoalUpdateTextRewritesGoalAndEmitsEvent(t *testing.T) {
+func TestGoalUpdateTextRequiresRuntimeGoal(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
 
@@ -960,32 +892,15 @@ func TestGoalUpdateTextRewritesGoalAndEmitsEvent(t *testing.T) {
 	}
 	msgs := parseOutput(t, out.String())
 	msg := responseByID(t, msgs, "upd")
-	if msg["error"] != nil {
-		t.Fatalf("unexpected error: %+v", msg["error"])
-	}
-	result := remarshal[GoalUpdateTextResult](t, msg["result"])
-	if !result.OK {
-		t.Fatalf("expected OK result, got %+v", result)
+	if msg["error"] == nil {
+		t.Fatalf("expected missing runtime goal error, got %+v", msg)
 	}
 	state, err := store.LoadState()
 	if err != nil {
 		t.Fatalf("LoadState: %v", err)
 	}
-	if state.Goal != "updated goal" {
-		t.Fatalf("expected goal rewritten, got %q", state.Goal)
-	}
-	events, err := store.Events()
-	if err != nil {
-		t.Fatalf("Events: %v", err)
-	}
-	foundEdit := false
-	for _, ev := range events {
-		if ev.Type == "goal_text_updated" {
-			foundEdit = true
-		}
-	}
-	if !foundEdit {
-		t.Fatalf("expected goal_text_updated event, got %+v", events)
+	if state.Goal != "live goal" {
+		t.Fatalf("legacy ledger must not be updated by goal/update-text, got %q", state.Goal)
 	}
 }
 
@@ -1006,10 +921,6 @@ func TestGoalUpdateTextUpdatesRuntimeGoal(t *testing.T) {
 	if _, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{ThreadID: threadID, GoalID: "runtime-edit", Objective: "old runtime goal"}); err != nil {
 		t.Fatalf("Create runtime goal: %v", err)
 	}
-	legacy := goalrunner.NewStore(statepath.GoalDir(statepath.SessionArtifactDir(rt.StateDir, threadID), "runtime-edit"))
-	if _, err := legacy.Init(goalrunner.Spec{ID: "runtime-edit", Goal: "old legacy goal"}); err != nil {
-		t.Fatalf("Init legacy goal: %v", err)
-	}
 
 	raw := `{"id":"upd-runtime","method":"goal/update-text","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `,"goal_id":"runtime-edit","text":"new runtime goal","confirm_user_approved":true}}`
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
@@ -1025,12 +936,5 @@ func TestGoalUpdateTextUpdatesRuntimeGoal(t *testing.T) {
 	}
 	if runtimeGoal.Objective != "new runtime goal" {
 		t.Fatalf("runtime objective not updated: %+v", runtimeGoal)
-	}
-	legacyState, err := legacy.LoadState()
-	if err != nil {
-		t.Fatalf("Load legacy: %v", err)
-	}
-	if legacyState.Goal != "new runtime goal" {
-		t.Fatalf("legacy goal text not updated: %+v", legacyState)
 	}
 }
