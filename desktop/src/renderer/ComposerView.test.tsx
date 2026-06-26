@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +26,14 @@ import type {
 
 let container: HTMLDivElement;
 let root: Root | null = null;
+const composerCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/composer.css"),
+  "utf8",
+);
+const responsiveDesignCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/responsive-design.css"),
+  "utf8",
+);
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -357,7 +367,7 @@ describe("Composer send control", () => {
 
     expect(container.querySelector(".composer-context-bar")).toBeNull();
     expect(container.querySelector(".context-project-button")).toBeNull();
-    expect(container.querySelector(".composer-bar > .hero-project-pill-anchor")).not.toBeNull();
+    expect(container.querySelector(".composer-bar-left > .hero-project-pill-anchor")).not.toBeNull();
     expect(container.querySelector(".hero-project-pill")).not.toBeNull();
     expect(container.querySelector(".hero-project-pill")?.textContent).toContain("选择项目");
     expect(container.querySelector<HTMLButtonElement>("button[aria-label=\"打开项目\"]")).toBeNull();
@@ -380,6 +390,49 @@ describe("Composer send control", () => {
     expect(selector).not.toBeNull();
     expect(selector?.textContent).toContain("wuu");
     expect(selector?.getAttribute("title")).toBe("/repo/wuu");
+  });
+
+  it("separates auxiliary controls from the send action for responsive collapse", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "follow up",
+    });
+
+    const leftGroup = container.querySelector(".composer-bar-left");
+    const rightGroup = container.querySelector(".composer-bar-right");
+    const sendButton = container.querySelector("button[aria-label=\"发送\"]");
+
+    expect(leftGroup).not.toBeNull();
+    expect(rightGroup).not.toBeNull();
+    expect(leftGroup?.querySelector(".composer-project-control")).not.toBeNull();
+    expect(leftGroup?.querySelector(".composer-attachment-button")).not.toBeNull();
+    expect(leftGroup?.querySelector(".composer-slash-button")).not.toBeNull();
+    expect(leftGroup?.querySelector(".permission-menu-anchor")).not.toBeNull();
+    expect(rightGroup?.querySelector(".composer-token-gauge")).not.toBeNull();
+    expect(rightGroup?.querySelector(".codex-runtime-anchor")).not.toBeNull();
+    expect(rightGroup?.contains(sendButton)).toBe(true);
+  });
+
+  it("declares composer-width collapse rules for the least important controls first", () => {
+    expect(composerCSS).toContain("container: composer-toolbar / inline-size");
+
+    const speedLabelCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 680px)");
+    const permissionLabelCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 620px)");
+    const gaugeCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 560px)");
+    const runtimeCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 500px)");
+    const slashCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 440px)");
+    const projectCollapse = responsiveDesignCSS.indexOf("@container composer-toolbar (max-width: 360px)");
+
+    expect(speedLabelCollapse).toBeGreaterThan(-1);
+    expect(permissionLabelCollapse).toBeGreaterThan(speedLabelCollapse);
+    expect(gaugeCollapse).toBeGreaterThan(permissionLabelCollapse);
+    expect(runtimeCollapse).toBeGreaterThan(gaugeCollapse);
+    expect(slashCollapse).toBeGreaterThan(runtimeCollapse);
+    expect(projectCollapse).toBeGreaterThan(slashCollapse);
+    expect(responsiveDesignCSS).toContain(".composer-token-gauge-label");
+    expect(responsiveDesignCSS).toContain(".codex-runtime-anchor");
+    expect(responsiveDesignCSS).toContain(".composer-slash-button");
+    expect(responsiveDesignCSS).toContain(".composer-project-control");
   });
 
   it("inserts a selected skill slash command into the composer", async () => {

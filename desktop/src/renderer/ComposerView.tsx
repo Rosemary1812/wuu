@@ -555,141 +555,149 @@ export function Composer({
               onKeyDown={handleComposerKeyDown}
             />
             <div className="composer-bar">
-              {variant === "hero" ? (
-                <div className="hero-project-pill-anchor" ref={menuRef}>
+              <div className="composer-bar-left">
+                {variant === "hero" ? (
+                  <div className="hero-project-pill-anchor composer-project-control" ref={menuRef}>
+                    <button
+                      className="hero-project-pill"
+                      type="button"
+                      title={projectPillTitle}
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                      aria-label={`切换项目：${projectPillLabel}`}
+                      onClick={onToggleMenu}
+                    >
+                      <span className="hero-project-pill-icon" aria-hidden="true">
+                        <ProjectPillIcon />
+                      </span>
+                      <span className="hero-project-pill-text">{projectPillLabel}</span>
+                      <ChevronDown className="hero-project-pill-chevron" aria-hidden="true" />
+                    </button>
+                    {menuOpen ? (
+                      <FloatingMenuPortal
+                        anchorRef={menuRef}
+                        owner="composer-runtime"
+                        placement="above"
+                        align="left"
+                        width={300}
+                      >
+                        <ProjectPickerMenu
+                          projects={projects}
+                          activeContext={activeContext}
+                          query={projectFilter}
+                          setQuery={setProjectFilter}
+                          onSelectProject={onSelectProject}
+                          onSelectNoProject={onSelectNoProject}
+                          onCreateProject={onCreateProject}
+                          onOpenProject={onOpenProject}
+                        />
+                      </FloatingMenuPortal>
+                    ) : null}
+                  </div>
+                ) : (
                   <button
-                    className="hero-project-pill"
+                    className="composer-tool-button composer-project-control"
                     type="button"
-                    title={projectPillTitle}
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    aria-label={`切换项目：${projectPillLabel}`}
-                    onClick={onToggleMenu}
+                    aria-label="打开项目"
+                    onClick={onOpenProject}
                   >
-                    <span className="hero-project-pill-icon" aria-hidden="true">
-                      <ProjectPillIcon />
-                    </span>
-                    <span className="hero-project-pill-text">{projectPillLabel}</span>
-                    <ChevronDown className="hero-project-pill-chevron" aria-hidden="true" />
+                    <Plus className="icon-xl" />
                   </button>
-                  {menuOpen ? (
+                )}
+                <button
+                  className="composer-tool-button composer-attachment-button"
+                  type="button"
+                  aria-label="添加附件"
+                  title="添加附件"
+                  disabled={readOnly}
+                  onClick={() => attachmentInputRef.current?.click()}
+                >
+                  <Paperclip aria-hidden="true" />
+                </button>
+                <button
+                  className="composer-tool-button composer-slash-button"
+                  type="button"
+                  aria-label="打开斜杠命令"
+                  title="输入 / 打开命令"
+                  disabled={readOnly}
+                  onClick={revealSlashCommands}
+                >
+                  <Slash aria-hidden="true" />
+                </button>
+                <div className="permission-menu-anchor" ref={accessMenuRef}>
+                  <button
+                    className={`permission-chip tone-${permissionOption.chipTone}`}
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={accessMenuOpen}
+                    aria-label={`权限模式：${permissionChipLabel}`}
+                    disabled={!initialized || readOnly || running}
+                    onClick={onToggleAccessMenu}
+                  >
+                    <permissionOption.icon aria-hidden="true" />
+                    <span>{permissionChipLabel}</span>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                  {accessMenuOpen ? (
                     <FloatingMenuPortal
-                      anchorRef={menuRef}
-                      owner="composer-runtime"
+                      anchorRef={accessMenuRef}
+                      owner="composer-access"
                       placement="above"
                       align="left"
-                      width={300}
+                      offset={6}
+                      width={176}
                     >
-                      <ProjectPickerMenu
-                        projects={projects}
-                        activeContext={activeContext}
-                        query={projectFilter}
-                        setQuery={setProjectFilter}
-                        onSelectProject={onSelectProject}
-                        onSelectNoProject={onSelectNoProject}
-                        onCreateProject={onCreateProject}
-                        onOpenProject={onOpenProject}
+                      <AccessMenu
+                        permissions={initialized?.permissions}
+                        policy={initialized?.tool_policy}
+                        disabled={!initialized || readOnly || running}
+                        onSelect={onSelectPermissionMode}
                       />
                     </FloatingMenuPortal>
                   ) : null}
                 </div>
-              ) : (
-                <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
-                  <Plus className="icon-xl" />
-                </button>
-              )}
-              <button
-                className="composer-tool-button"
-                type="button"
-                aria-label="添加附件"
-                title="添加附件"
-                disabled={readOnly}
-                onClick={() => attachmentInputRef.current?.click()}
-              >
-                <Paperclip aria-hidden="true" />
-              </button>
-              <button
-                className="composer-tool-button composer-slash-button"
-                type="button"
-                aria-label="打开斜杠命令"
-                title="输入 / 打开命令"
-                disabled={readOnly}
-                onClick={revealSlashCommands}
-              >
-                <Slash aria-hidden="true" />
-              </button>
-              <div className="permission-menu-anchor" ref={accessMenuRef}>
-                <button
-                  className={`permission-chip tone-${permissionOption.chipTone}`}
-                  type="button"
-                  aria-haspopup="menu"
-                  aria-expanded={accessMenuOpen}
-                  aria-label={`权限模式：${permissionChipLabel}`}
-                  disabled={!initialized || readOnly || running}
-                  onClick={onToggleAccessMenu}
-                >
-                  <permissionOption.icon aria-hidden="true" />
-                  <span>{permissionChipLabel}</span>
-                  <ChevronDown aria-hidden="true" />
-                </button>
-                {accessMenuOpen ? (
-                  <FloatingMenuPortal
-                    anchorRef={accessMenuRef}
-                    owner="composer-access"
-                    placement="above"
-                    align="left"
-                    offset={6}
-                    width={176}
-                  >
-                    <AccessMenu
-                      permissions={initialized?.permissions}
-                      policy={initialized?.tool_policy}
-                      disabled={!initialized || readOnly || running}
-                      onSelect={onSelectPermissionMode}
-                    />
-                  </FloatingMenuPortal>
-                ) : null}
               </div>
-              <div className="composer-spacer" />
-              <ComposerTokenGauge
-                running={running}
-                tokensPerSecond={tokensPerSecond}
-                sampledAt={tokenSpeedSampledAt}
-                source={tokenSpeedSource}
-              />
-              {initialized ? (
-                <RuntimePicker
-                  variant={variant}
-                  initialized={initialized}
-                  state={codexModels}
-                  openMenu={codexRuntimeMenu}
-                  anchorRef={codexRuntimeRef}
+              <div className="composer-bar-right">
+                <ComposerTokenGauge
                   running={running}
-                  onToggleMenu={onToggleCodexRuntimeMenu}
-                  onSelectModel={onSelectRuntimeModel}
-                  onSelectEffort={onSelectRuntimeEffort}
+                  tokensPerSecond={tokensPerSecond}
+                  sampledAt={tokenSpeedSampledAt}
+                  source={tokenSpeedSource}
                 />
-              ) : (
-                <>
-                  <button className="provider-pill" type="button" onClick={onOpenSettings}>
-                    provider
-                  </button>
-                  <button className="model-label" type="button" onClick={onOpenSettings}>
-                    model
-                  </button>
-                </>
-              )}
-              {statusText ? <span className="status-label">{statusText}</span> : null}
-              <button
-                className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
-                type="button"
-                onClick={running ? onInterrupt : submitComposer}
-                aria-label={running ? "停止" : "发送"}
-                title={running ? "停止" : "发送"}
-                disabled={!running && (readOnly || !hasDraft)}
-              >
-                {running ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
-              </button>
+                {initialized ? (
+                  <RuntimePicker
+                    variant={variant}
+                    initialized={initialized}
+                    state={codexModels}
+                    openMenu={codexRuntimeMenu}
+                    anchorRef={codexRuntimeRef}
+                    running={running}
+                    onToggleMenu={onToggleCodexRuntimeMenu}
+                    onSelectModel={onSelectRuntimeModel}
+                    onSelectEffort={onSelectRuntimeEffort}
+                  />
+                ) : (
+                  <>
+                    <button className="provider-pill" type="button" onClick={onOpenSettings}>
+                      provider
+                    </button>
+                    <button className="model-label" type="button" onClick={onOpenSettings}>
+                      model
+                    </button>
+                  </>
+                )}
+                {statusText ? <span className="status-label">{statusText}</span> : null}
+                <button
+                  className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
+                  type="button"
+                  onClick={running ? onInterrupt : submitComposer}
+                  aria-label={running ? "停止" : "发送"}
+                  title={running ? "停止" : "发送"}
+                  disabled={!running && (readOnly || !hasDraft)}
+                >
+                  {running ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
+                </button>
+              </div>
             </div>
           </div>
         </div>

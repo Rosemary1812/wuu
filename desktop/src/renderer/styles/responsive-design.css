@@ -113,6 +113,76 @@
   }
 }
 
+@container composer-toolbar (max-width: 680px) {
+  .status-label,
+  .composer-token-gauge-label {
+    display: none;
+  }
+
+  .composer-token-gauge {
+    gap: 0;
+  }
+}
+
+@container composer-toolbar (max-width: 620px) {
+  .permission-menu-anchor {
+    max-width: 52px;
+    flex: 0 0 52px;
+  }
+
+  .permission-chip {
+    justify-content: center;
+    gap: 5px;
+    padding: 0 6px;
+  }
+
+  .permission-chip span,
+  .codex-runtime-effort {
+    display: none;
+  }
+
+  .codex-runtime-anchor {
+    max-width: 112px;
+    flex-basis: 96px;
+  }
+
+  .codex-runtime-trigger {
+    gap: 5px;
+    padding: 0 7px;
+  }
+}
+
+@container composer-toolbar (max-width: 560px) {
+  .composer-token-gauge {
+    display: none;
+  }
+}
+
+@container composer-toolbar (max-width: 500px) {
+  .codex-runtime-anchor,
+  .composer-bar-right .provider-pill,
+  .composer-bar-right .model-label {
+    display: none;
+  }
+}
+
+@container composer-toolbar (max-width: 440px) {
+  .composer-bar-left,
+  .composer-bar-right {
+    gap: 6px;
+  }
+
+  .composer-slash-button {
+    display: none;
+  }
+}
+
+@container composer-toolbar (max-width: 360px) {
+  .composer-project-control {
+    display: none;
+  }
+}
+
 .primary-button,
 .secondary-button {
   height: 36px;

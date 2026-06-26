@@ -7,6 +7,7 @@
 
 .composer-token-gauge {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 6px;
   height: 32px;
@@ -71,10 +72,13 @@
 }
 
 .composer-token-gauge-label {
+  min-width: 0;
+  overflow: hidden;
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
+  text-overflow: ellipsis;
   white-space: nowrap;
   color: currentColor;
 }

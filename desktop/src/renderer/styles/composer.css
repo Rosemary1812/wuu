@@ -517,6 +517,27 @@
   gap: 8px;
   overflow: hidden;
   padding: 0 8px 8px;
+  container: composer-toolbar / inline-size;
+}
+
+.composer-bar-left,
+.composer-bar-right {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-bar-left {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.composer-bar-right {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  overflow: hidden;
+  margin-left: auto;
 }
 
 .composer-tool-button {
@@ -582,7 +603,7 @@
   display: inline-flex;
   min-width: 0;
   max-width: 160px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
 }
 
 .permission-chip {
