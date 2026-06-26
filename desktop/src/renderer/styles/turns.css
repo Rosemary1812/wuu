@@ -336,6 +336,69 @@
 }
 
 /*
+ * Long user messages collapse to a fixed line budget and surface an
+ * explicit "展开全文" / "收起" toggle. The clamp works at the box level
+ * (`-webkit-line-clamp`) so any RichContent children — paragraphs, code
+ * blocks, lists — all clip together. The toggle row sits below the body,
+ * right-aligned, and uses a subtle text button so it reads as secondary
+ * to the message itself.
+ */
+.user-message-text {
+  /* plain block element; the clamp class opts in to the line budget */
+}
+
+.user-message-text-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 10;
+  line-clamp: 10;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-message-expand-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.user-message-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: var(--weight-medium);
+  color: rgba(20, 20, 19, 0.55);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.user-message-expand-toggle:hover,
+.user-message-expand-toggle:focus-visible {
+  color: rgba(20, 20, 19, 0.9);
+  background: rgba(20, 20, 19, 0.06);
+}
+
+.user-message-expand-toggle:focus-visible {
+  outline: 2px solid var(--ink-overlay-18);
+  outline-offset: 1px;
+}
+
+.user-message-expand-toggle-icon {
+  transition: transform 160ms ease;
+}
+
+.user-message-expand-toggle-icon-up {
+  transform: rotate(180deg);
+}
+
+/*
  * Draft surface: a noticeably darker background than the conversation,
  * a stronger border, and a soft lift so the eye knows it's actively
  * editing and not just hovering a finished message. The transition makes

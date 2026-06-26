@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { Paperclip } from "lucide-react";
+import { ChevronDown, Paperclip } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import {
@@ -36,6 +36,27 @@ import {
   userFacingErrorForMessage,
   type UserFacingErrorAction,
 } from "./UserFacingErrors";
+
+// Above these sizes the user-message bubble starts to feel like a wall of
+// text and pushes everything else out of the viewport. We collapse the body
+// to a fixed line budget and surface an explicit toggle so the user can opt
+// in to the full text. The character threshold catches long single-paragraph
+// pastes; the newline threshold catches structured content (lists, code,
+// pasted log blocks) that is short per line but tall overall.
+const USER_MESSAGE_LONG_CHAR_THRESHOLD = 400;
+const USER_MESSAGE_LONG_LINE_THRESHOLD = 6;
+
+function isUserMessageTooLong(text: string): boolean {
+  if (text.length > USER_MESSAGE_LONG_CHAR_THRESHOLD) return true;
+  let newlines = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) {
+      newlines++;
+      if (newlines > USER_MESSAGE_LONG_LINE_THRESHOLD) return true;
+    }
+  }
+  return false;
+}
 
 export function ThreadItemView({
   turnID,
@@ -78,6 +99,7 @@ export function ThreadItemView({
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
+  const [userMessageExpanded, setUserMessageExpanded] = useState(false);
   switch (item.type) {
     case "user_message": {
       const text = item.text ?? "";
@@ -94,6 +116,8 @@ export function ThreadItemView({
         onEditMessage &&
           (copyable || (item.images?.length ?? 0) > 0 || (item.files?.length ?? 0) > 0),
       );
+      const isTooLong = isUserMessageTooLong(text);
+      const collapseText = isTooLong && !userMessageExpanded;
       return (
         <div
           className={`user-message-block${copyable || editable ? " user-message-block-with-actions" : ""}`}
@@ -117,7 +141,41 @@ export function ThreadItemView({
                 <MessageImageGrid images={item.images} />
               ) : null}
               {item.files?.length ? <MessageFileList files={item.files} /> : null}
-              {text ? <RichContent text={text} cwd={cwd} /> : null}
+              {text ? (
+                <div
+                  className={
+                    collapseText
+                      ? "user-message-text user-message-text-clamped"
+                      : "user-message-text"
+                  }
+                >
+                  <RichContent text={text} cwd={cwd} />
+                </div>
+              ) : null}
+              {isTooLong ? (
+                <div className="user-message-expand-toggle-row">
+                  <button
+                    type="button"
+                    className="user-message-expand-toggle"
+                    onClick={() => setUserMessageExpanded((value) => !value)}
+                    aria-expanded={userMessageExpanded}
+                    data-testid="user-message-expand-toggle"
+                  >
+                    <span className="user-message-expand-toggle-label">
+                      {userMessageExpanded ? "收起" : "展开全文"}
+                    </span>
+                    <ChevronDown
+                      size={14}
+                      aria-hidden="true"
+                      className={
+                        userMessageExpanded
+                          ? "user-message-expand-toggle-icon user-message-expand-toggle-icon-up"
+                          : "user-message-expand-toggle-icon"
+                      }
+                    />
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
           {!editing && (copyable || editable) ? (
