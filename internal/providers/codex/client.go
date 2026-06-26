@@ -152,8 +152,24 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	return models, nil
 }
 
+// codexRequest applies ChatGPT-Codex specific request shaping. The defaults
+// here mirror the Codex CLI / pi: ask the backend to surface reasoning
+// encrypted content, allow parallel tool calls, and request concise text.
+// Callers can override each field via req.ProviderOptions before sending.
 func codexRequest(req providers.ChatRequest) providers.ChatRequest {
 	req.Temperature = 0
+	if req.ProviderOptions == nil {
+		req.ProviderOptions = make(map[string]any)
+	}
+	if _, ok := req.ProviderOptions["include"]; !ok {
+		req.ProviderOptions["include"] = []string{"reasoning.encrypted_content"}
+	}
+	if _, ok := req.ProviderOptions["parallelToolCalls"]; !ok {
+		req.ProviderOptions["parallelToolCalls"] = true
+	}
+	if _, ok := req.ProviderOptions["textVerbosity"]; !ok {
+		req.ProviderOptions["textVerbosity"] = "low"
+	}
 	return req
 }
 

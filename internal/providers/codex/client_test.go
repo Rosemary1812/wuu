@@ -53,6 +53,17 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 		if body["store"] != false {
 			t.Fatalf("Codex request must set store=false, got %#v", body["store"])
 		}
+		include, _ := body["include"].([]any)
+		if len(include) != 1 || include[0] != "reasoning.encrypted_content" {
+			t.Fatalf("Codex request must include reasoning.encrypted_content, got %#v", body["include"])
+		}
+		if pt, _ := body["parallel_tool_calls"].(bool); !pt {
+			t.Fatalf("Codex request must enable parallel_tool_calls, got %#v", body["parallel_tool_calls"])
+		}
+		text, _ := body["text"].(map[string]any)
+		if text["verbosity"] != "low" {
+			t.Fatalf("Codex request must default text.verbosity to low, got %#v", text["verbosity"])
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
 	}))
@@ -353,6 +364,43 @@ func TestCompactWithCodexClientUsesNormalResponsesEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(result[0].Content, "summary via normal responses") {
 		t.Fatalf("expected cleaned summary from normal Responses call, got %q", result[0].Content)
+	}
+}
+
+func TestCodexRequestAppliesDefaultsButAllowsOverride(t *testing.T) {
+	// Empty ProviderOptions: defaults are filled in.
+	out := codexRequest(providers.ChatRequest{})
+	if out.Temperature != 0 {
+		t.Fatalf("temperature = %v, want 0", out.Temperature)
+	}
+	include, ok := out.ProviderOptions["include"].([]string)
+	if !ok || len(include) != 1 || include[0] != "reasoning.encrypted_content" {
+		t.Fatalf("include default = %#v", out.ProviderOptions["include"])
+	}
+	if pt, _ := out.ProviderOptions["parallelToolCalls"].(bool); !pt {
+		t.Fatalf("parallelToolCalls default = %#v", out.ProviderOptions["parallelToolCalls"])
+	}
+	if out.ProviderOptions["textVerbosity"] != "low" {
+		t.Fatalf("textVerbosity default = %#v", out.ProviderOptions["textVerbosity"])
+	}
+
+	// User-provided values must be preserved, not overwritten.
+	custom := codexRequest(providers.ChatRequest{
+		ProviderOptions: map[string]any{
+			"include":          []string{"reasoning.text"},
+			"parallelToolCalls": false,
+			"textVerbosity":    "high",
+		},
+	})
+	customInclude, _ := custom.ProviderOptions["include"].([]string)
+	if len(customInclude) != 1 || customInclude[0] != "reasoning.text" {
+		t.Fatalf("include override lost: %#v", custom.ProviderOptions["include"])
+	}
+	if pt, _ := custom.ProviderOptions["parallelToolCalls"].(bool); pt {
+		t.Fatalf("parallelToolCalls override lost: %#v", custom.ProviderOptions["parallelToolCalls"])
+	}
+	if custom.ProviderOptions["textVerbosity"] != "high" {
+		t.Fatalf("textVerbosity override lost: %#v", custom.ProviderOptions["textVerbosity"])
 	}
 }
 

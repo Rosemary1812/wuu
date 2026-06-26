@@ -175,6 +175,12 @@ func mergeResponsesProviderOptions(object map[string]any, options map[string]any
 			object["max_output_tokens"] = value
 		case "promptCacheKey":
 			object["prompt_cache_key"] = value
+		case "include":
+			// Accept either []string or []any so callers don't have to
+			// round-trip through a concrete slice type.
+			object["include"] = value
+		case "parallelToolCalls":
+			object["parallel_tool_calls"] = value
 		case "temperature":
 			if _, exists := object["temperature"]; !exists {
 				object["temperature"] = value
@@ -814,18 +820,25 @@ func (p *responsesPendingTool) update(item responsesOutputItem, outputIndex int)
 }
 
 type responsesRequest struct {
-	Model           string                    `json:"model"`
-	Instructions    string                    `json:"instructions,omitempty"`
-	Input           []responsesInputItem      `json:"input"`
-	Tools           []responsesToolDefinition `json:"tools,omitempty"`
-	ToolChoice      string                    `json:"tool_choice,omitempty"`
-	Temperature     float64                   `json:"temperature,omitempty"`
-	MaxOutputTokens int                       `json:"max_output_tokens,omitempty"`
-	Stream          bool                      `json:"stream,omitempty"`
-	Store           *bool                     `json:"store,omitempty"`
-	Reasoning       *responsesReasoning       `json:"reasoning,omitempty"`
-	PromptCacheKey  string                    `json:"prompt_cache_key,omitempty"`
-	Options         map[string]any            `json:"-"`
+	Model            string                    `json:"model"`
+	Instructions     string                    `json:"instructions,omitempty"`
+	Input            []responsesInputItem      `json:"input"`
+	Tools            []responsesToolDefinition `json:"tools,omitempty"`
+	ToolChoice       string                    `json:"tool_choice,omitempty"`
+	Temperature      float64                   `json:"temperature,omitempty"`
+	MaxOutputTokens  int                       `json:"max_output_tokens,omitempty"`
+	Stream           bool                      `json:"stream,omitempty"`
+	Store            *bool                     `json:"store,omitempty"`
+	Reasoning        *responsesReasoning       `json:"reasoning,omitempty"`
+	PromptCacheKey   string                    `json:"prompt_cache_key,omitempty"`
+	// Include asks the backend to surface specific output items (e.g.
+	// "reasoning.encrypted_content") alongside the assistant message.
+	// Codex / pi require this for reasoning replay.
+	Include []string `json:"include,omitempty"`
+	// ParallelToolCalls lets the backend issue concurrent tool calls when
+	// the model emits multiple in one turn. Codex / pi default this to true.
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
+	Options            map[string]any `json:"-"`
 }
 
 type responsesReasoning struct {
