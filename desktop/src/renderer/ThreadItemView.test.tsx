@@ -87,7 +87,8 @@ describe("ThreadItemView", () => {
       streaming: false,
     });
 
-    expect(container?.querySelector(".user-message-long-text")).toBeNull();
+    expect(container?.querySelector(".user-message-expand-toggle")).toBeNull();
+    expect(container?.querySelector(".user-message-text-collapsed")).toBeNull();
     expect(container?.textContent).toContain("Short query.");
   });
 
@@ -100,13 +101,15 @@ describe("ThreadItemView", () => {
       streaming: false,
     });
 
-    const wrapper = container?.querySelector<HTMLElement>(
-      ".user-message-long-text",
+    const bubble = container?.querySelector<HTMLElement>(".user-message");
+    const clippedText = container?.querySelector<HTMLElement>(
+      ".user-message-text-collapsed",
     );
     const toggle = container?.querySelector<HTMLButtonElement>(
-      ".user-message-long-text-toggle",
+      ".user-message-expand-toggle",
     );
-    expect(wrapper?.classList.contains("collapsed")).toBe(true);
+    expect(clippedText).not.toBeNull();
+    expect(bubble?.contains(toggle ?? null)).toBe(false);
     expect(toggle?.textContent).toBe("展开全文");
   });
 
@@ -122,14 +125,11 @@ describe("ThreadItemView", () => {
       streaming: false,
     });
 
-    const wrapper = container?.querySelector<HTMLElement>(
-      ".user-message-long-text",
-    );
     const toggle = container?.querySelector<HTMLButtonElement>(
-      ".user-message-long-text-toggle",
+      ".user-message-expand-toggle",
     );
 
-    expect(wrapper?.classList.contains("collapsed")).toBe(true);
+    expect(container?.querySelector(".user-message-text-collapsed")).not.toBeNull();
     expect(toggle?.textContent).toBe("展开全文");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
 
@@ -137,7 +137,7 @@ describe("ThreadItemView", () => {
       toggle?.click();
     });
 
-    expect(wrapper?.classList.contains("expanded")).toBe(true);
+    expect(container?.querySelector(".user-message-text-collapsed")).toBeNull();
     expect(toggle?.textContent).toBe("收起");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
 
@@ -145,7 +145,7 @@ describe("ThreadItemView", () => {
       toggle?.click();
     });
 
-    expect(wrapper?.classList.contains("collapsed")).toBe(true);
+    expect(container?.querySelector(".user-message-text-collapsed")).not.toBeNull();
     expect(toggle?.textContent).toBe("展开全文");
   });
 
@@ -166,17 +166,15 @@ describe("ThreadItemView", () => {
     });
 
     const firstToggle = container?.querySelector<HTMLButtonElement>(
-      ".user-message-long-text-toggle",
+      ".user-message-expand-toggle",
     );
     act(() => {
       firstToggle?.click();
     });
 
     expect(
-      container
-        ?.querySelector<HTMLElement>(".user-message-long-text")
-        ?.classList.contains("expanded"),
-    ).toBe(true);
+      container?.querySelector(".user-message-text-collapsed"),
+    ).toBeNull();
 
     render({
       item: makeUserMessage(secondLongText, "user-2"),
@@ -184,13 +182,10 @@ describe("ThreadItemView", () => {
       streaming: false,
     });
 
-    const secondWrapper = container?.querySelector<HTMLElement>(
-      ".user-message-long-text",
-    );
     const secondToggle = container?.querySelector<HTMLButtonElement>(
-      ".user-message-long-text-toggle",
+      ".user-message-expand-toggle",
     );
-    expect(secondWrapper?.classList.contains("collapsed")).toBe(true);
+    expect(container?.querySelector(".user-message-text-collapsed")).not.toBeNull();
     expect(secondToggle?.getAttribute("aria-expanded")).toBe("false");
   });
 

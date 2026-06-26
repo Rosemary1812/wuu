@@ -116,13 +116,12 @@ export function ThreadItemView({
               }
             />
           ) : (
-            <div className="message user-message">
-              {item.images?.length ? (
-                <MessageImageGrid images={item.images} />
-              ) : null}
-              {item.files?.length ? <MessageFileList files={item.files} /> : null}
-              {text ? <UserMessageContent text={text} cwd={cwd} /> : null}
-            </div>
+            <UserMessageBubble
+              text={text}
+              images={item.images ?? []}
+              files={item.files ?? []}
+              cwd={cwd}
+            />
           )}
           {!editing && (copyable || editable) ? (
             <div
@@ -221,11 +220,15 @@ export function ThreadItemView({
   }
 }
 
-function UserMessageContent({
+function UserMessageBubble({
   text,
+  images,
+  files,
   cwd,
 }: {
   text: string;
+  images: InputImage[];
+  files: InputFile[];
   cwd?: string;
 }): JSX.Element {
   const [expandedState, setExpandedState] = useState({
@@ -236,31 +239,37 @@ function UserMessageContent({
   const expanded =
     collapsible && expandedState.text === text ? expandedState.expanded : false;
 
-  if (!collapsible) {
-    return <RichContent text={text} cwd={cwd} />;
-  }
-
   return (
-    <div
-      className={`user-message-long-text ${expanded ? "expanded" : "collapsed"}`}
-    >
-      <div className="user-message-long-text-body">
-        <RichContent text={text} cwd={cwd} />
+    <>
+      <div className="message user-message">
+        {images.length ? <MessageImageGrid images={images} /> : null}
+        {files.length ? <MessageFileList files={files} /> : null}
+        {text ? (
+          <RichContent
+            text={text}
+            cwd={cwd}
+            className={
+              collapsible && !expanded ? "user-message-text-collapsed" : ""
+            }
+          />
+        ) : null}
       </div>
-      <button
-        type="button"
-        className="user-message-long-text-toggle"
-        aria-expanded={expanded}
-        onClick={() =>
-          setExpandedState({
-            text,
-            expanded: !expanded,
-          })
-        }
-      >
-        {expanded ? "收起" : "展开全文"}
-      </button>
-    </div>
+      {collapsible ? (
+        <button
+          type="button"
+          className="user-message-expand-toggle"
+          aria-expanded={expanded}
+          onClick={() =>
+            setExpandedState({
+              text,
+              expanded: !expanded,
+            })
+          }
+        >
+          {expanded ? "收起" : "展开全文"}
+        </button>
+      ) : null}
+    </>
   );
 }
 
