@@ -1,4 +1,4 @@
-import { RefreshCw, Search, Wrench } from "lucide-react";
+import { Check, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { RuntimeContext, SkillSummary } from "../shared/protocol";
 
@@ -85,9 +85,8 @@ export function SkillsCatalog({
     <section className="skills-catalog" aria-label="Skills">
       <header className="skills-catalog-header">
         <div className="skills-catalog-title">
-          <Wrench className="icon-lg" />
-          <strong>Skills</strong>
-          <span>{state.loading ? "加载中" : `${state.skills.length} 项`}</span>
+          <strong>技能</strong>
+          <span>通过任务专用技能扩展 Wuu 的能力</span>
         </div>
         <div className="skills-catalog-controls">
           <label className="skills-search">
@@ -95,7 +94,7 @@ export function SkillsCatalog({
             <input
               type="search"
               value={filter}
-              placeholder="搜索 Skills"
+              placeholder="搜索技能"
               onChange={(event) => setFilter(event.currentTarget.value)}
             />
           </label>
@@ -107,11 +106,22 @@ export function SkillsCatalog({
 
       {state.error ? <div className="skills-catalog-error">{state.error}</div> : null}
 
+      <div className="skills-section-heading">
+        <strong>Installed</strong>
+        <span>{state.loading ? "加载中" : `${visibleSkills.length} / ${state.skills.length}`}</span>
+      </div>
+
       <div className="skills-list">
         {visibleSkills.map((skill) => (
           <article key={`${skill.source}:${skill.name}`} className="skill-row">
-            <h2>/{skill.name}</h2>
-            <p>{skill.description || skill.when_to_use || "无描述"}</p>
+            <span className="skill-row-icon" aria-hidden="true">
+              <Wrench className="icon" />
+            </span>
+            <span className="skill-row-copy">
+              <h2>{skill.name}</h2>
+              <p>{skill.description || skill.when_to_use || "无描述"}</p>
+            </span>
+            <Check className="skill-row-check" aria-hidden="true" />
           </article>
         ))}
       </div>
