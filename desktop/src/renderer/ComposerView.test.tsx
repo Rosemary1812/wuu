@@ -754,6 +754,18 @@ describe("Composer permission menu", () => {
 });
 
 describe("ComposerTokenGauge", () => {
+  it("does not schedule animation frames while idle at zero", () => {
+    const requestAnimationFrame = vi.spyOn(window, "requestAnimationFrame");
+
+    try {
+      renderComposer({ running: false, tokensPerSecond: 0 });
+
+      expect(requestAnimationFrame).not.toHaveBeenCalled();
+    } finally {
+      requestAnimationFrame.mockRestore();
+    }
+  });
+
   it("keeps the gauge visible with the speed label always shown when idle", () => {
     renderComposer({ running: false, tokensPerSecond: 0 });
     const gauge = container.querySelector(".composer-token-gauge");
@@ -771,34 +783,46 @@ describe("ComposerTokenGauge", () => {
   });
 
   it("renders a live gauge with the speed label inline, no hover required", () => {
-    renderComposer({ running: true, tokensPerSecond: 18.4 });
+    const requestAnimationFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation(() => 1);
+    const cancelAnimationFrame = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation(() => {});
 
-    const gauge = container.querySelector(".composer-token-gauge");
-    expect(gauge).not.toBeNull();
-    expect(gauge?.getAttribute("data-state")).toBe("running");
-    expect(gauge?.getAttribute("title")).toBeNull();
+    try {
+      renderComposer({ running: true, tokensPerSecond: 18.4 });
 
-    // Label is inline; no portal, no hover gate. Hovering must not
-    // resurrect a tooltip either.
-    const label = container.querySelector(".composer-token-gauge-label");
-    expect(label).not.toBeNull();
-    expect(label?.textContent).toContain("18.4");
-    expect(label?.textContent).toContain("tok/s");
+      const gauge = container.querySelector(".composer-token-gauge");
+      expect(gauge).not.toBeNull();
+      expect(gauge?.getAttribute("data-state")).toBe("running");
+      expect(gauge?.getAttribute("title")).toBeNull();
+      expect(requestAnimationFrame).toHaveBeenCalled();
 
-    act(() => {
-      gauge?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-    });
-    expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
+      // Label is inline; no portal, no hover gate. Hovering must not
+      // resurrect a tooltip either.
+      const label = container.querySelector(".composer-token-gauge-label");
+      expect(label).not.toBeNull();
+      expect(label?.textContent).toContain("18.4");
+      expect(label?.textContent).toContain("tok/s");
 
-    // Dial components are still rendered.
-    const svg = container.querySelector(".composer-token-gauge-svg");
-    expect(svg?.getAttribute("width")).toBe("20");
-    expect(svg?.getAttribute("height")).toBe("20");
-    expect(container.querySelector(".composer-token-gauge-progress")).not.toBeNull();
-    expect(container.querySelector(".composer-token-gauge-needle")).not.toBeNull();
-    expect(container.querySelector(".composer-token-gauge-inner-arc")).toBeNull();
-    expect(container.querySelectorAll(".composer-token-gauge-speed-dot")).toHaveLength(0);
+      act(() => {
+        gauge?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      });
+      expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
 
+      // Dial components are still rendered.
+      const svg = container.querySelector(".composer-token-gauge-svg");
+      expect(svg?.getAttribute("width")).toBe("20");
+      expect(svg?.getAttribute("height")).toBe("20");
+      expect(container.querySelector(".composer-token-gauge-progress")).not.toBeNull();
+      expect(container.querySelector(".composer-token-gauge-needle")).not.toBeNull();
+      expect(container.querySelector(".composer-token-gauge-inner-arc")).toBeNull();
+      expect(container.querySelectorAll(".composer-token-gauge-speed-dot")).toHaveLength(0);
+    } finally {
+      requestAnimationFrame.mockRestore();
+      cancelAnimationFrame.mockRestore();
+    }
   });
 
   it("marks fallback token speed as approximate in the inline label", () => {

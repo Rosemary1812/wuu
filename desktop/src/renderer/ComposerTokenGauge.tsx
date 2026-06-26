@@ -46,6 +46,7 @@ export function ComposerTokenGauge({
     running ? Math.max(0, tokensPerSecond) : 0,
   );
   const runningRef = useRef(running);
+  const displayedRef = useRef(displayed);
   const targetRef = useRef(0);
   const sampledAtRef = useRef<number | undefined>(sampledAt);
   runningRef.current = running;
@@ -54,6 +55,17 @@ export function ComposerTokenGauge({
 
   useEffect(() => {
     let raf = 0;
+    const shouldAnimate = (): boolean =>
+      runningRef.current ||
+      targetRef.current > 0.05 ||
+      displayedRef.current > 0.05;
+
+    if (!shouldAnimate()) {
+      displayedRef.current = 0;
+      setDisplayed(0);
+      return;
+    }
+
     const tick = (): void => {
       const now = Date.now();
       // Apply the same stale decay to the display so the gauge visibly
@@ -72,18 +84,24 @@ export function ComposerTokenGauge({
       }
       setDisplayed((current) => {
         const diff = resolvedTarget - current;
+        let next = resolvedTarget;
         if (Math.abs(diff) < 0.05) {
-          return resolvedTarget;
+          displayedRef.current = next;
+          return next;
         }
-        return current + diff * DISPLAY_LERP;
+        next = current + diff * DISPLAY_LERP;
+        displayedRef.current = next;
+        return next;
       });
-      raf = window.requestAnimationFrame(tick);
+      if (shouldAnimate()) {
+        raf = window.requestAnimationFrame(tick);
+      }
     };
     raf = window.requestAnimationFrame(tick);
     return () => {
       window.cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [running, sampledAt, tokensPerSecond]);
 
   const ratio = Math.max(0, Math.min(1, displayed / MAX_TOKENS_PER_SEC));
   const dashOffset = GAUGE_ARC_PATH_LENGTH * (1 - ratio);
