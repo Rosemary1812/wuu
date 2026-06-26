@@ -63,9 +63,10 @@
   }
 
   .hero-project-pill-anchor {
-    flex-basis: 150px;
-    max-width: 150px;
-    min-width: 112px;
+    /* Width follows content; no fixed minimum at narrow widths. */
+    flex: 0 1 auto;
+    max-width: 220px;
+    min-width: 0;
   }
 
   .permission-menu-anchor {
@@ -86,9 +87,10 @@
   }
 
   .hero-project-pill-anchor {
-    flex-basis: 128px;
-    max-width: 128px;
-    min-width: 104px;
+    /* Width follows content; flex-shrink handles narrow bars. */
+    flex: 0 1 auto;
+    max-width: 220px;
+    min-width: 0;
   }
 
   .permission-chip {

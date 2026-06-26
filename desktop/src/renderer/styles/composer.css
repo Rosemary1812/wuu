@@ -718,12 +718,16 @@
 }
 
 .hero-project-pill-anchor {
+  /* Shrink-to-fit: width follows content (icon + label + chevron).
+   * Caps at 220px so a very long project name can't push the other
+   * composer-bar items out, and lets flex-shrink + text-overflow ellipsis
+   * handle narrow bars. */
   position: relative;
   display: inline-flex;
   align-items: center;
-  flex: 0 1 188px;
-  max-width: 188px;
-  min-width: 124px;
+  flex: 0 1 auto;
+  max-width: 220px;
+  min-width: 0;
 }
 
 .hero-project-pill {
