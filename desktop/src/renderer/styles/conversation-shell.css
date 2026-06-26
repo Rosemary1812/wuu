@@ -832,9 +832,9 @@
 .conversation-turn-rail-bar {
   position: relative;
   width: 18px;
-  height: 6px;
-  border-radius: 2px;
-  background: rgba(60, 60, 67, 0.85);
+  height: 5px;
+  border-radius: 2.5px;
+  background: rgba(60, 60, 67, 0.4);
   cursor: pointer;
   pointer-events: auto;
   transition:
@@ -850,7 +850,7 @@
 .conversation-turn-rail-bar.hovered,
 .conversation-turn-rail-bar:hover {
   width: 44px;
-  height: 8px;
+  height: 7px;
   background: var(--ink);
 }
 
@@ -862,7 +862,7 @@
    where the first real bar will appear so the rail's position stays
    discoverable before the user has sent any messages. */
 .conversation-turn-rail-bar.placeholder {
-  opacity: 0.65;
+  opacity: 0.8;
   cursor: default;
   pointer-events: none;
 }
