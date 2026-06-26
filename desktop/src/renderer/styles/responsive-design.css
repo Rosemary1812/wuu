@@ -91,17 +91,6 @@
     min-width: 104px;
   }
 
-  .hero-project-pill {
-    gap: 6px;
-    padding-right: 7px;
-  }
-
-  .hero-project-pill-icon {
-    width: 20px;
-    height: 20px;
-    flex-basis: 20px;
-  }
-
   .permission-chip {
     justify-content: center;
     padding: 0 6px;
