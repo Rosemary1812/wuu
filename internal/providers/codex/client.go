@@ -39,6 +39,7 @@ type Client struct {
 	httpClient   *http.Client
 	retryConfig  *providers.RetryConfig
 	streamConfig *providers.StreamTransportConfig
+	wsCache      *openai.ResponsesWebSocketCache
 }
 
 // ModelInfo describes one model advertised by the OAuth-backed Codex backend.
@@ -70,6 +71,7 @@ func New(cfg ClientConfig) (*Client, error) {
 		httpClient:   cfg.HTTPClient,
 		retryConfig:  cfg.RetryConfig,
 		streamConfig: cfg.StreamConfig,
+		wsCache:      openai.NewResponsesWebSocketCache(),
 	}, nil
 }
 
@@ -189,14 +191,16 @@ func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.C
 	}
 	store := false
 	client, err := openai.New(openai.ClientConfig{
-		BaseURL:        c.baseURL,
-		WireAPI:        "responses",
-		APIKey:         creds.accessToken,
-		Headers:        headers,
-		HTTPClient:     c.httpClient,
-		RetryConfig:    c.retryConfig,
-		StreamConfig:   c.streamConfig,
-		ResponsesStore: &store,
+		BaseURL:                 c.baseURL,
+		WireAPI:                 "responses",
+		APIKey:                  creds.accessToken,
+		Headers:                 headers,
+		HTTPClient:              c.httpClient,
+		RetryConfig:             c.retryConfig,
+		StreamConfig:            c.streamConfig,
+		ResponsesStore:          &store,
+		ResponsesWebSocket:      true,
+		ResponsesWebSocketCache: c.wsCache,
 	})
 	if err != nil {
 		return nil, credentials{}, err

@@ -60,6 +60,14 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
+	if c.responsesWebSocket {
+		ch, err := c.responsesStreamChatWebSocket(ctx, payload)
+		if err == nil {
+			return ch, nil
+		}
+		providers.DebugLogf("Responses websocket unavailable before stream start, falling back to SSE: %v", err)
+	}
+
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
 	resp, err := c.doSingleResponsesRequest(ctx, streamClient, body, true, payload.ExtraHeaders)
 	if err != nil {
@@ -699,7 +707,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 				pending.emitEnd(pt, event.Item.argumentsString(), ch)
 			}
 
-		case "response.completed":
+		case "response.completed", "response.done", "response.incomplete":
 			pending.emitEnds(ch)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
 			ch <- providers.StreamEvent{
@@ -1003,17 +1011,18 @@ func (p *responsesPendingTool) update(item responsesOutputItem, outputIndex int)
 }
 
 type responsesRequest struct {
-	Model           string                    `json:"model"`
-	Instructions    string                    `json:"instructions,omitempty"`
-	Input           []responsesInputItem      `json:"input"`
-	Tools           []responsesToolDefinition `json:"tools,omitempty"`
-	ToolChoice      string                    `json:"tool_choice,omitempty"`
-	Temperature     float64                   `json:"temperature,omitempty"`
-	MaxOutputTokens int                       `json:"max_output_tokens,omitempty"`
-	Stream          bool                      `json:"stream,omitempty"`
-	Store           *bool                     `json:"store,omitempty"`
-	Reasoning       *responsesReasoning       `json:"reasoning,omitempty"`
-	PromptCacheKey  string                    `json:"prompt_cache_key,omitempty"`
+	Model              string                    `json:"model"`
+	Instructions       string                    `json:"instructions,omitempty"`
+	Input              []responsesInputItem      `json:"input"`
+	Tools              []responsesToolDefinition `json:"tools,omitempty"`
+	ToolChoice         string                    `json:"tool_choice,omitempty"`
+	Temperature        float64                   `json:"temperature,omitempty"`
+	MaxOutputTokens    int                       `json:"max_output_tokens,omitempty"`
+	Stream             bool                      `json:"stream,omitempty"`
+	Store              *bool                     `json:"store,omitempty"`
+	Reasoning          *responsesReasoning       `json:"reasoning,omitempty"`
+	PromptCacheKey     string                    `json:"prompt_cache_key,omitempty"`
+	PreviousResponseID string                    `json:"previous_response_id,omitempty"`
 	// Include asks the backend to surface specific output items (e.g.
 	// "reasoning.encrypted_content") alongside the assistant message.
 	// Codex / pi require this for reasoning replay.
@@ -1078,6 +1087,7 @@ type responsesToolDefinition struct {
 }
 
 type responsesResponse struct {
+	ID                string                      `json:"id,omitempty"`
 	Status            string                      `json:"status"`
 	Output            []responsesOutputItem       `json:"output"`
 	Usage             *responsesUsage             `json:"usage,omitempty"`

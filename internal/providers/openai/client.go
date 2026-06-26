@@ -53,14 +53,16 @@ func normalizeWireAPI(value string) (string, error) {
 
 // ClientConfig configures an OpenAI-compatible endpoint.
 type ClientConfig struct {
-	BaseURL        string
-	WireAPI        string
-	APIKey         string
-	Headers        map[string]string
-	HTTPClient     *http.Client
-	RetryConfig    *providers.RetryConfig
-	StreamConfig   *providers.StreamTransportConfig
-	ResponsesStore *bool
+	BaseURL                 string
+	WireAPI                 string
+	APIKey                  string
+	Headers                 map[string]string
+	HTTPClient              *http.Client
+	RetryConfig             *providers.RetryConfig
+	StreamConfig            *providers.StreamTransportConfig
+	ResponsesStore          *bool
+	ResponsesWebSocket      bool
+	ResponsesWebSocketCache *ResponsesWebSocketCache
 }
 
 // Client sends tool-enabled chat requests to OpenAI-compatible APIs.
@@ -75,6 +77,8 @@ type Client struct {
 	reasoningFormat      reasoningEffortFormat
 	streamConfig         providers.StreamTransportConfig
 	responsesStore       *bool
+	responsesWebSocket   bool
+	responsesWSCache     *ResponsesWebSocketCache
 }
 
 // New creates an OpenAI-compatible client.
@@ -100,6 +104,10 @@ func New(cfg ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
+	if cfg.ResponsesWebSocketCache == nil && cfg.ResponsesWebSocket {
+		cfg.ResponsesWebSocketCache = NewResponsesWebSocketCache()
+	}
+
 	return &Client{
 		baseURL:              strings.TrimRight(cfg.BaseURL, "/"),
 		wireAPI:              wireAPI,
@@ -111,6 +119,8 @@ func New(cfg ClientConfig) (*Client, error) {
 		reasoningFormat:      detectReasoningEffortFormat(cfg.BaseURL),
 		streamConfig:         streamTransportConfig(cfg.StreamConfig),
 		responsesStore:       cfg.ResponsesStore,
+		responsesWebSocket:   cfg.ResponsesWebSocket,
+		responsesWSCache:     cfg.ResponsesWebSocketCache,
 	}, nil
 }
 

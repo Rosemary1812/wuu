@@ -2357,8 +2357,8 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 		"data: {\"type\":\"response.function_call_arguments.done\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"item_id\":\"fc_1\",\"output_index\":0}\n\n" +
 		"event: response.output_item.done\n" +
 		"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"completed\",\"arguments\":\"{\\\"path\\\":\\\"README.md\\\"}\",\"call_id\":\"call_1\",\"name\":\"read_file\"},\"output_index\":0}\n\n" +
-		"event: response.completed\n" +
-		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"
+		"event: response.done\n" +
+		"data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
