@@ -1,0 +1,128 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ThreadItem } from "../shared/protocol";
+import type { AssistantTurnDisplay, TurnEntry } from "./AssistantTurnDisplay";
+
+export const ASSISTANT_TURN_PRESENTATION_STABILIZE_MS = 120;
+
+export function useAssistantTurnPresentation(
+  turnID: string,
+  display: AssistantTurnDisplay | undefined,
+): AssistantTurnDisplay | undefined {
+  const [presented, setPresented] = useState(display);
+  const turnIDRef = useRef(turnID);
+  const presentedStructureRef = useRef(displayStructureSignature(display));
+  const presentedContentRef = useRef(displayContentSignature(display));
+  const pendingDisplayRef = useRef(display);
+  const pendingStructureRef = useRef(presentedStructureRef.current);
+  const pendingContentRef = useRef(presentedContentRef.current);
+  const timerRef = useRef<number | undefined>(undefined);
+
+  const clearPending = (): void => {
+    if (timerRef.current !== undefined) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+  };
+
+  const publish = (nextDisplay: AssistantTurnDisplay | undefined): void => {
+    presentedStructureRef.current = displayStructureSignature(nextDisplay);
+    presentedContentRef.current = displayContentSignature(nextDisplay);
+    pendingDisplayRef.current = nextDisplay;
+    pendingStructureRef.current = presentedStructureRef.current;
+    pendingContentRef.current = presentedContentRef.current;
+    setPresented(nextDisplay);
+  };
+
+  useLayoutEffect(() => {
+    const nextStructure = displayStructureSignature(display);
+    const nextContent = displayContentSignature(display);
+
+    if (turnIDRef.current !== turnID || !display) {
+      turnIDRef.current = turnID;
+      clearPending();
+      publish(display);
+      return;
+    }
+
+    if (nextStructure === presentedStructureRef.current) {
+      clearPending();
+      if (nextContent !== presentedContentRef.current) {
+        publish(display);
+      }
+      return;
+    }
+
+    pendingDisplayRef.current = display;
+    pendingStructureRef.current = nextStructure;
+    pendingContentRef.current = nextContent;
+    if (timerRef.current !== undefined) {
+      return;
+    }
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = undefined;
+      presentedStructureRef.current = pendingStructureRef.current;
+      presentedContentRef.current = pendingContentRef.current;
+      setPresented(pendingDisplayRef.current);
+    }, ASSISTANT_TURN_PRESENTATION_STABILIZE_MS);
+  }, [display, turnID]);
+
+  useEffect(() => {
+    return () => clearPending();
+  }, []);
+
+  return presented;
+}
+
+function displayStructureSignature(
+  display: AssistantTurnDisplay | undefined,
+): string {
+  if (!display) {
+    return "none";
+  }
+  return [
+    display.hasAnswer ? "answer" : "no-answer",
+    display.missingReplyMessage ? "missing" : "ok",
+    display.latestProcessPreview?.kind ?? "no-preview",
+    display.entries.map(entryStructureSignature).join("|"),
+  ].join(";");
+}
+
+function entryStructureSignature(entry: TurnEntry): string {
+  const items = entry.items ?? [entry.item];
+  return [
+    entry.key,
+    entry.position,
+    entry.kind,
+    entry.settled ? "settled" : "live",
+    entry.streaming ? "streaming" : "idle",
+    entry.count ?? "",
+    items.map(itemStructureSignature).join(","),
+  ].join(":");
+}
+
+function itemStructureSignature(item: ThreadItem): string {
+  const phase = item.type === "agent_message" ? item.phase ?? "" : "";
+  return [item.id, item.type, item.status, phase].join("/");
+}
+
+function displayContentSignature(
+  display: AssistantTurnDisplay | undefined,
+): string {
+  if (!display) {
+    return "none";
+  }
+  return [
+    displayStructureSignature(display),
+    display.latestProcessPreview?.text ?? "",
+    display.entries.map(entryContentSignature).join("|"),
+  ].join(";");
+}
+
+function entryContentSignature(entry: TurnEntry): string {
+  const items = entry.items ?? [entry.item];
+  return items.map(itemContentSignature).join(",");
+}
+
+function itemContentSignature(item: ThreadItem): string {
+  return "text" in item && typeof item.text === "string" ? item.text : "";
+}

@@ -2,6 +2,7 @@
 
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
+import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnNotice, turnNoticeDisplay } from "./TurnNotice";
@@ -87,10 +88,14 @@ export function TurnView({
   }
 
   const userItems = turn.items.filter((item) => item.type === "user_message");
-  const assistantDisplay = buildAssistantTurnDisplay(
+  const rawAssistantDisplay = buildAssistantTurnDisplay(
     turn,
     actionableAgentMessageID,
     renderThreadItem,
+  );
+  const assistantDisplay = useAssistantTurnPresentation(
+    turn.id,
+    rawAssistantDisplay,
   );
   const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
 
