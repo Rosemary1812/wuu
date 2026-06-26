@@ -28,9 +28,14 @@ func TestBuildHelpMePromptDoesNotEmitModeSection(t *testing.T) {
 	if strings.Contains(prompt, "## Mode") {
 		t.Fatalf("HelpMe prompt should not emit a Mode section:\n%s", prompt)
 	}
-	for _, want := range []string{"HelpMe Recovery Brief", "Why recovery was triggered", "Original user goal", "Your task"} {
+	for _, want := range []string{"HelpMe Handoff Brief", "Why this handoff is needed", "User goal", "Task to complete"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("HelpMe prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, unwanted := range []string{"wrong assumption", "polluted context", "do not inherit", "fresh general-purpose helper agent"} {
+		if strings.Contains(prompt, unwanted) {
+			t.Fatalf("HelpMe prompt should not expose internal recovery diagnosis %q:\n%s", unwanted, prompt)
 		}
 	}
 }

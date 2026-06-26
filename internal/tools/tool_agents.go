@@ -438,17 +438,17 @@ type helpMePromptInput struct {
 
 func buildHelpMePrompt(input helpMePromptInput) string {
 	var b strings.Builder
-	b.WriteString("# HelpMe Recovery Brief\n\n")
-	b.WriteString("You are a fresh general-purpose helper agent. The parent agent may be stuck in a wrong assumption or polluted context. Re-read the repository/runtime evidence yourself and do not inherit the parent agent's plan by default.\n\n")
-	b.WriteString("Before your final answer, call agent_report exactly once with outcome, summary, changed_files, work_done, blockers, risks, verification, next_steps, and evidence/artifacts that let the parent verify your handoff.\n\n")
-	writeHelpMePromptField(&b, "Why recovery was triggered", input.Reason)
-	writeHelpMePromptField(&b, "Original user goal", input.OriginalGoal)
-	writeHelpMePromptField(&b, "Parent's current understanding", input.CurrentUnderstanding)
-	writeHelpMePromptList(&b, "Failed or low-confidence parent attempts", input.FailedAttempts)
+	b.WriteString("# HelpMe Handoff Brief\n\n")
+	b.WriteString("Take over the task below using your own judgment. Treat this brief as context, then verify important facts from the workspace, runtime output, or other evidence before acting.\n\n")
+	b.WriteString("When you finish, submit one `agent_report` at the end with outcome, summary, changed_files, work_done, blockers, risks, verification, next_steps, and evidence/artifacts useful for continuing from your result.\n\n")
+	writeHelpMePromptField(&b, "Why this handoff is needed", input.Reason)
+	writeHelpMePromptField(&b, "User goal", input.OriginalGoal)
+	writeHelpMePromptField(&b, "Current context", input.CurrentUnderstanding)
+	writeHelpMePromptList(&b, "Tried or low-confidence paths", input.FailedAttempts)
 	writeHelpMePromptList(&b, "Constraints to preserve", input.Constraints)
-	writeHelpMePromptList(&b, "Evidence already observed", input.Evidence)
-	writeHelpMePromptField(&b, "Your task", input.Ask)
-	b.WriteString("Work in the current repository unless the evidence shows the task is only diagnostic. If you change files, keep the change scoped and run the most relevant verification you can.\n")
+	writeHelpMePromptList(&b, "Relevant evidence", input.Evidence)
+	writeHelpMePromptField(&b, "Task to complete", input.Ask)
+	b.WriteString("Work in the current workspace when inspection or changes are needed. If you change files, keep the change scoped and run the most relevant verification you can.\n")
 	return strings.TrimSpace(b.String())
 }
 
