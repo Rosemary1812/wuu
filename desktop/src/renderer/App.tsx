@@ -241,6 +241,7 @@ import {
   latestAgentMessageItemID,
   scrollToUserMessage,
 } from "./TurnView";
+import { firstUserMessageAnchor } from "./TurnViewHelpers";
 import {
   WorkspaceMainPanel,
   WorkspaceRightPanel,
@@ -687,7 +688,7 @@ export function App(): JSX.Element {
       setBranchMenuOpen(false);
       setCodexRuntimeMenu(null);
     },
-    onSelectThread: (threadID) => void selectThread(threadID),
+    onSelectThread: (threadID) => void activateThread(threadID),
   });
   const {
     pendingBrowserURL,
@@ -3505,6 +3506,25 @@ export function App(): JSX.Element {
     }
   }
 
+  // Wraps selectThread with the "jump to the first user message" behavior
+  // the sidebar row clicks ask for. Same-thread re-clicks still scroll,
+  // because selectThread bails when the target is already active but the
+  // anchor lookup runs regardless — useful when the user has scrolled
+  // away from the conversation's first prompt and wants to get back.
+  async function activateThread(threadID: string): Promise<void> {
+    await selectThread(threadID);
+    // Use appStateRef so we see the post-resume thread, not whatever stale
+    // value the row was holding at click time. scrollToUserMessage retries
+    // for ~200ms so a not-yet-mounted anchor does not produce a no-op.
+    const thread = appStateRef.current.threads.find(
+      (candidate) => candidate.id === threadID,
+    );
+    const anchor = firstUserMessageAnchor(thread);
+    if (anchor) {
+      scrollToUserMessage(anchor.turnID, anchor.itemID);
+    }
+  }
+
   async function selectChildAgent(agent: Agent): Promise<void> {
     if (!state.activeContext) {
       return;
@@ -4988,7 +5008,7 @@ export function App(): JSX.Element {
         onToggleConversationSearch={toggleConversationSearch}
         onSeedConversationFixture={seedConversationFixture}
         onSeedAgentTreeDemo={seedAgentTreeDemo}
-        onSelectThread={(id) => void selectThread(id)}
+        onSelectThread={(id) => void activateThread(id)}
         onSelectChildAgent={(agent) => void selectChildAgent(agent)}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}
         onArchiveThread={(thread) => void archiveThread(thread)}

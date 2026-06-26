@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Thread } from "../shared/protocol";
 import {
+  firstUserMessageAnchor,
   scrollToUserMessage,
+  threadReplySnippet,
+  truncateReplyPreview,
   turnAnchorID,
   userMessageAnchorID,
 } from "./TurnViewHelpers";
@@ -225,5 +229,155 @@ describe("anchor ID helpers", () => {
 
   it("userMessageAnchorID combines turn and item IDs uniquely", () => {
     expect(userMessageAnchorID("abc", "xyz")).toBe("user-msg-abc-xyz");
+  });
+});
+
+/**
+ * Tiny Thread builder for the discovery helpers. Only the fields the
+ * helpers actually read (id, turns, items, type, text) are populated —
+ * production Threads carry a lot more, but adding stub data here would
+ * make the tests brittle to future schema changes.
+ */
+function buildThread(
+  turns: Array<{
+    id: string;
+    items: Array<{ id: string; type: string; text?: string }>;
+  }>,
+): Thread {
+  return {
+    id: "thread-1",
+    preview: "",
+    model_provider: "",
+    model: "",
+    cwd: "",
+    status: "completed",
+    created_at: "",
+    updated_at: "",
+    turns: turns.map((turn) => ({
+      id: turn.id,
+      status: "completed" as const,
+      items: turn.items.map((item) => item as never),
+    })),
+  };
+}
+
+describe("firstUserMessageAnchor", () => {
+  it("returns the first user_message anchor across multiple turns", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [
+          { id: "u-1", type: "user_message" },
+          { id: "a-1", type: "agent_message", text: "hi" },
+        ],
+      },
+      {
+        id: "turn-2",
+        items: [
+          { id: "u-2", type: "user_message" },
+          { id: "a-2", type: "agent_message", text: "next" },
+        ],
+      },
+    ]);
+
+    expect(firstUserMessageAnchor(thread)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-1",
+    });
+  });
+
+  it("skips turns that start with reasoning or tool items", () => {
+    const thread = buildThread([
+      {
+        id: "turn-compact",
+        items: [{ id: "r-1", type: "reasoning" }],
+      },
+      {
+        id: "turn-1",
+        items: [{ id: "u-1", type: "user_message" }],
+      },
+    ]);
+
+    expect(firstUserMessageAnchor(thread)?.itemID).toBe("u-1");
+  });
+
+  it("returns undefined when the thread has no user_message", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [{ id: "a-1", type: "agent_message", text: "answer" }],
+      },
+    ]);
+
+    expect(firstUserMessageAnchor(thread)).toBeUndefined();
+  });
+
+  it("returns undefined for undefined input", () => {
+    expect(firstUserMessageAnchor(undefined)).toBeUndefined();
+  });
+});
+
+describe("threadReplySnippet", () => {
+  it("returns the first non-empty agent message and counts replies", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [
+          { id: "u-1", type: "user_message" },
+          // First agent message is empty (still streaming) and must be skipped.
+          { id: "a-1", type: "agent_message", text: "   " },
+          { id: "a-2", type: "agent_message", text: "first visible reply" },
+        ],
+      },
+      {
+        id: "turn-2",
+        items: [
+          { id: "u-2", type: "user_message" },
+          { id: "a-3", type: "agent_message", text: "second reply" },
+        ],
+      },
+    ]);
+
+    const snippet = threadReplySnippet(thread);
+    expect(snippet).toEqual({
+      text: "first visible reply",
+      totalAgentMessages: 2,
+    });
+  });
+
+  it("returns undefined when no agent_message has committed text", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [
+          { id: "u-1", type: "user_message" },
+          { id: "a-1", type: "agent_message", text: "" },
+        ],
+      },
+    ]);
+
+    expect(threadReplySnippet(thread)).toBeUndefined();
+  });
+
+  it("returns undefined for undefined input", () => {
+    expect(threadReplySnippet(undefined)).toBeUndefined();
+  });
+});
+
+describe("truncateReplyPreview", () => {
+  it("returns short text untouched", () => {
+    expect(truncateReplyPreview("短回复")).toBe("短回复");
+  });
+
+  it("collapses whitespace before measuring", () => {
+    const text = "a\n\nb\t\tc";
+    expect(truncateReplyPreview(text)).toBe("a b c");
+  });
+
+  it("truncates overlong replies with an ellipsis", () => {
+    const text = "x".repeat(200);
+    const out = truncateReplyPreview(text);
+    expect(out.endsWith("…")).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(140);
   });
 });

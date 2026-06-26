@@ -1,4 +1,4 @@
-import type { ThreadItem, Turn } from "../shared/protocol";
+import type { Thread, ThreadItem, Turn } from "../shared/protocol";
 import {
   messageFlowFinalTextIndex,
   messageFlowStatusLabel,
@@ -24,6 +24,119 @@ export function userMessageAnchorID(turnID: string, itemID: string): string {
 
 function userMessageAnchorSelector(turnID: string, itemID: string): string {
   return `#${userMessageAnchorID(turnID, itemID)}`;
+}
+
+export type UserMessageAnchor = {
+  turnID: string;
+  itemID: string;
+};
+
+// Walks a thread's turns/items in order and returns the anchor of the
+// earliest user_message. Sidebar rows use this to jump straight to the
+// conversation's first prompt when a row is activated. Returns undefined
+// for threads with no user_message yet (defensive against malformed
+// fixtures); callers should treat that as "skip the scroll".
+export function firstUserMessageAnchor(
+  thread: Thread | undefined,
+): UserMessageAnchor | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  for (const turn of thread.turns ?? []) {
+    for (const item of turn.items ?? []) {
+      if (item.type === "user_message") {
+        return { turnID: turn.id, itemID: item.id };
+      }
+    }
+  }
+  return undefined;
+}
+
+export type ThreadReplySnippet = {
+  text: string;
+  totalAgentMessages: number;
+};
+
+// Builds a short preview of the thread's agent replies for sidebar hover
+// popovers. Skips agent_message items with no committed text (still-active
+// streams that haven't produced visible output yet). Returns undefined when
+// there is nothing readable to show — callers fall back to the thread's
+// own `preview` field in that case.
+export function threadReplySnippet(
+  thread: Thread | undefined,
+): ThreadReplySnippet | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  let firstReply: string | undefined;
+  let total = 0;
+  for (const turn of thread.turns ?? []) {
+    for (const item of turn.items ?? []) {
+      if (item.type !== "agent_message") {
+        continue;
+      }
+      const trimmed = (item.text ?? "").trim();
+      if (!trimmed) {
+        continue;
+      }
+      total += 1;
+      if (firstReply === undefined) {
+        firstReply = trimmed;
+      }
+    }
+  }
+  if (!firstReply) {
+    return undefined;
+  }
+  return {
+    text: firstReply,
+    totalAgentMessages: total,
+  };
+}
+
+// Caps the preview body to ~140 characters on a single line. The Claude.ai
+// reference card uses three short lines, but the wuu sidebar is narrow
+// (326px) and the title already sits above the popover — a tighter single
+// line keeps the popover visually compact and avoids duplicating context
+// the title already conveys.
+const THREAD_REPLY_PREVIEW_MAX_CHARS = 140;
+
+export function truncateReplyPreview(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= THREAD_REPLY_PREVIEW_MAX_CHARS) {
+    return normalized;
+  }
+  return `${normalized.slice(0, THREAD_REPLY_PREVIEW_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+// Compact "X 分钟前" / "X 小时前" formatter for sidebar hover previews.
+// Kept here (not in ThreadSidebar) because the preview now lives inside
+// the conversation pane, not the sidebar DOM. The cadence mirrors the
+// relative-time labels already used elsewhere in the sidebar; we do not
+// pull in a date library because the input is always an ISO string from
+// the server.
+export function formatRelativeTime(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return "";
+  }
+  const diffMs = Date.now() - then;
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 1) {
+    return "刚刚";
+  }
+  if (minutes < 60) {
+    return `${minutes} 分钟前`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours} 小时前`;
+  }
+  const days = Math.round(hours / 24);
+  return `${days} 天前`;
 }
 
 const JUMP_HIGHLIGHT_CLASS = "user-message-jump-flash";
