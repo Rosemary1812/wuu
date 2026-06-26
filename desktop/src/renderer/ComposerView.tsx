@@ -103,6 +103,7 @@ export function Composer({
   queuedMessages,
   guideMessages,
   running,
+  runtimeControlsDisabled = running,
   status,
   readOnly,
   initialized,
@@ -167,6 +168,7 @@ export function Composer({
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
   running: boolean;
+  runtimeControlsDisabled?: boolean;
   status: string;
   readOnly: boolean;
   initialized?: InitializeResult;
@@ -671,7 +673,7 @@ export function Composer({
                     state={codexModels}
                     openMenu={codexRuntimeMenu}
                     anchorRef={codexRuntimeRef}
-                    running={running}
+                    running={runtimeControlsDisabled}
                     onToggleMenu={onToggleCodexRuntimeMenu}
                     onSelectModel={onSelectRuntimeModel}
                     onSelectEffort={onSelectRuntimeEffort}

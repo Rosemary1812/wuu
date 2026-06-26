@@ -1840,6 +1840,7 @@ export function App(): JSX.Element {
         running={
           (!activeThreadReadOnly && activeThreadIsRunning) || viewContextSwitchPending
         }
+        runtimeControlsDisabled={anyThreadIsRunning}
         tokensPerSecond={tokenSpeed.tokensPerSecond}
         tokenSpeedSampledAt={tokenSpeed.sampledAt}
         tokenSpeedSource={tokenSpeed.source}

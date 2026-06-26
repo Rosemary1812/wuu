@@ -79,6 +79,7 @@ function renderComposer(props: {
   guideMessages?: QueuedComposerMessage[];
   toolPolicy?: ToolPolicySummary;
   status?: string;
+  runtimeControlsDisabled?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
   onRemoveQueuedMessage?: (id: string) => void;
@@ -115,6 +116,7 @@ function renderComposer(props: {
           queuedMessages={props.queuedMessages ?? []}
           guideMessages={props.guideMessages ?? []}
           running={props.running ?? false}
+          runtimeControlsDisabled={props.runtimeControlsDisabled}
           status={props.status ?? "ready"}
           readOnly={false}
           initialized={initialized(props.toolPolicy, props.permissions)}
@@ -411,6 +413,21 @@ describe("Composer send control", () => {
     expect(rightGroup?.querySelector(".composer-token-gauge")).not.toBeNull();
     expect(rightGroup?.querySelector(".codex-runtime-anchor")).not.toBeNull();
     expect(rightGroup?.contains(sendButton)).toBe(true);
+  });
+
+  it("disables runtime controls when background work blocks runtime changes", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "follow up",
+      running: false,
+      runtimeControlsDisabled: true,
+    });
+
+    const runtimeButton = container.querySelector<HTMLButtonElement>(".codex-runtime-trigger");
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+
+    expect(runtimeButton?.disabled).toBe(true);
+    expect(sendButton?.disabled).toBe(false);
   });
 
   it("declares composer-width collapse rules for the least important controls first", () => {
