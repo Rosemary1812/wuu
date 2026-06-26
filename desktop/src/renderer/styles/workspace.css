@@ -2146,16 +2146,12 @@
 }
 
 .conversation-width {
+  /* Outer width, horizontal padding, and 12-col grid come from .session-flow
+     (applied via className in JSX). View-specific rules stay here. */
   contain: layout style;
   position: relative;
-  display: grid;
-  width: 100%;
-  max-width: var(--conversation-flow-width);
-  grid-template-columns: repeat(var(--wuu-grid-cols), minmax(0, 1fr));
-  column-gap: var(--wuu-grid-gutter);
+  padding-block: 72px 32px;
   row-gap: var(--wuu-grid-leading);
-  margin: 0 auto;
-  padding: 72px var(--conversation-flow-padding-inline) 32px;
 }
 
 .conversation-width > * {

@@ -4203,22 +4203,10 @@ pre {
 }
 
 .empty-home-inner {
-  /* Match the conversation flow width so the welcome and historical views
-     share the same column grid lines (12 cols / 24px gutter). Side margins
-     follow the conversation's inline padding so the outer rhythm aligns. */
-  display: grid;
-  width: min(
-    var(--conversation-flow-width),
-    calc(
-      100% - var(--conversation-flow-padding-inline) -
-        var(--conversation-flow-padding-inline)
-    )
-  );
-  grid-template-columns: repeat(var(--wuu-grid-cols), minmax(0, 1fr));
-  column-gap: var(--wuu-grid-gutter);
+  /* Outer width, horizontal padding, and 12-col grid come from .session-flow
+     (applied via className in JSX). View-specific rules stay here. */
   justify-items: center;
   row-gap: clamp(96px, 13vh, 144px);
-  margin: 0 auto;
 }
 
 .empty-home h2 {

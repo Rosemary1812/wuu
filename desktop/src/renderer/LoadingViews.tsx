@@ -55,7 +55,7 @@ export function EmptyConversationHome({
 }): JSX.Element {
   return (
     <section className="empty-home">
-      <div className="empty-home-inner">
+      <div className="empty-home-inner session-flow">
         <h2>{title}</h2>
         {children}
       </div>

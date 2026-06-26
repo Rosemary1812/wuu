@@ -5494,7 +5494,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
             data-active={isActive}
             style={isActive ? undefined : { display: "none" }}
           >
-            <div className="conversation-width">
+            <div className="conversation-width session-flow">
               {isActive && conversationGridVisible ? (
                 <ConversationGridGuides />
               ) : null}

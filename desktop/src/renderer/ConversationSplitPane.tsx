@@ -112,7 +112,7 @@ export function ConversationSplitPane({
         className="conversation-split-body"
         onScroll={(event) => onScroll(event.currentTarget)}
       >
-        <div className="conversation-width conversation-split-width">
+        <div className="conversation-width conversation-split-width session-flow">
           {paneTurns.map((turn) => (
             <TurnView
               key={turn.id}

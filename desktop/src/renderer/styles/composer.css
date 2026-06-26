@@ -94,6 +94,17 @@
   box-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
 }
 
+/* Force the hero composer to the dock composer's dialog width so the
+   input box stays the same width whether or not a turn has been sent.
+   The dock composer lives at the conversation-pane level (full pane
+   width) so it caps at --conversation-dialog-width naturally; the hero
+   composer lives inside the welcome grid where the column tracks are
+   narrower, so we have to pin it explicitly. */
+.hero-composer-wrap .composer-stack {
+  width: var(--conversation-dialog-width);
+  max-width: 100%;
+}
+
 .composer {
   width: 100%;
   min-height: 128px;
