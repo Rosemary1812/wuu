@@ -263,7 +263,8 @@
                                                               
                                                        
                             
-  background: #e8e8e4;
+  --user-message-background: #e8e8e4;
+  background: var(--user-message-background);
   color: var(--ink);
 }
 
@@ -333,6 +334,67 @@
 
 .user-message-block .user-message {
   max-width: 100%;
+}
+
+.user-message-long-text {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-message-long-text-body {
+  position: relative;
+  min-width: 0;
+}
+
+.user-message-long-text.collapsed .user-message-long-text-body {
+  max-height: 15.2em;
+  overflow: hidden;
+}
+
+.user-message-long-text.collapsed .user-message-long-text-body::after {
+  content: "...";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  min-width: 44px;
+  padding-left: 44px;
+  background: linear-gradient(
+    90deg,
+    rgba(232, 232, 228, 0),
+    var(--user-message-background) 52%
+  );
+  color: var(--ink-muted);
+  pointer-events: none;
+  text-align: right;
+}
+
+.user-message-long-text-toggle {
+  align-self: flex-start;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.46);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  padding: 0 9px;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.user-message-long-text-toggle:hover,
+.user-message-long-text-toggle:focus-visible {
+  outline: 0;
+  border-color: var(--ink-overlay-8);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
 }
 
 /*

@@ -37,6 +37,10 @@ import {
   type UserFacingErrorAction,
 } from "./UserFacingErrors";
 
+const COLLAPSIBLE_USER_MESSAGE_LINE_THRESHOLD = 10;
+const COLLAPSIBLE_USER_MESSAGE_CHAR_THRESHOLD = 1200;
+const COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS = 84;
+
 export function ThreadItemView({
   turnID,
   turnStatus,
@@ -117,7 +121,7 @@ export function ThreadItemView({
                 <MessageImageGrid images={item.images} />
               ) : null}
               {item.files?.length ? <MessageFileList files={item.files} /> : null}
-              {text ? <RichContent text={text} cwd={cwd} /> : null}
+              {text ? <UserMessageContent text={text} cwd={cwd} /> : null}
             </div>
           )}
           {!editing && (copyable || editable) ? (
@@ -215,6 +219,66 @@ export function ThreadItemView({
     default:
       return null;
   }
+}
+
+function UserMessageContent({
+  text,
+  cwd,
+}: {
+  text: string;
+  cwd?: string;
+}): JSX.Element {
+  const [expandedState, setExpandedState] = useState({
+    text,
+    expanded: false,
+  });
+  const collapsible = isCollapsibleUserMessage(text);
+  const expanded =
+    collapsible && expandedState.text === text ? expandedState.expanded : false;
+
+  if (!collapsible) {
+    return <RichContent text={text} cwd={cwd} />;
+  }
+
+  return (
+    <div
+      className={`user-message-long-text ${expanded ? "expanded" : "collapsed"}`}
+    >
+      <div className="user-message-long-text-body">
+        <RichContent text={text} cwd={cwd} />
+      </div>
+      <button
+        type="button"
+        className="user-message-long-text-toggle"
+        aria-expanded={expanded}
+        onClick={() =>
+          setExpandedState({
+            text,
+            expanded: !expanded,
+          })
+        }
+      >
+        {expanded ? "收起" : "展开全文"}
+      </button>
+    </div>
+  );
+}
+
+function isCollapsibleUserMessage(text: string): boolean {
+  if (text.length > COLLAPSIBLE_USER_MESSAGE_CHAR_THRESHOLD) {
+    return true;
+  }
+  let estimatedLines = 0;
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    estimatedLines += Math.max(
+      1,
+      Math.ceil(line.length / COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS),
+    );
+    if (estimatedLines > COLLAPSIBLE_USER_MESSAGE_LINE_THRESHOLD) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function UserMessageInlineEditor({

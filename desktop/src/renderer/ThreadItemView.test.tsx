@@ -18,6 +18,15 @@ function makeFinalAnswer(status: ThreadItem["status"]): ThreadItem {
   };
 }
 
+function makeUserMessage(text: string, id = "user-1"): ThreadItem {
+  return {
+    id,
+    type: "user_message",
+    status: "completed",
+    text,
+  };
+}
+
 function render({
   item,
   turnStatus,
@@ -71,6 +80,120 @@ afterEach(() => {
 });
 
 describe("ThreadItemView", () => {
+  it("shows short user messages in full without a collapse control", () => {
+    render({
+      item: makeUserMessage("Short query."),
+      turnStatus: "completed",
+      streaming: false,
+    });
+
+    expect(container?.querySelector(".user-message-long-text")).toBeNull();
+    expect(container?.textContent).toContain("Short query.");
+  });
+
+  it("collapses long wrapped user messages without explicit line breaks", () => {
+    const longSingleParagraph = "pasted query ".repeat(90);
+
+    render({
+      item: makeUserMessage(longSingleParagraph),
+      turnStatus: "completed",
+      streaming: false,
+    });
+
+    const wrapper = container?.querySelector<HTMLElement>(
+      ".user-message-long-text",
+    );
+    const toggle = container?.querySelector<HTMLButtonElement>(
+      ".user-message-long-text-toggle",
+    );
+    expect(wrapper?.classList.contains("collapsed")).toBe(true);
+    expect(toggle?.textContent).toBe("展开全文");
+  });
+
+  it("collapses long user messages and toggles the full text", () => {
+    const longText = Array.from(
+      { length: 12 },
+      (_, index) => `line ${index + 1}`,
+    ).join("\n");
+
+    render({
+      item: makeUserMessage(longText),
+      turnStatus: "completed",
+      streaming: false,
+    });
+
+    const wrapper = container?.querySelector<HTMLElement>(
+      ".user-message-long-text",
+    );
+    const toggle = container?.querySelector<HTMLButtonElement>(
+      ".user-message-long-text-toggle",
+    );
+
+    expect(wrapper?.classList.contains("collapsed")).toBe(true);
+    expect(toggle?.textContent).toBe("展开全文");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+
+    act(() => {
+      toggle?.click();
+    });
+
+    expect(wrapper?.classList.contains("expanded")).toBe(true);
+    expect(toggle?.textContent).toBe("收起");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => {
+      toggle?.click();
+    });
+
+    expect(wrapper?.classList.contains("collapsed")).toBe(true);
+    expect(toggle?.textContent).toBe("展开全文");
+  });
+
+  it("defaults a different long user query back to collapsed", () => {
+    const firstLongText = Array.from(
+      { length: 12 },
+      (_, index) => `first query line ${index + 1}`,
+    ).join("\n");
+    const secondLongText = Array.from(
+      { length: 12 },
+      (_, index) => `second query line ${index + 1}`,
+    ).join("\n");
+
+    render({
+      item: makeUserMessage(firstLongText, "user-1"),
+      turnStatus: "completed",
+      streaming: false,
+    });
+
+    const firstToggle = container?.querySelector<HTMLButtonElement>(
+      ".user-message-long-text-toggle",
+    );
+    act(() => {
+      firstToggle?.click();
+    });
+
+    expect(
+      container
+        ?.querySelector<HTMLElement>(".user-message-long-text")
+        ?.classList.contains("expanded"),
+    ).toBe(true);
+
+    render({
+      item: makeUserMessage(secondLongText, "user-2"),
+      turnStatus: "completed",
+      streaming: false,
+    });
+
+    const secondWrapper = container?.querySelector<HTMLElement>(
+      ".user-message-long-text",
+    );
+    const secondToggle = container?.querySelector<HTMLButtonElement>(
+      ".user-message-long-text-toggle",
+    );
+    expect(secondWrapper?.classList.contains("collapsed")).toBe(true);
+    expect(secondToggle?.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("keeps the final-answer action bar mounted while it becomes visible", () => {
     render({
       item: makeFinalAnswer("in_progress"),
