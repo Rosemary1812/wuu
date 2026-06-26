@@ -11,6 +11,30 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
+	def := NewHelpMeTool(&Env{}).Definition()
+	props, _ := def.InputSchema["properties"].(map[string]any)
+	if _, ok := props["mode"]; ok {
+		t.Fatalf("helpme schema should not expose mode: %#v", def.InputSchema)
+	}
+}
+
+func TestBuildHelpMePromptDoesNotEmitModeSection(t *testing.T) {
+	prompt := buildHelpMePrompt(helpMePromptInput{
+		Reason:       "parent may be stuck",
+		OriginalGoal: "finish the design",
+		Ask:          "re-evaluate the handoff",
+	})
+	if strings.Contains(prompt, "## Mode") {
+		t.Fatalf("HelpMe prompt should not emit a Mode section:\n%s", prompt)
+	}
+	for _, want := range []string{"HelpMe Recovery Brief", "Why recovery was triggered", "Original user goal", "Your task"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("HelpMe prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestWriteHelpMeMainTraceArchivesParentHistory(t *testing.T) {
 	sessionDir := t.TempDir()
 	ref, err := writeHelpMeMainTrace(&Env{

@@ -272,11 +272,6 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 					"description": "Important evidence already observed: files, errors, tests, logs, or facts. Prefer references over long raw output.",
 					"items":       map[string]any{"type": "string"},
 				},
-				"mode": map[string]any{
-					"type":        "string",
-					"enum":        []string{"recover", "diagnose", "fix", "review"},
-					"description": "Optional recovery mode. Defaults to recover.",
-				},
 				"timeout_ms": map[string]any{
 					"type":        "integer",
 					"description": "Optional maximum wait time for the helper. Defaults to 600000 and is capped at 1200000.",
@@ -305,13 +300,8 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	if reason == "" {
 		reason = "The main agent requested a fresh-context recovery."
 	}
-	mode := strings.ToLower(strings.TrimSpace(args.Mode))
-	if mode == "" {
-		mode = "recover"
-	}
 	timeout := helpMeTimeout(args.TimeoutMS)
 	prompt := buildHelpMePrompt(helpMePromptInput{
-		Mode:                 mode,
 		Reason:               reason,
 		OriginalGoal:         originalGoal,
 		CurrentUnderstanding: strings.TrimSpace(args.CurrentUnderstanding),
@@ -339,7 +329,6 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	response := helpMeResponse{
 		Action:        "helpme",
 		Status:        result.Status,
-		Mode:          mode,
 		AgentID:       result.AgentID,
 		AgentPath:     result.AgentPath,
 		Result:        result.Result,
@@ -414,7 +403,6 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 type helpMeResponse struct {
 	Action         string                           `json:"action"`
 	Status         string                           `json:"status"`
-	Mode           string                           `json:"mode,omitempty"`
 	AgentID        string                           `json:"agent_id,omitempty"`
 	AgentPath      string                           `json:"agent_path,omitempty"`
 	Result         string                           `json:"result,omitempty"`
@@ -428,7 +416,6 @@ type helpMeResponse struct {
 }
 
 type helpMeArgs struct {
-	Mode                 string   `json:"mode"`
 	Reason               string   `json:"reason"`
 	OriginalGoal         string   `json:"original_goal"`
 	CurrentUnderstanding string   `json:"current_understanding"`
@@ -440,7 +427,6 @@ type helpMeArgs struct {
 }
 
 type helpMePromptInput struct {
-	Mode                 string
 	Reason               string
 	OriginalGoal         string
 	CurrentUnderstanding string
@@ -455,7 +441,6 @@ func buildHelpMePrompt(input helpMePromptInput) string {
 	b.WriteString("# HelpMe Recovery Brief\n\n")
 	b.WriteString("You are a fresh general-purpose helper agent. The parent agent may be stuck in a wrong assumption or polluted context. Re-read the repository/runtime evidence yourself and do not inherit the parent agent's plan by default.\n\n")
 	b.WriteString("Before your final answer, call agent_report exactly once with outcome, summary, changed_files, work_done, blockers, risks, verification, next_steps, and evidence/artifacts that let the parent verify your handoff.\n\n")
-	writeHelpMePromptField(&b, "Mode", input.Mode)
 	writeHelpMePromptField(&b, "Why recovery was triggered", input.Reason)
 	writeHelpMePromptField(&b, "Original user goal", input.OriginalGoal)
 	writeHelpMePromptField(&b, "Parent's current understanding", input.CurrentUnderstanding)
