@@ -2,10 +2,9 @@
  * Tests for `ContextCompactionNotice`'s two-state rendering.
  *
  * The component now branches on `status`:
- *   - `in_progress` renders the centered-label + fading-divider + shared
+ *   - `in_progress` renders the centered event divider with the shared
  *     live-gray sweep host.
- *   - everything else (the established completed / failed states) keeps
- *     the icon + copy layout from the original implementation.
+ *   - everything else keeps the same centered event divider without motion.
  *
  * These tests pin the markup contract: which class is added, what the
  * host reads as, and which child element holds the sweep. The CSS
@@ -68,17 +67,16 @@ describe("ContextCompactionNotice", () => {
     const host = mount(<ContextCompactionNotice status="in_progress" />);
     const aside = host.querySelector("aside.turn-notice.context-compaction-notice");
     expect(aside).not.toBeNull();
-    expect(aside?.classList.contains("is-compacting")).toBe(true);
+    expect(aside?.classList.contains("is-progress")).toBe(true);
     expect(aside?.getAttribute("role")).toBe("status");
     expect(aside?.getAttribute("aria-live")).toBe("polite");
 
-    const label = host.querySelector(".context-compaction-compacting-text");
+    const label = host.querySelector(".turn-event-title");
     expect(label).not.toBeNull();
     expect(label?.textContent).toBe("正在自动压缩上下文");
 
-    // in_progress never renders the icon — the shimmer label is the
-    // entire visible affordance, so screen readers should not be told
-    // to expect a separate status icon.
+    // The event divider uses text and line color as the affordance; icons
+    // would make these lightweight stream events compete with message text.
     expect(host.querySelector(".turn-notice-icon")).toBeNull();
   });
 
@@ -91,23 +89,36 @@ describe("ContextCompactionNotice", () => {
     );
     const aside = host.querySelector("aside.turn-notice.context-compaction-notice");
     expect(aside).not.toBeNull();
-    expect(aside?.classList.contains("is-compacting")).toBe(false);
+    expect(aside?.classList.contains("is-progress")).toBe(false);
     expect(aside?.getAttribute("aria-live")).toBe("polite");
 
-    const title = host.querySelector(".turn-notice-copy strong");
+    const title = host.querySelector(".turn-event-title");
     expect(title?.textContent).toBe("上下文已压缩");
 
-    const detail = host.querySelector(".turn-notice-copy span");
+    const detail = host.querySelector(".turn-event-detail");
     expect(detail?.textContent).toContain("18 条消息整理为 5 条");
-    expect(host.querySelector(".turn-notice-icon")).not.toBeNull();
+    expect(host.querySelector(".turn-notice-icon")).toBeNull();
   });
 
   it("falls back to the completed layout when status is omitted", () => {
     const host = mount(<ContextCompactionNotice text="" />);
     const aside = host.querySelector("aside.turn-notice.context-compaction-notice");
-    expect(aside?.classList.contains("is-compacting")).toBe(false);
-    expect(host.querySelector(".turn-notice-copy strong")?.textContent).toBe(
+    expect(aside?.classList.contains("is-progress")).toBe(false);
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "上下文已压缩",
+    );
+  });
+
+  it("names context-overflow recovery separately from routine compaction", () => {
+    const host = mount(
+      <ContextCompactionNotice
+        status="completed"
+        text="Recovered from context overflow — compacted history: 18 → 5 messages (was ~12k tokens)"
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "已从上下文超限中恢复",
     );
   });
 });

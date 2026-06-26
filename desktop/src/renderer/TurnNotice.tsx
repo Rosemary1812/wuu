@@ -1,4 +1,3 @@
-import { AlertCircle, Archive, Info, ShieldCheck, Square } from "lucide-react";
 import type { ThreadItemStatus } from "../shared/protocol";
 import type { TurnEventDisplay } from "./TurnEvents";
 import type { UserFacingErrorAction, UserFacingErrorDisplay } from "./UserFacingErrors";
@@ -29,21 +28,17 @@ export function TurnNotice({
    */
   onAction?: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
-  const Icon = turnNoticeIcon(display);
   const actions = display.recommendedActions;
   return (
     <aside
-      className={`turn-notice ${display.tone}`}
+      className={`turn-notice turn-event-notice ${display.tone}`}
       role={
         display.tone === "error" || display.tone === "auth" ? "alert" : "status"
       }
     >
-      <span className="turn-notice-icon" aria-hidden="true">
-        <Icon className="icon-sm" />
-      </span>
-      <span className="turn-notice-copy">
-        <strong>{display.title}</strong>
-        <span>{display.detail}</span>
+      <span className="turn-event-content">
+        <strong className="turn-event-title">{display.title}</strong>
+        <span className="turn-event-detail">{display.detail}</span>
         {actions.length > 0 ? (
           <span className="turn-notice-actions">
             {actions.map((action) => (
@@ -82,12 +77,14 @@ export function ContextCompactionNotice({
   if (status === "in_progress") {
     return (
       <aside
-        className="turn-notice context-compaction-notice is-compacting"
+        className="turn-notice turn-event-notice context-compaction-notice is-progress"
         role="status"
         aria-live="polite"
       >
-        <span className="context-compaction-compacting-text">
+        <span className="turn-event-content">
+          <strong className="turn-event-title">
           正在自动压缩上下文
+          </strong>
         </span>
       </aside>
     );
@@ -95,19 +92,24 @@ export function ContextCompactionNotice({
   const detail = contextCompactionDetail(text);
   return (
     <aside
-      className="turn-notice context-compaction-notice"
+      className="turn-notice turn-event-notice context-compaction-notice"
       role="status"
       aria-live="polite"
     >
-      <span className="turn-notice-icon" aria-hidden="true">
-        <Archive className="icon-sm" />
-      </span>
-      <span className="turn-notice-copy">
-        <strong>上下文已压缩</strong>
-        <span>{detail}</span>
+      <span className="turn-event-content">
+        <strong className="turn-event-title">{contextCompactionTitle(text)}</strong>
+        <span className="turn-event-detail">{detail}</span>
       </span>
     </aside>
   );
+}
+
+function contextCompactionTitle(text?: string): string {
+  const normalized = normalizeContextCompactionText(text);
+  if (/^Recovered from context overflow/i.test(normalized)) {
+    return "已从上下文超限中恢复";
+  }
+  return "上下文已压缩";
 }
 
 function contextCompactionDetail(text?: string): string {
@@ -144,15 +146,3 @@ function parseContextCompactionNotice(text: string): string | undefined {
   return `已压缩较早上下文：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
 }
 
-function turnNoticeIcon(display: UserFacingErrorDisplay): typeof AlertCircle {
-  if (display.category === "cancelled") {
-    return Square;
-  }
-  if (display.tone === "auth") {
-    return ShieldCheck;
-  }
-  if (display.tone === "warning") {
-    return Info;
-  }
-  return AlertCircle;
-}

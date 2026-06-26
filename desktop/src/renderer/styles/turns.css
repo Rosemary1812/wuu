@@ -3411,7 +3411,7 @@
 .process-surface-row.is-live-gray,
 .turn-reasoning-summary-text.is-live-gray,
 .turn-process-preview.is-live,
-.context-compaction-compacting-text {
+.turn-event-notice.is-progress .turn-event-title {
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -3420,7 +3420,7 @@
 .process-surface-row.is-live-gray::after,
 .turn-reasoning-summary-text.is-live-gray::after,
 .turn-process-preview.is-live::after,
-.context-compaction-compacting-text::after {
+.turn-event-notice.is-progress .turn-event-title::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -3452,7 +3452,7 @@
   .process-surface-row.is-live-gray::after,
   .turn-reasoning-summary-text.is-live-gray::after,
   .turn-process-preview.is-live::after,
-  .context-compaction-compacting-text::after {
+  .turn-event-notice.is-progress .turn-event-title::after {
     animation: none;
     transform: translateX(50%);
   }
@@ -4056,11 +4056,10 @@ pre {
 .turn-notice,
 .turn-error {
   border-radius: 0;
-  padding: 4px 0 4px 14px;
+  padding: 4px 0;
   line-height: var(--line-body);
   background: transparent;
   border: 0;
-  border-left: 2px solid currentColor;
 }
 
 .turn-error {
@@ -4071,7 +4070,7 @@ pre {
                                                                
                                          
 .turn-notice-actions {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   column-gap: 14px;
   row-gap: 4px;
@@ -4111,46 +4110,45 @@ pre {
 }
 
 .turn-notice {
-  display: grid;
-  grid-template-columns: 14px 1fr;
-  column-gap: 10px;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  gap: 14px;
   color: var(--ink-tertiary);
+  width: 100%;
   max-width: min(720px, 100%);
 }
 
-.turn-notice-icon {
-  display: grid;
-  width: 14px;
-  height: 16px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: currentColor;
-  margin-top: 3px;
+.turn-event-notice::before,
+.turn-event-notice::after {
+  content: "";
+  flex: 1;
+  min-width: 32px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.32;
 }
 
-.turn-notice-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.turn-notice-copy {
-  display: grid;
+.turn-event-content {
+  display: inline-grid;
   min-width: 0;
+  max-width: min(520px, 100%);
+  justify-items: center;
   gap: 2px;
+  text-align: center;
 }
 
-.turn-notice-copy strong {
-  color: var(--ink);
+.turn-event-title {
+  color: currentColor;
   font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-  line-height: 1.35;
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
-.turn-notice-copy span {
-  color: var(--ink);
+.turn-event-detail {
+  color: color-mix(in srgb, currentColor 72%, var(--ink) 28%);
   font-size: var(--font-ui);
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .turn-notice.warning {
@@ -4167,47 +4165,6 @@ pre {
 
 .turn-notice.context-compaction-notice {
   color: var(--ink-muted);
-  border-left-color: #c8cbc6;
-}
-
-/* in_progress variant: a centered label flanked by two fading dividers
-   with the shared live-gray sweep on the label. The host flips from
-   the default `display: grid` (icon + copy) to a single-row flex
-   layout, drops the left border, and grows the dividers from
-   `::before` / `::after`. The shimmer overlay lives in the shared
-   live-gray selector group above, so the visual language for "still
-   working" stays unified across tool, reasoning, preview, and
-   compaction surfaces. */
-.turn-notice.context-compaction-notice.is-compacting {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 4px 0;
-  border-left: 0;
-}
-
-.turn-notice.context-compaction-notice.is-compacting::before,
-.turn-notice.context-compaction-notice.is-compacting::after {
-  content: "";
-  flex: 1;
-  min-width: 32px;
-  height: 1px;
-  background: #c8cbc6;
-}
-
-.context-compaction-compacting-text {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  color: var(--ink-muted);
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.turn-notice.context-compaction-notice .turn-notice-copy strong {
-  color: #3b4045;
 }
 
   
