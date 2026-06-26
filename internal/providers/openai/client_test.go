@@ -2513,3 +2513,78 @@ func TestClampPromptCacheKey(t *testing.T) {
 		t.Fatalf("chinese clamp code points = %d, want %d", n, openAIPromptCacheKeyMaxLength)
 	}
 }
+
+func TestChat_ResponsesSendsSessionIDAndRequestIDFromCacheHint(t *testing.T) {
+	// The Responses wire path must mirror the prompt_cache_key value into
+	// session-id and x-client-request-id so the ChatGPT Codex backend can
+	// keep sticky routing across the tool loop. OpenAI ignores the headers
+	// on the public Responses API.
+	t.Helper()
+
+	var seenSession, seenRequest string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenSession = r.Header.Get("session-id")
+		seenRequest = r.Header.Get("x-client-request-id")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key", WireAPI: "responses"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+		},
+		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-abc-123"},
+	}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if seenSession != "thread-abc-123" {
+		t.Fatalf("session-id = %q, want thread-abc-123", seenSession)
+	}
+	if seenRequest != "thread-abc-123" {
+		t.Fatalf("x-client-request-id = %q, want thread-abc-123", seenRequest)
+	}
+}
+
+func TestChat_ResponsesOmitsSessionIDWithoutCacheHint(t *testing.T) {
+	// Without a CacheHint (or with an empty PromptCacheKey) the headers must
+	// not be sent at all: otherwise OpenAI would log unexplained session-id
+	// values, and codex-style backends could incorrectly chain unrelated
+	// requests.
+	t.Helper()
+
+	var seenSession, seenRequest string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenSession = r.Header.Get("session-id")
+		seenRequest = r.Header.Get("x-client-request-id")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key", WireAPI: "responses"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "hello"},
+		},
+	}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if seenSession != "" {
+		t.Fatalf("session-id = %q, want empty", seenSession)
+	}
+	if seenRequest != "" {
+		t.Fatalf("x-client-request-id = %q, want empty", seenRequest)
+	}
+}

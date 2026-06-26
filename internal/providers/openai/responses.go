@@ -28,7 +28,7 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doResponsesRequest(ctx, c.httpClient, body, false)
+	httpResp, err := c.doResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -61,7 +61,7 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 	}
 
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
-	resp, err := c.doSingleResponsesRequest(ctx, streamClient, body, true)
+	resp, err := c.doSingleResponsesRequest(ctx, streamClient, body, true, payload.ExtraHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +129,20 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		if len(tools) > 0 {
 			payload.ToolChoice = "auto"
 			payload.Tools = tools
+		}
+	}
+
+	// Sticky-routing headers for Codex-style backends. The ChatGPT backend
+	// keys turn-local state off session-id / x-client-request-id; the Codex
+	// CLI / pi set both to the prompt_cache_key value. OpenAI ignores the
+	// fields on the public Responses path, so it is safe to attach them
+	// unconditionally whenever a cache hint exists.
+	if req.CacheHint != nil {
+		if key := strings.TrimSpace(req.CacheHint.PromptCacheKey); key != "" {
+			payload.ExtraHeaders = map[string]string{
+				"session-id":          key,
+				"x-client-request-id": key,
+			}
 		}
 	}
 
@@ -487,6 +501,7 @@ func (c *Client) doSingleResponsesRequest(
 	httpClient *http.Client,
 	body []byte,
 	acceptStream bool,
+	extraHeaders map[string]string,
 ) (*http.Response, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/responses", bytes.NewReader(body))
 	if err != nil {
@@ -498,6 +513,9 @@ func (c *Client) doSingleResponsesRequest(
 		httpReq.Header.Set("Accept", "text/event-stream")
 	}
 	for k, v := range c.headers {
+		httpReq.Header.Set(k, v)
+	}
+	for k, v := range extraHeaders {
 		httpReq.Header.Set(k, v)
 	}
 
@@ -524,10 +542,11 @@ func (c *Client) doResponsesRequest(
 	httpClient *http.Client,
 	body []byte,
 	acceptStream bool,
+	extraHeaders map[string]string,
 ) (*http.Response, error) {
 	var httpResp *http.Response
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream)
+		resp, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream, extraHeaders)
 		if err != nil {
 			return err
 		}
@@ -860,7 +879,14 @@ type responsesRequest struct {
 	// ParallelToolCalls lets the backend issue concurrent tool calls when
 	// the model emits multiple in one turn. Codex / pi default this to true.
 	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
-	Options            map[string]any `json:"-"`
+	Options           map[string]any `json:"-"`
+	// ExtraHeaders carries per-request HTTP headers derived from runtime state
+	// (e.g. session-id / x-client-request-id sourced from the prompt cache
+	// key). They are not serialized into the request body; the caller is
+	// expected to merge them onto the outgoing http.Request right before
+	// dispatch. OpenAI ignores them on the public API path; the ChatGPT
+	// Codex backend uses them for sticky routing within a turn.
+	ExtraHeaders map[string]string `json:"-"`
 }
 
 type responsesReasoning struct {
