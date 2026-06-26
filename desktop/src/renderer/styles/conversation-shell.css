@@ -817,13 +817,14 @@
 
 .conversation-turn-rail {
   position: absolute;
-  left: 0;
+  /* Breathing space from the left panel's right edge */
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  width: 18px;
+  width: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding: 0;
   z-index: 100;
   /* The container is the hover zone so the gap between bars and the
@@ -834,9 +835,9 @@
 
 .conversation-turn-rail-bar {
   position: relative;
-  width: 18px;
-  height: 5px;
-  border-radius: 2.5px;
+  width: 12px;
+  height: 3px;
+  border-radius: 1.5px;
   background: rgba(60, 60, 67, 0.4);
   cursor: pointer;
   pointer-events: auto;
@@ -847,13 +848,13 @@
 }
 
 .conversation-turn-rail-bar.adjacent {
-  width: 26px;
+  width: 18px;
 }
 
 .conversation-turn-rail-bar.hovered,
 .conversation-turn-rail-bar:hover {
-  width: 44px;
-  height: 7px;
+  width: 32px;
+  height: 5px;
   background: var(--ink);
 }
 
