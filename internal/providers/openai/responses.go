@@ -265,6 +265,11 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 	}
 
 	if msg.Role == "assistant" {
+		for _, block := range msg.ReasoningBlocks {
+			if item, ok := responsesReasoningInputItem(block); ok {
+				input = append(input, item)
+			}
+		}
 		if strings.TrimSpace(msg.Content) != "" {
 			input = append(input, responsesInputItem{
 				Role:    "assistant",
@@ -299,6 +304,20 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 		Role:    msg.Role,
 		Content: responsesMessageContent(msg),
 	})
+}
+
+func responsesReasoningInputItem(block providers.ReasoningBlock) (responsesInputItem, bool) {
+	raw := json.RawMessage(strings.TrimSpace(block.Data))
+	if len(raw) == 0 || !json.Valid(raw) {
+		return responsesInputItem{}, false
+	}
+	var probe struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil || probe.Type != "reasoning" {
+		return responsesInputItem{}, false
+	}
+	return responsesInputItem{Raw: append(json.RawMessage(nil), raw...)}, true
 }
 
 func responsesMessageContent(msg providers.ChatMessage) any {
@@ -573,6 +592,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 	resetIdle := func() { idleTimer.Reset(idleTimeout) }
 
 	pending := newResponsesPendingTools()
+	pendingReasoning := newResponsesPendingReasoning()
 	var sawToolCall bool
 	var currentTextPhase providers.MessagePhase
 
@@ -603,6 +623,12 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 		}
 
 		switch event.Type {
+		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			pendingReasoning.appendDelta(event, event.Delta, ch)
+
+		case "response.reasoning_summary_part.done":
+			pendingReasoning.appendDelta(event, "\n\n", ch)
+
 		case "response.output_text.delta":
 			if event.Delta != "" {
 				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase}
@@ -610,6 +636,8 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 		case "response.output_item.added":
 			switch event.Item.Type {
+			case "reasoning":
+				pendingReasoning.start(event.Item, event.outputIndex())
 			case "message":
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
@@ -630,6 +658,8 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 		case "response.output_item.done":
 			switch event.Item.Type {
+			case "reasoning":
+				pendingReasoning.emitDone(event, ch)
 			case "message":
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
@@ -724,6 +754,88 @@ type responsesPendingTool struct {
 	kind        providers.ToolCallKind
 	args        strings.Builder
 	ended       bool
+}
+
+type responsesPendingReasoning struct {
+	items    []*strings.Builder
+	byItemID map[string]*strings.Builder
+	byIndex  map[int]*strings.Builder
+}
+
+func newResponsesPendingReasoning() *responsesPendingReasoning {
+	return &responsesPendingReasoning{
+		byItemID: make(map[string]*strings.Builder),
+		byIndex:  make(map[int]*strings.Builder),
+	}
+}
+
+func (p *responsesPendingReasoning) start(item responsesOutputItem, outputIndex int) *strings.Builder {
+	if item.Type != "reasoning" {
+		return nil
+	}
+	builder := &strings.Builder{}
+	p.items = append(p.items, builder)
+	if item.ID != "" {
+		p.byItemID[item.ID] = builder
+	}
+	if outputIndex >= 0 {
+		p.byIndex[outputIndex] = builder
+	}
+	return builder
+}
+
+func (p *responsesPendingReasoning) appendDelta(event responsesStreamEvent, delta string, ch chan<- providers.StreamEvent) {
+	if delta == "" {
+		return
+	}
+	builder := p.find(event)
+	if builder == nil {
+		builder = p.start(responsesOutputItem{Type: "reasoning", ID: event.ItemID}, event.outputIndex())
+	}
+	if builder != nil {
+		builder.WriteString(delta)
+	}
+	ch <- providers.StreamEvent{Type: providers.EventThinkingDelta, Content: delta}
+}
+
+func (p *responsesPendingReasoning) emitDone(event responsesStreamEvent, ch chan<- providers.StreamEvent) {
+	if event.Item.Type != "reasoning" {
+		return
+	}
+	block := responsesReasoningBlock(event.Item)
+	if strings.TrimSpace(block.Thinking) == "" {
+		if builder := p.find(event); builder != nil {
+			block.Thinking = builder.String()
+		}
+	}
+	if strings.TrimSpace(block.Thinking) != "" {
+		if builder := p.find(event); builder == nil || builder.String() == "" {
+			ch <- providers.StreamEvent{Type: providers.EventThinkingDelta, Content: block.Thinking}
+		}
+	}
+	ch <- providers.StreamEvent{Type: providers.EventThinkingDone, ReasoningBlock: &block}
+}
+
+func (p *responsesPendingReasoning) find(event responsesStreamEvent) *strings.Builder {
+	if event.ItemID != "" {
+		if builder := p.byItemID[event.ItemID]; builder != nil {
+			return builder
+		}
+	}
+	if event.Item.ID != "" {
+		if builder := p.byItemID[event.Item.ID]; builder != nil {
+			return builder
+		}
+	}
+	if idx := event.outputIndex(); idx >= 0 {
+		if builder := p.byIndex[idx]; builder != nil {
+			return builder
+		}
+	}
+	if len(p.items) == 0 {
+		return nil
+	}
+	return p.items[len(p.items)-1]
 }
 
 type responsesPendingTools struct {
@@ -861,24 +973,24 @@ func (p *responsesPendingTool) update(item responsesOutputItem, outputIndex int)
 }
 
 type responsesRequest struct {
-	Model            string                    `json:"model"`
-	Instructions     string                    `json:"instructions,omitempty"`
-	Input            []responsesInputItem      `json:"input"`
-	Tools            []responsesToolDefinition `json:"tools,omitempty"`
-	ToolChoice       string                    `json:"tool_choice,omitempty"`
-	Temperature      float64                   `json:"temperature,omitempty"`
-	MaxOutputTokens  int                       `json:"max_output_tokens,omitempty"`
-	Stream           bool                      `json:"stream,omitempty"`
-	Store            *bool                     `json:"store,omitempty"`
-	Reasoning        *responsesReasoning       `json:"reasoning,omitempty"`
-	PromptCacheKey   string                    `json:"prompt_cache_key,omitempty"`
+	Model           string                    `json:"model"`
+	Instructions    string                    `json:"instructions,omitempty"`
+	Input           []responsesInputItem      `json:"input"`
+	Tools           []responsesToolDefinition `json:"tools,omitempty"`
+	ToolChoice      string                    `json:"tool_choice,omitempty"`
+	Temperature     float64                   `json:"temperature,omitempty"`
+	MaxOutputTokens int                       `json:"max_output_tokens,omitempty"`
+	Stream          bool                      `json:"stream,omitempty"`
+	Store           *bool                     `json:"store,omitempty"`
+	Reasoning       *responsesReasoning       `json:"reasoning,omitempty"`
+	PromptCacheKey  string                    `json:"prompt_cache_key,omitempty"`
 	// Include asks the backend to surface specific output items (e.g.
 	// "reasoning.encrypted_content") alongside the assistant message.
 	// Codex / pi require this for reasoning replay.
 	Include []string `json:"include,omitempty"`
 	// ParallelToolCalls lets the backend issue concurrent tool calls when
 	// the model emits multiple in one turn. Codex / pi default this to true.
-	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
+	ParallelToolCalls *bool          `json:"parallel_tool_calls,omitempty"`
 	Options           map[string]any `json:"-"`
 	// ExtraHeaders carries per-request HTTP headers derived from runtime state
 	// (e.g. session-id / x-client-request-id sourced from the prompt cache
@@ -894,16 +1006,26 @@ type responsesReasoning struct {
 }
 
 type responsesInputItem struct {
-	Type      string `json:"type,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Content   any    `json:"content,omitempty"`
-	CallID    string `json:"call_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Execution string `json:"execution,omitempty"`
-	Arguments any    `json:"arguments,omitempty"`
-	Output    string `json:"output,omitempty"`
-	Tools     any    `json:"tools,omitempty"`
+	Raw       json.RawMessage `json:"-"`
+	Type      string          `json:"type,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Content   any             `json:"content,omitempty"`
+	CallID    string          `json:"call_id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Status    string          `json:"status,omitempty"`
+	Execution string          `json:"execution,omitempty"`
+	Arguments any             `json:"arguments,omitempty"`
+	Output    string          `json:"output,omitempty"`
+	Tools     any             `json:"tools,omitempty"`
+}
+
+func (i responsesInputItem) MarshalJSON() ([]byte, error) {
+	if len(i.Raw) > 0 {
+		return i.Raw, nil
+	}
+	type alias responsesInputItem
+	return json.Marshal(alias(i))
 }
 
 type responsesInputContentPart struct {
@@ -939,9 +1061,12 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 
 	var contentParts []string
 	calls := make([]providers.ToolCall, 0)
+	reasoningBlocks := make([]providers.ReasoningBlock, 0)
 	var phase providers.MessagePhase
 	for _, item := range r.Output {
 		switch item.Type {
+		case "reasoning":
+			reasoningBlocks = append(reasoningBlocks, responsesReasoningBlock(item))
 		case "message":
 			if itemPhase := providers.NormalizeMessagePhase(item.Phase); itemPhase != "" {
 				phase = itemPhase
@@ -981,27 +1106,85 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 	finishReason := providers.NormalizeFinishReason(stopReason, truncated, len(calls) > 0)
 
 	return providers.ChatResponse{
-		Content:      strings.Join(contentParts, "\n"),
-		Phase:        phase,
-		ToolCalls:    calls,
-		Usage:        r.Usage.asTokenUsage(),
-		StopReason:   stopReason,
-		FinishReason: finishReason,
-		Truncated:    truncated,
+		Content:         strings.Join(contentParts, "\n"),
+		Phase:           phase,
+		ReasoningBlocks: reasoningBlocks,
+		ToolCalls:       calls,
+		Usage:           r.Usage.asTokenUsage(),
+		StopReason:      stopReason,
+		FinishReason:    finishReason,
+		Truncated:       truncated,
 	}, nil
 }
 
 type responsesOutputItem struct {
+	Raw       json.RawMessage `json:"-"`
 	ID        string          `json:"id"`
 	Type      string          `json:"type"`
 	Role      string          `json:"role,omitempty"`
 	Phase     string          `json:"phase,omitempty"`
 	Status    string          `json:"status,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"`
+	Summary   json.RawMessage `json:"summary,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
 	Name      string          `json:"name,omitempty"`
 	Execution string          `json:"execution,omitempty"`
 	Arguments json.RawMessage `json:"arguments,omitempty"`
+}
+
+func (i *responsesOutputItem) UnmarshalJSON(data []byte) error {
+	type alias responsesOutputItem
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*i = responsesOutputItem(decoded)
+	if json.Valid(data) {
+		i.Raw = append(i.Raw[:0], data...)
+	}
+	return nil
+}
+
+func responsesReasoningBlock(item responsesOutputItem) providers.ReasoningBlock {
+	return providers.ReasoningBlock{
+		Type:     "reasoning",
+		Thinking: firstNonEmptyString(responsesTextFromParts(item.Summary), responsesTextFromParts(item.Content)),
+		Data:     string(item.Raw),
+	}
+}
+
+func responsesTextFromParts(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var parts []struct {
+		Text string `json:"text,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if part.Text != "" {
+				out = append(out, part.Text)
+			}
+		}
+		return strings.Join(out, "\n\n")
+	}
+	var part struct {
+		Text string `json:"text,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &part); err == nil {
+		return part.Text
+	}
+	return ""
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (i responsesOutputItem) toolCallName() string {

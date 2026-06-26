@@ -1770,6 +1770,55 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	}
 }
 
+func TestResponsesRequest_ReplaysReasoningBlocks(t *testing.T) {
+	client := &Client{}
+	reasoningRaw := `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"inspect first"}],"encrypted_content":"enc_123"}`
+
+	payload, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "inspect"},
+			{
+				Role: "assistant",
+				ReasoningBlocks: []providers.ReasoningBlock{{
+					Type:     "reasoning",
+					Thinking: "inspect first",
+					Data:     reasoningRaw,
+				}},
+				ToolCalls: []providers.ToolCall{{
+					ID:        "call_1",
+					Name:      "read_file",
+					Arguments: `{"path":"README.md"}`,
+				}},
+			},
+			{Role: "tool", ToolCallID: "call_1", Content: "contents"},
+		},
+	}, false)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	body, err := marshalResponsesRequest(payload)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	input, ok := decoded["input"].([]any)
+	if !ok || len(input) != 4 {
+		t.Fatalf("unexpected input: %#v", decoded["input"])
+	}
+	reasoning, ok := input[1].(map[string]any)
+	if !ok || reasoning["type"] != "reasoning" || reasoning["id"] != "rs_1" || reasoning["encrypted_content"] != "enc_123" {
+		t.Fatalf("reasoning item was not replayed verbatim: %#v", input[1])
+	}
+	if input[2].(map[string]any)["type"] != "function_call" {
+		t.Fatalf("expected function call after reasoning item, got %#v", input[2])
+	}
+}
+
 func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
@@ -2280,6 +2329,57 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 	}
 	if done.Usage == nil || done.Usage.InputTokens != 5 || done.Usage.OutputTokens != 2 {
 		t.Fatalf("unexpected usage: %+v", done.Usage)
+	}
+}
+
+func TestResponsesStreamChat_ParsesReasoningItem(t *testing.T) {
+	ssePayload := "event: response.output_item.added\n" +
+		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"in_progress\"},\"output_index\":0}\n\n" +
+		"event: response.reasoning_summary_text.delta\n" +
+		"data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"inspect first\",\"output_index\":0}\n\n" +
+		"event: response.output_item.done\n" +
+		"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"inspect first\"}],\"encrypted_content\":\"enc_123\"},\"output_index\":0}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var thinking string
+	var block *providers.ReasoningBlock
+	for ev := range ch {
+		switch ev.Type {
+		case providers.EventThinkingDelta:
+			thinking += ev.Content
+		case providers.EventThinkingDone:
+			block = ev.ReasoningBlock
+		}
+	}
+	if thinking != "inspect first" {
+		t.Fatalf("thinking delta = %q", thinking)
+	}
+	if block == nil || block.Type != "reasoning" || block.Thinking != "inspect first" || !strings.Contains(block.Data, `"encrypted_content":"enc_123"`) {
+		t.Fatalf("unexpected reasoning block: %+v", block)
 	}
 }
 
