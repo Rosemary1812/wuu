@@ -245,6 +245,17 @@ export function Composer({
   const permissionMode = permissionModeFromSummary(initialized?.permissions);
   const permissionOption = permissionModeOption(permissionMode);
   const permissionChipLabel = permissionModeHasOverrides ? "自定义权限" : permissionOption.chipLabel;
+  const projectPillLabel = heroProjectPillLabel(activeContext, activeProject);
+  const projectPillTitle =
+    activeContext?.kind === "project" && activeProject?.path
+      ? activeProject.path
+      : projectPillLabel;
+  const ProjectPillIcon =
+    activeContext?.kind === "no_project"
+      ? FolderX
+      : activeContext?.kind === "project"
+        ? Folder
+        : FolderOpen;
   const visibleSlashCommands = useMemo(
     () => filterComposerSlashCommands(slashCommands, slashQuery),
     [slashCommands, slashQuery]
@@ -544,9 +555,49 @@ export function Composer({
               onKeyDown={handleComposerKeyDown}
             />
             <div className="composer-bar">
-              <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
-                <Plus className="icon-xl" />
-              </button>
+              {variant === "hero" ? (
+                <div className="hero-project-pill-anchor" ref={menuRef}>
+                  <button
+                    className="hero-project-pill"
+                    type="button"
+                    title={projectPillTitle}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    aria-label={`切换项目：${projectPillLabel}`}
+                    onClick={onToggleMenu}
+                  >
+                    <span className="hero-project-pill-icon" aria-hidden="true">
+                      <ProjectPillIcon />
+                    </span>
+                    <span className="hero-project-pill-text">{projectPillLabel}</span>
+                    <ChevronDown className="hero-project-pill-chevron" aria-hidden="true" />
+                  </button>
+                  {menuOpen ? (
+                    <FloatingMenuPortal
+                      anchorRef={menuRef}
+                      owner="composer-runtime"
+                      placement="above"
+                      align="left"
+                      width={300}
+                    >
+                      <ProjectPickerMenu
+                        projects={projects}
+                        activeContext={activeContext}
+                        query={projectFilter}
+                        setQuery={setProjectFilter}
+                        onSelectProject={onSelectProject}
+                        onSelectNoProject={onSelectNoProject}
+                        onCreateProject={onCreateProject}
+                        onOpenProject={onOpenProject}
+                      />
+                    </FloatingMenuPortal>
+                  ) : null}
+                </div>
+              ) : (
+                <button className="composer-tool-button" type="button" aria-label="打开项目" onClick={onOpenProject}>
+                  <Plus className="icon-xl" />
+                </button>
+              )}
               <button
                 className="composer-tool-button"
                 type="button"
@@ -641,44 +692,6 @@ export function Composer({
               </button>
             </div>
           </div>
-          {variant === "hero" ? (
-            <div className="hero-project-pill-anchor" ref={menuRef}>
-              <button
-                className="hero-project-pill"
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={onToggleMenu}
-              >
-                <Folder aria-hidden="true" />
-                <span>
-                  {activeContext?.kind === "project" && activeProject?.name
-                    ? activeProject.name
-                    : "Choose project"}
-                </span>
-              </button>
-              {menuOpen ? (
-                <FloatingMenuPortal
-                  anchorRef={menuRef}
-                  owner="composer-runtime"
-                  placement="above"
-                  align="left"
-                  width={300}
-                >
-                  <ProjectPickerMenu
-                    projects={projects}
-                    activeContext={activeContext}
-                    query={projectFilter}
-                    setQuery={setProjectFilter}
-                    onSelectProject={onSelectProject}
-                    onSelectNoProject={onSelectNoProject}
-                    onCreateProject={onCreateProject}
-                    onOpenProject={onOpenProject}
-                  />
-                </FloatingMenuPortal>
-              ) : null}
-            </div>
-          ) : null}
         </div>
       </div>
     </div>
@@ -735,6 +748,16 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
 
 function composerRuntimeContextKey(context: RuntimeContext): string {
   return context.kind === "project" ? `project:${context.project_id}` : `no_project:${context.cwd}`;
+}
+
+function heroProjectPillLabel(activeContext: RuntimeContext | undefined, activeProject: DesktopProject | undefined): string {
+  if (activeContext?.kind === "project") {
+    return activeProject?.name ?? "当前项目";
+  }
+  if (activeContext?.kind === "no_project") {
+    return "无项目";
+  }
+  return "选择项目";
 }
 
 function exactRunnableSlashCommand(commands: ComposerSlashCommand[], draft: ComposerSlashDraft): ComposerSlashCommand | undefined {

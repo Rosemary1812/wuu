@@ -13,6 +13,7 @@ import {
 import { ImagePreviewProvider } from "./ImagePreview";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import type {
+  DesktopProject,
   InitializeResult,
   PermissionSummary,
   RuntimeContext,
@@ -82,6 +83,8 @@ function renderComposer(props: {
   tokensPerSecond?: number;
   tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
+  activeProject?: DesktopProject;
+  projects?: DesktopProject[];
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -105,8 +108,9 @@ function renderComposer(props: {
           status={props.status ?? "ready"}
           readOnly={false}
           initialized={initialized(props.toolPolicy, props.permissions)}
-          projects={[]}
+          projects={props.projects ?? []}
           activeContext={props.activeContext}
+          activeProject={props.activeProject}
           codexModels={codexModels}
           codexRuntimeMenu={null}
           codexRuntimeRef={createRef<HTMLDivElement>()}
@@ -346,18 +350,36 @@ describe("Composer send control", () => {
     expect(frame?.contains(slashMenu)).toBe(false);
   });
 
-  it("shows the hero project pill before a session starts", () => {
+  it("shows the hero project selector inside the composer toolbar", () => {
     renderComposer({
       variant: "hero",
     });
 
-    // The hero composer no longer renders a context bar; the project picker
-    // is now a single light pill anchored below the input.
     expect(container.querySelector(".composer-context-bar")).toBeNull();
     expect(container.querySelector(".context-project-button")).toBeNull();
-    expect(container.querySelector(".hero-project-pill-anchor")).not.toBeNull();
+    expect(container.querySelector(".composer-bar > .hero-project-pill-anchor")).not.toBeNull();
     expect(container.querySelector(".hero-project-pill")).not.toBeNull();
-    expect(container.querySelector(".hero-project-pill")?.textContent).toContain("Choose project");
+    expect(container.querySelector(".hero-project-pill")?.textContent).toContain("选择项目");
+    expect(container.querySelector<HTMLButtonElement>("button[aria-label=\"打开项目\"]")).toBeNull();
+  });
+
+  it("uses the active project name in the hero project selector", () => {
+    renderComposer({
+      variant: "hero",
+      activeContext: { kind: "project", project_id: "project-1", cwd: "/repo/wuu" },
+      activeProject: {
+        id: "project-1",
+        name: "wuu",
+        path: "/repo/wuu",
+        created_at: "2026-06-26T00:00:00.000Z",
+        updated_at: "2026-06-26T00:00:00.000Z",
+      },
+    });
+
+    const selector = container.querySelector<HTMLButtonElement>(".hero-project-pill");
+    expect(selector).not.toBeNull();
+    expect(selector?.textContent).toContain("wuu");
+    expect(selector?.getAttribute("title")).toBe("/repo/wuu");
   });
 
   it("inserts a selected skill slash command into the composer", async () => {
