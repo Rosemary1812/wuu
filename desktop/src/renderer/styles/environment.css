@@ -148,7 +148,6 @@
   margin-bottom: 10px;
   padding: 3px 8px 13px;
   max-height: min(320px, calc(100vh - 360px));
-  min-height: clamp(120px, 24vh, 220px);
   contain: layout paint;
 }
 
