@@ -51,6 +51,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
 			"Write a concrete brief using the shared Base Agent Brief Contract. " +
 			prompttext.AgentBriefContractSummary() + " " +
+			"For a fresh subagent_type invocation, write `prompt` as the helper's first and complete query: include the task, necessary context, scope, constraints, acceptance criteria, and expected report. " +
+			"For a fork invocation, write `prompt` as an incremental directive: rely on inherited context and specify the focus, owned scope, non-goals, and deliverable instead of pasting the whole transcript. " +
+			"Use helpme, not ordinary spawn_agent, when the purpose is context rescue, repeated-failure recovery, or a fresh second opinion on the parent agent's assumptions. " +
 			prompttext.ProfileBriefExtensionSummary() + " " +
 			prompttext.EphemeralBriefExtensionSummary() + " " +
 			"Do not make the child infer missing acceptance criteria from a vague ask. " +
@@ -77,8 +80,11 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"description": "Short 3-5 word summary of what the agent will do.",
 				},
 				"prompt": map[string]any{
-					"type":        "string",
-					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() + " For code edits, include owned files/modules and out-of-scope neighbors. Fresh subagents start without conversation context; forks inherit your current context but still need a specific directive.",
+					"type": "string",
+					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() +
+						" For fresh subagents, this is their first query and must be self-contained: include the task, necessary context, starting points, constraints, acceptance criteria, and expected report. " +
+						"For forks, keep this as an incremental directive that relies on inherited context while naming focus, scope, non-goals, and deliverable. " +
+						"For code edits, include owned files/modules and out-of-scope neighbors. Use helpme instead when the purpose is context rescue or second-opinion recovery.",
 				},
 				"subagent_type": map[string]any{
 					"type":        "string",

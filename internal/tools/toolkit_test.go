@@ -5443,6 +5443,12 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"Keep work local",
 			"concrete brief",
 			"Base Agent Brief Contract",
+			"fresh subagent_type invocation",
+			"first and complete query",
+			"fork invocation",
+			"incremental directive",
+			"Use helpme",
+			"context rescue",
 			"destructive or broad experiments",
 			"overlapping or uncertain concurrent writes",
 			"generated outputs/formatters",
@@ -5461,7 +5467,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
 			"subagent_type": {"general-purpose", "verification", "fork yourself"},
-			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "owned files/modules", "Fresh subagents"},
+			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "fresh subagents", "first query", "self-contained", "forks", "incremental directive", "helpme"},
 			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
 			"goal_id":       {"workflow evidence Goal id", "start_workflow", "run_workflow"},
