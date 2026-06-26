@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
 import { truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
 
@@ -7,7 +7,7 @@ import { truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
 // neighbours grow by ~1.5x. The spring easing is applied via CSS
 // (cubic-bezier with slight overshoot) so React stays out of the
 // animation loop.
-const RAIL_BAR_DEFAULT_WIDTH = 14;
+const RAIL_BAR_DEFAULT_WIDTH = 18;
 const RAIL_BAR_ADJACENT_WIDTH = 22;
 const RAIL_BAR_HOVERED_WIDTH = 40;
 
@@ -18,9 +18,15 @@ const RAIL_BAR_HOVERED_WIDTH = 40;
  * slightly, in classic Dock fashion) and reveals a preview card to the
  * right with that turn's first agent reply.
  *
- * Visibility/animation is driven entirely by the `hovered` and `adjacent`
- * CSS classes plus CSS transitions; the component itself just tracks which
- * turn the cursor is over.
+ * Hover continuity ("连贯"): the container is the hover zone
+ * (pointer-events: auto) and a `mousemove` handler finds the bar
+ * closest to the mouse Y position, so the hover effect stays
+ * continuous when the mouse crosses the gap between bars. A transparent
+ * bridge element covers the 12px gap between each bar and its preview
+ * card, so the mouse can move from bar -> preview without losing the
+ * hover state. The bridge is non-interactive by default (doesn't
+ * block the chat content) and only becomes interactive when the bar is
+ * hovered.
  *
  * The rail always renders, even when the thread has no turns yet, so its
  * position stays discoverable from a fresh conversation. In the empty
@@ -35,6 +41,7 @@ export function ConversationTurnRail({
   activeTurnID?: string;
 }): JSX.Element {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const isEmpty = turns.length === 0;
   const hoveredIndex = turns.findIndex((t) => t.id === hoveredTurnID);
@@ -48,8 +55,66 @@ export function ConversationTurnRail({
     }
   }
 
+  // Magnet the hover to the bar closest to the mouse Y. This keeps the
+  // hover continuous when the mouse crosses the gap between bars (the
+  // 8px gap in the flex container would otherwise be a dead zone).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      if (!container) {
+        return;
+      }
+      const barElements = container.querySelectorAll<HTMLElement>(
+        ".conversation-turn-rail-bar"
+      );
+      if (barElements.length === 0) {
+        return;
+      }
+
+      const mouseY = event.clientY;
+      let closestBar: HTMLElement | null = null;
+      let closestDistance = Infinity;
+
+      barElements.forEach((bar) => {
+        const rect = bar.getBoundingClientRect();
+        const barCenterY = rect.top + rect.height / 2;
+        const distance = Math.abs(mouseY - barCenterY);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestBar = bar;
+        }
+      });
+
+      if (!closestBar) {
+        return;
+      }
+      const turnID = closestBar.getAttribute("data-turn-id");
+      if (!turnID || turnID === "placeholder") {
+        return;
+      }
+      setHoveredTurnID((current) => (current === turnID ? current : turnID));
+    }
+
+    function handleMouseLeave() {
+      setHoveredTurnID(undefined);
+    }
+
+    container.addEventListener("mousemove", handleMouseMove);
+    container.addEventListener("mouseleave", handleMouseLeave);
+
+    return () => {
+      container.removeEventListener("mousemove", handleMouseMove);
+      container.removeEventListener("mouseleave", handleMouseLeave);
+    };
+  }, [turns]);
+
   return (
     <div
+      ref={containerRef}
       className="conversation-turn-rail"
       aria-label="对话回合导航"
       data-empty={isEmpty}
@@ -58,6 +123,7 @@ export function ConversationTurnRail({
         <div
           className="conversation-turn-rail-bar placeholder"
           aria-hidden="true"
+          data-turn-id="placeholder"
         />
       ) : (
         turns.map((turn, index) => {
@@ -75,10 +141,13 @@ export function ConversationTurnRail({
           return (
             <div
               key={turn.id}
+              data-turn-id={turn.id}
               className={className}
-              onMouseEnter={() => setHoveredTurnID(turn.id)}
-              onMouseLeave={() => setHoveredTurnID(undefined)}
             >
+              <div
+                className="conversation-turn-rail-bridge"
+                aria-hidden="true"
+              />
               {isHovered ? <TurnHoverPreview turn={turn} /> : null}
             </div>
           );

@@ -826,7 +826,10 @@
   gap: 8px;
   padding: 0;
   z-index: 100;
-  pointer-events: none;
+  /* The container is the hover zone so the gap between bars and the
+     gap between bar and preview card stay continuous. The mouse-move
+     handler in the component picks the bar closest to the cursor Y. */
+  pointer-events: auto;
 }
 
 .conversation-turn-rail-bar {
@@ -867,6 +870,24 @@
   pointer-events: none;
 }
 
+/* Bridge that covers the 12px gap between each bar and its preview
+   card. Non-interactive by default so it doesn't block the chat
+   content; the bar's `.hovered` state flips it on so the cursor can
+   move bar -> bridge -> preview without losing the hover. */
+.conversation-turn-rail-bridge {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  width: 12px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.conversation-turn-rail-bar.hovered .conversation-turn-rail-bridge {
+  pointer-events: auto;
+}
+
 .conversation-turn-rail-preview {
   position: absolute;
   left: calc(100% + 12px);
@@ -888,6 +909,7 @@
 .conversation-turn-rail-bar.hovered .conversation-turn-rail-preview {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
