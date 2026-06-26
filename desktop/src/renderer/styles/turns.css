@@ -297,6 +297,12 @@
   justify-items: stretch;
 }
 
+.user-message-block:has(.user-message-long-card) {
+  width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
+}
+
                                                                          
                                                                      
                                                                      
@@ -332,37 +338,43 @@
   max-width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
 }
 
+.conversation-split-width .user-message-block:has(.user-message-long-card) {
+  width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
+}
+
 .user-message-block .user-message {
   max-width: 100%;
 }
 
-.user-message-text-collapsed {
-  position: relative;
-  max-height: 15.2em;
+.user-message-long-card {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: flex-start;
+  border-radius: calc(var(--radius-lg) + 8px);
   overflow: hidden;
+  padding: 18px 22px 16px;
 }
 
-.user-message-text-collapsed::after {
-  content: "...";
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  min-width: 44px;
-  padding-left: 44px;
-  background: linear-gradient(
-    90deg,
-    rgba(232, 232, 228, 0),
-    var(--user-message-background) 52%
-  );
-  color: var(--ink-muted);
-  pointer-events: none;
-  text-align: right;
+.user-message-raw-query {
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .user-message-expand-toggle {
-  justify-self: start;
-  height: 26px;
-  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 14px;
+  min-height: 24px;
+  border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
@@ -370,19 +382,22 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   line-height: 1;
-  padding: 0 9px;
+  padding: 0;
   transition:
     background-color 120ms ease,
-    border-color 120ms ease,
     color 120ms ease;
 }
 
 .user-message-expand-toggle:hover,
 .user-message-expand-toggle:focus-visible {
   outline: 0;
-  border-color: var(--ink-overlay-8);
-  background: var(--surface-2);
   color: var(--ink);
+}
+
+.user-message-expand-toggle svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
 }
 
 /*

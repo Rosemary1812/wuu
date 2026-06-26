@@ -7,7 +7,6 @@ import { MessageCopyButton } from "./MessageActions";
 type RichContentProps = {
   text?: string;
   cwd?: string;
-  className?: string;
 };
 
 export type RichBlock =
@@ -30,9 +29,9 @@ type MermaidState =
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 
-export const RichContent = memo(function RichContent({ text = "", cwd, className = "" }: RichContentProps): JSX.Element {
+export const RichContent = memo(function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
   return (
-    <div className={`rich-content${className ? ` ${className}` : ""}`}>
+    <div className="rich-content">
       <MarkdownContent text={text} cwd={cwd} />
     </div>
   );

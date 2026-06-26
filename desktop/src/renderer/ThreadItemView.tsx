@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { Paperclip } from "lucide-react";
+import { ChevronDown, ChevronUp, Paperclip } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import {
@@ -37,9 +37,10 @@ import {
   type UserFacingErrorAction,
 } from "./UserFacingErrors";
 
-const COLLAPSIBLE_USER_MESSAGE_LINE_THRESHOLD = 10;
+const COLLAPSIBLE_USER_MESSAGE_LINE_THRESHOLD = 14;
 const COLLAPSIBLE_USER_MESSAGE_CHAR_THRESHOLD = 1200;
 const COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS = 84;
+const COLLAPSIBLE_USER_MESSAGE_PREVIEW_LINES = 14;
 
 export function ThreadItemView({
   turnID,
@@ -239,21 +240,24 @@ function UserMessageBubble({
   const expanded =
     collapsible && expandedState.text === text ? expandedState.expanded : false;
 
+  const collapsed = collapsible && !expanded;
+  const displayedText = collapsed ? collapsedUserMessagePreview(text) : text;
+
   return (
-    <>
-      <div className="message user-message">
-        {images.length ? <MessageImageGrid images={images} /> : null}
-        {files.length ? <MessageFileList files={files} /> : null}
-        {text ? (
-          <RichContent
-            text={text}
-            cwd={cwd}
-            className={
-              collapsible && !expanded ? "user-message-text-collapsed" : ""
-            }
-          />
-        ) : null}
-      </div>
+    <div
+      className={`message user-message${
+        collapsible
+          ? ` user-message-long-card ${expanded ? "expanded" : "collapsed"}`
+          : ""
+      }`}
+    >
+      {images.length ? <MessageImageGrid images={images} /> : null}
+      {files.length ? <MessageFileList files={files} /> : null}
+      {collapsible ? (
+        <div className="user-message-raw-query">{displayedText}</div>
+      ) : text ? (
+        <RichContent text={text} cwd={cwd} />
+      ) : null}
       {collapsible ? (
         <button
           type="button"
@@ -266,11 +270,42 @@ function UserMessageBubble({
             })
           }
         >
-          {expanded ? "收起" : "展开全文"}
+          <span>{expanded ? "收起" : "显示更多"}</span>
+          {expanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
         </button>
       ) : null}
-    </>
+    </div>
   );
+}
+
+function collapsedUserMessagePreview(text: string): string {
+  let estimatedLines = 0;
+  const previewLines: string[] = [];
+
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const lineEstimate = Math.max(
+      1,
+      Math.ceil(line.length / COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS),
+    );
+    if (estimatedLines + lineEstimate <= COLLAPSIBLE_USER_MESSAGE_PREVIEW_LINES) {
+      previewLines.push(line);
+      estimatedLines += lineEstimate;
+      continue;
+    }
+
+    const remainingLines = COLLAPSIBLE_USER_MESSAGE_PREVIEW_LINES - estimatedLines;
+    if (remainingLines > 0) {
+      previewLines.push(
+        line
+          .slice(0, remainingLines * COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS)
+          .trimEnd(),
+      );
+    }
+    break;
+  }
+
+  const preview = previewLines.join("\n").trimEnd();
+  return preview ? `${preview}...` : "...";
 }
 
 function isCollapsibleUserMessage(text: string): boolean {
