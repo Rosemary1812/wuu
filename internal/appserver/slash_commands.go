@@ -44,8 +44,8 @@ var lightweightSlashCommandTemplates = []slashCommandTemplate{
 		Name:        "helpme",
 		Aliases:     []string{"rescue", "handoff"},
 		Execution:   slashCommandExecutionInlinePrompt,
-		Prompt:      "Start a HelpMe recovery for this task:\n\n{{args}}\n\nCall the helpme tool with the original goal, your current understanding, failed or low-confidence attempts, preserved constraints, and concrete evidence. Use HelpMe to launch a fresh general-purpose helper and automatically compact the combined context after the helper finishes. Do not continue trying to solve only from the current polluted context.",
-		PromptNoArg: "Start a HelpMe recovery for the current task. Call the helpme tool with the original goal, your current understanding, failed or low-confidence attempts, preserved constraints, and concrete evidence. Use HelpMe to launch a fresh general-purpose helper and automatically compact the combined context after the helper finishes. Do not continue trying to solve only from the current polluted context.",
+		Prompt:      "Start a HelpMe recovery for this task:\n\n{{args}}\n\nCall the helpme tool with the original goal, your current understanding, failed or low-confidence attempts, preserved constraints, and concrete evidence. Pass failed_attempts, constraints, and evidence as arrays of short strings; use [] for any empty list. Use HelpMe to launch a fresh general-purpose helper and automatically compact the combined context after the helper finishes. Do not continue trying to solve only from the current polluted context.",
+		PromptNoArg: "Start a HelpMe recovery for the current task. Call the helpme tool with the original goal, your current understanding, failed or low-confidence attempts, preserved constraints, and concrete evidence. Pass failed_attempts, constraints, and evidence as arrays of short strings; use [] for any empty list. Use HelpMe to launch a fresh general-purpose helper and automatically compact the combined context after the helper finishes. Do not continue trying to solve only from the current polluted context.",
 	},
 	{
 		Name:        "test",

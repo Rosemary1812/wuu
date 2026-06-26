@@ -259,17 +259,17 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 				},
 				"failed_attempts": map[string]any{
 					"type":        "array",
-					"description": "Specific approaches already tried or now considered low-confidence, with why they did not work.",
+					"description": "String array of specific approaches already tried or now considered low-confidence, with why they did not work. Use [] when there are none.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"constraints": map[string]any{
 					"type":        "array",
-					"description": "User, repo, product, safety, or verification constraints the helper must preserve.",
+					"description": "String array of user, repo, product, safety, or verification constraints the helper must preserve. Use [] when there are none.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"evidence": map[string]any{
 					"type":        "array",
-					"description": "Important evidence already observed: files, errors, tests, logs, or facts. Prefer references over long raw output.",
+					"description": "String array of important evidence already observed: files, errors, tests, logs, or facts. Prefer references over long raw output. Use [] when there is none.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"timeout_ms": map[string]any{
@@ -424,6 +424,64 @@ type helpMeArgs struct {
 	Constraints          []string `json:"constraints"`
 	Evidence             []string `json:"evidence"`
 	TimeoutMS            int      `json:"timeout_ms"`
+}
+
+func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Reason               string          `json:"reason"`
+		OriginalGoal         string          `json:"original_goal"`
+		CurrentUnderstanding string          `json:"current_understanding"`
+		Ask                  string          `json:"ask"`
+		FailedAttempts       json.RawMessage `json:"failed_attempts"`
+		Constraints          json.RawMessage `json:"constraints"`
+		Evidence             json.RawMessage `json:"evidence"`
+		TimeoutMS            int             `json:"timeout_ms"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	failedAttempts, err := decodeHelpMeStringList(raw.FailedAttempts, "failed_attempts")
+	if err != nil {
+		return err
+	}
+	constraints, err := decodeHelpMeStringList(raw.Constraints, "constraints")
+	if err != nil {
+		return err
+	}
+	evidence, err := decodeHelpMeStringList(raw.Evidence, "evidence")
+	if err != nil {
+		return err
+	}
+	*a = helpMeArgs{
+		Reason:               raw.Reason,
+		OriginalGoal:         raw.OriginalGoal,
+		CurrentUnderstanding: raw.CurrentUnderstanding,
+		Ask:                  raw.Ask,
+		FailedAttempts:       failedAttempts,
+		Constraints:          constraints,
+		Evidence:             evidence,
+		TimeoutMS:            raw.TimeoutMS,
+	}
+	return nil
+}
+
+func decodeHelpMeStringList(raw json.RawMessage, field string) ([]string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil, nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err == nil {
+		return values, nil
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		if strings.TrimSpace(single) == "" {
+			return nil, nil
+		}
+		return []string{single}, nil
+	}
+	return nil, fmt.Errorf("%s must be a string or string array", field)
 }
 
 type helpMePromptInput struct {

@@ -19,6 +19,38 @@ func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
 	}
 }
 
+func TestDecodeHelpMeArgsAcceptsSingleStringLists(t *testing.T) {
+	var args helpMeArgs
+	if err := decodeArgs(`{
+		"reason": "stuck",
+		"failed_attempts": "CSS visibility changed but the rail still did not render",
+		"constraints": "preserve existing sidebar behavior",
+		"evidence": "screenshot shows the rail missing"
+	}`, &args); err != nil {
+		t.Fatalf("decode helpme args: %v", err)
+	}
+	if got := args.FailedAttempts; len(got) != 1 || got[0] != "CSS visibility changed but the rail still did not render" {
+		t.Fatalf("failed_attempts = %#v", got)
+	}
+	if got := args.Constraints; len(got) != 1 || got[0] != "preserve existing sidebar behavior" {
+		t.Fatalf("constraints = %#v", got)
+	}
+	if got := args.Evidence; len(got) != 1 || got[0] != "screenshot shows the rail missing" {
+		t.Fatalf("evidence = %#v", got)
+	}
+}
+
+func TestDecodeHelpMeArgsRejectsObjectListField(t *testing.T) {
+	var args helpMeArgs
+	err := decodeArgs(`{"failed_attempts":{"summary":"still wrong"}}`, &args)
+	if err == nil {
+		t.Fatal("expected invalid failed_attempts type")
+	}
+	if !strings.Contains(err.Error(), "failed_attempts must be a string or string array") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildHelpMePromptDoesNotEmitModeSection(t *testing.T) {
 	prompt := buildHelpMePrompt(helpMePromptInput{
 		Reason:       "parent may be stuck",
