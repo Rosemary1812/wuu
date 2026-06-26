@@ -2474,3 +2474,42 @@ func TestChunkUsage_AsTokenUsage_Nil(t *testing.T) {
 		t.Fatalf("expected nil for nil receiver, got %+v", got)
 	}
 }
+
+func TestClampPromptCacheKey(t *testing.T) {
+	// Empty / whitespace-only inputs collapse to "".
+	if got := clampPromptCacheKey(""); got != "" {
+		t.Fatalf("empty = %q", got)
+	}
+	if got := clampPromptCacheKey("   \t\n"); got != "" {
+		t.Fatalf("whitespace-only = %q", got)
+	}
+	if got := clampPromptCacheKey("  abc  "); got != "abc" {
+		t.Fatalf("whitespace-trimmed = %q", got)
+	}
+
+	// Under the cap: pass through unchanged.
+	short := "thread-abc-123"
+	if got := clampPromptCacheKey(short); got != short {
+		t.Fatalf("under-cap = %q, want %q", got, short)
+	}
+
+	// Exactly at the cap: pass through unchanged.
+	atLimit := strings.Repeat("a", openAIPromptCacheKeyMaxLength)
+	if got := clampPromptCacheKey(atLimit); got != atLimit {
+		t.Fatalf("at-cap = %q", got)
+	}
+
+	// Over the cap: truncated to exactly the cap.
+	over := strings.Repeat("a", openAIPromptCacheKeyMaxLength+10)
+	wantOver := strings.Repeat("a", openAIPromptCacheKeyMaxLength)
+	if got := clampPromptCacheKey(over); got != wantOver {
+		t.Fatalf("over-cap = %q (len %d), want len %d", got, len(got), openAIPromptCacheKeyMaxLength)
+	}
+
+	// Multi-byte: clamp by code point, never split a rune.
+	chinese := strings.Repeat("中", openAIPromptCacheKeyMaxLength+6)
+	got := clampPromptCacheKey(chinese)
+	if n := len([]rune(got)); n != openAIPromptCacheKeyMaxLength {
+		t.Fatalf("chinese clamp code points = %d, want %d", n, openAIPromptCacheKeyMaxLength)
+	}
+}

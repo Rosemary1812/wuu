@@ -766,7 +766,7 @@ func applyPromptCacheKey(payload *chatCompletionsRequest, hint *providers.CacheH
 	if payload == nil || hint == nil {
 		return
 	}
-	key := strings.TrimSpace(hint.PromptCacheKey)
+	key := clampPromptCacheKey(hint.PromptCacheKey)
 	if key == "" {
 		return
 	}

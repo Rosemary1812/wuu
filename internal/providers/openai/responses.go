@@ -335,11 +335,33 @@ func responsesMessageContent(msg providers.ChatMessage) any {
 	return parts
 }
 
+// openAIPromptCacheKeyMaxLength matches the OpenAI Responses / Chat
+// Completions spec cap of 64 characters on the prompt_cache_key field.
+// Truncating client-side avoids the backend's 400 for over-long keys.
+const openAIPromptCacheKeyMaxLength = 64
+
+// clampPromptCacheKey enforces the 64-char Responses spec limit. Mirrors
+// what the Codex CLI / pi do on the client side. Returns "" for empty or
+// whitespace-only input so callers can treat the result as a presence check.
+// Truncation is done on Unicode code points so we never split a multi-byte
+// character mid-sequence.
+func clampPromptCacheKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	runes := []rune(key)
+	if len(runes) <= openAIPromptCacheKeyMaxLength {
+		return key
+	}
+	return string(runes[:openAIPromptCacheKeyMaxLength])
+}
+
 func responsePromptCacheKey(hint *providers.CacheHint) string {
 	if hint == nil {
 		return ""
 	}
-	return strings.TrimSpace(hint.PromptCacheKey)
+	return clampPromptCacheKey(hint.PromptCacheKey)
 }
 
 func responsesToolParameters(schema map[string]any) map[string]any {
