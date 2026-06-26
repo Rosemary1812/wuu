@@ -99,10 +99,12 @@
    The dock composer lives at the conversation-pane level (full pane
    width) so it caps at --conversation-dialog-width naturally; the hero
    composer lives inside the welcome grid where the column tracks are
-   narrower, so we have to pin it explicitly. */
+   narrower, so we have to pin it explicitly. The composer may overflow
+   the welcome content area by a few px on each side (well within the
+   empty-home-inner's outer padding), which is the price of matching
+   the dock composer exactly. */
 .hero-composer-wrap .composer-stack {
   width: var(--conversation-dialog-width);
-  max-width: 100%;
 }
 
 .composer {

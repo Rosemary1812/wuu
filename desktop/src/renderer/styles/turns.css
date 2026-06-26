@@ -4222,8 +4222,13 @@ pre {
 }
 
 .empty-home-inner > .hero-composer-wrap {
-  grid-column: 2 / 12;
-  justify-self: stretch;
+  /* Span the full content width so the hero composer can hit the dock
+     composer's dialog width (740px) without being squeezed by the
+     narrower title/action card column tracks (cols 2-12). Flex centering
+     keeps the composer-stack visually centered when it overflows. */
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
 }
 
 .empty-home-actions {
