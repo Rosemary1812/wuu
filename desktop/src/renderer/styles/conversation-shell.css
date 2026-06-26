@@ -817,8 +817,8 @@
 
 .conversation-turn-rail {
   position: absolute;
-  left: 8px;
-  top: 56px;
+  left: 0;
+  top: 64px;
   bottom: 16px;
   width: 44px;
   display: flex;
@@ -834,7 +834,7 @@
   width: 18px;
   height: 6px;
   border-radius: 2px;
-  background: rgba(60, 60, 67, 0.45);
+  background: rgba(60, 60, 67, 0.85);
   cursor: pointer;
   pointer-events: auto;
   transition:
@@ -862,7 +862,7 @@
    where the first real bar will appear so the rail's position stays
    discoverable before the user has sent any messages. */
 .conversation-turn-rail-bar.placeholder {
-  opacity: 0.35;
+  opacity: 0.65;
   cursor: default;
   pointer-events: none;
 }
