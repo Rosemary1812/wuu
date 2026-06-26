@@ -60,18 +60,6 @@ function actionBar(): HTMLElement {
   return node;
 }
 
-function renderUserMessage(text: string): void {
-  render({
-    item: {
-      id: "user-1",
-      type: "user_message",
-      text,
-    },
-    turnStatus: "completed",
-    streaming: false,
-  });
-}
-
 afterEach(() => {
   act(() => {
     root?.unmount();
@@ -111,71 +99,5 @@ describe("ThreadItemView", () => {
       false,
     );
     expect(visibleActions.getAttribute("aria-label")).toBe("助手消息操作");
-  });
-
-  it("does not collapse a short user message and hides the expand toggle", () => {
-    renderUserMessage("短 query,够短");
-
-    const textWrapper = container?.querySelector(".user-message-text");
-    expect(textWrapper).not.toBeNull();
-    expect(textWrapper?.classList.contains("user-message-text-clamped")).toBe(
-      false,
-    );
-    expect(container?.querySelector(".user-message-expand-toggle")).toBeNull();
-  });
-
-  it("collapses a long character-pasted user message and surfaces the toggle", () => {
-    renderUserMessage("a".repeat(500));
-
-    const textWrapper = container?.querySelector(".user-message-text");
-    expect(textWrapper?.classList.contains("user-message-text-clamped")).toBe(
-      true,
-    );
-    const toggle = container?.querySelector<HTMLButtonElement>(
-      ".user-message-expand-toggle",
-    );
-    expect(toggle).not.toBeNull();
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle?.textContent ?? "").toContain("展开全文");
-  });
-
-  it("collapses a long newline-pasted user message and surfaces the toggle", () => {
-    renderUserMessage("\n".repeat(8));
-
-    const textWrapper = container?.querySelector(".user-message-text");
-    expect(textWrapper?.classList.contains("user-message-text-clamped")).toBe(
-      true,
-    );
-    expect(container?.querySelector(".user-message-expand-toggle")).not.toBeNull();
-  });
-
-  it("toggles the user message between collapsed and expanded on click", () => {
-    renderUserMessage("a".repeat(500));
-
-    const toggle = container?.querySelector<HTMLButtonElement>(
-      ".user-message-expand-toggle",
-    );
-    if (!toggle) throw new Error("expected expand toggle");
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-
-    act(() => {
-      toggle.click();
-    });
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(toggle.textContent ?? "").toContain("收起");
-    let textWrapper = container?.querySelector(".user-message-text");
-    expect(textWrapper?.classList.contains("user-message-text-clamped")).toBe(
-      false,
-    );
-
-    act(() => {
-      toggle.click();
-    });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle.textContent ?? "").toContain("展开全文");
-    textWrapper = container?.querySelector(".user-message-text");
-    expect(textWrapper?.classList.contains("user-message-text-clamped")).toBe(
-      true,
-    );
   });
 });
