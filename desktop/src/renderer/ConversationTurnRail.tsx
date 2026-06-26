@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
-import { truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
+import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
 
 // Rail geometry. The macOS Dock magnification model drives the numbers:
 // a default bar is short, the hovered bar grows by ~3x, and the two
@@ -158,11 +158,17 @@ export function ConversationTurnRail({
 }
 
 function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
+  const firstUserText = firstUserMessageText(turn);
   const snippet = turnReplySnippet(turn);
   const body = snippet ? truncateReplyPreview(snippet.text) : "暂无回复";
   const replyCount = snippet?.totalAgentMessages ?? 0;
   return (
     <div className="conversation-turn-rail-preview" role="tooltip">
+      {firstUserText ? (
+        <div className="conversation-turn-rail-preview-query">
+          {truncateReplyPreview(firstUserText)}
+        </div>
+      ) : null}
       <div className="conversation-turn-rail-preview-body">{body}</div>
       <div className="conversation-turn-rail-preview-footer">
         {replyCount > 0 ? `${replyCount} 条回复` : "暂无回复"}

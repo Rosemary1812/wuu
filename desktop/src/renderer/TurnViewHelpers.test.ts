@@ -7,6 +7,7 @@ import {
   threadReplySnippet,
   truncateReplyPreview,
   turnReplySnippet,
+  firstUserMessageText,
   turnAnchorID,
   userMessageAnchorID,
 } from "./TurnViewHelpers";
@@ -379,6 +380,28 @@ function buildTurn(
     items: items.map((item) => item as never),
   };
 }
+
+describe("firstUserMessageText", () => {
+  it("returns the first user_message text in a turn", () => {
+    const turn = buildTurn([
+      { id: "a-1", type: "agent_message", text: "ignored" },
+      { id: "u-1", type: "user_message", text: "hello" },
+      { id: "a-2", type: "agent_message", text: "world" },
+    ]);
+    expect(firstUserMessageText(turn)).toBe("hello");
+  });
+
+  it("returns undefined when no user_message exists", () => {
+    const turn = buildTurn([
+      { id: "a-1", type: "agent_message", text: "answer" },
+    ]);
+    expect(firstUserMessageText(turn)).toBeUndefined();
+  });
+
+  it("returns undefined for undefined input", () => {
+    expect(firstUserMessageText(undefined)).toBeUndefined();
+  });
+});
 
 describe("turnReplySnippet", () => {
   it("returns the first non-empty agent message and counts replies in one turn", () => {

@@ -128,6 +128,29 @@ export function turnReplySnippet(
   };
 }
 
+// Per-turn variant for the first user message text. Used in the
+// conversation turn rail's hover preview to show what the user
+// asked for alongside the first agent reply. Same empty-text
+// skipping rules as turnReplySnippet.
+export function firstUserMessageText(
+  turn: Turn | undefined,
+): string | undefined {
+  if (!turn) {
+    return undefined;
+  }
+  for (const item of turn.items ?? []) {
+    if (item.type !== "user_message") {
+      continue;
+    }
+    const trimmed = (item.text ?? "").trim();
+    if (!trimmed) {
+      continue;
+    }
+    return trimmed;
+  }
+  return undefined;
+}
+
 // Caps the preview body to ~140 characters on a single line. The Claude.ai
 // reference card uses three short lines, but the wuu sidebar is narrow
 // (326px) and the title already sits above the popover — a tighter single
