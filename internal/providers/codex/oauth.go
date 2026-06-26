@@ -242,16 +242,29 @@ func loadCodexCLIAuth(home string) (config.CodexOAuthState, error) {
 	}, nil
 }
 
+// codexHeaders returns the static headers the ChatGPT-backed Codex backend
+// expects on every Responses API call. They mirror the OAuth-Responses client
+// contract used by the Codex CLI / pi: a stable originator + User-Agent so
+// the backend can attribute traffic, the lowercase chatgpt-account-id it
+// uses for subscription routing, and the OpenAI-Beta tag that gates the
+// experimental Responses surface.
 func codexHeaders(accessToken, accountID string) map[string]string {
 	headers := map[string]string{
 		"User-Agent": "codex_cli_rs/0.0.0 (wuu)",
 		"originator": "codex_cli_rs",
+		// The ChatGPT backend rejects requests without this beta tag. The
+		// Responses-over-WebSocket variant uses a different value, but wuu
+		// currently talks HTTP Responses, so the SSE beta tag is correct.
+		"OpenAI-Beta": "responses=experimental",
 	}
 	if accountID == "" {
 		accountID = accountIDFromToken(accessToken)
 	}
 	if accountID != "" {
-		headers["ChatGPT-Account-ID"] = accountID
+		// Codex backend matches on the lowercase header. The legacy capitalized
+		// ChatGPT-Account-ID was a wuu-only spelling; the canonical lowercase
+		// form is what the Codex CLI / pi send and what the backend routes on.
+		headers["chatgpt-account-id"] = accountID
 	}
 	return headers
 }

@@ -34,8 +34,11 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 		if got := r.Header.Get("originator"); got != "codex_cli_rs" {
 			t.Fatalf("originator = %q", got)
 		}
-		if got := r.Header.Get("ChatGPT-Account-ID"); got != "acct_123" {
-			t.Fatalf("ChatGPT-Account-ID = %q", got)
+		if got := r.Header.Get("OpenAI-Beta"); got != "responses=experimental" {
+			t.Fatalf("OpenAI-Beta = %q", got)
+		}
+		if got := r.Header.Get("chatgpt-account-id"); got != "acct_123" {
+			t.Fatalf("chatgpt-account-id = %q", got)
 		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -188,8 +191,11 @@ func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+fresh {
 			t.Fatalf("Authorization = %q", got)
 		}
-		if got := r.Header.Get("ChatGPT-Account-ID"); got != "acct_new" {
-			t.Fatalf("ChatGPT-Account-ID = %q", got)
+		if got := r.Header.Get("OpenAI-Beta"); got != "responses=experimental" {
+			t.Fatalf("OpenAI-Beta = %q", got)
+		}
+		if got := r.Header.Get("chatgpt-account-id"); got != "acct_new" {
+			t.Fatalf("chatgpt-account-id = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"refreshed"}]}]}`))
@@ -239,8 +245,11 @@ func TestClientModelsUsesCodexOAuth(t *testing.T) {
 		if got := r.Header.Get("originator"); got != "codex_cli_rs" {
 			t.Fatalf("originator = %q", got)
 		}
-		if got := r.Header.Get("ChatGPT-Account-ID"); got != "acct_models" {
-			t.Fatalf("ChatGPT-Account-ID = %q", got)
+		if got := r.Header.Get("OpenAI-Beta"); got != "responses=experimental" {
+			t.Fatalf("OpenAI-Beta = %q", got)
+		}
+		if got := r.Header.Get("chatgpt-account-id"); got != "acct_models" {
+			t.Fatalf("chatgpt-account-id = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
