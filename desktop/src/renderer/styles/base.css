@@ -297,9 +297,26 @@ body {
   overflow: hidden;
 }
 
-.window-resizing *,
-.window-resizing *::before,
-.window-resizing *::after {
+/* During window resize we pause transitions and animations on layout
+   containers only. The previous `.window-resizing *` rule forced Chromium
+   to walk the entire DOM on every resize event and re-disable
+   transitions on every element + pseudo-element, which dominated the
+   resize frame budget and made dragging the window frame feel sticky.
+   Targeting the layout containers directly keeps the optimization
+   without that full-tree style invalidation pass. */
+.window-resizing .app-shell,
+.window-resizing .sidebar,
+.window-resizing .sidebar-content,
+.window-resizing .conversation-pane,
+.window-resizing .scroll-region,
+.window-resizing .composer,
+.window-resizing .titlebar,
+.window-resizing .environment-panel,
+.window-resizing .workspace-right-panel,
+.window-resizing .empty-home,
+.window-resizing .empty-home-inner,
+.window-resizing .jump-to-latest-pill,
+.window-resizing .launch-preview-button {
   transition: none !important;
   animation-play-state: paused !important;
 }
