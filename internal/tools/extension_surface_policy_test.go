@@ -104,7 +104,7 @@ func TestExtensionSurfacePolicyBlocksMCPEvenWhenProfileAllowsCapability(t *testi
 			result: `{"action":"mcp_docs_search"}`,
 		},
 	)
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	kit.SetExtensionSurfacePolicy(RestrictedExtensionSurfacePolicy())
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{

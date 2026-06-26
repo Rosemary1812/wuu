@@ -1495,7 +1495,7 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	rt := &Session{
 		RootDir:          root,
 		UserSystemPrompt: "Prefer concise answers.",
@@ -1777,7 +1777,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
 	if err != nil {
 		t.Fatalf("agent type: %v", err)
@@ -1806,7 +1806,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	wt, err := agentcontrol.LookupWorkerType("verification")
 	if err != nil {
 		t.Fatalf("agent type: %v", err)

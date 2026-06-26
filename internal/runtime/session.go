@@ -187,7 +187,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetWorkflows(discoveredWorkflows)
 		ConfigureToolkitPermissions(kit, cfg.Agent.ToolPolicy, permissions)
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
-		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel)
+		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled && !cfg.Memory.Disable {
 			// Attach the global long-term memory store. With memory now a
@@ -270,7 +270,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
-				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
+				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
 					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
@@ -633,7 +633,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					if err != nil {
 						return nil, err
 					}
-					workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
+					workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
 					workerStateDir := stateDir
 					if workerRoot != s.RootDir {
 						if home, err := statepath.Home(""); err == nil {
@@ -1480,8 +1480,17 @@ func activeSurface(kit *tools.Toolkit) capability.Surface {
 	return kit.ActiveSurface()
 }
 
+// compiledSurfaceForProviderModel is the worker-only entry point in
+// production: every caller in internal/runtime/session.go that uses
+// it is configuring a worker's tool surface, not the main agent's.
+// The main agent's surface is installed through
+// internal/tools/edit_mode.go::ConfigureSurfaceForProviderModel on
+// the toolkit itself. Worker surfaces intentionally omit the
+// main-agent-only helpme recovery tool; the runtime still enforces
+// the same boundary via DisallowedTools and the helpme tool's
+// Execute path check.
 func compiledSurfaceForProviderModel(providerName, model string) capability.Surface {
-	return modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(providerName, model))
+	return modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(providerName, model), false)
 }
 
 func recallProfileMemory(ctx context.Context, provider memstore.Provider) []memstore.Entry {

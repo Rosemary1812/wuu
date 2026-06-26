@@ -35,8 +35,16 @@ func (t *Toolkit) ConfigureEditToolsForProviderModel(providerName, model string)
 	t.SetEditToolMode(EditToolModeForProviderModel(providerName, model))
 }
 
-func (t *Toolkit) ConfigureSurfaceForProviderModel(providerName, model string) {
-	t.SetActiveProfile(modelprofile.Resolve(providerName, model))
+// ConfigureSurfaceForProviderModel compiles the surface for the given
+// provider/model and installs it as the toolkit's active profile. The
+// forMainAgent flag selects whether the compiled surface includes the
+// helpme recovery tool — main-agent kits pass true so helpme is part
+// of the model's tool list, worker kits pass false so the compiled
+// surface omits it cleanly. Runtime defense-in-depth (DisallowedTools
+// in internal/agentcontrol/worker_types.go and the path check in
+// HelpMeTool.Execute) is unchanged.
+func (t *Toolkit) ConfigureSurfaceForProviderModel(providerName, model string, forMainAgent bool) {
+	t.SetActiveProfile(modelprofile.Resolve(providerName, model), forMainAgent)
 }
 
 func (t *Toolkit) SetEditToolMode(mode EditToolMode) {

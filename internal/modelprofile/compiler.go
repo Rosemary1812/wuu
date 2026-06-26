@@ -42,17 +42,26 @@ const (
 	ProfileGeneric ProfileKey = "generic"
 )
 
-// Compiler compiles a model profile into a tool surface.
+// Compiler compiles a model profile into a tool surface. Compile is
+// given a forMainAgent flag so it can decide whether the surface
+// should advertise helpme — the recovery tool is only available to the
+// main agent (it is gated to the root agent at
+// internal/tools/tool_agents.go::HelpMeTool.Execute and by
+// DisallowedTools in internal/agentcontrol/worker_types.go). Worker
+// surfaces pass false; the surface is therefore consistent with the
+// runtime boundary instead of being filtered downstream.
 type Compiler interface {
-	Compile(p Profile) capability.Surface
+	Compile(p Profile, forMainAgent bool) capability.Surface
 }
 
 // DefaultCompiler returns the built-in compiler. The compiler is
 // stateless: callers should keep a single instance and reuse it.
 type DefaultCompiler struct{}
 
-// Compile implements Compiler.
-func (DefaultCompiler) Compile(p Profile) capability.Surface {
+// Compile implements Compiler. forMainAgent=true adds the helpme
+// recovery tool to the surface; forMainAgent=false omits it. All other
+// surface entries come from the profile-specific compileXxx helper.
+func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
 	switch key {
@@ -64,6 +73,9 @@ func (DefaultCompiler) Compile(p Profile) capability.Surface {
 		compileAnthropicClaude(b, p)
 	default:
 		compileGeneric(b, p)
+	}
+	if forMainAgent {
+		addHelpmeTool(b)
 	}
 	b.sortCaps()
 	return b.surface
@@ -263,7 +275,6 @@ func addWebTools(b *surfaceBuilder) {
 
 func addTaskTools(b *surfaceBuilder) {
 	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
-	b.addVisible("helpme", capability.CapabilityTaskSpawn)
 	b.addVisible("send_message", capability.CapabilityTaskCommunicate)
 	b.addVisible("followup_task", capability.CapabilityTaskCommunicate)
 	b.addVisible("wait_agent", capability.CapabilityTaskManage)
@@ -271,6 +282,16 @@ func addTaskTools(b *surfaceBuilder) {
 	b.addVisible("close_agent", capability.CapabilityTaskManage)
 	b.addVisible("list_agents", capability.CapabilityTaskManage)
 	b.addVisible("agent_report", capability.CapabilityTaskManage)
+}
+
+// addHelpmeTool registers the main-agent-only HelpMe recovery tool. It
+// is called from DefaultCompiler.Compile only when forMainAgent is true;
+// worker surfaces intentionally omit helpme so the model never sees a
+// recovery tool it cannot use. Runtime defense-in-depth (DisallowedTools
+// in internal/agentcontrol/worker_types.go and the path check in
+// HelpMeTool.Execute) is unchanged.
+func addHelpmeTool(b *surfaceBuilder) {
+	b.addVisible("helpme", capability.CapabilityTaskSpawn)
 }
 
 func addMemoryTools(b *surfaceBuilder) {

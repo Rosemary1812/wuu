@@ -362,7 +362,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	}
 	s.updateIdleThreadAdvancedRuntime()
 	if s.rt.Toolkit != nil {
-		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
+		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 	}
 	return s.writeResponse(req.ID, ConfigAdvancedUpdateResult{
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
@@ -543,7 +543,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.WorkerClient = workerClient
 	}
 	if s.rt.Toolkit != nil {
-		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
+		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 	}
 	if params.PermissionMode != nil {
 		permissions, err := config.ResolvePermissionModePreset(*params.PermissionMode)
@@ -720,7 +720,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 				}
 				th.execRuntime.ModelBudget = s.rt.ModelBudget
 				if th.execRuntime.Toolkit != nil {
-					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel)
+					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 					if s.rt != nil {
 						runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
 						s.installToolApprovalReviewer(th.execRuntime.Toolkit)

@@ -614,7 +614,13 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 // CLI's `wuu debug tools` path and for any admin caller that wants
 // to inspect every tool the registry knows about, regardless of
 // model context.
-func (t *Toolkit) SetActiveProfile(p modelprofile.Profile) {
+//
+// forMainAgent must be true when configuring a main-agent kit (the
+// surface includes the helpme recovery tool). Worker kits built via
+// CloneForRoot pass false so the compiled surface omits helpme —
+// the same boundary is enforced at runtime by DisallowedTools and by
+// HelpMeTool.Execute.
+func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	if t == nil {
 		return
 	}
@@ -632,7 +638,7 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile) {
 		t.env.ActiveSurface = capability.Surface{}
 		return
 	}
-	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p)
+	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, forMainAgent)
 	t.env.ActiveSurface = cloneSurface(t.activeSurface)
 }
 

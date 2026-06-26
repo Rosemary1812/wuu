@@ -376,7 +376,7 @@ func TestToolkitWorkflowToolsFilterByActiveSurface(t *testing.T) {
 	}
 	exposeWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(t.TempDir())
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
 	kit.SetWorkflows([]workflow.Definition{
 		{
 			Name:        "portable-plan",

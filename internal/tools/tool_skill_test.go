@@ -113,7 +113,7 @@ func TestToolkit_LoadSkillFiltersByActiveSurface(t *testing.T) {
 			AllowedTools: []string{"read_file", "grep", "glob"},
 		},
 	})
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
 
 	defs := kit.Definitions()
 	var loadSkillDef providers.ToolDefinition

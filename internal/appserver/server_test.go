@@ -321,7 +321,7 @@ func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel(rt.ProviderName, rt.Model)
+	kit.ConfigureSurfaceForProviderModel(rt.ProviderName, rt.Model, true)
 	rt.Toolkit = kit
 
 	out := &lockedBuffer{}

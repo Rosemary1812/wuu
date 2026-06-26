@@ -75,7 +75,7 @@ func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 		{provider: "ollama", model: "llama-coder"},
 	}
 	for _, tt := range profiles {
-		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model))
+		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model), true)
 		surface := kit.ActiveSurface()
 		defs := kit.Definitions()
 		for _, name := range advancedTools {

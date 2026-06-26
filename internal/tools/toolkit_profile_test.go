@@ -50,7 +50,7 @@ func TestSetActiveProfileCompilesAndExposesBashForAllStandardProfiles(t *testing
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model))
+		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model), true)
 		surface := kit.ActiveSurface()
 		if surface.ProfileName == "" {
 			t.Fatalf("%s/%s: expected a compiled surface", tt.provider, tt.model)
@@ -74,7 +74,7 @@ func TestCompiledProfileVisibleDefinitionsDoNotTeachLegacyCommandTools(t *testin
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model))
+		kit.SetActiveProfile(modelprofile.Resolve(tt.provider, tt.model), true)
 		for _, def := range kit.Definitions() {
 			text := visibleDefinitionText(def)
 			for _, old := range []string{
@@ -113,7 +113,7 @@ func TestActiveProfileAllowsDeferredMCPThroughToolSearch(t *testing.T) {
 			result: `{"action":"mcp_docs_search"}`,
 		},
 	)
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	if containsProfileDef(kit.Definitions(), "mcp_docs_search") {
 		t.Fatal("MCP tool should not be visible before tool_search")
@@ -182,7 +182,7 @@ func TestLocalNoShellProfileFiltersTerminalMCPTools(t *testing.T) {
 			result: `{"action":"mcp_server_execute_command"}`,
 		},
 	)
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
 
 	if containsProfileDef(kit.Definitions(), "mcp_server_execute_command") {
 		t.Fatal("local/no-shell profile must not directly expose terminal MCP tools")
@@ -235,7 +235,7 @@ func TestLocalNoShellProfileRequiresExplicitReadOnlyMCPCapability(t *testing.T) 
 			result: `{"action":"mcp_docs_search"}`,
 		},
 	)
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "tool_search",
@@ -276,7 +276,7 @@ func TestBashCapableProfileAllowsTerminalMCPTools(t *testing.T) {
 			result: `{"action":"mcp_terminal_exec"}`,
 		},
 	)
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "tool_search",
@@ -308,7 +308,7 @@ func TestSetActiveProfileLocalProfileDropsBash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
 	defs := kit.Definitions()
 	if containsProfileDef(defs, "bash") {
 		t.Fatalf("local profile must not expose bash, got %v", sortedProfileDefNames(defs))
@@ -320,7 +320,7 @@ func TestLocalProfileVisibleDefinitionsDoNotTeachShellTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"))
+	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
 
 	for _, def := range kit.Definitions() {
 		text := visibleDefinitionText(def)
@@ -335,7 +335,7 @@ func TestSetActiveProfileCodexExposesApplyPatchHidesEditAndWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	defs := kit.Definitions()
 	if !containsProfileDef(defs, "apply_patch") {
 		t.Fatalf("Codex surface must include apply_patch, got %v", sortedProfileDefNames(defs))
@@ -352,7 +352,7 @@ func TestSetActiveProfileAlignsDefinitionWithExecutionState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	if !containsProfileDef(kit.Definitions(), "apply_patch") {
 		t.Fatal("Codex surface should advertise apply_patch")
@@ -376,7 +376,7 @@ func TestActiveProfileDefinitionsRespectExplicitDisables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	kit.DisableTools("spawn_agent")
 
 	defs := kit.Definitions()
@@ -393,7 +393,7 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_shell", Arguments: `{"command":"echo hi"}`})
 	if err == nil || !strings.Contains(err.Error(), "active model surface") {
@@ -416,7 +416,7 @@ func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	if containsProfileDef(kit.Definitions(), "read_memory") || containsProfileDef(kit.Definitions(), "write_memory") {
 		t.Fatal("memory tools should stay hidden without a provider")
 	}
@@ -439,7 +439,7 @@ func TestSetActiveProfileClaudeExposesEditAndWriteHidesApplyPatch(t *testing.T) 
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"))
+	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
 	defs := kit.Definitions()
 	for _, want := range []string{"bash", "edit_file", "write_file", "read_file", "grep", "glob"} {
 		if !containsProfileDef(defs, want) {
@@ -461,7 +461,7 @@ func TestSetActiveProfileOpenAIGPTUsesApplyPatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-4.1-mini"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-4.1-mini"), true)
 	defs := kit.Definitions()
 	if !containsProfileDef(defs, "apply_patch") {
 		t.Fatalf("OpenAI GPT profile must expose apply_patch, got %v", sortedProfileDefNames(defs))
@@ -479,7 +479,7 @@ func TestSetActiveProfileZeroValueRestoresLegacySurface(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	// Codex first: the model sees only apply_patch, not edit_file.
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	if containsProfileDef(kit.Definitions(), "edit_file") {
 		t.Fatal("expected Codex surface to hide edit_file")
 	}
@@ -487,7 +487,7 @@ func TestSetActiveProfileZeroValueRestoresLegacySurface(t *testing.T) {
 	// returns: bash is the only visible shell entry point. The
 	// legacy run_shell name is now an internal implementation
 	// and is hidden from every surface.
-	kit.SetActiveProfile(modelprofile.Profile{})
+	kit.SetActiveProfile(modelprofile.Profile{}, true)
 	if kit.ActiveSurface().ProfileName != "" {
 		t.Fatal("expected zero-value profile to clear the active surface")
 	}
@@ -508,7 +508,7 @@ func TestCloneForRootPreservesActiveProfileSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	clone, err := kit.CloneForRoot(t.TempDir())
 	if err != nil {
@@ -539,7 +539,7 @@ func TestActiveProfileReturnsInstalledProfile(t *testing.T) {
 		t.Fatal("expected zero-value profile before SetActiveProfile")
 	}
 	want := modelprofile.Resolve("anthropic", "claude-sonnet-4-5")
-	kit.SetActiveProfile(want)
+	kit.SetActiveProfile(want, true)
 	got := kit.ActiveProfile()
 	if got.ProviderName != want.ProviderName || got.Model != want.Model {
 		t.Fatalf("ActiveProfile = %+v, want provider=%s model=%s", got, want.ProviderName, want.Model)
@@ -551,7 +551,7 @@ func TestActiveSurfaceReturnsCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"))
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	surface := kit.ActiveSurface()
 	delete(surface.Tools, "apply_patch")
@@ -575,7 +575,7 @@ func TestDefinitionsFilterMatchesSurfaceToolsExactly(t *testing.T) {
 		t.Fatalf("NewFileProvider: %v", err)
 	}
 	kit.SetMemory(provider)
-	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"))
+	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
 	kit.activateDeferredTools("schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow")
 	surface := kit.ActiveSurface()
 	defs := kit.Definitions()

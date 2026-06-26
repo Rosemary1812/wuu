@@ -57,7 +57,7 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 		{provider: "google", model: "gemini-2.5-pro", want: ProfileGeneric},
 	}
 	for _, tt := range cases {
-		s := c.Compile(Resolve(tt.provider, tt.model))
+		s := c.Compile(Resolve(tt.provider, tt.model), true)
 		if s.ProfileName != string(tt.want) {
 			t.Fatalf("Compile(%s, %s).ProfileName = %s, want %s", tt.provider, tt.model, s.ProfileName, tt.want)
 		}
@@ -71,7 +71,7 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 }
 
 func TestOpenAICodexSurface(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"))
+	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), true)
 
 	// Editing primitive is apply_patch. edit_file and write_file
 	// must not be visible on this surface.
@@ -131,7 +131,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 }
 
 func TestOpenAIGPTSurfaceDefaultsToApplyPatch(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5.5"))
+	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5.5"), true)
 	if tool, ok := s.ToolForCapability(capability.CapabilityFileEdit); !ok || tool != "apply_patch" {
 		t.Fatalf("GPT surface must default to apply_patch, got tool=%q ok=%v", tool, ok)
 	}
@@ -145,7 +145,7 @@ func TestOpenAIGPTSurfaceDefaultsToApplyPatch(t *testing.T) {
 
 func TestOpenAIGPTSurfaceUsesApplyPatchForAllOpenAIModels(t *testing.T) {
 	for _, model := range []string{"gpt-5.5", "gpt-4.1-mini", "openai/gpt-oss-120b"} {
-		s := DefaultCompiler{}.Compile(Resolve("openai", model))
+		s := DefaultCompiler{}.Compile(Resolve("openai", model), true)
 		tool, ok := s.ToolForCapability(capability.CapabilityFileEdit)
 		if !ok {
 			t.Fatalf("%s: expected file.edit capability to be visible", model)
@@ -163,7 +163,7 @@ func TestOpenAIGPTSurfaceUsesApplyPatchForAllOpenAIModels(t *testing.T) {
 }
 
 func TestAnthropicClaudeSurface(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"))
+	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"), true)
 
 	// Editing primitive is edit_file (+ write_file as whole-file fallback).
 	// apply_patch is hidden, never visible.
@@ -226,7 +226,7 @@ func TestGenericSurfaceForOpenAISHapedBYOK(t *testing.T) {
 		{provider: "deepseek", model: "deepseek-v3.2"},
 		{provider: "dashscope", model: "qwen3-coder-plus"},
 	} {
-		s := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model))
+		s := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
 		if s.ProfileName != string(ProfileGeneric) {
 			t.Fatalf("%s/%s: ProfileName = %s, want generic", tt.provider, tt.model, s.ProfileName)
 		}
@@ -247,7 +247,7 @@ func TestGenericSurfaceForOpenAISHapedBYOK(t *testing.T) {
 }
 
 func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"))
+	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"), true)
 	if s.ProfileName != string(ProfileGeneric) {
 		t.Fatalf("local profile must compile under generic, got %s", s.ProfileName)
 	}
@@ -274,7 +274,7 @@ func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
 }
 
 func TestLocalNoShellFragmentDoesNotNameUnavailableTools(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"))
+	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"), true)
 	fragment := strings.ToLower(s.SystemFragment)
 	for _, banned := range []string{
 		"bash",
@@ -295,9 +295,9 @@ func TestLocalNoShellFragmentDoesNotNameUnavailableTools(t *testing.T) {
 
 func TestCompilerEmitsStableCapabilityOrder(t *testing.T) {
 	c := DefaultCompiler{}
-	prev := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"))
+	prev := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), true)
 	for i := 0; i < 8; i++ {
-		got := c.Compile(Resolve("openai", "gpt-5-codex"))
+		got := c.Compile(Resolve("openai", "gpt-5-codex"), true)
 		if !sameStringSlice(toCapabilityStrings(prev.Capabilities), toCapabilityStrings(got.Capabilities)) {
 			t.Fatalf("compiler must emit deterministic capability order, prev=%v got=%v", prev.Capabilities, got.Capabilities)
 		}
@@ -305,7 +305,7 @@ func TestCompilerEmitsStableCapabilityOrder(t *testing.T) {
 }
 
 func TestSummarizeIsJSONFriendlyAndOmitsRawFragmentsInTests(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"))
+	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"), true)
 	summary := s.Summarize()
 	if summary.ProfileName != string(ProfileAnthropicClaude) {
 		t.Fatalf("summary ProfileName = %s, want %s", summary.ProfileName, ProfileAnthropicClaude)
@@ -325,7 +325,7 @@ func TestSummarizeIsJSONFriendlyAndOmitsRawFragmentsInTests(t *testing.T) {
 }
 
 func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"))
+	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), true)
 	if !s.HasCapability(capability.CapabilityFileEdit) {
 		t.Fatal("Codex surface must have file.edit capability (via apply_patch)")
 	}
@@ -354,7 +354,7 @@ func TestNoProfileAdvertisesRunTestStartProcessOrGitAsDefault(t *testing.T) {
 		Resolve("deepseek", "deepseek-v3.2"),
 	}
 	for _, p := range cases {
-		s := c.Compile(p)
+		s := c.Compile(p, true)
 		for _, name := range []string{"run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
 			if _, visible := s.Tools[name]; visible {
 				t.Fatalf("%s/%s: surface must not advertise %s as a default tool", p.ProviderName, p.Model, name)
@@ -428,4 +428,34 @@ func sortedKeys(m map[string]capability.Capability) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TestCompile_HelpmeMainOnly locks in the surface-layer contract that
+// helpme is added to the main-agent surface but is omitted from worker
+// surfaces. The runtime also enforces this boundary via DisallowedTools
+// in internal/agentcontrol/worker_types.go and the path check in
+// HelpMeTool.Execute (internal/tools/tool_agents.go:288-289); this
+// test keeps the compiled-surface declaration honest so future
+// consumers (UI, telemetry, prompt fragments) match the actual tool
+// list the model sees at runtime.
+func TestCompile_HelpmeMainOnly(t *testing.T) {
+	cases := []struct {
+		provider string
+		model    string
+	}{
+		{"openai", "gpt-5-codex"},
+		{"openai", "gpt-5.5"},
+		{"anthropic", "claude-sonnet-4-5"},
+		{"ollama", "llama-coder"},
+	}
+	for _, tt := range cases {
+		mainSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
+		if _, ok := mainSurface.Tools["helpme"]; !ok {
+			t.Errorf("%s/%s main-agent surface must include helpme", tt.provider, tt.model)
+		}
+		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), false)
+		if _, ok := workerSurface.Tools["helpme"]; ok {
+			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)
+		}
+	}
 }

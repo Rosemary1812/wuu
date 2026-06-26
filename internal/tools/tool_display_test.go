@@ -103,7 +103,7 @@ func TestToolkitToolDisplayAddsCapabilityForActiveSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 
 	got, ok := kit.ToolDisplay(providers.ToolCall{Name: "run_shell", Arguments: `{"command":"npm test"}`})
 	if !ok {

@@ -199,7 +199,7 @@ func TestToolkitAppliesDefaultCommandPolicyBeforeBashExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "call-vitest",
@@ -230,7 +230,7 @@ func TestDefaultCommandPolicyFallbackRequiresApprovalForUnclassifiedBash(t *test
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "call-migrate",
@@ -255,7 +255,7 @@ func TestWorkspaceWriteAllowsCommandPolicyAskForPackageInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileWorkspaceWrite))
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -276,7 +276,7 @@ func TestFullAccessProfileDoesNotAskForDefaultCommandPolicyReview(t *testing.T) 
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
 	if !ok {
 		t.Fatal("missing full_access policy")
@@ -334,7 +334,7 @@ func TestDefaultCommandPolicyAskFollowsApprovalPolicyAxis(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+			kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 			kit.SetToolPolicy(tt.policy)
 
 			info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
@@ -358,7 +358,7 @@ func TestDefaultCommandPolicyAskDoesNotOverrideExplicitDeny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	kit.SetToolPolicy(ToolPolicy{
 		Profile: ToolPolicyProfileFullAccess,
 		ToolActions: map[string]ToolPolicyAction{
@@ -387,7 +387,7 @@ func TestFullAccessBypassesDefaultCommandPolicyDenyExplain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
 	if !ok {
 		t.Fatal("missing full_access policy")
@@ -418,7 +418,7 @@ func TestFullAccessDefaultCommandPolicyBypassDoesNotOverrideExplicitDeny(t *test
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex")
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 	kit.SetToolPolicy(ToolPolicy{
 		Profile:        ToolPolicyProfileFullAccess,
 		ApprovalPolicy: ToolApprovalPolicyNever,
