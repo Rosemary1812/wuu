@@ -1840,7 +1840,7 @@ export function App(): JSX.Element {
         running={
           (!activeThreadReadOnly && activeThreadIsRunning) || viewContextSwitchPending
         }
-        runtimeControlsDisabled={anyThreadIsRunning}
+        runtimeControlsDisabled={viewContextSwitchPending}
         tokensPerSecond={tokenSpeed.tokensPerSecond}
         tokenSpeedSampledAt={tokenSpeed.sampledAt}
         tokenSpeedSource={tokenSpeed.source}
@@ -4643,7 +4643,6 @@ export function App(): JSX.Element {
       !nextProvider ||
       !nextModel ||
       !state.initialized ||
-      anyThreadIsRunning ||
       (nextProvider === state.initialized.provider &&
         nextModel === state.initialized.model &&
         (nextEffort === undefined ||
@@ -4679,19 +4678,9 @@ export function App(): JSX.Element {
               advanced_settings: updated.advanced_settings ?? current.initialized.advanced_settings,
             }
           : current.initialized;
-        const updateThreadModel = (thread: Thread): Thread => ({
-          ...thread,
-          model_provider: updated.provider,
-          model: updated.model,
-        });
-        const thread = current.thread
-          ? updateThreadModel(current.thread)
-          : current.thread;
         return {
           ...current,
           initialized,
-          thread,
-          threads: current.threads.map(updateThreadModel),
           status: current.status === "ready" ? current.status : "ready",
         };
       });
@@ -4710,7 +4699,7 @@ export function App(): JSX.Element {
   async function updateAdvancedSettings(
     settings: RuntimeAdvancedSettingsUpdate,
   ): Promise<void> {
-    if (!state.initialized || anyThreadIsRunning) {
+    if (!state.initialized || viewContextSwitchPending) {
       return;
     }
     try {
@@ -4742,7 +4731,7 @@ export function App(): JSX.Element {
   }
 
   function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
-    if (!state.initialized || anyThreadIsRunning) {
+    if (!state.initialized || viewContextSwitchPending) {
       return;
     }
     setRuntimeMenuOpen(false);
@@ -4805,7 +4794,7 @@ export function App(): JSX.Element {
     model: string,
     variant?: string,
   ): Promise<void> {
-    if (!state.initialized || anyThreadIsRunning) {
+    if (!state.initialized || viewContextSwitchPending) {
       return;
     }
     await updateRuntimeSettings(provider, model, undefined, undefined, variant);
@@ -4813,7 +4802,7 @@ export function App(): JSX.Element {
   }
 
   async function selectRuntimeEffort(nextVariant: string): Promise<void> {
-    if (!state.initialized || anyThreadIsRunning) {
+    if (!state.initialized || viewContextSwitchPending) {
       return;
     }
     await updateRuntimeSettings(
@@ -4829,7 +4818,7 @@ export function App(): JSX.Element {
   async function selectPermissionMode(
     mode: PermissionMode,
   ): Promise<void> {
-    if (!state.initialized || anyThreadIsRunning) {
+    if (!state.initialized || viewContextSwitchPending) {
       return;
     }
     await updateRuntimeSettings(
@@ -4936,7 +4925,7 @@ export function App(): JSX.Element {
       <SettingsView
         initialized={state.initialized}
         initialPage={settingsInitialPage}
-        running={anyThreadIsRunning}
+        running={viewContextSwitchPending}
         usage={settingsUsage}
         usageRange={usageRange}
         setUsageRange={setUsageRange}

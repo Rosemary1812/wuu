@@ -415,7 +415,7 @@ describe("Composer send control", () => {
     expect(rightGroup?.contains(sendButton)).toBe(true);
   });
 
-  it("disables runtime controls when background work blocks runtime changes", () => {
+  it("keeps runtime controls separate from composer send state", () => {
     renderComposer({
       variant: "dock",
       prompt: "follow up",
