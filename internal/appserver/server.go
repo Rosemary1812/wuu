@@ -333,7 +333,7 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 		Content:   ev.Content,
 		Truncated: ev.Truncated,
 	}
-	if ev.Message != nil {
+	if ev.Message != nil && !ev.Message.Hidden {
 		out.Message = ev.Message
 	}
 	if ev.ToolCall != nil {

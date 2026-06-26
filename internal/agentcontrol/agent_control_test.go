@@ -27,6 +27,17 @@ type fakeClient struct {
 	resp providers.ChatResponse
 }
 
+func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
+	out := make([]providers.ChatMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Hidden {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
 func (f *fakeClient) Chat(_ context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
 	return f.resp, nil
 }
@@ -1947,10 +1958,11 @@ func TestFork_WorktreeIsolation(t *testing.T) {
 	}
 
 	last := client.LastRequest()
-	if len(last.Messages) != len(parentHistory)+1 {
-		t.Fatalf("expected parent history plus final fork prompt, got %d messages", len(last.Messages))
+	visible := visibleMessagesForTest(last.Messages)
+	if len(visible) != len(parentHistory)+1 {
+		t.Fatalf("expected parent history plus final fork prompt, got %+v", last.Messages)
 	}
-	tail := last.Messages[len(last.Messages)-1]
+	tail := visible[len(visible)-1]
 	if tail.Role != "user" || !strings.Contains(tail.Content, "continue") {
 		t.Fatalf("expected final fork task prompt, got %+v", tail)
 	}

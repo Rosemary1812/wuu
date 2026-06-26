@@ -54,6 +54,9 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 	}
 
 	for i, msg := range history {
+		if msg.Hidden {
+			continue
+		}
 		if matchedToolCallID != "" && !(msg.Role == "tool" && msg.ToolCallID == matchedToolCallID) {
 			return returnPrefix(matchedToolCutoffIndex), nil
 		}
@@ -165,6 +168,9 @@ func editHistoryBeforeUserMessage(history []providers.ChatMessage, sourceThreadI
 	}
 
 	for i, msg := range history {
+		if msg.Hidden {
+			continue
+		}
 		if msg.Role == "system" {
 			continue
 		}

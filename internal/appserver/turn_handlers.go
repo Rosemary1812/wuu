@@ -442,10 +442,10 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage) {
-	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, history, nil)
+	s.runTurnWithModelContext(ctx, th, threadRuntime, turnID, history, nil)
 }
 
-func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, requestOnly []providers.ChatMessage) {
+func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, modelContext []providers.ChatMessage) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -463,7 +463,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
 	}
 	baseBeforeStep := runner.BeforeStep
-	baseBeforeRequest := runner.BeforeRequest
+	baseBeforeModelContext := runner.BeforeModelContext
 	baseOnRequestContext := runner.OnRequestContext
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
@@ -547,20 +547,20 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		}
 		return messages
 	}
-	requestOnlyContext := cloneHistory(requestOnly)
-	runner.BeforeRequest = func() []providers.ChatMessage {
+	turnModelContext := cloneHistory(modelContext)
+	runner.BeforeModelContext = func() []providers.ChatMessage {
 		var messages []providers.ChatMessage
-		if baseBeforeRequest != nil {
-			messages = append(messages, baseBeforeRequest()...)
+		if baseBeforeModelContext != nil {
+			messages = append(messages, baseBeforeModelContext()...)
 		}
-		if len(requestOnlyContext) > 0 {
-			messages = append(messages, cloneHistory(requestOnlyContext)...)
+		if len(turnModelContext) > 0 {
+			messages = append(messages, cloneHistory(turnModelContext)...)
 		}
 		return messages
 	}
 	defer func() {
 		runner.BeforeStep = baseBeforeStep
-		runner.BeforeRequest = baseBeforeRequest
+		runner.BeforeModelContext = baseBeforeModelContext
 		runner.OnRequestContext = baseOnRequestContext
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
@@ -1320,7 +1320,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, history, []providers.ChatMessage{goalContinuationMessage(goal)})
+	go s.runTurnWithModelContext(turnCtx, th, threadRuntime, turnID, history, []providers.ChatMessage{goalContinuationMessage(goal)})
 	return true, nil
 }
 
@@ -1356,6 +1356,7 @@ Make concrete progress toward the objective. Do not mark the goal complete unles
 		Role:    "user",
 		Name:    wuucontext.GoalContinuationMessageName,
 		Content: content,
+		Hidden:  true,
 	}
 }
 

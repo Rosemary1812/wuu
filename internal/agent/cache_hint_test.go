@@ -52,13 +52,13 @@ func TestBuildCacheHint_OnlyCurrentTurnStillGetsPromptCacheKey(t *testing.T) {
 	}
 }
 
-func TestBuildCacheHint_TransientReminderExtendsStableToolLoopPrefix(t *testing.T) {
+func TestBuildCacheHint_HiddenModelContextKeepsCurrentTurnVolatile(t *testing.T) {
 	hint := buildCacheHint([]providers.ChatMessage{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "current ask"},
 		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{}`}}},
 		{Role: "tool", ToolCallID: "call_1", Content: "file contents"},
-		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: "<system-reminder>\nstate changed\n</system-reminder>"},
+		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: "<system-reminder>\nstate changed\n</system-reminder>", Hidden: true},
 	})
 	if hint == nil {
 		t.Fatal("expected cache hint")
@@ -66,8 +66,8 @@ func TestBuildCacheHint_TransientReminderExtendsStableToolLoopPrefix(t *testing.
 	if !hint.StableSystem {
 		t.Fatal("expected stable system to be enabled")
 	}
-	if hint.StablePrefixMessages != 3 {
-		t.Fatalf("expected current ask and completed tool exchange in stable prefix, got %d", hint.StablePrefixMessages)
+	if hint.StablePrefixMessages != 0 {
+		t.Fatalf("expected hidden context to keep current ask volatile, got %d", hint.StablePrefixMessages)
 	}
 }
 

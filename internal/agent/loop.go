@@ -110,7 +110,7 @@ func RunToolLoop(
 	contextAnchorsEnabled := toolDefinitionsContain(cfg.Tools, compact.InceptionToolName)
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
-		if cfg.OnMessage != nil {
+		if cfg.OnMessage != nil && !msg.Hidden {
 			cfg.OnMessage(msg)
 		}
 	}
@@ -163,35 +163,22 @@ func RunToolLoop(
 			appendMessage(anchor)
 			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
 		}
-		requestMessages := messages
-		if cfg.BeforeRequest != nil {
-			transient := cfg.BeforeRequest()
-			if contract, ok := taskContractReminder(messages); ok {
-				transient = append(transient, contract)
-			}
-			if len(transient) > 0 {
-				requestMessages = make([]providers.ChatMessage, 0, len(messages)+len(transient))
-				requestMessages = append(requestMessages, messages...)
-				requestMessages = append(requestMessages, transient...)
-				if repaired, _, nerr := repairLiveToolCallHistory(requestMessages); nerr != nil {
-					return LoopResult{
-						NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
-						HistoryRewritten:    historyRewritten,
-						InputTokens:         totalIn,
-						OutputTokens:        totalOut,
-						CacheCreationTokens: totalCacheCreation,
-						CacheReadTokens:     totalCacheRead,
-					}, nerr
-				} else {
-					requestMessages = repaired
-				}
+		modelContext := modelContextMessages(cfg.BeforeModelContext, messages)
+		if contract, ok := taskContractReminder(messages); ok {
+			modelContext = append(modelContext, contract)
+		}
+		if len(modelContext) > 0 {
+			appended := appendHiddenModelContext(&messages, appendMessage, modelContext)
+			if len(appended) > 0 {
+				usage.RecordPendingMessages(appended)
 				if cfg.OnRequestContext != nil {
-					if info, ok := requestContextInfo(stepIdx, transient); ok {
+					if info, ok := requestContextInfo(stepIdx, appended); ok {
 						cfg.OnRequestContext(info)
 					}
 				}
 			}
 		}
+		requestMessages := messages
 		cacheHint := buildCacheHint(requestMessages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req := providers.ChatRequest{
@@ -464,7 +451,7 @@ func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessa
 	)
 	return providers.ChatMessage{
 		Role:    "user",
-		Name:    wuucontext.SystemReminderMessageName,
+		Name:    wuucontext.TaskContractMessageName,
 		Content: content,
 	}, true
 }
@@ -476,9 +463,12 @@ func recentUserDirectives(messages []providers.ChatMessage, limit int) []string 
 	out := make([]string, 0, limit)
 	for i := len(messages) - 1; i >= 0 && len(out) < limit; i-- {
 		msg := messages[i]
-		if msg.Role != "user" ||
+		if msg.Hidden ||
+			msg.Role != "user" ||
 			wuucontext.IsSystemReminder(msg.Name, msg.Content) ||
 			wuucontext.IsAgentNotification(msg.Name, msg.Content) ||
+			wuucontext.IsGoalContinuation(msg.Name, msg.Content) ||
+			strings.TrimSpace(msg.Name) == wuucontext.TaskContractMessageName ||
 			compact.IsInternalContextMessage(msg) {
 			continue
 		}
@@ -574,6 +564,73 @@ func compactChanged(before, after []providers.ChatMessage) bool {
 		return true
 	}
 	return !reflect.DeepEqual(before, after)
+}
+
+func modelContextMessages(provider func() []providers.ChatMessage, history []providers.ChatMessage) []providers.ChatMessage {
+	if provider == nil {
+		return nil
+	}
+	msgs := provider()
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]providers.ChatMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		normalizeHiddenModelContext(&msg)
+		if latestHiddenContextMatches(history, msg) {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func appendHiddenModelContext(messages *[]providers.ChatMessage, appendMessage func(providers.ChatMessage), context []providers.ChatMessage) []providers.ChatMessage {
+	if len(context) == 0 {
+		return nil
+	}
+	appended := make([]providers.ChatMessage, 0, len(context))
+	for _, msg := range context {
+		normalizeHiddenModelContext(&msg)
+		if latestHiddenContextMatches(*messages, msg) {
+			continue
+		}
+		appendMessage(msg)
+		appended = append(appended, msg)
+	}
+	return appended
+}
+
+func normalizeHiddenModelContext(msg *providers.ChatMessage) {
+	if msg == nil {
+		return
+	}
+	if strings.TrimSpace(msg.Role) == "" {
+		msg.Role = "user"
+	}
+	msg.Hidden = true
+}
+
+func latestHiddenContextMatches(history []providers.ChatMessage, msg providers.ChatMessage) bool {
+	key := strings.TrimSpace(msg.Name)
+	if key == "" {
+		key = strings.TrimSpace(msg.Content)
+	}
+	for i := len(history) - 1; i >= 0; i-- {
+		prev := history[i]
+		if !prev.Hidden {
+			continue
+		}
+		prevKey := strings.TrimSpace(prev.Name)
+		if prevKey == "" {
+			prevKey = strings.TrimSpace(prev.Content)
+		}
+		if prevKey != key {
+			continue
+		}
+		return prev.Role == msg.Role && prev.Name == msg.Name && prev.Content == msg.Content
+	}
+	return false
 }
 
 // copyMessages returns an independent copy of msgs so callers can

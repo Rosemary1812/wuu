@@ -176,11 +176,36 @@ func TestThreadPreviewSkipsInternalContextMessages(t *testing.T) {
 	preview := threadPreview([]providers.ChatMessage{
 		compact.BuildContextAnchorMessage(0),
 		{Role: "user", Name: compact.ContextContinuationName, Content: compact.BuildInceptionContinuationContent(0, "## Task state\nContinue.")},
+		{Role: "user", Name: "wuu_system_reminder", Content: "hidden environment", Hidden: true},
 		{Role: "user", Content: "visible request"},
 	})
 
 	if preview != "visible request" {
 		t.Fatalf("preview = %q, want visible request", preview)
+	}
+}
+
+func TestTurnsFromHistorySkipsHiddenMessages(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	turns := turnsFromHistory("thread", []providers.ChatMessage{
+		{Role: "user", Name: "wuu_system_reminder", Content: "hidden environment", Hidden: true},
+		{Role: "user", Content: "visible request"},
+		{Role: "user", Name: "wuu_task_contract", Content: "hidden task contract", Hidden: true},
+		{Role: "assistant", Content: "done"},
+	}, now)
+
+	if len(turns) != 1 {
+		t.Fatalf("expected one visible turn, got %+v", turns)
+	}
+	items := turns[0].Items
+	if len(items) != 2 {
+		t.Fatalf("expected only visible user and assistant items, got %+v", items)
+	}
+	if items[0].Type != ThreadItemUserMessage || items[0].Text != "visible request" {
+		t.Fatalf("expected visible user item, got %+v", items[0])
+	}
+	if items[1].Type != ThreadItemAgentMessage || items[1].Text != "done" {
+		t.Fatalf("expected visible assistant item, got %+v", items[1])
 	}
 }
 

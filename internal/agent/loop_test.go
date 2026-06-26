@@ -195,7 +195,8 @@ func TestRunToolLoop_SimpleAnswer(t *testing.T) {
 	if res.Content != "hello back" {
 		t.Fatalf("got content %q", res.Content)
 	}
-	if len(res.NewMessages) != 1 || res.NewMessages[0].Role != "assistant" {
+	visible := visibleMessagesForTest(res.NewMessages)
+	if len(visible) != 1 || visible[0].Role != "assistant" {
 		t.Fatalf("unexpected new messages: %+v", res.NewMessages)
 	}
 }
@@ -430,7 +431,7 @@ func TestRunToolLoop_ToolCallThenAnswer(t *testing.T) {
 		t.Fatalf("expected OnToolResult to fire once, got %d", len(seenCalls))
 	}
 	roles := []string{}
-	for _, m := range res.NewMessages {
+	for _, m := range visibleMessagesForTest(res.NewMessages) {
 		roles = append(roles, m.Role)
 	}
 	if strings.Join(roles, ",") != "assistant,tool,assistant" {
@@ -462,8 +463,9 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("expected valid returned message sequence, got %v: %+v", err, res.NewMessages)
 	}
-	roles := make([]string, 0, len(res.NewMessages))
-	for _, msg := range res.NewMessages {
+	visible := visibleMessagesForTest(res.NewMessages)
+	roles := make([]string, 0, len(visible))
+	for _, msg := range visible {
 		roles = append(roles, msg.Role)
 	}
 	if got, want := strings.Join(roles, ","), "assistant,tool,tool,tool,user,user,user,assistant"; got != want {
@@ -472,15 +474,16 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 	if len(step.calls) != 2 {
 		t.Fatalf("expected two provider requests, got %d", len(step.calls))
 	}
-	requestRoles := make([]string, 0, len(step.calls[1].Messages))
-	for _, msg := range step.calls[1].Messages {
+	visibleRequest := visibleMessagesForTest(step.calls[1].Messages)
+	requestRoles := make([]string, 0, len(visibleRequest))
+	for _, msg := range visibleRequest {
 		requestRoles = append(requestRoles, msg.Role)
 	}
 	if got, want := strings.Join(requestRoles, ","), "user,assistant,tool,tool,tool,user,user,user"; got != want {
 		t.Fatalf("unexpected second request order: got %s want %s", got, want)
 	}
 	for i, wantID := range []string{"call_1", "call_2", "call_3"} {
-		msg := step.calls[1].Messages[2+i]
+		msg := visibleRequest[2+i]
 		if msg.Role != "tool" || msg.ToolCallID != wantID {
 			t.Fatalf("tool result %d: got %+v want call_id %s", i, msg, wantID)
 		}
@@ -541,10 +544,11 @@ func TestRunToolLoop_OutputTruncationCompletesTurn(t *testing.T) {
 	if len(step.calls) != 1 {
 		t.Fatalf("expected 1 step call, got %d", len(step.calls))
 	}
-	if len(res.NewMessages) != 1 {
+	visible := visibleMessagesForTest(res.NewMessages)
+	if len(visible) != 1 {
 		t.Fatalf("expected one assistant message, got %+v", res.NewMessages)
 	}
-	msg := res.NewMessages[0]
+	msg := visible[0]
 	if msg.FinishReason != providers.FinishReasonLength || msg.StopReason != "length" || !msg.Truncated {
 		t.Fatalf("expected assistant message finish metadata, got %+v", msg)
 	}
@@ -726,14 +730,15 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 	if !res.HistoryRewritten {
 		t.Fatal("expected history rewritten after proactive compact")
 	}
-	if len(res.NewMessages) != 2 {
+	visible := visibleMessagesForTest(res.NewMessages)
+	if len(visible) != 2 {
 		t.Fatalf("expected full compacted history snapshot, got %d messages", len(res.NewMessages))
 	}
-	if res.NewMessages[0].Role != "user" || res.NewMessages[0].Content != "summary" {
-		t.Fatalf("expected compacted snapshot to start with summary message, got %+v", res.NewMessages[0])
+	if visible[0].Role != "user" || visible[0].Content != "summary" {
+		t.Fatalf("expected compacted snapshot to start with summary message, got %+v", visible[0])
 	}
-	if res.NewMessages[1].Role != "assistant" || res.NewMessages[1].Content != "compacted answer" {
-		t.Fatalf("expected compacted answer in snapshot, got %+v", res.NewMessages[1])
+	if visible[1].Role != "assistant" || visible[1].Content != "compacted answer" {
+		t.Fatalf("expected compacted answer in snapshot, got %+v", visible[1])
 	}
 }
 
@@ -767,7 +772,7 @@ func TestRunToolLoop_PreRequestCompactUsesLocalEstimateWithoutGroundTruth(t *tes
 	if len(step.calls) != 1 {
 		t.Fatalf("expected one provider call, got %d", len(step.calls))
 	}
-	if len(step.calls[0].Messages) != 2 {
+	if len(visibleMessagesForTest(step.calls[0].Messages)) != 2 {
 		t.Fatalf("expected compacted history to be sent, got %d messages", len(step.calls[0].Messages))
 	}
 	if res.Content != "ok" {
@@ -941,15 +946,16 @@ func TestRunToolLoop_BeforeStepInjectsMessages(t *testing.T) {
 		t.Fatalf("expected one step call, got %d", len(step.calls))
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != 2 {
+	visible := visibleMessagesForTest(msgs)
+	if len(visible) != 2 {
 		t.Fatalf("expected injected message in request, got %d messages", len(msgs))
 	}
-	if msgs[1].Role != "user" || msgs[1].Content != "follow-up" {
-		t.Fatalf("unexpected injected message: %+v", msgs[1])
+	if visible[1].Role != "user" || visible[1].Content != "follow-up" {
+		t.Fatalf("unexpected injected message: %+v", visible[1])
 	}
 }
 
-func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
+func TestRunToolLoop_BeforeModelContextAppendsHiddenMessages(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
 	reminder := wuucontext.FormatSystemReminderBlocks(wuucontext.Block{
 		Kind:    wuucontext.BlockEnvironment,
@@ -960,7 +966,7 @@ func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
 	var contexts []RequestContextInfo
 	cfg := LoopConfig{
 		Model: "m",
-		BeforeRequest: func() []providers.ChatMessage {
+		BeforeModelContext: func() []providers.ChatMessage {
 			return []providers.ChatMessage{{
 				Role:    "user",
 				Name:    wuucontext.SystemReminderMessageName,
@@ -979,16 +985,27 @@ func TestRunToolLoop_BeforeRequestInjectsTransientMessages(t *testing.T) {
 		t.Fatalf("expected one step call, got %d", len(step.calls))
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != 3 || msgs[1].Content != reminder {
-		t.Fatalf("expected transient request message, got %+v", msgs)
+	if len(msgs) != 3 || msgs[1].Content != reminder || !msgs[1].Hidden {
+		t.Fatalf("expected hidden model context message, got %+v", msgs)
 	}
 	if !strings.Contains(msgs[2].Content, "[TASK]") ||
 		!strings.Contains(msgs[2].Content, "[CONSTRAINT_LEDGER]") ||
-		!strings.Contains(msgs[2].Content, "hi") {
+		!strings.Contains(msgs[2].Content, "hi") ||
+		msgs[2].Name != wuucontext.TaskContractMessageName ||
+		!msgs[2].Hidden {
 		t.Fatalf("expected task contract reminder, got %+v", msgs[2])
 	}
-	if len(res.NewMessages) != 1 || res.NewMessages[0].Content != "ok" {
-		t.Fatalf("transient request context should not persist, got %+v", res.NewMessages)
+	if len(res.NewMessages) != 3 {
+		t.Fatalf("expected hidden context plus assistant reply, got %+v", res.NewMessages)
+	}
+	if !res.NewMessages[0].Hidden || res.NewMessages[0].Content != reminder {
+		t.Fatalf("expected hidden environment context to persist, got %+v", res.NewMessages[0])
+	}
+	if !res.NewMessages[1].Hidden || res.NewMessages[1].Name != wuucontext.TaskContractMessageName {
+		t.Fatalf("expected hidden task contract to persist, got %+v", res.NewMessages[1])
+	}
+	if res.NewMessages[2].Hidden || res.NewMessages[2].Content != "ok" {
+		t.Fatalf("expected visible assistant reply, got %+v", res.NewMessages[2])
 	}
 	if len(contexts) != 1 {
 		t.Fatalf("expected one request context summary, got %+v", contexts)
@@ -1030,6 +1047,18 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 		},
 		{
 			Role:    "user",
+			Name:    wuucontext.TaskContractMessageName,
+			Content: "hidden task contract should not echo",
+			Hidden:  true,
+		},
+		{
+			Role:    "user",
+			Name:    wuucontext.GoalContinuationMessageName,
+			Content: "<goal_continuation>hidden goal should not echo</goal_continuation>",
+			Hidden:  true,
+		},
+		{
+			Role:    "user",
 			Content: agentNotificationEnvelope,
 		},
 		{
@@ -1043,7 +1072,7 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 
 	cfg := LoopConfig{
 		Model: "m",
-		BeforeRequest: func() []providers.ChatMessage {
+		BeforeModelContext: func() []providers.ChatMessage {
 			return []providers.ChatMessage{{
 				Role:    "user",
 				Name:    wuucontext.SystemReminderMessageName,
@@ -1064,6 +1093,9 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 	}
 	if strings.Contains(contract, "agent done") {
 		t.Fatalf("task contract should ignore agent notifications: %s", contract)
+	}
+	if strings.Contains(contract, "should not echo") {
+		t.Fatalf("task contract should ignore hidden model context: %s", contract)
 	}
 	for _, want := range []string{"first request", "second request", "final constraint"} {
 		if !strings.Contains(contract, want) {
@@ -1107,7 +1139,7 @@ func TestRunToolLoop_EmptyAnswerWithNaturalStopReasonSucceeds(t *testing.T) {
 	if res.Content != "" {
 		t.Fatalf("expected empty final content, got %q", res.Content)
 	}
-	if len(res.NewMessages) != 0 {
+	if len(visibleMessagesForTest(res.NewMessages)) != 0 {
 		t.Fatalf("expected no persisted empty assistant message, got %+v", res.NewMessages)
 	}
 }
@@ -1122,10 +1154,11 @@ func TestRunToolLoop_ReasoningOnlyAnswerStillPersistsAssistantMessage(t *testing
 	if err != nil {
 		t.Fatalf("expected reasoning-only completion to succeed, got %v", err)
 	}
-	if len(res.NewMessages) != 1 {
+	visible := visibleMessagesForTest(res.NewMessages)
+	if len(visible) != 1 {
 		t.Fatalf("expected reasoning-only assistant message to persist, got %+v", res.NewMessages)
 	}
-	if got := res.NewMessages[0].ReasoningContent; got != "inspect repo before reply" {
+	if got := visible[0].ReasoningContent; got != "inspect repo before reply" {
 		t.Fatalf("unexpected reasoning content: %q", got)
 	}
 }

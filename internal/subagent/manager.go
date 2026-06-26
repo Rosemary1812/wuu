@@ -242,7 +242,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		OnTokenUsage:    onTokenUsage,
 	}
 	if provider, ok := sa.toolkit.(toolContextBlockProvider); ok {
-		runner.BeforeRequest = func() []providers.ChatMessage {
+		runner.BeforeModelContext = func() []providers.ChatMessage {
 			blocks := provider.ContextBlocks()
 			if len(blocks) == 0 {
 				return nil

@@ -82,12 +82,13 @@ type StreamRunner struct {
 	// messages are appended to history for that round.
 	BeforeStep func() []providers.ChatMessage
 
-	// BeforeRequest, when set, is called right before each provider
-	// request. Returned messages are sent for that request only and
-	// are not appended to saved conversation history.
-	BeforeRequest func() []providers.ChatMessage
-	// OnRequestContext receives metadata-only summaries of request-only
-	// context injected by BeforeRequest.
+	// BeforeModelContext, when set, is called before each provider
+	// request. Returned messages are appended as hidden model context:
+	// provider-visible and persisted for replay, but not shown as user
+	// conversation items.
+	BeforeModelContext func() []providers.ChatMessage
+	// OnRequestContext receives metadata-only summaries of hidden model
+	// context appended before requests.
 	OnRequestContext func(info RequestContextInfo)
 
 	// AfterTurn, when set, is invoked after a successful turn has
@@ -217,7 +218,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		OutputReserveTokens: r.OutputReserveTokens,
 		CompactThresholdPct: r.CompactThresholdPct,
 		BeforeStep:          beforeStep,
-		BeforeRequest:       r.BeforeRequest,
+		BeforeModelContext:  r.BeforeModelContext,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)
@@ -233,7 +234,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		OnUsage:      r.OnUsage,
 		OnTokenUsage: r.OnTokenUsage,
 		OnMessage: func(msg providers.ChatMessage) {
-			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) || isInternalContextHistoryMessage(msg) {
+			if effectiveOnEvent == nil || msg.Hidden || isEphemeralHistoryMessage(msg) || isInternalContextHistoryMessage(msg) {
 				return
 			}
 			copyMsg := msg
@@ -421,7 +422,7 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 }
 
 func isEphemeralHistoryMessage(msg providers.ChatMessage) bool {
-	return msg.Role == "user" && strings.TrimSpace(msg.Name) == wuucontext.SystemReminderMessageName
+	return !msg.Hidden && msg.Role == "user" && strings.TrimSpace(msg.Name) == wuucontext.SystemReminderMessageName
 }
 
 func filterEphemeralHistory(msgs []providers.ChatMessage) []providers.ChatMessage {

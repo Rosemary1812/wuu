@@ -177,6 +177,9 @@ func threadSearchCandidates(thread Thread, history []providers.ChatMessage) []th
 		{text: thread.Model},
 	}
 	for _, msg := range history {
+		if msg.Hidden {
+			continue
+		}
 		candidates = append(candidates, threadSearchCandidatesFromMessage(msg)...)
 	}
 	return candidates

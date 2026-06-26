@@ -335,7 +335,7 @@ func NewSession(opts Options) (*Session, error) {
 		OutputReserveTokens:   modelBudget.OutputReserveTokens,
 		CompactThresholdPct:   cfg.Agent.CompactThresholdPct,
 		DisableAutoCompact:    cfg.Agent.DisableAutoCompact,
-		BeforeRequest:         EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
+		BeforeModelContext:    EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:             afterTurn,
 	}
 
@@ -691,7 +691,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.PromptCacheKey = strings.TrimSpace(id)
-	runner.BeforeRequest = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
+	runner.BeforeModelContext = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
 		memoryLimit, userLimit := kit.MemoryLimits()
@@ -736,7 +736,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		DisableAutoCompact:      base.DisableAutoCompact,
 		StreamingToolExecution:  base.StreamingToolExecution,
 		BeforeStep:              base.BeforeStep,
-		BeforeRequest:           base.BeforeRequest,
+		BeforeModelContext:      base.BeforeModelContext,
 		AfterTurn:               base.AfterTurn,
 		Effort:                  base.Effort,
 		Variant:                 base.Variant,

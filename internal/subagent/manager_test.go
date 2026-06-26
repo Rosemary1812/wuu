@@ -24,6 +24,17 @@ type fakeClient struct {
 	lastRequest atomic.Pointer[providers.ChatRequest]
 }
 
+func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
+	out := make([]providers.ChatMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Hidden {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
 func (f *fakeClient) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	f.calls.Add(1)
 	cp := req
@@ -386,7 +397,7 @@ func TestSpawn_WithInitialHistory_PrefixIsParentHistory(t *testing.T) {
 	if last == nil {
 		t.Fatal("client never received a request")
 	}
-	got := last.Messages
+	got := visibleMessagesForTest(last.Messages)
 	if len(got) != len(parentHistory)+1 {
 		t.Fatalf("expected %d messages (parent history + 1 user), got %d",
 			len(parentHistory)+1, len(got))
@@ -431,14 +442,15 @@ func TestSpawn_WithoutInitialHistory_UsesSystemPrompt(t *testing.T) {
 	if last == nil {
 		t.Fatal("client never received a request")
 	}
-	if len(last.Messages) != 2 {
-		t.Fatalf("expected 2 messages [system, user], got %d", len(last.Messages))
+	visible := visibleMessagesForTest(last.Messages)
+	if len(visible) != 2 {
+		t.Fatalf("expected 2 visible messages [system, user], got %+v", last.Messages)
 	}
-	if last.Messages[0].Role != "system" || last.Messages[0].Content != "you are a worker" {
-		t.Errorf("system message wrong: %+v", last.Messages[0])
+	if visible[0].Role != "system" || visible[0].Content != "you are a worker" {
+		t.Errorf("system message wrong: %+v", visible[0])
 	}
-	if last.Messages[1].Role != "user" || last.Messages[1].Content != "do the task" {
-		t.Errorf("user message wrong: %+v", last.Messages[1])
+	if visible[1].Role != "user" || visible[1].Content != "do the task" {
+		t.Errorf("user message wrong: %+v", visible[1])
 	}
 }
 
@@ -494,12 +506,13 @@ func TestFollowup_CompletedAgentStartsNewTurnWithHistory(t *testing.T) {
 		{"user", "queued mailbox note"},
 		{"user", "continue task"},
 	}
-	if len(last.Messages) != len(want) {
-		t.Fatalf("expected %d messages in follow-up request, got %d: %+v", len(want), len(last.Messages), last.Messages)
+	visible := visibleMessagesForTest(last.Messages)
+	if len(visible) != len(want) {
+		t.Fatalf("expected %d visible messages in follow-up request, got %+v", len(want), last.Messages)
 	}
 	for i, msg := range want {
-		if last.Messages[i].Role != msg.role || last.Messages[i].Content != msg.content {
-			t.Fatalf("message %d = {%s,%q}, want {%s,%q}", i, last.Messages[i].Role, last.Messages[i].Content, msg.role, msg.content)
+		if visible[i].Role != msg.role || visible[i].Content != msg.content {
+			t.Fatalf("message %d = {%s,%q}, want {%s,%q}", i, visible[i].Role, visible[i].Content, msg.role, msg.content)
 		}
 	}
 }

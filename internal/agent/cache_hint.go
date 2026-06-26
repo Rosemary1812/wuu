@@ -22,12 +22,9 @@ const (
 //   - let a compacted summary become the new stable history root
 //     without introducing a heavier session-part model
 //
-// The stable prefix is everything before the most recent user-role
-// message in the request. On the first step of a turn, that excludes the
-// latest human prompt. During the tool loop, transient system reminders
-// are appended as user-role messages just before the provider request;
-// that makes completed tool calls and tool results cacheable while the
-// per-request reminder remains outside the cached prefix.
+// The stable prefix is everything before the most recent visible user-role
+// message in the request. Hidden model context is replayable history, but it
+// is not user intent and must not move the volatile turn boundary.
 //
 // After compact rewrites history, the synthetic conversation summary at
 // the front of the prompt becomes the best stable anchor we have. We
@@ -85,7 +82,7 @@ func systemMessageCount(messages []providers.ChatMessage) int {
 
 func lastUserMessageIndex(messages []providers.ChatMessage) int {
 	for i := len(messages) - 1; i >= 0; i-- {
-		if strings.EqualFold(messages[i].Role, volatileTurnUserRole) {
+		if !messages[i].Hidden && strings.EqualFold(messages[i].Role, volatileTurnUserRole) {
 			return i
 		}
 	}

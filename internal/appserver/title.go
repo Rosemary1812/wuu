@@ -495,6 +495,9 @@ func firstUserMessageForTitle(history []providers.ChatMessage, force bool) (stri
 	var first string
 	count := 0
 	for _, msg := range history {
+		if msg.Hidden {
+			continue
+		}
 		if msg.Role != "user" || isToolResultMessage(msg) {
 			continue
 		}

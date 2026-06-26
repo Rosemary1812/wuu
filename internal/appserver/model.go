@@ -411,7 +411,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if ev.Message == nil {
 			return nil
 		}
-		if compact.IsInternalContextMessage(*ev.Message) {
+		if ev.Message.Hidden || compact.IsInternalContextMessage(*ev.Message) {
 			return nil
 		}
 		out = append(out, th.applyMessageItemLocked(turnID, *ev.Message, now)...)
@@ -730,6 +730,9 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		current.Items = append(current.Items, item)
 	}
 	for _, msg := range history {
+		if msg.Hidden {
+			continue
+		}
 		if compact.IsInternalContextMessage(msg) {
 			continue
 		}
@@ -930,6 +933,9 @@ func threadItemPhaseFromProvider(phase providers.MessagePhase) ThreadItemPhase {
 
 func threadPreview(history []providers.ChatMessage) string {
 	for _, msg := range history {
+		if msg.Hidden {
+			continue
+		}
 		if compact.IsInternalContextMessage(msg) {
 			continue
 		}

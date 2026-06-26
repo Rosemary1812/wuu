@@ -105,8 +105,8 @@ type CompactInfo struct {
 	MessagesAfter  int
 }
 
-// RequestContextInfo summarizes transient request-only context injected into
-// a provider call. It intentionally excludes raw prompt text.
+// RequestContextInfo summarizes hidden model context appended before a
+// provider call. It intentionally excludes raw prompt text.
 type RequestContextInfo struct {
 	StepIndex         int
 	TransientMessages int
@@ -158,14 +158,13 @@ type LoopConfig struct {
 	// sub-agent follow-up messaging: send_message queues
 	// user-role messages that are injected on the next round.
 	BeforeStep func() []providers.ChatMessage
-	// BeforeRequest, when set, is called after live-history updates and
-	// right before each provider request. Returned messages are sent to
-	// the model for this request only; they are not appended to live
-	// history and are not persisted. Use this for dynamic runtime facts
-	// such as environment or child-agent status reminders.
-	BeforeRequest func() []providers.ChatMessage
-	// OnRequestContext receives a metadata-only summary of request-only
-	// context injected by BeforeRequest.
+	// BeforeModelContext, when set, is called after live-history updates
+	// and before each provider request. Returned messages are appended to
+	// live history as hidden model context: provider-visible and persisted
+	// for replay, but omitted from user-facing conversation items.
+	BeforeModelContext func() []providers.ChatMessage
+	// OnRequestContext receives a metadata-only summary of hidden model
+	// context appended before a request.
 	OnRequestContext func(info RequestContextInfo)
 	// OnUsage is invoked once per LLM round-trip with the per-call
 	// token counts when the provider reports them. The loop also
@@ -174,10 +173,9 @@ type LoopConfig struct {
 	// OnTokenUsage is invoked once per LLM round-trip with the full
 	// provider token usage, including prompt cache read/write counts.
 	OnTokenUsage func(usage providers.TokenUsage)
-	// OnMessage is invoked whenever the loop appends a semantic chat
-	// message to its live history. Streaming callers use it to persist
-	// assistant/tool/internal follow-up messages incrementally instead of
-	// waiting for the whole turn to finish.
+	// OnMessage is invoked whenever the loop appends a visible semantic chat
+	// message to its live history. Hidden model context is returned in
+	// LoopResult for persistence instead of being emitted as a message event.
 	OnMessage func(msg providers.ChatMessage)
 	// OnToolResult is invoked after each tool execution with the
 	// (call, JSON result) pair. Used by streaming callers to feed

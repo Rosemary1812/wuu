@@ -142,7 +142,8 @@ func TestStreamRunner_AfterTurnRunsAfterSuccess(t *testing.T) {
 		if result.Content != "ok" {
 			t.Fatalf("AfterTurn content = %q, want ok", result.Content)
 		}
-		if len(history) != 2 || history[1].Role != "assistant" || history[1].Content != "ok" {
+		visible := visibleMessagesForTest(history)
+		if len(visible) != 2 || visible[1].Role != "assistant" || visible[1].Content != "ok" {
 			t.Fatalf("AfterTurn history = %+v", history)
 		}
 	}
@@ -198,23 +199,26 @@ func TestStreamRunner_SimpleContent(t *testing.T) {
 		t.Fatalf("unexpected result: %q", result)
 	}
 
-	if len(received) != 6 {
-		t.Fatalf("expected 6 events including lifecycle/message, got %d", len(received))
+	if len(received) != 7 {
+		t.Fatalf("expected 7 events including lifecycle/context/message, got %d", len(received))
 	}
-	if received[0].Type != providers.EventLifecycle || received[0].Lifecycle == nil || received[0].Lifecycle.Phase != providers.StreamPhaseConnecting {
-		t.Fatalf("unexpected first event: %+v", received[0])
+	if received[0].Type != providers.EventRequestContext || received[0].RequestContext == nil {
+		t.Fatalf("expected request context event, got %+v", received[0])
 	}
-	if received[1].Type != providers.EventLifecycle || received[1].Lifecycle == nil || received[1].Lifecycle.Phase != providers.StreamPhaseConnected {
-		t.Fatalf("unexpected second event: %+v", received[1])
+	if received[1].Type != providers.EventLifecycle || received[1].Lifecycle == nil || received[1].Lifecycle.Phase != providers.StreamPhaseConnecting {
+		t.Fatalf("unexpected first lifecycle event: %+v", received[1])
 	}
-	if received[2].Type != providers.EventContentDelta || received[2].Content != "Hello " {
-		t.Fatalf("unexpected first content event: %+v", received[2])
+	if received[2].Type != providers.EventLifecycle || received[2].Lifecycle == nil || received[2].Lifecycle.Phase != providers.StreamPhaseConnected {
+		t.Fatalf("unexpected second lifecycle event: %+v", received[2])
 	}
-	if received[4].Type != providers.EventDone {
-		t.Fatalf("expected done event before committed message, got %s", received[4].Type)
+	if received[3].Type != providers.EventContentDelta || received[3].Content != "Hello " {
+		t.Fatalf("unexpected first content event: %+v", received[3])
 	}
-	if received[5].Type != providers.EventMessage || received[5].Message == nil || received[5].Message.Role != "assistant" {
-		t.Fatalf("expected committed assistant message event, got %+v", received[5])
+	if received[5].Type != providers.EventDone {
+		t.Fatalf("expected done event before committed message, got %s", received[5].Type)
+	}
+	if received[6].Type != providers.EventMessage || received[6].Message == nil || received[6].Message.Role != "assistant" {
+		t.Fatalf("expected committed assistant message event, got %+v", received[6])
 	}
 }
 
@@ -897,24 +901,26 @@ func TestStreamRunner_AcceptsHistory(t *testing.T) {
 		t.Fatalf("expected 1 request, got %d", len(client.requests))
 	}
 	sent := client.requests[0].Messages
-	if len(sent) != len(history) {
+	visibleSent := visibleMessagesForTest(sent)
+	if len(visibleSent) != len(history) {
 		t.Fatalf("expected %d messages sent, got %d", len(history), len(sent))
 	}
 	for i, msg := range history {
-		if sent[i].Role != msg.Role || sent[i].Content != msg.Content {
-			t.Fatalf("message %d mismatch: got %+v, want %+v", i, sent[i], msg)
+		if visibleSent[i].Role != msg.Role || visibleSent[i].Content != msg.Content {
+			t.Fatalf("message %d mismatch: got %+v, want %+v", i, visibleSent[i], msg)
 		}
 	}
 
 	// newMsgs should contain exactly the assistant reply.
-	if len(newMsgs) != 1 {
-		t.Fatalf("expected 1 new message, got %d", len(newMsgs))
+	visibleNew := visibleMessagesForTest(newMsgs)
+	if len(visibleNew) != 1 {
+		t.Fatalf("expected 1 visible new message, got %+v", newMsgs)
 	}
-	if newMsgs[0].Role != "assistant" {
-		t.Fatalf("expected assistant message, got %q", newMsgs[0].Role)
+	if visibleNew[0].Role != "assistant" {
+		t.Fatalf("expected assistant message, got %q", visibleNew[0].Role)
 	}
-	if newMsgs[0].Content != "turn2 reply" {
-		t.Fatalf("unexpected new message content: %q", newMsgs[0].Content)
+	if visibleNew[0].Content != "turn2 reply" {
+		t.Fatalf("unexpected new message content: %q", visibleNew[0].Content)
 	}
 }
 
@@ -925,21 +931,22 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 		},
 	}
 
+	reminder := "<system-reminder>\n# Environment\n- CWD: /tmp\n</system-reminder>"
 	history := []providers.ChatMessage{
 		{Role: "system", Content: "you are helpful"},
 		{Role: "user", Content: "hello"},
-		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: "<system-reminder>\n# Environment\n- CWD: /tmp\n</system-reminder>"},
+		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: reminder},
 	}
 
 	var received []providers.StreamEvent
 	runner := StreamRunner{
 		Client: client,
 		Model:  "test-model",
-		BeforeStep: func() []providers.ChatMessage {
+		BeforeModelContext: func() []providers.ChatMessage {
 			return []providers.ChatMessage{{
 				Role:    "user",
 				Name:    wuucontext.SystemReminderMessageName,
-				Content: "<system-reminder>\n# Environment\n- CWD: /tmp\n</system-reminder>",
+				Content: reminder,
 			}}
 		},
 	}
@@ -955,17 +962,21 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 		t.Fatalf("expected 1 request, got %d", len(client.requests))
 	}
 	sent := client.requests[0].Messages
-	if len(sent) != 2 {
-		t.Fatalf("expected reminder messages to be filtered from request, got %+v", sent)
+	if len(sent) != 4 {
+		t.Fatalf("expected legacy reminder to be filtered and hidden context to be sent, got %+v", sent)
 	}
-	for _, msg := range sent {
-		if wuucontext.IsSystemReminder(msg.Name, msg.Content) {
-			t.Fatalf("unexpected system reminder in request: %+v", msg)
-		}
+	if sent[0].Role != "system" || sent[1].Role != "user" || sent[2].Name != wuucontext.SystemReminderMessageName || !sent[2].Hidden {
+		t.Fatalf("unexpected request messages: %+v", sent)
+	}
+	if sent[3].Name != wuucontext.TaskContractMessageName || !sent[3].Hidden {
+		t.Fatalf("expected hidden task contract in request, got %+v", sent[3])
 	}
 
-	if len(res.NewMessages) != 0 {
-		t.Fatalf("expected no persisted messages from reminder-only turn, got %+v", res.NewMessages)
+	if len(res.NewMessages) != 2 || !res.NewMessages[0].Hidden || res.NewMessages[0].Content != reminder {
+		t.Fatalf("expected hidden model context to persist without a visible event, got %+v", res.NewMessages)
+	}
+	if !res.NewMessages[1].Hidden || res.NewMessages[1].Name != wuucontext.TaskContractMessageName {
+		t.Fatalf("expected hidden task contract to persist without a visible event, got %+v", res.NewMessages)
 	}
 	for _, ev := range received {
 		if ev.Type == providers.EventMessage && ev.Message != nil && wuucontext.IsSystemReminder(ev.Message.Name, ev.Message.Content) {
@@ -1021,7 +1032,7 @@ func TestStreamRunner_ReusesUsageAcrossTurnsForPreRequestCompact(t *testing.T) {
 	if len(client.requests) != 3 {
 		t.Fatalf("expected 3 total requests (stream, compact, stream), got %d", len(client.requests))
 	}
-	if len(client.requests[2].Messages) >= len(secondHistory) {
+	if len(visibleMessagesForTest(client.requests[2].Messages)) >= len(visibleMessagesForTest(secondHistory)) {
 		t.Fatalf("expected compacted second request, got %d messages from %d-history input",
 			len(client.requests[2].Messages), len(secondHistory))
 	}
@@ -1069,7 +1080,7 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	if len(client.requests) != 2 {
 		t.Fatalf("expected compact request plus stream request, got %d", len(client.requests))
 	}
-	if len(client.requests[1].Messages) >= len(history) {
+	if len(visibleMessagesForTest(client.requests[1].Messages)) >= len(history) {
 		t.Fatalf("expected compacted stream request, got %d messages from %d-history input",
 			len(client.requests[1].Messages), len(history))
 	}
@@ -1148,8 +1159,8 @@ func TestStreamRunner_CompactedHistoryDoesNotTriggerImmediateSecondCompact(t *te
 	}
 
 	secondSent := client.requests[2].Messages
-	if len(secondSent) != len(secondHistory) {
-		t.Fatalf("expected second request to send compacted persisted history unchanged, got %d messages from %d-history input",
+	if len(visibleMessagesForTest(secondSent)) != len(visibleMessagesForTest(secondHistory)) {
+		t.Fatalf("expected second request to preserve visible compacted history, got %d messages from %d-history input",
 			len(secondSent), len(secondHistory))
 	}
 	if got := secondSent[1].Content; !compact.IsConversationSummaryContent(got) ||
@@ -1227,7 +1238,7 @@ func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testin
 		t.Fatalf("expected stream, compact, stream requests, got %d", len(client.requests))
 	}
 	finalRequest := client.requests[2]
-	if len(finalRequest.Messages) >= len(history) {
+	if len(visibleMessagesForTest(finalRequest.Messages)) >= len(history) {
 		t.Fatalf("expected compacted retry request, got %d messages from %d-history input",
 			len(finalRequest.Messages), len(history))
 	}
@@ -1412,10 +1423,11 @@ func TestStreamRunner_ReplaysReasoningContentAfterToolCall(t *testing.T) {
 		t.Fatalf("expected 2 provider requests, got %d", len(client.requests))
 	}
 	second := client.requests[1].Messages
-	if len(second) != 3 {
-		t.Fatalf("expected user + assistant + tool in second request, got %d", len(second))
+	visibleSecond := visibleMessagesForTest(second)
+	if len(visibleSecond) != 3 {
+		t.Fatalf("expected user + assistant + tool in second request, got %+v", second)
 	}
-	assistant := second[1]
+	assistant := visibleSecond[1]
 	if assistant.Role != "assistant" {
 		t.Fatalf("expected assistant message, got %+v", assistant)
 	}

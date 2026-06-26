@@ -44,6 +44,17 @@ type fakeClient struct {
 	onChat    func(call int, req providers.ChatRequest)
 }
 
+func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
+	out := make([]providers.ChatMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Hidden {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
 func (f *fakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
@@ -1862,7 +1873,8 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
-	if len(persisted) != 3 || persisted[0].Role != "user" || persisted[0].Content != "hello" || !compact.IsInternalContextMessage(persisted[1]) || persisted[2].Role != "assistant" || persisted[2].Content != "done" {
+	visiblePersisted := visibleMessagesForTest(persisted)
+	if len(visiblePersisted) != 3 || visiblePersisted[0].Role != "user" || visiblePersisted[0].Content != "hello" || !compact.IsInternalContextMessage(visiblePersisted[1]) || visiblePersisted[2].Role != "assistant" || visiblePersisted[2].Content != "done" {
 		t.Fatalf("unexpected persisted history: %+v", persisted)
 	}
 	sessions, err := session.List(rt.SessionDir, 1)
@@ -2120,6 +2132,9 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	if continuation.Content == "" {
 		t.Fatalf("second request missing goal continuation message: %+v", requests[1].Messages)
 	}
+	if !continuation.Hidden {
+		t.Fatalf("goal continuation should be hidden model context: %+v", continuation)
+	}
 	if !strings.Contains(continuation.Content, "finish the idle continuation loop") ||
 		!strings.Contains(continuation.Content, "<goal_continuation>") {
 		t.Fatalf("unexpected goal continuation content:\n%s", continuation.Content)
@@ -2130,13 +2145,21 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 		t.Fatalf("load persisted history: %v", err)
 	}
 	userMessages := 0
+	hiddenContinuation := 0
 	for _, msg := range persisted {
 		if msg.Name == wuucontext.GoalContinuationMessageName || wuucontext.IsGoalContinuation(msg.Name, msg.Content) {
-			t.Fatalf("goal continuation should not be persisted: %+v", persisted)
+			if !msg.Hidden {
+				t.Fatalf("persisted goal continuation should be hidden: %+v", msg)
+			}
+			hiddenContinuation++
+			continue
 		}
-		if msg.Role == "user" {
+		if msg.Role == "user" && !msg.Hidden {
 			userMessages++
 		}
+	}
+	if hiddenContinuation != 1 {
+		t.Fatalf("expected one hidden persisted goal continuation, got %+v", persisted)
 	}
 	if userMessages != 1 {
 		t.Fatalf("persisted history should contain only the real user prompt, got %+v", persisted)
@@ -2990,14 +3013,15 @@ func TestServerThreadForkAtAssistantItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fork history: %v", err)
 	}
-	if len(forkHistory) != 2 || forkHistory[0].Content != "first prompt" || forkHistory[1].Content != "first answer" {
+	visibleForkHistory := visibleMessagesForTest(forkHistory)
+	if len(visibleForkHistory) != 2 || visibleForkHistory[0].Content != "first prompt" || visibleForkHistory[1].Content != "first answer" {
 		t.Fatalf("unexpected persisted fork history: %+v", forkHistory)
 	}
 	sourceHistory, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
 	if err != nil {
 		t.Fatalf("load source history: %v", err)
 	}
-	if len(sourceHistory) != 4 {
+	if len(visibleMessagesForTest(sourceHistory)) != 4 {
 		t.Fatalf("source history should remain intact, got %+v", sourceHistory)
 	}
 
@@ -3259,7 +3283,8 @@ func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
-	if len(persisted) != 2 || len(persisted[0].Images) != 1 {
+	visiblePersisted := visibleMessagesForTest(persisted)
+	if len(visiblePersisted) != 2 || len(visiblePersisted[0].Images) != 1 {
 		t.Fatalf("unexpected persisted history: %+v", persisted)
 	}
 	sessions, err := session.List(rt.SessionDir, 1)
@@ -3334,7 +3359,8 @@ func TestServerTurnStartAcceptsPDFOnlyPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
-	if len(persisted) != 2 || len(persisted[0].Files) != 1 {
+	visiblePersisted := visibleMessagesForTest(persisted)
+	if len(visiblePersisted) != 2 || len(visiblePersisted[0].Files) != 1 {
 		t.Fatalf("unexpected persisted history: %+v", persisted)
 	}
 	sessions, err := session.List(rt.SessionDir, 1)
@@ -4049,6 +4075,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		ClientID:          "client-msg-1",
 		Content:           "done",
 		Phase:             providers.MessagePhaseFinalAnswer,
+		Hidden:            true,
 		ProviderItemID:    "msg_1",
 		ProviderItemModel: "gpt-test",
 		Steered:           true,
@@ -4095,7 +4122,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		t.Fatalf("expected one message, got %+v", history)
 	}
 	got := history[0]
-	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || got.ProviderItemID != "msg_1" || got.ProviderItemModel != "gpt-test" || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
+	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || !got.Hidden || got.ProviderItemID != "msg_1" || got.ProviderItemModel != "gpt-test" || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
 		t.Fatalf("message scalar fields did not round-trip: %+v", got)
 	}
 	if len(got.ReasoningBlocks) != 1 || got.ReasoningBlocks[0].Signature != "sig-1" || got.ReasoningBlocks[0].Data != "opaque" {
@@ -4230,20 +4257,21 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load compacted history: %v", err)
 	}
-	if len(persisted) != 4 {
+	visiblePersisted := visibleMessagesForTest(persisted)
+	if len(visiblePersisted) != 4 {
 		t.Fatalf("expected compacted persisted history of 4 messages, got %+v", persisted)
 	}
-	if persisted[0].Role != "system" || !strings.Contains(persisted[0].Content, "summary of older single-turn tool run") {
-		t.Fatalf("expected persisted compact summary first, got %+v", persisted[0])
+	if visiblePersisted[0].Role != "system" || !strings.Contains(visiblePersisted[0].Content, "summary of older single-turn tool run") {
+		t.Fatalf("expected persisted compact summary first, got %+v", visiblePersisted[0])
 	}
-	if persisted[1].Role != "assistant" || persisted[1].Content != "I found the first clue." {
-		t.Fatalf("expected recent assistant tail after summary, got %+v", persisted[1])
+	if visiblePersisted[1].Role != "assistant" || visiblePersisted[1].Content != "I found the first clue." {
+		t.Fatalf("expected recent assistant tail after summary, got %+v", visiblePersisted[1])
 	}
-	if persisted[2].Role != "user" || persisted[2].Content != "continue" {
-		t.Fatalf("expected resumed user message after recent tail, got %+v", persisted[2])
+	if visiblePersisted[2].Role != "user" || visiblePersisted[2].Content != "continue" {
+		t.Fatalf("expected resumed user message after recent tail, got %+v", visiblePersisted[2])
 	}
-	if persisted[3].Role != "assistant" || persisted[3].Content != "after compact" {
-		t.Fatalf("expected final assistant message after compact, got %+v", persisted[3])
+	if visiblePersisted[3].Role != "assistant" || visiblePersisted[3].Content != "after compact" {
+		t.Fatalf("expected final assistant message after compact, got %+v", visiblePersisted[3])
 	}
 
 	out2 := &lockedBuffer{}
@@ -4271,10 +4299,11 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	if th == nil {
 		t.Fatal("expected resumed compacted thread state")
 	}
-	if len(th.History) != 5 {
+	visibleHistory := visibleMessagesForTest(th.History)
+	if len(visibleHistory) != 5 {
 		t.Fatalf("expected base system prompt plus compacted persisted history, got %+v", th.History)
 	}
-	if th.History[1].Role != "system" || !strings.Contains(th.History[1].Content, "summary of older single-turn tool run") {
+	if visibleHistory[1].Role != "system" || !strings.Contains(visibleHistory[1].Content, "summary of older single-turn tool run") {
 		t.Fatalf("expected compact summary after base system prompt, got %+v", th.History)
 	}
 }

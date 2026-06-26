@@ -176,7 +176,14 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 			t.Fatalf("dream system prompt must not inherit profile-specific tool names %q:\n%s", blocked, firstSystem.Content)
 		}
 	}
-	last := client.requests[0].Messages[len(client.requests[0].Messages)-1]
+	var last providers.ChatMessage
+	for i := len(client.requests[0].Messages) - 1; i >= 0; i-- {
+		if client.requests[0].Messages[i].Hidden {
+			continue
+		}
+		last = client.requests[0].Messages[i]
+		break
+	}
 	if last.Role != "user" || !strings.Contains(last.Content, "read_file") || !strings.Contains(last.Content, "Nothing to dream") {
 		t.Fatalf("missing dream prompt in request: %+v", last)
 	}

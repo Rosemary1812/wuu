@@ -45,6 +45,7 @@ type persistedMessage struct {
 	ProviderItemID      string                             `json:"provider_item_id,omitempty"`
 	ProviderItemModel   string                             `json:"provider_item_model,omitempty"`
 	ClientID            string                             `json:"client_id,omitempty"`
+	Hidden              bool                               `json:"hidden,omitempty"`
 	Steered             bool                               `json:"steered,omitempty"`
 	ReasoningContent    string                             `json:"reasoning_content,omitempty"`
 	ReasoningBlocks     []providers.ReasoningBlock         `json:"reasoning_blocks,omitempty"`
@@ -111,6 +112,7 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			Content:           rec.Content,
 			DisplayContent:    rec.DisplayContent,
 			Phase:             providers.NormalizeMessagePhase(rec.Phase),
+			Hidden:            rec.Hidden,
 			ProviderItemID:    rec.ProviderItemID,
 			ProviderItemModel: rec.ProviderItemModel,
 			Steered:           rec.Steered,
@@ -289,6 +291,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		Content:           msg.Content,
 		DisplayContent:    msg.DisplayContent,
 		Phase:             string(msg.Phase),
+		Hidden:            msg.Hidden,
 		ProviderItemID:    msg.ProviderItemID,
 		ProviderItemModel: msg.ProviderItemModel,
 		ClientID:          msg.ClientID,
@@ -457,6 +460,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		ProviderItemID:      rec.ProviderItemID,
 		ProviderItemModel:   rec.ProviderItemModel,
 		ClientID:            rec.ClientID,
+		Hidden:              rec.Hidden,
 		Steered:             rec.Steered,
 		ReasoningContent:    rec.ReasoningContent,
 		ReasoningBlocks:     mustJSON(rec.ReasoningBlocks),
@@ -489,6 +493,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		ProviderItemID:      rec.ProviderItemID,
 		ProviderItemModel:   rec.ProviderItemModel,
 		ClientID:            rec.ClientID,
+		Hidden:              rec.Hidden,
 		Steered:             rec.Steered,
 		ReasoningContent:    rec.ReasoningContent,
 		ToolCallID:          rec.ToolCallID,
@@ -557,7 +562,7 @@ func shouldPersistMessage(msg providers.ChatMessage) bool {
 func persistableMessageCount(msgs []providers.ChatMessage) int {
 	var count int
 	for _, msg := range msgs {
-		if shouldPersistMessage(msg) && !compact.IsInternalContextMessage(msg) {
+		if shouldPersistMessage(msg) && !msg.Hidden && !compact.IsInternalContextMessage(msg) {
 			count++
 		}
 	}

@@ -1,7 +1,7 @@
-// Package context provides per-turn dynamic context injection for the
-// agent loop. It generates environment information (CWD, date, git
-// status) that gets injected as <system-reminder> blocks in user
-// messages, keeping the system prompt stable for prompt caching.
+// Package context provides dynamic model context for the agent loop. It
+// generates environment information (CWD, date, git status) that gets
+// injected as <system-reminder> blocks in hidden user messages, keeping the
+// system prompt stable for prompt caching while preserving replayable history.
 //
 // The prompt path stays split:
 //   - System prompt = static role, rules, instructions (cacheable)
@@ -19,16 +19,21 @@ import (
 	"time"
 )
 
-// SystemReminderMessageName marks internal per-step environment context
-// injections so callers can keep them out of persisted chat history.
+// SystemReminderMessageName marks hidden environment context injections.
+// They are model-visible and persisted for replay, but omitted from
+// user-facing conversation views.
 const SystemReminderMessageName = "wuu_system_reminder"
+
+// TaskContractMessageName marks hidden task-contract context derived from
+// recent user directives.
+const TaskContractMessageName = "wuu_task_contract"
 
 // AgentNotificationMessageName marks internal sub-agent completion handoffs.
 // They are model-visible user-role messages, but they are not user intent.
 const AgentNotificationMessageName = "wuu_agent_notification"
 
-// GoalContinuationMessageName marks internal active-goal continuation prompts.
-// They are request-only steering, not durable user intent.
+// GoalContinuationMessageName marks hidden active-goal continuation prompts.
+// They are model-visible and persisted for replay, but not durable user intent.
 const GoalContinuationMessageName = "wuu_goal_continuation"
 
 // EnvInfo holds the dynamic environment snapshot for one turn.
