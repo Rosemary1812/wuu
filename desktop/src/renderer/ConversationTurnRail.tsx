@@ -21,6 +21,11 @@ const RAIL_BAR_HOVERED_WIDTH = 40;
  * Visibility/animation is driven entirely by the `hovered` and `adjacent`
  * CSS classes plus CSS transitions; the component itself just tracks which
  * turn the cursor is over.
+ *
+ * The rail always renders, even when the thread has no turns yet, so its
+ * position stays discoverable from a fresh conversation. In the empty
+ * case a single dimmed placeholder bar marks where the first real bar
+ * will appear; it is non-interactive and announced as decorative.
  */
 export function ConversationTurnRail({
   turns,
@@ -28,13 +33,10 @@ export function ConversationTurnRail({
 }: {
   turns: Turn[];
   activeTurnID?: string;
-}): JSX.Element | null {
+}): JSX.Element {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
 
-  if (turns.length === 0) {
-    return null;
-  }
-
+  const isEmpty = turns.length === 0;
   const hoveredIndex = turns.findIndex((t) => t.id === hoveredTurnID);
   const adjacentIndices = new Set<number>();
   if (hoveredIndex >= 0) {
@@ -47,30 +49,41 @@ export function ConversationTurnRail({
   }
 
   return (
-    <div className="conversation-turn-rail" aria-label="对话回合导航">
-      {turns.map((turn, index) => {
-        const isHovered = turn.id === hoveredTurnID;
-        const isAdjacent = adjacentIndices.has(index);
-        const isActive = turn.id === activeTurnID;
-        const className = [
-          "conversation-turn-rail-bar",
-          isActive && "active",
-          isHovered && "hovered",
-          isAdjacent && "adjacent",
-        ]
-          .filter(Boolean)
-          .join(" ");
-        return (
-          <div
-            key={turn.id}
-            className={className}
-            onMouseEnter={() => setHoveredTurnID(turn.id)}
-            onMouseLeave={() => setHoveredTurnID(undefined)}
-          >
-            {isHovered ? <TurnHoverPreview turn={turn} /> : null}
-          </div>
-        );
-      })}
+    <div
+      className="conversation-turn-rail"
+      aria-label="对话回合导航"
+      data-empty={isEmpty}
+    >
+      {isEmpty ? (
+        <div
+          className="conversation-turn-rail-bar placeholder"
+          aria-hidden="true"
+        />
+      ) : (
+        turns.map((turn, index) => {
+          const isHovered = turn.id === hoveredTurnID;
+          const isAdjacent = adjacentIndices.has(index);
+          const isActive = turn.id === activeTurnID;
+          const className = [
+            "conversation-turn-rail-bar",
+            isActive && "active",
+            isHovered && "hovered",
+            isAdjacent && "adjacent",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div
+              key={turn.id}
+              className={className}
+              onMouseEnter={() => setHoveredTurnID(turn.id)}
+              onMouseLeave={() => setHoveredTurnID(undefined)}
+            >
+              {isHovered ? <TurnHoverPreview turn={turn} /> : null}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }

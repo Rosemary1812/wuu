@@ -858,6 +858,15 @@
   background: var(--sidebar-accent);
 }
 
+/* Empty-thread placeholder. A single dimmed, non-interactive bar sits
+   where the first real bar will appear so the rail's position stays
+   discoverable before the user has sent any messages. */
+.conversation-turn-rail-bar.placeholder {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
 .conversation-turn-rail-preview {
   position: absolute;
   left: calc(100% + 12px);
