@@ -242,6 +242,7 @@ import {
   scrollToUserMessage,
 } from "./TurnView";
 import { firstUserMessageAnchor } from "./TurnViewHelpers";
+import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceMainPanel,
   WorkspaceRightPanel,
@@ -5229,6 +5230,11 @@ export function App(): JSX.Element {
             </button>
           </div>
         </header>
+
+        <ConversationTurnRail
+          turns={turns}
+          activeTurnID={turns[turns.length - 1]?.id}
+        />
 
         {debugControlsVisible &&
         ENABLE_TURN_PROGRESS_EXPERIMENT &&

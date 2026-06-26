@@ -798,3 +798,93 @@
     transform: translateY(0);
   }
 }
+
+/*
+ * Conversation turn rail on the left edge of the message stream.
+ *
+ * One horizontal bar per turn. Hovering magnifies the bar (and its two
+ * neighbours slightly, in classic Dock fashion) and reveals a preview
+ * card to the right with that turn's first agent reply.
+ *
+ * macOS Dock-style motion: smooth spring with slight overshoot
+ * (cubic-bezier(0.34, 1.56, 0.64, 1) ≈ easeOutBack) so the magnified bar
+ * settles with a natural "spring then rest" feel rather than a linear
+ * slide. prefers-reduced-motion collapses the easing to a 1ms step.
+ */
+.conversation-pane {
+  position: relative;
+}
+
+.conversation-turn-rail {
+  position: absolute;
+  left: 8px;
+  top: 56px;
+  bottom: 16px;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.conversation-turn-rail-bar {
+  position: relative;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(17, 19, 21, 0.18);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    width 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 180ms ease;
+}
+
+.conversation-turn-rail-bar.adjacent {
+  width: 22px;
+}
+
+.conversation-turn-rail-bar.hovered,
+.conversation-turn-rail-bar:hover {
+  width: 40px;
+  height: 6px;
+  background: var(--ink);
+}
+
+.conversation-turn-rail-bar.active {
+  background: var(--sidebar-accent);
+}
+
+.conversation-turn-rail-preview {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: -8px;
+  width: 360px;
+  padding: 12px 14px;
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  box-shadow: var(--menu-shadow);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(-6px, 0, 0) scale(0.985);
+  transition:
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.conversation-turn-rail-bar.hovered .conversation-turn-rail-preview {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-turn-rail-bar,
+  .conversation-turn-rail-preview {
+    transition: opacity 1ms linear;
+    transform: none;
+  }
+}

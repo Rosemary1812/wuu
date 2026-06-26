@@ -94,6 +94,40 @@ export function threadReplySnippet(
   };
 }
 
+// Per-turn variant of threadReplySnippet. The conversation turn rail shows
+// one horizontal bar per turn on the left side of the message stream;
+// hovering a bar must surface *that turn's* reply, not the whole thread's
+// first reply. Same empty-text skipping rules as the thread-level helper.
+export function turnReplySnippet(
+  turn: Turn | undefined,
+): ThreadReplySnippet | undefined {
+  if (!turn) {
+    return undefined;
+  }
+  let firstReply: string | undefined;
+  let total = 0;
+  for (const item of turn.items ?? []) {
+    if (item.type !== "agent_message") {
+      continue;
+    }
+    const trimmed = (item.text ?? "").trim();
+    if (!trimmed) {
+      continue;
+    }
+    total += 1;
+    if (firstReply === undefined) {
+      firstReply = trimmed;
+    }
+  }
+  if (!firstReply) {
+    return undefined;
+  }
+  return {
+    text: firstReply,
+    totalAgentMessages: total,
+  };
+}
+
 // Caps the preview body to ~140 characters on a single line. The Claude.ai
 // reference card uses three short lines, but the wuu sidebar is narrow
 // (326px) and the title already sits above the popover — a tighter single

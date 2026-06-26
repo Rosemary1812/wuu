@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Thread } from "../shared/protocol";
+import type { Thread, Turn } from "../shared/protocol";
 import {
   firstUserMessageAnchor,
   scrollToUserMessage,
   threadReplySnippet,
   truncateReplyPreview,
+  turnReplySnippet,
   turnAnchorID,
   userMessageAnchorID,
 } from "./TurnViewHelpers";
@@ -361,6 +362,52 @@ describe("threadReplySnippet", () => {
 
   it("returns undefined for undefined input", () => {
     expect(threadReplySnippet(undefined)).toBeUndefined();
+  });
+});
+
+/**
+ * Build a single turn for the per-turn helper tests. Mirrors buildThread
+ * but skips the thread-level wrapping so we can exercise turn-level
+ * behavior (e.g. the conversation turn rail) in isolation.
+ */
+function buildTurn(
+  items: Array<{ id: string; type: string; text?: string }>,
+): Turn {
+  return {
+    id: "turn-1",
+    status: "completed",
+    items: items.map((item) => item as never),
+  };
+}
+
+describe("turnReplySnippet", () => {
+  it("returns the first non-empty agent message and counts replies in one turn", () => {
+    const turn = buildTurn([
+      { id: "u-1", type: "user_message" },
+      // First agent message is empty (still streaming) and must be skipped.
+      { id: "a-1", type: "agent_message", text: "   " },
+      { id: "a-2", type: "agent_message", text: "first visible reply" },
+      { id: "a-3", type: "agent_message", text: "second reply" },
+    ]);
+
+    const snippet = turnReplySnippet(turn);
+    expect(snippet).toEqual({
+      text: "first visible reply",
+      totalAgentMessages: 2,
+    });
+  });
+
+  it("returns undefined when no agent_message has committed text", () => {
+    const turn = buildTurn([
+      { id: "u-1", type: "user_message" },
+      { id: "a-1", type: "agent_message", text: "" },
+    ]);
+
+    expect(turnReplySnippet(turn)).toBeUndefined();
+  });
+
+  it("returns undefined for undefined input", () => {
+    expect(turnReplySnippet(undefined)).toBeUndefined();
   });
 });
 
