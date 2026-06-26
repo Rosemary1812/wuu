@@ -118,11 +118,13 @@ func NormalizeFinishReason(stopReason string, truncated bool, hasToolCalls bool)
 
 // ToolCall is a model requested tool execution.
 type ToolCall struct {
-	ID        string           `json:"id,omitempty"`
-	Name      string           `json:"name,omitempty"`
-	Arguments string           `json:"arguments,omitempty"`
-	Kind      ToolCallKind     `json:"kind,omitempty"`
-	Display   *ToolCallDisplay `json:"display,omitempty"`
+	ID                string           `json:"id,omitempty"`
+	ProviderItemID    string           `json:"provider_item_id,omitempty"`
+	ProviderItemModel string           `json:"provider_item_model,omitempty"`
+	Name              string           `json:"name,omitempty"`
+	Arguments         string           `json:"arguments,omitempty"`
+	Kind              ToolCallKind     `json:"kind,omitempty"`
+	Display           *ToolCallDisplay `json:"display,omitempty"`
 }
 
 // InputImage carries one user-provided image in base64 form.
@@ -179,6 +181,10 @@ type ChatMessage struct {
 	Content        string
 	DisplayContent string `json:"display_content,omitempty"`
 	Phase          MessagePhase
+	// ProviderItemID preserves provider-native assistant output item identity,
+	// such as OpenAI Responses msg_* ids, for same-model replay.
+	ProviderItemID    string
+	ProviderItemModel string
 	// Steered marks user input that was injected into an already-running turn.
 	// Providers ignore this; app-server history uses it to restore turn items.
 	Steered bool
@@ -259,12 +265,14 @@ type ChatRequest struct {
 
 // ChatResponse is the normalized response from providers.
 type ChatResponse struct {
-	Content          string
-	Phase            MessagePhase
-	ReasoningContent string
-	ReasoningBlocks  []ReasoningBlock
-	ToolCalls        []ToolCall
-	Usage            *TokenUsage // optional; nil when the provider didn't return usage
+	Content           string
+	Phase             MessagePhase
+	ProviderItemID    string
+	ProviderItemModel string
+	ReasoningContent  string
+	ReasoningBlocks   []ReasoningBlock
+	ToolCalls         []ToolCall
+	Usage             *TokenUsage // optional; nil when the provider didn't return usage
 	// StopReason is the raw provider stop signal, normalized to lowercase.
 	// Common values: "stop" / "end_turn" (natural finish), "length" /
 	// "max_tokens" (output truncation), "tool_calls" / "tool_use".
@@ -408,6 +416,7 @@ type StreamEvent struct {
 	Type           StreamEventType
 	Content        string
 	Phase          MessagePhase
+	ProviderItemID string
 	Message        *ChatMessage
 	ReasoningBlock *ReasoningBlock
 	ToolCall       *ToolCall

@@ -256,11 +256,13 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				return
 			}
 			toolCall := enrichToolCallDisplay(r.Tools, providers.ToolCall{
-				ID:        call.ID,
-				Name:      call.Name,
-				Arguments: call.Arguments,
-				Kind:      call.Kind,
-				Display:   call.Display,
+				ID:                call.ID,
+				ProviderItemID:    call.ProviderItemID,
+				ProviderItemModel: call.ProviderItemModel,
+				Name:              call.Name,
+				Arguments:         call.Arguments,
+				Kind:              call.Kind,
+				Display:           call.Display,
 			})
 			effectiveOnEvent(providers.StreamEvent{
 				Type:       providers.EventToolUseEnd,
@@ -421,15 +423,17 @@ type streamStep struct {
 
 func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (StepResult, error) {
 	var (
-		contentBuf      strings.Builder
-		thinkingBuf     strings.Builder
-		reasoningBlocks []providers.ReasoningBlock
-		pendingTools    = map[int]*providers.ToolCall{}
-		usage           *providers.TokenUsage
-		stopReason      string
-		finishReason    providers.FinishReason
-		truncated       bool
-		messagePhase    providers.MessagePhase
+		contentBuf        strings.Builder
+		thinkingBuf       strings.Builder
+		reasoningBlocks   []providers.ReasoningBlock
+		pendingTools      = map[int]*providers.ToolCall{}
+		usage             *providers.TokenUsage
+		stopReason        string
+		finishReason      providers.FinishReason
+		truncated         bool
+		messagePhase      providers.MessagePhase
+		providerItemID    string
+		providerItemModel string
 	)
 
 	var toolRuntime *TurnToolRuntime
@@ -455,7 +459,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			toolRuntime = NewTurnToolRuntime(s.tools)
 		}
 	}
-	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {
+	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
@@ -517,15 +521,17 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 		fbFinishReason := normalizedChatResponseFinish(resp)
 		return StepResult{
-			Content:          resp.Content,
-			Phase:            resp.Phase,
-			ReasoningContent: resp.ReasoningContent,
-			ReasoningBlocks:  cloneReasoningBlocks(resp.ReasoningBlocks),
-			ToolCalls:        fbToolCalls,
-			Usage:            resp.Usage,
-			FinishReason:     fbFinishReason,
-			StopReason:       resp.StopReason,
-			Truncated:        resp.Truncated,
+			Content:           resp.Content,
+			Phase:             resp.Phase,
+			ProviderItemID:    resp.ProviderItemID,
+			ProviderItemModel: resp.ProviderItemModel,
+			ReasoningContent:  resp.ReasoningContent,
+			ReasoningBlocks:   cloneReasoningBlocks(resp.ReasoningBlocks),
+			ToolCalls:         fbToolCalls,
+			Usage:             resp.Usage,
+			FinishReason:      fbFinishReason,
+			StopReason:        resp.StopReason,
+			Truncated:         resp.Truncated,
 		}, nil
 	}
 	if len(toolCalls) == 0 && toolRuntime != nil {
@@ -534,16 +540,18 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	}
 
 	return StepResult{
-		Content:          contentBuf.String(),
-		Phase:            messagePhase,
-		ReasoningContent: thinkingBuf.String(),
-		ReasoningBlocks:  cloneReasoningBlocks(reasoningBlocks),
-		ToolCalls:        toolCalls,
-		Usage:            usage,
-		FinishReason:     finishReason,
-		StopReason:       stopReason,
-		Truncated:        truncated,
-		ToolRuntime:      toolRuntime,
+		Content:           contentBuf.String(),
+		Phase:             messagePhase,
+		ProviderItemID:    providerItemID,
+		ProviderItemModel: providerItemModel,
+		ReasoningContent:  thinkingBuf.String(),
+		ReasoningBlocks:   cloneReasoningBlocks(reasoningBlocks),
+		ToolCalls:         toolCalls,
+		Usage:             usage,
+		FinishReason:      finishReason,
+		StopReason:        stopReason,
+		Truncated:         truncated,
+		ToolRuntime:       toolRuntime,
 	}, nil
 }
 
@@ -601,6 +609,8 @@ func (s *streamStep) runStreamWithReconnect(
 	reasoningBlocks *[]providers.ReasoningBlock,
 	pendingTools map[int]*providers.ToolCall,
 	messagePhase *providers.MessagePhase,
+	providerItemID *string,
+	providerItemModel *string,
 	usage **providers.TokenUsage,
 	stopReason *string,
 	finishReason *providers.FinishReason,
@@ -650,6 +660,8 @@ func (s *streamStep) runStreamWithReconnect(
 		thinkingBuf.Reset()
 		*reasoningBlocks = nil
 		*messagePhase = ""
+		*providerItemID = ""
+		*providerItemModel = ""
 		*usage = nil
 		*stopReason = ""
 		*finishReason = ""
@@ -759,11 +771,19 @@ func (s *streamStep) runStreamWithReconnect(
 				if event.Phase != "" {
 					*messagePhase = event.Phase
 				}
+				if strings.TrimSpace(event.ProviderItemID) != "" {
+					*providerItemID = event.ProviderItemID
+					*providerItemModel = req.Model
+				}
 				contentBuf.WriteString(event.Content)
 
 			case providers.EventContentReplace:
 				if event.Phase != "" {
 					*messagePhase = event.Phase
+				}
+				if strings.TrimSpace(event.ProviderItemID) != "" {
+					*providerItemID = event.ProviderItemID
+					*providerItemModel = req.Model
 				}
 				contentBuf.Reset()
 				contentBuf.WriteString(event.Content)
@@ -778,11 +798,16 @@ func (s *streamStep) runStreamWithReconnect(
 
 			case providers.EventToolUseStart:
 				if event.ToolCall != nil {
+					if strings.TrimSpace(event.ToolCall.ProviderItemID) != "" {
+						event.ToolCall.ProviderItemModel = req.Model
+					}
 					idx := len(pendingTools)
 					toolCall := enrichToolCallDisplay(s.tools, providers.ToolCall{
-						ID:   event.ToolCall.ID,
-						Name: event.ToolCall.Name,
-						Kind: event.ToolCall.Kind,
+						ID:                event.ToolCall.ID,
+						ProviderItemID:    event.ToolCall.ProviderItemID,
+						ProviderItemModel: event.ToolCall.ProviderItemModel,
+						Name:              event.ToolCall.Name,
+						Kind:              event.ToolCall.Kind,
 					})
 					pendingTools[idx] = &toolCall
 					event.ToolCall = &toolCall
@@ -796,9 +821,16 @@ func (s *streamStep) runStreamWithReconnect(
 
 			case providers.EventToolUseEnd:
 				if event.ToolCall != nil {
+					if strings.TrimSpace(event.ToolCall.ProviderItemID) != "" {
+						event.ToolCall.ProviderItemModel = req.Model
+					}
 					toolCall := enrichToolCallDisplay(s.tools, *event.ToolCall)
 					for _, tc := range pendingTools {
 						if tc.ID == toolCall.ID {
+							if strings.TrimSpace(toolCall.ProviderItemID) != "" {
+								tc.ProviderItemID = toolCall.ProviderItemID
+								tc.ProviderItemModel = toolCall.ProviderItemModel
+							}
 							if strings.TrimSpace(toolCall.Name) != "" {
 								tc.Name = toolCall.Name
 							}

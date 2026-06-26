@@ -1819,6 +1819,110 @@ func TestResponsesRequest_ReplaysReasoningBlocks(t *testing.T) {
 	}
 }
 
+func TestResponsesRequest_ReplaysProviderItemIDsForSameModel(t *testing.T) {
+	client := &Client{}
+
+	payload, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "inspect"},
+			{
+				Role:              "assistant",
+				Content:           "I'll inspect it.",
+				Phase:             providers.MessagePhaseCommentary,
+				ProviderItemID:    "msg_1",
+				ProviderItemModel: "gpt-test",
+				ToolCalls: []providers.ToolCall{{
+					ID:                "call_1",
+					ProviderItemID:    "fc_1",
+					ProviderItemModel: "gpt-test",
+					Name:              "read_file",
+					Arguments:         `{"path":"README.md"}`,
+				}},
+			},
+			{Role: "tool", ToolCallID: "call_1", Content: "contents"},
+		},
+	}, false)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	body, err := marshalResponsesRequest(payload)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	input, ok := decoded["input"].([]any)
+	if !ok || len(input) != 4 {
+		t.Fatalf("unexpected input: %#v", decoded["input"])
+	}
+	msgItem, ok := input[1].(map[string]any)
+	if !ok || msgItem["type"] != "message" || msgItem["id"] != "msg_1" || msgItem["phase"] != "commentary" {
+		t.Fatalf("assistant message item did not preserve id/phase: %#v", input[1])
+	}
+	content, ok := msgItem["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("unexpected assistant message content: %#v", msgItem["content"])
+	}
+	contentPart, ok := content[0].(map[string]any)
+	if !ok || contentPart["type"] != "output_text" || contentPart["text"] != "I'll inspect it." {
+		t.Fatalf("unexpected assistant message content part: %#v", content[0])
+	}
+	callItem, ok := input[2].(map[string]any)
+	if !ok || callItem["type"] != "function_call" || callItem["id"] != "fc_1" || callItem["call_id"] != "call_1" {
+		t.Fatalf("function call item did not preserve Responses id: %#v", input[2])
+	}
+}
+
+func TestResponsesRequest_OmitsProviderItemIDsForDifferentModel(t *testing.T) {
+	client := &Client{}
+
+	payload, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-next",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "inspect"},
+			{
+				Role:              "assistant",
+				Content:           "I'll inspect it.",
+				ProviderItemID:    "msg_1",
+				ProviderItemModel: "gpt-test",
+				ToolCalls: []providers.ToolCall{{
+					ID:                "call_1",
+					ProviderItemID:    "fc_1",
+					ProviderItemModel: "gpt-test",
+					Name:              "read_file",
+					Arguments:         `{"path":"README.md"}`,
+				}},
+			},
+			{Role: "tool", ToolCallID: "call_1", Content: "contents"},
+		},
+	}, false)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	body, err := marshalResponsesRequest(payload)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	input := decoded["input"].([]any)
+	msgItem := input[1].(map[string]any)
+	if _, exists := msgItem["id"]; exists {
+		t.Fatalf("assistant message item should omit foreign model id: %#v", msgItem)
+	}
+	callItem := input[2].(map[string]any)
+	if _, exists := callItem["id"]; exists {
+		t.Fatalf("function call item should omit foreign model id: %#v", callItem)
+	}
+}
+
 func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
@@ -2289,6 +2393,7 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 
 	var content string
 	var contentPhase providers.MessagePhase
+	var contentProviderItemID string
 	var toolStarts, toolEnds int
 	var endToolCall *providers.ToolCall
 	var done *providers.StreamEvent
@@ -2300,9 +2405,12 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 			if ev.Content != "" {
 				contentPhase = ev.Phase
 			}
+			if ev.ProviderItemID != "" {
+				contentProviderItemID = ev.ProviderItemID
+			}
 		case providers.EventToolUseStart:
 			toolStarts++
-			if ev.ToolCall == nil || ev.ToolCall.ID != "call_1" || ev.ToolCall.Name != "read_file" {
+			if ev.ToolCall == nil || ev.ToolCall.ID != "call_1" || ev.ToolCall.ProviderItemID != "fc_1" || ev.ToolCall.Name != "read_file" {
 				t.Fatalf("unexpected tool start: %+v", ev.ToolCall)
 			}
 		case providers.EventToolUseEnd:
@@ -2318,10 +2426,13 @@ func TestResponsesStreamChat_SSE(t *testing.T) {
 	if contentPhase != providers.MessagePhaseFinalAnswer {
 		t.Fatalf("unexpected content phase: %q", contentPhase)
 	}
+	if contentProviderItemID != "msg_1" {
+		t.Fatalf("unexpected content provider item id: %q", contentProviderItemID)
+	}
 	if toolStarts != 1 || toolEnds != 1 {
 		t.Fatalf("expected one tool start/end, got starts=%d ends=%d events=%+v", toolStarts, toolEnds, events)
 	}
-	if endToolCall == nil || endToolCall.Arguments != `{"path":"README.md"}` {
+	if endToolCall == nil || endToolCall.ProviderItemID != "fc_1" || endToolCall.Arguments != `{"path":"README.md"}` {
 		t.Fatalf("unexpected tool end: %+v", endToolCall)
 	}
 	if done == nil || done.StopReason != "tool_calls" {

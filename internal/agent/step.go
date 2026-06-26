@@ -22,6 +22,10 @@ type StepResult struct {
 	// Phase is the provider-supplied assistant message phase when
 	// available. Empty means unknown and callers may infer from tool use.
 	Phase providers.MessagePhase
+	// ProviderItemID preserves provider-native assistant output item identity
+	// for same-model replay on APIs such as OpenAI Responses.
+	ProviderItemID    string
+	ProviderItemModel string
 	// ReasoningContent is provider-emitted hidden reasoning for this
 	// round. Some OpenAI-compatible providers require replaying it
 	// verbatim on follow-up assistant tool-call messages.

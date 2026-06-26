@@ -65,6 +65,8 @@ type HistoryRecord struct {
 	Content             string          `json:"content"`
 	DisplayContent      string          `json:"display_content,omitempty"`
 	Phase               string          `json:"phase,omitempty"`
+	ProviderItemID      string          `json:"provider_item_id,omitempty"`
+	ProviderItemModel   string          `json:"provider_item_model,omitempty"`
 	ClientID            string          `json:"client_id,omitempty"`
 	Steered             bool            `json:"steered,omitempty"`
 	ReasoningContent    string          `json:"reasoning_content,omitempty"`
@@ -642,13 +644,15 @@ func migrateSchema(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at, id)`,
 		`CREATE TABLE IF NOT EXISTS session_messages (
-			session_id TEXT NOT NULL,
-			seq INTEGER NOT NULL,
-			role TEXT NOT NULL,
-			content TEXT NOT NULL DEFAULT '',
-			display_content TEXT NOT NULL DEFAULT '',
-			phase TEXT NOT NULL DEFAULT '',
-			client_id TEXT NOT NULL DEFAULT '',
+				session_id TEXT NOT NULL,
+				seq INTEGER NOT NULL,
+				role TEXT NOT NULL,
+				content TEXT NOT NULL DEFAULT '',
+				display_content TEXT NOT NULL DEFAULT '',
+				phase TEXT NOT NULL DEFAULT '',
+				provider_item_id TEXT NOT NULL DEFAULT '',
+				provider_item_model TEXT NOT NULL DEFAULT '',
+				client_id TEXT NOT NULL DEFAULT '',
 			steered INTEGER NOT NULL DEFAULT 0,
 			reasoning_content TEXT NOT NULL DEFAULT '',
 			reasoning_blocks_json TEXT NOT NULL DEFAULT '',
@@ -684,6 +688,12 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "display_content", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "provider_item_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "provider_item_model", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "cache_creation_tokens", "INTEGER NOT NULL DEFAULT 0"); err != nil {
@@ -1021,13 +1031,13 @@ func appendHistoryRecordTx(tx *sql.Tx, id string, rec HistoryRecord) error {
 
 func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) error {
 	_, err := tx.Exec(`
-	INSERT INTO session_messages (
-		session_id, seq, role, content, display_content, phase, client_id, steered, reasoning_content,
-		reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
-		tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-		provider, model
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
+		INSERT INTO session_messages (
+			session_id, seq, role, content, display_content, phase, provider_item_id, provider_item_model, client_id, steered, reasoning_content,
+			reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
+			tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+			provider, model
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), strings.TrimSpace(rec.ProviderItemID), strings.TrimSpace(rec.ProviderItemModel), rec.ClientID, boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
 		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model),
@@ -1041,6 +1051,7 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
 	query := `
 	SELECT role, content, display_content, phase, client_id, steered, reasoning_content,
+	       provider_item_id, provider_item_model,
 	       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
 	       provider, model
@@ -1066,6 +1077,7 @@ WHERE session_id = ?`
 		var at sql.NullString
 		if err := rows.Scan(
 			&rec.Role, &rec.Content, &rec.DisplayContent, &rec.Phase, &rec.ClientID, &steered, &rec.ReasoningContent,
+			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
 			&rec.Provider, &rec.Model,

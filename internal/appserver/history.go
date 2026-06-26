@@ -17,11 +17,13 @@ import (
 )
 
 type persistedToolCall struct {
-	ID        string                     `json:"id"`
-	Name      string                     `json:"name"`
-	Arguments string                     `json:"arguments"`
-	Kind      string                     `json:"kind,omitempty"`
-	Display   *providers.ToolCallDisplay `json:"display,omitempty"`
+	ID                string                     `json:"id"`
+	ProviderItemID    string                     `json:"provider_item_id,omitempty"`
+	ProviderItemModel string                     `json:"provider_item_model,omitempty"`
+	Name              string                     `json:"name"`
+	Arguments         string                     `json:"arguments"`
+	Kind              string                     `json:"kind,omitempty"`
+	Display           *providers.ToolCallDisplay `json:"display,omitempty"`
 }
 
 type persistedImage struct {
@@ -40,6 +42,8 @@ type persistedMessage struct {
 	Content             string                             `json:"content"`
 	DisplayContent      string                             `json:"display_content,omitempty"`
 	Phase               string                             `json:"phase,omitempty"`
+	ProviderItemID      string                             `json:"provider_item_id,omitempty"`
+	ProviderItemModel   string                             `json:"provider_item_model,omitempty"`
 	ClientID            string                             `json:"client_id,omitempty"`
 	Steered             bool                               `json:"steered,omitempty"`
 	ReasoningContent    string                             `json:"reasoning_content,omitempty"`
@@ -101,21 +105,23 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 			continue
 		}
 		msg := providers.ChatMessage{
-			Role:             role,
-			Name:             rec.Name,
-			ClientID:         rec.ClientID,
-			Content:          rec.Content,
-			DisplayContent:   rec.DisplayContent,
-			Phase:            providers.NormalizeMessagePhase(rec.Phase),
-			Steered:          rec.Steered,
-			ReasoningContent: rec.ReasoningContent,
-			ReasoningBlocks:  append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
-			ToolCallID:       rec.ToolCallID,
-			ToolResultKind:   providers.NormalizeToolCallKind(rec.ToolResultKind),
-			FinishReason:     providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
-			StopReason:       strings.ToLower(strings.TrimSpace(rec.StopReason)),
-			Truncated:        rec.Truncated,
-			DiscoveredTools:  providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
+			Role:              role,
+			Name:              rec.Name,
+			ClientID:          rec.ClientID,
+			Content:           rec.Content,
+			DisplayContent:    rec.DisplayContent,
+			Phase:             providers.NormalizeMessagePhase(rec.Phase),
+			ProviderItemID:    rec.ProviderItemID,
+			ProviderItemModel: rec.ProviderItemModel,
+			Steered:           rec.Steered,
+			ReasoningContent:  rec.ReasoningContent,
+			ReasoningBlocks:   append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
+			ToolCallID:        rec.ToolCallID,
+			ToolResultKind:    providers.NormalizeToolCallKind(rec.ToolResultKind),
+			FinishReason:      providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
+			StopReason:        strings.ToLower(strings.TrimSpace(rec.StopReason)),
+			Truncated:         rec.Truncated,
+			DiscoveredTools:   providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
 		}
 		for _, image := range rec.Images {
 			if strings.TrimSpace(image.Data) == "" {
@@ -138,11 +144,13 @@ func loadChatMessages(path string) ([]providers.ChatMessage, error) {
 		}
 		for _, tc := range rec.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, providers.ToolCall{
-				ID:        tc.ID,
-				Name:      tc.Name,
-				Arguments: tc.Arguments,
-				Kind:      providers.NormalizeToolCallKind(tc.Kind),
-				Display:   cloneToolCallDisplay(tc.Display),
+				ID:                tc.ID,
+				ProviderItemID:    tc.ProviderItemID,
+				ProviderItemModel: tc.ProviderItemModel,
+				Name:              tc.Name,
+				Arguments:         tc.Arguments,
+				Kind:              providers.NormalizeToolCallKind(tc.Kind),
+				Display:           cloneToolCallDisplay(tc.Display),
 			})
 		}
 		messages = append(messages, msg)
@@ -277,22 +285,24 @@ func appendTokenUsage(path, provider, model string, usage providers.TokenUsage) 
 
 func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage {
 	out := persistedMessage{
-		Role:             strings.ToLower(msg.Role),
-		Content:          msg.Content,
-		DisplayContent:   msg.DisplayContent,
-		Phase:            string(msg.Phase),
-		ClientID:         msg.ClientID,
-		Steered:          msg.Steered,
-		ReasoningContent: msg.ReasoningContent,
-		ReasoningBlocks:  append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...),
-		DiscoveredTools:  providers.CloneLoadableToolDefinitions(msg.DiscoveredTools),
-		ToolCallID:       msg.ToolCallID,
-		ToolResultKind:   string(msg.ToolResultKind),
-		FinishReason:     string(msg.FinishReason),
-		StopReason:       strings.ToLower(strings.TrimSpace(msg.StopReason)),
-		Truncated:        msg.Truncated,
-		Name:             msg.Name,
-		At:               time.Now().UTC(),
+		Role:              strings.ToLower(msg.Role),
+		Content:           msg.Content,
+		DisplayContent:    msg.DisplayContent,
+		Phase:             string(msg.Phase),
+		ProviderItemID:    msg.ProviderItemID,
+		ProviderItemModel: msg.ProviderItemModel,
+		ClientID:          msg.ClientID,
+		Steered:           msg.Steered,
+		ReasoningContent:  msg.ReasoningContent,
+		ReasoningBlocks:   append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...),
+		DiscoveredTools:   providers.CloneLoadableToolDefinitions(msg.DiscoveredTools),
+		ToolCallID:        msg.ToolCallID,
+		ToolResultKind:    string(msg.ToolResultKind),
+		FinishReason:      string(msg.FinishReason),
+		StopReason:        strings.ToLower(strings.TrimSpace(msg.StopReason)),
+		Truncated:         msg.Truncated,
+		Name:              msg.Name,
+		At:                time.Now().UTC(),
 	}
 	for _, image := range msg.Images {
 		data := strings.TrimSpace(image.Data)
@@ -317,11 +327,13 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 	}
 	for _, tc := range msg.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, persistedToolCall{
-			ID:        tc.ID,
-			Name:      tc.Name,
-			Arguments: tc.Arguments,
-			Kind:      string(tc.Kind),
-			Display:   cloneToolCallDisplay(tc.Display),
+			ID:                tc.ID,
+			ProviderItemID:    tc.ProviderItemID,
+			ProviderItemModel: tc.ProviderItemModel,
+			Name:              tc.Name,
+			Arguments:         tc.Arguments,
+			Kind:              string(tc.Kind),
+			Display:           cloneToolCallDisplay(tc.Display),
 		})
 	}
 	return out
@@ -442,6 +454,8 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		Content:             rec.Content,
 		DisplayContent:      rec.DisplayContent,
 		Phase:               rec.Phase,
+		ProviderItemID:      rec.ProviderItemID,
+		ProviderItemModel:   rec.ProviderItemModel,
 		ClientID:            rec.ClientID,
 		Steered:             rec.Steered,
 		ReasoningContent:    rec.ReasoningContent,
@@ -472,6 +486,8 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		Content:             rec.Content,
 		DisplayContent:      rec.DisplayContent,
 		Phase:               rec.Phase,
+		ProviderItemID:      rec.ProviderItemID,
+		ProviderItemModel:   rec.ProviderItemModel,
 		ClientID:            rec.ClientID,
 		Steered:             rec.Steered,
 		ReasoningContent:    rec.ReasoningContent,

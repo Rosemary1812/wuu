@@ -4045,12 +4045,14 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
 
 	msg := providers.ChatMessage{
-		Role:             "assistant",
-		ClientID:         "client-msg-1",
-		Content:          "done",
-		Phase:            providers.MessagePhaseFinalAnswer,
-		Steered:          true,
-		ReasoningContent: "inspect before answering",
+		Role:              "assistant",
+		ClientID:          "client-msg-1",
+		Content:           "done",
+		Phase:             providers.MessagePhaseFinalAnswer,
+		ProviderItemID:    "msg_1",
+		ProviderItemModel: "gpt-test",
+		Steered:           true,
+		ReasoningContent:  "inspect before answering",
 		ReasoningBlocks: []providers.ReasoningBlock{{
 			Type:      "thinking",
 			Thinking:  "step one",
@@ -4067,10 +4069,12 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 			Filename:  "brief.pdf",
 		}},
 		ToolCalls: []providers.ToolCall{{
-			ID:        "call_1",
-			Name:      "read_file",
-			Arguments: `{"path":"README.md"}`,
-			Display:   &providers.ToolCallDisplay{Kind: "read", Text: "README.md"},
+			ID:                "call_1",
+			ProviderItemID:    "fc_1",
+			ProviderItemModel: "gpt-test",
+			Name:              "read_file",
+			Arguments:         `{"path":"README.md"}`,
+			Display:           &providers.ToolCallDisplay{Kind: "read", Text: "README.md"},
 		}},
 		DiscoveredTools: []providers.LoadableToolDefinition{{
 			Type:        "function",
@@ -4091,7 +4095,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		t.Fatalf("expected one message, got %+v", history)
 	}
 	got := history[0]
-	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
+	if got.Role != msg.Role || got.ClientID != msg.ClientID || got.Content != msg.Content || got.Phase != msg.Phase || got.ProviderItemID != "msg_1" || got.ProviderItemModel != "gpt-test" || !got.Steered || got.ReasoningContent != msg.ReasoningContent {
 		t.Fatalf("message scalar fields did not round-trip: %+v", got)
 	}
 	if len(got.ReasoningBlocks) != 1 || got.ReasoningBlocks[0].Signature != "sig-1" || got.ReasoningBlocks[0].Data != "opaque" {
@@ -4103,7 +4107,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	if len(got.Files) != 1 || got.Files[0].MediaType != "application/pdf" || got.Files[0].Data != "file-data" || got.Files[0].Filename != "brief.pdf" {
 		t.Fatalf("files did not round-trip: %+v", got.Files)
 	}
-	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].Display == nil || got.ToolCalls[0].Display.Text != "README.md" {
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].ProviderItemID != "fc_1" || got.ToolCalls[0].ProviderItemModel != "gpt-test" || got.ToolCalls[0].Display == nil || got.ToolCalls[0].Display.Text != "README.md" {
 		t.Fatalf("tool calls did not round-trip: %+v", got.ToolCalls)
 	}
 	if len(got.DiscoveredTools) != 1 || got.DiscoveredTools[0].Name != "mcp_docs_search" || got.DiscoveredTools[0].InputSchema["type"] != "object" {

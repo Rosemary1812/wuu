@@ -103,6 +103,8 @@ func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
 		return
 	}
 	if existing := r.byID[call.ID]; existing != nil {
+		existing.call.ProviderItemID = call.ProviderItemID
+		existing.call.ProviderItemModel = call.ProviderItemModel
 		existing.call.Name = call.Name
 		existing.call.Kind = call.Kind
 		existing.concurrencySafe = toolCanRunConcurrently(r.executor, existing.call)
@@ -110,7 +112,13 @@ func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
 		return
 	}
 	run := &toolRun{
-		call:  providers.ToolCall{ID: call.ID, Name: call.Name, Kind: call.Kind},
+		call: providers.ToolCall{
+			ID:                call.ID,
+			ProviderItemID:    call.ProviderItemID,
+			ProviderItemModel: call.ProviderItemModel,
+			Name:              call.Name,
+			Kind:              call.Kind,
+		},
 		order: len(r.runs),
 		done:  make(chan struct{}),
 	}
@@ -141,12 +149,20 @@ func (r *TurnToolRuntime) finalizeStreamTool(ctx context.Context, call *provider
 	run := r.byID[call.ID]
 	if run == nil {
 		run = &toolRun{
-			call:  providers.ToolCall{ID: call.ID},
+			call: providers.ToolCall{
+				ID:                call.ID,
+				ProviderItemID:    call.ProviderItemID,
+				ProviderItemModel: call.ProviderItemModel,
+			},
 			order: len(r.runs),
 			done:  make(chan struct{}),
 		}
 		r.runs = append(r.runs, run)
 		r.byID[call.ID] = run
+	}
+	if call.ProviderItemID != "" {
+		run.call.ProviderItemID = call.ProviderItemID
+		run.call.ProviderItemModel = call.ProviderItemModel
 	}
 	run.call.Name = call.Name
 	run.call.Kind = call.Kind

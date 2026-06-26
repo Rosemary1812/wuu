@@ -46,7 +46,7 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 	if parsed.Error != nil {
 		return providers.ChatResponse{}, parsed.Error.asError()
 	}
-	return parsed.asChatResponse()
+	return parsed.asChatResponse(req.Model)
 }
 
 func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
@@ -272,14 +272,19 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 		}
 		if strings.TrimSpace(msg.Content) != "" {
 			input = append(input, responsesInputItem{
+				Type:    "message",
+				ID:      responsesProviderItemIDForModel(msg.ProviderItemID, msg.ProviderItemModel, model),
 				Role:    "assistant",
-				Content: msg.Content,
+				Status:  "completed",
+				Phase:   string(msg.Phase),
+				Content: []responsesInputContentPart{{Type: "output_text", Text: msg.Content}},
 			})
 		}
 		for _, call := range msg.ToolCalls {
 			if isResponsesToolSearchCall(call) {
 				input = append(input, responsesInputItem{
 					Type:      "tool_search_call",
+					ID:        responsesProviderItemIDForModel(call.ProviderItemID, call.ProviderItemModel, model),
 					CallID:    call.ID,
 					Status:    "completed",
 					Execution: "client",
@@ -289,6 +294,7 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 			}
 			input = append(input, responsesInputItem{
 				Type:      "function_call",
+				ID:        responsesProviderItemIDForModel(call.ProviderItemID, call.ProviderItemModel, model),
 				CallID:    call.ID,
 				Name:      call.Name,
 				Arguments: call.Arguments,
@@ -318,6 +324,18 @@ func responsesReasoningInputItem(block providers.ReasoningBlock) (responsesInput
 		return responsesInputItem{}, false
 	}
 	return responsesInputItem{Raw: append(json.RawMessage(nil), raw...)}, true
+}
+
+func responsesProviderItemIDForModel(itemID, itemModel, targetModel string) string {
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" {
+		return ""
+	}
+	itemModel = strings.TrimSpace(itemModel)
+	if itemModel == "" || itemModel == strings.TrimSpace(targetModel) {
+		return itemID
+	}
+	return ""
 }
 
 func responsesMessageContent(msg providers.ChatMessage) any {
@@ -595,6 +613,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 	pendingReasoning := newResponsesPendingReasoning()
 	var sawToolCall bool
 	var currentTextPhase providers.MessagePhase
+	var currentTextItemID string
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -631,7 +650,10 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 		case "response.output_text.delta":
 			if event.Delta != "" {
-				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase}
+				if event.ItemID != "" {
+					currentTextItemID = event.ItemID
+				}
+				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
 			}
 
 		case "response.output_item.added":
@@ -639,9 +661,12 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 			case "reasoning":
 				pendingReasoning.start(event.Item, event.outputIndex())
 			case "message":
+				if event.Item.ID != "" {
+					currentTextItemID = event.Item.ID
+				}
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
-					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase}
+					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
 				}
 			case "function_call", "tool_search_call":
 				sawToolCall = true
@@ -661,9 +686,12 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 			case "reasoning":
 				pendingReasoning.emitDone(event, ch)
 			case "message":
+				if event.Item.ID != "" {
+					currentTextItemID = event.Item.ID
+				}
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
-					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase}
+					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
 				}
 			case "function_call", "tool_search_call":
 				sawToolCall = true
@@ -885,9 +913,10 @@ func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int,
 	ch <- providers.StreamEvent{
 		Type: providers.EventToolUseStart,
 		ToolCall: &providers.ToolCall{
-			ID:   pt.id,
-			Name: pt.name,
-			Kind: pt.kind,
+			ID:             pt.id,
+			ProviderItemID: pt.itemID,
+			Name:           pt.name,
+			Kind:           pt.kind,
 		},
 	}
 	return pt
@@ -923,10 +952,11 @@ func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments stri
 	ch <- providers.StreamEvent{
 		Type: providers.EventToolUseEnd,
 		ToolCall: &providers.ToolCall{
-			ID:        pt.id,
-			Name:      pt.name,
-			Kind:      pt.kind,
-			Arguments: pt.args.String(),
+			ID:             pt.id,
+			ProviderItemID: pt.itemID,
+			Name:           pt.name,
+			Kind:           pt.kind,
+			Arguments:      pt.args.String(),
 		},
 	}
 }
@@ -1010,6 +1040,7 @@ type responsesInputItem struct {
 	Type      string          `json:"type,omitempty"`
 	ID        string          `json:"id,omitempty"`
 	Role      string          `json:"role,omitempty"`
+	Phase     string          `json:"phase,omitempty"`
 	Content   any             `json:"content,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
 	Name      string          `json:"name,omitempty"`
@@ -1054,7 +1085,7 @@ type responsesResponse struct {
 	IncompleteDetails *responsesIncompleteDetails `json:"incomplete_details,omitempty"`
 }
 
-func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
+func (r responsesResponse) asChatResponse(model string) (providers.ChatResponse, error) {
 	if r.Error != nil {
 		return providers.ChatResponse{}, r.Error.asError()
 	}
@@ -1063,11 +1094,15 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 	calls := make([]providers.ToolCall, 0)
 	reasoningBlocks := make([]providers.ReasoningBlock, 0)
 	var phase providers.MessagePhase
+	var providerItemID string
 	for _, item := range r.Output {
 		switch item.Type {
 		case "reasoning":
 			reasoningBlocks = append(reasoningBlocks, responsesReasoningBlock(item))
 		case "message":
+			if providerItemID == "" {
+				providerItemID = item.ID
+			}
 			if itemPhase := providers.NormalizeMessagePhase(item.Phase); itemPhase != "" {
 				phase = itemPhase
 			}
@@ -1080,16 +1115,20 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 			}
 		case "function_call":
 			calls = append(calls, providers.ToolCall{
-				ID:        item.CallID,
-				Name:      item.Name,
-				Arguments: item.argumentsString(),
+				ID:                item.CallID,
+				ProviderItemID:    item.ID,
+				ProviderItemModel: model,
+				Name:              item.Name,
+				Arguments:         item.argumentsString(),
 			})
 		case "tool_search_call":
 			calls = append(calls, providers.ToolCall{
-				ID:        item.CallID,
-				Name:      "tool_search",
-				Kind:      providers.ToolCallKindToolSearch,
-				Arguments: item.argumentsString(),
+				ID:                item.CallID,
+				ProviderItemID:    item.ID,
+				ProviderItemModel: model,
+				Name:              "tool_search",
+				Kind:              providers.ToolCallKindToolSearch,
+				Arguments:         item.argumentsString(),
 			})
 		}
 	}
@@ -1106,14 +1145,16 @@ func (r responsesResponse) asChatResponse() (providers.ChatResponse, error) {
 	finishReason := providers.NormalizeFinishReason(stopReason, truncated, len(calls) > 0)
 
 	return providers.ChatResponse{
-		Content:         strings.Join(contentParts, "\n"),
-		Phase:           phase,
-		ReasoningBlocks: reasoningBlocks,
-		ToolCalls:       calls,
-		Usage:           r.Usage.asTokenUsage(),
-		StopReason:      stopReason,
-		FinishReason:    finishReason,
-		Truncated:       truncated,
+		Content:           strings.Join(contentParts, "\n"),
+		Phase:             phase,
+		ProviderItemID:    providerItemID,
+		ProviderItemModel: model,
+		ReasoningBlocks:   reasoningBlocks,
+		ToolCalls:         calls,
+		Usage:             r.Usage.asTokenUsage(),
+		StopReason:        stopReason,
+		FinishReason:      finishReason,
+		Truncated:         truncated,
 	}, nil
 }
 
