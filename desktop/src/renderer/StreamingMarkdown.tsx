@@ -71,6 +71,11 @@ type StreamingMarkdownProps = {
    * this renderer keeps commentary and final-answer text visually identical.
    */
   phase: "commentary" | "final_answer";
+  /**
+   * Callback fired when a file-path chip rendered inside the assistant
+   * reply is activated. When omitted, file paths render as plain text.
+   */
+  onOpenFile?: (path: string) => void;
   onFrame?: () => void;
   onSettled?: () => void;
 };
@@ -102,6 +107,7 @@ export function StreamingMarkdown({
   cwd,
   className = DEFAULT_CLASS_NAME,
   isLive,
+  onOpenFile,
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
@@ -370,6 +376,7 @@ export function StreamingMarkdown({
             text={block}
             cwd={cwd}
             renderMermaid={renderMermaid}
+            onOpenFile={onOpenFile}
           />
         </div>
       ))}
@@ -378,6 +385,7 @@ export function StreamingMarkdown({
         cwd={cwd}
         renderText={cursorTextRenderer}
         renderMermaid={renderMermaid}
+        onOpenFile={onOpenFile}
       />
     </div>
   );

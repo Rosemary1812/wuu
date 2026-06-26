@@ -1,12 +1,18 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { splitTextByFilePaths } from "./InlineFilePathDetection";
 import { useImagePreview } from "./ImagePreview";
 import { MessageCopyButton } from "./MessageActions";
 
 type RichContentProps = {
   text?: string;
   cwd?: string;
+  /**
+   * Callback fired when a file-path chip rendered inside the assistant
+   * reply is activated. When omitted, file paths render as plain text.
+   */
+  onOpenFile?: (path: string) => void;
 };
 
 export type RichBlock =
@@ -29,26 +35,46 @@ type MermaidState =
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 
-export const RichContent = memo(function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
+export const RichContent = memo(function RichContent({ text = "", cwd, onOpenFile }: RichContentProps): JSX.Element {
   return (
     <div className="rich-content">
-      <MarkdownContent text={text} cwd={cwd} />
+      <MarkdownContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
     </div>
   );
 });
+
+/**
+ * Enhancer threaded through the markdown tree so inline text can be
+ * scanned for file paths and rendered as `<RichFileChip>` elements.
+ * `cwd` is forwarded from the surrounding message context so the chip
+ * callback receives an absolute path the file viewer can open.
+ */
+type FileChipEnhancer = {
+  cwd?: string;
+  onOpenFile: (path: string) => void;
+};
 
 function MarkdownContentView({
   text,
   cwd,
   renderText,
-  renderMermaid = true
+  renderMermaid = true,
+  onOpenFile
 }: {
   text: string;
   cwd?: string;
   renderText?: RichTextRenderer;
   renderMermaid?: boolean;
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
-  const components = useMemo(() => markdownComponents(cwd, renderText, renderMermaid), [cwd, renderMermaid, renderText]);
+  const fileChipEnhancer = useMemo(
+    () => (onOpenFile ? { cwd, onOpenFile } : undefined),
+    [cwd, onOpenFile]
+  );
+  const components = useMemo(
+    () => markdownComponents(cwd, renderText, renderMermaid, fileChipEnhancer),
+    [cwd, renderText, renderMermaid, fileChipEnhancer]
+  );
   return (
     <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
       {text}
@@ -62,12 +88,14 @@ export function RichContentBlock({
   block,
   blockKey,
   cwd,
-  renderText
+  renderText,
+  onOpenFile
 }: {
   block: RichBlock;
   blockKey: string;
   cwd?: string;
   renderText?: RichTextRenderer;
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   if (block.kind === "image") {
     return <RichImage source={block.source} alt={block.alt ?? ""} cwd={cwd} />;
@@ -84,7 +112,7 @@ export function RichContentBlock({
   }
   return (
     <p className="rich-paragraph">
-      {renderInlineContent(block.text, cwd, blockKey, renderText)}
+      {renderInlineContent(block.text, cwd, blockKey, renderText, onOpenFile)}
     </p>
   );
 }
@@ -174,14 +202,24 @@ function renderInlineContent(
   text: string,
   cwd: string | undefined,
   keyPrefix: string,
-  renderText?: RichTextRenderer
+  renderText: RichTextRenderer | undefined,
+  onOpenFile: ((path: string) => void) | undefined
 ): Array<JSX.Element | string> {
   const output: Array<JSX.Element | string> = [];
   const pushText = (value: string, key: string): void => {
     if (!value) {
       return;
     }
-    output.push(...(renderText ? renderText(value, key) : [value]));
+    const segments = onOpenFile
+      ? splitTextByFilePaths(value, cwd, onOpenFile, key)
+      : [value];
+    for (const segment of segments) {
+      if (typeof segment === "string") {
+        output.push(...(renderText ? renderText(segment, key) : [segment]));
+      } else {
+        output.push(segment);
+      }
+    }
   };
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -210,38 +248,42 @@ type CodeElementProps = {
 function markdownComponents(
   cwd: string | undefined,
   renderText: RichTextRenderer | undefined,
-  renderMermaid: boolean
+  renderMermaid: boolean,
+  fileChipEnhancer: FileChipEnhancer | undefined
 ): Components {
   return {
     p({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p", fileChipEnhancer)}</p>;
     },
     h1({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h1")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h1", fileChipEnhancer)}</p>;
     },
     h2({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h2")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h2", fileChipEnhancer)}</p>;
     },
     h3({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h3")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h3", fileChipEnhancer)}</p>;
     },
     h4({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h4")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h4", fileChipEnhancer)}</p>;
     },
     h5({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h5")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h5", fileChipEnhancer)}</p>;
     },
     h6({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h6")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h6", fileChipEnhancer)}</p>;
     },
     a({ href, title, children }) {
+      // Skip chipification inside <a>: the link itself is already clickable
+      // and nesting a chip pill inside an anchor produces malformed markup.
+      const inner = renderMarkdownText(children, renderText, "a", undefined);
       const safeHref = safeMarkdownHref(href);
       if (!safeHref) {
-        return <span>{renderMarkdownText(children, renderText, "a-disabled")}</span>;
+        return <span>{inner}</span>;
       }
       return (
         <a className="rich-link" href={safeHref} title={title} target="_blank" rel="noreferrer">
-          {renderMarkdownText(children, renderText, "a")}
+          {inner}
         </a>
       );
     },
@@ -268,10 +310,13 @@ function markdownComponents(
       return <pre className="rich-code">{children}</pre>;
     },
     code({ className, children }) {
-      return <code className={className}>{renderMarkdownText(children, renderText, "code")}</code>;
+      // Inline code spans already have monospace + background styling, so
+      // skip chipification here too — see renderMarkdownText's <code>/<pre>
+      // guard for the same rationale.
+      return <code className={className}>{renderMarkdownText(children, renderText, "code", undefined)}</code>;
     },
     li({ children }) {
-      return <li>{renderMarkdownText(children, renderText, "li")}</li>;
+      return <li>{renderMarkdownText(children, renderText, "li", fileChipEnhancer)}</li>;
     },
     table({ children }) {
       return (
@@ -281,13 +326,13 @@ function markdownComponents(
       );
     },
     th({ children }) {
-      return <th>{renderMarkdownText(children, renderText, "th")}</th>;
+      return <th>{renderMarkdownText(children, renderText, "th", fileChipEnhancer)}</th>;
     },
     td({ children }) {
-      return <td>{renderMarkdownText(children, renderText, "td")}</td>;
+      return <td>{renderMarkdownText(children, renderText, "td", fileChipEnhancer)}</td>;
     },
     blockquote({ children }) {
-      return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote")}</blockquote>;
+      return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote", fileChipEnhancer)}</blockquote>;
     },
     hr() {
       return <hr className="rich-rule" />;
@@ -304,20 +349,28 @@ function RichCodeBlock({
   language: string;
   children: ReactNode;
 }): JSX.Element {
+  // The header (language label + copy button) lives in its own row so the
+  // scrolling code area is not visually coupled to a floating overlay. With
+  // the previous single-container layout the absolute-positioned header sat
+  // on top of a pre that used padding-top to leave room, which meant long
+  // code blocks had the header painted into the same overflow:hidden box as
+  // the scrollable content.
   return (
     <div className="rich-code-block">
+      <div className="rich-code-header">
+        {language ? <span className="rich-code-language">{language}</span> : null}
+        <MessageCopyButton
+          getText={() => code}
+          className="rich-code-copy"
+          iconSize={13}
+          idleLabel="复制代码"
+          copiedLabel="已复制代码"
+          failedLabel="复制失败"
+        />
+      </div>
       <pre className="rich-code">
         {children}
       </pre>
-      {language ? <span className="rich-code-language">{language}</span> : null}
-      <MessageCopyButton
-        getText={() => code}
-        className="rich-code-copy"
-        iconSize={13}
-        idleLabel="复制代码"
-        copiedLabel="已复制代码"
-        failedLabel="复制失败"
-      />
     </div>
   );
 }
@@ -325,25 +378,61 @@ function RichCodeBlock({
 function renderMarkdownText(
   children: ReactNode,
   renderText: RichTextRenderer | undefined,
-  keyPrefix: string
+  keyPrefix: string,
+  fileChipEnhancer: FileChipEnhancer | undefined
 ): ReactNode {
-  if (!renderText) {
+  // Skip the whole walk when neither enhancement is configured — react-markdown's
+  // default rendering already handles the children tree correctly in that case.
+  if (!renderText && !fileChipEnhancer) {
     return children;
   }
   return Children.toArray(children).flatMap((child, index): ReactNode[] => {
     const childKey = `${keyPrefix}-${index}`;
     if (typeof child === "string" || typeof child === "number") {
-      return renderText(String(child), childKey);
+      const text = String(child);
+      // Apply file-chip detection FIRST so the remaining text segments get
+      // fed to renderText (the streaming cursor renderer) untouched.
+      const segments = fileChipEnhancer
+        ? splitTextByFilePaths(text, fileChipEnhancer.cwd, fileChipEnhancer.onOpenFile, childKey)
+        : [text];
+      return segments.flatMap((segment): ReactNode[] => {
+        if (typeof segment === "string") {
+          return renderText ? renderText(segment, childKey) : [segment];
+        }
+        return [segment];
+      });
     }
     if (!isValidElement<{ children?: ReactNode }>(child) || child.props.children === undefined) {
       return [child];
     }
+    // Recurse: disable chipification inside <code>/<pre> so the monospace code
+    // surface stays uninterrupted by chip pills.
+    const nextEnhancer = isCodeLikeElement(child) ? undefined : fileChipEnhancer;
     return [
       cloneElement(child, {
-        children: renderMarkdownText(child.props.children, renderText, childKey)
+        children: renderMarkdownText(child.props.children, renderText, childKey, nextEnhancer)
       })
     ];
   });
+}
+
+/**
+ * Returns true when `child` should suppress file-chip detection in its
+ * subtree. We treat `<code>` and `<pre>` (and any custom component with the
+ * matching displayName) as code surfaces where a chip pill would visually
+ * clash with the monospace background.
+ */
+function isCodeLikeElement(child: ReactElement): boolean {
+  const type = child.type;
+  if (typeof type === "string") {
+    return type === "code" || type === "pre";
+  }
+  if (typeof type === "function") {
+    const displayName = (type as { displayName?: string; name?: string }).displayName
+      ?? (type as { name?: string }).name;
+    return displayName === "code" || displayName === "pre";
+  }
+  return false;
 }
 
 function languageFromClassName(className: string | undefined): string {
