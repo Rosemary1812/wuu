@@ -822,7 +822,7 @@
   border: 1.5px solid rgba(95, 126, 104, 0.22);
   border-top-color: var(--sidebar-accent);
   border-radius: var(--radius-pill);
-  animation: session-loading-spin 1400ms linear infinite;
+  animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
 
                                                                      

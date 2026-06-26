@@ -244,13 +244,7 @@
   border: 2px solid rgba(17, 19, 21, 0.18);
   border-top-color: var(--sidebar-accent);
   box-sizing: border-box;
-  animation: session-tab-spin 0.9s linear infinite;
-}
-
-@keyframes session-tab-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
 
 .session-tab.pending-switch .session-tab-status,
