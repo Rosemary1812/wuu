@@ -346,13 +346,18 @@ describe("Composer send control", () => {
     expect(frame?.contains(slashMenu)).toBe(false);
   });
 
-  it("keeps context chips in the hero composer before a session starts", () => {
+  it("shows the hero project pill before a session starts", () => {
     renderComposer({
       variant: "hero",
     });
 
-    expect(container.querySelector(".composer-context-bar")).not.toBeNull();
-    expect(container.querySelector(".context-project-button")).not.toBeNull();
+    // The hero composer no longer renders a context bar; the project picker
+    // is now a single light pill anchored below the input.
+    expect(container.querySelector(".composer-context-bar")).toBeNull();
+    expect(container.querySelector(".context-project-button")).toBeNull();
+    expect(container.querySelector(".hero-project-pill-anchor")).not.toBeNull();
+    expect(container.querySelector(".hero-project-pill")).not.toBeNull();
+    expect(container.querySelector(".hero-project-pill")?.textContent).toContain("Choose project");
   });
 
   it("inserts a selected skill slash command into the composer", async () => {

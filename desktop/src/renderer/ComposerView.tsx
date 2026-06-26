@@ -7,7 +7,6 @@ import {
   Folder,
   FolderOpen,
   FolderX,
-  GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
   Hammer,
@@ -63,7 +62,6 @@ import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSect
 import { ComposerGoalStrip } from "./ComposerGoalStrip";
 import {
   AccessMenu,
-  BranchMenu,
   ProjectPickerMenu,
   RuntimePicker,
   permissionModeFromSummary,
@@ -75,7 +73,6 @@ import type {
   CodexModelLoadState,
   CodexRuntimeMenu,
   ComposerVariant,
-  FloatingMenuPlacement,
   PermissionMode
 } from "./ComposerTypes";
 import { composerStatusText } from "./ComposerTypes";
@@ -225,13 +222,10 @@ export function Composer({
   queryHistorySessionID?: string;
   queryHistory?: string[];
 }): JSX.Element {
-  const contextLabel = activeContext?.kind === "project" ? activeProject?.name ?? "项目" : "不使用项目";
   const statusText = composerStatusText(status);
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
-  const contextBarVisible = variant === "hero";
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
-  const menuPlacement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
@@ -647,46 +641,28 @@ export function Composer({
               </button>
             </div>
           </div>
-          {contextBarVisible ? (
-            <div className="composer-context-bar" ref={menuRef}>
-              <button className="context-project-button" onClick={onToggleMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
-                {activeContext?.kind === "project" ? <Folder aria-hidden="true" /> : <FolderX aria-hidden="true" />}
-                <span>{contextLabel}</span>
-                <ChevronDown aria-hidden="true" />
+          {variant === "hero" ? (
+            <div className="hero-project-pill-anchor" ref={menuRef}>
+              <button
+                className="hero-project-pill"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={onToggleMenu}
+              >
+                <Folder aria-hidden="true" />
+                <span>
+                  {activeContext?.kind === "project" && activeProject?.name
+                    ? activeProject.name
+                    : "Choose project"}
+                </span>
               </button>
-              {gitStatus?.is_repo && gitStatus.branch ? (
-                <button
-                  className="context-branch-chip"
-                  type="button"
-                  aria-haspopup="menu"
-                  aria-expanded={branchMenuOpen}
-                  onClick={onToggleBranchMenu}
-                >
-                  <GitBranch aria-hidden="true" />
-                  <span>{gitStatus.branch}</span>
-                  {gitStatus.dirty_count > 0 ? <small>未提交：{gitStatus.dirty_count} 个文件</small> : null}
-                  <ChevronDown aria-hidden="true" />
-                </button>
-              ) : null}
-              {branchMenuOpen && gitStatus?.is_repo ? (
-                <FloatingMenuPortal
-                  anchorRef={menuRef}
-                  owner="composer-runtime"
-                  placement={menuPlacement}
-                  align="left"
-                  crossAxisOffset={304}
-                  width={300}
-                >
-                  <BranchMenu gitStatus={gitStatus} onSelectBranch={onSelectGitBranch} />
-                </FloatingMenuPortal>
-              ) : null}
               {menuOpen ? (
                 <FloatingMenuPortal
                   anchorRef={menuRef}
                   owner="composer-runtime"
-                  placement={menuPlacement}
+                  placement="above"
                   align="left"
-                  crossAxisOffset={12}
                   width={300}
                 >
                   <ProjectPickerMenu
