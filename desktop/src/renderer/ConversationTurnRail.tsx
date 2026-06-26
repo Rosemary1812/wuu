@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
-import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
+import { firstUserMessageAnchor, firstUserMessageText, scrollToUserMessage, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
 
 // Rail geometry. The macOS Dock magnification model drives the numbers:
 // a default bar is short, the hovered bar grows by ~3x, and the two
@@ -112,6 +112,18 @@ export function ConversationTurnRail({
     };
   }, [turns]);
 
+  // Click a bar to jump the conversation to the first user message
+  // of that turn. firstUserMessageAnchor returns the same
+  // (turnID, itemID) pair the chat scroll surface uses for its
+  // anchor IDs, so scrollToUserMessage's existing retry/highlight
+  // pipeline does the rest.
+  function handleBarClick(turn: Turn) {
+    const anchor = firstUserMessageAnchor(turn);
+    if (anchor) {
+      scrollToUserMessage(anchor.turnID, anchor.itemID);
+    }
+  }
+
   return (
     <div
       ref={containerRef}
@@ -143,6 +155,16 @@ export function ConversationTurnRail({
               key={turn.id}
               data-turn-id={turn.id}
               className={className}
+              onClick={() => handleBarClick(turn)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleBarClick(turn);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`跳转到第 ${index + 1} 轮对话`}
             >
               <div
                 className="conversation-turn-rail-bridge"
