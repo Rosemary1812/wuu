@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -106,6 +107,7 @@ func RunToolLoop(
 		usage.RecordPendingMessages(history)
 	}
 	threshold := proactiveCompactThreshold(cfg)
+	contextAnchorsEnabled := toolDefinitionsContain(cfg.Tools, compact.InceptionToolName)
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
 		if cfg.OnMessage != nil {
@@ -155,6 +157,11 @@ func RunToolLoop(
 			historyRewritten = true
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
+		}
+		if contextAnchorsEnabled {
+			anchor := compact.BuildContextAnchorMessage(compact.NextContextAnchorID(messages))
+			appendMessage(anchor)
+			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
 		}
 		requestMessages := messages
 		if cfg.BeforeRequest != nil {
@@ -357,6 +364,7 @@ func RunToolLoop(
 		if cfg.PostToolRewrite != nil {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
+			reason := postToolRewriteCompactReason(orderedToolMessages)
 			rewritten, changed, rerr := cfg.PostToolRewrite(ctx, providers.CloneChatMessages(messages), providers.CloneChatMessages(orderedToolMessages))
 			if rerr != nil {
 				return LoopResult{
@@ -375,7 +383,7 @@ func RunToolLoop(
 				usage.RecordPendingMessages(messages)
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{
-						Reason:         CompactReasonHelpMe,
+						Reason:         reason,
 						TokensBefore:   before,
 						MessagesBefore: msgsBefore,
 						MessagesAfter:  len(messages),
@@ -393,6 +401,27 @@ func RunToolLoop(
 		CacheCreationTokens: totalCacheCreation,
 		CacheReadTokens:     totalCacheRead,
 	}, fmt.Errorf("max steps exceeded (%d)", cfg.MaxSteps)
+}
+
+func toolDefinitionsContain(executor ToolExecutor, name string) bool {
+	if executor == nil || strings.TrimSpace(name) == "" {
+		return false
+	}
+	for _, def := range executor.Definitions() {
+		if strings.EqualFold(strings.TrimSpace(def.Name), name) {
+			return true
+		}
+	}
+	return false
+}
+
+func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactReason {
+	for _, msg := range toolMessages {
+		if strings.EqualFold(strings.TrimSpace(msg.Name), compact.InceptionToolName) {
+			return CompactReasonInception
+		}
+	}
+	return CompactReasonHelpMe
 }
 
 func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessage, bool) {
@@ -449,7 +478,8 @@ func recentUserDirectives(messages []providers.ChatMessage, limit int) []string 
 		msg := messages[i]
 		if msg.Role != "user" ||
 			wuucontext.IsSystemReminder(msg.Name, msg.Content) ||
-			wuucontext.IsAgentNotification(msg.Name, msg.Content) {
+			wuucontext.IsAgentNotification(msg.Name, msg.Content) ||
+			compact.IsInternalContextMessage(msg) {
 			continue
 		}
 		content := compactDirectiveContent(msg.Content, taskContractMaxDirectiveRunes)

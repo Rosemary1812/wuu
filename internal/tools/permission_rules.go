@@ -152,6 +152,8 @@ func canonicalPermissionName(permission string) string {
 		return string(capability.CapabilityWebFetch)
 	case "web_search":
 		return string(capability.CapabilityWebSearch)
+	case "inception":
+		return string(capability.CapabilityContextRewrite)
 	default:
 		return strings.TrimSpace(permission)
 	}
@@ -406,6 +408,8 @@ func defaultPermissionName(toolName string, info ToolInfo) string {
 		}
 	case ToolKindDiscovery:
 		return string(capability.CapabilityDiscovery)
+	case ToolKindContext:
+		return string(capability.CapabilityContextRewrite)
 	case ToolKindMCP:
 		return toolName
 	default:

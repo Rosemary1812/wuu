@@ -44,12 +44,10 @@ const (
 
 // Compiler compiles a model profile into a tool surface. Compile is
 // given a forMainAgent flag so it can decide whether the surface
-// should advertise helpme — the recovery tool is only available to the
-// main agent (it is gated to the root agent at
-// internal/tools/tool_agents.go::HelpMeTool.Execute and by
-// DisallowedTools in internal/agentcontrol/worker_types.go). Worker
-// surfaces pass false; the surface is therefore consistent with the
-// runtime boundary instead of being filtered downstream.
+// should advertise main-agent-only context tools such as helpme and
+// inception. Worker surfaces pass false; the surface is therefore
+// consistent with the runtime boundary instead of being filtered
+// downstream.
 type Compiler interface {
 	Compile(p Profile, forMainAgent bool) capability.Surface
 }
@@ -58,9 +56,10 @@ type Compiler interface {
 // stateless: callers should keep a single instance and reuse it.
 type DefaultCompiler struct{}
 
-// Compile implements Compiler. forMainAgent=true adds the helpme
-// recovery tool to the surface; forMainAgent=false omits it. All other
-// surface entries come from the profile-specific compileXxx helper.
+// Compile implements Compiler. forMainAgent=true adds main-agent-only
+// recovery/context tools to the surface; forMainAgent=false omits them.
+// All other surface entries come from the profile-specific compileXxx
+// helper.
 func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
@@ -76,6 +75,7 @@ func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface 
 	}
 	if forMainAgent {
 		addHelpmeTool(b)
+		addInceptionTool(b)
 	}
 	b.sortCaps()
 	return b.surface
@@ -292,6 +292,10 @@ func addTaskTools(b *surfaceBuilder) {
 // HelpMeTool.Execute) is unchanged.
 func addHelpmeTool(b *surfaceBuilder) {
 	b.addVisible("helpme", capability.CapabilityTaskSpawn)
+}
+
+func addInceptionTool(b *surfaceBuilder) {
+	b.addVisible("inception", capability.CapabilityContextRewrite)
 }
 
 func addMemoryTools(b *surfaceBuilder) {

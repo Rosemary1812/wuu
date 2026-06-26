@@ -557,7 +557,7 @@ func shouldPersistMessage(msg providers.ChatMessage) bool {
 func persistableMessageCount(msgs []providers.ChatMessage) int {
 	var count int
 	for _, msg := range msgs {
-		if shouldPersistMessage(msg) {
+		if shouldPersistMessage(msg) && !compact.IsInternalContextMessage(msg) {
 			count++
 		}
 	}

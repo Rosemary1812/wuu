@@ -25,6 +25,7 @@ func TestAllCapabilitiesReturnsStableClosedSet(t *testing.T) {
 		CapabilityWebFetch, CapabilityWebSearch,
 		CapabilityTaskSpawn,
 		CapabilityMemorySession, CapabilityPlan,
+		CapabilityContextRewrite,
 	}
 	for _, c := range mustHave {
 		if _, ok := seen[c]; !ok {

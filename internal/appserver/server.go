@@ -61,6 +61,7 @@ type threadState struct {
 	activeAgentItemID     string
 	activeReasoningItemID string
 	toolItems             map[string]string
+	hiddenToolEvent       bool
 }
 
 type Server struct {

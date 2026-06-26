@@ -430,15 +430,13 @@ func sortedKeys(m map[string]capability.Capability) []string {
 	return out
 }
 
-// TestCompile_HelpmeMainOnly locks in the surface-layer contract that
-// helpme is added to the main-agent surface but is omitted from worker
-// surfaces. The runtime also enforces this boundary via DisallowedTools
-// in internal/agentcontrol/worker_types.go and the path check in
-// HelpMeTool.Execute (internal/tools/tool_agents.go:288-289); this
-// test keeps the compiled-surface declaration honest so future
-// consumers (UI, telemetry, prompt fragments) match the actual tool
+// TestCompile_MainOnlyTools locks in the surface-layer contract that
+// main-agent-only tools are omitted from worker surfaces. The runtime
+// also enforces this boundary with worker tool filtering and
+// tool-specific main-agent path checks; this test keeps the compiled
+// surface declaration honest so future consumers match the actual tool
 // list the model sees at runtime.
-func TestCompile_HelpmeMainOnly(t *testing.T) {
+func TestCompile_MainOnlyTools(t *testing.T) {
 	cases := []struct {
 		provider string
 		model    string
@@ -450,12 +448,19 @@ func TestCompile_HelpmeMainOnly(t *testing.T) {
 	}
 	for _, tt := range cases {
 		mainSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
-		if _, ok := mainSurface.Tools["helpme"]; !ok {
-			t.Errorf("%s/%s main-agent surface must include helpme", tt.provider, tt.model)
+		for _, name := range []string{"helpme", "inception"} {
+			if _, ok := mainSurface.Tools[name]; !ok {
+				t.Errorf("%s/%s main-agent surface must include %s", tt.provider, tt.model, name)
+			}
+			if name == "inception" && mainSurface.Tools[name] != capability.CapabilityContextRewrite {
+				t.Errorf("%s/%s inception capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools[name], capability.CapabilityContextRewrite)
+			}
 		}
 		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), false)
-		if _, ok := workerSurface.Tools["helpme"]; ok {
-			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)
+		for _, name := range []string{"helpme", "inception"} {
+			if _, ok := workerSurface.Tools[name]; ok {
+				t.Errorf("%s/%s worker surface must NOT include %s", tt.provider, tt.model, name)
+			}
 		}
 	}
 }

@@ -80,6 +80,8 @@ func displayCapabilityForKnownToolName(name string) string {
 		return "web.search"
 	case "update_plan":
 		return "plan"
+	case "inception":
+		return "context.rewrite"
 	}
 	return ""
 }
@@ -199,6 +201,8 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("agent", "启动子任务 "+displayTarget(displayString(args, "name", "description"), ""))
 	case "helpme":
 		return toolDisplay("agent", "HelpMe 求助 "+displayTarget(displayString(args, "reason", "ask"), ""))
+	case "inception":
+		return toolDisplay("context", "压缩上下文")
 	case "send_message":
 		return toolDisplay("agent", "发送给子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "followup_task":
@@ -416,6 +420,8 @@ func displayKindForTool(name string) string {
 		return "command"
 	case ToolKindPlan:
 		return "plan"
+	case ToolKindContext:
+		return "context"
 	case ToolKindAgent:
 		return "agent"
 	case ToolKindSchedule:

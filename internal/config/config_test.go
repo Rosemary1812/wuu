@@ -797,6 +797,7 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 		"create_goal",
 		"start_workflow",
 		"spawn_agent",
+		"inception",
 		"write_memory",
 		"read_memory",
 		"explicitly requested",

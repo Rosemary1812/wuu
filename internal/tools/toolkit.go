@@ -241,6 +241,8 @@ func (t *Toolkit) rebuildRegistry() {
 		NewWorkflowStatusTool(e),
 		// Planning
 		NewUpdatePlanTool(e),
+		// Internal context rewrite
+		NewInceptionTool(e),
 		// Agent orchestration
 		NewSpawnAgentTool(e),
 		NewHelpMeTool(e),
@@ -616,10 +618,10 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 // model context.
 //
 // forMainAgent must be true when configuring a main-agent kit (the
-// surface includes the helpme recovery tool). Worker kits built via
-// CloneForRoot pass false so the compiled surface omits helpme —
-// the same boundary is enforced at runtime by DisallowedTools and by
-// HelpMeTool.Execute.
+// surface includes main-agent-only context tools such as helpme and
+// inception). Worker kits built via CloneForRoot pass false so the
+// compiled surface omits them; the same boundary is enforced at
+// runtime by worker tool filtering and tool-specific path checks.
 func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	if t == nil {
 		return

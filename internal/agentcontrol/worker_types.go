@@ -86,7 +86,7 @@ Response style:
 		Description:     "Verification specialist. Use after non-trivial implementation work to run checks, try to break the change, and return a PASS/FAIL/PARTIAL verdict with evidence.",
 		SystemPrompt:    VerificationPreset,
 		AllowedTools:    nil,
-		DisallowedTools: []string{"spawn_agent", "helpme", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "write_file", "edit_file", "apply_patch"},
+		DisallowedTools: []string{"spawn_agent", "helpme", "inception", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "write_file", "edit_file", "apply_patch"},
 		ContextScope:    "Final diff, acceptance criteria, changed files, and declared verification policy.",
 		OutputSchema:    "Use agent_report with outcome, verification, risks, blockers, and evidence; final verdict must be PASS, FAIL, or PARTIAL.",
 		SuccessCriteria: []string{
@@ -288,6 +288,7 @@ func LookupWorkerType(name string) (WorkerType, error) {
 var alwaysBlockedTools = map[string]struct{}{
 	"spawn_agent":   {},
 	"helpme":        {},
+	"inception":     {},
 	"send_message":  {},
 	"followup_task": {},
 	"wait_agent":    {},

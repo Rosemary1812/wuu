@@ -1862,7 +1862,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
-	if len(persisted) != 2 || persisted[0].Role != "user" || persisted[0].Content != "hello" || persisted[1].Role != "assistant" || persisted[1].Content != "done" {
+	if len(persisted) != 3 || persisted[0].Role != "user" || persisted[0].Content != "hello" || !compact.IsInternalContextMessage(persisted[1]) || persisted[2].Role != "assistant" || persisted[2].Content != "done" {
 		t.Fatalf("unexpected persisted history: %+v", persisted)
 	}
 	sessions, err := session.List(rt.SessionDir, 1)

@@ -719,8 +719,8 @@ func DefaultSystemPrompt() string {
 // subagents. It contains only the universal base sections; the main-only
 // orchestration map is excluded because the tools and durable state
 // concepts listed there (update_plan, create_goal, start_workflow,
-// spawn_agent, helpme, write_memory, read_memory) are not part of a
-// worker's tool surface.
+// spawn_agent, helpme, inception, write_memory, read_memory) are not
+// part of a worker's tool surface.
 func WorkerSystemPrompt() string {
 	return prompts.System()
 }

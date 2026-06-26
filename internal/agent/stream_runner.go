@@ -166,15 +166,16 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	runUsage, baseHistoryLen := r.prepareUsageTracker(history)
 
 	// Wrap the caller's callback so events also flow to the bus, if wired.
-	effectiveOnEvent := onEvent
+	emitEvent := onEvent
 	if r.Bus != nil {
-		effectiveOnEvent = func(ev providers.StreamEvent) {
+		emitEvent = func(ev providers.StreamEvent) {
 			if onEvent != nil {
 				onEvent(ev)
 			}
 			r.Bus.Publish(eventbus.AdaptStreamEvent(ev))
 		}
 	}
+	effectiveOnEvent := filterInternalContextStreamEvents(emitEvent)
 
 	step := &streamStep{
 		client:                  r.Client,
@@ -232,7 +233,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		OnUsage:      r.OnUsage,
 		OnTokenUsage: r.OnTokenUsage,
 		OnMessage: func(msg providers.ChatMessage) {
-			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) {
+			if effectiveOnEvent == nil || isEphemeralHistoryMessage(msg) || isInternalContextHistoryMessage(msg) {
 				return
 			}
 			copyMsg := msg
@@ -252,7 +253,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		// clients can render tool output live (the loop itself only
 		// records the tool message into the history).
 		OnToolResult: func(call providers.ToolCall, result string) {
-			if effectiveOnEvent == nil {
+			if effectiveOnEvent == nil || isInternalContextToolName(call.Name) {
 				return
 			}
 			toolCall := enrichToolCallDisplay(r.Tools, providers.ToolCall{
@@ -276,7 +277,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				})
 			}
 		},
-		PostToolRewrite: compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
+		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
 		// Surface auto-compact events as stream events. The loop fires
 		// this for both the proactive and the reactive overflow path.
 		OnCompact: func(info CompactInfo) {
@@ -330,6 +331,49 @@ func planUpdateEventFromToolResult(call providers.ToolCall, result string) (*pro
 		return nil, false
 	}
 	return &update, true
+}
+
+func filterInternalContextStreamEvents(next StreamCallback) StreamCallback {
+	if next == nil {
+		return nil
+	}
+	var hiddenTool bool
+	return func(ev providers.StreamEvent) {
+		switch ev.Type {
+		case providers.EventToolUseStart:
+			if ev.ToolCall != nil && isInternalContextToolName(ev.ToolCall.Name) {
+				hiddenTool = true
+				return
+			}
+			hiddenTool = false
+		case providers.EventToolUseDelta:
+			if hiddenTool {
+				return
+			}
+		case providers.EventToolUseEnd:
+			if ev.ToolCall != nil && isInternalContextToolName(ev.ToolCall.Name) {
+				hiddenTool = false
+				return
+			}
+			if hiddenTool {
+				hiddenTool = false
+				return
+			}
+		case providers.EventMessage:
+			if ev.Message != nil && isInternalContextHistoryMessage(*ev.Message) {
+				return
+			}
+		}
+		next(ev)
+	}
+}
+
+func isInternalContextToolName(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), compact.InceptionToolName)
+}
+
+func isInternalContextHistoryMessage(msg providers.ChatMessage) bool {
+	return compact.IsInternalContextMessage(msg)
 }
 
 // prepareUsageTracker snapshots the runner's shared conversation

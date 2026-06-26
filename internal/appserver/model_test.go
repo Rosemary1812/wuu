@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -168,6 +169,79 @@ func TestThreadPreviewUsesDisplayContent(t *testing.T) {
 
 	if preview != "/debug login failure" {
 		t.Fatalf("preview = %q, want display content", preview)
+	}
+}
+
+func TestThreadPreviewSkipsInternalContextMessages(t *testing.T) {
+	preview := threadPreview([]providers.ChatMessage{
+		compact.BuildContextAnchorMessage(0),
+		{Role: "user", Name: compact.ContextContinuationName, Content: compact.BuildInceptionContinuationContent(0, "## Task state\nContinue.")},
+		{Role: "user", Content: "visible request"},
+	})
+
+	if preview != "visible request" {
+		t.Fatalf("preview = %q, want visible request", preview)
+	}
+}
+
+func TestTurnsFromHistoryHidesInceptionArtifacts(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	turns := turnsFromHistory("thread", []providers.ChatMessage{
+		{Role: "user", Content: "start"},
+		compact.BuildContextAnchorMessage(0),
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_inception",
+				Name:      compact.InceptionToolName,
+				Arguments: `{"anchor_id":0,"summary":"state"}`,
+			}},
+		},
+		{Role: "tool", Name: compact.InceptionToolName, ToolCallID: "call_inception", Content: `{"action":"inception","status":"completed"}`},
+		{Role: "user", Name: compact.ContextContinuationName, Content: compact.BuildInceptionContinuationContent(0, "## Task state\nContinue.")},
+		{Role: "assistant", Content: "done"},
+	}, now)
+
+	if len(turns) != 1 {
+		t.Fatalf("expected one visible turn, got %+v", turns)
+	}
+	items := turns[0].Items
+	if len(items) != 2 {
+		t.Fatalf("expected only user and assistant items, got %+v", items)
+	}
+	if items[0].Type != ThreadItemUserMessage || items[0].Text != "start" {
+		t.Fatalf("expected visible user item, got %+v", items[0])
+	}
+	if items[1].Type != ThreadItemAgentMessage || items[1].Text != "done" {
+		t.Fatalf("expected visible assistant item, got %+v", items[1])
+	}
+}
+
+func TestThreadStateHidesLiveInceptionEvents(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start"}, now)
+
+	for _, ev := range []providers.StreamEvent{
+		{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: "call_inception", Name: compact.InceptionToolName}},
+		{Type: providers.EventToolUseDelta, Content: `{"anchor_id":0`},
+		{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call_inception", Name: compact.InceptionToolName}, ToolResult: `{"action":"inception"}`},
+	} {
+		if out := th.applyStreamEventLocked("turn", ev, now); len(out) != 0 {
+			t.Fatalf("internal event should not emit notifications: %#v", out)
+		}
+	}
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:     providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{ID: "call_read", Name: "read_file", Arguments: `{"path":"README.md"}`},
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user plus read_file only, got %+v", turn.Items)
+	}
+	if turn.Items[1].Name != "read_file" || turn.Items[1].Arguments != `{"path":"README.md"}` {
+		t.Fatalf("inception delta leaked into visible tool item: %+v", turn.Items[1])
 	}
 }
 

@@ -30,6 +30,7 @@ const (
 	ToolKindGoal      ToolKind = "goal"
 	ToolKindWorkflow  ToolKind = "workflow"
 	ToolKindPlan      ToolKind = "plan"
+	ToolKindContext   ToolKind = "context"
 	ToolKindAgent     ToolKind = "agent"
 	ToolKindProcess   ToolKind = "process"
 	ToolKindSchedule  ToolKind = "schedule"
@@ -236,6 +237,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindWorkflow
 	case "update_plan":
 		return ToolKindPlan
+	case "inception":
+		return ToolKindContext
 	case "spawn_agent", "helpme", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":
 		return ToolKindAgent
 	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin":

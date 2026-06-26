@@ -135,7 +135,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		OutputReserveTokens: r.OutputReserveTokens,
 		CompactThresholdPct: r.CompactThresholdPct,
 		OnUsage:             onUsage,
-		PostToolRewrite:     compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
+		PostToolRewrite:     compact.RewriteHistoryFromInternalToolMessagesWithContext,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return compact.CompactWithBudget(ctx, messages, r.Client, r.Model, compact.Budget{
 				ContextTokens:       maxCtx,

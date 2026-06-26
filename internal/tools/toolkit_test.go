@@ -2425,6 +2425,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "create_goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "get_goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "update_goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
+		{name: "inception", kind: ToolKindContext, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: false},
 		{name: "list_agent_profiles", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "create_agent_profile", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "start_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},

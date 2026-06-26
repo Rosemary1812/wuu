@@ -21,7 +21,7 @@ func System() string {
 
 // SystemMain returns the main-agent-only path-selection map. The tools
 // and durable-state concepts listed here (update_plan, create_goal,
-// start_workflow, spawn_agent, helpme, write_memory, read_memory) are
+// start_workflow, spawn_agent, helpme, inception, write_memory, read_memory) are
 // not on a worker's tool surface, so this section must not be embedded
 // in a subagent's system prompt. config.DefaultSystemPrompt() joins
 // System() and SystemMain() for the main agent; config.WorkerSystemPrompt()

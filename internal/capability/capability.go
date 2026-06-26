@@ -59,11 +59,12 @@ const (
 	CapabilityMemorySession Capability = "memory.session"
 	CapabilityMemoryProject Capability = "memory.project"
 
-	// Plan / Goal / Workflow.
-	CapabilityPlan     Capability = "plan"
-	CapabilityGoal     Capability = "goal"
-	CapabilityWorkflow Capability = "workflow"
-	CapabilitySkill    Capability = "skill"
+	// Plan / Goal / Workflow / context rewrite.
+	CapabilityPlan           Capability = "plan"
+	CapabilityGoal           Capability = "goal"
+	CapabilityWorkflow       Capability = "workflow"
+	CapabilitySkill          Capability = "skill"
+	CapabilityContextRewrite Capability = "context.rewrite"
 
 	// Schedule.
 	CapabilitySchedule Capability = "schedule"
@@ -104,6 +105,7 @@ func All() []Capability {
 		CapabilityGoal,
 		CapabilityWorkflow,
 		CapabilitySkill,
+		CapabilityContextRewrite,
 		CapabilitySchedule,
 		CapabilityMCP,
 		CapabilityPorts,

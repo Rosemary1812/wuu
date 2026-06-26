@@ -347,11 +347,19 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		if ev.ToolCall == nil {
 			return nil
 		}
+		if isInternalContextToolName(ev.ToolCall.Name) {
+			th.hiddenToolEvent = true
+			return nil
+		}
+		th.hiddenToolEvent = false
 		out = append(out, th.completeActiveAgentItemLocked(turnID, now, ThreadItemPhaseCommentary)...)
 		item := th.toolItemFromCallLocked(turnID, *ev.ToolCall, now)
 		out = append(out, itemStarted(th.ID, turnID, item, now))
 	case providers.EventToolUseDelta:
 		if ev.Content == "" {
+			return nil
+		}
+		if th.hiddenToolEvent {
 			return nil
 		}
 		item, ok := th.latestToolItemLocked(turnID)
@@ -371,6 +379,10 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		})
 	case providers.EventToolUseEnd:
 		if ev.ToolCall == nil {
+			return nil
+		}
+		if isInternalContextToolName(ev.ToolCall.Name) || th.hiddenToolEvent {
+			th.hiddenToolEvent = false
 			return nil
 		}
 		item := th.toolItemFromCallLocked(turnID, *ev.ToolCall, now)
@@ -397,6 +409,9 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		}
 	case providers.EventMessage:
 		if ev.Message == nil {
+			return nil
+		}
+		if compact.IsInternalContextMessage(*ev.Message) {
 			return nil
 		}
 		out = append(out, th.applyMessageItemLocked(turnID, *ev.Message, now)...)
@@ -466,6 +481,9 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 		return out
 	case "tool":
 		if msg.ToolCallID == "" {
+			return nil
+		}
+		if isInternalContextToolName(msg.Name) {
 			return nil
 		}
 		item, ok := th.itemLocked(turnID, th.toolItems[msg.ToolCallID])
@@ -699,6 +717,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 	var current *Turn
 	itemIndex := 0
 	toolItems := make(map[string]int)
+	hiddenToolCalls := make(map[string]struct{})
 	var pendingCompactions []ThreadItem
 	nextItemID := func(turnID string) string {
 		itemIndex++
@@ -711,6 +730,9 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		current.Items = append(current.Items, item)
 	}
 	for _, msg := range history {
+		if compact.IsInternalContextMessage(msg) {
+			continue
+		}
 		if msg.Role == "system" {
 			if compact.IsConversationSummaryContent(msg.Content) {
 				pendingCompactions = append(pendingCompactions, ThreadItem{
@@ -729,6 +751,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
 			itemIndex = 0
 			toolItems = make(map[string]int)
+			hiddenToolCalls = make(map[string]struct{})
 			turn := Turn{
 				ID:        turnID,
 				ItemsView: TurnItemsViewFull,
@@ -776,6 +799,12 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 				current.Truncated = msg.Truncated
 			}
 			for _, call := range msg.ToolCalls {
+				if isInternalContextToolName(call.Name) {
+					if strings.TrimSpace(call.ID) != "" {
+						hiddenToolCalls[call.ID] = struct{}{}
+					}
+					continue
+				}
 				item := ThreadItem{
 					ID:        nextItemID(current.ID),
 					Type:      threadItemTypeForTool(call.Name),
@@ -790,6 +819,12 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 				appendItem(item)
 			}
 		case "tool":
+			if isInternalContextToolName(msg.Name) {
+				continue
+			}
+			if _, hidden := hiddenToolCalls[msg.ToolCallID]; hidden {
+				continue
+			}
 			if idx, ok := toolItems[msg.ToolCallID]; ok && idx >= 0 && idx < len(current.Items) {
 				current.Items[idx].Result += msg.Content
 				current.Items[idx].Status = ThreadItemStatusCompleted
@@ -859,6 +894,10 @@ func isToolResultMessage(msg providers.ChatMessage) bool {
 	return msg.Role == "tool" || msg.ToolCallID != ""
 }
 
+func isInternalContextToolName(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), compact.InceptionToolName)
+}
+
 func threadItemTypeForTool(name string) ThreadItemType {
 	switch strings.TrimSpace(name) {
 	case "spawn_agent", "helpme", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":
@@ -891,6 +930,9 @@ func threadItemPhaseFromProvider(phase providers.MessagePhase) ThreadItemPhase {
 
 func threadPreview(history []providers.ChatMessage) string {
 	for _, msg := range history {
+		if compact.IsInternalContextMessage(msg) {
+			continue
+		}
 		if msg.Role == "user" && !isToolResultMessage(msg) && strings.TrimSpace(chatMessageDisplayContent(msg)) != "" {
 			return strings.TrimSpace(chatMessageDisplayContent(msg))
 		}

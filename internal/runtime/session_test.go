@@ -1673,7 +1673,7 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 // prompts.SystemMain() (the Orchestration path-selection map that lives only
 // in the main agent's prompt). The Orchestration section lists tools that
 // are not on a worker's tool surface (update_plan, create_goal,
-// start_workflow, spawn_agent, helpme, write_memory, read_memory); if it
+// start_workflow, spawn_agent, helpme, inception, write_memory, read_memory); if it
 // leaked into a worker's system prompt the model would be told to call
 // tools it does not have.
 func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T) {
@@ -1701,6 +1701,7 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 	for _, want := range []string{
 		"# Orchestration",
 		"- helpme:",
+		"- inception:",
 		"- update_plan:",
 		"- create_goal:",
 		"- start_workflow:",
@@ -1713,6 +1714,7 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 	for _, banned := range []string{
 		"# Orchestration",
 		"- helpme:",
+		"- inception:",
 		"- update_plan:",
 		"- create_goal:",
 		"- start_workflow:",

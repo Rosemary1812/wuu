@@ -332,6 +332,74 @@ func TestRunToolLoop_PostToolRewriteAfterHelpMeKeepsValidHistory(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing.T) {
+	content := compact.BuildInceptionContinuationContent(0, "## Task state\nCurrent files already include the fix.\n\n## External state\nNo external rollback happened.\n\n## Verification state\nTests still need to run.\n\n## Evidence pointers\n- internal/agent/loop.go\n\n## Next step\nRun focused tests.")
+	rawResult, err := json.Marshal(map[string]any{
+		"action": "inception",
+		"status": "completed",
+		"history_rewrite": map[string]any{
+			"kind":      compact.InceptionHistoryRewriteKind,
+			"anchor_id": 0,
+			"content":   content,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":"state"}`}}},
+		{Content: "continued after context rewrite"},
+	}}
+	cfg := LoopConfig{
+		Model:           "m",
+		Tools:           &fakeLoopTools{defs: []providers.ToolDefinition{{Name: compact.InceptionToolName}}, results: map[string]string{"inception_1": string(rawResult)}},
+		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
+	}
+	var infos []CompactInfo
+	cfg.OnCompact = func(info CompactInfo) {
+		infos = append(infos, info)
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "please continue cleanly"},
+	}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("expected Inception rewrite to replace history")
+	}
+	if len(infos) != 1 || infos[0].Reason != CompactReasonInception {
+		t.Fatalf("expected Inception compact event, got %+v", infos)
+	}
+	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
+		t.Fatalf("rewritten history must be provider-valid: %v\n%+v", err, res.NewMessages)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected second request after Inception rewrite, got %d calls", len(step.calls))
+	}
+	if _, ok := compact.FindContextAnchorIndex(step.calls[0].Messages, 0); !ok {
+		t.Fatalf("first request should include automatic anchor 0: %+v", step.calls[0].Messages)
+	}
+	secondMessages := step.calls[1].Messages
+	foundSummary := false
+	for _, msg := range secondMessages {
+		if msg.Name == compact.ContextContinuationName && strings.Contains(msg.Content, compact.InceptionContinuationPrefix) {
+			foundSummary = true
+		}
+		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
+			t.Fatalf("Inception rewrite should remove old tool call chain from second request: %+v", secondMessages)
+		}
+	}
+	if !foundSummary {
+		t.Fatalf("second request missing continuation summary: %+v", secondMessages)
+	}
+	if res.Content != "continued after context rewrite" {
+		t.Fatalf("unexpected final content %q", res.Content)
+	}
+}
+
 func TestRunToolLoop_ToolCallThenAnswer(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "run_shell", Arguments: `{}`}}},

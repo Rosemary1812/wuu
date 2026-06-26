@@ -74,7 +74,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	wt, _ := LookupWorkerType(DefaultSubagentType)
 	full := []string{
 		"read_file", "write_file", "edit_file", "bash",
-		"grep", "glob", "spawn_agent", "send_message", "followup_task",
+		"grep", "glob", "spawn_agent", "helpme", "inception", "send_message", "followup_task",
 		"wait_agent", "await_agents", "close_agent", "list_agents", "agent_report",
 	}
 	filtered := FilterToolsForWorker(wt, full)
@@ -87,7 +87,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 			t.Errorf("general-purpose agent missing %s", expected)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
+	for _, blocked := range []string{"spawn_agent", "helpme", "inception", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
 		if allowed[blocked] {
 			t.Errorf("general-purpose agent should not receive recursive control tool %s", blocked)
 		}

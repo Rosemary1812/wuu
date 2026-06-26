@@ -927,6 +927,12 @@ Cover these sections:
 - In progress
 - Blocked
 
+## External State
+- Files changed, commands/processes run, browser state, remote systems touched, and any external side effects that remain current
+
+## Verification State
+- Checks passed, failed, skipped, or still needed; include exact failure status without overstating confidence
+
 ## Key Decisions
 - Product or engineering decisions already made and why
 
@@ -935,6 +941,9 @@ Cover these sections:
 
 ## Critical Context
 - Exact errors, commands, logs, IDs, state, assumptions, and anything easy to lose
+
+## Evidence Pointers
+- Exact files, commands, logs, result ids, artifact paths, screenshots, or other evidence needed to resume
 
 ## Relevant Files
 - Exact paths and why each matters

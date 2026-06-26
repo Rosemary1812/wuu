@@ -37,12 +37,10 @@ func (t *Toolkit) ConfigureEditToolsForProviderModel(providerName, model string)
 
 // ConfigureSurfaceForProviderModel compiles the surface for the given
 // provider/model and installs it as the toolkit's active profile. The
-// forMainAgent flag selects whether the compiled surface includes the
-// helpme recovery tool — main-agent kits pass true so helpme is part
-// of the model's tool list, worker kits pass false so the compiled
-// surface omits it cleanly. Runtime defense-in-depth (DisallowedTools
-// in internal/agentcontrol/worker_types.go and the path check in
-// HelpMeTool.Execute) is unchanged.
+// forMainAgent flag selects whether the compiled surface includes
+// main-agent-only tools such as helpme and inception. Runtime
+// defense-in-depth is enforced by worker tool filtering and the tools'
+// own main-agent path checks.
 func (t *Toolkit) ConfigureSurfaceForProviderModel(providerName, model string, forMainAgent bool) {
 	t.SetActiveProfile(modelprofile.Resolve(providerName, model), forMainAgent)
 }

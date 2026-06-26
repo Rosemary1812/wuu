@@ -187,9 +187,12 @@ func TestCompactInstructionPrompt_CoversHandoffSections(t *testing.T) {
 		"## Goal",
 		"## Constraints & Preferences",
 		"## Progress",
+		"## External State",
+		"## Verification State",
 		"## Key Decisions",
 		"## Next Steps",
 		"## Critical Context",
+		"## Evidence Pointers",
 		"## Relevant Files",
 	} {
 		if !strings.Contains(compactInstructionPrompt, want) {
