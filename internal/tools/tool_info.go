@@ -236,7 +236,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindWorkflow
 	case "update_plan":
 		return ToolKindPlan
-	case "spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":
+	case "spawn_agent", "helpme", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":
 		return ToolKindAgent
 	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin":
 		return ToolKindProcess

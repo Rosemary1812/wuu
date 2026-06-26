@@ -123,12 +123,14 @@ describe("composer slash commands", () => {
 
     const debug = filterComposerSlashCommands(commands, "debug")[0];
     const fix = filterComposerSlashCommands(commands, "fix")[0];
+    const helpme = filterComposerSlashCommands(commands, "helpme")[0];
     const commit = filterComposerSlashCommands(commands, "commit")[0];
     const pr = filterComposerSlashCommands(commands, "pr")[0];
 
     expect(debug?.kind).toBe("prompt");
     expect(composerSlashPrompt(debug!, "login failure")).toBe("/debug login failure");
     expect(composerSlashPrompt(fix!, "")).toBe("/fix ");
+    expect(composerSlashPrompt(helpme!, "still stuck")).toBe("/helpme still stuck");
     expect(composerSlashPrompt(commit!, "")).toBe("/commit ");
     expect(composerSlashPrompt(pr!, "draft")).toBe("/pr draft");
   });

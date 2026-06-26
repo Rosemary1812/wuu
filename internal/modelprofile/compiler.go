@@ -263,6 +263,7 @@ func addWebTools(b *surfaceBuilder) {
 
 func addTaskTools(b *surfaceBuilder) {
 	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
+	b.addVisible("helpme", capability.CapabilityTaskSpawn)
 	b.addVisible("send_message", capability.CapabilityTaskCommunicate)
 	b.addVisible("followup_task", capability.CapabilityTaskCommunicate)
 	b.addVisible("wait_agent", capability.CapabilityTaskManage)

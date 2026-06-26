@@ -274,6 +274,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				})
 			}
 		},
+		PostToolRewrite: compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
 		// Surface auto-compact events as stream events. The loop fires
 		// this for both the proactive and the reactive overflow path.
 		OnCompact: func(info CompactInfo) {
@@ -562,8 +563,11 @@ func truncateLog(s string, maxLen int) string {
 // the chat viewport.
 func formatCompactNotice(info CompactInfo) string {
 	verb := "Compacted"
-	if info.Reason == CompactReasonOverflow {
+	switch info.Reason {
+	case CompactReasonOverflow:
 		verb = "Recovered from context overflow — compacted"
+	case CompactReasonHelpMe:
+		verb = "HelpMe recovered and compacted"
 	}
 	if info.TokensBefore > 0 {
 		return fmt.Sprintf("✦ %s history: %d → %d messages (was ~%s)",

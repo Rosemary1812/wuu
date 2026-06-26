@@ -66,6 +66,12 @@ type Step interface {
 // summarization they need; the loop is intentionally agnostic.
 type CompactFn func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error)
 
+// PostToolRewriteFn can replace the live history after a complete assistant
+// tool-call turn has been recorded. The hook runs only after the assistant
+// tool_calls and every matching tool result are present in history, so provider
+// tool-call/result ordering is never rewritten mid-flight.
+type PostToolRewriteFn func(ctx context.Context, messages []providers.ChatMessage, toolMessages []providers.ChatMessage) ([]providers.ChatMessage, bool, error)
+
 // CompactReason classifies why the loop ran a compact pass.
 type CompactReason string
 
@@ -77,6 +83,9 @@ const (
 	// context-overflow error and the loop ran compact reactively as
 	// the recovery path.
 	CompactReasonOverflow CompactReason = "overflow"
+	// CompactReasonHelpMe means a recovery tool produced a validated
+	// replacement context after its tool result was recorded.
+	CompactReasonHelpMe CompactReason = "helpme"
 )
 
 // CompactInfo describes a compact pass that just ran. Surfaced via
@@ -167,6 +176,11 @@ type LoopConfig struct {
 	// (call, JSON result) pair. Used by streaming callers to feed
 	// live tool-result rendering into clients.
 	OnToolResult func(call providers.ToolCall, result string)
+	// PostToolRewrite, when set, may replace live history after all
+	// tool results for a model step have been appended. This is for
+	// checkpoint/compact style tools that intentionally rewrite the
+	// next model-visible context.
+	PostToolRewrite PostToolRewriteFn
 	// OnCompact is invoked once per compact pass (proactive or
 	// reactive). Optional; clients can use it to render a status line.
 	OnCompact func(info CompactInfo)

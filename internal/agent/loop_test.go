@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -277,6 +278,57 @@ func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 	}
 	if step.calls[1].Messages[0].Content != "[Conversation summary]\nOlder turns were compacted." {
 		t.Fatalf("expected compact summary at request root, got %+v", step.calls[1].Messages[0])
+	}
+}
+
+func TestRunToolLoop_PostToolRewriteAfterHelpMeKeepsValidHistory(t *testing.T) {
+	helpMeResult := `{"action":"helpme","status":"completed","history_rewrite":{"kind":"helpme_joint_compact","content":"[HelpMe joint compact]\nCorrected task state","agent_id":"agent-1","agent_path":"/root/helpme_recovery"}}`
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "helpme_1", Name: "helpme", Arguments: `{"reason":"stuck"}`}}},
+		{Content: "continued from HelpMe"},
+	}}
+	cfg := LoopConfig{
+		Model:           "m",
+		Tools:           &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "helpme"}}, results: map[string]string{"helpme_1": helpMeResult}},
+		PostToolRewrite: compact.RewriteHistoryFromHelpMeToolMessagesWithContext,
+	}
+	var infos []CompactInfo
+	cfg.OnCompact = func(info CompactInfo) {
+		infos = append(infos, info)
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "please recover"},
+	}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("expected HelpMe rewrite to replace history")
+	}
+	if len(infos) != 1 || infos[0].Reason != CompactReasonHelpMe {
+		t.Fatalf("expected HelpMe compact event, got %+v", infos)
+	}
+	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
+		t.Fatalf("rewritten history must be provider-valid: %v\n%+v", err, res.NewMessages)
+	}
+	if got := len(res.NewMessages); got != 3 {
+		t.Fatalf("expected system prompt, HelpMe compact, and final answer, got %d: %+v", got, res.NewMessages)
+	}
+	if res.NewMessages[1].Role != "system" || !strings.Contains(res.NewMessages[1].Content, compact.HelpMeJointCompactPrefix) {
+		t.Fatalf("expected HelpMe compact system message, got %+v", res.NewMessages[1])
+	}
+	for _, msg := range res.NewMessages {
+		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
+			t.Fatalf("HelpMe rewrite should remove old tool call chain, got %+v", res.NewMessages)
+		}
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected second request after HelpMe rewrite, got %d calls", len(step.calls))
+	}
+	if got := len(step.calls[1].Messages); got != 2 {
+		t.Fatalf("expected rewritten request to contain two system messages, got %d: %+v", got, step.calls[1].Messages)
 	}
 }
 

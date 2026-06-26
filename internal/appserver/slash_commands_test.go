@@ -23,6 +23,24 @@ func TestRenderLightweightSlashCommandPrompt(t *testing.T) {
 	}
 }
 
+func TestRenderHelpMeSlashCommandPrompt(t *testing.T) {
+	content, display, ok := renderLightweightSlashCommandPrompt("/helpme still not fixed after three tries")
+	if !ok {
+		t.Fatal("expected /helpme to render")
+	}
+	if display != "/helpme still not fixed after three tries" {
+		t.Fatalf("display = %q", display)
+	}
+	for _, want := range []string{"HelpMe recovery", "helpme tool", "fresh general-purpose helper", "automatically compact", "still not fixed"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("rendered prompt missing %q:\n%s", want, content)
+		}
+	}
+	if strings.Contains(content, "/helpme") {
+		t.Fatalf("rendered prompt should not include raw slash command:\n%s", content)
+	}
+}
+
 func TestRenderCommitSlashCommandPromptIsSurfaceNeutral(t *testing.T) {
 	content, _, ok := renderLightweightSlashCommandPrompt("/commit polish summary")
 	if !ok {

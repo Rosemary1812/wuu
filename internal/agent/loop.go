@@ -352,6 +352,35 @@ func RunToolLoop(
 			appendMessage(toolMsg)
 		}
 		usage.RecordPendingMessages(orderedToolMessages)
+		if cfg.PostToolRewrite != nil {
+			before := usage.EstimateCurrent()
+			msgsBefore := len(messages)
+			rewritten, changed, rerr := cfg.PostToolRewrite(ctx, providers.CloneChatMessages(messages), providers.CloneChatMessages(orderedToolMessages))
+			if rerr != nil {
+				return LoopResult{
+					NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+					HistoryRewritten:    historyRewritten,
+					InputTokens:         totalIn,
+					OutputTokens:        totalOut,
+					CacheCreationTokens: totalCacheCreation,
+					CacheReadTokens:     totalCacheRead,
+				}, rerr
+			}
+			if changed && compactChanged(messages, rewritten) {
+				messages = rewritten
+				historyRewritten = true
+				usage.Reset()
+				usage.RecordPendingMessages(messages)
+				if cfg.OnCompact != nil {
+					cfg.OnCompact(CompactInfo{
+						Reason:         CompactReasonHelpMe,
+						TokensBefore:   before,
+						MessagesBefore: msgsBefore,
+						MessagesAfter:  len(messages),
+					})
+				}
+			}
+		}
 	}
 
 	return LoopResult{

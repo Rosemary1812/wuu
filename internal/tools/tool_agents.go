@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +14,9 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -207,6 +211,410 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		return "", err
 	}
 	return string(out), nil
+}
+
+// ---------------------------------------------------------------------------
+// helpme
+// ---------------------------------------------------------------------------
+
+type HelpMeTool struct{ env *Env }
+
+func NewHelpMeTool(env *Env) *HelpMeTool { return &HelpMeTool{env: env} }
+
+func (t *HelpMeTool) Name() string            { return "helpme" }
+func (t *HelpMeTool) IsReadOnly() bool        { return false }
+func (t *HelpMeTool) IsConcurrencySafe() bool { return false }
+
+func (t *HelpMeTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{
+		Name: "helpme",
+		Description: "Start a HelpMe recovery when the main agent may be stuck in a wrong direction, polluted context, or repeated failed attempts. " +
+			"This launches a fresh general-purpose subagent with a clean context, waits for it to finish, then returns a HelpMe joint compact marker that rewrites the next model-visible context. " +
+			"Use this instead of spawn_agent when the purpose is context rescue / second-opinion recovery, especially after user feedback like 'still wrong' or after several unsuccessful local attempts. " +
+			"Include the original goal, the current interpretation, failed attempts, constraints, and concrete evidence so the fresh helper can avoid repeating your mistakes.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"reason": map[string]any{
+					"type":        "string",
+					"description": "Why recovery is needed now. Be concrete about the suspected wrong assumption or repeated failure.",
+				},
+				"original_goal": map[string]any{
+					"type":        "string",
+					"description": "The user's original intent or latest task contract, as neutrally as possible.",
+				},
+				"current_understanding": map[string]any{
+					"type":        "string",
+					"description": "Your current best understanding before recovery, including uncertainty.",
+				},
+				"ask": map[string]any{
+					"type":        "string",
+					"description": "The exact task for the fresh helper to perform.",
+				},
+				"failed_attempts": map[string]any{
+					"type":        "array",
+					"description": "Specific approaches already tried or now considered low-confidence, with why they did not work.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"constraints": map[string]any{
+					"type":        "array",
+					"description": "User, repo, product, safety, or verification constraints the helper must preserve.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"evidence": map[string]any{
+					"type":        "array",
+					"description": "Important evidence already observed: files, errors, tests, logs, or facts. Prefer references over long raw output.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"mode": map[string]any{
+					"type":        "string",
+					"enum":        []string{"recover", "diagnose", "fix", "review"},
+					"description": "Optional recovery mode. Defaults to recover.",
+				},
+				"timeout_ms": map[string]any{
+					"type":        "integer",
+					"description": "Optional maximum wait time for the helper. Defaults to 600000 and is capped at 1200000.",
+				},
+			},
+		},
+	}
+}
+
+func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	if t.env.AgentControl == nil {
+		return "", errors.New("helpme: agent control not configured (this build does not support sub-agents)")
+	}
+	if currentAgentPath(t.env) != agentthread.RootPath {
+		return "", errors.New("helpme is only available to the main agent")
+	}
+	var args helpMeArgs
+	if err := decodeArgs(argsJSON, &args); err != nil {
+		return "", err
+	}
+
+	history := agent.HistoryFromContext(ctx)
+	originalGoal := helpMeFirstNonEmpty(args.OriginalGoal, latestUserGoalFromHistory(history), "Continue the user's current coding task.")
+	ask := helpMeFirstNonEmpty(args.Ask, originalGoal)
+	reason := strings.TrimSpace(args.Reason)
+	if reason == "" {
+		reason = "The main agent requested a fresh-context recovery."
+	}
+	mode := strings.ToLower(strings.TrimSpace(args.Mode))
+	if mode == "" {
+		mode = "recover"
+	}
+	timeout := helpMeTimeout(args.TimeoutMS)
+	prompt := buildHelpMePrompt(helpMePromptInput{
+		Mode:                 mode,
+		Reason:               reason,
+		OriginalGoal:         originalGoal,
+		CurrentUnderstanding: strings.TrimSpace(args.CurrentUnderstanding),
+		Ask:                  ask,
+		FailedAttempts:       trimStringSlice(args.FailedAttempts),
+		Constraints:          trimStringSlice(args.Constraints),
+		Evidence:             trimStringSlice(args.Evidence),
+	})
+
+	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    deriveAgentTaskName("helpme_recovery"),
+		Description: "HelpMe recovery",
+		Prompt:      prompt,
+		ParentID:    strings.TrimSpace(t.env.AgentID),
+		ParentPath:  currentAgentPath(t.env),
+		Synchronous: true,
+		Timeout:     timeout,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	report, reportOK := t.env.AgentControl.AgentReportDetailsForTask(result.AgentID)
+	response := helpMeResponse{
+		Action:        "helpme",
+		Status:        result.Status,
+		Mode:          mode,
+		AgentID:       result.AgentID,
+		AgentPath:     result.AgentPath,
+		Result:        result.Result,
+		ResultPath:    result.ResultPath,
+		Error:         result.Error,
+		ReportMissing: !reportOK,
+		NextSteps:     result.NextSteps,
+	}
+	if reportOK {
+		response.Report = &report
+	}
+	mainTracePath, err := writeHelpMeMainTrace(t.env, history, args, result, response.Report, reportOK)
+	if err != nil {
+		return "", err
+	}
+	response.MainTracePath = mainTracePath
+
+	if subagent.Status(result.Status) == subagent.StatusCompleted {
+		parentEvidence := trimStringSlice(args.Evidence)
+		if mainTracePath != "" {
+			parentEvidence = append(parentEvidence, "Main pre-HelpMe trace: "+mainTracePath)
+		}
+		artifacts := trimStringSlice(report.Artifacts)
+		if mainTracePath != "" {
+			artifacts = append(artifacts, mainTracePath)
+		}
+		compactInput := compact.HelpMeJointCompactInput{
+			OriginalGoal:         originalGoal,
+			CurrentUnderstanding: args.CurrentUnderstanding,
+			Ask:                  ask,
+			Reason:               reason,
+			Constraints:          args.Constraints,
+			FailedAttempts:       args.FailedAttempts,
+			Evidence:             parentEvidence,
+			HelperStatus:         result.Status,
+			HelperAgentID:        result.AgentID,
+			HelperAgentPath:      result.AgentPath,
+			HelperResult:         result.Result,
+			HelperResultPath:     result.ResultPath,
+			HelperReportPath:     report.ReportPath,
+			HelperError:          result.Error,
+			ReportOutcome:        report.Outcome,
+			ReportSummary:        report.Summary,
+			ChangedFiles:         report.ChangedFiles,
+			WorkDone:             report.WorkDone,
+			Blockers:             report.Blockers,
+			Risks:                helpMeRisks(report.Risks, reportOK),
+			Verification:         report.Verification,
+			ReportEvidence:       helpMeEvidenceStrings(report.Evidence),
+			NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
+			Artifacts:            artifacts,
+		}
+		content := compact.BuildHelpMeJointCompactContent(compactInput)
+		response.HistoryRewrite = &compact.HelpMeHistoryRewrite{
+			Kind:         compact.HelpMeHistoryRewriteKind,
+			Content:      content,
+			AgentID:      result.AgentID,
+			AgentPath:    result.AgentPath,
+			ResultPath:   result.ResultPath,
+			ReportPath:   report.ReportPath,
+			TraceSummary: "Main history was replaced by HelpMe joint compact; raw main trace is available via main_trace_path, and helper trace is available via agent_path, result_path, and report_path.",
+		}
+	}
+
+	out, err := json.Marshal(response)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+type helpMeResponse struct {
+	Action         string                           `json:"action"`
+	Status         string                           `json:"status"`
+	Mode           string                           `json:"mode,omitempty"`
+	AgentID        string                           `json:"agent_id,omitempty"`
+	AgentPath      string                           `json:"agent_path,omitempty"`
+	Result         string                           `json:"result,omitempty"`
+	ResultPath     string                           `json:"result_path,omitempty"`
+	MainTracePath  string                           `json:"main_trace_path,omitempty"`
+	Error          string                           `json:"error,omitempty"`
+	Report         *agentcontrol.AgentReportDetails `json:"report,omitempty"`
+	ReportMissing  bool                             `json:"report_missing,omitempty"`
+	NextSteps      []string                         `json:"next_steps,omitempty"`
+	HistoryRewrite *compact.HelpMeHistoryRewrite    `json:"history_rewrite,omitempty"`
+}
+
+type helpMeArgs struct {
+	Mode                 string   `json:"mode"`
+	Reason               string   `json:"reason"`
+	OriginalGoal         string   `json:"original_goal"`
+	CurrentUnderstanding string   `json:"current_understanding"`
+	Ask                  string   `json:"ask"`
+	FailedAttempts       []string `json:"failed_attempts"`
+	Constraints          []string `json:"constraints"`
+	Evidence             []string `json:"evidence"`
+	TimeoutMS            int      `json:"timeout_ms"`
+}
+
+type helpMePromptInput struct {
+	Mode                 string
+	Reason               string
+	OriginalGoal         string
+	CurrentUnderstanding string
+	Ask                  string
+	FailedAttempts       []string
+	Constraints          []string
+	Evidence             []string
+}
+
+func buildHelpMePrompt(input helpMePromptInput) string {
+	var b strings.Builder
+	b.WriteString("# HelpMe Recovery Brief\n\n")
+	b.WriteString("You are a fresh general-purpose helper agent. The parent agent may be stuck in a wrong assumption or polluted context. Re-read the repository/runtime evidence yourself and do not inherit the parent agent's plan by default.\n\n")
+	b.WriteString("Before your final answer, call agent_report exactly once with outcome, summary, changed_files, work_done, blockers, risks, verification, next_steps, and evidence/artifacts that let the parent verify your handoff.\n\n")
+	writeHelpMePromptField(&b, "Mode", input.Mode)
+	writeHelpMePromptField(&b, "Why recovery was triggered", input.Reason)
+	writeHelpMePromptField(&b, "Original user goal", input.OriginalGoal)
+	writeHelpMePromptField(&b, "Parent's current understanding", input.CurrentUnderstanding)
+	writeHelpMePromptList(&b, "Failed or low-confidence parent attempts", input.FailedAttempts)
+	writeHelpMePromptList(&b, "Constraints to preserve", input.Constraints)
+	writeHelpMePromptList(&b, "Evidence already observed", input.Evidence)
+	writeHelpMePromptField(&b, "Your task", input.Ask)
+	b.WriteString("Work in the current repository unless the evidence shows the task is only diagnostic. If you change files, keep the change scoped and run the most relevant verification you can.\n")
+	return strings.TrimSpace(b.String())
+}
+
+func writeHelpMePromptField(b *strings.Builder, label, value string) {
+	if value = strings.TrimSpace(value); value != "" {
+		fmt.Fprintf(b, "## %s\n%s\n\n", label, value)
+	}
+}
+
+func writeHelpMePromptList(b *strings.Builder, label string, values []string) {
+	values = trimStringSlice(values)
+	if len(values) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "## %s\n", label)
+	for _, value := range values {
+		fmt.Fprintf(b, "- %s\n", value)
+	}
+	b.WriteByte('\n')
+}
+
+func helpMeTimeout(timeoutMS int) time.Duration {
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	maxTimeout := 20 * time.Minute
+	if timeout > maxTimeout {
+		return maxTimeout
+	}
+	return timeout
+}
+
+func writeHelpMeMainTrace(env *Env, history []providers.ChatMessage, args helpMeArgs, result *agentcontrol.SpawnResult, report *agentcontrol.AgentReportDetails, reportOK bool) (string, error) {
+	if env == nil || strings.TrimSpace(env.SessionDir) == "" {
+		return "", nil
+	}
+	dir := filepath.Join(env.SessionDir, "helpme")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("helpme: create trace dir: %w", err)
+	}
+	now := time.Now().UTC()
+	path := filepath.Join(dir, fmt.Sprintf("%d-main-trace.json", now.UnixNano()))
+	payload := struct {
+		SchemaVersion string                           `json:"schema_version"`
+		CreatedAt     time.Time                        `json:"created_at"`
+		ParentAgentID string                           `json:"parent_agent_id,omitempty"`
+		ParentPath    string                           `json:"parent_path,omitempty"`
+		Args          helpMeArgs                       `json:"args"`
+		MainHistory   []providers.ChatMessage          `json:"main_history"`
+		HelperResult  *agentcontrol.SpawnResult        `json:"helper_result,omitempty"`
+		Report        *agentcontrol.AgentReportDetails `json:"report,omitempty"`
+		ReportMissing bool                             `json:"report_missing,omitempty"`
+	}{
+		SchemaVersion: "wuu/helpme-main-trace/v0.1",
+		CreatedAt:     now,
+		ParentAgentID: strings.TrimSpace(env.AgentID),
+		ParentPath:    currentAgentPath(env),
+		Args:          args,
+		MainHistory:   providers.CloneChatMessages(history),
+		HelperResult:  result,
+		Report:        report,
+		ReportMissing: !reportOK,
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("helpme: encode trace: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", fmt.Errorf("helpme: write trace: %w", err)
+	}
+	return helpMeSessionRef(env.SessionDir, path), nil
+}
+
+func helpMeSessionRef(sessionDir, path string) string {
+	sessionDir = strings.TrimSpace(sessionDir)
+	path = strings.TrimSpace(path)
+	if sessionDir == "" || path == "" {
+		return path
+	}
+	rel, err := filepath.Rel(sessionDir, path)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return path
+	}
+	return "$SESSION_DIR/" + filepath.ToSlash(rel)
+}
+
+func latestUserGoalFromHistory(history []providers.ChatMessage) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		msg := history[i]
+		if msg.Role != "user" || wuucontext.IsSystemReminder(msg.Name, msg.Content) || wuucontext.IsAgentNotification(msg.Name, msg.Content) {
+			continue
+		}
+		if content := strings.TrimSpace(msg.DisplayContent); content != "" {
+			return content
+		}
+		if content := strings.TrimSpace(msg.Content); content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+func helpMeRisks(risks []string, reportOK bool) []string {
+	out := trimStringSlice(risks)
+	if !reportOK {
+		out = append(out, "Helper completed without a structured agent_report; rely on result_path and verify before broad follow-up.")
+	}
+	return out
+}
+
+func helpMeEvidenceStrings(evidence []agentcontrol.ReportEvidence) []string {
+	out := make([]string, 0, len(evidence))
+	for _, ref := range evidence {
+		var parts []string
+		if ref.Type != "" {
+			parts = append(parts, ref.Type)
+		}
+		if ref.Path != "" {
+			path := ref.Path
+			if ref.Line > 0 {
+				path = fmt.Sprintf("%s:%d", path, ref.Line)
+			}
+			parts = append(parts, path)
+		}
+		if ref.Command != "" {
+			parts = append(parts, ref.Command)
+		}
+		if ref.Output != "" {
+			parts = append(parts, ref.Output)
+		}
+		if ref.Note != "" {
+			parts = append(parts, ref.Note)
+		}
+		if len(parts) > 0 {
+			out = append(out, strings.Join(parts, " - "))
+		}
+	}
+	return out
+}
+
+func helpMeFirstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func helpMeFirstNonEmptySlice(values ...[]string) []string {
+	for _, value := range values {
+		if trimmed := trimStringSlice(value); len(trimmed) > 0 {
+			return trimmed
+		}
+	}
+	return nil
 }
 
 func deriveAgentTaskName(description string) string {

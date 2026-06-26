@@ -42,6 +42,51 @@ type AgentReportResult struct {
 	Artifacts  []string `json:"artifacts,omitempty"`
 }
 
+type AgentReportDetails struct {
+	Outcome      string           `json:"outcome,omitempty"`
+	Summary      string           `json:"summary,omitempty"`
+	ChangedFiles []string         `json:"changed_files,omitempty"`
+	WorkDone     []string         `json:"work_done,omitempty"`
+	Blockers     []string         `json:"blockers,omitempty"`
+	Risks        []string         `json:"risks,omitempty"`
+	Verification []string         `json:"verification,omitempty"`
+	NextSteps    []string         `json:"next_steps,omitempty"`
+	Evidence     []ReportEvidence `json:"evidence,omitempty"`
+	Artifacts    []string         `json:"artifacts,omitempty"`
+	ReportPath   string           `json:"report_path,omitempty"`
+}
+
+func (c *AgentControl) AgentReportDetailsForTask(taskID string) (AgentReportDetails, bool) {
+	report, ok := c.harnessReportDetailsForTask(taskID)
+	if !ok {
+		return AgentReportDetails{}, false
+	}
+	evidence := make([]ReportEvidence, 0, len(report.Evidence))
+	for _, ref := range report.Evidence {
+		evidence = append(evidence, ReportEvidence{
+			Type:    ref.Type,
+			Path:    ref.Path,
+			Line:    ref.Line,
+			Command: ref.Command,
+			Output:  ref.Output,
+			Note:    ref.Note,
+		})
+	}
+	return AgentReportDetails{
+		Outcome:      report.Outcome,
+		Summary:      report.Summary,
+		ChangedFiles: trimStringSlice(report.ChangedFiles),
+		WorkDone:     trimStringSlice(report.WorkDone),
+		Blockers:     trimStringSlice(report.Blockers),
+		Risks:        trimStringSlice(report.Risks),
+		Verification: trimStringSlice(report.Verification),
+		NextSteps:    trimStringSlice(report.NextSteps),
+		Evidence:     evidence,
+		Artifacts:    c.sessionArtifactRefs(report.Artifacts),
+		ReportPath:   c.sessionArtifactRef(report.ReportPath),
+	}, true
+}
+
 func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentReportRequest) (AgentReportResult, error) {
 	if c == nil || c.harnessStore == nil {
 		return AgentReportResult{}, errors.New("agent_report: harness store not configured")

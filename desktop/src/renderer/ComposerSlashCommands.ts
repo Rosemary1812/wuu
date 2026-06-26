@@ -115,6 +115,17 @@ export function buildComposerSlashCommands({
       disabledReason: needsRuntime
     },
     {
+      id: "helpme",
+      name: "helpme",
+      title: "HelpMe 求助",
+      description: "让 fresh 子 agent 重新理解，并自动压缩上下文",
+      tag: "Agent",
+      kind: "prompt",
+      aliases: ["rescue", "handoff"],
+      keywords: ["stuck", "retry", "rescue", "求助", "卡住", "魂穿", "交接"],
+      disabledReason: needsRuntime
+    },
+    {
       id: "test",
       name: "test",
       title: "补测试",

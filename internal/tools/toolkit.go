@@ -243,6 +243,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewUpdatePlanTool(e),
 		// Agent orchestration
 		NewSpawnAgentTool(e),
+		NewHelpMeTool(e),
 		NewSendAgentMessageTool(e),
 		NewFollowupTaskTool(e),
 		NewWaitAgentTool(e),
