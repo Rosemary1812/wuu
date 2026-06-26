@@ -170,23 +170,6 @@
   box-sizing: border-box;
 }
 
-/* Shared outer rhythm + 12-col grid for the session views.
-   Both the empty-session welcome (.empty-home-inner) and the historical
-   conversation (.conversation-width) apply this class so their outer
-   width, horizontal padding, and column tracks stay aligned when
-   switching between views. View-specific rules (vertical padding,
-   row-gap, justify-items, position, contain, ...) stay in the view
-   classes themselves. */
-.session-flow {
-  display: grid;
-  width: 100%;
-  max-width: var(--conversation-flow-width);
-  padding-inline: var(--conversation-flow-padding-inline);
-  grid-template-columns: repeat(var(--wuu-grid-cols), minmax(0, 1fr));
-  column-gap: var(--wuu-grid-gutter);
-  margin-inline: auto;
-}
-
 @keyframes menu-enter {
   from {
     opacity: 0;

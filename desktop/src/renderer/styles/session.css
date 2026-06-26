@@ -1,0 +1,35 @@
+/* Session design tokens + shared layout class.
+ *
+ * This file is the SINGLE source of truth for session-level design tokens.
+ * Touch ONLY this file (and nothing else) when adjusting:
+ *   - Session outer width                  (--session-outer-width)
+ *   - Session horizontal padding rhythm    (--session-outer-padding-inline)
+ *   - Composer dialog width                (--session-composer-width)
+ *   - Composer dialog corner radius        (--session-composer-radius)
+ *
+ * Both the empty-session welcome (.empty-home-inner) and the historical
+ * conversation (.conversation-width) consume these tokens via the
+ * .session-flow class. View-specific rules (vertical padding, row-gap,
+ * justify-items, contain, position, ...) stay in the view classes.
+ */
+
+:root {
+  --session-outer-width: 864px;
+  --session-outer-padding-inline: 68px;
+  --session-composer-width: 740px;
+  --session-composer-radius: 18px;
+}
+
+/* Shared outer rhythm + 12-col grid for the session views.
+ * Applied via className on .empty-home-inner and .conversation-width
+ * so their outer width, horizontal padding, and column tracks stay
+ * aligned when switching between empty and populated sessions. */
+.session-flow {
+  display: grid;
+  width: 100%;
+  max-width: var(--session-outer-width);
+  padding-inline: var(--session-outer-padding-inline);
+  grid-template-columns: repeat(var(--wuu-grid-cols), minmax(0, 1fr));
+  column-gap: var(--wuu-grid-gutter);
+  margin-inline: auto;
+}

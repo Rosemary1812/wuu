@@ -7,18 +7,18 @@
   --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
+  /* Conversation-only tokens. Shared session-level tokens
+     (outer width, horizontal padding, composer width/radius) live in
+     session.css at :root — change them there and nothing else. */
   --conversation-readable-width: 864px;
-  --conversation-flow-width: var(--conversation-readable-width);
-  --conversation-flow-padding-inline: 68px;
   --conversation-content-width: calc(
-    var(--conversation-flow-width) - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline)
+    var(--session-outer-width) - var(--session-outer-padding-inline) -
+      var(--session-outer-padding-inline)
   );
   --conversation-message-max-width: 656px;
   --conversation-message-max-inline: 83%;
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
-  --conversation-dialog-width: 740px;
-  --conversation-dialog-radius: 18px;
   --conversation-message-font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Microsoft YaHei UI",

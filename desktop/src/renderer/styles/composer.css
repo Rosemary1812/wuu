@@ -47,9 +47,9 @@
 .composer-stack {
   display: flex;
   width: min(
-    var(--conversation-dialog-width),
+    var(--session-composer-width),
     calc(
-      100% - var(--conversation-flow-padding-inline) - var(--conversation-flow-padding-inline) -
+      100% - var(--session-outer-padding-inline) - var(--session-outer-padding-inline) -
         var(--conversation-scrollbar-gutter)
     )
   );
@@ -72,7 +72,7 @@
 .composer-frame {
   position: relative;
   width: 100%;
-  border-radius: var(--conversation-dialog-radius, var(--radius-sm));
+  border-radius: var(--session-composer-radius, var(--radius-sm));
   background: var(--paper);
   box-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
   overflow: hidden;
@@ -89,7 +89,7 @@
 }
 
 .hero-composer-wrap .composer-frame {
-  border-radius: var(--conversation-dialog-radius, var(--radius-sm));
+  border-radius: var(--session-composer-radius, var(--radius-sm));
   background: var(--paper);
   box-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
 }
@@ -104,7 +104,7 @@
    empty-home-inner's outer padding), which is the price of matching
    the dock composer exactly. */
 .hero-composer-wrap .composer-stack {
-  width: var(--conversation-dialog-width);
+  width: var(--session-composer-width);
 }
 
 .composer {

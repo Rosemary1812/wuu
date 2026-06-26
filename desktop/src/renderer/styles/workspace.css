@@ -2164,7 +2164,7 @@
 
 .conversation-grid-guides {
   position: absolute;
-  inset: 0 var(--conversation-flow-padding-inline);
+  inset: 0 var(--session-outer-padding-inline);
   z-index: 40;
   pointer-events: none;
 }
