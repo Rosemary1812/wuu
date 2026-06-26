@@ -107,25 +107,11 @@ export function SkillsCatalog({
 
       {state.error ? <div className="skills-catalog-error">{state.error}</div> : null}
 
-      <div className="skills-grid">
+      <div className="skills-list">
         {visibleSkills.map((skill) => (
-          <article key={`${skill.source}:${skill.name}`} className="skill-card">
-            <div className="skill-card-main">
-              <div className="skill-card-title-row">
-                <h2>/{skill.name}</h2>
-                <span className={`skill-source ${sourceClass(skill.source)}`}>{sourceLabel(skill.source)}</span>
-              </div>
-              <p>{skill.description || skill.when_to_use || "无描述"}</p>
-            </div>
-            <div className="skill-card-meta">
-              {skill.argument_hint ? <span>{skill.argument_hint}</span> : null}
-              {skill.model ? <span>{skill.model}</span> : null}
-              {skill.context ? <span>{skill.context}</span> : null}
-              {skill.paths?.length ? <span>{skill.paths[0]}</span> : null}
-            </div>
-            <footer className="skill-card-footer">
-              <span className="skill-card-path">{skill.path ? shortPath(skill.path) : sourceLabel(skill.source)}</span>
-            </footer>
+          <article key={`${skill.source}:${skill.name}`} className="skill-row">
+            <h2>/{skill.name}</h2>
+            <p>{skill.description || skill.when_to_use || "无描述"}</p>
           </article>
         ))}
       </div>
@@ -160,28 +146,6 @@ function sourceRank(source: string): number {
     default:
       return 3;
   }
-}
-
-function sourceLabel(source: string): string {
-  switch (source) {
-    case "bundled":
-      return "内置";
-    case "project":
-      return "项目";
-    case "user":
-      return "用户";
-    default:
-      return source || "未知";
-  }
-}
-
-function sourceClass(source: string): string {
-  return source === "bundled" || source === "project" || source === "user" ? source : "other";
-}
-
-function shortPath(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.slice(-3).join("/");
 }
 
 function runtimeContextKey(context: RuntimeContext): string {
