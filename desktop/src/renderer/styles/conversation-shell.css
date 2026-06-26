@@ -818,9 +818,9 @@
 .conversation-turn-rail {
   position: absolute;
   left: 0;
-  top: 64px;
-  bottom: 16px;
-  width: 44px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
