@@ -35,9 +35,11 @@ This section exists to preserve the default coding-agent loop: inspect, change, 
 
 This section exists because the prior Wuu prompt over-weighted minimal edits. It prevents the model from treating greenfield product work as a tiny patch, while still protecting existing code from broad rewrites. The Codex source is the "Ambition vs. precision" section in `default.md`. The Wuu alignment point is the product-stage guidance in `AGENTS.md`: ship coherent user-facing behavior, but avoid unrelated changes.
 
-### Section 6: Orchestration
+### Section 6: Orchestration (main-only)
 
-This section exists to map work size and risk to actual Wuu paths: Direct, Skill, `update_plan`, `create_goal`, `start_workflow`, `spawn_agent`, and `write_memory`/`read_memory`. It prevents forced durable state for simple work and prevents missing durable state for work that must survive context loss. The Codex source is the path-selection pattern in `default.md`, adapted to Wuu's tool names. The Wuu alignment points are `internal/tools/tool_goal.go`, `internal/tools/tool_plan.go`, workflow tools, sub-agent tools, and memory-provider-gated memory tools.
+This section exists to map work size and risk to actual Wuu paths: Direct, Skill, `update_plan`, `create_goal`, `start_workflow`, `spawn_agent`, `helpme`, and `write_memory`/`read_memory`. It prevents forced durable state for simple work and prevents missing durable state for work that must survive context loss. The Codex source is the path-selection pattern in `default.md`, adapted to Wuu's tool names. The Wuu alignment points are `internal/tools/tool_goal.go`, `internal/tools/tool_plan.go`, workflow tools, sub-agent tools, the helpme recovery tool at `internal/tools/tool_agents.go::HelpMeTool`, and memory-provider-gated memory tools.
+
+Because every tool and durable-state concept listed here is main-agent only (`helpme` is gated to the root agent at `internal/tools/tool_agents.go:288-289`; `update_plan`, `create_goal`, `start_workflow`, `spawn_agent`, and `write_memory`/`read_memory` are not on the subagent's tool surface), this section lives in `prompts/system_main.md` rather than `prompts/system.md`. `config.DefaultSystemPrompt()` joins base plus main for the main agent's prompt, and `config.WorkerSystemPrompt()` returns only base for spawned subagents, so workers never see this section in their system prompt. The build wiring is `internal/runtime/session.go::buildProfileWorkerBasePrompt` and the `WorkerSysPrompt` fields in `internal/runtime/session.go:252` and `:605`.
 
 ### Section 7: Validating your work
 

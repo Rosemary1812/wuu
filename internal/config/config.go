@@ -707,9 +707,21 @@ func Default() Config {
 	}
 }
 
-// DefaultSystemPrompt returns wuu's built-in base behavior prompt. It is not
-// serialized into config files; user config is appended separately.
+// DefaultSystemPrompt returns wuu's built-in base behavior prompt for the
+// main agent. It combines the universal base sections with the main-only
+// orchestration path-selection map. It is not serialized into config files;
+// user config is appended separately.
 func DefaultSystemPrompt() string {
+	return prompts.System() + "\n\n" + prompts.SystemMain()
+}
+
+// WorkerSystemPrompt returns the system prompt used to seed spawned
+// subagents. It contains only the universal base sections; the main-only
+// orchestration map is excluded because the tools and durable state
+// concepts listed there (update_plan, create_goal, start_workflow,
+// spawn_agent, helpme, write_memory, read_memory) are not part of a
+// worker's tool surface.
+func WorkerSystemPrompt() string {
 	return prompts.System()
 }
 

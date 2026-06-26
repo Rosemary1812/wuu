@@ -231,6 +231,7 @@ func NewSession(opts Options) (*Session, error) {
 		workerToolProviderName := roleSelections.Worker.RuleProvider
 		workerToolModeModel := roleSelections.Worker.APIModel
 		workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
+		workerBaseSystemPrompt := buildBaseSystemPrompt(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
@@ -249,7 +250,7 @@ func NewSession(opts Options) (*Session, error) {
 			HistoryDir:      "",
 			FailureSink:     loopSink,
 			ReportSink:      loopSink,
-			WorkerSysPrompt: baseSystemPrompt,
+			WorkerSysPrompt: workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 			},
@@ -589,6 +590,27 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 			workerToolProviderName := s.ModelRoles.Worker.RuleProvider
 			workerToolModeModel := workerModel
 			workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
+			var workerProfileMemoryEntries []memstore.Entry
+			workerProfileMemoryEnabled := false
+			if s.Toolkit != nil && s.Toolkit.Memory() != nil {
+				workerProfileMemoryEnabled = true
+				workerProfileMemoryEntries = recallProfileMemory(context.Background(), s.Toolkit.Memory())
+			}
+			workerBaseSystemPrompt := buildBaseSystemPrompt(
+				s.RootDir,
+				config.WorkerSystemPrompt(),
+				s.UserSystemPrompt,
+				workerToolProviderName,
+				workerToolModeModel,
+				workerToolSurface,
+				s.Memory,
+				workerProfileMemoryEntries,
+				workerProfileMemoryEnabled,
+				s.ProfileMemoryCharLimit,
+				s.ProfileUserMemoryCharLimit,
+				s.Skills,
+				s.Workflows,
+			)
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:          workerClient,
 				DefaultModel:    workerModel,
@@ -602,7 +624,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				HarnessDir:      filepath.Join(artifactDir, "harness"),
 				FailureSink:     loopSink,
 				ReportSink:      loopSink,
-				WorkerSysPrompt: s.BaseSystemPrompt,
+				WorkerSysPrompt: workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
 				},
@@ -1399,7 +1421,7 @@ func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, pro
 		}
 		entries = recallProfileMemory(context.Background(), provider)
 	}
-	return buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, entries, enabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
+	return buildBaseSystemPrompt(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, entries, enabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {

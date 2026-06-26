@@ -1668,6 +1668,64 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 	}
 }
 
+// TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration locks in the
+// split between prompts.System() (base sections shared with workers) and
+// prompts.SystemMain() (the Orchestration path-selection map that lives only
+// in the main agent's prompt). The Orchestration section lists tools that
+// are not on a worker's tool surface (update_plan, create_goal,
+// start_workflow, spawn_agent, helpme, write_memory, read_memory); if it
+// leaked into a worker's system prompt the model would be told to call
+// tools it does not have.
+func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T) {
+	surface := compiledSurfaceForProviderModel("openai", "gpt-5")
+
+	mainPrompt := buildBaseSystemPrompt(
+		t.TempDir(),
+		config.DefaultSystemPrompt(),
+		"",
+		"openai",
+		"gpt-5",
+		surface,
+		nil, nil, false, 0, 0, nil, nil,
+	)
+	workerPrompt := buildBaseSystemPrompt(
+		t.TempDir(),
+		config.WorkerSystemPrompt(),
+		"",
+		"openai",
+		"gpt-5",
+		surface,
+		nil, nil, false, 0, 0, nil, nil,
+	)
+
+	for _, want := range []string{
+		"# Orchestration",
+		"- helpme:",
+		"- update_plan:",
+		"- create_goal:",
+		"- start_workflow:",
+		"- spawn_agent:",
+	} {
+		if !strings.Contains(mainPrompt, want) {
+			t.Fatalf("main agent prompt must contain %q; got prompt:\n%s", want, mainPrompt)
+		}
+	}
+	for _, banned := range []string{
+		"# Orchestration",
+		"- helpme:",
+		"- update_plan:",
+		"- create_goal:",
+		"- start_workflow:",
+		"- spawn_agent:",
+		"- write_memory",
+		"- read_memory",
+	} {
+		if strings.Contains(workerPrompt, banned) {
+			t.Fatalf("worker prompt must not contain main-only guidance %q; got prompt:\n%s", banned, workerPrompt)
+		}
+	}
+}
+
 func TestResolveInputWindow_CapsCodexSubscriptionGPT5(t *testing.T) {
 	got := ResolveInputWindow("gpt-5.5", config.ProviderConfig{
 		Type:  "openai-codex",
