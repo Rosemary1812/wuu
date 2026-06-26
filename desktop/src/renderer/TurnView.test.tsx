@@ -28,6 +28,15 @@ function makeCommentary(text: string): ThreadItem {
   };
 }
 
+function makeError(error: string): ThreadItem {
+  return {
+    id: "error-1",
+    type: "error",
+    status: "failed",
+    error,
+  };
+}
+
 function makeReasoning(text: string, id = "reasoning-1"): ThreadItem {
   return {
     id,
@@ -140,5 +149,18 @@ describe("TurnView", () => {
     });
 
     expect(view.textContent).toContain("思考过程");
+  });
+
+  it("renders one stop notice when a manual interruption also records a cancellation error item", () => {
+    const view = render(
+      makeTurn("interrupted", [
+        makeCommentary("partial progress"),
+        makeError("context canceled"),
+      ]),
+    );
+
+    expect(view.textContent).toContain("partial progress");
+    expect(view.querySelectorAll(".turn-notice")).toHaveLength(1);
+    expect(view.textContent?.match(/已停止/g)).toHaveLength(1);
   });
 });

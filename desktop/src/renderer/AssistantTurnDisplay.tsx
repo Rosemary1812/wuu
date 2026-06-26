@@ -2,6 +2,7 @@ import { type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { streamFieldValue } from "./ThreadItemText";
 import { readableToolActivityCommand } from "./ToolActivityHelpers";
+import { isCancellationMessage } from "./UserFacingErrors";
 
 /**
  * The single, ordered list of items that make up an assistant turn.
@@ -171,6 +172,17 @@ export function buildAssistantTurnDisplay(
         count: group.length,
       });
       index = nextIndex - 1;
+      continue;
+    }
+
+    // The turn-level interruption notice already explains user-initiated
+    // stops. Rendering the matching cancellation error item here would show
+    // the same stop twice in one turn.
+    if (
+      turn.status === "interrupted" &&
+      item.type === "error" &&
+      isCancellationMessage((item.error ?? "").toLowerCase())
+    ) {
       continue;
     }
 
