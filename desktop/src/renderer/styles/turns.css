@@ -3655,7 +3655,6 @@
 }
 
 .rich-code-block {
-  position: relative;
   margin: 8px 0;
   background: #f3f3f0;
   border: 1px solid var(--ink-overlay-6);
@@ -3668,14 +3667,15 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding-top: 28px;
+}
+
+.rich-code-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 6px 12px;
 }
 
 .rich-code-language {
-  position: absolute;
-  top: 8px;
-  left: 12px;
-  z-index: 1;
   font-family: inherit;
   font-size: 10px;
   font-weight: var(--weight-semibold);
@@ -3687,10 +3687,7 @@
 }
 
 .rich-code-copy {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
+  margin-left: auto;
   --message-copy-rest-transform: none;
   width: 24px;
   height: 24px;
@@ -4206,8 +4203,17 @@ pre {
 }
 
 .empty-home-inner {
+  /* Match the conversation flow width so the welcome and historical views
+     share the same column grid lines (12 cols / 24px gutter). Side margins
+     follow the conversation's inline padding so the outer rhythm aligns. */
   display: grid;
-  width: min(var(--wuu-grid-max-width), calc(100% - var(--wuu-grid-margin) - var(--wuu-grid-margin)));
+  width: min(
+    var(--conversation-flow-width),
+    calc(
+      100% - var(--conversation-flow-padding-inline) -
+        var(--conversation-flow-padding-inline)
+    )
+  );
   grid-template-columns: repeat(var(--wuu-grid-cols), minmax(0, 1fr));
   column-gap: var(--wuu-grid-gutter);
   justify-items: center;
