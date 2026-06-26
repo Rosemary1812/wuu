@@ -1557,8 +1557,6 @@ func (s *Server) handleSettingsUsage(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("scan sessions: %w", err))
 	}
-	agg := insight.Aggregate(metas, nil)
-
 	rows, err := insight.CollectTokenUsageRows(sessDir)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("collect usage rows: %w", err))
@@ -1579,7 +1577,7 @@ func (s *Server) handleSettingsUsage(req Request) error {
 		TotalSessions:   totalSessions,
 		GeneratedAt:     now.Format(time.RFC3339Nano),
 		Metrics:         metrics,
-		ModelBreakdowns: agg.ModelBreakdowns,
+		ModelBreakdowns: buildUsageModelBreakdowns(filteredRows),
 		Days:            days,
 		Entries:         entries,
 	}, nil)
@@ -1622,6 +1620,41 @@ func countSessionsInRange(rows []insight.TokenUsageRow, cutoff *time.Time) int {
 		seen[r.SessionID] = struct{}{}
 	}
 	return len(seen)
+}
+
+func buildUsageModelBreakdowns(rows []insight.TokenUsageRow) []insight.ModelUsage {
+	buckets := make(map[string]*insight.ModelUsage)
+	sessionsByBucket := make(map[string]map[string]struct{})
+	for _, r := range rows {
+		key := r.Provider + "|" + r.Model
+		bucket, ok := buckets[key]
+		if !ok {
+			bucket = &insight.ModelUsage{Provider: r.Provider, Model: r.Model}
+			buckets[key] = bucket
+		}
+		bucket.InputTokens += r.InputTokens
+		bucket.OutputTokens += r.OutputTokens
+		bucket.CacheCreationTokens += r.CacheCreationTokens
+		bucket.CacheReadTokens += r.CacheReadTokens
+		if r.SessionID != "" {
+			seen := sessionsByBucket[key]
+			if seen == nil {
+				seen = make(map[string]struct{})
+				sessionsByBucket[key] = seen
+			}
+			seen[r.SessionID] = struct{}{}
+		}
+	}
+
+	breakdowns := make([]insight.ModelUsage, 0, len(buckets))
+	for key, bucket := range buckets {
+		bucket.Sessions = len(sessionsByBucket[key])
+		breakdowns = append(breakdowns, *bucket)
+	}
+	sort.Slice(breakdowns, func(i, j int) bool {
+		return breakdowns[i].TotalContextTokens() > breakdowns[j].TotalContextTokens()
+	})
+	return breakdowns
 }
 
 // aggregateUsageRows is the single source of truth for the desktop

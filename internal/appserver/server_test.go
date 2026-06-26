@@ -5029,6 +5029,7 @@ func remarshal[T any](t *testing.T, value any) T {
 
 func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
+	now := time.Now().UTC()
 
 	sess1, err := session.CreateWithMetadata(rt.SessionDir, "usage-anthropic", rt.RootDir)
 	if err != nil {
@@ -5047,6 +5048,7 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	if err := session.AppendHistoryRecord(rt.SessionDir, sess1.ID, session.HistoryRecord{
 		Role: "meta", Content: "token_usage",
 		Provider: "anthropic", Model: "claude-sonnet-4-6",
+		At:          now.Add(-2 * time.Hour),
 		InputTokens: 100, OutputTokens: 50,
 		CacheCreationTokens: 80, CacheReadTokens: 20,
 	}); err != nil {
@@ -5070,6 +5072,7 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	if err := session.AppendHistoryRecord(rt.SessionDir, sess2.ID, session.HistoryRecord{
 		Role: "meta", Content: "token_usage",
 		Provider: "openai", Model: "gpt-4o",
+		At:          now.Add(-time.Hour),
 		InputTokens: 200, OutputTokens: 100,
 		CacheCreationTokens: 0, CacheReadTokens: 50,
 	}); err != nil {
@@ -5110,6 +5113,61 @@ func TestSettingsUsageAggregatesAcrossSessions(t *testing.T) {
 	}
 	if result.ModelBreakdowns[1].Provider != "anthropic" {
 		t.Fatalf("expected anthropic second, got %q", result.ModelBreakdowns[1].Provider)
+	}
+}
+
+func TestSettingsUsageModelBreakdownsRespectRange(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	now := time.Now().UTC()
+
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "usage-range-models", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []session.HistoryRecord{
+		{Role: "user", Content: "current codex session", At: now.Add(-time.Hour)},
+		{
+			Role: "meta", Content: "token_usage", Provider: "openai-codex", Model: "gpt-5-codex",
+			At: now.Add(-time.Hour), InputTokens: 100, OutputTokens: 20, CacheReadTokens: 300,
+		},
+		{
+			Role: "meta", Content: "token_usage", Provider: "openai", Model: "gpt-4o",
+			At: now.AddDate(0, 0, -20), InputTokens: 900, OutputTokens: 100, CacheReadTokens: 0,
+		},
+	} {
+		if err := session.AppendHistoryRecord(rt.SessionDir, sess.ID, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw, err := json.Marshal(map[string]any{
+		"id":     "1",
+		"method": MethodSettingsUsage,
+		"params": map[string]any{"range": string(SettingsUsageRange7d)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("handleLine: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[SettingsUsageResponse](t, responseByID(t, msgs, "1")["result"])
+	if len(result.ModelBreakdowns) != 1 {
+		t.Fatalf("expected one in-range breakdown, got %d (%+v)", len(result.ModelBreakdowns), result.ModelBreakdowns)
+	}
+	got := result.ModelBreakdowns[0]
+	if got.Provider != "openai-codex" || got.Model != "gpt-5-codex" {
+		t.Fatalf("unexpected model breakdown: %+v", got)
+	}
+	if got.InputTokens != 100 || got.CacheReadTokens != 300 || got.OutputTokens != 20 {
+		t.Fatalf("unexpected model usage totals: %+v", got)
+	}
+	if result.Metrics.PromptTokens != 400 || result.Metrics.CacheReadTokens != 300 || result.Metrics.CacheHitRate != 0.75 {
+		t.Fatalf("unexpected headline usage: %+v", result.Metrics)
 	}
 }
 
