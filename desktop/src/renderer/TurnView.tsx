@@ -5,7 +5,8 @@ import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
-import { TurnNotice, turnNoticeDisplay } from "./TurnNotice";
+import { TurnEventNotice } from "./TurnNotice";
+import { turnEventForTurn } from "./TurnEvents";
 import {
   latestAgentMessageItemID,
   messageFlowAgentMessageItemID,
@@ -97,7 +98,7 @@ export function TurnView({
     turn.id,
     rawAssistantDisplay,
   );
-  const notice = turnNoticeDisplay(turn, turnHasAssistantOutput(turn));
+  const event = turnEventForTurn(turn, turnHasAssistantOutput(turn));
 
   return (
     <section
@@ -120,7 +121,7 @@ export function TurnView({
           onNoticeAction={onNoticeAction}
         />
       ) : null}
-      {notice ? <TurnNotice display={notice} onAction={onNoticeAction} /> : null}
+      {event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null}
     </section>
   );
 }

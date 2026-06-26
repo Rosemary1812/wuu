@@ -1,43 +1,19 @@
 import { AlertCircle, Archive, Info, ShieldCheck, Square } from "lucide-react";
-import type { ThreadItemStatus, Turn } from "../shared/protocol";
-import {
-  isCancellationMessage,
-  userFacingErrorForMessage,
-  type UserFacingErrorAction,
-  type UserFacingErrorDisplay,
-} from "./UserFacingErrors";
+import type { ThreadItemStatus } from "../shared/protocol";
+import type { TurnEventDisplay } from "./TurnEvents";
+import type { UserFacingErrorAction, UserFacingErrorDisplay } from "./UserFacingErrors";
 
-export function turnNoticeDisplay(
-  turn: Turn,
-  hasAssistantOutput: boolean,
-): UserFacingErrorDisplay | undefined {
-  const rawMessage = turn.error?.message;
-  const baseDisplay =
-    turn.status === "interrupted"
-      ? userFacingErrorForMessage("context canceled", "turn")
-      : isCancellationMessage((rawMessage ?? "").toLowerCase())
-        ? userFacingErrorForMessage(rawMessage, "turn")
-        : turn.status === "failed"
-          ? userFacingErrorForMessage(rawMessage, "turn")
-          : undefined;
-  if (!baseDisplay) {
-    return undefined;
+export function TurnEventNotice({
+  event,
+  onAction,
+}: {
+  event: TurnEventDisplay;
+  onAction?: (action: UserFacingErrorAction) => void;
+}): JSX.Element {
+  if (event.presentation === "context_compaction") {
+    return <ContextCompactionNotice text={event.text} status={event.status} />;
   }
-  if (baseDisplay.category === "cancelled") {
-    return {
-      ...baseDisplay,
-      title: hasAssistantOutput ? "回复已中断" : "已停止",
-      detail: hasAssistantOutput
-        ? "已保留已生成内容，可以继续发送消息。"
-        : "这次请求已停止，没有生成回复内容。",
-    };
-  }
-  return {
-    ...baseDisplay,
-    detail: hasAssistantOutput
-      ? `${baseDisplay.detail} 已保留已生成内容。`
-      : baseDisplay.detail,
-  };
+  return <TurnNotice display={event.notice} onAction={onAction} />;
 }
 
 export function TurnNotice({

@@ -15,7 +15,8 @@ import type {
 import { CollapsibleDetails } from "./CollapsibleMotion";
 import { ThreadItemView } from "./ThreadItemView";
 import { LightweightStreamingText } from "./LightweightStreamingText";
-import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
+import { TurnEventNotice } from "./TurnNotice";
+import { turnEventForItem } from "./TurnEvents";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
 import { formatDuration, useLiveNow } from "./TurnProgress";
 import { ProcessSurface } from "./ProcessSurface";
@@ -24,7 +25,6 @@ import {
   turnProgressContent,
 } from "./TurnViewHelpers";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
-import { userFacingErrorForMessage } from "./UserFacingErrors";
 import {
   AUTO_FOLLOW_NESTED_SCROLL_ATTR,
   useAutoFollowScrollContainer,
@@ -464,16 +464,9 @@ function EntryRenderer({
       />
     );
   }
-  if (item.type === "context_compaction") {
-    return <ContextCompactionNotice text={item.text} status={item.status} />;
-  }
-  if (item.type === "error") {
-    return (
-      <TurnNotice
-        display={userFacingErrorForMessage(item.error ?? "", "turn")}
-        onAction={onNoticeAction}
-      />
-    );
+  if (item.type === "context_compaction" || item.type === "error") {
+    const event = turnEventForItem(item);
+    return event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null;
   }
   return null;
 }

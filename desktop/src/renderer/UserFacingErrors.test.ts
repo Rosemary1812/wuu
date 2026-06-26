@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { ThreadItem, Turn } from "../shared/protocol";
+import { turnEventForItem, turnEventForTurn } from "./TurnEvents";
 import { userFacingErrorForMessage } from "./UserFacingErrors";
 
 describe("userFacingErrorForMessage", () => {
@@ -76,5 +78,35 @@ describe("userFacingErrorForMessage", () => {
         }
       }
     });
+  });
+});
+
+describe("TurnEvents", () => {
+  it("maps manual interruption to one user-stopped turn event", () => {
+    const turn: Turn = {
+      id: "turn-1",
+      items: [],
+      items_view: "full",
+      status: "interrupted",
+    };
+
+    const event = turnEventForTurn(turn, false);
+
+    expect(event?.kind).toBe("user_stopped");
+    expect(event?.source).toBe("turn");
+    expect(event?.presentation).toBe("notice");
+  });
+
+  it("maps in-progress compaction to a compaction event instead of an error notice", () => {
+    const item: ThreadItem = {
+      id: "compact-1",
+      type: "context_compaction",
+      status: "in_progress",
+    };
+
+    const event = turnEventForItem(item);
+
+    expect(event?.kind).toBe("context_compacting");
+    expect(event?.presentation).toBe("context_compaction");
   });
 });
