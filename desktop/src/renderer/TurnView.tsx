@@ -30,6 +30,7 @@ export function TurnView({
   onSubmitEditMessage,
   onCollapseComplete,
   onNoticeAction,
+  onOpenFile,
 }: {
   turn: Turn;
   cwd?: string;
@@ -48,6 +49,12 @@ export function TurnView({
   ) => void;
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  /**
+   * Forwarded to `<ThreadItemView>` so file-path chips inside any message
+   * in this turn can request the right-side panel to open the referenced
+   * file. The host (typically App.tsx) wires this to the environment panel.
+   */
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   const actionableAgentMessageID =
     turn.status === "completed"
@@ -84,6 +91,7 @@ export function TurnView({
         onCancelEditMessage={onCancelEditMessage}
         onSubmitEditMessage={onSubmitEditMessage}
         onNoticeAction={onNoticeAction}
+        onOpenFile={onOpenFile}
       />
     );
   }

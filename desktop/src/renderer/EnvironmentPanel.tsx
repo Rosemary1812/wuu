@@ -1,8 +1,11 @@
 import {
   Activity,
+  AlertCircle,
   Check,
   ChevronRight,
   CornerDownRight,
+  FileText,
+  FileX,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -17,7 +20,7 @@ import {
   Terminal,
   X
 } from "lucide-react";
-import { type FormEvent as ReactFormEvent, type RefObject, useState } from "react";
+import { type FormEvent as ReactFormEvent, type RefObject, useEffect, useState } from "react";
 import type {
   DesktopProject,
   GitStatusResult,
@@ -25,10 +28,12 @@ import type {
   ManagedProcess,
   PlanUpdate,
   RuntimeContext,
-  Thread
+  Thread,
+  WorkspaceFileReadResult
 } from "../shared/protocol";
+import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 
-export type EnvironmentPanelMenu = "mode" | "branch" | null;
+export type EnvironmentPanelMenu = "mode" | "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
 
 export type BackgroundProcessItem = {
@@ -119,7 +124,9 @@ export function EnvironmentPanel({
   onOpenCommit,
   onOpenPullRequest,
   onStopBackgroundProcess,
-  onOpenBackgroundPreview
+  onOpenBackgroundPreview,
+  rightPanelFilePath,
+  onCloseFilePreview
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   motionState: EnvironmentPanelMotionState;
@@ -144,7 +151,31 @@ export function EnvironmentPanel({
   onOpenPullRequest: () => void;
   onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
   onOpenBackgroundPreview: (process: BackgroundProcessItem) => void;
+  /**
+   * Absolute path to a workspace file the right panel should preview. When
+   * present together with `activeMenu === "file"`, the panel swaps its
+   * default environment body for a file viewer that reads the file via
+   * `window.wuu.readWorkspaceFile`.
+   */
+  rightPanelFilePath?: string;
+  /**
+   * Invoked when the user closes the file preview from inside the panel.
+   * Falls back to `onClose` (which dismisses the whole panel) when the
+   * caller does not provide a file-specific closer.
+   */
+  onCloseFilePreview?: () => void;
 }): JSX.Element {
+  if (activeMenu === "file" && rightPanelFilePath) {
+    return (
+      <EnvironmentFilePreview
+        filePath={rightPanelFilePath}
+        onClose={onCloseFilePreview ?? onClose}
+        panelRef={panelRef}
+        motionState={motionState}
+      />
+    );
+  }
+
   const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
@@ -641,5 +672,152 @@ function EnvironmentBranchMenu({
       </form>
       {error ? <div className="environment-side-error">{error}</div> : null}
     </div>
+  );
+}
+
+/**
+ * Right-panel body that replaces the default environment panel when
+ * `activeMenu === "file"` and a `rightPanelFilePath` is supplied. Reads the
+ * file via `window.wuu.readWorkspaceFile` and renders loading / error /
+ * binary / text-file states. The header close button falls back to
+ * `onClose` when the caller does not provide a file-specific closer.
+ */
+function EnvironmentFilePreview({
+  filePath,
+  onClose,
+  panelRef,
+  motionState
+}: {
+  filePath: string;
+  onClose: () => void;
+  panelRef: RefObject<HTMLDivElement | null>;
+  motionState: EnvironmentPanelMotionState;
+}): JSX.Element {
+  const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+    setFile(undefined);
+    void window.wuu
+      .readWorkspaceFile(filePath)
+      .then((result) => {
+        if (!cancelled) {
+          setFile(result);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(desktopApiErrorMessage(e, "打开文件失败"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [filePath]);
+
+  let body: JSX.Element;
+  if (loading) {
+    body = (
+      <div className="environment-panel-body">
+        <div className="environment-row environment-file-row">
+          <FileText aria-hidden="true" className="icon-lg" />
+          <strong>正在打开</strong>
+          <span>{filePath}</span>
+        </div>
+      </div>
+    );
+  } else if (error) {
+    body = (
+      <div className="environment-panel-body">
+        <div className="environment-row environment-file-row">
+          <AlertCircle aria-hidden="true" className="icon-lg" />
+          <strong>打开失败</strong>
+          <span>{error}</span>
+          <span className="environment-row-meta">{filePath}</span>
+        </div>
+      </div>
+    );
+  } else if (!file) {
+    body = (
+      <div className="environment-panel-body">
+        <div className="environment-row environment-file-row">
+          <FileText aria-hidden="true" className="icon-lg" />
+          <strong>没有内容</strong>
+          <span>{filePath}</span>
+        </div>
+      </div>
+    );
+  } else if (file.binary) {
+    body = (
+      <div className="environment-panel-body">
+        <div className="environment-row environment-file-row">
+          <FileX aria-hidden="true" className="icon-lg" />
+          <strong>无法预览</strong>
+          <span>{file.path} 是二进制文件</span>
+        </div>
+      </div>
+    );
+  } else {
+    body = (
+      <article className="workspace-file-preview">
+        <header className="workspace-file-preview-header">
+          <div>
+            <strong>{file.path}</strong>
+            <span>
+              {formatBytes(file.size_bytes)}
+              {file.truncated ? " · 仅显示前 512 KB" : ""}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            aria-label="返回环境信息"
+            title="返回"
+          >
+            <ChevronRight aria-hidden="true" className="icon" />
+          </button>
+        </header>
+        <div className="workspace-file-code-scroll">
+          <pre className="workspace-file-code">
+            <code>{file.text}</code>
+          </pre>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <aside
+      ref={panelRef}
+      className={`environment-panel ${motionState}`}
+      aria-label="文件预览"
+      aria-hidden={motionState === "closing" ? true : undefined}
+    >
+      <div className="environment-panel-header">
+        <h2>文件</h2>
+        <div className="environment-panel-actions">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="返回环境信息"
+            title="返回"
+            onClick={onClose}
+          >
+            <X aria-hidden="true" className="icon" />
+          </button>
+        </div>
+      </div>
+      {body}
+    </aside>
   );
 }

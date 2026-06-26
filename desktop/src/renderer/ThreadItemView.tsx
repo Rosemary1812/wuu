@@ -59,6 +59,7 @@ export function ThreadItemView({
   onCancelEditMessage,
   onSubmitEditMessage,
   onNoticeAction,
+  onOpenFile,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -82,6 +83,12 @@ export function ThreadItemView({
     files: InputFile[],
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  /**
+   * Fired when a file-path chip rendered inside the message stream is
+   * activated. The host wires this to the right-side panel so the
+   * referenced file opens in the environment panel's file viewer.
+   */
+  onOpenFile?: (path: string) => void;
 }): JSX.Element | null {
   switch (item.type) {
     case "user_message": {
@@ -122,6 +129,7 @@ export function ThreadItemView({
               images={item.images ?? []}
               files={item.files ?? []}
               cwd={cwd}
+              onOpenFile={onOpenFile}
             />
           )}
           {!editing && (copyable || editable) ? (
@@ -180,6 +188,7 @@ export function ThreadItemView({
               cwd={cwd}
               pendingCompanionReasoning={pendingCompanionReasoning}
               onStreamFrame={onStreamFrame}
+              onOpenFile={onOpenFile}
             />
           </div>
           {reserveActionSlot ? (
@@ -201,6 +210,7 @@ export function ThreadItemView({
             turnID={turnID}
             item={item}
             onStreamFrame={onStreamFrame}
+            onOpenFile={onOpenFile}
           />
         </article>
       );
@@ -226,11 +236,17 @@ function UserMessageBubble({
   images,
   files,
   cwd,
+  onOpenFile,
 }: {
   text: string;
   images: InputImage[];
   files: InputFile[];
   cwd?: string;
+  /**
+   * Forwarded to `<RichContent>` so file-path chips inside user messages
+   * can request the right-side panel to open the referenced file.
+   */
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   const [expandedState, setExpandedState] = useState({
     text,
@@ -256,7 +272,7 @@ function UserMessageBubble({
       {collapsible ? (
         <div className="user-message-raw-query">{displayedText}</div>
       ) : text ? (
-        <RichContent text={text} cwd={cwd} />
+        <RichContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
       ) : null}
       {collapsible ? (
         <button
@@ -557,6 +573,7 @@ function AgentMessageContent({
   cwd,
   pendingCompanionReasoning,
   onStreamFrame,
+  onOpenFile,
 }: {
   turnID: string;
   item: ThreadItem;
@@ -568,6 +585,12 @@ function AgentMessageContent({
    */
   pendingCompanionReasoning?: boolean;
   onStreamFrame: () => void;
+  /**
+   * Forwarded to `<StreamingMarkdown>` so file-path chips inside the
+   * assistant answer can request the right-side panel to open the
+   * referenced file.
+   */
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   // isLive is driven entirely by `item.status`: once the back-end marks
@@ -618,6 +641,7 @@ function AgentMessageContent({
           : "commentary"
       }
       onFrame={onStreamFrame}
+      onOpenFile={onOpenFile}
     />
   );
 }
@@ -626,10 +650,17 @@ function ReasoningContent({
   turnID,
   item,
   onStreamFrame,
+  onOpenFile,
 }: {
   turnID: string;
   item: ThreadItem;
   onStreamFrame: () => void;
+  /**
+   * Forwarded to `<StreamingMarkdown>` so file-path chips inside the
+   * reasoning block can request the right-side panel to open the
+   * referenced file.
+   */
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
   const isLive = item.status === "in_progress";
@@ -648,6 +679,7 @@ function ReasoningContent({
       isLive={isLive}
       phase="commentary"
       onFrame={onStreamFrame}
+      onOpenFile={onOpenFile}
     />
   );
 }

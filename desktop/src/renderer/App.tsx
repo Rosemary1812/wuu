@@ -439,8 +439,11 @@ export function App(): JSX.Element {
     useState(false);
   const [environmentPanelMenu, setEnvironmentPanelMenu] =
     useState<EnvironmentPanelMenu>(null);
+  const [rightPanelFilePath, setRightPanelFilePath] = useState<
+    string | undefined
+  >(undefined);
   const [environmentDialog, setEnvironmentDialog] =
-    useState<EnvironmentDialog>(null);
+    useState<EnvironmentDialog | null>(null);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
     [],
   );
@@ -1290,6 +1293,20 @@ export function App(): JSX.Element {
       setEnvironmentPanelMenu(null);
     }
   }, [environmentPanelMenu, environmentPanelVisible]);
+
+  const handleOpenFileInRightPanel = useCallback(
+    (path: string): void => {
+      setRightPanelFilePath(path);
+      setEnvironmentPanelMenu("file");
+      setRightPanelOpenWithMotion(true);
+    },
+    [setRightPanelOpenWithMotion],
+  );
+
+  const handleCloseFilePreview = useCallback((): void => {
+    setRightPanelFilePath(undefined);
+    setEnvironmentPanelMenu(null);
+  }, []);
 
   useEffect(() => {
     if (queryHistoryDocked) {
@@ -5235,6 +5252,8 @@ export function App(): JSX.Element {
           onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
           onOpenBackgroundPreview={openBackgroundProcessPreview}
           onSelectQueryHistory={handleQueryHistorySelect}
+          rightPanelFilePath={rightPanelFilePath}
+          onCloseFilePreview={handleCloseFilePreview}
         />
 
         {viewContextSwitchPending ? <ViewSwitchLoading /> : null}
@@ -5303,6 +5322,7 @@ export function App(): JSX.Element {
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
+                onOpenFile={handleOpenFileInRightPanel}
               />
             )}
               </>
@@ -5461,6 +5481,11 @@ type CachedConversationPanesProps = {
     files: InputFile[],
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  /**
+   * Forwarded to `<TurnView>` so file-path chips inside any message
+   * can request the right-side panel to open the referenced file.
+   */
+  onOpenFile?: (path: string) => void;
 };
 
 const CachedConversationPanes = memo(function CachedConversationPanes({
@@ -5478,6 +5503,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onCancelEditMessage,
   onSubmitEditMessage,
   onNoticeAction,
+  onOpenFile,
 }: CachedConversationPanesProps): JSX.Element {
   return (
     <div className="cached-conversation-panes">
@@ -5531,6 +5557,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     )
                   }
                   onNoticeAction={onNoticeAction}
+                  onOpenFile={onOpenFile}
                 />
               ))}
             </div>

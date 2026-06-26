@@ -26,6 +26,8 @@ export function EnvironmentSideStack({
   pullRequestDisabledReason,
   queryHistoryDocked,
   queryHistory,
+  rightPanelFilePath,
+  onCloseFilePreview,
   onSetActiveMenu,
   onClose,
   onOpenProject,
@@ -54,6 +56,13 @@ export function EnvironmentSideStack({
   pullRequestDisabledReason: string;
   queryHistoryDocked: boolean;
   queryHistory: QueryHistoryEntry[];
+  /**
+   * Absolute path of the file the right panel should preview. When set
+   * together with `activeMenu === "file"`, the panel swaps to a file
+   * viewer; `onCloseFilePreview` returns it to the default environment view.
+   */
+  rightPanelFilePath?: string;
+  onCloseFilePreview?: () => void;
   onSetActiveMenu: (menu: EnvironmentPanelMenu) => void;
   onClose: () => void;
   onOpenProject: () => void;
@@ -86,6 +95,8 @@ export function EnvironmentSideStack({
         activeMenu={activeMenu}
         running={running}
         pullRequestDisabledReason={pullRequestDisabledReason}
+        rightPanelFilePath={rightPanelFilePath}
+        onCloseFilePreview={onCloseFilePreview}
         onSetActiveMenu={onSetActiveMenu}
         onClose={onClose}
         onOpenProject={onOpenProject}
