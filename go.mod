@@ -14,6 +14,7 @@ require (
 
 require (
 	github.com/charmbracelet/x/etag v0.2.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dlclark/regexp2/v2 v2.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
