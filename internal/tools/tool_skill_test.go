@@ -126,11 +126,13 @@ func TestToolkit_LoadSkillFiltersByActiveSurface(t *testing.T) {
 	if loadSkillDef.Name == "" {
 		t.Fatalf("local/no-shell surface should still expose load_skill for compatible skills, got %v", sortedProfileDefNames(defs))
 	}
-	if strings.Contains(loadSkillDef.Description, "commit") ||
-		strings.Contains(loadSkillDef.Description, "misdeclared-shell") ||
-		strings.Contains(loadSkillDef.Description, "claude-style-shell") ||
-		!strings.Contains(loadSkillDef.Description, "plan") {
-		t.Fatalf("load_skill catalog must hide incompatible skills and keep compatible ones:\n%s", loadSkillDef.Description)
+	if strings.Contains(loadSkillDef.Description, "## Available Skills") ||
+		strings.Contains(loadSkillDef.Description, "commit") ||
+		strings.Contains(loadSkillDef.Description, "plan") {
+		t.Fatalf("load_skill description should not duplicate the skill catalog:\n%s", loadSkillDef.Description)
+	}
+	if names := strings.Join(kit.env.SkillNames(), ","); names != "plan" {
+		t.Fatalf("visible skill filtering must hide incompatible skills and keep compatible ones; names=%v", kit.env.SkillNames())
 	}
 
 	for _, skillName := range []string{"commit", "misdeclared-shell", "claude-style-shell"} {
