@@ -4442,8 +4442,8 @@ func TestToolkit_ToolPolicyContextBlockShowsPermissionBoundary(t *testing.T) {
 	for _, want := range []string{
 		"permission_profile: workspace_write",
 		"boundary: workspace_write",
-		"permission_boundary is checked before command policy and approval",
-		"hard boundary denials cannot be fixed by setting approval flags",
+		"permission_boundary is enforced before policy and approval",
+		"approval flags cannot bypass them",
 	} {
 		if !strings.Contains(block.Content, want) {
 			t.Fatalf("policy block missing %q:\n%s", want, block.Content)
