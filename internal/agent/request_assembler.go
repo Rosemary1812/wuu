@@ -3,6 +3,7 @@ package agent
 import (
 	"strings"
 
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -39,6 +40,7 @@ const (
 // providers.ChatMessage.Hidden with durability, UI visibility, and cache intent.
 type ContextSegment struct {
 	Messages    []providers.ChatMessage
+	Blocks      []wuucontext.Block
 	Lifecycle   ContextSegmentLifecycle
 	Placement   ContextSegmentPlacement
 	CachePolicy ContextSegmentCachePolicy
@@ -59,6 +61,31 @@ func RequestOnlyContextMessages(messages []providers.ChatMessage) []ContextSegme
 func RequestOnlyContextSegment(messages []providers.ChatMessage) ContextSegment {
 	return ContextSegment{
 		Messages:    normalizeRequestOnlyMessages(messages),
+		Lifecycle:   ContextSegmentRequestOnly,
+		Placement:   ContextSegmentAfterHistory,
+		CachePolicy: ContextSegmentVolatile,
+		Durable:     false,
+		VisibleInUI: false,
+	}
+}
+
+// RequestOnlyContextBlocks wraps typed runtime context blocks as volatile
+// request-only context. The segment keeps the typed blocks as the source of
+// truth; ChatMessages are only the provider request projection.
+func RequestOnlyContextBlocks(blocks []wuucontext.Block) []ContextSegment {
+	if len(blocks) == 0 {
+		return nil
+	}
+	return []ContextSegment{RequestOnlyContextBlockSegment(blocks)}
+}
+
+// RequestOnlyContextBlockSegment builds a request-only segment from typed
+// context blocks.
+func RequestOnlyContextBlockSegment(blocks []wuucontext.Block) ContextSegment {
+	copied := append([]wuucontext.Block(nil), blocks...)
+	return ContextSegment{
+		Messages:    requestOnlyMessagesFromBlocks(copied),
+		Blocks:      copied,
 		Lifecycle:   ContextSegmentRequestOnly,
 		Placement:   ContextSegmentAfterHistory,
 		CachePolicy: ContextSegmentVolatile,
@@ -127,6 +154,33 @@ func normalizeRequestOnlyMessages(messages []providers.ChatMessage) []providers.
 		out = append(out, msg)
 	}
 	return out
+}
+
+func requestOnlyMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
+	if len(blocks) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, len(blocks))
+	messages := make([]providers.ChatMessage, 0, len(blocks))
+	for _, block := range blocks {
+		rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
+		if strings.TrimSpace(rendered) == "" {
+			continue
+		}
+		name := wuucontext.SystemReminderBlockMessageName(block, 0)
+		ordinal := counts[name]
+		counts[name] = ordinal + 1
+		if ordinal > 0 {
+			name = wuucontext.SystemReminderBlockMessageName(block, ordinal)
+		}
+		messages = append(messages, providers.ChatMessage{
+			Role:    "user",
+			Name:    name,
+			Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
+			Hidden:  true,
+		})
+	}
+	return messages
 }
 
 func isRequestOnlyAfterHistorySegment(segment ContextSegment) bool {

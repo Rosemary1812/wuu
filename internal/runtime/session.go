@@ -896,35 +896,8 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 				})
 			}
 		}
-		return agent.RequestOnlyContextMessages(hiddenContextMessagesFromBlocks(blocks))
+		return agent.RequestOnlyContextBlocks(blocks)
 	}
-}
-
-func hiddenContextMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
-	if len(blocks) == 0 {
-		return nil
-	}
-	counts := make(map[string]int, len(blocks))
-	messages := make([]providers.ChatMessage, 0, len(blocks))
-	for _, block := range blocks {
-		rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
-		if strings.TrimSpace(rendered) == "" {
-			continue
-		}
-		name := wuucontext.SystemReminderBlockMessageName(block, 0)
-		ordinal := counts[name]
-		counts[name] = ordinal + 1
-		if ordinal > 0 {
-			name = wuucontext.SystemReminderBlockMessageName(block, ordinal)
-		}
-		messages = append(messages, providers.ChatMessage{
-			Role:    "user",
-			Name:    name,
-			Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
-			Hidden:  true,
-		})
-	}
-	return messages
 }
 
 func toolkitContextBlockProvider(toolkit *tools.Toolkit) func() []wuucontext.Block {

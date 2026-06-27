@@ -13,7 +13,8 @@ import (
 
 const requestShapeHashBytes = 16
 
-func requestContextInfo(stepIndex int, messages, dynamicMessages []providers.ChatMessage, tools []providers.ToolDefinition, hint *providers.CacheHint) RequestContextInfo {
+func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []providers.ToolDefinition, hint *providers.CacheHint) RequestContextInfo {
+	messages := assembly.Messages
 	systemMessages := systemMessageCount(messages)
 	stablePrefix := 0
 	promptCacheKey := ""
@@ -50,7 +51,7 @@ func requestContextInfo(stepIndex int, messages, dynamicMessages []providers.Cha
 			info.HiddenMessages++
 		}
 	}
-	for _, msg := range dynamicMessages {
+	for _, msg := range assembly.RequestOnlyMessages {
 		info.DynamicBytes += len([]byte(msg.Content))
 		if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
 			continue
@@ -58,6 +59,22 @@ func requestContextInfo(stepIndex int, messages, dynamicMessages []providers.Cha
 		info.TransientMessages++
 		info.ContentBytes += len([]byte(msg.Content))
 		for _, kind := range systemReminderBlockKinds(msg.Content) {
+			if _, ok := seenKinds[kind]; ok {
+				continue
+			}
+			seenKinds[kind] = struct{}{}
+			info.BlockKinds = append(info.BlockKinds, kind)
+		}
+	}
+	for _, segment := range assembly.Segments {
+		for _, block := range segment.Blocks {
+			if strings.TrimSpace(wuucontext.CompileBlocks([]wuucontext.Block{block})) == "" {
+				continue
+			}
+			kind := strings.TrimSpace(string(block.Kind))
+			if kind == "" {
+				kind = string(wuucontext.BlockAdditionalContext)
+			}
 			if _, ok := seenKinds[kind]; ok {
 				continue
 			}

@@ -1068,6 +1068,70 @@ func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 	}
 }
 
+func TestRequestOnlyContextBlocksOwnTypedBlockProjection(t *testing.T) {
+	block := wuucontext.Block{
+		Kind:    wuucontext.BlockEnvironment,
+		Title:   "Runtime environment",
+		Source:  "runtime.snapshot",
+		Content: "# Environment\n- CWD: /tmp/project",
+	}
+	segments := RequestOnlyContextBlocks([]wuucontext.Block{block})
+	if len(segments) != 1 {
+		t.Fatalf("expected one context segment, got %+v", segments)
+	}
+	segment := segments[0]
+	if segment.Lifecycle != ContextSegmentRequestOnly || segment.Placement != ContextSegmentAfterHistory || segment.CachePolicy != ContextSegmentVolatile || segment.Durable || segment.VisibleInUI {
+		t.Fatalf("unexpected segment policy: %+v", segment)
+	}
+	if len(segment.Blocks) != 1 || segment.Blocks[0].Kind != wuucontext.BlockEnvironment {
+		t.Fatalf("segment should retain typed blocks: %+v", segment)
+	}
+	if len(segment.Messages) != 1 {
+		t.Fatalf("segment should include provider projection: %+v", segment)
+	}
+	msg := segment.Messages[0]
+	if msg.Role != "user" || !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) || !strings.Contains(msg.Content, "[ENVIRONMENT]") {
+		t.Fatalf("unexpected provider projection: %+v", msg)
+	}
+}
+
+func TestRunToolLoop_TypedRequestOnlyBlocksStayOutOfDurableHistory(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	block := wuucontext.Block{
+		Kind:    wuucontext.BlockEnvironment,
+		Title:   "Runtime environment",
+		Source:  "runtime.snapshot",
+		Content: "# Environment\n- CWD: /tmp/project",
+	}
+	var contexts []RequestContextInfo
+	cfg := LoopConfig{
+		Model: "m",
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextBlocks([]wuucontext.Block{block})
+		},
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
+		},
+	}
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("expected one provider call, got %d", len(step.calls))
+	}
+	request := step.calls[0].Messages
+	if len(request) != 2 || !request[1].Hidden || !strings.Contains(request[1].Content, "[ENVIRONMENT]") {
+		t.Fatalf("typed block should render once as request-only provider context: %+v", request)
+	}
+	if len(res.NewMessages) != 1 || res.NewMessages[0].Hidden || strings.Contains(res.NewMessages[0].Content, "[ENVIRONMENT]") {
+		t.Fatalf("typed request context should not enter durable new messages: %+v", res.NewMessages)
+	}
+	if len(contexts) != 1 || !containsString(contexts[0].BlockKinds, string(wuucontext.BlockEnvironment)) {
+		t.Fatalf("request shape should include typed block kind: %+v", contexts)
+	}
+}
+
 func TestRunToolLoop_RequestOnlyContextExcludedFromUsageBaseline(t *testing.T) {
 	requestOnly := []providers.ChatMessage{{
 		Role:    "user",
