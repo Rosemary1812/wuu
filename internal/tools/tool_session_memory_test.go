@@ -13,7 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessionmemory"
 )
 
-func TestSessionMemoryToolAppendReadAndContextBlocks(t *testing.T) {
+func TestSessionMemoryToolAppendReadAndRequestContextBlocks(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(t.TempDir(), "state")
 	sessionDir := filepath.Join(stateDir, "sessions", "session-1")
@@ -109,18 +109,21 @@ func TestSessionMemoryToolAppendReadAndContextBlocks(t *testing.T) {
 	}
 
 	blocks := kit.ContextBlocks()
-	foundMemory := false
+	foundProjectMemory := false
 	foundSummary := false
 	for _, block := range blocks {
 		if block.Kind == wuucontext.BlockMemory && strings.Contains(block.Content, "Project uses make install") {
-			foundMemory = true
+			foundProjectMemory = true
 		}
 		if block.Kind == wuucontext.BlockTaskState && strings.Contains(block.Content, "Ship session memory") {
 			foundSummary = true
 		}
 	}
-	if !foundMemory || !foundSummary {
-		t.Fatalf("ContextBlocks missing session memory content: %+v", blocks)
+	if foundProjectMemory {
+		t.Fatalf("request context should not include project memory; read it on demand through session_memory: %+v", blocks)
+	}
+	if !foundSummary {
+		t.Fatalf("ContextBlocks missing session summary content: %+v", blocks)
 	}
 }
 

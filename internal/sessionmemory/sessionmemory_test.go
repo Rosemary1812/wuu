@@ -110,6 +110,36 @@ func TestContextBlocksSkipsMissingAndInjectsExistingFiles(t *testing.T) {
 	}
 }
 
+func TestRequestContextBlocksExcludesProjectMemory(t *testing.T) {
+	workspaceState := filepath.Join(t.TempDir(), "workspace-state")
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+
+	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetProjectMemory, "# Project Memory\n\nDurable project fact."); err != nil {
+		t.Fatalf("ReplaceTarget project: %v", err)
+	}
+	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetSummary, "# Session Summary\n\nActive task state."); err != nil {
+		t.Fatalf("ReplaceTarget summary: %v", err)
+	}
+	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetNotes, "# Session Notes\n\nScratch state."); err != nil {
+		t.Fatalf("ReplaceTarget notes: %v", err)
+	}
+
+	blocks := RequestContextBlocks(workspaceState, sessionArtifact)
+	if len(blocks) != 2 {
+		t.Fatalf("request blocks len = %d, want 2: %+v", len(blocks), blocks)
+	}
+	sources := map[string]bool{}
+	for _, block := range blocks {
+		sources[block.Source] = true
+		if block.Kind == wuucontext.BlockMemory || strings.Contains(block.Content, "Durable project fact") {
+			t.Fatalf("request context should not include project memory: %+v", blocks)
+		}
+	}
+	if !sources["session.summary:summary"] || !sources["session.notes:notes"] {
+		t.Fatalf("request context missing session state sources: %+v", blocks)
+	}
+}
+
 func TestContextBlocksPrefersSummaryOverLegacyCheckpoint(t *testing.T) {
 	workspaceState := filepath.Join(t.TempDir(), "workspace-state")
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")

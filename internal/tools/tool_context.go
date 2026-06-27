@@ -45,7 +45,7 @@ func (t *Toolkit) SessionMemoryContextBlocks() []wuucontext.Block {
 	if err != nil {
 		return nil
 	}
-	return sessionmemory.ContextBlocks(stateDir, t.env.SessionDir)
+	return sessionmemory.RequestContextBlocks(stateDir, t.env.SessionDir)
 }
 
 func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {

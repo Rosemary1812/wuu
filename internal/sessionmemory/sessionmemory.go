@@ -336,15 +336,32 @@ func ReplaceTarget(workspaceStateDir, sessionArtifactDir, target, content string
 }
 
 func ContextBlocks(workspaceStateDir, sessionArtifactDir string) []wuucontext.Block {
+	return contextBlocks(workspaceStateDir, sessionArtifactDir, true)
+}
+
+// RequestContextBlocks returns only memory that should ride along with each model request.
+// Workspace project memory is durable knowledge and stays available through the tool.
+func RequestContextBlocks(workspaceStateDir, sessionArtifactDir string) []wuucontext.Block {
+	return contextBlocks(workspaceStateDir, sessionArtifactDir, false)
+}
+
+func contextBlocks(workspaceStateDir, sessionArtifactDir string, includeProjectMemory bool) []wuucontext.Block {
 	paths := PathsFor(workspaceStateDir, sessionArtifactDir)
 	var blocks []wuucontext.Block
-	if block, ok := fileBlock(TargetProjectMemory, paths.ProjectMemory, wuucontext.BlockMemory, "Workspace project memory", "workspace.memory", projectMemoryTokenBudget); ok {
-		blocks = append(blocks, block)
+	if includeProjectMemory {
+		if block, ok := fileBlock(TargetProjectMemory, paths.ProjectMemory, wuucontext.BlockMemory, "Workspace project memory", "workspace.memory", projectMemoryTokenBudget); ok {
+			blocks = append(blocks, block)
+		}
 	}
+	summaryInjected := false
 	if block, ok := fileBlock(TargetSummary, paths.Summary, wuucontext.BlockTaskState, "Session summary", "session.summary", checkpointTokenBudget); ok {
 		blocks = append(blocks, block)
-	} else if block, ok := fileBlock(TargetCheckpoint, paths.Checkpoint, wuucontext.BlockTaskState, "Session checkpoint", "session.checkpoint", checkpointTokenBudget); ok {
-		blocks = append(blocks, block)
+		summaryInjected = true
+	}
+	if !summaryInjected {
+		if block, ok := fileBlock(TargetCheckpoint, paths.Checkpoint, wuucontext.BlockTaskState, "Session checkpoint", "session.checkpoint", checkpointTokenBudget); ok {
+			blocks = append(blocks, block)
+		}
 	}
 	if block, ok := fileBlock(TargetNotes, paths.Notes, wuucontext.BlockTaskState, "Session notes", "session.notes", notesTokenBudget); ok {
 		blocks = append(blocks, block)

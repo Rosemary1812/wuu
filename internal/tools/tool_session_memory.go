@@ -58,9 +58,9 @@ func (t *SessionMemoryTool) IsConcurrencySafe() bool { return false }
 func (t *SessionMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: sessionMemoryName,
-		Description: "Read or update durable workspace/session memory files that are injected as per-turn context. " +
+		Description: "Read or update durable workspace/session memory files. " +
 			"Use target=\"summary\" for compact recoverable state of the active task, target=\"checkpoint\" only for legacy checkpoint compatibility, target=\"notes\" for session scratch notes, " +
-			"and target=\"project_memory\" only for stable workspace facts that should survive across future sessions. " +
+			"and target=\"project_memory\" only for stable workspace facts that should survive across future sessions and can be read on demand. " +
 			"Do not store raw transcripts, secrets, temporary task progress, PR numbers, commit SHAs, or facts likely to go stale within a week. " +
 			"Prefer append for incremental notes; use replace when consolidating a summary or project memory after review.",
 		InputSchema: map[string]any{
