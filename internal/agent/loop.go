@@ -79,6 +79,9 @@ func RunToolLoop(
 
 	messages := make([]providers.ChatMessage, len(history))
 	copy(messages, history)
+	// Transient context is request-only across runs, but append-only inside
+	// a run so provider continuation deltas can match prior request prefixes.
+	messages = filterTransientModelContextHistory(messages)
 	startLen := len(messages)
 
 	currentMaxTokens := cfg.DefaultMaxTokens // 0 = provider default
@@ -104,7 +107,7 @@ func RunToolLoop(
 		// Without caller-owned cross-turn state, seed this run from a
 		// local estimate so resumed long sessions can compact before
 		// the first provider request.
-		usage.RecordPendingMessages(history)
+		usage.RecordPendingMessages(messages)
 	}
 	threshold := proactiveCompactThreshold(cfg)
 	contextAnchorsEnabled := toolDefinitionsContain(cfg.Tools, compact.InceptionToolName)
@@ -157,9 +160,6 @@ func RunToolLoop(
 			historyRewritten = true
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
-		}
-		if pruned, changed := pruneRefreshableModelContext(messages); changed {
-			messages = pruned
 		}
 		if contextAnchorsEnabled {
 			anchor := compact.BuildContextAnchorMessage(compact.NextContextAnchorID(messages))

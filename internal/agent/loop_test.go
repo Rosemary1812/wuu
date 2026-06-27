@@ -1078,7 +1078,7 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 		t.Fatalf("unchanged repo map should not be re-appended, got %d repo map messages in %+v", got, request)
 	}
 	if got := countMessagesContaining(request, "Git status: clean"); got != 0 {
-		t.Fatalf("stale environment block should be replaced before request, got %d in %+v", got, request)
+		t.Fatalf("stale boundary environment block should be filtered before request, got %d in %+v", got, request)
 	}
 	if got := countMessagesContaining(request, "1 changed file"); got != 1 {
 		t.Fatalf("changed environment block should be appended once, got %d in %+v", got, request)
@@ -1087,6 +1087,67 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 		if strings.Contains(msg.Content, "[REPO_MAP]") {
 			t.Fatalf("unchanged repo map should not be returned as a new message: %+v", res.NewMessages)
 		}
+	}
+}
+
+func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSteps(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+		{Content: "ok"},
+	}}
+	repoMap := wuucontext.Block{
+		Kind:    wuucontext.BlockRepoMap,
+		Title:   "Compact repository map",
+		Source:  "runtime.repo_map",
+		Content: "files_scanned: 2\nrepresentative_files:\n- go.mod",
+	}
+	contextCalls := 0
+	var contexts []RequestContextInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "read_file"}},
+			results: map[string]string{"call_1": `{"content":"hello"}`},
+		},
+		BeforeModelContext: func() []providers.ChatMessage {
+			contextCalls++
+			env := wuucontext.Block{
+				Kind:    wuucontext.BlockEnvironment,
+				Title:   "Runtime environment",
+				Source:  "runtime.snapshot",
+				Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
+			}
+			return []providers.ChatMessage{
+				hiddenReminderForTest(repoMap, 0),
+				hiddenReminderForTest(env, 0),
+			}
+		},
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
+		},
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("inspect the repo")}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected two provider calls, got %d", len(step.calls))
+	}
+	if len(contexts) != 2 {
+		t.Fatalf("expected two context observations, got %+v", contexts)
+	}
+	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockRepoMap)) {
+		t.Fatalf("first request should include repo map context: %+v", contexts[0])
+	}
+	if containsString(contexts[1].BlockKinds, string(wuucontext.BlockRepoMap)) {
+		t.Fatalf("second request should not reappend unchanged repo map: %+v", contexts[1])
+	}
+	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockEnvironment)) {
+		t.Fatalf("second request should refresh changed environment: %+v", contexts[1])
 	}
 }
 
@@ -1134,8 +1195,8 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	if err := providers.ValidateToolCallHistory(second); err != nil {
 		t.Fatalf("second request must keep provider-valid tool history: %v\n%+v", err, second)
 	}
-	if got := countMessagesContaining(second, "State: step 1"); got != 0 {
-		t.Fatalf("second request should not keep stale hidden context, got %d in %+v", got, second)
+	if got := countMessagesContaining(second, "State: step 1"); got != 1 {
+		t.Fatalf("second request should keep prior hidden context for provider prefix continuity, got %d in %+v", got, second)
 	}
 	if got := countMessagesContaining(second, "State: step 2"); got != 1 {
 		t.Fatalf("second request should include latest hidden context once, got %d in %+v", got, second)

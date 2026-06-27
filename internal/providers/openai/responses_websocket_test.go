@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/coder/websocket"
@@ -443,6 +445,156 @@ func TestResponsesStreamChatWebSocket_PreservesDeltaWithHiddenModelContext(t *te
 	delta, ok := secondInput[0].(map[string]any)
 	if !ok || delta["role"] != "user" {
 		t.Fatalf("unexpected delta input: %#v", secondInput[0])
+	}
+}
+
+func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenContext(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 2; i++ {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				t.Errorf("read request %d: %v", i+1, err)
+				return
+			}
+			if typ != websocket.MessageText {
+				t.Errorf("request %d type = %v", i+1, typ)
+				return
+			}
+			var body map[string]any
+			if err := json.Unmarshal(data, &body); err != nil {
+				t.Errorf("decode request %d: %v", i+1, err)
+				return
+			}
+			requests <- body
+
+			if i == 0 {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"fc_1","type":"function_call","status":"in_progress","arguments":"","call_id":"call_1","name":"read_file"},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.function_call_arguments.done","arguments":"{\"path\":\"README.md\"}","item_id":"fc_1","output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"fc_1","type":"function_call","status":"completed","arguments":"{\"path\":\"README.md\"}","call_id":"call_1","name":"read_file"},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.done","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":2}}}`)
+			} else {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"done","item_id":"msg_2","output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"done"}]},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":2,"output_tokens":1}}}`)
+			}
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		Headers:                 map[string]string{"OpenAI-Beta": "responses=experimental"},
+		ResponsesStore:          &store,
+		ResponsesWebSocket:      true,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	contextCalls := 0
+	runner := agent.StreamRunner{
+		Client:         client,
+		Model:          "gpt-test",
+		Tools:          &webSocketAgentLoopTools{},
+		PromptCacheKey: "thread-agent-hidden-context",
+		BeforeModelContext: func() []providers.ChatMessage {
+			contextCalls++
+			repoMap := wuucontext.Block{
+				Kind:    wuucontext.BlockRepoMap,
+				Title:   "Compact repository map",
+				Source:  "runtime.repo_map",
+				Content: "files_scanned: 2\nrepresentative_files:\n- go.mod",
+			}
+			env := wuucontext.Block{
+				Kind:    wuucontext.BlockEnvironment,
+				Title:   "Runtime environment",
+				Source:  "runtime.snapshot",
+				Content: "State: step " + strconv.Itoa(contextCalls),
+			}
+			return []providers.ChatMessage{
+				hiddenReminderForWebSocketAgentTest(repoMap),
+				hiddenReminderForWebSocketAgentTest(env),
+			}
+		},
+	}
+	res, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{{Role: "user", Content: "read README"}}, nil)
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if res.Content != "done" {
+		t.Fatalf("unexpected final content %q", res.Content)
+	}
+
+	first := <-requests
+	if _, exists := first["previous_response_id"]; exists {
+		t.Fatalf("first request must be full context: %#v", first)
+	}
+	firstInputRaw, err := json.Marshal(first["input"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstInput := string(firstInputRaw)
+	if !strings.Contains(firstInput, "REPO_MAP") || !strings.Contains(firstInput, "State: step 1") {
+		t.Fatalf("first request missing hidden context: %s", firstInput)
+	}
+
+	second := <-requests
+	if second["previous_response_id"] != "resp_1" {
+		t.Fatalf("second request previous_response_id = %#v; body=%#v", second["previous_response_id"], second)
+	}
+	secondInputRaw, err := json.Marshal(second["input"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondInput := string(secondInputRaw)
+	if !strings.Contains(secondInput, "function_call_output") {
+		t.Fatalf("second delta missing tool result: %s", secondInput)
+	}
+	if !strings.Contains(secondInput, "State: step 2") {
+		t.Fatalf("second delta missing changed environment context: %s", secondInput)
+	}
+	if strings.Contains(secondInput, "REPO_MAP") {
+		t.Fatalf("second delta re-sent unchanged repo map: %s", secondInput)
+	}
+}
+
+type webSocketAgentLoopTools struct{}
+
+func (t *webSocketAgentLoopTools) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{
+		Name:        "read_file",
+		Description: "read file",
+		InputSchema: map[string]any{"type": "object"},
+	}}
+}
+
+func (t *webSocketAgentLoopTools) Execute(_ context.Context, call providers.ToolCall) (string, error) {
+	return "contents", nil
+}
+
+func hiddenReminderForWebSocketAgentTest(block wuucontext.Block) providers.ChatMessage {
+	return providers.ChatMessage{
+		Role:    "user",
+		Name:    wuucontext.SystemReminderBlockMessageName(block, 0),
+		Content: wuucontext.FormatSystemReminderBlocks(block),
+		Hidden:  true,
 	}
 }
 
