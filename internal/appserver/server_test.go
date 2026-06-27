@@ -26,12 +26,14 @@ import (
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
+	"github.com/coder/websocket"
 )
 
 type fakeClient struct {
@@ -1903,6 +1905,165 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].ID != threadID || sessions[0].Entries != 2 || sessions[0].Summary != "hello" {
 		t.Fatalf("unexpected session index: %+v", sessions)
+	}
+}
+
+func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 2; i++ {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				t.Errorf("read request %d: %v", i+1, err)
+				return
+			}
+			if typ != websocket.MessageText {
+				t.Errorf("request %d type = %v", i+1, typ)
+				return
+			}
+			var body map[string]any
+			if err := json.Unmarshal(data, &body); err != nil {
+				t.Errorf("decode request %d: %v", i+1, err)
+				return
+			}
+			requests <- body
+
+			if i == 0 {
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"first answer","item_id":"msg_1","output_index":0}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"first answer"}]},"output_index":0}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":12,"output_tokens":2}}}`)
+			} else {
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"second answer","item_id":"msg_2","output_index":0}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"second answer"}]},"output_index":0}`)
+				writeAppServerWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":3,"output_tokens":2,"input_tokens_details":{"cached_tokens":2}}}}`)
+			}
+		}
+	}))
+	defer server.Close()
+
+	client, err := codex.New(codex.ClientConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-token",
+		StreamConfig: &providers.StreamTransportConfig{
+			ConnectTimeout: 2 * time.Second,
+			IdleTimeout:    5 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("codex.New: %v", err)
+	}
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	rt := &runtime.Session{
+		ProviderName: "openai-codex",
+		Model:        "gpt-5.5",
+		RootDir:      root,
+		ConfigPath:   filepath.Join(root, ".wuu.json"),
+		SessionDir:   filepath.Join(root, ".wuu", "sessions"),
+		StreamRunner: &agent.StreamRunner{
+			Client:       providers.AdaptStreamClient(client),
+			Model:        "gpt-5.5",
+			SystemPrompt: "stable system prompt",
+			SystemPromptSections: []agent.SystemPromptSectionInfo{{
+				Key:    "base",
+				Static: true,
+				Bytes:  len("stable system prompt"),
+				Hash:   "base-hash",
+			}},
+			MaxSteps: 1,
+		},
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	startTurn := func(id, prompt string) {
+		t.Helper()
+		payload := map[string]any{
+			"id":     id,
+			"method": MethodTurnStart,
+			"params": TurnStartParams{ThreadID: threadID, Prompt: prompt},
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal turn request: %v", err)
+		}
+		if err := srv.handleLine(context.Background(), raw); err != nil {
+			t.Fatalf("turn/start %s: %v", id, err)
+		}
+	}
+
+	startTurn("2", "say first answer")
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	startTurn("3", "say second answer")
+	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
+
+	providerStates := turnEventsByTypeForThread(t, msgs, threadID, providers.EventProviderState)
+	if len(providerStates) != 2 {
+		t.Fatalf("provider state events = %d, want 2", len(providerStates))
+	}
+	firstState := providerStates[0].Event.ProviderState
+	secondState := providerStates[1].Event.ProviderState
+	if firstState == nil || firstState.ReplayMode != "full_request" || firstState.PreviousResponseIDUsed {
+		t.Fatalf("unexpected first provider state: %+v", firstState)
+	}
+	if secondState == nil || secondState.ReplayMode != "previous_response_id" || !secondState.PreviousResponseIDUsed {
+		t.Fatalf("same app-server thread did not use previous_response_id on second turn: first=%+v second=%+v", firstState, secondState)
+	}
+	if secondState.FullInputItems <= secondState.InputItems || secondState.DeltaInputItems != secondState.InputItems {
+		t.Fatalf("second provider state should report a smaller delta input: %+v", secondState)
+	}
+
+	contexts := turnEventsByTypeForThread(t, msgs, threadID, providers.EventRequestContext)
+	if len(contexts) != 2 {
+		t.Fatalf("request context events = %d, want 2", len(contexts))
+	}
+	firstContext := contexts[0].Event.RequestContext
+	secondContext := contexts[1].Event.RequestContext
+	if firstContext == nil || secondContext == nil {
+		t.Fatalf("missing request context: first=%+v second=%+v", firstContext, secondContext)
+	}
+	if firstContext.PromptCacheKey != threadID || secondContext.PromptCacheKey != threadID {
+		t.Fatalf("prompt cache key should stay pinned to thread id: first=%q second=%q thread=%q", firstContext.PromptCacheKey, secondContext.PromptCacheKey, threadID)
+	}
+	if firstContext.SystemHash == "" || secondContext.SystemHash != firstContext.SystemHash {
+		t.Fatalf("system hash drifted across turns: first=%q second=%q", firstContext.SystemHash, secondContext.SystemHash)
+	}
+	if secondContext.ToolSurfaceHash != firstContext.ToolSurfaceHash {
+		t.Fatalf("tool surface hash drifted across turns: first=%q second=%q", firstContext.ToolSurfaceHash, secondContext.ToolSurfaceHash)
+	}
+
+	firstRequest := <-requests
+	secondRequest := <-requests
+	if firstRequest["prompt_cache_key"] != threadID || secondRequest["prompt_cache_key"] != threadID {
+		t.Fatalf("wire prompt_cache_key drifted: first=%#v second=%#v thread=%q", firstRequest["prompt_cache_key"], secondRequest["prompt_cache_key"], threadID)
+	}
+	if _, exists := firstRequest["previous_response_id"]; exists {
+		t.Fatalf("first request should be full context: %#v", firstRequest)
+	}
+	if secondRequest["previous_response_id"] != "resp_1" {
+		t.Fatalf("second request previous_response_id = %#v; body=%#v", secondRequest["previous_response_id"], secondRequest)
+	}
+	firstInput := firstRequest["input"].([]any)
+	secondInput := secondRequest["input"].([]any)
+	if len(secondInput) >= len(firstInput)+2 {
+		t.Fatalf("second request should send delta input, first=%d second=%d body=%#v", len(firstInput), len(secondInput), secondRequest)
 	}
 }
 
@@ -5094,6 +5255,28 @@ func turnEventByType(t *testing.T, msgs []map[string]any, typ providers.StreamEv
 	}
 	t.Fatalf("turn event %s not found in %+v", typ, msgs)
 	return nil
+}
+
+func turnEventsByTypeForThread(t *testing.T, msgs []map[string]any, threadID string, typ providers.StreamEventType) []TurnEventNotification {
+	t.Helper()
+	var out []TurnEventNotification
+	for _, msg := range msgs {
+		if msg["id"] != nil || msg["method"] != NotificationTurnEvent {
+			continue
+		}
+		params := remarshal[TurnEventNotification](t, msg["params"])
+		if params.ThreadID == threadID && params.Event.Type == typ {
+			out = append(out, params)
+		}
+	}
+	return out
+}
+
+func writeAppServerWSEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, raw string) {
+	t.Helper()
+	if err := conn.Write(ctx, websocket.MessageText, []byte(raw)); err != nil {
+		t.Fatalf("write websocket event: %v", err)
+	}
 }
 
 func remarshal[T any](t *testing.T, value any) T {
