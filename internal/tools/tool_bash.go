@@ -127,46 +127,15 @@ func (t *BashTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
 func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
-		Description: "Runs bash operations in the workspace and returns structured output. " +
-			"This is the unified command entry point for the Wuu harness.\n\n" +
-			"Use bash for every terminal operation: tests (npx vitest, pytest, go test, " +
-			"cargo test, pnpm test, bun test, …), lint, type checks, build commands, " +
-			"git operations (git status / diff / log / add / commit / push), package " +
-			"manager invocations (npm / pnpm / yarn / bun / pip / uv / cargo / go), " +
-			"docker, scripts, and managed background processes. There is no separate " +
-			"\"run test\" or \"git\" tool on the bash-first surfaces — bash covers " +
-			"all of them.\n\n" +
-			"The default action is run: it executes a bounded command and returns exit_code, " +
-			"duration_ms, output tails, workspace_revision, and full_log_ref when available. " +
-			"Verification commands automatically include verification metadata with passed, " +
-			"failure_summary, repeat_guard, and test-focused next_suggestions.\n\n" +
-			"Use action=start_background for dev servers, watch modes, and other long-lived " +
-			"commands; bash returns managed process metadata plus optional initial output. " +
-			"Use list_background, read_background, write_background, and stop_background to manage " +
-			"those processes through the same bash tool.\n\n" +
-			"The working directory defaults to the workspace root. Set cwd for action=run or " +
-			"action=start_background; cwd values are resolved inside the workspace root unless full access is active, where absolute and outside-workspace paths are allowed. " +
-			"Shell state does not persist between " +
-			"run calls.\n\n" +
-			"IMPORTANT: Avoid using bash to cat, head, tail, grep, find, sed, awk, or " +
-			"echo when a dedicated tool exists. Use read_file instead of cat, the " +
-			"search tools (grep / glob / ast_search / semantic_search) instead of " +
-			"grep / rg / find, and the file editing tool exposed in this session " +
-			"instead of sed.\n\n" +
-			"Instructions:\n" +
-			"- Commands must be non-interactive; never rely on editors, pagers, or terminal prompts\n" +
-			"- Default timeout is 300s, max 3600s\n" +
-			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
-			"- If commands are independent, make multiple tool calls in parallel\n" +
-			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms (broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, interactive git) are rejected by the bash policy unless full access is active.",
+		Description: "Run non-interactive bash operations in the workspace. Use for terminal work: tests, lint, builds, git, package managers, scripts, docker, and managed background processes.\n\n" +
+			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. Use start_background/list_background/read_background/write_background/stop_background for long-lived processes. cwd defaults to the workspace root. Shell state does not persist between run calls.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
 					"enum":        []string{bashActionRun, bashActionStartBackground, bashActionListBackground, bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground},
-					"description": "Operation to perform. Defaults to run. Use start_background/read_background/list_background/write_background/stop_background for managed long-running processes.",
+					"description": "Operation. Defaults to run; background actions manage long-lived processes.",
 				},
 				"command": map[string]any{
 					"type":        "string",
@@ -187,7 +156,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"cwd": map[string]any{
 					"type":        "string",
-					"description": "Working directory for action=run or action=start_background. Defaults to the workspace root. Paths are resolved inside the workspace root unless full access is active.",
+					"description": "Working directory for run/start_background. Defaults to workspace root.",
 				},
 				"lifecycle": map[string]any{
 					"type":        "string",

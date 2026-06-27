@@ -28,13 +28,8 @@ func (t *LoadSkillTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "load_skill",
 		Description: strings.Join([]string{
-			"Load a specialized skill that provides domain-specific instructions and workflows.",
-			"",
-			"The available skill names and descriptions are listed in the Skills section of the system prompt. When the task matches one of them, use this tool to load the full skill instructions.",
-			"",
-			"The skill will inject detailed instructions, workflows, and access to bundled resources (scripts, references, templates) into the conversation context.",
-			"",
-			"Tool output includes a `<skill_content name=\"...\">` block with the loaded content.",
+			"Load full instructions for a listed skill when the task matches it.",
+			"Available skill names and summaries are in the system prompt; output returns a <skill_content name=\"...\"> block.",
 		}, "\n"),
 		InputSchema: map[string]any{
 			"type": "object",

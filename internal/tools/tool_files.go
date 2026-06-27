@@ -29,25 +29,14 @@ func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "read_file",
-		Description: "Reads a file from the workspace. Returns content with line numbers.\n\n" +
-			"Usage:\n" +
-			"- The path parameter is relative to the workspace root\n" +
-			"- $SESSION_DIR/... references returned by tools are allowed for Wuu-managed artifacts\n" +
-			"- Returns content with cat -n style line number prefixes (number + tab)\n" +
-			"- Use range.start_line/range.end_line, symbol.name, or offset (1-based line) plus limit, to read specific portions of large files\n" +
-			"- Use context_lines with range/limit/symbol when nearby surrounding context is needed before editing\n" +
-			"- Results include file_sha, workspace_revision, range, omitted_ranges, and next_suggestions for follow-up reads\n" +
-			"- Files >256KB are rejected unless limit is provided\n" +
-			"- Repeated reads of the same file/range return a stub if the file is unchanged\n" +
-			"- This tool can only read files, not directories — use list_files for directories\n" +
-			"- Binary files are not supported; use another available inspection path when binary evidence is required",
+		Name:        "read_file",
+		Description: "Read a workspace file with line numbers. Use offset/limit, range, symbol, and context_lines for focused reads. Results include file_sha, workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "File path. Relative paths resolve from the workspace root; full access also allows absolute or outside-workspace paths. $SESSION_DIR/... artifact references returned by tools are also supported.",
+					"description": "File path relative to workspace root, or a supported artifact path.",
 				},
 				"offset": map[string]any{
 					"type":        "integer",
@@ -59,7 +48,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 				},
 				"range": map[string]any{
 					"type":        "object",
-					"description": "Inclusive line range to read. Use instead of offset/limit when you already know start_line and end_line.",
+					"description": "Inclusive line range to read.",
 					"properties": map[string]any{
 						"start_line": map[string]any{
 							"type":        "integer",
@@ -74,7 +63,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 				},
 				"symbol": map[string]any{
 					"type":        "object",
-					"description": "Read a conservative definition range for a named Go, TypeScript/JavaScript, or Python symbol. Use instead of range or offset/limit.",
+					"description": "Read a conservative definition range for a named Go, TypeScript/JavaScript, or Python symbol.",
 					"properties": map[string]any{
 						"name": map[string]any{
 							"type":        "string",
@@ -89,7 +78,7 @@ func (t *ReadFileTool) Definition() providers.ToolDefinition {
 				},
 				"context_lines": map[string]any{
 					"type":        "integer",
-					"description": "Optional surrounding lines to include before and after a range, limit, or symbol match. Max 200.",
+					"description": "Surrounding lines to include with a focused read. Max 200.",
 				},
 			},
 			"required": []string{"path"},
@@ -1017,18 +1006,14 @@ func (t *ListFilesTool) IsConcurrencySafe() bool { return true }
 
 func (t *ListFilesTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "list_files",
-		Description: "Lists entries under a directory.\n\n" +
-			"Usage:\n" +
-			"- Returns workspace_revision plus name, path, is_dir, and size for each entry\n" +
-			"- Defaults to workspace root when path is omitted; full access also allows absolute or outside-workspace paths\n" +
-			"- Truncated at 1000 entries for large directories",
+		Name:        "list_files",
+		Description: "List directory entries. Defaults to workspace root and returns workspace_revision, name, path, is_dir, and size; large directories are capped.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Directory path. Relative paths resolve from the workspace root; full access also allows absolute or outside-workspace paths.",
+					"description": "Directory path. Defaults to workspace root.",
 				},
 			},
 		},

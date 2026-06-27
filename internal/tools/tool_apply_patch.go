@@ -57,24 +57,14 @@ func (t *ApplyPatchTool) Classify(argsJSON string) ToolClassification {
 
 func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "apply_patch",
-		Description: "Applies a structured patch to one or more workspace files.\n\n" +
-			"Usage:\n" +
-			"- Use this for manual code edits when this tool is available\n" +
-			"- The patch language uses *** Begin Patch / *** End Patch markers\n" +
-			"- Supported operations: *** Add File, *** Update File, optional *** Move to, and *** Delete File\n" +
-			"- Prefix added lines with +, removed lines with -, and unchanged context lines with a space\n" +
-			"- Paths are relative to the workspace root and cannot escape it\n" +
-			"- Set dry_run=true to validate anchors and preview structured diffs without mutating files\n" +
-			"- Updating, moving, or deleting existing files requires a fresh prior read_file result or expected_old_shas mapping each source path to read_file file_sha\n" +
-			"- expected_old_sha may be used for a single existing-file patch; use expected_old_shas for multi-file patches\n" +
-			"- Returns workspace_revision, changed_files, hunk_count, provenance, per-file old/new sha, and structured diffs showing what changed",
+		Name:        "apply_patch",
+		Description: "Apply a structured workspace patch using *** Begin Patch / *** End Patch. Supports Add, Update, optional Move, and Delete sections. Existing-file changes require a fresh read_file baseline or expected_old_sha(s). dry_run validates without writing.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"patchText": map[string]any{
 					"type":        "string",
-					"description": "The full patch text, including *** Begin Patch and *** End Patch markers.",
+					"description": "Full patch text including *** Begin Patch and *** End Patch markers.",
 				},
 				"dry_run": map[string]any{
 					"type":        "boolean",
@@ -87,7 +77,7 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 				"expected_old_shas": map[string]any{
 					"type":                 "object",
 					"additionalProperties": map[string]any{"type": "string"},
-					"description":          "Optional mapping of patch source path to read_file file_sha for each updated, moved, or deleted file.",
+					"description":          "Optional source path to read_file file_sha mapping for multi-file patches.",
 				},
 			},
 			"required": []string{"patchText"},

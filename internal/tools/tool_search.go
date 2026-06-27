@@ -34,15 +34,8 @@ func (t *GrepTool) IsConcurrencySafe() bool { return true }
 
 func (t *GrepTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "grep",
-		Description: "Search file contents using a regex pattern, powered by ripgrep.\n\n" +
-			"Usage:\n" +
-			"- Use this tool for content search; do not invoke separate search programs through command execution\n" +
-			"- Supports full regex syntax (e.g. \"log.*Error\", \"func\\\\s+\\\\w+\")\n" +
-			"- Filter files with the include glob parameter (e.g. \"*.go\", \"*.ts\")\n" +
-			"- Returns matching lines with file paths and line numbers (max 250 matches)\n" +
-			"- Results include workspace_revision so search evidence can be tied to a workspace state\n" +
-			"- Falls back to a pure Go implementation if ripgrep is not installed",
+		Name:        "grep",
+		Description: "Search file contents with a regex. Supports include globs, context lines, output modes, and case-insensitive search. Returns file paths, line numbers, matches, and workspace_revision.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -60,7 +53,7 @@ func (t *GrepTool) Definition() providers.ToolDefinition {
 				},
 				"output_mode": map[string]any{
 					"type":        "string",
-					"description": "Output mode: 'content' (default, matching lines), 'files_with_matches' (file paths only), 'count' (match counts per file).",
+					"description": "content (default), files_with_matches, or count.",
 				},
 				"context": map[string]any{
 					"type":        "integer",
@@ -214,14 +207,8 @@ func (t *GlobTool) IsConcurrencySafe() bool { return true }
 
 func (t *GlobTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "glob",
-		Description: "Fast file pattern matching tool that works with any codebase size.\n\n" +
-			"Usage:\n" +
-			"- Supports glob patterns like \"**/*.go\" or \"src/**/*.ts\"\n" +
-			"- Returns matching file paths (max 500 matches)\n" +
-			"- Results include workspace_revision so file discovery can be tied to a workspace state\n" +
-			"- Use this tool when you need to find files by name patterns\n" +
-			"- For content search (finding text inside files), use grep instead",
+		Name:        "glob",
+		Description: "Find files by glob pattern. Returns matching paths and workspace_revision; use grep for content search.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
