@@ -29,10 +29,9 @@ const RAIL_BAR_HOVERED_WIDTH = 40;
  * block the chat content) and only becomes interactive when the bar is
  * hovered.
  *
- * The rail always renders, even when the thread has no turns yet, so its
- * position stays discoverable from a fresh conversation. In the empty
- * case a single dimmed placeholder bar marks where the first real bar
- * will appear; it is non-interactive and announced as decorative.
+ * The rail is hidden until the thread has turns. The empty-session welcome
+ * screen should stay clean; the rail becomes useful only after there is
+ * actual conversation history to navigate.
  */
 export function ConversationTurnRail({
   turns,
@@ -42,7 +41,7 @@ export function ConversationTurnRail({
   turns: Turn[];
   activeTurnID?: string;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
-}): JSX.Element {
+}): JSX.Element | null {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -133,21 +132,17 @@ export function ConversationTurnRail({
     }
   }
 
+  if (isEmpty) {
+    return null;
+  }
+
   return (
     <div
       ref={containerRef}
       className="conversation-turn-rail"
       aria-label="对话回合导航"
-      data-empty={isEmpty}
     >
-      {isEmpty ? (
-        <div
-          className="conversation-turn-rail-bar placeholder"
-          aria-hidden="true"
-          data-turn-id="placeholder"
-        />
-      ) : (
-        turns.map((turn, index) => {
+      {turns.map((turn, index) => {
           const isHovered = turn.id === hoveredTurnID;
           const isAdjacent = adjacentIndices.has(index);
           const isActive = turn.id === activeTurnID;
@@ -182,8 +177,7 @@ export function ConversationTurnRail({
               {isHovered ? <TurnHoverPreview turn={turn} /> : null}
             </div>
           );
-        })
-      )}
+        })}
     </div>
   );
 }

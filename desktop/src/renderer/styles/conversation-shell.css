@@ -862,15 +862,6 @@
   background: var(--sidebar-accent);
 }
 
-/* Empty-thread placeholder. A single dimmed, non-interactive bar sits
-   where the first real bar will appear so the rail's position stays
-   discoverable before the user has sent any messages. */
-.conversation-turn-rail-bar.placeholder {
-  opacity: 0.8;
-  cursor: default;
-  pointer-events: none;
-}
-
 /* Bridge that covers the 12px gap between each bar and its preview
    card. Non-interactive by default so it doesn't block the chat
    content; the bar's `.hovered` state flips it on so the cursor can

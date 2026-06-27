@@ -36,14 +36,20 @@ function turn(id: string, query: string): Turn {
   };
 }
 
-function renderRail(onSelectQueryHistory: (entry: QueryHistoryEntry) => void): void {
+function renderRail({
+  turns,
+  onSelectQueryHistory,
+}: {
+  turns?: Turn[];
+  onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
+}): void {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
     root?.render(
       <ConversationTurnRail
-        turns={[turn("turn-1", "first query"), turn("turn-2", "second query")]}
+        turns={turns ?? [turn("turn-1", "first query"), turn("turn-2", "second query")]}
         onSelectQueryHistory={onSelectQueryHistory}
       />,
     );
@@ -62,8 +68,10 @@ afterEach(() => {
 describe("ConversationTurnRail", () => {
   it("routes bar clicks through query-history selection", () => {
     let selected: QueryHistoryEntry | undefined;
-    renderRail((entry) => {
-      selected = entry;
+    renderRail({
+      onSelectQueryHistory: (entry) => {
+        selected = entry;
+      },
     });
 
     const bars = container?.querySelectorAll<HTMLElement>(
@@ -80,5 +88,15 @@ describe("ConversationTurnRail", () => {
       itemID: "user-turn-2",
       text: "second query",
     });
+  });
+
+  it("stays hidden for an empty conversation", () => {
+    renderRail({
+      turns: [],
+      onSelectQueryHistory: () => {},
+    });
+
+    expect(container?.querySelector(".conversation-turn-rail")).toBeNull();
+    expect(container?.querySelector(".conversation-turn-rail-bar")).toBeNull();
   });
 });
