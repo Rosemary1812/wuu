@@ -118,6 +118,48 @@ func TestDialCodexWebSocket_HappyPath(t *testing.T) {
 	}
 }
 
+func TestDialCodexWebSocket_AllowsResponsesMessagesAboveDefaultReadLimit(t *testing.T) {
+	largeMessage := strings.Repeat("x", 64*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			InsecureSkipVerify: true,
+		})
+		if err != nil {
+			t.Errorf("server-side accept: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := conn.Write(ctx, websocket.MessageText, []byte(largeMessage)); err != nil {
+			t.Errorf("server-side write: %v", err)
+			return
+		}
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	wsURL := strings.Replace(server.URL, "http://", "ws://", 1)
+	conn, err := (CodexWebSocketDialer{}).dialCodexWebSocket(context.Background(), wsURL, http.Header{})
+	if err != nil {
+		t.Fatalf("dialCodexWebSocket: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	typ, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("client read: %v", err)
+	}
+	if typ != websocket.MessageText {
+		t.Errorf("message type = %v, want MessageText", typ)
+	}
+	if string(data) != largeMessage {
+		t.Fatalf("large message length = %d, want %d", len(data), len(largeMessage))
+	}
+}
+
 func TestDialCodexWebSocket_InjectsBetaTagWhenAbsent(t *testing.T) {
 	var seenBeta string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

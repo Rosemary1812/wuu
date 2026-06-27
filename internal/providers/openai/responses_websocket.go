@@ -20,6 +20,8 @@ import (
 // corresponding beta tag in codex-rs responses_websocket.rs.
 const CodexWebSocketBetaTag = "responses_websockets=2026-02-06"
 
+const codexWebSocketReadLimitBytes = 16 << 20
+
 // resolveCodexWebSocketURL converts an HTTP Responses base URL into its
 // WebSocket-equivalent endpoint. The regular Responses client stores a base
 // URL and appends /responses at dispatch time; the WebSocket path sends the
@@ -107,5 +109,6 @@ func (d CodexWebSocketDialer) dialCodexWebSocket(
 		}
 		return nil, fmt.Errorf("codex websocket dial %q: %w", wsURL, err)
 	}
+	conn.SetReadLimit(codexWebSocketReadLimitBytes)
 	return conn, nil
 }
