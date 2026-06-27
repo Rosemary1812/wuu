@@ -249,19 +249,6 @@ func (t *Toolkit) isDeferredToolLoaded(name string) bool {
 	return ok
 }
 
-func (t *Toolkit) cloneLoadedDeferredTools() map[string]struct{} {
-	t.exposureMu.RLock()
-	defer t.exposureMu.RUnlock()
-	if len(t.loadedDeferredTools) == 0 {
-		return nil
-	}
-	out := make(map[string]struct{}, len(t.loadedDeferredTools))
-	for name := range t.loadedDeferredTools {
-		out[name] = struct{}{}
-	}
-	return out
-}
-
 func searchTokens(query string) []string {
 	fields := strings.Fields(strings.ToLower(query))
 	out := make([]string, 0, len(fields))

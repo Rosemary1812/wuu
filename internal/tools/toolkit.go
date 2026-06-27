@@ -180,7 +180,9 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 			clone.disabledTools[name] = struct{}{}
 		}
 	}
-	clone.loadedDeferredTools = t.cloneLoadedDeferredTools()
+	// Deferred tool loads are model-visible, per-conversation state created by
+	// tool_search. A cloned toolkit must not inherit them unless the clone's
+	// own model context has seen the loadable schema.
 	clone.rebuildRegistry()
 	return clone, nil
 }

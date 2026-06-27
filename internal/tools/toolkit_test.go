@@ -3542,6 +3542,37 @@ func TestToolkit_LoadedDeferredToolsStayOutOfDefinitions(t *testing.T) {
 	}
 }
 
+func TestToolkit_CloneForRootDoesNotInheritLoadedDeferredTools(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewReadFileTool(kit.env),
+		NewScheduleCronTool(kit.env),
+		NewToolSearchTool(kit),
+	)
+	kit.markDeferredToolsLoaded("schedule_cron")
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("source loaded deferred tool should reach validation, got %v", err)
+	}
+
+	clone, err := kit.CloneForRoot(root)
+	if err != nil {
+		t.Fatalf("CloneForRoot: %v", err)
+	}
+	_, err = clone.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("clone should require its own tool_search load, got %v", err)
+	}
+
+	if definitionNames(clone.Definitions())["schedule_cron"] {
+		t.Fatal("clone must not expose inherited deferred tool in top-level definitions")
+	}
+}
+
 func TestToolkit_ToolSearchLoadsDeferredTool(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
