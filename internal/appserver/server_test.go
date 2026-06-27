@@ -1849,6 +1849,10 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if contextParams.Event.RequestContext.MessageCount == 0 ||
 		contextParams.Event.RequestContext.HiddenMessages == 0 ||
 		contextParams.Event.RequestContext.DynamicBytes == 0 ||
+		contextParams.Event.RequestContext.SystemBytes == 0 ||
+		contextParams.Event.RequestContext.StablePrefixBytes == 0 ||
+		contextParams.Event.RequestContext.MessageBytes == 0 ||
+		contextParams.Event.RequestContext.ToolSchemaBytes == 0 ||
 		contextParams.Event.RequestContext.SystemHash == "" ||
 		contextParams.Event.RequestContext.StablePrefixHash == "" ||
 		contextParams.Event.RequestContext.ToolSurfaceHash == "" {

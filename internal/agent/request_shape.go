@@ -34,15 +34,19 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 	}
 
 	info := RequestContextInfo{
-		StepIndex:        stepIndex,
-		MessageCount:     len(messages),
-		SystemMessages:   systemMessages,
-		ToolCount:        len(tools),
-		StablePrefix:     stablePrefix,
-		SystemHash:       hashMessagesForRequestShape(messages[:systemMessages]),
-		StablePrefixHash: hashMessagesForRequestShape(messages[:stableEnd]),
-		ToolSurfaceHash:  hashToolsForRequestShape(tools),
-		PromptCacheKey:   promptCacheKey,
+		StepIndex:         stepIndex,
+		MessageCount:      len(messages),
+		SystemMessages:    systemMessages,
+		ToolCount:         len(tools),
+		StablePrefix:      stablePrefix,
+		SystemBytes:       messageBytesForRequestShape(messages[:systemMessages]),
+		StablePrefixBytes: messageBytesForRequestShape(messages[:stableEnd]),
+		MessageBytes:      messageBytesForRequestShape(messages),
+		ToolSchemaBytes:   toolSchemaBytesForRequestShape(tools),
+		SystemHash:        hashMessagesForRequestShape(messages[:systemMessages]),
+		StablePrefixHash:  hashMessagesForRequestShape(messages[:stableEnd]),
+		ToolSurfaceHash:   hashToolsForRequestShape(tools),
+		PromptCacheKey:    promptCacheKey,
 	}
 
 	seenKinds := make(map[string]struct{})
@@ -85,6 +89,45 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 	return info
 }
 
+func messageBytesForRequestShape(messages []providers.ChatMessage) int {
+	total := 0
+	for _, msg := range messages {
+		total += len([]byte(msg.Name))
+		total += len([]byte(msg.Content))
+		total += len([]byte(msg.ReasoningContent))
+		total += len([]byte(msg.ToolCallID))
+		for _, block := range msg.ReasoningBlocks {
+			total += len([]byte(block.Type))
+			total += len([]byte(block.Thinking))
+			total += len([]byte(block.Signature))
+			total += len([]byte(block.Data))
+		}
+		for _, image := range msg.Images {
+			total += len([]byte(image.MediaType))
+			total += len([]byte(image.Data))
+		}
+		for _, file := range msg.Files {
+			total += len([]byte(file.MediaType))
+			total += len([]byte(file.Data))
+			total += len([]byte(file.Filename))
+		}
+		for _, call := range msg.ToolCalls {
+			total += len([]byte(call.ID))
+			total += len([]byte(call.ProviderItemID))
+			total += len([]byte(call.ProviderItemModel))
+			total += len([]byte(call.Name))
+			total += len([]byte(call.Arguments))
+			total += len([]byte(string(call.Kind)))
+		}
+		for _, tool := range msg.DiscoveredTools {
+			if raw, err := json.Marshal(tool); err == nil {
+				total += len(raw)
+			}
+		}
+	}
+	return total
+}
+
 func hashMessagesForRequestShape(messages []providers.ChatMessage) string {
 	if len(messages) == 0 {
 		return ""
@@ -116,6 +159,34 @@ func hashMessagesForRequestShape(messages []providers.ChatMessage) string {
 		}
 	}
 	return shortRequestShapeHash(b.String())
+}
+
+func toolSchemaBytesForRequestShape(tools []providers.ToolDefinition) int {
+	if len(tools) == 0 {
+		return 0
+	}
+	type toolSchema struct {
+		Name         string         `json:"name"`
+		Description  string         `json:"description,omitempty"`
+		InputSchema  map[string]any `json:"input_schema,omitempty"`
+		DeferLoading bool           `json:"defer_loading,omitempty"`
+		CacheStable  bool           `json:"cache_stable,omitempty"`
+	}
+	schemas := make([]toolSchema, 0, len(tools))
+	for _, tool := range tools {
+		schemas = append(schemas, toolSchema{
+			Name:         tool.Name,
+			Description:  tool.Description,
+			InputSchema:  tool.InputSchema,
+			DeferLoading: tool.DeferLoading,
+			CacheStable:  tool.CacheStable,
+		})
+	}
+	raw, err := json.Marshal(schemas)
+	if err != nil {
+		return 0
+	}
+	return len(raw)
 }
 
 func hashToolsForRequestShape(tools []providers.ToolDefinition) string {

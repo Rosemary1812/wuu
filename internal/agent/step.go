@@ -118,6 +118,10 @@ type RequestContextInfo struct {
 	ToolCount         int
 	StablePrefix      int
 	DynamicBytes      int
+	SystemBytes       int
+	StablePrefixBytes int
+	MessageBytes      int
+	ToolSchemaBytes   int
 	SystemHash        string
 	StablePrefixHash  string
 	ToolSurfaceHash   string

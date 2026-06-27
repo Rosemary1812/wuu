@@ -167,6 +167,10 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					ToolCount:         9,
 					StablePrefix:      0,
 					DynamicBytes:      128,
+					SystemBytes:       2048,
+					StablePrefixBytes: 2048,
+					MessageBytes:      2304,
+					ToolSchemaBytes:   4096,
 					SystemHash:        "system-hash",
 					StablePrefixHash:  "stable-hash",
 					ToolSurfaceHash:   "tools-hash",
@@ -204,6 +208,10 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	requestContext := events[3]
 	if requestContext["tool_count"] != float64(9) ||
 		requestContext["dynamic_context_bytes"] != float64(128) ||
+		requestContext["system_bytes"] != float64(2048) ||
+		requestContext["stable_prefix_bytes"] != float64(2048) ||
+		requestContext["message_bytes"] != float64(2304) ||
+		requestContext["tool_schema_bytes"] != float64(4096) ||
 		requestContext["system_hash"] != "system-hash" ||
 		requestContext["stable_prefix_hash"] != "stable-hash" ||
 		requestContext["tool_surface_hash"] != "tools-hash" ||

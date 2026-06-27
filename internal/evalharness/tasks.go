@@ -126,6 +126,10 @@ type ContextRequestObservation struct {
 	ToolCount         int      `json:"tool_count,omitempty"`
 	StablePrefix      int      `json:"stable_prefix,omitempty"`
 	DynamicBytes      int      `json:"dynamic_context_bytes,omitempty"`
+	SystemBytes       int      `json:"system_bytes,omitempty"`
+	StablePrefixBytes int      `json:"stable_prefix_bytes,omitempty"`
+	MessageBytes      int      `json:"message_bytes,omitempty"`
+	ToolSchemaBytes   int      `json:"tool_schema_bytes,omitempty"`
 	SystemHash        string   `json:"system_hash,omitempty"`
 	StablePrefixHash  string   `json:"stable_prefix_hash,omitempty"`
 	ToolSurfaceHash   string   `json:"tool_surface_hash,omitempty"`

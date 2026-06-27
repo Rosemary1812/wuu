@@ -282,6 +282,9 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	if shape.SystemHash == "" || shape.StablePrefixHash == "" || shape.ToolSurfaceHash == "" {
 		t.Fatalf("request shape missing hashes: %+v", shape)
 	}
+	if shape.SystemBytes == 0 || shape.StablePrefixBytes == 0 || shape.MessageBytes == 0 || shape.ToolSchemaBytes == 0 {
+		t.Fatalf("request shape missing byte metrics: %+v", shape)
+	}
 	if shape.PromptCacheKey != "thread-cache-key" {
 		t.Fatalf("request shape prompt cache key = %q", shape.PromptCacheKey)
 	}

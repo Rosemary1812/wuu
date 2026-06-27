@@ -56,6 +56,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				StepIndex:         0,
 				TransientMessages: 1,
 				ContentBytes:      512,
+				SystemBytes:       2048,
+				MessageBytes:      2560,
+				ToolSchemaBytes:   4096,
 				BlockKinds:        []string{"ENVIRONMENT", "REPO_MAP"},
 			}},
 			ToolInventory: []ToolInventoryObservation{{
@@ -119,7 +122,12 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	if !ok {
 		t.Fatalf("context_requests event data has wrong type: %#v", events[4].Data)
 	}
-	if len(contextRequests) != 1 || contextRequests[0].StepIndex != 0 || len(contextRequests[0].BlockKinds) != 2 {
+	if len(contextRequests) != 1 ||
+		contextRequests[0].StepIndex != 0 ||
+		len(contextRequests[0].BlockKinds) != 2 ||
+		contextRequests[0].SystemBytes != 2048 ||
+		contextRequests[0].MessageBytes != 2560 ||
+		contextRequests[0].ToolSchemaBytes != 4096 {
 		t.Fatalf("context_requests event missing request metadata: %+v", contextRequests)
 	}
 	if len(task.MissingToolCalls) != 1 || task.MissingToolCalls[0] != "checkpoint action=restore" {
