@@ -175,6 +175,9 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 	}
 	if strings.TrimSpace(opts.Effort) != "" {
 		cfg.Agent.Effort = strings.TrimSpace(opts.Effort)
+		if strings.TrimSpace(opts.Variant) == "" {
+			cfg.Agent.Variant = ""
+		}
 	}
 	if strings.TrimSpace(opts.Variant) != "" {
 		cfg.Agent.Variant = strings.TrimSpace(opts.Variant)

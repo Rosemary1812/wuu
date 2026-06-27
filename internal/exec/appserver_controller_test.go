@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/config"
 )
 
 func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
@@ -64,5 +66,87 @@ func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 	}
 	if resumed.ID != thread.ID {
 		t.Fatalf("resumed thread = %q, want %q", resumed.ID, thread.ID)
+	}
+}
+
+func TestLocalAppServerControllerEffortOverrideClearsConfiguredVariant(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".wuu.json")
+	if err := os.WriteFile(configPath, []byte(`{
+		"default_provider": "test",
+		"providers": {
+			"test": {
+				"type": "openai-compatible",
+				"base_url": "https://example.test/v1",
+				"api_key": "sk-test",
+				"model": "gpt-5.5"
+			}
+		},
+		"agent": {
+			"effort": "xhigh",
+			"variant": "xhigh"
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	controller, err := NewLocalAppServerController(ctx, Options{
+		Workdir: root,
+		Effort:  "low",
+		NoTools: true,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalAppServerController: %v", err)
+	}
+	defer controller.Shutdown(context.Background())
+
+	init, err := controller.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if init.Effort != "low" || init.Variant != "low" {
+		t.Fatalf("effort override should select low variant, got effort=%q variant=%q", init.Effort, init.Variant)
+	}
+}
+
+func TestApplyConfigOverridesEffortClearsConfiguredVariant(t *testing.T) {
+	cfg := config.Config{
+		Agent: config.AgentConfig{
+			Effort:  "xhigh",
+			Variant: "xhigh",
+		},
+	}
+
+	if err := applyConfigOverrides(&cfg, Options{Effort: "low"}); err != nil {
+		t.Fatalf("applyConfigOverrides: %v", err)
+	}
+
+	if cfg.Agent.Effort != "low" {
+		t.Fatalf("Effort = %q, want low", cfg.Agent.Effort)
+	}
+	if cfg.Agent.Variant != "" {
+		t.Fatalf("Variant should be cleared by explicit effort override, got %q", cfg.Agent.Variant)
+	}
+}
+
+func TestApplyConfigOverridesExplicitVariantWinsOverEffort(t *testing.T) {
+	cfg := config.Config{
+		Agent: config.AgentConfig{
+			Effort:  "medium",
+			Variant: "medium",
+		},
+	}
+
+	if err := applyConfigOverrides(&cfg, Options{Effort: "low", Variant: "high"}); err != nil {
+		t.Fatalf("applyConfigOverrides: %v", err)
+	}
+
+	if cfg.Agent.Effort != "low" {
+		t.Fatalf("Effort = %q, want low", cfg.Agent.Effort)
+	}
+	if cfg.Agent.Variant != "high" {
+		t.Fatalf("Variant = %q, want high", cfg.Agent.Variant)
 	}
 }
