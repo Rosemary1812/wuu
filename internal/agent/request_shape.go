@@ -18,20 +18,35 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 	messages := assembly.Messages
 	systemMessages := systemMessageCount(messages)
 	stablePrefix := 0
+	turnPrefix := 0
 	promptCacheKey := ""
 	if hint != nil {
 		stablePrefix = hint.StablePrefixMessages
+		turnPrefix = hint.TurnPrefixMessages
 		promptCacheKey = strings.TrimSpace(hint.PromptCacheKey)
 	}
 	if stablePrefix < 0 {
 		stablePrefix = 0
 	}
+	if turnPrefix < 0 {
+		turnPrefix = 0
+	}
 	if maxStable := len(messages) - systemMessages; stablePrefix > maxStable {
 		stablePrefix = maxStable
+	}
+	if maxTurn := len(messages) - systemMessages; turnPrefix > maxTurn {
+		turnPrefix = maxTurn
+	}
+	if turnPrefix < stablePrefix {
+		turnPrefix = stablePrefix
 	}
 	stableEnd := systemMessages + stablePrefix
 	if stableEnd > len(messages) {
 		stableEnd = len(messages)
+	}
+	turnEnd := systemMessages + turnPrefix
+	if turnEnd > len(messages) {
+		turnEnd = len(messages)
 	}
 	loadableTools := providers.DiscoveredToolsFromMessages(messages)
 
@@ -41,8 +56,10 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 		SystemMessages:          systemMessages,
 		ToolCount:               len(tools),
 		StablePrefix:            stablePrefix,
+		TurnPrefix:              turnPrefix,
 		SystemBytes:             messageBytesForRequestShape(messages[:systemMessages]),
 		StablePrefixBytes:       messageBytesForRequestShape(messages[:stableEnd]),
+		TurnPrefixBytes:         messageBytesForRequestShape(messages[:turnEnd]),
 		MessageBytes:            messageBytesForRequestShape(messages),
 		ToolSchemaBytes:         toolSchemaBytesForRequestShape(tools),
 		LoadableToolCount:       len(loadableTools),
@@ -50,6 +67,7 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 		LoadableToolSurfaceHash: hashLoadableToolsForRequestShape(loadableTools),
 		SystemHash:              hashMessagesForRequestShape(messages[:systemMessages]),
 		StablePrefixHash:        hashMessagesForRequestShape(messages[:stableEnd]),
+		TurnPrefixHash:          hashMessagesForRequestShape(messages[:turnEnd]),
 		ToolSurfaceHash:         hashToolsForRequestShape(tools),
 		PromptCacheKey:          promptCacheKey,
 		SystemSections:          cloneSystemPromptSections(systemSections),

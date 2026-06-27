@@ -219,6 +219,8 @@ type ChatMessage struct {
 //   - StableSystem/StablePrefixMessages: which request prefix is
 //     stable enough to mark as cache-eligible on providers like
 //     Anthropic.
+//   - TurnPrefixMessages: which request prefix is stable within a
+//     single user turn for multi-step tool loops.
 //   - HasCompactSummary: whether the stable prefix starts with a
 //     compacted conversation summary, so providers can bias cache
 //     anchors toward that rewritten history root.
@@ -236,6 +238,12 @@ type CacheHint struct {
 	// Providers that merge, split, or lift messages must map this
 	// source-message count onto their final wire-format block boundary.
 	StablePrefixMessages int
+	// TurnPrefixMessages is the number of leading non-system entries
+	// that are stable within the current turn, typically through the
+	// latest visible user message. It can be larger than
+	// StablePrefixMessages without making the latest user request part
+	// of the cross-turn stable prefix.
+	TurnPrefixMessages int
 	// HasCompactSummary reports that the leading system prompt contains
 	// a compacted conversation summary. This lets providers prefer a
 	// cache anchor close to the rewritten history root without needing
@@ -421,9 +429,11 @@ type RequestContextSummary struct {
 	HiddenMessages          int                          `json:"hidden_messages,omitempty"`
 	ToolCount               int                          `json:"tool_count,omitempty"`
 	StablePrefix            int                          `json:"stable_prefix,omitempty"`
+	TurnPrefix              int                          `json:"turn_prefix,omitempty"`
 	DynamicBytes            int                          `json:"dynamic_context_bytes,omitempty"`
 	SystemBytes             int                          `json:"system_bytes,omitempty"`
 	StablePrefixBytes       int                          `json:"stable_prefix_bytes,omitempty"`
+	TurnPrefixBytes         int                          `json:"turn_prefix_bytes,omitempty"`
 	MessageBytes            int                          `json:"message_bytes,omitempty"`
 	ToolSchemaBytes         int                          `json:"tool_schema_bytes,omitempty"`
 	LoadableToolCount       int                          `json:"loadable_tool_count,omitempty"`
@@ -431,6 +441,7 @@ type RequestContextSummary struct {
 	LoadableToolSurfaceHash string                       `json:"loadable_tool_surface_hash,omitempty"`
 	SystemHash              string                       `json:"system_hash,omitempty"`
 	StablePrefixHash        string                       `json:"stable_prefix_hash,omitempty"`
+	TurnPrefixHash          string                       `json:"turn_prefix_hash,omitempty"`
 	ToolSurfaceHash         string                       `json:"tool_surface_hash,omitempty"`
 	PromptCacheKey          string                       `json:"prompt_cache_key,omitempty"`
 	SystemSections          []SystemPromptSectionSummary `json:"system_sections,omitempty"`

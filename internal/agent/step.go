@@ -119,9 +119,11 @@ type RequestContextInfo struct {
 	HiddenMessages          int
 	ToolCount               int
 	StablePrefix            int
+	TurnPrefix              int
 	DynamicBytes            int
 	SystemBytes             int
 	StablePrefixBytes       int
+	TurnPrefixBytes         int
 	MessageBytes            int
 	ToolSchemaBytes         int
 	LoadableToolCount       int
@@ -129,6 +131,7 @@ type RequestContextInfo struct {
 	LoadableToolSurfaceHash string
 	SystemHash              string
 	StablePrefixHash        string
+	TurnPrefixHash          string
 	ToolSurfaceHash         string
 	PromptCacheKey          string
 	SystemSections          []SystemPromptSectionInfo

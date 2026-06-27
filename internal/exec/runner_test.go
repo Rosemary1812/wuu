@@ -168,9 +168,11 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					HiddenMessages:          2,
 					ToolCount:               9,
 					StablePrefix:            0,
+					TurnPrefix:              1,
 					DynamicBytes:            128,
 					SystemBytes:             2048,
 					StablePrefixBytes:       2048,
+					TurnPrefixBytes:         2176,
 					MessageBytes:            2304,
 					ToolSchemaBytes:         4096,
 					LoadableToolCount:       1,
@@ -178,6 +180,7 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					LoadableToolSurfaceHash: "loadable-hash",
 					SystemHash:              "system-hash",
 					StablePrefixHash:        "stable-hash",
+					TurnPrefixHash:          "turn-hash",
 					ToolSurfaceHash:         "tools-hash",
 					PromptCacheKey:          "thread-1",
 					SystemSections: []providers.SystemPromptSectionSummary{{
@@ -234,9 +237,11 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	}
 	requestContext := events[3]
 	if requestContext["tool_count"] != float64(9) ||
+		requestContext["turn_prefix"] != float64(1) ||
 		requestContext["dynamic_context_bytes"] != float64(128) ||
 		requestContext["system_bytes"] != float64(2048) ||
 		requestContext["stable_prefix_bytes"] != float64(2048) ||
+		requestContext["turn_prefix_bytes"] != float64(2176) ||
 		requestContext["message_bytes"] != float64(2304) ||
 		requestContext["tool_schema_bytes"] != float64(4096) ||
 		requestContext["loadable_tool_count"] != float64(1) ||
@@ -244,6 +249,7 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		requestContext["loadable_tool_surface_hash"] != "loadable-hash" ||
 		requestContext["system_hash"] != "system-hash" ||
 		requestContext["stable_prefix_hash"] != "stable-hash" ||
+		requestContext["turn_prefix_hash"] != "turn-hash" ||
 		requestContext["tool_surface_hash"] != "tools-hash" ||
 		requestContext["prompt_cache_key"] != "thread-1" {
 		t.Fatalf("unexpected request_context event: %+v", requestContext)

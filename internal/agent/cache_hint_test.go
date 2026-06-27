@@ -23,6 +23,9 @@ func TestBuildCacheHint_DefaultsToStableHistoryBeforeCurrentTurn(t *testing.T) {
 	if hint.StablePrefixMessages != 2 {
 		t.Fatalf("expected 2 stable non-system messages, got %d", hint.StablePrefixMessages)
 	}
+	if hint.TurnPrefixMessages != 3 {
+		t.Fatalf("expected turn prefix through latest user, got %d", hint.TurnPrefixMessages)
+	}
 	if hint.HasCompactSummary {
 		t.Fatal("did not expect compact summary flag")
 	}
@@ -43,6 +46,9 @@ func TestBuildCacheHint_OnlyCurrentTurnStillGetsPromptCacheKey(t *testing.T) {
 	}
 	if hint.StablePrefixMessages != 0 {
 		t.Fatalf("expected no stable prefix messages, got %d", hint.StablePrefixMessages)
+	}
+	if hint.TurnPrefixMessages != 1 {
+		t.Fatalf("expected current user in turn prefix, got %d", hint.TurnPrefixMessages)
 	}
 	if hint.HasCompactSummary {
 		t.Fatal("did not expect compact summary flag")
@@ -69,6 +75,9 @@ func TestBuildCacheHint_HiddenModelContextKeepsCurrentTurnVolatile(t *testing.T)
 	if hint.StablePrefixMessages != 0 {
 		t.Fatalf("expected hidden context to keep current ask volatile, got %d", hint.StablePrefixMessages)
 	}
+	if hint.TurnPrefixMessages != 1 {
+		t.Fatalf("expected turn prefix to stop at latest visible user, got %d", hint.TurnPrefixMessages)
+	}
 }
 
 func TestBuildCacheHint_CompactSummaryBecomesStableAnchor(t *testing.T) {
@@ -90,6 +99,9 @@ func TestBuildCacheHint_CompactSummaryBecomesStableAnchor(t *testing.T) {
 	}
 	if hint.StablePrefixMessages != 0 {
 		t.Fatalf("expected current turn to stay volatile, got %d stable prefix messages", hint.StablePrefixMessages)
+	}
+	if hint.TurnPrefixMessages != 1 {
+		t.Fatalf("expected compacted turn prefix through current user, got %d", hint.TurnPrefixMessages)
 	}
 
 	otherCurrentTurn := []providers.ChatMessage{

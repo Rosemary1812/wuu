@@ -335,7 +335,8 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 
 	systemTexts := make([]string, 0, 1)
 	nonSystemSeen := 0
-	var cacheBoundary *anthropicCacheBoundary
+	var stableCacheBoundary *anthropicCacheBoundary
+	var turnCacheBoundary *anthropicCacheBoundary
 	for _, msg := range req.Messages {
 		if strings.EqualFold(msg.Role, "system") {
 			systemTexts = append(systemTexts, msg.Content)
@@ -374,20 +375,14 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 			// walk strictly within source's blocks instead of spilling
 			// into earlier source messages that share the same merged
 			// payload slot.
-			srcLastCacheable := lastCacheableBlockIndex(mapped.Content)
-			payloadIdx := -1
-			if srcLastCacheable >= 0 {
-				payloadIdx = destBlockEnd - len(mapped.Content) + srcLastCacheable
-			}
-			cacheBoundary = &anthropicCacheBoundary{
-				MessageIndex:                  destIdx,
-				BlockEnd:                      destBlockEnd,
-				SourceLastCacheablePayloadIdx: payloadIdx,
-			}
+			stableCacheBoundary = anthropicBoundaryForMapped(destIdx, destBlockEnd, mapped.Content)
+		}
+		if shouldMarkAnthropicTurnBoundary(req.CacheHint, nonSystemSeen) {
+			turnCacheBoundary = anthropicBoundaryForMapped(destIdx, destBlockEnd, mapped.Content)
 		}
 	}
 	providers.DebugLogf("buildAnthropicRequest: %d input msgs → %d merged msgs", len(req.Messages), len(payload.Messages))
-	applyAnthropicCacheHint(&payload, req.CacheHint, cacheBoundary)
+	applyAnthropicCacheHint(&payload, req.CacheHint, stableCacheBoundary, turnCacheBoundary)
 	for i := range payload.Messages {
 		payload.Messages[i] = smooshSystemReminderBlocks(payload.Messages[i])
 	}
@@ -704,31 +699,60 @@ func shouldMarkAnthropicStableBoundary(hint *providers.CacheHint, nonSystemSeen 
 	return hint != nil && hint.StablePrefixMessages > 0 && nonSystemSeen == hint.StablePrefixMessages
 }
 
-func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint, boundary *anthropicCacheBoundary) {
-	if payload == nil || hint == nil || hint.StablePrefixMessages <= 0 {
+func shouldMarkAnthropicTurnBoundary(hint *providers.CacheHint, nonSystemSeen int) bool {
+	return hint != nil &&
+		hint.TurnPrefixMessages > hint.StablePrefixMessages &&
+		nonSystemSeen == hint.TurnPrefixMessages
+}
+
+func anthropicBoundaryForMapped(destIdx, destBlockEnd int, content []anthropicBlock) *anthropicCacheBoundary {
+	srcLastCacheable := lastCacheableBlockIndex(content)
+	payloadIdx := -1
+	if srcLastCacheable >= 0 {
+		payloadIdx = destBlockEnd - len(content) + srcLastCacheable
+	}
+	return &anthropicCacheBoundary{
+		MessageIndex:                  destIdx,
+		BlockEnd:                      destBlockEnd,
+		SourceLastCacheablePayloadIdx: payloadIdx,
+	}
+}
+
+func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint, stableBoundary, turnBoundary *anthropicCacheBoundary) {
+	if payload == nil || hint == nil {
 		return
 	}
 	if len(payload.Messages) == 0 {
 		return
 	}
-	if hint.HasCompactSummary && markAnthropicMessageForCache(&payload.Messages[0]) {
-		return
-	}
-	if boundary != nil && markAnthropicBoundaryForCache(payload.Messages, *boundary) {
-		return
-	}
-	stable := hint.StablePrefixMessages
-	if stable > len(payload.Messages) {
-		stable = len(payload.Messages)
-	}
-	if stable == 0 {
-		return
-	}
-	for i := stable - 1; i >= 0; i-- {
-		if markAnthropicMessageForCache(&payload.Messages[i]) {
-			return
+	if hint.StablePrefixMessages > 0 {
+		if hint.HasCompactSummary {
+			markAnthropicMessageForCache(&payload.Messages[0])
+		} else {
+			markAnthropicPrefixForCache(payload, hint.StablePrefixMessages, stableBoundary)
 		}
 	}
+	if hint.TurnPrefixMessages > hint.StablePrefixMessages {
+		markAnthropicPrefixForCache(payload, hint.TurnPrefixMessages, turnBoundary)
+	}
+}
+
+func markAnthropicPrefixForCache(payload *anthropicRequest, prefix int, boundary *anthropicCacheBoundary) bool {
+	if payload == nil || prefix <= 0 || len(payload.Messages) == 0 {
+		return false
+	}
+	if boundary != nil && markAnthropicBoundaryForCache(payload.Messages, *boundary) {
+		return true
+	}
+	if prefix > len(payload.Messages) {
+		prefix = len(payload.Messages)
+	}
+	for i := prefix - 1; i >= 0; i-- {
+		if markAnthropicMessageForCache(&payload.Messages[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 func markAnthropicMessageForCache(msg *anthropicMessage) bool {

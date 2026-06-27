@@ -482,6 +482,54 @@ func TestBuildAnthropicRequest_CacheBoundaryKeepsSystemReminderAfterToolResult(t
 	if last.Content[1].Type != "text" || !strings.Contains(last.Content[1].Text, "<system-reminder>") {
 		t.Fatalf("expected volatile system reminder after cache boundary, got %+v", last.Content[1])
 	}
+	if last.Content[1].CacheControl != nil {
+		t.Fatalf("did not expect cache marker on volatile reminder, got %+v", last.Content[1].CacheControl)
+	}
+}
+
+func TestBuildAnthropicRequest_TurnPrefixCachesLatestUserBeforeDynamicContext(t *testing.T) {
+	reminder := wuucontext.FormatSystemReminder(wuucontext.EnvInfo{
+		CWD:  "/tmp/project",
+		Date: "2026-04-21",
+	})
+
+	payload, err := buildAnthropicRequest(providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "check repo"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID: "tool_1", Name: "read_file", Arguments: `{"path":"README.md"}`,
+			}}},
+			{Role: "tool", ToolCallID: "tool_1", Name: "read_file", Content: `{"content":"hello"}`},
+			{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: reminder, Hidden: true},
+		},
+		CacheHint: &providers.CacheHint{StableSystem: true, TurnPrefixMessages: 1},
+	}, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if len(payload.Messages) != 3 {
+		t.Fatalf("expected 3 messages after merge, got %d", len(payload.Messages))
+	}
+	first := payload.Messages[0]
+	if first.Role != "user" || len(first.Content) != 1 {
+		t.Fatalf("unexpected first message: %+v", first)
+	}
+	if first.Content[0].CacheControl == nil || first.Content[0].CacheControl.Type != "ephemeral" {
+		t.Fatalf("expected turn prefix cache marker on latest user, got %+v", first.Content[0].CacheControl)
+	}
+	last := payload.Messages[2]
+	if len(last.Content) != 1 || last.Content[0].Type != "tool_result" {
+		t.Fatalf("expected tool_result carrying volatile reminder, got %+v", last.Content)
+	}
+	if last.Content[0].CacheControl != nil {
+		t.Fatalf("did not expect cache marker on dynamic tool result context, got %+v", last.Content[0].CacheControl)
+	}
+	content, ok := last.Content[0].Content.(string)
+	if !ok || !strings.Contains(content, "<system-reminder>") {
+		t.Fatalf("expected volatile reminder in uncached tool_result content, got %#v", last.Content[0].Content)
+	}
 }
 
 func TestBuildAnthropicRequest_ClampsOverlargeStablePrefixCacheHint(t *testing.T) {

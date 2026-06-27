@@ -60,6 +60,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				TransientMessages:       1,
 				ContentBytes:            512,
 				SystemBytes:             2048,
+				TurnPrefix:              1,
+				TurnPrefixBytes:         2176,
+				TurnPrefixHash:          "turn-hash",
 				MessageBytes:            2560,
 				ToolSchemaBytes:         4096,
 				LoadableToolCount:       1,
@@ -137,6 +140,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		contextRequests[0].StepIndex != 0 ||
 		len(contextRequests[0].BlockKinds) != 2 ||
 		contextRequests[0].SystemBytes != 2048 ||
+		contextRequests[0].TurnPrefix != 1 ||
+		contextRequests[0].TurnPrefixBytes != 2176 ||
+		contextRequests[0].TurnPrefixHash != "turn-hash" ||
 		contextRequests[0].MessageBytes != 2560 ||
 		contextRequests[0].ToolSchemaBytes != 4096 ||
 		contextRequests[0].LoadableToolCount != 1 ||

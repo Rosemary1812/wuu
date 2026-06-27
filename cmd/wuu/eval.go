@@ -418,9 +418,11 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 				HiddenMessages:          info.HiddenMessages,
 				ToolCount:               info.ToolCount,
 				StablePrefix:            info.StablePrefix,
+				TurnPrefix:              info.TurnPrefix,
 				DynamicBytes:            info.DynamicBytes,
 				SystemBytes:             info.SystemBytes,
 				StablePrefixBytes:       info.StablePrefixBytes,
+				TurnPrefixBytes:         info.TurnPrefixBytes,
 				MessageBytes:            info.MessageBytes,
 				ToolSchemaBytes:         info.ToolSchemaBytes,
 				LoadableToolCount:       info.LoadableToolCount,
@@ -428,6 +430,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 				LoadableToolSurfaceHash: info.LoadableToolSurfaceHash,
 				SystemHash:              info.SystemHash,
 				StablePrefixHash:        info.StablePrefixHash,
+				TurnPrefixHash:          info.TurnPrefixHash,
 				ToolSurfaceHash:         info.ToolSurfaceHash,
 				PromptCacheKey:          info.PromptCacheKey,
 			})
@@ -658,6 +661,7 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			info.LoadableToolSchemaBytes <= 0 &&
 			info.SystemHash == "" &&
 			info.StablePrefixHash == "" &&
+			info.TurnPrefixHash == "" &&
 			info.ToolSurfaceHash == "" &&
 			info.LoadableToolSurfaceHash == "" {
 			continue
@@ -674,9 +678,11 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			HiddenMessages:          info.HiddenMessages,
 			ToolCount:               info.ToolCount,
 			StablePrefix:            info.StablePrefix,
+			TurnPrefix:              info.TurnPrefix,
 			DynamicBytes:            info.DynamicBytes,
 			SystemBytes:             info.SystemBytes,
 			StablePrefixBytes:       info.StablePrefixBytes,
+			TurnPrefixBytes:         info.TurnPrefixBytes,
 			MessageBytes:            info.MessageBytes,
 			ToolSchemaBytes:         info.ToolSchemaBytes,
 			LoadableToolCount:       info.LoadableToolCount,
@@ -684,6 +690,7 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			LoadableToolSurfaceHash: info.LoadableToolSurfaceHash,
 			SystemHash:              info.SystemHash,
 			StablePrefixHash:        info.StablePrefixHash,
+			TurnPrefixHash:          info.TurnPrefixHash,
 			ToolSurfaceHash:         info.ToolSurfaceHash,
 			PromptCacheKey:          info.PromptCacheKey,
 		})

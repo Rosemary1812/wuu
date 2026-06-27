@@ -138,9 +138,11 @@ type ContextRequestObservation struct {
 	HiddenMessages          int            `json:"hidden_messages,omitempty"`
 	ToolCount               int            `json:"tool_count,omitempty"`
 	StablePrefix            int            `json:"stable_prefix,omitempty"`
+	TurnPrefix              int            `json:"turn_prefix,omitempty"`
 	DynamicBytes            int            `json:"dynamic_context_bytes,omitempty"`
 	SystemBytes             int            `json:"system_bytes,omitempty"`
 	StablePrefixBytes       int            `json:"stable_prefix_bytes,omitempty"`
+	TurnPrefixBytes         int            `json:"turn_prefix_bytes,omitempty"`
 	MessageBytes            int            `json:"message_bytes,omitempty"`
 	ToolSchemaBytes         int            `json:"tool_schema_bytes,omitempty"`
 	LoadableToolCount       int            `json:"loadable_tool_count,omitempty"`
@@ -148,6 +150,7 @@ type ContextRequestObservation struct {
 	LoadableToolSurfaceHash string         `json:"loadable_tool_surface_hash,omitempty"`
 	SystemHash              string         `json:"system_hash,omitempty"`
 	StablePrefixHash        string         `json:"stable_prefix_hash,omitempty"`
+	TurnPrefixHash          string         `json:"turn_prefix_hash,omitempty"`
 	ToolSurfaceHash         string         `json:"tool_surface_hash,omitempty"`
 	PromptCacheKey          string         `json:"prompt_cache_key,omitempty"`
 }

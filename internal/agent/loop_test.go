@@ -261,6 +261,9 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	if hint.StablePrefixMessages != 2 {
 		t.Fatalf("expected stable prefix size 2, got %d", hint.StablePrefixMessages)
 	}
+	if hint.TurnPrefixMessages != 3 {
+		t.Fatalf("expected turn prefix through latest user, got %d", hint.TurnPrefixMessages)
+	}
 	if hint.PromptCacheKey != "thread-cache-key" {
 		t.Fatalf("expected thread prompt cache key, got %q", hint.PromptCacheKey)
 	}
@@ -268,7 +271,7 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 		t.Fatalf("expected one request shape observation, got %+v", contexts)
 	}
 	shape := contexts[0]
-	if shape.StepIndex != 0 || shape.MessageCount != 6 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.ToolCount != 1 {
+	if shape.StepIndex != 0 || shape.MessageCount != 6 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.TurnPrefix != 3 || shape.ToolCount != 1 {
 		t.Fatalf("unexpected request shape: %+v", shape)
 	}
 	if shape.TransientMessages != 2 || shape.ContentBytes == 0 || shape.DynamicBytes == 0 || shape.HiddenMessages != 2 {
@@ -282,10 +285,10 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 			t.Fatalf("request shape missing dynamic block metrics for %s: %+v", want, shape)
 		}
 	}
-	if shape.SystemHash == "" || shape.StablePrefixHash == "" || shape.ToolSurfaceHash == "" {
+	if shape.SystemHash == "" || shape.StablePrefixHash == "" || shape.TurnPrefixHash == "" || shape.ToolSurfaceHash == "" {
 		t.Fatalf("request shape missing hashes: %+v", shape)
 	}
-	if shape.SystemBytes == 0 || shape.StablePrefixBytes == 0 || shape.MessageBytes == 0 || shape.ToolSchemaBytes == 0 {
+	if shape.SystemBytes == 0 || shape.StablePrefixBytes == 0 || shape.TurnPrefixBytes == 0 || shape.MessageBytes == 0 || shape.ToolSchemaBytes == 0 {
 		t.Fatalf("request shape missing byte metrics: %+v", shape)
 	}
 	if shape.PromptCacheKey != "thread-cache-key" {
@@ -354,6 +357,9 @@ func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 	}
 	if secondHint.StablePrefixMessages != 0 {
 		t.Fatalf("expected current turn to remain volatile after rewrite, got %d", secondHint.StablePrefixMessages)
+	}
+	if secondHint.TurnPrefixMessages != 1 {
+		t.Fatalf("expected turn prefix through current ask after rewrite, got %d", secondHint.TurnPrefixMessages)
 	}
 	if !secondHint.StableSystem {
 		t.Fatal("expected summary system message to stay cacheable")

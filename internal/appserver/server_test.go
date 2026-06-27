@@ -1853,10 +1853,12 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		contextParams.Event.RequestContext.DynamicBytes == 0 ||
 		contextParams.Event.RequestContext.SystemBytes == 0 ||
 		contextParams.Event.RequestContext.StablePrefixBytes == 0 ||
+		contextParams.Event.RequestContext.TurnPrefixBytes == 0 ||
 		contextParams.Event.RequestContext.MessageBytes == 0 ||
 		contextParams.Event.RequestContext.ToolSchemaBytes == 0 ||
 		contextParams.Event.RequestContext.SystemHash == "" ||
 		contextParams.Event.RequestContext.StablePrefixHash == "" ||
+		contextParams.Event.RequestContext.TurnPrefixHash == "" ||
 		contextParams.Event.RequestContext.ToolSurfaceHash == "" {
 		t.Fatalf("request context missing request shape metadata: %+v", contextParams.Event.RequestContext)
 	}
