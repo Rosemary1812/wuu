@@ -1077,12 +1077,84 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 	if got := countMessagesContaining(request, "[REPO_MAP]"); got != 1 {
 		t.Fatalf("unchanged repo map should not be re-appended, got %d repo map messages in %+v", got, request)
 	}
+	if got := countMessagesContaining(request, "Git status: clean"); got != 0 {
+		t.Fatalf("stale environment block should be replaced before request, got %d in %+v", got, request)
+	}
 	if got := countMessagesContaining(request, "1 changed file"); got != 1 {
 		t.Fatalf("changed environment block should be appended once, got %d in %+v", got, request)
 	}
 	for _, msg := range res.NewMessages {
 		if strings.Contains(msg.Content, "[REPO_MAP]") {
 			t.Fatalf("unchanged repo map should not be returned as a new message: %+v", res.NewMessages)
+		}
+	}
+}
+
+func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+		{Content: "ok"},
+	}}
+
+	contextCalls := 0
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "read_file"}},
+			results: map[string]string{"call_1": `{"content":"hello"}`},
+		},
+		BeforeModelContext: func() []providers.ChatMessage {
+			contextCalls++
+			block := wuucontext.Block{
+				Kind:    wuucontext.BlockEnvironment,
+				Title:   "Runtime environment",
+				Source:  "runtime.snapshot",
+				Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
+			}
+			return []providers.ChatMessage{hiddenReminderForTest(block, 0)}
+		},
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("inspect the repo")}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected two provider calls, got %d", len(step.calls))
+	}
+	first := step.calls[0].Messages
+	if got := countMessagesContaining(first, "State: step 1"); got != 1 {
+		t.Fatalf("first request should include first context once, got %d in %+v", got, first)
+	}
+
+	second := step.calls[1].Messages
+	if err := providers.ValidateToolCallHistory(second); err != nil {
+		t.Fatalf("second request must keep provider-valid tool history: %v\n%+v", err, second)
+	}
+	if got := countMessagesContaining(second, "State: step 1"); got != 0 {
+		t.Fatalf("second request should not keep stale hidden context, got %d in %+v", got, second)
+	}
+	if got := countMessagesContaining(second, "State: step 2"); got != 1 {
+		t.Fatalf("second request should include latest hidden context once, got %d in %+v", got, second)
+	}
+	taskContracts := 0
+	for _, msg := range second {
+		if msg.Name == wuucontext.TaskContractMessageName {
+			taskContracts++
+		}
+	}
+	if taskContracts != 1 {
+		t.Fatalf("second request should keep one refreshed task contract, got %d in %+v", taskContracts, second)
+	}
+	if len(res.NewMessages) != 3 {
+		t.Fatalf("expected only durable assistant/tool/final messages, got %+v", res.NewMessages)
+	}
+	for _, msg := range res.NewMessages {
+		if msg.Hidden {
+			t.Fatalf("transient hidden context should not be returned as durable history: %+v", res.NewMessages)
 		}
 	}
 }
@@ -1148,8 +1220,18 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 		t.Fatal(err)
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != len(history)+2 {
-		t.Fatalf("expected history plus environment and task contract, got %+v", msgs)
+	if len(msgs) != len(history)-1 {
+		t.Fatalf("expected stale internal context to be replaced before request, got %+v", msgs)
+	}
+	for _, msg := range msgs[:len(msgs)-2] {
+		if msg.Name == wuucontext.SystemReminderMessageName ||
+			msg.Name == wuucontext.TaskContractMessageName ||
+			msg.Name == wuucontext.GoalContinuationMessageName {
+			t.Fatalf("stale model context should not remain in request history: %+v", msgs)
+		}
+	}
+	if msgs[len(msgs)-2].Name != wuucontext.SystemReminderMessageName || !msgs[len(msgs)-2].Hidden {
+		t.Fatalf("expected refreshed hidden environment context before task contract, got %+v", msgs)
 	}
 	contract := msgs[len(msgs)-1].Content
 	if strings.Contains(contract, "ignore me") {

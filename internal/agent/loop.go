@@ -158,6 +158,9 @@ func RunToolLoop(
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
 		}
+		if pruned, changed := pruneRefreshableModelContext(messages); changed {
+			messages = pruned
+		}
 		if contextAnchorsEnabled {
 			anchor := compact.BuildContextAnchorMessage(compact.NextContextAnchorID(messages))
 			appendMessage(anchor)
@@ -631,6 +634,46 @@ func latestHiddenContextMatches(history []providers.ChatMessage, msg providers.C
 		return prev.Role == msg.Role && prev.Name == msg.Name && prev.Content == msg.Content
 	}
 	return false
+}
+
+func pruneRefreshableModelContext(messages []providers.ChatMessage) ([]providers.ChatMessage, bool) {
+	if len(messages) == 0 {
+		return messages, false
+	}
+	var out []providers.ChatMessage
+	for i, msg := range messages {
+		if isRefreshableModelContextMessage(msg) {
+			if out == nil {
+				out = make([]providers.ChatMessage, 0, len(messages)-1)
+				out = append(out, messages[:i]...)
+			}
+			continue
+		}
+		if out != nil {
+			out = append(out, msg)
+		}
+	}
+	if out == nil {
+		return messages, false
+	}
+	return out, true
+}
+
+func isRefreshableModelContextMessage(msg providers.ChatMessage) bool {
+	name := strings.TrimSpace(msg.Name)
+	switch name {
+	case wuucontext.TaskContractMessageName, wuucontext.GoalContinuationMessageName:
+		return true
+	}
+	if wuucontext.IsSystemReminder(name, "") {
+		return true
+	}
+	if !msg.Hidden {
+		return false
+	}
+	return compact.IsInternalContextMessage(msg) ||
+		wuucontext.IsSystemReminder("", msg.Content) ||
+		wuucontext.IsGoalContinuation("", msg.Content)
 }
 
 // copyMessages returns an independent copy of msgs so callers can
