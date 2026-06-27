@@ -192,23 +192,26 @@ const maxCompactRetries = 3
 const compactReservedMaxTokens = 20_000
 
 // compactTailMaxTokens caps the recent raw history kept after compaction.
-// OpenCode keeps only a small recent tail after the anchored summary; its
-// default upper bound is 8K tokens.
-const compactTailMaxTokens = 8_000
+// Pi keeps approximately 20K recent tokens after the anchored summary, which
+// is a better fit for long coding-agent turns than a fixed small-turn tail.
+const compactTailMaxTokens = 20_000
 
 // compactTailMinTokens mirrors OpenCode's lower bound for the recent raw
 // context kept after the anchored summary. Even small models need enough fresh
 // context to preserve the immediate working state.
 const compactTailMinTokens = 2_000
 
-// compactTailDefaultTurns mirrors OpenCode's default tail_turns setting.
-const compactTailDefaultTurns = 2
+// compactTailAllFitFallbackTurns avoids no-op compaction when the configured
+// tail budget is larger than the whole conversation. Normal budgeted selection
+// can retain more turns; this only chooses a minimal recent tail when no budget
+// boundary was reached.
+const compactTailAllFitFallbackTurns = 2
 
 // compactTailContextFraction keeps the raw tail small relative to the target
 // model window so the generated summary and post-compact context still have
-// room. OpenCode's default is roughly 25% of the usable input window, capped at
-// 8K. The tail selector also keeps complete user-anchored turns and tool chains,
-// so this is a soft budget rather than a hard truncation point.
+// room. Pi uses a token budget rather than a fixed number of turns; the tail
+// selector also keeps complete user-anchored turns and tool chains, so this is
+// a soft budget rather than a hard truncation point.
 const compactTailContextFraction = 0.25
 
 // Compact compresses older messages into a summary. It finds an
@@ -657,11 +660,12 @@ type compactTurn struct {
 }
 
 // compactKeepStart returns the index where the un-compacted tail should begin.
-// It keeps up to the latest two user-anchored turns within the token budget,
-// matching OpenCode's default tail selection. Long single-turn tool runs only
-// have one user message at the front, so those fall back to a token-budgeted
-// raw tail instead of refusing to compact. A return value equal to len(messages)
-// means summarize everything and keep no raw tail; -1 means no compaction.
+// It keeps recent user-anchored turns within the token budget instead of
+// imposing a fixed turn count, matching Pi's compaction boundary shape. Long
+// single-turn tool runs only have one user message at the front, so those fall
+// back to a token-budgeted raw tail instead of refusing to compact. A return
+// value equal to len(messages) means summarize everything and keep no raw tail;
+// -1 means no compaction.
 func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) int {
 	if len(messages) <= 1 {
 		return -1
@@ -678,16 +682,10 @@ func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) in
 		return compactTailStartOrSummaryAll(messages, compactFallbackTailStart(messages, tailBudgetTokens))
 	}
 
-	recentStart := len(turns) - compactTailDefaultTurns
-	if recentStart < 0 {
-		recentStart = 0
-	}
-	recent := turns[recentStart:]
-
 	total := 0
 	keepStart := -1
-	for i := len(recent) - 1; i >= 0; i-- {
-		turn := recent[i]
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
 		size := EstimateMessagesTokens(messages[turn.start:turn.end])
 		if total+size <= tailBudgetTokens {
 			total += size
@@ -702,6 +700,9 @@ func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) in
 		break
 	}
 	if keepStart <= 0 {
+		if len(turns) > compactTailAllFitFallbackTurns {
+			return adjustToolBoundary(messages, turns[len(turns)-compactTailAllFitFallbackTurns].start)
+		}
 		return len(messages)
 	}
 	return adjustToolBoundary(messages, keepStart)

@@ -756,9 +756,10 @@ func TestCompactKeepStart_UsesTokenBudgetForRecentUserTurns(t *testing.T) {
 }
 
 func TestCompactKeepStart_ExpandsRecentTurnsWithinBudget(t *testing.T) {
+	large := strings.Repeat("x", 5000)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "first"},
-		{Role: "assistant", Content: "first reply"},
+		{Role: "assistant", Content: large},
 		{Role: "user", Content: "second"},
 		{Role: "assistant", Content: "second reply"},
 		{Role: "user", Content: "third"},
@@ -771,10 +772,11 @@ func TestCompactKeepStart_ExpandsRecentTurnsWithinBudget(t *testing.T) {
 	}
 }
 
-func TestCompactKeepStart_LimitsRecentTailToTwoUserTurns(t *testing.T) {
+func TestCompactKeepStart_UsesFullBudgetAcrossMoreThanTwoUserTurns(t *testing.T) {
+	large := strings.Repeat("x", 5000)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "first"},
-		{Role: "assistant", Content: "first reply"},
+		{Role: "assistant", Content: large},
 		{Role: "user", Content: "second"},
 		{Role: "assistant", Content: "second reply"},
 		{Role: "user", Content: "third"},
@@ -783,9 +785,9 @@ func TestCompactKeepStart_LimitsRecentTailToTwoUserTurns(t *testing.T) {
 		{Role: "assistant", Content: "fourth reply"},
 	}
 
-	start := compactKeepStart(messages, 10_000)
-	if start != 4 {
-		t.Fatalf("expected default tail to keep only the latest two user turns, start=%d", start)
+	start := compactKeepStart(messages, 1000)
+	if start != 2 {
+		t.Fatalf("expected token budget to keep more than two recent turns, start=%d", start)
 	}
 }
 
