@@ -91,6 +91,10 @@ type MemoryConfig struct {
 	ProjectRootMarkers []string `json:"project_root_markers,omitempty"`
 	// UserDirs are scanned for user-level memory. Tilde-expanded.
 	UserDirs []string `json:"user_dirs,omitempty"`
+	// IncludeLegacyMemory imports Claude-style rules, local files, and
+	// auto-memory paths. It is off by default and intended for explicit
+	// migration, not normal request context.
+	IncludeLegacyMemory *bool `json:"include_legacy_memory,omitempty"`
 	// Disable turns off memory loading entirely.
 	Disable bool `json:"disable,omitempty"`
 	// NudgeInterval controls how many successful user turns pass before

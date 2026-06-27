@@ -1583,6 +1583,30 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	}
 }
 
+func TestDiscoverMemoryHonorsLegacyOptIn(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "repo")
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude", "CLAUDE.md"), []byte("legacy project rule"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if files := discoverMemory(root, home, config.MemoryConfig{}); len(files) != 0 {
+		t.Fatalf("default runtime memory discovery should skip legacy files, got %+v", files)
+	}
+
+	includeLegacy := true
+	files := discoverMemory(root, home, config.MemoryConfig{IncludeLegacyMemory: &includeLegacy})
+	if len(files) != 1 || files[0].Content != "legacy project rule" {
+		t.Fatalf("legacy opt-in did not load legacy file: %+v", files)
+	}
+}
+
 func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 	promptText := buildBaseSystemPrompt(
 		t.TempDir(),

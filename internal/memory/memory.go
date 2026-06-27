@@ -1,11 +1,12 @@
 // Package memory discovers and loads project / user memory files so they can
 // be injected into the system prompt at session start.
 //
-// The design intentionally avoids locking wuu into a single ecosystem:
+// The default path stays Wuu-native and cache-friendly:
 //
-//   - Shared project instructions take priority by default.
+//   - Wuu user instructions live under ~/.config/wuu.
+//   - Shared project instructions take priority within each directory.
 //   - Local-only overrides are supported for machine-specific notes.
-//   - Legacy project and user memory layouts are imported for migration.
+//   - Legacy cross-harness layouts are opt-in for migration only.
 //
 // Project root detection walks up from the workspace root looking for marker
 // directories (.git, .hg, .jj, .svn).
@@ -46,21 +47,23 @@ type Options struct {
 
 	// UserDirs are absolute or home-relative directories scanned for
 	// user-level memory files (no hierarchy walk). Empty entries and
-	// missing directories are silently skipped. Defaults include Wuu and
-	// legacy tool directories.
+	// missing directories are silently skipped. Defaults include Wuu's
+	// user config directory only.
 	UserDirs []string
 
-	// Enables import of legacy markdown memory layouts. It defaults to true.
+	// Enables import of legacy markdown memory layouts from Claude-style
+	// rules, local files, and auto-memory. It defaults to false; callers
+	// should enable it only for explicit migration.
 	IncludeLegacyMemory *bool
 }
 
 // DefaultOptions returns the recommended configuration.
 func DefaultOptions() Options {
 	return Options{
-		Filenames:               []string{"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"},
-		ProjectRootMarkers:      []string{".git", ".hg", ".jj", ".svn"},
-		UserDirs:                []string{"~/.config/wuu", "~/.claude", "~/.codex"},
-		IncludeLegacyMemory: boolPtr(true),
+		Filenames:           []string{"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"},
+		ProjectRootMarkers:  []string{".git", ".hg", ".jj", ".svn"},
+		UserDirs:            []string{"~/.config/wuu"},
+		IncludeLegacyMemory: boolPtr(false),
 	}
 }
 
@@ -120,9 +123,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 		if dir == "" {
 			continue
 		}
-		for _, name := range opts.Filenames {
-			add(filepath.Join(dir, name), "user")
-		}
+		addInstructionFiles(dir, opts.Filenames, "user", add)
 		if includeLegacyMemory {
 			addRulesDir(filepath.Join(dir, "rules"), "user", add)
 		}
@@ -138,7 +139,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 			projectRoot = findProjectRoot(absRoot, opts.ProjectRootMarkers)
 			dirs := walkBetween(projectRoot, absRoot)
 			for _, dir := range dirs {
-				addProjectInstructionFiles(dir, opts.Filenames, add)
+				addInstructionFiles(dir, opts.Filenames, "project", add)
 				if includeLegacyMemory {
 					add(filepath.Join(dir, ".claude", "CLAUDE.md"), "project")
 					addRulesDir(filepath.Join(dir, ".claude", "rules"), "project", add)
@@ -157,7 +158,7 @@ func Discover(rootDir, homeDir string, opts Options) []File {
 	return out
 }
 
-func addProjectInstructionFiles(dir string, filenames []string, add func(path, source string)) {
+func addInstructionFiles(dir string, filenames []string, source string, add func(path, source string)) {
 	wanted := make(map[string]struct{}, len(filenames))
 	for _, name := range filenames {
 		wanted[name] = struct{}{}
@@ -165,20 +166,20 @@ func addProjectInstructionFiles(dir string, filenames []string, add func(path, s
 	_, wantsAgents := wanted["AGENTS.md"]
 	hasAgents := wantsAgents && fileExists(filepath.Join(dir, "AGENTS.md"))
 	if hasAgents {
-		add(filepath.Join(dir, "AGENTS.md"), "project")
+		add(filepath.Join(dir, "AGENTS.md"), source)
 	}
 	if _, ok := wanted["CLAUDE.md"]; ok && !hasAgents {
-		add(filepath.Join(dir, "CLAUDE.md"), "project")
+		add(filepath.Join(dir, "CLAUDE.md"), source)
 	}
 	if _, ok := wanted["AGENTS.override.md"]; ok {
-		add(filepath.Join(dir, "AGENTS.override.md"), "project")
+		add(filepath.Join(dir, "AGENTS.override.md"), source)
 	}
 	for _, name := range filenames {
 		switch name {
 		case "AGENTS.md", "CLAUDE.md", "AGENTS.override.md":
 			continue
 		default:
-			add(filepath.Join(dir, name), "project")
+			add(filepath.Join(dir, name), source)
 		}
 	}
 }

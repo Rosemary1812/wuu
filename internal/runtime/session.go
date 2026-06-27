@@ -1382,6 +1382,9 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 	if len(cfg.UserDirs) > 0 {
 		memOpts.UserDirs = cfg.UserDirs
 	}
+	if cfg.IncludeLegacyMemory != nil {
+		memOpts.IncludeLegacyMemory = cfg.IncludeLegacyMemory
+	}
 	return memory.Discover(rootDir, homeDir, memOpts)
 }
 

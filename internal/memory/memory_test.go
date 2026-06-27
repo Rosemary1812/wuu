@@ -14,6 +14,12 @@ func testOpts(userDirs []string) Options {
 	return o
 }
 
+func legacyTestOpts(userDirs []string) Options {
+	o := testOpts(userDirs)
+	o.IncludeLegacyMemory = boolPtr(true)
+	return o
+}
+
 func TestDiscover_EmptyDirs(t *testing.T) {
 	files := Discover("", "", testOpts(nil))
 	if len(files) != 0 {
@@ -31,12 +37,11 @@ func TestDiscover_UserDirOnly(t *testing.T) {
 	}
 
 	files := Discover("", "", testOpts([]string{dir}))
-	if len(files) != 2 {
-		t.Fatalf("expected 2 files, got %d", len(files))
+	if len(files) != 1 {
+		t.Fatalf("expected AGENTS.md to suppress same-dir CLAUDE.md, got %d files", len(files))
 	}
-	// AGENTS.md comes first per default Filenames priority.
-	if files[0].Name != "AGENTS.md" || files[1].Name != "CLAUDE.md" {
-		t.Errorf("unexpected order: %s, %s", files[0].Name, files[1].Name)
+	if files[0].Name != "AGENTS.md" {
+		t.Errorf("unexpected user instruction file: %s", files[0].Name)
 	}
 	for _, f := range files {
 		if f.Source != "user" {
@@ -276,7 +281,7 @@ func TestDiscover_LegacyProjectMemoryLayout(t *testing.T) {
 		}
 	}
 
-	files := Discover(root, "", testOpts(nil))
+	files := Discover(root, "", legacyTestOpts(nil))
 	byContent := map[string]File{}
 	for _, f := range files {
 		byContent[f.Content] = f
@@ -304,7 +309,7 @@ func TestDiscover_LegacyUserRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	files := Discover("", home, testOpts([]string{"~/.claude"}))
+	files := Discover("", home, legacyTestOpts([]string{"~/.claude"}))
 	if len(files) != 1 {
 		t.Fatalf("expected one user rule, got %d: %+v", len(files), files)
 	}
@@ -332,7 +337,7 @@ func TestDiscover_LegacyAutoMemoryEntrypoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	files := Discover(root, home, testOpts(nil))
+	files := Discover(root, home, legacyTestOpts(nil))
 	if len(files) != 1 {
 		t.Fatalf("expected one auto memory file, got %d: %+v", len(files), files)
 	}
@@ -359,15 +364,51 @@ func TestDiscover_TildeExpansion(t *testing.T) {
 	}
 }
 
-func TestDiscover_DefaultOptionsIncludesAllUserDirs(t *testing.T) {
+func TestDiscover_DefaultOptionsAreWuuNative(t *testing.T) {
 	opts := DefaultOptions()
-	if len(opts.UserDirs) != 3 {
-		t.Errorf("expected 3 default user dirs, got %d: %v", len(opts.UserDirs), opts.UserDirs)
+	if len(opts.UserDirs) != 1 || opts.UserDirs[0] != "~/.config/wuu" {
+		t.Errorf("expected only Wuu default user dir, got %v", opts.UserDirs)
 	}
 	if len(opts.Filenames) != 3 {
 		t.Errorf("expected 3 default filenames, got %d", len(opts.Filenames))
 	}
 	if opts.Filenames[0] != "AGENTS.md" {
 		t.Errorf("expected AGENTS.md as highest-priority filename, got %q", opts.Filenames[0])
+	}
+	if opts.IncludeLegacyMemory == nil || *opts.IncludeLegacyMemory {
+		t.Errorf("legacy memory import should be opt-in by default, got %v", opts.IncludeLegacyMemory)
+	}
+}
+
+func TestDiscover_DefaultSkipsLegacyMemoryLayouts(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "repo")
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".claude", "rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude", "CLAUDE.md"), []byte("dot claude"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude", "rules", "style.md"), []byte("style"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projectKeyRoot := root
+	if ev, err := filepath.EvalSymlinks(projectKeyRoot); err == nil {
+		projectKeyRoot = ev
+	}
+	autoPath := filepath.Join(home, ".claude", "projects", claudeCodeSanitizePath(filepath.Clean(projectKeyRoot)), "memory", "MEMORY.md")
+	if err := os.MkdirAll(filepath.Dir(autoPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(autoPath, []byte("auto"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := Discover(root, home, testOpts(nil))
+	if len(files) != 0 {
+		t.Fatalf("default discovery should skip legacy layouts, got %+v", files)
 	}
 }
