@@ -6,29 +6,17 @@ import (
 	"testing"
 )
 
-// BenchmarkSnapshot measures the cost of wuu's per-turn git context injection.
-// This runs git rev-parse --abbrev-ref HEAD and git status --short every call.
+// BenchmarkSnapshot measures the cost of wuu's lightweight per-request runtime
+// context injection. Git state is intentionally not part of Snapshot.
 func BenchmarkSnapshot(b *testing.B) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		b.Fatal(err)
 	}
-	// Walk up to find the git root (bench runs from package dir)
-	root := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
-			break
-		}
-		parent := filepath.Dir(root)
-		if parent == root {
-			b.Skip("not in a git repo")
-		}
-		root = parent
-	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = Snapshot(root)
+		_ = Snapshot(cwd)
 	}
 }
 
@@ -77,33 +65,5 @@ func BenchmarkGitStatusOnly(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = gitStatusSummary(root)
-	}
-}
-
-// BenchmarkSnapshotCached measures the cost when the TTL cache hits.
-// The first iteration warms the cache; the remainder reuse it.
-func BenchmarkSnapshotCached(b *testing.B) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		b.Fatal(err)
-	}
-	root := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
-			break
-		}
-		parent := filepath.Dir(root)
-		if parent == root {
-			b.Skip("not in a git repo")
-		}
-		root = parent
-	}
-
-	// Warm cache.
-	_ = Snapshot(root)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = Snapshot(root)
 	}
 }

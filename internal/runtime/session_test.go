@@ -377,8 +377,11 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 		combined.WriteString("\n")
 	}
 	content := combined.String()
-	if !strings.Contains(content, "[ENVIRONMENT]") || !strings.Contains(content, "Git status:") {
-		t.Fatalf("per-turn environment context should still carry live git state:\n%s", content)
+	if !strings.Contains(content, "[ENVIRONMENT]") || !strings.Contains(content, "- CWD:") {
+		t.Fatalf("per-turn environment context should carry lightweight runtime state:\n%s", content)
+	}
+	if strings.Contains(content, "Git status:") || strings.Contains(content, "Git branch:") {
+		t.Fatalf("default environment context should not inject volatile git state:\n%s", content)
 	}
 	if strings.Contains(content, "[REPO_MAP]") || strings.Contains(content, "source: runtime.repo_map") {
 		t.Fatalf("per-turn context should not inject repo map by default:\n%s", content)
