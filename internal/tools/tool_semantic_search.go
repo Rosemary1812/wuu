@@ -482,7 +482,7 @@ func semanticSortMatches(matches []semanticSearchMatch) {
 
 func semanticSearchNextSuggestions(total int, truncated bool) []string {
 	if total == 0 {
-		return []string{"try a broader concept query, search exact strings with grep, or inspect the repo map"}
+		return []string{"try a broader concept query or search exact strings with grep"}
 	}
 	if truncated {
 		return []string{"narrow semantic_search with path/include, then confirm candidate files with read_file, grep, or ast_search before editing"}

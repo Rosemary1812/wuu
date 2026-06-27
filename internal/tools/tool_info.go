@@ -214,7 +214,7 @@ func classifyToolKind(name string) ToolKind {
 	switch name {
 	case "read_file", "write_file", "list_files", "edit_file", "apply_patch", "checkpoint":
 		return ToolKindFile
-	case "repo_map", "grep", "glob", "ast_search", "semantic_search":
+	case "grep", "glob", "ast_search", "semantic_search":
 		return ToolKindSearch
 	case "tool_search":
 		return ToolKindDiscovery
@@ -279,8 +279,7 @@ func (t *Toolkit) shouldDeferByDefault(name string) bool {
 
 func isProfileDeferredByDefault(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "repo_map",
-		"ast_search",
+	case "ast_search",
 		"semantic_search",
 		"web_search",
 		"web_fetch",

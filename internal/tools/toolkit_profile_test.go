@@ -92,7 +92,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"checkpoint", "repo_map", "thread_get"} {
+	for _, name := range []string{"checkpoint", "thread_get"} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("non-surface tool %s should not be visible, got %v", name, sortedProfileDefNames(defs))
 		}
@@ -103,6 +103,9 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		if info.Exposure != ToolExposureHidden {
 			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureHidden)
 		}
+	}
+	if _, ok := kit.ToolInfo("repo_map"); ok {
+		t.Fatalf("repo_map should not be registered as a model tool")
 	}
 
 	for _, name := range []string{

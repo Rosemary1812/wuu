@@ -31,7 +31,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "lead",
 			Role:         "Lead / Planner",
 			ContextScope: ContextScopeFull,
-			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "load_skill", "list_workflows", "start_workflow", "workflow_status", "workflow_control", "spawn_agent", "await_agents", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "load_skill", "list_workflows", "start_workflow", "workflow_status", "workflow_control", "spawn_agent", "await_agents", "agent_report"},
 			SystemPrompt: "Own the goal, maintain durable state, split work into phases, and require reviewer or verifier evidence before completion.",
 			OutputSchema: "report: summary, decisions, assignments, blockers, verification policy, next steps",
 			SuccessCriteria: []string{
@@ -44,7 +44,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "planner",
 			Role:         "Planner",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "load_skill", "list_workflows", "update_plan", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "load_skill", "list_workflows", "update_plan", "agent_report"},
 			SystemPrompt: "Turn researched context into an executable plan with scope, non-goals, risks, verification, and rollback notes. Do not edit product files.",
 			OutputSchema: "plan: steps, files, risks, verification, rollback, open questions",
 			SuccessCriteria: []string{
@@ -56,7 +56,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "researcher",
 			Role:         "Researcher",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "ast_search", "semantic_search", "bash", "load_skill", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "ast_search", "semantic_search", "bash", "load_skill", "agent_report"},
 			SystemPrompt: "Read the code and summarize constraints, ownership boundaries, relevant files, and unknowns. Do not edit files.",
 			OutputSchema: "research: relevant files, findings, constraints, risks, suggested next reads",
 			SuccessCriteria: []string{
@@ -104,7 +104,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "debugger",
 			Role:         "Debugger",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "repo_map", "bash", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "bash", "agent_report"},
 			SystemPrompt: "Analyze failure logs and identify root cause before proposing or making a fix. Prefer evidence over guesses.",
 			OutputSchema: "debug: symptom, evidence, root cause, fix options, next command",
 			SuccessCriteria: []string{

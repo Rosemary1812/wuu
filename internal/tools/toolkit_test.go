@@ -2408,7 +2408,6 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 	}{
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "checkpoint", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "repo_map", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "ast_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "semantic_search", kind: ToolKindSearch, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
@@ -6619,70 +6618,6 @@ func TestToolkit_ASTSearchFindsDefinitionsImportsAndCalls(t *testing.T) {
 	}
 	if len(callParsed.Matches) != 1 || callParsed.Matches[0].File != "main.go" || callParsed.Matches[0].Line != 10 || callParsed.Matches[0].Kind != "call" {
 		t.Fatalf("unexpected call matches: %+v", callParsed.Matches)
-	}
-}
-
-func TestToolkit_RepoMapReturnsStructuredWorkspaceSummary(t *testing.T) {
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	mustWriteFile(t, filepath.Join(root, "AGENTS.md"), "rules\n")
-	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/repo\n")
-	mustWriteFile(t, filepath.Join(root, "checkout", "discount.go"), "package checkout\n")
-	mustWriteFile(t, filepath.Join(root, "checkout", "discount_test.go"), "package checkout\n")
-	mustWriteFile(t, filepath.Join(root, "web", "app.tsx"), "export const App = () => null\n")
-	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "trace.jsonl"), "{}\n")
-	mustWriteFile(t, filepath.Join(root, "node_modules", "pkg", "index.js"), "ignored\n")
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "repo_map",
-		Arguments: `{"max_listed_files":10}`,
-	})
-	if err != nil {
-		t.Fatalf("repo_map: %v", err)
-	}
-	if strings.Contains(resp, "node_modules") || strings.Contains(resp, ".wuu") {
-		t.Fatalf("repo_map should skip generated/internal state paths: %s", resp)
-	}
-	var parsed struct {
-		Action            string `json:"action"`
-		WorkspaceRevision string `json:"workspace_revision"`
-		Summary           struct {
-			FilesScanned int `json:"files_scanned"`
-			Languages    []struct {
-				Name  string `json:"name"`
-				Count int    `json:"count"`
-			} `json:"languages"`
-			TestMappings []struct {
-				Source string `json:"source"`
-				Test   string `json:"test"`
-			} `json:"test_mappings"`
-			RepresentativeFiles []string `json:"representative_files"`
-		} `json:"summary"`
-		Suggestions []string `json:"next_suggestions"`
-	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse repo_map response: %v\n%s", err, resp)
-	}
-	if parsed.Action != "repo_map" {
-		t.Fatalf("repo_map action = %q, want repo_map", parsed.Action)
-	}
-	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
-		t.Fatalf("repo_map response missing workspace revision: %+v", parsed)
-	}
-	if parsed.Summary.FilesScanned != 5 {
-		t.Fatalf("unexpected files scanned: %+v", parsed.Summary)
-	}
-	if len(parsed.Summary.TestMappings) != 1 || parsed.Summary.TestMappings[0].Source != "checkout/discount.go" || parsed.Summary.TestMappings[0].Test != "checkout/discount_test.go" {
-		t.Fatalf("unexpected test mappings: %+v", parsed.Summary.TestMappings)
-	}
-	if len(parsed.Summary.RepresentativeFiles) == 0 || parsed.Summary.RepresentativeFiles[0] != "AGENTS.md" {
-		t.Fatalf("unexpected representative files: %+v", parsed.Summary.RepresentativeFiles)
-	}
-	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "read_file") {
-		t.Fatalf("repo_map response missing confirmation suggestion: %+v", parsed.Suggestions)
 	}
 }
 
