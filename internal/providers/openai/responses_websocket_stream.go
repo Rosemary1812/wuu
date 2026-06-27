@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/coder/websocket"
 )
@@ -295,13 +296,41 @@ func responsesCachedInputDelta(current []responsesInputItem, continuation *respo
 	baseline := make([]responsesInputItem, 0, len(continuation.lastRequestInput)+len(continuation.lastResponseItems))
 	baseline = append(baseline, continuation.lastRequestInput...)
 	baseline = append(baseline, continuation.lastResponseItems...)
+	return responsesCachedInputDeltaFromBaseline(current, baseline)
+}
+
+func responsesCachedInputDeltaFromBaseline(current, baseline []responsesInputItem) ([]responsesInputItem, bool) {
 	if len(current) < len(baseline) {
-		return nil, false
+		if !responsesInputCanMatchBaselineWithRefreshableContext(current, baseline) {
+			return nil, false
+		}
 	}
-	if !responsesInputItemsEqual(current[:len(baseline)], baseline) {
-		return nil, false
+	var delta []responsesInputItem
+	i := 0
+	for j := 0; j < len(baseline); j++ {
+		base := baseline[j]
+		if isRefreshableResponsesInputItem(base) {
+			if i < len(current) && responsesInputItemEqual(current[i], base) {
+				i++
+			}
+			continue
+		}
+		for i < len(current) && isRefreshableResponsesInputItem(current[i]) {
+			delta = append(delta, current[i])
+			i++
+		}
+		if i >= len(current) || !responsesInputItemEqual(current[i], base) {
+			return nil, false
+		}
+		i++
 	}
-	return current[len(baseline):], true
+	if i < len(current) {
+		delta = append(delta, current[i:]...)
+	}
+	if delta == nil {
+		delta = make([]responsesInputItem, 0)
+	}
+	return delta, true
 }
 
 func responsesWebSocketStoreContinuation(session *responsesWebSocketSession, payload responsesRequest, responseID string, responseItems []responsesInputItem) {
@@ -346,6 +375,55 @@ func responsesInputItemsEqual(a, b []responsesInputItem) bool {
 		return false
 	}
 	return string(aj) == string(bj)
+}
+
+func responsesInputItemEqual(a, b responsesInputItem) bool {
+	return responsesInputItemsEqual([]responsesInputItem{a}, []responsesInputItem{b})
+}
+
+func responsesInputCanMatchBaselineWithRefreshableContext(current, baseline []responsesInputItem) bool {
+	nonRefreshable := 0
+	for _, item := range baseline {
+		if !isRefreshableResponsesInputItem(item) {
+			nonRefreshable++
+		}
+	}
+	return len(current) >= nonRefreshable
+}
+
+func isRefreshableResponsesInputItem(item responsesInputItem) bool {
+	if !strings.EqualFold(strings.TrimSpace(item.Role), "user") {
+		return false
+	}
+	text := strings.TrimSpace(responsesInputItemText(item))
+	return wuucontext.IsSystemReminder("", text) || wuucontext.IsGoalContinuation("", text)
+}
+
+func responsesInputItemText(item responsesInputItem) string {
+	switch content := item.Content.(type) {
+	case string:
+		return content
+	case []responsesInputContentPart:
+		parts := make([]string, 0, len(content))
+		for _, part := range content {
+			if part.Text != "" {
+				parts = append(parts, part.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	case []any:
+		parts := make([]string, 0, len(content))
+		for _, raw := range content {
+			if part, ok := raw.(map[string]any); ok {
+				if text, ok := part["text"].(string); ok && text != "" {
+					parts = append(parts, text)
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return ""
+	}
 }
 
 func marshalResponsesWebSocketCreate(payload responsesRequest) ([]byte, error) {

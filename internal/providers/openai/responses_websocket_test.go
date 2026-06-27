@@ -492,6 +492,138 @@ func TestResponsesStreamChatWebSocket_PreservesDeltaWithHiddenModelContext(t *te
 	}
 }
 
+func TestResponsesStreamChatWebSocket_DeltaWithRefreshedHiddenContextAcrossTurns(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 2; i++ {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				t.Errorf("read request %d: %v", i+1, err)
+				return
+			}
+			if typ != websocket.MessageText {
+				t.Errorf("request %d type = %v", i+1, typ)
+				return
+			}
+			var body map[string]any
+			if err := json.Unmarshal(data, &body); err != nil {
+				t.Errorf("decode request %d: %v", i+1, err)
+				return
+			}
+			requests <- body
+
+			if i == 0 {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"first answer","item_id":"msg_1","output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"first answer"}]},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":2}}}`)
+			} else {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"second answer","item_id":"msg_2","output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"second answer"}]},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+			}
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesWebSocket:      true,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	oldContext := providers.ChatMessage{
+		Role:    "user",
+		Name:    wuucontext.SystemReminderMessageName,
+		Content: "<system-reminder>\n# Environment\nState: old\n</system-reminder>",
+		Hidden:  true,
+	}
+	newContext := providers.ChatMessage{
+		Role:    "user",
+		Name:    wuucontext.SystemReminderMessageName,
+		Content: "<system-reminder>\n# Environment\nState: new\n</system-reminder>",
+		Hidden:  true,
+	}
+	cache := &providers.CacheHint{PromptCacheKey: "thread-refresh-hidden-context"}
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "first"}, oldContext},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("first StreamChat: %v", err)
+	}
+	if err := drainStream(ch); err != nil {
+		t.Fatalf("first stream: %v", err)
+	}
+
+	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{
+				Role:              "assistant",
+				Content:           "first answer",
+				Phase:             providers.MessagePhaseFinalAnswer,
+				ProviderItemID:    "msg_1",
+				ProviderItemModel: "gpt-test",
+			},
+			{Role: "user", Content: "second"},
+			newContext,
+		},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("second StreamChat: %v", err)
+	}
+	if err := drainStream(ch); err != nil {
+		t.Fatalf("second stream: %v", err)
+	}
+
+	first := <-requests
+	if _, exists := first["previous_response_id"]; exists {
+		t.Fatalf("first request must be full context: %#v", first)
+	}
+
+	second := <-requests
+	if second["previous_response_id"] != "resp_1" {
+		t.Fatalf("second request previous_response_id = %#v; body=%#v", second["previous_response_id"], second)
+	}
+	secondInput := second["input"].([]any)
+	if len(secondInput) != 2 {
+		t.Fatalf("second request should send only new user input and refreshed context, got %#v", secondInput)
+	}
+	rawSecondInput, err := json.Marshal(secondInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rawSecondInput), "second") || !strings.Contains(string(rawSecondInput), "State: new") {
+		t.Fatalf("second delta missing new turn or refreshed context: %s", rawSecondInput)
+	}
+	if strings.Contains(string(rawSecondInput), "State: old") || strings.Contains(string(rawSecondInput), "first answer") {
+		t.Fatalf("second delta should not resend old context or assistant answer: %s", rawSecondInput)
+	}
+}
+
 func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenContext(t *testing.T) {
 	requests := make(chan map[string]any, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
