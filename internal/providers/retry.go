@@ -324,12 +324,18 @@ func IsRetryable(err error) bool {
 		if streamErr.ContextOverflow || streamErr.Auth {
 			return false
 		}
+		if isTerminalUsageLimit(streamErr.Code, streamErr.Message) {
+			return false
+		}
 		return streamErr.Retryable
 	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		// Context-overflow needs compaction, not a blind retry.
 		if httpErr.ContextOverflow {
+			return false
+		}
+		if httpErr.StatusCode == 429 && isTerminalUsageLimit("", httpErr.Body) {
 			return false
 		}
 		switch httpErr.StatusCode {
@@ -451,8 +457,36 @@ func isNetworkError(err error) bool {
 }
 
 func isRetryableStreamError(code, message string) bool {
+	if isTerminalUsageLimit(code, message) {
+		return false
+	}
 	if isProviderOverloaded(code, message) || isTemporaryProviderFailure(code, message) {
 		return true
+	}
+	return false
+}
+
+func isTerminalUsageLimit(code, message string) bool {
+	needle := strings.ToLower(strings.TrimSpace(code + " " + message))
+	if needle == "" {
+		return false
+	}
+	terminal := []string{
+		"usage_limit_reached",
+		"usage limit has been reached",
+		"monthly usage limit reached",
+		"gousagelimiterror",
+		"freeusagelimiterror",
+		"insufficient_quota",
+		"quota exceeded",
+		"out of budget",
+		"available balance",
+		"billing",
+	}
+	for _, marker := range terminal {
+		if strings.Contains(needle, marker) {
+			return true
+		}
 	}
 	return false
 }

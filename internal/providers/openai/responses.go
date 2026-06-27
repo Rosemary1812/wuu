@@ -1348,8 +1348,12 @@ func (e *responsesError) asError() error {
 	if e == nil {
 		return errors.New("response error")
 	}
-	if e.Code != "" || e.Message != "" {
-		return providers.NewProviderStreamError(e.Code, e.Message)
+	code := strings.TrimSpace(e.Code)
+	if code == "" {
+		code = strings.TrimSpace(e.Type)
+	}
+	if code != "" || e.Message != "" {
+		return providers.NewProviderStreamError(code, e.Message)
 	}
 	if e.Type != "" {
 		return fmt.Errorf("response error: %s", e.Type)

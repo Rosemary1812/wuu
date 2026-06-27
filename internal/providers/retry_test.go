@@ -65,6 +65,23 @@ func TestIsRetryable_HTTPServerErrors(t *testing.T) {
 	}
 }
 
+func TestIsRetryable_TerminalUsageLimit(t *testing.T) {
+	cases := []string{
+		`{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`,
+		`{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}`,
+		`Monthly usage limit reached`,
+		`available balance is too low`,
+	}
+	for _, body := range cases {
+		if IsRetryable(&HTTPError{StatusCode: 429, Body: body}) {
+			t.Fatalf("expected terminal usage limit to not be retryable: %s", body)
+		}
+	}
+	if !IsRetryable(&HTTPError{StatusCode: 429, Body: "temporary rate limit, retry later"}) {
+		t.Fatal("expected temporary rate limit to remain retryable")
+	}
+}
+
 func TestIsRetryable_IncompleteStreamError(t *testing.T) {
 	if !IsRetryable(NewIncompleteStreamError("stream closed before done")) {
 		t.Fatal("expected incomplete stream error to be retryable")
@@ -75,6 +92,13 @@ func TestNewProviderStreamError_Retryable(t *testing.T) {
 	err := NewProviderStreamError("1305", "该模型当前访问量过大，请您稍后再试")
 	if !IsRetryable(err) {
 		t.Fatal("expected zhipu 1305 stream error to be retryable")
+	}
+}
+
+func TestNewProviderStreamError_TerminalUsageLimit(t *testing.T) {
+	err := NewProviderStreamError("usage_limit_reached", "The usage limit has been reached")
+	if IsRetryable(err) {
+		t.Fatal("expected terminal usage-limit stream error to not be retryable")
 	}
 }
 

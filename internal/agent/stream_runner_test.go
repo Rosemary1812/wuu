@@ -732,6 +732,40 @@ func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_DoesNotRetryTerminalUsageLimit(t *testing.T) {
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{
+				events: []providers.StreamEvent{
+					{Type: providers.EventError, Error: providers.NewProviderStreamError("usage_limit_reached", "The usage limit has been reached")},
+				},
+			},
+			{
+				events: []providers.StreamEvent{
+					{Type: providers.EventContentDelta, Content: "should not run"},
+					{Type: providers.EventDone},
+				},
+			},
+		},
+	}
+
+	runner := StreamRunner{
+		Client:                  client,
+		Model:                   "m",
+		StreamReconnectBudget:   time.Second,
+		StreamRetryInitialDelay: time.Millisecond,
+		StreamRetryMaxDelay:     2 * time.Millisecond,
+	}
+
+	_, err := runner.Run(context.Background(), "hi")
+	if err == nil {
+		t.Fatal("expected terminal usage-limit error")
+	}
+	if client.callCount != 1 {
+		t.Fatalf("expected no retry after terminal usage limit, got %d stream attempts", client.callCount)
+	}
+}
+
 func TestStreamRunner_RetryOnEarlyStreamErrorEvent(t *testing.T) {
 	client := &mockStreamClient{
 		attempts: []mockStreamAttempt{
