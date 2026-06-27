@@ -101,6 +101,10 @@ func RunToolLoop(
 		// response.usage as ground truth + delta estimation for
 		// messages added since the last successful response.
 		usage = cfg.UsageTracker
+		// Request-only context produced by tool execution in the current
+		// run. It is consumed by the next provider request and never enters
+		// live or durable history.
+		postToolContextSegments []ContextSegment
 	)
 	if usage == nil {
 		usage = NewUsageTracker()
@@ -167,6 +171,10 @@ func RunToolLoop(
 			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
 		}
 		requestSegments := requestContextSegments(cfg.BeforeRequestContext)
+		if len(postToolContextSegments) > 0 {
+			requestSegments = append(requestSegments, postToolContextSegments...)
+			postToolContextSegments = nil
+		}
 		if contract, ok := taskContractReminder(messages); ok {
 			requestSegments = append(requestSegments, RequestOnlyContextSegment([]providers.ChatMessage{contract}))
 		}
@@ -339,6 +347,7 @@ func RunToolLoop(
 			toolRuntime = NewTurnToolRuntime(cfg.Tools)
 		}
 		orderedToolMessages := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult)
+		postToolContextSegments = append(postToolContextSegments, toolRuntime.TakeRequestContextSegments()...)
 		enforceAggregateResultBudget(orderedToolMessages)
 		for _, toolMsg := range orderedToolMessages {
 			appendMessage(toolMsg)
@@ -618,12 +627,20 @@ func isTransientModelContextMessage(msg providers.ChatMessage) bool {
 	if wuucontext.IsSystemReminder(name, "") {
 		return true
 	}
+	if isLegacyHookContextMessage(msg) {
+		return true
+	}
 	if !msg.Hidden {
 		return false
 	}
 	return compact.IsInternalContextMessage(msg) ||
 		wuucontext.IsSystemReminder("", msg.Content) ||
 		wuucontext.IsGoalContinuation("", msg.Content)
+}
+
+func isLegacyHookContextMessage(msg providers.ChatMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(msg.Role), "user") &&
+		strings.HasPrefix(strings.TrimSpace(msg.Content), "[Hook context for ")
 }
 
 func cloneReasoningBlocks(blocks []providers.ReasoningBlock) []providers.ReasoningBlock {

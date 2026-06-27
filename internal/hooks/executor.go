@@ -22,8 +22,9 @@ type ToolExecutor interface {
 //
 // It also implements agent.ToolContextProvider: after each Execute call,
 // LastAdditionalContext() returns any additional_context from PostToolUse
-// hooks. The agent loop injects this into the conversation so the model
-// sees hook-provided context alongside the tool result.
+// hooks. The agent loop projects this into the next provider request as
+// request-only context so the model sees hook-provided context without
+// adding it to durable conversation history.
 type HookedExecutor struct {
 	inner             ToolExecutor
 	dispatcher        *Dispatcher

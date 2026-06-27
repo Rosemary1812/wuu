@@ -498,7 +498,7 @@ func TestRunToolLoop_ToolCallThenAnswer(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
+func TestRunToolLoop_AppendsToolResultsBeforeRequestOnlyHookContext(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{
 			{ID: "call_1", Name: "read_file", Arguments: `{}`},
@@ -511,10 +511,14 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 		{Name: "read_file"},
 		{Name: "grep"},
 	}}
+	var contexts []RequestContextInfo
 
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("inspect")}, LoopConfig{
 		Model: "m",
 		Tools: tools,
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
+		},
 	}, step)
 	if err != nil {
 		t.Fatal(err)
@@ -527,18 +531,21 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 	for _, msg := range visible {
 		roles = append(roles, msg.Role)
 	}
-	if got, want := strings.Join(roles, ","), "assistant,tool,tool,tool,user,user,user,assistant"; got != want {
+	if got, want := strings.Join(roles, ","), "assistant,tool,tool,tool,assistant"; got != want {
 		t.Fatalf("unexpected returned message order: got %s want %s", got, want)
 	}
 	if len(step.calls) != 2 {
 		t.Fatalf("expected two provider requests, got %d", len(step.calls))
+	}
+	if err := providers.ValidateToolCallHistory(step.calls[1].Messages); err != nil {
+		t.Fatalf("expected valid second request sequence, got %v: %+v", err, step.calls[1].Messages)
 	}
 	visibleRequest := visibleMessagesForTest(step.calls[1].Messages)
 	requestRoles := make([]string, 0, len(visibleRequest))
 	for _, msg := range visibleRequest {
 		requestRoles = append(requestRoles, msg.Role)
 	}
-	if got, want := strings.Join(requestRoles, ","), "user,assistant,tool,tool,tool,user,user,user"; got != want {
+	if got, want := strings.Join(requestRoles, ","), "user,assistant,tool,tool,tool"; got != want {
 		t.Fatalf("unexpected second request order: got %s want %s", got, want)
 	}
 	for i, wantID := range []string{"call_1", "call_2", "call_3"} {
@@ -546,6 +553,40 @@ func TestRunToolLoop_AppendsAllToolResultsBeforeFollowupContext(t *testing.T) {
 		if msg.Role != "tool" || msg.ToolCallID != wantID {
 			t.Fatalf("tool result %d: got %+v want call_id %s", i, msg, wantID)
 		}
+	}
+	if got := countMessagesContaining(step.calls[1].Messages, "[ADDITIONAL_CONTEXT]"); got != 3 {
+		t.Fatalf("expected three request-only hook context blocks, got %d in %+v", got, step.calls[1].Messages)
+	}
+	if got := countMessagesContaining(res.NewMessages, "[ADDITIONAL_CONTEXT]"); got != 0 {
+		t.Fatalf("hook context must not enter durable returned history, got %d in %+v", got, res.NewMessages)
+	}
+	if len(contexts) != 2 {
+		t.Fatalf("expected two request context observations, got %+v", contexts)
+	}
+	if containsString(contexts[0].BlockKinds, string(wuucontext.BlockAdditionalContext)) {
+		t.Fatalf("first request should not include post-tool hook context: %+v", contexts[0])
+	}
+	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockAdditionalContext)) || contexts[1].TransientMessages != 3 {
+		t.Fatalf("second request should expose hook context as request-only additional context: %+v", contexts[1])
+	}
+}
+
+func TestRunToolLoop_FiltersLegacyHookContextHistory(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "done"}}}
+	history := []providers.ChatMessage{
+		userMsg("inspect"),
+		{Role: "user", Content: "[Hook context for read_file]: stale plugin note"},
+	}
+
+	res, err := RunToolLoop(context.Background(), history, LoopConfig{Model: "m"}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := countMessagesContaining(step.calls[0].Messages, "[Hook context for"); got != 0 {
+		t.Fatalf("legacy hook context should be filtered before request, got %d in %+v", got, step.calls[0].Messages)
+	}
+	if got := countMessagesContaining(res.NewMessages, "[Hook context for"); got != 0 {
+		t.Fatalf("legacy hook context should not be returned as durable history, got %d in %+v", got, res.NewMessages)
 	}
 }
 

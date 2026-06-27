@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -43,6 +44,8 @@ type TurnToolRuntime struct {
 	runs     []*toolRun
 	byID     map[string]*toolRun
 	canceled bool
+
+	requestContext []ContextSegment
 }
 
 func NewTurnToolRuntime(executor ToolExecutor) *TurnToolRuntime {
@@ -262,18 +265,23 @@ func (r *TurnToolRuntime) ExecuteFinalCalls(
 	r.registerFinalCalls(calls)
 	batches := partitionToolCalls(r.executor, calls)
 	var toolMessages []providers.ChatMessage
-	var followupMessages []providers.ChatMessage
 	for _, batch := range batches {
-		batchMessages := r.executeBatch(ctx, batch, onResult)
-		for _, msg := range batchMessages {
-			if strings.EqualFold(msg.Role, "tool") {
-				toolMessages = append(toolMessages, msg)
-			} else {
-				followupMessages = append(followupMessages, msg)
-			}
-		}
+		batchResult := r.executeBatch(ctx, batch, onResult)
+		toolMessages = append(toolMessages, batchResult.messages...)
+		r.requestContext = append(r.requestContext, batchResult.requestContext...)
 	}
-	return append(toolMessages, followupMessages...)
+	return toolMessages
+}
+
+// TakeRequestContextSegments returns request-only context produced by tool
+// execution and clears it from this turn runtime.
+func (r *TurnToolRuntime) TakeRequestContextSegments() []ContextSegment {
+	if r == nil || len(r.requestContext) == 0 {
+		return nil
+	}
+	out := append([]ContextSegment(nil), r.requestContext...)
+	r.requestContext = nil
+	return out
 }
 
 func (r *TurnToolRuntime) registerFinalCalls(calls []providers.ToolCall) {
@@ -332,12 +340,12 @@ func (r *TurnToolRuntime) executeBatch(
 	ctx context.Context,
 	batch toolBatch,
 	onResult func(providers.ToolCall, string),
-) []providers.ChatMessage {
+) toolBatchResult {
 	ctxProvider, hasCtxProvider := r.executor.(ToolContextProvider)
 
 	if !batch.concurrent || len(batch.calls) == 1 {
 		msgs := make([]providers.ChatMessage, 0, len(batch.calls))
-		followups := make([]providers.ChatMessage, 0, len(batch.calls))
+		requestContext := make([]ContextSegment, 0, len(batch.calls))
 		for _, call := range batch.calls {
 			result := r.executeOrAwaitRun(ctx, call)
 			if onResult != nil {
@@ -352,14 +360,14 @@ func (r *TurnToolRuntime) executeBatch(
 			})
 			if hasCtxProvider {
 				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
-					followups = append(followups, providers.ChatMessage{
-						Role:    "user",
-						Content: "[Hook context for " + call.Name + "]: " + extra,
-					})
+					segment := postToolAdditionalContextSegment(call.Name, extra)
+					if len(segment.Messages) > 0 {
+						requestContext = append(requestContext, segment)
+					}
 				}
 			}
 		}
-		return append(msgs, followups...)
+		return toolBatchResult{messages: msgs, requestContext: requestContext}
 	}
 
 	runs := make([]*toolRun, len(batch.calls))
@@ -385,7 +393,29 @@ func (r *TurnToolRuntime) executeBatch(
 			Content:        result,
 		}
 	}
-	return msgs
+	return toolBatchResult{messages: msgs}
+}
+
+type toolBatchResult struct {
+	messages       []providers.ChatMessage
+	requestContext []ContextSegment
+}
+
+func postToolAdditionalContextSegment(toolName, content string) ContextSegment {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ContextSegment{}
+	}
+	title := "Hook context"
+	if name := strings.TrimSpace(toolName); name != "" {
+		title = "Hook context for " + name
+	}
+	return RequestOnlyContextBlockSegment([]wuucontext.Block{{
+		Kind:    wuucontext.BlockAdditionalContext,
+		Title:   title,
+		Source:  "hooks.post_tool_use",
+		Content: content,
+	}})
 }
 
 func (r *TurnToolRuntime) executeOrAwaitRun(ctx context.Context, call providers.ToolCall) string {

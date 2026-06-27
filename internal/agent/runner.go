@@ -41,13 +41,13 @@ type ToolDisplayProvider interface {
 
 // ToolContextProvider is an optional interface a ToolExecutor can
 // implement to return additional context alongside tool results.
-// Hook systems use this to inject context into the conversation after
+// Hook systems use this to expose request-only context after
 // PostToolUse hooks run.
 type ToolContextProvider interface {
 	// LastAdditionalContext returns the additional context string
-	// from the most recent Execute call, if any. Callers should
-	// check this after each Execute and inject non-empty values
-	// as system messages.
+	// from the most recent Execute call, if any. Callers should check
+	// this after each Execute and project non-empty values into the next
+	// provider request without appending them to durable history.
 	LastAdditionalContext() string
 }
 
