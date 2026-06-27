@@ -75,8 +75,8 @@ type Toolkit struct {
 	// back to the legacy direct-tool surface in that case.
 	activeProfile modelprofile.Profile
 	// activeSurface is the compiled surface for activeProfile. It is
-	// the authoritative source for which tool names are visible to
-	// the model under the current profile.
+	// the authoritative source for which tool names are direct,
+	// deferred, or hidden under the current profile.
 	activeSurface capability.Surface
 }
 
@@ -545,18 +545,14 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			continue
 		}
 		if hasSurface {
-			// Surface is the authoritative whitelist: tools the
-			// surface includes are visible regardless of the legacy
-			// toolExposure state. Explicit session disables still
-			// win, so worker filters and edit-mode switches cannot
-			// leak tools back into the model-visible list. The
-			// compiler can promote a Hidden-by-default tool (e.g.
-			// apply_patch on Codex) into a model-visible entry by
-			// listing it in surface.Tools.
-			if !activeSurfaceAllowsKnownTool(surface, t.registry.Lookup(d.Name)) {
+			// Surface.Tools is the authoritative direct-tool set.
+			// DeferredTools stay executable only after tool_search
+			// loads their schemas, and HiddenTools never enter the
+			// top-level request definitions.
+			if _, ok := surface.Tools[d.Name]; !ok {
 				continue
 			}
-			if t.shouldDeferByDefault(d.Name) {
+			if !activeSurfaceAllowsKnownTool(surface, t.registry.Lookup(d.Name)) {
 				continue
 			}
 			d.CacheStable = true
@@ -583,10 +579,10 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				if t.isToolDisabled(tool.Name()) {
 					continue
 				}
-				if !activeSurfaceAllowsKnownTool(surface, tool) {
+				if _, ok := surface.Tools[tool.Name()]; !ok {
 					continue
 				}
-				if t.shouldDeferByDefault(tool.Name()) {
+				if !activeSurfaceAllowsKnownTool(surface, tool) {
 					continue
 				}
 				d := tool.Definition()
@@ -684,6 +680,12 @@ func cloneSurface(surface capability.Surface) capability.Surface {
 			out.Tools[name] = cap
 		}
 	}
+	if len(surface.DeferredTools) > 0 {
+		out.DeferredTools = make(map[string]capability.Capability, len(surface.DeferredTools))
+		for name, cap := range surface.DeferredTools {
+			out.DeferredTools[name] = cap
+		}
+	}
 	if len(surface.HiddenTools) > 0 {
 		out.HiddenTools = make(map[string]capability.Capability, len(surface.HiddenTools))
 		for name, cap := range surface.HiddenTools {
@@ -691,6 +693,7 @@ func cloneSurface(surface capability.Surface) capability.Surface {
 		}
 	}
 	out.Capabilities = append([]capability.Capability(nil), surface.Capabilities...)
+	out.DeferredCapabilities = append([]capability.Capability(nil), surface.DeferredCapabilities...)
 	out.HiddenCapabilities = append([]capability.Capability(nil), surface.HiddenCapabilities...)
 	return out
 }
@@ -732,7 +735,7 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 		if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 			return nil
 		}
-		if t.shouldDeferByDefault(name) && !t.isDeferredToolLoaded(name) {
+		if activeSurfaceToolExposure(surface, name) == ToolExposureDeferred && !t.isDeferredToolLoaded(name) {
 			return fmt.Errorf("tool %q is deferred; call tool_search first to load it", name)
 		}
 		return nil
@@ -750,7 +753,10 @@ func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) boo
 	if _, ok := surface.Tools[name]; ok {
 		return true
 	}
-	if classifyToolKind(name) == ToolKindMCP && surfaceHasVisibleCapability(surface, capability.CapabilityMCP) {
+	if _, ok := surface.DeferredTools[name]; ok {
+		return true
+	}
+	if classifyToolKind(name) == ToolKindMCP && surfaceHasAvailableCapability(surface, capability.CapabilityMCP) {
 		return true
 	}
 	return false
@@ -778,7 +784,7 @@ func mcpToolAllowedWithoutTerminalExecution(surface capability.Surface, tool Too
 	if !ok {
 		return false
 	}
-	if !surfaceHasVisibleCapability(surface, capName) {
+	if !surfaceHasAvailableCapability(surface, capName) {
 		return false
 	}
 	if !isReadOnlyMCPProfileCapability(capName) {
@@ -812,6 +818,36 @@ func surfaceHasVisibleCapability(surface capability.Surface, capName capability.
 		}
 	}
 	return false
+}
+
+func surfaceHasAvailableCapability(surface capability.Surface, capName capability.Capability) bool {
+	for _, existing := range surface.Capabilities {
+		if existing == capName {
+			return true
+		}
+	}
+	for _, existing := range surface.DeferredCapabilities {
+		if existing == capName {
+			return true
+		}
+	}
+	return false
+}
+
+func activeSurfaceToolExposure(surface capability.Surface, name string) ToolExposure {
+	if surface.ProfileName == "" {
+		return ToolExposureDirect
+	}
+	if _, ok := surface.Tools[name]; ok {
+		return ToolExposureDirect
+	}
+	if _, ok := surface.DeferredTools[name]; ok {
+		return ToolExposureDeferred
+	}
+	if classifyToolKind(name) == ToolKindMCP && surfaceHasAvailableCapability(surface, capability.CapabilityMCP) {
+		return ToolExposureDeferred
+	}
+	return ToolExposureHidden
 }
 
 // LookupTool returns the Tool with the given name, or nil. This

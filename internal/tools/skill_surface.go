@@ -60,6 +60,9 @@ func surfaceAllowsSkillTool(surface capability.Surface, name string) bool {
 	if _, ok := surface.Tools[name]; ok {
 		return true
 	}
+	if _, ok := surface.DeferredTools[name]; ok {
+		return true
+	}
 	switch name {
 	case "bash":
 		return surfaceHasVisibleCapability(surface, capability.CapabilityCommandBash)

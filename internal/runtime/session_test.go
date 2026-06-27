@@ -311,8 +311,15 @@ func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 		defs[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if !defs[name] {
-			t.Fatalf("default profile should expose %s", name)
+		if defs[name] {
+			t.Fatalf("default profile should keep %s deferred", name)
+		}
+		info, ok := rt.Toolkit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != tools.ToolExposureDeferred {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
 		}
 	}
 }
@@ -998,9 +1005,12 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		toolNames[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if !toolNames[name] {
-			t.Fatalf("profile worker missing %s in tools: %+v", name, req.Tools)
+		if toolNames[name] {
+			t.Fatalf("profile worker should keep %s deferred from top-level tools: %+v", name, req.Tools)
 		}
+	}
+	if !toolNames["tool_search"] {
+		t.Fatalf("profile worker should expose tool_search for deferred memory tools: %+v", req.Tools)
 	}
 	if len(req.Messages) == 0 {
 		t.Fatal("profile worker sent no messages")
@@ -1069,8 +1079,15 @@ func TestNewSessionUsesGlobalMemoryStore(t *testing.T) {
 		defs[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if !defs[name] {
-			t.Fatalf("default session should expose %s", name)
+		if defs[name] {
+			t.Fatalf("default session should keep %s deferred", name)
+		}
+		info, ok := rt.Toolkit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != tools.ToolExposureDeferred {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
 		}
 	}
 }
@@ -1529,7 +1546,7 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", false)
 	rt := &Session{
 		RootDir:          root,
 		UserSystemPrompt: "Prefer concise answers.",
@@ -1875,7 +1892,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", false)
 	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
 	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
 	if err != nil {
@@ -1905,7 +1922,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	if err != nil {
 		t.Fatalf("New toolkit: %v", err)
 	}
-	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", false)
 	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
 	wt, err := agentcontrol.LookupWorkerType("verification")
 	if err != nil {

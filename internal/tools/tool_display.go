@@ -48,6 +48,9 @@ func (t *Toolkit) displayCapabilityForTool(call providers.ToolCall) string {
 	if c, ok := surface.Tools[name]; ok {
 		return string(c)
 	}
+	if c, ok := surface.DeferredTools[name]; ok {
+		return string(c)
+	}
 	if c, ok := surface.HiddenTools[name]; ok {
 		return string(c)
 	}

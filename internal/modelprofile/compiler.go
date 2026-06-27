@@ -45,9 +45,9 @@ const (
 // Compiler compiles a model profile into a tool surface. Compile is
 // given a forMainAgent flag so it can decide whether the surface
 // should advertise main-agent-only context tools such as helpme and
-// inception. Worker surfaces pass false; the surface is therefore
-// consistent with the runtime boundary instead of being filtered
-// downstream.
+// inception or worker-only handoff tools such as agent_report. The
+// surface is therefore consistent with the runtime boundary instead
+// of being filtered downstream.
 type Compiler interface {
 	Compile(p Profile, forMainAgent bool) capability.Surface
 }
@@ -76,6 +76,8 @@ func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface 
 	if forMainAgent {
 		addHelpmeTool(b)
 		addInceptionTool(b)
+	} else {
+		addWorkerReportTool(b)
 	}
 	b.sortCaps()
 	return b.surface
@@ -99,30 +101,35 @@ func ResolveProfileKey(p Profile) ProfileKey {
 }
 
 // surfaceBuilder is a helper that incrementally builds a Surface.
-// It enforces the rule that every visible tool and every
-// capability lives in exactly one of (Tools, HiddenTools) and
-// (Capabilities, HiddenCapabilities).
+// It enforces the rule that every tool name lives in exactly one
+// exposure bucket: direct, deferred, or hidden. A broad capability
+// can appear in more than one bucket when different tools under that
+// capability have different lifecycles, such as worker agent_report
+// being direct while other agent management tools stay deferred.
 type surfaceBuilder struct {
-	surface capability.Surface
-	visible map[capability.Capability]struct{}
-	hidden  map[capability.Capability]struct{}
+	surface  capability.Surface
+	visible  map[capability.Capability]struct{}
+	deferred map[capability.Capability]struct{}
+	hidden   map[capability.Capability]struct{}
 }
 
 func newSurfaceFor(p Profile, key ProfileKey) capability.Surface {
 	return capability.Surface{
-		ProfileName: string(key),
-		Provider:    p.ProviderName,
-		Model:       p.Model,
-		Tools:       map[string]capability.Capability{},
-		HiddenTools: map[string]capability.Capability{},
+		ProfileName:   string(key),
+		Provider:      p.ProviderName,
+		Model:         p.Model,
+		Tools:         map[string]capability.Capability{},
+		DeferredTools: map[string]capability.Capability{},
+		HiddenTools:   map[string]capability.Capability{},
 	}
 }
 
 func newBuilder(p Profile, key ProfileKey) *surfaceBuilder {
 	return &surfaceBuilder{
-		surface: newSurfaceFor(p, key),
-		visible: map[capability.Capability]struct{}{},
-		hidden:  map[capability.Capability]struct{}{},
+		surface:  newSurfaceFor(p, key),
+		visible:  map[capability.Capability]struct{}{},
+		deferred: map[capability.Capability]struct{}{},
+		hidden:   map[capability.Capability]struct{}{},
 	}
 }
 
@@ -140,6 +147,21 @@ func (b *surfaceBuilder) addVisibleCapability(c capability.Capability) {
 	b.surface.Capabilities = append(b.surface.Capabilities, c)
 }
 
+// addDeferred registers a tool that is available only after
+// tool_search loads its schema.
+func (b *surfaceBuilder) addDeferred(tool string, c capability.Capability) {
+	b.surface.DeferredTools[tool] = c
+	b.addDeferredCapability(c)
+}
+
+func (b *surfaceBuilder) addDeferredCapability(c capability.Capability) {
+	if _, ok := b.deferred[c]; ok {
+		return
+	}
+	b.deferred[c] = struct{}{}
+	b.surface.DeferredCapabilities = append(b.surface.DeferredCapabilities, c)
+}
+
 // addHidden registers a profile companion tool that is intentionally
 // not model-visible under this surface.
 func (b *surfaceBuilder) addHidden(tool string, c capability.Capability) {
@@ -148,6 +170,9 @@ func (b *surfaceBuilder) addHidden(tool string, c capability.Capability) {
 		return
 	}
 	if _, ok := b.visible[c]; ok {
+		return
+	}
+	if _, ok := b.deferred[c]; ok {
 		return
 	}
 	b.hidden[c] = struct{}{}
@@ -165,6 +190,9 @@ func (b *surfaceBuilder) skipHidden(c capability.Capability) {
 	if _, ok := b.visible[c]; ok {
 		return
 	}
+	if _, ok := b.deferred[c]; ok {
+		return
+	}
 	b.hidden[c] = struct{}{}
 	b.surface.HiddenCapabilities = append(b.surface.HiddenCapabilities, c)
 }
@@ -173,6 +201,9 @@ func (b *surfaceBuilder) skipHidden(c capability.Capability) {
 func (b *surfaceBuilder) sortCaps() {
 	sort.SliceStable(b.surface.Capabilities, func(i, j int) bool {
 		return string(b.surface.Capabilities[i]) < string(b.surface.Capabilities[j])
+	})
+	sort.SliceStable(b.surface.DeferredCapabilities, func(i, j int) bool {
+		return string(b.surface.DeferredCapabilities[i]) < string(b.surface.DeferredCapabilities[j])
 	})
 	sort.SliceStable(b.surface.HiddenCapabilities, func(i, j int) bool {
 		return string(b.surface.HiddenCapabilities[i]) < string(b.surface.HiddenCapabilities[j])
@@ -257,8 +288,8 @@ func addFileReadTools(b *surfaceBuilder) {
 func addSearchTools(b *surfaceBuilder) {
 	b.addVisible("grep", capability.CapabilitySearchGrep)
 	b.addVisible("glob", capability.CapabilitySearchGlob)
-	b.addVisible("ast_search", capability.CapabilitySearchAST)
-	b.addVisible("semantic_search", capability.CapabilitySearchSemantic)
+	b.addDeferred("ast_search", capability.CapabilitySearchAST)
+	b.addDeferred("semantic_search", capability.CapabilitySearchSemantic)
 }
 
 func addBashFirstTools(b *surfaceBuilder, p Profile) {
@@ -269,19 +300,18 @@ func addBashFirstTools(b *surfaceBuilder, p Profile) {
 }
 
 func addWebTools(b *surfaceBuilder) {
-	b.addVisible("web_search", capability.CapabilityWebSearch)
-	b.addVisible("web_fetch", capability.CapabilityWebFetch)
+	b.addDeferred("web_search", capability.CapabilityWebSearch)
+	b.addDeferred("web_fetch", capability.CapabilityWebFetch)
 }
 
 func addTaskTools(b *surfaceBuilder) {
-	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
-	b.addVisible("send_message", capability.CapabilityTaskCommunicate)
-	b.addVisible("followup_task", capability.CapabilityTaskCommunicate)
-	b.addVisible("wait_agent", capability.CapabilityTaskManage)
-	b.addVisible("await_agents", capability.CapabilityTaskManage)
-	b.addVisible("close_agent", capability.CapabilityTaskManage)
-	b.addVisible("list_agents", capability.CapabilityTaskManage)
-	b.addVisible("agent_report", capability.CapabilityTaskManage)
+	b.addDeferred("spawn_agent", capability.CapabilityTaskSpawn)
+	b.addDeferred("send_message", capability.CapabilityTaskCommunicate)
+	b.addDeferred("followup_task", capability.CapabilityTaskCommunicate)
+	b.addDeferred("wait_agent", capability.CapabilityTaskManage)
+	b.addDeferred("await_agents", capability.CapabilityTaskManage)
+	b.addDeferred("close_agent", capability.CapabilityTaskManage)
+	b.addDeferred("list_agents", capability.CapabilityTaskManage)
 }
 
 // addHelpmeTool registers the main-agent-only HelpMe recovery tool. It
@@ -291,48 +321,52 @@ func addTaskTools(b *surfaceBuilder) {
 // in internal/agentcontrol/worker_types.go and the path check in
 // HelpMeTool.Execute) is unchanged.
 func addHelpmeTool(b *surfaceBuilder) {
-	b.addVisible("helpme", capability.CapabilityTaskSpawn)
+	b.addDeferred("helpme", capability.CapabilityTaskSpawn)
 }
 
 func addInceptionTool(b *surfaceBuilder) {
 	b.addVisible("inception", capability.CapabilityContextRewrite)
 }
 
+func addWorkerReportTool(b *surfaceBuilder) {
+	b.addVisible("agent_report", capability.CapabilityTaskManage)
+}
+
 func addMemoryTools(b *surfaceBuilder) {
-	b.addVisible("session_memory", capability.CapabilityMemorySession)
+	b.addDeferred("session_memory", capability.CapabilityMemorySession)
 	// Project-level memory tools are gated on the model surface
-	// (not on whether a memory provider is attached). The
-	// toolkit still hides individual memory_* tools when no
-	// provider is configured; the capability is the contract
-	// that says "project memory is a thing on this surface".
-	b.addVisible("read_memory", capability.CapabilityMemoryProject)
-	b.addVisible("write_memory", capability.CapabilityMemoryProject)
+	// (not on whether a memory provider is attached). The toolkit
+	// still hides individual memory_* tools when no provider is
+	// configured; the capability is the contract that says "project
+	// memory is a thing on this surface".
+	b.addDeferred("read_memory", capability.CapabilityMemoryProject)
+	b.addDeferred("write_memory", capability.CapabilityMemoryProject)
 }
 
 func addPlanningTools(b *surfaceBuilder) {
 	b.addVisible("update_plan", capability.CapabilityPlan)
-	b.addVisible("create_goal", capability.CapabilityGoal)
-	b.addVisible("get_goal", capability.CapabilityGoal)
-	b.addVisible("update_goal", capability.CapabilityGoal)
+	b.addDeferred("create_goal", capability.CapabilityGoal)
+	b.addDeferred("get_goal", capability.CapabilityGoal)
+	b.addDeferred("update_goal", capability.CapabilityGoal)
 }
 
 func addWorkflowTools(b *surfaceBuilder) {
-	b.addVisible("list_workflows", capability.CapabilityWorkflow)
-	b.addVisible("load_workflow", capability.CapabilityWorkflow)
-	b.addVisible("save_workflow", capability.CapabilityWorkflow)
-	b.addVisible("list_agent_profiles", capability.CapabilityWorkflow)
-	b.addVisible("create_agent_profile", capability.CapabilityWorkflow)
-	b.addVisible("start_workflow", capability.CapabilityWorkflow)
-	b.addVisible("run_workflow", capability.CapabilityWorkflow)
-	b.addVisible("create_workflow", capability.CapabilityWorkflow)
-	b.addVisible("workflow_control", capability.CapabilityWorkflow)
-	b.addVisible("workflow_status", capability.CapabilityWorkflow)
+	b.addDeferred("list_workflows", capability.CapabilityWorkflow)
+	b.addDeferred("load_workflow", capability.CapabilityWorkflow)
+	b.addDeferred("save_workflow", capability.CapabilityWorkflow)
+	b.addDeferred("list_agent_profiles", capability.CapabilityWorkflow)
+	b.addDeferred("create_agent_profile", capability.CapabilityWorkflow)
+	b.addDeferred("start_workflow", capability.CapabilityWorkflow)
+	b.addDeferred("run_workflow", capability.CapabilityWorkflow)
+	b.addDeferred("create_workflow", capability.CapabilityWorkflow)
+	b.addDeferred("workflow_control", capability.CapabilityWorkflow)
+	b.addDeferred("workflow_status", capability.CapabilityWorkflow)
 }
 
 func addScheduleTools(b *surfaceBuilder) {
-	b.addVisible("schedule_cron", capability.CapabilitySchedule)
-	b.addVisible("cancel_cron", capability.CapabilitySchedule)
-	b.addVisible("list_cron", capability.CapabilitySchedule)
+	b.addDeferred("schedule_cron", capability.CapabilitySchedule)
+	b.addDeferred("cancel_cron", capability.CapabilitySchedule)
+	b.addDeferred("list_cron", capability.CapabilitySchedule)
 }
 
 func addSkillTools(b *surfaceBuilder) {
@@ -343,10 +377,10 @@ func addSkillTools(b *surfaceBuilder) {
 func addExtensionTools(b *surfaceBuilder) {
 	b.addVisible("report_listening_ports", capability.CapabilityPorts)
 	// MCP has no stable built-in tool name because concrete MCP
-	// tools are discovered at runtime. The visible capability says
+	// tools are discovered at runtime. The deferred capability says
 	// this profile may load MCP tools through tool_search; the tools
 	// themselves are still deferred and policy-gated.
-	b.addVisibleCapability(capability.CapabilityMCP)
+	b.addDeferredCapability(capability.CapabilityMCP)
 }
 
 func addOpenAICodexEditTools(b *surfaceBuilder) {

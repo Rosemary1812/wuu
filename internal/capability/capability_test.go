@@ -42,11 +42,15 @@ func TestSurfaceToolForCapabilityRoundTrip(t *testing.T) {
 			"edit_file":   CapabilityFileEdit,
 			"apply_patch": CapabilityFileEdit,
 		},
+		DeferredTools: map[string]Capability{
+			"web_search": CapabilityWebSearch,
+		},
 		HiddenTools: map[string]Capability{
 			"internal_helper": CapabilityCommandBash,
 		},
-		Capabilities:       []Capability{CapabilityFileRead, CapabilityFileEdit, CapabilityCommandBash},
-		HiddenCapabilities: nil,
+		Capabilities:         []Capability{CapabilityFileRead, CapabilityFileEdit, CapabilityCommandBash},
+		DeferredCapabilities: []Capability{CapabilityWebSearch},
+		HiddenCapabilities:   nil,
 	}
 	if got, ok := s.ToolForCapability(CapabilityFileEdit); !ok {
 		t.Fatalf("ToolForCapability(file.edit) = _,%v, want true (map iteration order is non-deterministic)", ok)
@@ -56,8 +60,14 @@ func TestSurfaceToolForCapabilityRoundTrip(t *testing.T) {
 	if got, ok := s.HiddenToolForCapability(CapabilityCommandBash); !ok || got != "internal_helper" {
 		t.Fatalf("HiddenToolForCapability(command.bash) = %q,%v, want internal_helper,true", got, ok)
 	}
+	if got, ok := s.DeferredToolForCapability(CapabilityWebSearch); !ok || got != "web_search" {
+		t.Fatalf("DeferredToolForCapability(web.search) = %q,%v, want web_search,true", got, ok)
+	}
 	if !s.HasCapability(CapabilityFileRead) {
 		t.Fatal("HasCapability must report visible capabilities")
+	}
+	if !s.HasCapability(CapabilityWebSearch) {
+		t.Fatal("HasCapability must report deferred capabilities")
 	}
 }
 
@@ -70,12 +80,16 @@ func TestSummarizeExposesAllContractFields(t *testing.T) {
 			"apply_patch": CapabilityFileEdit,
 			"bash":        CapabilityCommandBash,
 		},
+		DeferredTools: map[string]Capability{
+			"web_search": CapabilityWebSearch,
+		},
 		HiddenTools: map[string]Capability{
 			"internal_helper": CapabilityCommandBash,
 		},
-		Capabilities:       []Capability{CapabilityFileEdit, CapabilityCommandBash},
-		HiddenCapabilities: []Capability{},
-		SystemFragment:     "fragment",
+		Capabilities:         []Capability{CapabilityFileEdit, CapabilityCommandBash},
+		DeferredCapabilities: []Capability{CapabilityWebSearch},
+		HiddenCapabilities:   []Capability{},
+		SystemFragment:       "fragment",
 	}
 	sum := s.Summarize()
 	if sum.ProfileName != "openai_codex" {
@@ -89,6 +103,9 @@ func TestSummarizeExposesAllContractFields(t *testing.T) {
 	}
 	if sum.ToolCapabilityMap["apply_patch"] != string(CapabilityFileEdit) {
 		t.Fatalf("ToolCapabilityMap[apply_patch] = %q, want %q", sum.ToolCapabilityMap["apply_patch"], CapabilityFileEdit)
+	}
+	if sum.DeferredCapabilityMap["web_search"] != string(CapabilityWebSearch) {
+		t.Fatalf("DeferredCapabilityMap[web_search] = %q, want %q", sum.DeferredCapabilityMap["web_search"], CapabilityWebSearch)
 	}
 	if sum.HiddenCapabilityMap["internal_helper"] != string(CapabilityCommandBash) {
 		t.Fatalf("HiddenCapabilityMap[internal_helper] = %q, want %q", sum.HiddenCapabilityMap["internal_helper"], CapabilityCommandBash)

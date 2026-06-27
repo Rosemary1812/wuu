@@ -83,8 +83,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"apply_patch",
 		"tool_search",
 		"load_skill",
-		"read_memory",
-		"write_memory",
 		"report_listening_ports",
 	} {
 		if !containsProfileDef(defs, want) {
@@ -112,6 +110,8 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"ast_search",
 		"semantic_search",
 		"session_memory",
+		"read_memory",
+		"write_memory",
 		"list_workflows",
 		"load_workflow",
 		"save_workflow",
@@ -124,7 +124,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"web_search",
 		"web_fetch",
 		"spawn_agent",
-		"agent_report",
 	} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("low-frequency tool %s should stay deferred, got %v", name, sortedProfileDefNames(defs))
@@ -136,6 +135,13 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		if info.Exposure != ToolExposureDeferred {
 			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureDeferred)
 		}
+	}
+	info, ok := kit.ToolInfo("agent_report")
+	if !ok {
+		t.Fatalf("ToolInfo(%q) not found", "agent_report")
+	}
+	if info.Exposure != ToolExposureHidden {
+		t.Fatalf("main-agent agent_report exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 	}
 }
 
@@ -539,9 +545,27 @@ func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
 	kit.SetMemory(provider)
 	defs := kit.Definitions()
 	for _, want := range []string{"read_memory", "write_memory"} {
-		if !containsProfileDef(defs, want) {
-			t.Fatalf("memory provider should expose %s, got %v", want, sortedProfileDefNames(defs))
+		if containsProfileDef(defs, want) {
+			t.Fatalf("memory provider should keep %s deferred, got %v", want, sortedProfileDefNames(defs))
 		}
+		info, ok := kit.ToolInfo(want)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", want)
+		}
+		if info.Exposure != ToolExposureDeferred {
+			t.Fatalf("%s exposure = %s, want %s", want, info.Exposure, ToolExposureDeferred)
+		}
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"select:read_memory write_memory"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search memory tools: %v", err)
+	}
+	if !strings.Contains(resp, "read_memory") || !strings.Contains(resp, "write_memory") {
+		t.Fatalf("tool_search should load memory tools with provider: %s", resp)
 	}
 }
 
@@ -700,11 +724,13 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 		}
 	}
 	for name := range surface.Tools {
-		if _, ok := visible[name]; ok {
-			continue
+		if _, ok := visible[name]; !ok {
+			t.Fatalf("surface.Tools has direct %q but Definitions did not include it", name)
 		}
-		if !isDeferredByDefault(name) && !isProfileDeferredByDefault(name) {
-			t.Fatalf("surface.Tools has non-deferred %q but Definitions did not include it", name)
+	}
+	for name := range surface.DeferredTools {
+		if _, ok := visible[name]; ok {
+			t.Fatalf("deferred tool %q leaked into Definitions", name)
 		}
 	}
 }

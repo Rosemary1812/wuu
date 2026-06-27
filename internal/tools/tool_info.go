@@ -118,6 +118,9 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if isAdvancedCommandToolHidden(name) {
 		return ToolExposureHidden
 	}
+	if isMemoryToolName(name) && memoryProvider(t.env) == nil {
+		return ToolExposureHidden
+	}
 	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 		return ToolExposureHidden
 	}
@@ -126,9 +129,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
 			return ToolExposureHidden
 		}
-		if classifyToolKind(name) == ToolKindMCP {
-			return ToolExposureDeferred
-		}
+		return activeSurfaceToolExposure(surface, name)
 	}
 	if classifyToolKind(name) == ToolKindMCP {
 		if t.shouldExposeMCPDirectly(name) {
@@ -271,41 +272,5 @@ func (t *Toolkit) shouldDeferByDefault(name string) bool {
 	if isDeferredByDefault(name) {
 		return true
 	}
-	if t != nil && t.activeCompiledSurface().ProfileName != "" && isProfileDeferredByDefault(name) {
-		return true
-	}
 	return false
-}
-
-func isProfileDeferredByDefault(name string) bool {
-	switch strings.TrimSpace(name) {
-	case "ast_search",
-		"semantic_search",
-		"web_search",
-		"web_fetch",
-		"session_memory",
-		"create_goal",
-		"get_goal",
-		"update_goal",
-		"list_workflows",
-		"load_workflow",
-		"save_workflow",
-		"list_agent_profiles",
-		"create_agent_profile",
-		"start_workflow",
-		"workflow_control",
-		"workflow_status",
-		"spawn_agent",
-		"helpme",
-		"send_message",
-		"followup_task",
-		"wait_agent",
-		"await_agents",
-		"close_agent",
-		"list_agents",
-		"agent_report":
-		return true
-	default:
-		return false
-	}
 }

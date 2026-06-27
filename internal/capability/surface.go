@@ -3,8 +3,8 @@ package capability
 import "sort"
 
 // Surface is the per-model compilation of internal capabilities to
-// model-visible tool entries plus a profile-specific system prompt
-// fragment.
+// direct, deferred, and hidden tool entries plus a profile-specific
+// system prompt fragment.
 //
 // The toolkit consumes a Surface to decide which ToolDefinitions to
 // expose to the model and which to keep as internal / advanced
@@ -23,11 +23,17 @@ type Surface struct {
 	Provider string
 	Model    string
 
-	// Tools maps the external model-visible tool name (the value
-	// sent in providers.ToolDefinition.Name) to its owning
-	// capability. Tools not present in the map are NOT exposed to
-	// the model under this surface.
+	// Tools maps direct model-visible tool names (the value sent in
+	// providers.ToolDefinition.Name) to their owning capability.
+	// Only these tools appear in the top-level request definitions.
 	Tools map[string]Capability
+
+	// DeferredTools maps tool names that this profile may use only
+	// after tool_search returns their loadable schemas. Deferred
+	// tools are available to the runtime, but they stay out of the
+	// top-level tool list so the provider prompt-cache prefix stays
+	// stable across turns.
+	DeferredTools map[string]Capability
 
 	// HiddenTools maps profile companion tool names that are known
 	// to this compiled surface but are not advertised to the model.
@@ -36,11 +42,16 @@ type Surface struct {
 	// implementation details.
 	HiddenTools map[string]Capability
 
-	// Capabilities is the ordered set of capabilities exposed to
-	// the model. The order is stable per ProfileName and is used
-	// to drive capability-first rendering, permission routing, and
-	// approval UI.
+	// Capabilities is the ordered set of direct capabilities exposed
+	// to the model in the top-level tool list. The order is stable
+	// per ProfileName and is used to drive capability-first rendering,
+	// permission routing, and approval UI.
 	Capabilities []Capability
+
+	// DeferredCapabilities lists capabilities that may be loaded via
+	// tool_search. They are available to the profile, but not part of
+	// the direct model-visible prefix.
+	DeferredCapabilities []Capability
 
 	// HiddenCapabilities lists capabilities that exist but are not
 	// surfaced on this profile. They still exist for permission
@@ -55,14 +66,18 @@ type Surface struct {
 	SystemFragment string
 }
 
-// HasCapability reports whether the surface advertises a capability
-// either directly (Capabilities) or as a hidden implementation
-// (HiddenCapabilities). Tooling that needs to check whether a
-// capability is *available* should use this; tooling that needs to
-// check whether the model can *see* the capability should consult
-// Capabilities directly.
+// HasCapability reports whether the surface knows a capability
+// directly, deferred, or hidden. Tooling that needs to check whether
+// a capability is available should use this; tooling that needs to
+// check whether the model can see the capability in the direct tool
+// list should consult Capabilities directly.
 func (s Surface) HasCapability(c Capability) bool {
 	for _, existing := range s.Capabilities {
+		if existing == c {
+			return true
+		}
+	}
+	for _, existing := range s.DeferredCapabilities {
 		if existing == c {
 			return true
 		}
@@ -97,6 +112,17 @@ func (s Surface) ToolNames() []string {
 	return out
 }
 
+// DeferredToolNames returns the tool names that can be loaded through
+// tool_search in alphabetical order.
+func (s Surface) DeferredToolNames() []string {
+	out := make([]string, 0, len(s.DeferredTools))
+	for name := range s.DeferredTools {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ToolForCapability returns the model-visible tool name that
 // implements the given capability, plus true. Returns "", false if
 // no model-visible tool implements the capability on this surface
@@ -110,6 +136,18 @@ func (s Surface) ToolNames() []string {
 func (s Surface) ToolForCapability(c Capability) (string, bool) {
 	for _, name := range s.ToolNames() {
 		if s.Tools[name] == c {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// DeferredToolForCapability returns a deferred tool name (if any)
+// that implements the capability. The model must load the tool via
+// tool_search before calling it.
+func (s Surface) DeferredToolForCapability(c Capability) (string, bool) {
+	for _, name := range s.DeferredToolNames() {
+		if s.DeferredTools[name] == c {
 			return name, true
 		}
 	}
@@ -138,18 +176,21 @@ func (s Surface) HiddenToolForCapability(c Capability) (string, bool) {
 // the app-server protocol. InitializeResult, runtime setting
 // updates, and Settings debug views all return this struct.
 type Summary struct {
-	ProfileName         string            `json:"profile_name"`
-	Provider            string            `json:"provider"`
-	Model               string            `json:"model"`
-	ToolNames           []string          `json:"tool_names"`
-	HiddenToolNames     []string          `json:"hidden_tool_names"`
-	Capabilities        []string          `json:"capabilities"`
-	HiddenCapabilities  []string          `json:"hidden_capabilities"`
-	EditPrimitive       string            `json:"edit_primitive"`
-	BashFirst           bool              `json:"bash_first"`
-	ToolCapabilityMap   map[string]string `json:"tool_capability_map"`
-	HiddenCapabilityMap map[string]string `json:"hidden_capability_map"`
-	SystemFragment      string            `json:"system_fragment,omitempty"`
+	ProfileName           string            `json:"profile_name"`
+	Provider              string            `json:"provider"`
+	Model                 string            `json:"model"`
+	ToolNames             []string          `json:"tool_names"`
+	DeferredToolNames     []string          `json:"deferred_tool_names"`
+	HiddenToolNames       []string          `json:"hidden_tool_names"`
+	Capabilities          []string          `json:"capabilities"`
+	DeferredCapabilities  []string          `json:"deferred_capabilities"`
+	HiddenCapabilities    []string          `json:"hidden_capabilities"`
+	EditPrimitive         string            `json:"edit_primitive"`
+	BashFirst             bool              `json:"bash_first"`
+	ToolCapabilityMap     map[string]string `json:"tool_capability_map"`
+	DeferredCapabilityMap map[string]string `json:"deferred_capability_map"`
+	HiddenCapabilityMap   map[string]string `json:"hidden_capability_map"`
+	SystemFragment        string            `json:"system_fragment,omitempty"`
 }
 
 // Summarize returns a compact summary of the surface. The summary
@@ -161,6 +202,10 @@ func (s Surface) Summarize() Summary {
 	for name, c := range s.Tools {
 		toolCaps[name] = string(c)
 	}
+	deferredCaps := make(map[string]string, len(s.DeferredTools))
+	for name, c := range s.DeferredTools {
+		deferredCaps[name] = string(c)
+	}
 	hiddenCaps := make(map[string]string, len(s.HiddenTools))
 	for name, c := range s.HiddenTools {
 		hiddenCaps[name] = string(c)
@@ -168,6 +213,10 @@ func (s Surface) Summarize() Summary {
 	caps := make([]string, 0, len(s.Capabilities))
 	for _, c := range s.Capabilities {
 		caps = append(caps, string(c))
+	}
+	deferred := make([]string, 0, len(s.DeferredCapabilities))
+	for _, c := range s.DeferredCapabilities {
+		deferred = append(deferred, string(c))
 	}
 	hidden := make([]string, 0, len(s.HiddenCapabilities))
 	for _, c := range s.HiddenCapabilities {
@@ -179,18 +228,21 @@ func (s Surface) Summarize() Summary {
 	}
 	sort.Strings(hiddenTools)
 	return Summary{
-		ProfileName:         s.ProfileName,
-		Provider:            s.Provider,
-		Model:               s.Model,
-		ToolNames:           s.ToolNames(),
-		HiddenToolNames:     hiddenTools,
-		Capabilities:        caps,
-		HiddenCapabilities:  hidden,
-		EditPrimitive:       s.editPrimitive(),
-		BashFirst:           s.HasCapability(CapabilityCommandBash),
-		ToolCapabilityMap:   toolCaps,
-		HiddenCapabilityMap: hiddenCaps,
-		SystemFragment:      s.SystemFragment,
+		ProfileName:           s.ProfileName,
+		Provider:              s.Provider,
+		Model:                 s.Model,
+		ToolNames:             s.ToolNames(),
+		DeferredToolNames:     s.DeferredToolNames(),
+		HiddenToolNames:       hiddenTools,
+		Capabilities:          caps,
+		DeferredCapabilities:  deferred,
+		HiddenCapabilities:    hidden,
+		EditPrimitive:         s.editPrimitive(),
+		BashFirst:             s.HasCapability(CapabilityCommandBash),
+		ToolCapabilityMap:     toolCaps,
+		DeferredCapabilityMap: deferredCaps,
+		HiddenCapabilityMap:   hiddenCaps,
+		SystemFragment:        s.SystemFragment,
 	}
 }
 

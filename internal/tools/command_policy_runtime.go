@@ -59,6 +59,9 @@ func defaultCommandPolicyCapability(surface capability.Surface, toolName string,
 	if capName, ok := surface.Tools[toolName]; ok {
 		return capName
 	}
+	if capName, ok := surface.DeferredTools[toolName]; ok {
+		return capName
+	}
 	if capName, ok := surface.HiddenTools[toolName]; ok {
 		return capName
 	}

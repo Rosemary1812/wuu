@@ -92,8 +92,8 @@ func TestOpenAICodexSurface(t *testing.T) {
 	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
 		t.Fatalf("Codex surface must advertise command.background through bash, got caps=%v", s.Capabilities)
 	}
-	if !hasCapability(s.Capabilities, capability.CapabilityMCP) {
-		t.Fatalf("Codex surface must advertise mcp capability for tool_search-gated extensions, got caps=%v", s.Capabilities)
+	if !hasCapability(s.DeferredCapabilities, capability.CapabilityMCP) {
+		t.Fatalf("Codex surface must defer mcp capability for tool_search-gated extensions, got caps=%v", s.DeferredCapabilities)
 	}
 	for _, hidden := range []string{"run_test", "git"} {
 		if _, visible := s.Tools[hidden]; visible {
@@ -104,20 +104,35 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 
-	// Read / list / search / web / task / plan / workflow / schedule / skill / ports
-	// must all be visible.
+	// The direct request prefix stays small: core file/search/edit/command,
+	// planning, skill loading, and desktop port reporting.
 	mustVisible := []string{
 		"read_file", "list_files",
-		"grep", "glob", "ast_search", "semantic_search",
-		"web_search", "web_fetch",
-		"spawn_agent", "session_memory",
-		"update_plan", "create_goal", "get_goal", "update_goal", "list_workflows",
-		"schedule_cron", "load_skill",
+		"grep", "glob",
+		"bash", "apply_patch",
+		"update_plan", "load_skill", "tool_search",
 		"report_listening_ports",
 	}
 	for _, name := range mustVisible {
 		if _, ok := s.Tools[name]; !ok {
 			t.Fatalf("Codex surface must include %s, got tools=%v", name, sortedKeys(s.Tools))
+		}
+	}
+	mustDeferred := []string{
+		"ast_search", "semantic_search",
+		"web_search", "web_fetch",
+		"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "helpme",
+		"session_memory", "read_memory", "write_memory",
+		"create_goal", "get_goal", "update_goal",
+		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
+		"schedule_cron", "cancel_cron", "list_cron",
+	}
+	for _, name := range mustDeferred {
+		if _, ok := s.Tools[name]; ok {
+			t.Fatalf("Codex surface must not directly advertise deferred tool %s, got tools=%v", name, sortedKeys(s.Tools))
+		}
+		if _, ok := s.DeferredTools[name]; !ok {
+			t.Fatalf("Codex surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}
 	}
 
@@ -186,8 +201,8 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
 		t.Fatalf("Claude surface must advertise command.background through bash, got caps=%v", s.Capabilities)
 	}
-	if !hasCapability(s.Capabilities, capability.CapabilityMCP) {
-		t.Fatalf("Claude surface must advertise mcp capability for tool_search-gated extensions, got caps=%v", s.Capabilities)
+	if !hasCapability(s.DeferredCapabilities, capability.CapabilityMCP) {
+		t.Fatalf("Claude surface must defer mcp capability for tool_search-gated extensions, got caps=%v", s.DeferredCapabilities)
 	}
 	for _, hidden := range []string{"run_test", "git"} {
 		if _, visible := s.Tools[hidden]; visible {
@@ -195,14 +210,18 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 		}
 	}
 
-	// The same core capabilities as Codex, minus apply_patch.
+	// The same direct core capabilities as Codex, minus apply_patch.
 	for _, name := range []string{
 		"read_file", "list_files", "grep", "glob",
-		"web_search", "web_fetch", "update_plan",
-		"session_memory", "load_skill", "report_listening_ports",
+		"update_plan", "load_skill", "tool_search", "report_listening_ports",
 	} {
 		if _, ok := s.Tools[name]; !ok {
 			t.Fatalf("Claude surface must include %s, got tools=%v", name, sortedKeys(s.Tools))
+		}
+	}
+	for _, name := range []string{"web_search", "web_fetch", "session_memory", "read_memory", "write_memory", "spawn_agent"} {
+		if _, ok := s.DeferredTools[name]; !ok {
+			t.Fatalf("Claude surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}
 	}
 
@@ -322,6 +341,9 @@ func TestSummarizeIsJSONFriendlyAndOmitsRawFragmentsInTests(t *testing.T) {
 	if summary.ToolCapabilityMap["bash"] != string(capability.CapabilityCommandBash) {
 		t.Fatalf("summary must map bash → command.bash, got %q", summary.ToolCapabilityMap["bash"])
 	}
+	if summary.DeferredCapabilityMap["web_search"] != string(capability.CapabilityWebSearch) {
+		t.Fatalf("summary must map deferred web_search → web.search, got %q", summary.DeferredCapabilityMap["web_search"])
+	}
 }
 
 func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
@@ -331,6 +353,9 @@ func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
 	}
 	if !s.HasCapability(capability.CapabilityCommandBash) {
 		t.Fatal("Codex surface must have command.bash")
+	}
+	if !s.HasCapability(capability.CapabilityWebSearch) {
+		t.Fatal("Codex surface must have deferred web.search")
 	}
 	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
 		t.Fatal("Codex surface must expose command.background through bash")
@@ -448,19 +473,32 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 	}
 	for _, tt := range cases {
 		mainSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
-		for _, name := range []string{"helpme", "inception"} {
-			if _, ok := mainSurface.Tools[name]; !ok {
-				t.Errorf("%s/%s main-agent surface must include %s", tt.provider, tt.model, name)
-			}
-			if name == "inception" && mainSurface.Tools[name] != capability.CapabilityContextRewrite {
-				t.Errorf("%s/%s inception capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools[name], capability.CapabilityContextRewrite)
-			}
+		if _, ok := mainSurface.DeferredTools["helpme"]; !ok {
+			t.Errorf("%s/%s main-agent surface must defer helpme", tt.provider, tt.model)
+		}
+		if _, ok := mainSurface.Tools["inception"]; !ok {
+			t.Errorf("%s/%s main-agent surface must include inception", tt.provider, tt.model)
+		}
+		if mainSurface.Tools["inception"] != capability.CapabilityContextRewrite {
+			t.Errorf("%s/%s inception capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["inception"], capability.CapabilityContextRewrite)
 		}
 		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), false)
-		for _, name := range []string{"helpme", "inception"} {
+		for _, name := range []string{"inception"} {
 			if _, ok := workerSurface.Tools[name]; ok {
 				t.Errorf("%s/%s worker surface must NOT include %s", tt.provider, tt.model, name)
 			}
+		}
+		if _, ok := workerSurface.DeferredTools["helpme"]; ok {
+			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)
+		}
+		if _, ok := mainSurface.Tools["agent_report"]; ok {
+			t.Errorf("%s/%s main-agent surface must NOT directly include agent_report", tt.provider, tt.model)
+		}
+		if _, ok := mainSurface.DeferredTools["agent_report"]; ok {
+			t.Errorf("%s/%s main-agent surface must NOT defer agent_report", tt.provider, tt.model)
+		}
+		if _, ok := workerSurface.Tools["agent_report"]; !ok {
+			t.Errorf("%s/%s worker surface must directly include agent_report", tt.provider, tt.model)
 		}
 	}
 }
