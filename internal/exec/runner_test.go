@@ -178,6 +178,22 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 				},
 			},
 		}),
+		notification(appserver.NotificationTurnEvent, appserver.TurnEventNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Event: appserver.StreamEventPayload{
+				Type: providers.EventProviderState,
+				ProviderState: &providers.ProviderStateSummary{
+					Provider:               "openai",
+					Protocol:               "responses_websocket",
+					ReplayMode:             "previous_response_id",
+					PreviousResponseIDUsed: true,
+					InputItems:             1,
+					FullInputItems:         3,
+					DeltaInputItems:        1,
+				},
+			},
+		}),
 		notification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{ThreadID: "thread-1", TurnID: "turn-1", Delta: "hello"}),
 		notification(appserver.NotificationTurnUsage, appserver.TurnUsageNotification{ThreadID: "thread-1", TurnID: "turn-1", InputTokens: 3, OutputTokens: 4}),
 		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "hello", TracePath: "/trace.jsonl"}),
@@ -201,7 +217,7 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	for _, event := range events {
 		gotTypes = append(gotTypes, event["type"].(string))
 	}
-	wantTypes := []string{"session_configured", "thread_started", "turn_started", "request_context", "agent_message_delta", "usage_updated", "turn_completed", "result"}
+	wantTypes := []string{"session_configured", "thread_started", "turn_started", "request_context", "provider_state", "agent_message_delta", "usage_updated", "turn_completed", "result"}
 	if !reflect.DeepEqual(gotTypes, wantTypes) {
 		t.Fatalf("event types:\n got: %#v\nwant: %#v\njsonl:\n%s", gotTypes, wantTypes, stdout.String())
 	}
@@ -217,6 +233,16 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		requestContext["tool_surface_hash"] != "tools-hash" ||
 		requestContext["prompt_cache_key"] != "thread-1" {
 		t.Fatalf("unexpected request_context event: %+v", requestContext)
+	}
+	providerState := events[4]
+	if providerState["provider"] != "openai" ||
+		providerState["protocol"] != "responses_websocket" ||
+		providerState["replay_mode"] != "previous_response_id" ||
+		providerState["previous_response_id_used"] != true ||
+		providerState["input_items"] != float64(1) ||
+		providerState["full_input_items"] != float64(3) ||
+		providerState["delta_input_items"] != float64(1) {
+		t.Fatalf("unexpected provider_state event: %+v", providerState)
 	}
 	result := events[len(events)-1]
 	if result["status"] != "completed" || result["thread_id"] != "thread-1" || result["turn_id"] != "turn-1" || result["final_message"] != "hello" || result["trace_path"] != "/trace.jsonl" {

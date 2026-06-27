@@ -1557,6 +1557,8 @@ func TestRunEvalReplaySessionTraceJSON(t *testing.T) {
 			Kind:            tools.ToolKindSearch,
 			Success:         true,
 		}},
+		nil,
+		nil,
 	); err != nil {
 		t.Fatalf("write session trace: %v", err)
 	}
@@ -1615,6 +1617,8 @@ func TestRunEvalReplaySessionTraceTextPrintsPolicyBlocks(t *testing.T) {
 			ArgumentsSHA256: strings.Repeat("f", 64),
 			Success:         false,
 		}},
+		nil,
+		nil,
 	); err != nil {
 		t.Fatalf("write session trace: %v", err)
 	}
@@ -2349,6 +2353,8 @@ func TestRunDebugProtocolEventsJSONReadsTraceEvents(t *testing.T) {
 		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
 		nil,
 		nil,
+		nil,
+		nil,
 	); err != nil {
 		t.Fatalf("append trace: %v", err)
 	}
@@ -2406,6 +2412,8 @@ func TestRunSessionTraceJSONReplaysTrace(t *testing.T) {
 		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
 		nil,
 		nil,
+		nil,
+		nil,
 	); err != nil {
 		t.Fatalf("append trace: %v", err)
 	}
@@ -2455,6 +2463,8 @@ func TestRunSessionTraceLastReplaysMostRecentTrace(t *testing.T) {
 		tracePath,
 		sessiontrace.TurnRecord{ThreadID: latest.ID, TurnID: "turn-1", Status: "completed", InputTokens: 1, OutputTokens: 2},
 		sessiontrace.FinalRecord{Status: "completed", FinalAnswerPreview: "latest"},
+		nil,
+		nil,
 		nil,
 		nil,
 	); err != nil {

@@ -523,6 +523,7 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 		notifyUsage(usageSnapshot, true)
 	}
 	var contextRequests []sessiontrace.RequestContextRecord
+	var providerStates []sessiontrace.ProviderStateRecord
 	runner.OnRequestContext = func(info agent.RequestContextInfo) {
 		if baseOnRequestContext != nil {
 			baseOnRequestContext(info)
@@ -592,6 +593,9 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 			usageSnapshot := addUsage(completedUsage, liveUsage)
 			usagePushMu.Unlock()
 			notifyUsage(usageSnapshot, false)
+		}
+		if ev.Type == providers.EventProviderState && ev.ProviderState != nil {
+			providerStates = append(providerStates, providerStateRecord(ev.ProviderState))
 		}
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
@@ -668,7 +672,7 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart, contextRequests)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart, contextRequests, providerStates)
 	if traceErr != nil {
 		tracePath = ""
 	}
@@ -757,7 +761,7 @@ func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr 
 	return nil
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord) (string, error) {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
 		return "", nil
 	}
@@ -819,10 +823,25 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	} else if toolRecordStart >= len(records) {
 		records = nil
 	}
-	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests); err != nil {
+	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests, providerStates); err != nil {
 		return "", err
 	}
 	return tracePath, nil
+}
+
+func providerStateRecord(state *providers.ProviderStateSummary) sessiontrace.ProviderStateRecord {
+	if state == nil {
+		return sessiontrace.ProviderStateRecord{}
+	}
+	return sessiontrace.ProviderStateRecord{
+		Provider:               state.Provider,
+		Protocol:               state.Protocol,
+		ReplayMode:             state.ReplayMode,
+		PreviousResponseIDUsed: state.PreviousResponseIDUsed,
+		InputItems:             state.InputItems,
+		FullInputItems:         state.FullInputItems,
+		DeltaInputItems:        state.DeltaInputItems,
+	}
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, msg providers.ChatMessage) {

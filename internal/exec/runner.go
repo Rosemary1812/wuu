@@ -892,6 +892,23 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 			"tool_surface_hash":     rc.ToolSurfaceHash,
 			"prompt_cache_key":      rc.PromptCacheKey,
 		})
+	case "provider_state":
+		state := params.Event.ProviderState
+		if state == nil {
+			return
+		}
+		emitJSON(opts, map[string]any{
+			"type":                      "provider_state",
+			"thread_id":                 params.ThreadID,
+			"turn_id":                   params.TurnID,
+			"provider":                  state.Provider,
+			"protocol":                  state.Protocol,
+			"replay_mode":               state.ReplayMode,
+			"previous_response_id_used": state.PreviousResponseIDUsed,
+			"input_items":               state.InputItems,
+			"full_input_items":          state.FullInputItems,
+			"delta_input_items":         state.DeltaInputItems,
+		})
 	}
 }
 

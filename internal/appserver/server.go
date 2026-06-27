@@ -348,6 +348,9 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 	if ev.RequestContext != nil {
 		out.RequestContext = ev.RequestContext
 	}
+	if ev.ProviderState != nil {
+		out.ProviderState = ev.ProviderState
+	}
 	if ev.Usage != nil {
 		out.Usage = ev.Usage
 	}

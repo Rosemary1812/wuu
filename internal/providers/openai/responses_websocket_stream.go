@@ -77,7 +77,7 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesWebSocket(ctx, session, fullPayload, conn, ch)
+	go c.readResponsesWebSocket(ctx, session, fullPayload, requestPayload, conn, ch)
 	return ch, nil
 }
 
@@ -108,9 +108,14 @@ func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session
 	return conn, nil
 }
 
-func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesWebSocketSession, fullPayload responsesRequest, conn *websocket.Conn, ch chan<- providers.StreamEvent) {
+func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesWebSocketSession, fullPayload, requestPayload responsesRequest, conn *websocket.Conn, ch chan<- providers.StreamEvent) {
 	defer close(ch)
 	defer session.mu.Unlock()
+
+	ch <- providers.StreamEvent{
+		Type:          providers.EventProviderState,
+		ProviderState: responsesWebSocketProviderState(fullPayload, requestPayload),
+	}
 
 	pending := newResponsesPendingTools()
 	pendingReasoning := newResponsesPendingReasoning()
@@ -238,6 +243,25 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: errors.New("response websocket error")}
 			return
 		}
+	}
+}
+
+func responsesWebSocketProviderState(fullPayload, requestPayload responsesRequest) *providers.ProviderStateSummary {
+	previous := strings.TrimSpace(requestPayload.PreviousResponseID) != ""
+	replayMode := "full_request"
+	deltaItems := 0
+	if previous {
+		replayMode = "previous_response_id"
+		deltaItems = len(requestPayload.Input)
+	}
+	return &providers.ProviderStateSummary{
+		Provider:               "openai",
+		Protocol:               "responses_websocket",
+		ReplayMode:             replayMode,
+		PreviousResponseIDUsed: previous,
+		InputItems:             len(requestPayload.Input),
+		FullInputItems:         len(fullPayload.Input),
+		DeltaInputItems:        deltaItems,
 	}
 }
 

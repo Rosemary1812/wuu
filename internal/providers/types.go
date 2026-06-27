@@ -310,6 +310,7 @@ const (
 	EventToolUseEnd      StreamEventType = "tool_use_end"
 	EventPlanUpdate      StreamEventType = "plan_update"
 	EventRequestContext  StreamEventType = "request_context"
+	EventProviderState   StreamEventType = "provider_state"
 	EventUsage           StreamEventType = "usage"
 	EventMessage         StreamEventType = "message"
 	EventLifecycle       StreamEventType = "lifecycle"
@@ -328,6 +329,18 @@ const (
 	StreamPhaseReconnecting StreamLifecyclePhase = "reconnecting"
 	StreamPhaseFailed       StreamLifecyclePhase = "failed"
 )
+
+// ProviderStateSummary carries metadata-only provider replay/request-state
+// details. It intentionally avoids raw provider ids and prompt text.
+type ProviderStateSummary struct {
+	Provider               string `json:"provider,omitempty"`
+	Protocol               string `json:"protocol,omitempty"`
+	ReplayMode             string `json:"replay_mode,omitempty"`
+	PreviousResponseIDUsed bool   `json:"previous_response_id_used,omitempty"`
+	InputItems             int    `json:"input_items,omitempty"`
+	FullInputItems         int    `json:"full_input_items,omitempty"`
+	DeltaInputItems        int    `json:"delta_input_items,omitempty"`
+}
 
 // StreamLifecycle carries retry metadata for one streaming connection attempt.
 // Attempt is 1-based and includes the initial connect.
@@ -441,6 +454,7 @@ type StreamEvent struct {
 	ToolResult     string
 	PlanUpdate     *PlanUpdate
 	RequestContext *RequestContextSummary
+	ProviderState  *ProviderStateSummary
 	Lifecycle      *StreamLifecycle
 	Error          error
 	Usage          *TokenUsage

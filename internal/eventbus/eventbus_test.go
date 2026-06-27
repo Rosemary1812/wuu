@@ -45,6 +45,37 @@ func TestAdaptStreamEventPreservesRequestContext(t *testing.T) {
 	}
 }
 
+func TestAdaptStreamEventPreservesProviderState(t *testing.T) {
+	summary := &providers.ProviderStateSummary{
+		Provider:               "openai",
+		Protocol:               "responses_websocket",
+		ReplayMode:             "previous_response_id",
+		PreviousResponseIDUsed: true,
+		InputItems:             1,
+		FullInputItems:         3,
+		DeltaInputItems:        1,
+	}
+
+	event := AdaptStreamEvent(providers.StreamEvent{
+		Type:          providers.EventProviderState,
+		ProviderState: summary,
+	})
+	if event.Type != ProviderState || event.ProviderState == nil {
+		t.Fatalf("provider state not adapted: %+v", event)
+	}
+	if !reflect.DeepEqual(event.ProviderState, summary) {
+		t.Fatalf("provider state changed during adaptation: got %+v want %+v", event.ProviderState, summary)
+	}
+
+	stream := ToStreamEvent(event)
+	if stream.Type != providers.EventProviderState || stream.ProviderState == nil {
+		t.Fatalf("provider state not converted back: %+v", stream)
+	}
+	if !reflect.DeepEqual(stream.ProviderState, summary) {
+		t.Fatalf("provider state changed during stream conversion: got %+v want %+v", stream.ProviderState, summary)
+	}
+}
+
 func TestAdaptStreamEventPreservesTextPhase(t *testing.T) {
 	event := AdaptStreamEvent(providers.StreamEvent{
 		Type:    providers.EventContentDelta,

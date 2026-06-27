@@ -145,6 +145,7 @@ type ReplaySummary struct {
 	Turns             []TurnRecord           `json:"turns,omitempty"`
 	LatestTurn        *TurnRecord            `json:"latest_turn,omitempty"`
 	ContextRequests   []RequestContextRecord `json:"context_requests,omitempty"`
+	ProviderStates    []ProviderStateRecord  `json:"provider_states,omitempty"`
 	ContextBlockKinds []string               `json:"context_block_kinds,omitempty"`
 	ToolInventory     []tools.ToolInfo       `json:"tool_inventory,omitempty"`
 	ToolNames         []string               `json:"tool_names,omitempty"`
@@ -173,6 +174,16 @@ type RequestContextRecord struct {
 	StablePrefixHash  string   `json:"stable_prefix_hash,omitempty"`
 	ToolSurfaceHash   string   `json:"tool_surface_hash,omitempty"`
 	PromptCacheKey    string   `json:"prompt_cache_key,omitempty"`
+}
+
+type ProviderStateRecord struct {
+	Provider               string `json:"provider,omitempty"`
+	Protocol               string `json:"protocol,omitempty"`
+	ReplayMode             string `json:"replay_mode,omitempty"`
+	PreviousResponseIDUsed bool   `json:"previous_response_id_used,omitempty"`
+	InputItems             int    `json:"input_items,omitempty"`
+	FullInputItems         int    `json:"full_input_items,omitempty"`
+	DeltaInputItems        int    `json:"delta_input_items,omitempty"`
 }
 
 type ToolSummary struct {
@@ -279,6 +290,12 @@ func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage)
 		}
 		summary.ContextRequests = append(summary.ContextRequests, records...)
 		summary.addContextBlockKinds(records)
+	case "provider_states":
+		var records []ProviderStateRecord
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		summary.ProviderStates = append(summary.ProviderStates, records...)
 	case "tool_inventory":
 		var inventory []tools.ToolInfo
 		if err := json.Unmarshal(data, &inventory); err != nil {
@@ -461,7 +478,7 @@ func (summary *ReplaySummary) finalizeToolSummary() {
 	summary.ToolSummary.argumentCounts = nil
 }
 
-func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests ...[]RequestContextRecord) error {
+func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests []RequestContextRecord, providerStates []ProviderStateRecord) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil
@@ -484,13 +501,22 @@ func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []too
 		CreatedAt: createdAt,
 		Data:      turn,
 	}}
-	if len(contextRequests) > 0 && len(contextRequests[0]) > 0 {
+	if len(contextRequests) > 0 {
 		events = append(events, Event{
 			Type:      "context_requests",
 			ThreadID:  turn.ThreadID,
 			TurnID:    turn.TurnID,
 			CreatedAt: createdAt,
-			Data:      append([]RequestContextRecord(nil), contextRequests[0]...),
+			Data:      append([]RequestContextRecord(nil), contextRequests...),
+		})
+	}
+	if len(providerStates) > 0 {
+		events = append(events, Event{
+			Type:      "provider_states",
+			ThreadID:  turn.ThreadID,
+			TurnID:    turn.TurnID,
+			CreatedAt: createdAt,
+			Data:      append([]ProviderStateRecord(nil), providerStates...),
 		})
 	}
 	if len(inventory) > 0 {

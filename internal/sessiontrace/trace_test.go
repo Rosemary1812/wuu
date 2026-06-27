@@ -55,16 +55,25 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			ToolSurfaceHash:   "tool-hash",
 			PromptCacheKey:    "thread-cache-key",
 		}},
+		[]ProviderStateRecord{{
+			Provider:               "openai",
+			Protocol:               "responses_websocket",
+			ReplayMode:             "previous_response_id",
+			PreviousResponseIDUsed: true,
+			InputItems:             1,
+			FullInputItems:         4,
+			DeltaInputItems:        1,
+		}},
 	)
 	if err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
 
 	events := readTraceEvents(t, path)
-	if len(events) != 5 {
-		t.Fatalf("expected 5 events, got %d: %+v", len(events), events)
+	if len(events) != 6 {
+		t.Fatalf("expected 6 events, got %d: %+v", len(events), events)
 	}
-	wantTypes := []string{"turn", "context_requests", "tool_inventory", "tool_records", "final"}
+	wantTypes := []string{"turn", "context_requests", "provider_states", "tool_inventory", "tool_records", "final"}
 	for i, want := range wantTypes {
 		if events[i].Type != want || events[i].ThreadID != "thread-1" || events[i].TurnID != "turn-1" {
 			t.Fatalf("unexpected event %d: %+v", i, events[i])
@@ -103,6 +112,18 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("trace should include request shape field %s:\n%s", want, raw)
+		}
+	}
+	for _, want := range []string{
+		`"type":"provider_states"`,
+		`"protocol":"responses_websocket"`,
+		`"replay_mode":"previous_response_id"`,
+		`"previous_response_id_used":true`,
+		`"full_input_items":4`,
+		`"delta_input_items":1`,
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("trace should include provider state field %s:\n%s", want, raw)
 		}
 	}
 }
@@ -158,6 +179,14 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			ContentBytes:      240,
 			BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
 		}},
+		[]ProviderStateRecord{{
+			Provider:               "openai",
+			Protocol:               "responses_websocket",
+			ReplayMode:             "full_request",
+			PreviousResponseIDUsed: false,
+			InputItems:             4,
+			FullInputItems:         4,
+		}},
 	); err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
@@ -166,7 +195,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayTrace: %v", err)
 	}
-	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 5 {
+	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 6 {
 		t.Fatalf("unexpected replay summary: %+v", summary)
 	}
 	if summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "thread-1" || summary.LatestTurn.Model != "gpt-test" {
@@ -184,6 +213,12 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		summary.ContextRequests[0].TransientMessages != 2 ||
 		!containsString(summary.ContextBlockKinds, "TOOL_POLICY") {
 		t.Fatalf("context requests missing: %+v", summary)
+	}
+	if len(summary.ProviderStates) != 1 ||
+		summary.ProviderStates[0].Protocol != "responses_websocket" ||
+		summary.ProviderStates[0].ReplayMode != "full_request" ||
+		summary.ProviderStates[0].FullInputItems != 4 {
+		t.Fatalf("provider states missing: %+v", summary.ProviderStates)
 	}
 	if len(summary.ToolNames) != 4 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "semantic_search" || summary.ToolNames[2] != "run_shell" || summary.ToolNames[3] != "start_process" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)

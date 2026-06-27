@@ -1063,6 +1063,7 @@ type StreamEventPayload struct {
 	ToolResult     string                           `json:"tool_result,omitempty"`
 	PlanUpdate     *providers.PlanUpdate            `json:"plan_update,omitempty"`
 	RequestContext *providers.RequestContextSummary `json:"request_context,omitempty"`
+	ProviderState  *providers.ProviderStateSummary  `json:"provider_state,omitempty"`
 	Usage          *providers.TokenUsage            `json:"usage,omitempty"`
 	StopReason     string                           `json:"stop_reason,omitempty"`
 	FinishReason   string                           `json:"finish_reason,omitempty"`

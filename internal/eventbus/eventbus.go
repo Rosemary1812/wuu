@@ -41,6 +41,7 @@ const (
 	Lifecycle      EventType = "lifecycle"
 	Compact        EventType = "compact"
 	RequestContext EventType = "request_context"
+	ProviderState  EventType = "provider_state"
 	Error          EventType = "error"
 	Done           EventType = "done"
 
@@ -69,6 +70,8 @@ type Event struct {
 	Lifecycle *providers.StreamLifecycle
 	// RequestContext carries metadata-only context compilation details.
 	RequestContext *providers.RequestContextSummary
+	// ProviderState carries metadata-only provider replay/request-state details.
+	ProviderState *providers.ProviderStateSummary
 
 	// Usage carries token consumption for a completed turn.
 	Usage        *providers.TokenUsage
@@ -163,6 +166,8 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 		return Event{Type: Compact, Content: se.Content}
 	case providers.EventRequestContext:
 		return Event{Type: RequestContext, RequestContext: se.RequestContext}
+	case providers.EventProviderState:
+		return Event{Type: ProviderState, ProviderState: se.ProviderState}
 	case providers.EventDone:
 		return Event{Type: Done, Usage: se.Usage, StopReason: se.StopReason, FinishReason: se.FinishReason, Truncated: se.Truncated}
 	case providers.EventError:
@@ -202,6 +207,8 @@ func ToStreamEvent(ev Event) providers.StreamEvent {
 		return providers.StreamEvent{Type: providers.EventCompact, Content: ev.Content}
 	case RequestContext:
 		return providers.StreamEvent{Type: providers.EventRequestContext, RequestContext: ev.RequestContext}
+	case ProviderState:
+		return providers.StreamEvent{Type: providers.EventProviderState, ProviderState: ev.ProviderState}
 	case Done:
 		return providers.StreamEvent{Type: providers.EventDone, Usage: ev.Usage, StopReason: ev.StopReason, FinishReason: ev.FinishReason, Truncated: ev.Truncated}
 	case Error:

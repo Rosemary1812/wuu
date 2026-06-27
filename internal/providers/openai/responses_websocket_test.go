@@ -305,8 +305,17 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 	if err != nil {
 		t.Fatalf("first StreamChat: %v", err)
 	}
-	if err := drainStream(ch); err != nil {
+	firstStates, err := drainStreamProviderStates(ch)
+	if err != nil {
 		t.Fatalf("first stream: %v", err)
+	}
+	if len(firstStates) != 1 ||
+		firstStates[0].ReplayMode != "full_request" ||
+		firstStates[0].PreviousResponseIDUsed ||
+		firstStates[0].InputItems != 1 ||
+		firstStates[0].FullInputItems != 1 ||
+		firstStates[0].DeltaInputItems != 0 {
+		t.Fatalf("unexpected first provider state: %+v", firstStates)
 	}
 
 	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
@@ -331,8 +340,17 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 	if err != nil {
 		t.Fatalf("second StreamChat: %v", err)
 	}
-	if err := drainStream(ch); err != nil {
+	secondStates, err := drainStreamProviderStates(ch)
+	if err != nil {
 		t.Fatalf("second stream: %v", err)
+	}
+	if len(secondStates) != 1 ||
+		secondStates[0].ReplayMode != "previous_response_id" ||
+		!secondStates[0].PreviousResponseIDUsed ||
+		secondStates[0].InputItems != 1 ||
+		secondStates[0].FullInputItems != 3 ||
+		secondStates[0].DeltaInputItems != 1 {
+		t.Fatalf("unexpected second provider state: %+v", secondStates)
 	}
 
 	if got := <-betas; got != CodexWebSocketBetaTag {
@@ -784,4 +802,21 @@ func drainStream(ch <-chan providers.StreamEvent) error {
 		}
 	}
 	return nil
+}
+
+func drainStreamProviderStates(ch <-chan providers.StreamEvent) ([]providers.ProviderStateSummary, error) {
+	var states []providers.ProviderStateSummary
+	for ev := range ch {
+		if ev.Type == providers.EventProviderState && ev.ProviderState != nil {
+			states = append(states, *ev.ProviderState)
+			continue
+		}
+		if ev.Type == providers.EventError {
+			if ev.Error != nil {
+				return states, ev.Error
+			}
+			return states, context.Canceled
+		}
+	}
+	return states, nil
 }
