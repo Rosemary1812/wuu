@@ -697,7 +697,9 @@ func goalUsageDeltaForTurn(turn Turn, completedAt time.Time, res agent.LoopResul
 		elapsed = completedAt.Sub(*turn.StartedAt)
 	}
 	return goalruntime.UsageDelta{
-		Tokens:  res.InputTokens + res.CacheReadTokens + res.OutputTokens,
+		// Goal budgets track fresh model work, not prompt-cache reads. Cache
+		// reads still count toward context-window pressure in the agent loop.
+		Tokens:  res.InputTokens + res.OutputTokens,
 		Elapsed: elapsed,
 		Turns:   1,
 	}

@@ -2050,7 +2050,7 @@ func TestServerTurnStartAccountsActiveGoalUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentGoal: %v", err)
 	}
-	if goal.TokensUsed != 15 || goal.GoalTurns != 1 {
+	if goal.TokensUsed != 12 || goal.GoalTurns != 1 {
 		t.Fatalf("unexpected accounted goal usage: %+v", goal)
 	}
 	if goal.Status != goalruntime.StatusActive {
