@@ -159,6 +159,7 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 		"deferred",
 		"`tool_search`",
 		"select:<tool_name>",
+		"desktop port reporting",
 		"Do not use `tool_search` for visible core tools",
 	} {
 		if !strings.Contains(result, want) {

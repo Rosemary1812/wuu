@@ -220,9 +220,9 @@ func defaultProcessOwnerID(env *Env) string {
 
 func startProcessNextSuggestions(waitMS int) []string {
 	if waitMS <= 0 {
-		return []string{"use read_process_output with offset_bytes=0 and wait_ms to wait for readiness; call report_listening_ports after a dev server prints its localhost port"}
+		return []string{"use read_process_output with offset_bytes=0 and wait_ms to wait for readiness; after a dev server prints its localhost port, use tool_search select:report_listening_ports if needed, then report the port"}
 	}
-	return []string{"pass initial_end_offset as offset_bytes to read_process_output for incremental logs; call report_listening_ports after a dev server prints its localhost port"}
+	return []string{"pass initial_end_offset as offset_bytes to read_process_output for incremental logs; after a dev server prints its localhost port, use tool_search select:report_listening_ports if needed, then report the port"}
 }
 
 // ---------------------------------------------------------------------------

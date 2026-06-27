@@ -525,9 +525,9 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 
 func bashBackgroundNextSuggestions(waitMS int) []string {
 	if waitMS <= 0 {
-		return []string{"use bash action=read_background with offset_bytes=0 and wait_ms to wait for readiness; report listening ports after a dev server prints its localhost URL"}
+		return []string{"use bash action=read_background with offset_bytes=0 and wait_ms to wait for readiness; after a dev server prints its localhost URL, use tool_search select:report_listening_ports if needed, then report the port"}
 	}
-	return []string{"pass initial_end_offset as offset_bytes to bash action=read_background for incremental logs; report listening ports after a dev server prints its localhost URL"}
+	return []string{"pass initial_end_offset as offset_bytes to bash action=read_background for incremental logs; after a dev server prints its localhost URL, use tool_search select:report_listening_ports if needed, then report the port"}
 }
 
 func (t *BashTool) executeListBackground() (string, error) {

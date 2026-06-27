@@ -105,13 +105,12 @@ func TestOpenAICodexSurface(t *testing.T) {
 	}
 
 	// The direct request prefix stays small: core file/search/edit/command,
-	// planning, skill loading, and desktop port reporting.
+	// planning, skill loading, and tool discovery.
 	mustVisible := []string{
 		"read_file", "list_files",
 		"grep", "glob",
 		"bash", "apply_patch",
 		"update_plan", "load_skill", "tool_search",
-		"report_listening_ports",
 	}
 	for _, name := range mustVisible {
 		if _, ok := s.Tools[name]; !ok {
@@ -126,6 +125,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 		"create_goal", "get_goal", "update_goal",
 		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
 		"schedule_cron", "cancel_cron", "list_cron",
+		"report_listening_ports",
 	}
 	for _, name := range mustDeferred {
 		if _, ok := s.Tools[name]; ok {
@@ -213,13 +213,13 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	// The same direct core capabilities as Codex, minus apply_patch.
 	for _, name := range []string{
 		"read_file", "list_files", "grep", "glob",
-		"update_plan", "load_skill", "tool_search", "report_listening_ports",
+		"update_plan", "load_skill", "tool_search",
 	} {
 		if _, ok := s.Tools[name]; !ok {
 			t.Fatalf("Claude surface must include %s, got tools=%v", name, sortedKeys(s.Tools))
 		}
 	}
-	for _, name := range []string{"web_search", "web_fetch", "session_memory", "read_memory", "write_memory", "spawn_agent"} {
+	for _, name := range []string{"web_search", "web_fetch", "session_memory", "read_memory", "write_memory", "spawn_agent", "report_listening_ports"} {
 		if _, ok := s.DeferredTools[name]; !ok {
 			t.Fatalf("Claude surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}

@@ -83,7 +83,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"apply_patch",
 		"tool_search",
 		"load_skill",
-		"report_listening_ports",
 	} {
 		if !containsProfileDef(defs, want) {
 			t.Fatalf("Codex profile should keep core tool %s visible, got %v", want, sortedProfileDefNames(defs))
@@ -123,6 +122,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"update_goal",
 		"web_search",
 		"web_fetch",
+		"report_listening_ports",
 		"spawn_agent",
 	} {
 		if containsProfileDef(defs, name) {
@@ -142,6 +142,62 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	}
 	if info.Exposure != ToolExposureHidden {
 		t.Fatalf("main-agent agent_report exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
+}
+
+func TestActiveProfileLoadsDeferredPortReporting(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+
+	if containsProfileDef(kit.Definitions(), "report_listening_ports") {
+		t.Fatal("report_listening_ports should be deferred by default")
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "report_listening_ports",
+		Arguments: `{"ports":[5173]}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("inactive report_listening_ports should ask for tool_search, got %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"select:report_listening_ports"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var loaded struct {
+		LoadedTools []string `json:"loaded_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &loaded); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if !containsString(loaded.LoadedTools, "report_listening_ports") {
+		t.Fatalf("tool_search should load report_listening_ports: %s", resp)
+	}
+	if containsProfileDef(kit.Definitions(), "report_listening_ports") {
+		t.Fatalf("loaded report_listening_ports should stay out of definitions: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "report_listening_ports",
+		Arguments: `{"ports":[5173]}`,
+	})
+	if err != nil {
+		t.Fatalf("loaded report_listening_ports should execute: %v", err)
+	}
+	var parsed struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse report_listening_ports: %v", err)
+	}
+	if parsed.Action != "report_listening_ports" {
+		t.Fatalf("report_listening_ports action = %q", parsed.Action)
 	}
 }
 
