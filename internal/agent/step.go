@@ -160,8 +160,8 @@ type LoopConfig struct {
 	BeforeStep func() []providers.ChatMessage
 	// BeforeModelContext, when set, is called after live-history updates
 	// and before each provider request. Returned messages are appended to
-	// live history as hidden model context: provider-visible and persisted
-	// for replay, but omitted from user-facing conversation items.
+	// live history as hidden model context for the current request, then
+	// removed from durable history before the turn result is persisted.
 	BeforeModelContext func() []providers.ChatMessage
 	// OnRequestContext receives a metadata-only summary of hidden model
 	// context appended before a request.

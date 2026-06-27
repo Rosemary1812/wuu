@@ -649,7 +649,7 @@ func repairLiveToolCallHistory(messages []providers.ChatMessage) ([]providers.Ch
 
 func newMessagesForReturn(messages []providers.ChatMessage, startLen int, historyRewritten bool) []providers.ChatMessage {
 	if historyRewritten {
-		return copyMessages(messages)
+		return copyMessages(filterTransientModelContextHistory(messages))
 	}
 	if startLen < 0 {
 		startLen = 0
@@ -657,7 +657,41 @@ func newMessagesForReturn(messages []providers.ChatMessage, startLen int, histor
 	if startLen > len(messages) {
 		startLen = len(messages)
 	}
-	return copyMessages(messages[startLen:])
+	return copyMessages(filterTransientModelContextHistory(messages[startLen:]))
+}
+
+func filterTransientModelContextHistory(msgs []providers.ChatMessage) []providers.ChatMessage {
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]providers.ChatMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		if isTransientModelContextMessage(msg) {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func isTransientModelContextMessage(msg providers.ChatMessage) bool {
+	name := strings.TrimSpace(msg.Name)
+	switch name {
+	case compact.ContextAnchorMessageName,
+		compact.ContextContinuationName,
+		wuucontext.TaskContractMessageName,
+		wuucontext.GoalContinuationMessageName:
+		return true
+	}
+	if wuucontext.IsSystemReminder(name, "") {
+		return true
+	}
+	if !msg.Hidden {
+		return false
+	}
+	return compact.IsInternalContextMessage(msg) ||
+		wuucontext.IsSystemReminder("", msg.Content) ||
+		wuucontext.IsGoalContinuation("", msg.Content)
 }
 
 func cloneReasoningBlocks(blocks []providers.ReasoningBlock) []providers.ReasoningBlock {

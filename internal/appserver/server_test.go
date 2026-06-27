@@ -1874,7 +1874,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		t.Fatalf("load persisted history: %v", err)
 	}
 	visiblePersisted := visibleMessagesForTest(persisted)
-	if len(visiblePersisted) != 3 || visiblePersisted[0].Role != "user" || visiblePersisted[0].Content != "hello" || !compact.IsInternalContextMessage(visiblePersisted[1]) || visiblePersisted[2].Role != "assistant" || visiblePersisted[2].Content != "done" {
+	if len(visiblePersisted) != 2 || visiblePersisted[0].Role != "user" || visiblePersisted[0].Content != "hello" || visiblePersisted[1].Role != "assistant" || visiblePersisted[1].Content != "done" {
 		t.Fatalf("unexpected persisted history: %+v", persisted)
 	}
 	sessions, err := session.List(rt.SessionDir, 1)
@@ -2148,9 +2148,6 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	hiddenContinuation := 0
 	for _, msg := range persisted {
 		if msg.Name == wuucontext.GoalContinuationMessageName || wuucontext.IsGoalContinuation(msg.Name, msg.Content) {
-			if !msg.Hidden {
-				t.Fatalf("persisted goal continuation should be hidden: %+v", msg)
-			}
 			hiddenContinuation++
 			continue
 		}
@@ -2158,8 +2155,8 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 			userMessages++
 		}
 	}
-	if hiddenContinuation != 1 {
-		t.Fatalf("expected one hidden persisted goal continuation, got %+v", persisted)
+	if hiddenContinuation != 0 {
+		t.Fatalf("goal continuation should not persist into durable history, got %+v", persisted)
 	}
 	if userMessages != 1 {
 		t.Fatalf("persisted history should contain only the real user prompt, got %+v", persisted)

@@ -1015,17 +1015,11 @@ func TestRunToolLoop_BeforeModelContextAppendsHiddenMessages(t *testing.T) {
 		!msgs[2].Hidden {
 		t.Fatalf("expected task contract reminder, got %+v", msgs[2])
 	}
-	if len(res.NewMessages) != 3 {
-		t.Fatalf("expected hidden context plus assistant reply, got %+v", res.NewMessages)
+	if len(res.NewMessages) != 1 {
+		t.Fatalf("expected only durable assistant reply, got %+v", res.NewMessages)
 	}
-	if !res.NewMessages[0].Hidden || res.NewMessages[0].Content != reminder {
-		t.Fatalf("expected hidden environment context to persist, got %+v", res.NewMessages[0])
-	}
-	if !res.NewMessages[1].Hidden || res.NewMessages[1].Name != wuucontext.TaskContractMessageName {
-		t.Fatalf("expected hidden task contract to persist, got %+v", res.NewMessages[1])
-	}
-	if res.NewMessages[2].Hidden || res.NewMessages[2].Content != "ok" {
-		t.Fatalf("expected visible assistant reply, got %+v", res.NewMessages[2])
+	if res.NewMessages[0].Hidden || res.NewMessages[0].Content != "ok" {
+		t.Fatalf("expected visible assistant reply, got %+v", res.NewMessages[0])
 	}
 	if len(contexts) != 1 {
 		t.Fatalf("expected one request context summary, got %+v", contexts)

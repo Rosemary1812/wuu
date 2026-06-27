@@ -6,7 +6,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-func BenchmarkFilterEphemeralHistory(b *testing.B) {
+func BenchmarkFilterDurableHistory(b *testing.B) {
 	msgs := []providers.ChatMessage{
 		{Role: "system", Content: "You are wuu."},
 		{Role: "user", Content: "Hello"},
@@ -19,6 +19,6 @@ func BenchmarkFilterEphemeralHistory(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = filterEphemeralHistory(msgs)
+		_ = filterDurableHistory(msgs)
 	}
 }

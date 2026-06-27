@@ -936,6 +936,7 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 		{Role: "system", Content: "you are helpful"},
 		{Role: "user", Content: "hello"},
 		{Role: "user", Name: wuucontext.SystemReminderMessageName, Content: reminder},
+		compact.BuildContextAnchorMessage(7),
 	}
 
 	var received []providers.StreamEvent
@@ -972,11 +973,8 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 		t.Fatalf("expected hidden task contract in request, got %+v", sent[3])
 	}
 
-	if len(res.NewMessages) != 2 || !res.NewMessages[0].Hidden || res.NewMessages[0].Content != reminder {
-		t.Fatalf("expected hidden model context to persist without a visible event, got %+v", res.NewMessages)
-	}
-	if !res.NewMessages[1].Hidden || res.NewMessages[1].Name != wuucontext.TaskContractMessageName {
-		t.Fatalf("expected hidden task contract to persist without a visible event, got %+v", res.NewMessages)
+	if len(res.NewMessages) != 0 {
+		t.Fatalf("expected transient model context to stay out of durable new messages, got %+v", res.NewMessages)
 	}
 	for _, ev := range received {
 		if ev.Type == providers.EventMessage && ev.Message != nil && wuucontext.IsSystemReminder(ev.Message.Name, ev.Message.Content) {

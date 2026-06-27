@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
-	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/eventbus"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -83,9 +82,9 @@ type StreamRunner struct {
 	BeforeStep func() []providers.ChatMessage
 
 	// BeforeModelContext, when set, is called before each provider
-	// request. Returned messages are appended as hidden model context:
-	// provider-visible and persisted for replay, but not shown as user
-	// conversation items.
+	// request. Returned messages are appended as hidden model context for
+	// the current request, but are not persisted as durable conversation
+	// history.
 	BeforeModelContext func() []providers.ChatMessage
 	// OnRequestContext receives metadata-only summaries of hidden model
 	// context appended before requests.
@@ -163,7 +162,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	if requestModel == "" {
 		requestModel = r.Model
 	}
-	history = filterEphemeralHistory(history)
+	history = filterDurableHistory(history)
 	runUsage, baseHistoryLen := r.prepareUsageTracker(history)
 
 	// Wrap the caller's callback so events also flow to the bus, if wired.
@@ -205,7 +204,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	beforeStep := r.BeforeStep
 	if beforeStep != nil {
 		beforeStep = func() []providers.ChatMessage {
-			return filterEphemeralHistory(r.BeforeStep())
+			return filterDurableHistory(r.BeforeStep())
 		}
 	}
 	cfg := LoopConfig{
@@ -234,7 +233,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		OnUsage:      r.OnUsage,
 		OnTokenUsage: r.OnTokenUsage,
 		OnMessage: func(msg providers.ChatMessage) {
-			if effectiveOnEvent == nil || msg.Hidden || isEphemeralHistoryMessage(msg) || isInternalContextHistoryMessage(msg) {
+			if effectiveOnEvent == nil || msg.Hidden || isNonDurableHistoryMessage(msg) || isInternalContextHistoryMessage(msg) {
 				return
 			}
 			copyMsg := msg
@@ -297,7 +296,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)
-	res.NewMessages = filterEphemeralHistory(res.NewMessages)
+	res.NewMessages = filterDurableHistory(res.NewMessages)
 	if err != nil {
 		r.commitUsageTracker(runUsage, baseHistoryLen)
 		return res, err
@@ -311,7 +310,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		fullHistory := make([]providers.ChatMessage, 0, len(history)+len(res.NewMessages))
 		fullHistory = append(fullHistory, history...)
 		fullHistory = append(fullHistory, res.NewMessages...)
-		fullHistory = filterEphemeralHistory(fullHistory)
+		fullHistory = filterDurableHistory(fullHistory)
 		r.AfterTurn(ctx, r, fullHistory, res)
 	}
 	return res, nil
@@ -421,19 +420,19 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 	r.trackedHistoryLen = historyLen
 }
 
-func isEphemeralHistoryMessage(msg providers.ChatMessage) bool {
-	return !msg.Hidden && msg.Role == "user" && strings.TrimSpace(msg.Name) == wuucontext.SystemReminderMessageName
+func isNonDurableHistoryMessage(msg providers.ChatMessage) bool {
+	return isTransientModelContextMessage(msg)
 }
 
-func filterEphemeralHistory(msgs []providers.ChatMessage) []providers.ChatMessage {
+func filterDurableHistory(msgs []providers.ChatMessage) []providers.ChatMessage {
 	if len(msgs) == 0 {
 		return nil
 	}
-	// In-place filter: ephemeral messages are rare (usually 0-1 per turn),
-	// so the write-back cost is negligible and we avoid a heap allocation.
+	// In-place filter: transient messages are rare, so the write-back cost is
+	// negligible and we avoid a heap allocation.
 	n := 0
 	for _, msg := range msgs {
-		if !isEphemeralHistoryMessage(msg) {
+		if !isNonDurableHistoryMessage(msg) {
 			msgs[n] = msg
 			n++
 		}
