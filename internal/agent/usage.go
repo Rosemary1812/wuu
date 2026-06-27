@@ -47,12 +47,27 @@ func NewUsageTracker() *UsageTracker {
 // session with prompt caching look almost empty and the auto-compact
 // trigger would never fire.
 func (t *UsageTracker) RecordResponse(usage *providers.TokenUsage) {
+	t.RecordResponseExcludingMessages(usage, nil)
+}
+
+// RecordResponseExcludingMessages stores provider usage while subtracting
+// messages that were present only in the just-sent request. Provider usage is
+// still reported separately by the caller; this tracker represents the future
+// durable conversation fill used for compaction decisions.
+func (t *UsageTracker) RecordResponseExcludingMessages(usage *providers.TokenUsage, excluded []providers.ChatMessage) {
 	if t == nil || usage == nil {
 		return
 	}
+	total := usage.TotalContextTokens()
+	if len(excluded) > 0 {
+		total -= estimateMessages(excluded)
+		if total < 0 {
+			total = 0
+		}
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.lastResponseTotal = usage.TotalContextTokens()
+	t.lastResponseTotal = total
 	// The new ground truth already includes everything we'd been
 	// estimating, so the pending delta resets to zero.
 	t.pendingDelta = 0

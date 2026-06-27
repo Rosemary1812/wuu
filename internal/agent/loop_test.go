@@ -289,7 +289,7 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 
 func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 950}},
+		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}},
 		{Content: "done"},
 	}}
 	cfg := LoopConfig{
@@ -753,7 +753,7 @@ func TestRunToolLoop_OnUsageReceivesPerCall(t *testing.T) {
 }
 
 func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 950, OutputTokens: 0}}, {Content: "compacted answer"}}}
+	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300, OutputTokens: 0}}, {Content: "compacted answer"}}}
 	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}
 
 	compactCalled := 0
@@ -903,7 +903,7 @@ func TestRunToolLoop_ProactiveCompactDisabledWhenNoWindow(t *testing.T) {
 }
 
 func TestRunToolLoop_ProactiveCompactRespectsCustomThreshold(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 600}}, {Content: "ok"}}}
+	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 900}}, {Content: "ok"}}}
 	compactCalled := 0
 	cfg := LoopConfig{Model: "m", Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}, Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		compactCalled++
@@ -953,7 +953,7 @@ func TestProactiveCompactThresholdRespectsInputLimit(t *testing.T) {
 }
 
 func TestRunToolLoop_ProactiveCompactDoesNotLoopOnNoOpCompact(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 950}}, {ToolCalls: []providers.ToolCall{{ID: "c2", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 950}}, {Content: "done"}}}
+	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}}, {ToolCalls: []providers.ToolCall{{ID: "c2", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}}, {Content: "done"}}}
 	compactCalled := 0
 	cfg := LoopConfig{Model: "m", Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}, Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		compactCalled++
@@ -1070,6 +1070,68 @@ func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 	}
 	if len(contexts[0].BlockKinds) != 3 {
 		t.Fatalf("unexpected request context block kinds: %+v", contexts[0])
+	}
+}
+
+func TestRunToolLoop_RequestOnlyContextExcludedFromUsageBaseline(t *testing.T) {
+	requestOnly := []providers.ChatMessage{{
+		Role:    "user",
+		Content: strings.Repeat("dynamic context ", 40),
+		Hidden:  true,
+	}}
+	step := &fakeStep{results: []StepResult{{
+		Content: "ok",
+		Usage:   &providers.TokenUsage{InputTokens: 1000, OutputTokens: 25},
+	}}}
+	tracker := NewUsageTracker()
+	cfg := LoopConfig{
+		Model:        "m",
+		UsageTracker: tracker,
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextMessages(requestOnly)
+		},
+	}
+
+	if _, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "system", Content: "sys"}}, cfg, step); err != nil {
+		t.Fatal(err)
+	}
+
+	want := 1025 - estimateMessages(requestOnly)
+	if got := tracker.LastResponseTotal(); got != want {
+		t.Fatalf("request-only context should not persist in usage baseline: got %d, want %d", got, want)
+	}
+	if got := tracker.PendingDelta(); got != 0 {
+		t.Fatalf("request-only context should not remain pending, got %d", got)
+	}
+}
+
+func TestRunToolLoop_RequestOnlyContextNotTrackedOnRequestError(t *testing.T) {
+	requestOnly := []providers.ChatMessage{{
+		Role:    "user",
+		Content: strings.Repeat("dynamic context ", 40),
+		Hidden:  true,
+	}}
+	step := &fakeStep{
+		results: []StepResult{{}},
+		errs:    []error{errors.New("boom")},
+	}
+	tracker := NewUsageTracker()
+	cfg := LoopConfig{
+		Model:        "m",
+		UsageTracker: tracker,
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextMessages(requestOnly)
+		},
+	}
+
+	if _, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "system", Content: "sys"}}, cfg, step); err == nil {
+		t.Fatal("expected request error")
+	}
+	if got := tracker.PendingDelta(); got != 0 {
+		t.Fatalf("request-only context should not be committed on error, got pending delta %d", got)
+	}
+	if got := tracker.LastResponseTotal(); got != 0 {
+		t.Fatalf("request-only context should not create a response baseline on error, got %d", got)
 	}
 }
 

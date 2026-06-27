@@ -1022,7 +1022,7 @@ func TestStreamRunner_ReusesUsageAcrossTurnsForPreRequestCompact(t *testing.T) {
 		attempts: []mockStreamAttempt{
 			{events: []providers.StreamEvent{
 				{Type: providers.EventContentDelta, Content: "turn1"},
-				{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 950}},
+				{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 1300}},
 			}},
 			{events: []providers.StreamEvent{
 				{Type: providers.EventContentDelta, Content: "turn2"},

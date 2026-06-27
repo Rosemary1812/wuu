@@ -171,9 +171,6 @@ func RunToolLoop(
 			requestSegments = append(requestSegments, RequestOnlyContextSegment([]providers.ChatMessage{contract}))
 		}
 		assembly := assembleModelRequest(messages, requestSegments)
-		if len(assembly.RequestOnlyMessages) > 0 {
-			usage.RecordPendingMessages(assembly.RequestOnlyMessages)
-		}
 		requestMessages := assembly.Messages
 		cacheHint := buildCacheHint(requestMessages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
@@ -241,9 +238,9 @@ func RunToolLoop(
 			if cfg.OnTokenUsage != nil {
 				cfg.OnTokenUsage(*result.Usage)
 			}
-			// Fold the precise per-call usage into the tracker. This
-			// collapses any pending estimate into ground truth.
-			usage.RecordResponse(result.Usage)
+			// Fold the precise per-call usage into the tracker, excluding
+			// request-only context that will not persist into future history.
+			usage.RecordResponseExcludingMessages(result.Usage, assembly.RequestOnlyMessages)
 		}
 		if err := providers.ValidateAssistantToolCalls(result.ToolCalls); err != nil {
 			return LoopResult{
