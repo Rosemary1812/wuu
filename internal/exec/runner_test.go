@@ -161,6 +161,8 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					TransientMessages:       2,
 					ContentBytes:            128,
 					BlockKinds:              []string{"ENVIRONMENT", "TOOL_POLICY"},
+					BlockKindCounts:         map[string]int{"ENVIRONMENT": 1, "TOOL_POLICY": 1},
+					BlockKindBytes:          map[string]int{"ENVIRONMENT": 80, "TOOL_POLICY": 48},
 					MessageCount:            4,
 					SystemMessages:          1,
 					HiddenMessages:          2,
@@ -245,6 +247,10 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		requestContext["tool_surface_hash"] != "tools-hash" ||
 		requestContext["prompt_cache_key"] != "thread-1" {
 		t.Fatalf("unexpected request_context event: %+v", requestContext)
+	}
+	if !reflect.DeepEqual(requestContext["block_kind_counts"], map[string]any{"ENVIRONMENT": float64(1), "TOOL_POLICY": float64(1)}) ||
+		!reflect.DeepEqual(requestContext["block_kind_bytes"], map[string]any{"ENVIRONMENT": float64(80), "TOOL_POLICY": float64(48)}) {
+		t.Fatalf("unexpected request_context block metrics: %+v", requestContext)
 	}
 	sections, ok := requestContext["system_sections"].([]any)
 	if !ok || len(sections) != 1 {

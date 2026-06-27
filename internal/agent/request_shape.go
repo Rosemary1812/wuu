@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -54,7 +55,6 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 		SystemSections:          cloneSystemPromptSections(systemSections),
 	}
 
-	seenKinds := make(map[string]struct{})
 	for _, msg := range messages {
 		if msg.Hidden {
 			info.HiddenMessages++
@@ -67,31 +67,57 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 		}
 		info.TransientMessages++
 		info.ContentBytes += len([]byte(msg.Content))
-		for _, kind := range systemReminderBlockKinds(msg.Content) {
-			if _, ok := seenKinds[kind]; ok {
-				continue
-			}
-			seenKinds[kind] = struct{}{}
-			info.BlockKinds = append(info.BlockKinds, kind)
-		}
 	}
-	for _, segment := range assembly.Segments {
-		for _, block := range segment.Blocks {
-			if strings.TrimSpace(wuucontext.CompileBlocks([]wuucontext.Block{block})) == "" {
-				continue
-			}
-			kind := strings.TrimSpace(string(block.Kind))
-			if kind == "" {
-				kind = string(wuucontext.BlockAdditionalContext)
-			}
-			if _, ok := seenKinds[kind]; ok {
-				continue
-			}
-			seenKinds[kind] = struct{}{}
-			info.BlockKinds = append(info.BlockKinds, kind)
-		}
-	}
+	info.BlockKinds, info.BlockKindCounts, info.BlockKindBytes = requestBlockMetrics(assembly)
 	return info
+}
+
+func requestBlockMetrics(assembly RequestAssembly) ([]string, map[string]int, map[string]int) {
+	counts := map[string]int{}
+	bytesByKind := map[string]int{}
+	for _, segment := range assembly.Segments {
+		if len(segment.Blocks) > 0 {
+			for _, block := range segment.Blocks {
+				rendered := strings.TrimSpace(wuucontext.CompileBlocks([]wuucontext.Block{block}))
+				if rendered == "" {
+					continue
+				}
+				kind := strings.TrimSpace(string(block.Kind))
+				if kind == "" {
+					kind = string(wuucontext.BlockAdditionalContext)
+				}
+				counts[kind]++
+				bytesByKind[kind] += len([]byte(rendered))
+			}
+			continue
+		}
+		for _, msg := range segment.Messages {
+			if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+				continue
+			}
+			kinds := systemReminderBlockKinds(msg.Content)
+			if len(kinds) == 0 {
+				continue
+			}
+			bytesPerKind := len([]byte(msg.Content))
+			if len(kinds) > 1 {
+				bytesPerKind = bytesPerKind / len(kinds)
+			}
+			for _, kind := range kinds {
+				counts[kind]++
+				bytesByKind[kind] += bytesPerKind
+			}
+		}
+	}
+	if len(counts) == 0 {
+		return nil, nil, nil
+	}
+	kinds := make([]string, 0, len(counts))
+	for kind := range counts {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	return kinds, counts, bytesByKind
 }
 
 func cloneSystemPromptSections(sections []SystemPromptSectionInfo) []SystemPromptSectionInfo {

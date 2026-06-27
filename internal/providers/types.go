@@ -414,6 +414,8 @@ type RequestContextSummary struct {
 	TransientMessages       int                          `json:"transient_messages,omitempty"`
 	ContentBytes            int                          `json:"content_bytes,omitempty"`
 	BlockKinds              []string                     `json:"block_kinds,omitempty"`
+	BlockKindCounts         map[string]int               `json:"block_kind_counts,omitempty"`
+	BlockKindBytes          map[string]int               `json:"block_kind_bytes,omitempty"`
 	MessageCount            int                          `json:"message_count,omitempty"`
 	SystemMessages          int                          `json:"system_messages,omitempty"`
 	HiddenMessages          int                          `json:"hidden_messages,omitempty"`

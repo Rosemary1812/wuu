@@ -112,6 +112,8 @@ type RequestContextInfo struct {
 	TransientMessages       int
 	ContentBytes            int
 	BlockKinds              []string
+	BlockKindCounts         map[string]int
+	BlockKindBytes          map[string]int
 	MessageCount            int
 	SystemMessages          int
 	HiddenMessages          int

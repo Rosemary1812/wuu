@@ -533,6 +533,8 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			TransientMessages:       info.TransientMessages,
 			ContentBytes:            info.ContentBytes,
 			BlockKinds:              append([]string(nil), info.BlockKinds...),
+			BlockKindCounts:         cloneStringIntMap(info.BlockKindCounts),
+			BlockKindBytes:          cloneStringIntMap(info.BlockKindBytes),
 			MessageCount:            info.MessageCount,
 			SystemMessages:          info.SystemMessages,
 			HiddenMessages:          info.HiddenMessages,
@@ -1877,6 +1879,17 @@ func requestContextSystemSections(sections []agent.SystemPromptSectionInfo) []se
 			Bytes:  section.Bytes,
 			Hash:   section.Hash,
 		})
+	}
+	return out
+}
+
+func cloneStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
 	}
 	return out
 }

@@ -116,27 +116,29 @@ type ContextBlockObservation struct {
 }
 
 type ContextRequestObservation struct {
-	StepIndex               int      `json:"step_index"`
-	TransientMessages       int      `json:"transient_messages,omitempty"`
-	ContentBytes            int      `json:"content_bytes,omitempty"`
-	BlockKinds              []string `json:"block_kinds,omitempty"`
-	MessageCount            int      `json:"message_count,omitempty"`
-	SystemMessages          int      `json:"system_messages,omitempty"`
-	HiddenMessages          int      `json:"hidden_messages,omitempty"`
-	ToolCount               int      `json:"tool_count,omitempty"`
-	StablePrefix            int      `json:"stable_prefix,omitempty"`
-	DynamicBytes            int      `json:"dynamic_context_bytes,omitempty"`
-	SystemBytes             int      `json:"system_bytes,omitempty"`
-	StablePrefixBytes       int      `json:"stable_prefix_bytes,omitempty"`
-	MessageBytes            int      `json:"message_bytes,omitempty"`
-	ToolSchemaBytes         int      `json:"tool_schema_bytes,omitempty"`
-	LoadableToolCount       int      `json:"loadable_tool_count,omitempty"`
-	LoadableToolSchemaBytes int      `json:"loadable_tool_schema_bytes,omitempty"`
-	LoadableToolSurfaceHash string   `json:"loadable_tool_surface_hash,omitempty"`
-	SystemHash              string   `json:"system_hash,omitempty"`
-	StablePrefixHash        string   `json:"stable_prefix_hash,omitempty"`
-	ToolSurfaceHash         string   `json:"tool_surface_hash,omitempty"`
-	PromptCacheKey          string   `json:"prompt_cache_key,omitempty"`
+	StepIndex               int            `json:"step_index"`
+	TransientMessages       int            `json:"transient_messages,omitempty"`
+	ContentBytes            int            `json:"content_bytes,omitempty"`
+	BlockKinds              []string       `json:"block_kinds,omitempty"`
+	BlockKindCounts         map[string]int `json:"block_kind_counts,omitempty"`
+	BlockKindBytes          map[string]int `json:"block_kind_bytes,omitempty"`
+	MessageCount            int            `json:"message_count,omitempty"`
+	SystemMessages          int            `json:"system_messages,omitempty"`
+	HiddenMessages          int            `json:"hidden_messages,omitempty"`
+	ToolCount               int            `json:"tool_count,omitempty"`
+	StablePrefix            int            `json:"stable_prefix,omitempty"`
+	DynamicBytes            int            `json:"dynamic_context_bytes,omitempty"`
+	SystemBytes             int            `json:"system_bytes,omitempty"`
+	StablePrefixBytes       int            `json:"stable_prefix_bytes,omitempty"`
+	MessageBytes            int            `json:"message_bytes,omitempty"`
+	ToolSchemaBytes         int            `json:"tool_schema_bytes,omitempty"`
+	LoadableToolCount       int            `json:"loadable_tool_count,omitempty"`
+	LoadableToolSchemaBytes int            `json:"loadable_tool_schema_bytes,omitempty"`
+	LoadableToolSurfaceHash string         `json:"loadable_tool_surface_hash,omitempty"`
+	SystemHash              string         `json:"system_hash,omitempty"`
+	StablePrefixHash        string         `json:"stable_prefix_hash,omitempty"`
+	ToolSurfaceHash         string         `json:"tool_surface_hash,omitempty"`
+	PromptCacheKey          string         `json:"prompt_cache_key,omitempty"`
 }
 
 type ModelProfileObservation struct {

@@ -877,6 +877,8 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 			"transient_messages":         rc.TransientMessages,
 			"content_bytes":              rc.ContentBytes,
 			"block_kinds":                rc.BlockKinds,
+			"block_kind_counts":          rc.BlockKindCounts,
+			"block_kind_bytes":           rc.BlockKindBytes,
 			"message_count":              rc.MessageCount,
 			"system_messages":            rc.SystemMessages,
 			"hidden_messages":            rc.HiddenMessages,

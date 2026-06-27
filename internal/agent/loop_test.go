@@ -278,6 +278,9 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 		if !containsString(shape.BlockKinds, want) {
 			t.Fatalf("request shape missing dynamic block kind %s: %+v", want, shape)
 		}
+		if shape.BlockKindCounts[want] != 1 || shape.BlockKindBytes[want] == 0 {
+			t.Fatalf("request shape missing dynamic block metrics for %s: %+v", want, shape)
+		}
 	}
 	if shape.SystemHash == "" || shape.StablePrefixHash == "" || shape.ToolSurfaceHash == "" {
 		t.Fatalf("request shape missing hashes: %+v", shape)

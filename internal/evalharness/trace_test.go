@@ -63,6 +63,8 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				LoadableToolSchemaBytes: 512,
 				LoadableToolSurfaceHash: "loadable-hash",
 				BlockKinds:              []string{"ENVIRONMENT", "REPO_MAP"},
+				BlockKindCounts:         map[string]int{"ENVIRONMENT": 1, "REPO_MAP": 1},
+				BlockKindBytes:          map[string]int{"ENVIRONMENT": 128, "REPO_MAP": 384},
 			}},
 			ToolInventory: []ToolInventoryObservation{{
 				Name:     "read_file",
@@ -133,7 +135,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		contextRequests[0].ToolSchemaBytes != 4096 ||
 		contextRequests[0].LoadableToolCount != 1 ||
 		contextRequests[0].LoadableToolSchemaBytes != 512 ||
-		contextRequests[0].LoadableToolSurfaceHash != "loadable-hash" {
+		contextRequests[0].LoadableToolSurfaceHash != "loadable-hash" ||
+		contextRequests[0].BlockKindCounts["ENVIRONMENT"] != 1 ||
+		contextRequests[0].BlockKindBytes["REPO_MAP"] != 384 {
 		t.Fatalf("context_requests event missing request metadata: %+v", contextRequests)
 	}
 	if len(task.MissingToolCalls) != 1 || task.MissingToolCalls[0] != "checkpoint action=restore" {

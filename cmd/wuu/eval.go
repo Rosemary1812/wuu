@@ -633,6 +633,8 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 		if info.TransientMessages <= 0 &&
 			info.ContentBytes <= 0 &&
 			len(info.BlockKinds) == 0 &&
+			len(info.BlockKindCounts) == 0 &&
+			len(info.BlockKindBytes) == 0 &&
 			info.MessageCount <= 0 &&
 			info.ToolCount <= 0 &&
 			info.LoadableToolCount <= 0 &&
@@ -648,6 +650,8 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			TransientMessages:       info.TransientMessages,
 			ContentBytes:            info.ContentBytes,
 			BlockKinds:              append([]string(nil), info.BlockKinds...),
+			BlockKindCounts:         cloneStringIntMap(info.BlockKindCounts),
+			BlockKindBytes:          cloneStringIntMap(info.BlockKindBytes),
 			MessageCount:            info.MessageCount,
 			SystemMessages:          info.SystemMessages,
 			HiddenMessages:          info.HiddenMessages,
@@ -666,6 +670,17 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			ToolSurfaceHash:         info.ToolSurfaceHash,
 			PromptCacheKey:          info.PromptCacheKey,
 		})
+	}
+	return out
+}
+
+func cloneStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
 	}
 	return out
 }

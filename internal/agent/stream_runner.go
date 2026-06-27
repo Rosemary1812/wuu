@@ -466,6 +466,8 @@ func requestContextSummary(info RequestContextInfo) *providers.RequestContextSum
 		TransientMessages:       info.TransientMessages,
 		ContentBytes:            info.ContentBytes,
 		BlockKinds:              append([]string(nil), info.BlockKinds...),
+		BlockKindCounts:         cloneStringIntMap(info.BlockKindCounts),
+		BlockKindBytes:          cloneStringIntMap(info.BlockKindBytes),
 		MessageCount:            info.MessageCount,
 		SystemMessages:          info.SystemMessages,
 		HiddenMessages:          info.HiddenMessages,
@@ -485,6 +487,17 @@ func requestContextSummary(info RequestContextInfo) *providers.RequestContextSum
 		PromptCacheKey:          info.PromptCacheKey,
 		SystemSections:          systemPromptSectionSummaries(info.SystemSections),
 	}
+}
+
+func cloneStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func systemPromptSectionSummaries(sections []SystemPromptSectionInfo) []providers.SystemPromptSectionSummary {
