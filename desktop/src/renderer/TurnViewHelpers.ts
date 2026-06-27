@@ -31,18 +31,26 @@ export type UserMessageAnchor = {
   itemID: string;
 };
 
-// Walks a thread's turns/items in order and returns the anchor of the
-// earliest user_message. Sidebar rows use this to jump straight to the
-// conversation's first prompt when a row is activated. Returns undefined
-// for threads with no user_message yet (defensive against malformed
-// fixtures); callers should treat that as "skip the scroll".
+// Walks a thread's or a single turn's turns/items in order and returns
+// the anchor of the earliest user_message. Sidebar rows pass a full
+// Thread; the conversation turn rail passes a single Turn. For a
+// Turn, the function treats it as a single-element sequence so the
+// rail can scroll straight to that turn's first prompt.
+// Returns undefined when there is no user_message yet (defensive
+// against malformed fixtures); callers should treat that as "skip
+// the scroll".
 export function firstUserMessageAnchor(
-  thread: Thread | undefined,
+  source: Thread | Turn | undefined,
 ): UserMessageAnchor | undefined {
-  if (!thread) {
+  if (!source) {
     return undefined;
   }
-  for (const turn of thread.turns ?? []) {
+  // Thread has `turns: Turn[]`; Turn has `items: ThreadItem[]`
+  // directly. The `in` narrowing picks the right field without a
+  // full type-guard.
+  const turns: Turn[] =
+    "turns" in source ? source.turns ?? [] : [source as Turn];
+  for (const turn of turns) {
     for (const item of turn.items ?? []) {
       if (item.type === "user_message") {
         return { turnID: turn.id, itemID: item.id };

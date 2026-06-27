@@ -317,6 +317,24 @@ describe("firstUserMessageAnchor", () => {
   it("returns undefined for undefined input", () => {
     expect(firstUserMessageAnchor(undefined)).toBeUndefined();
   });
+
+  it("returns the first user_message anchor when given a single Turn", () => {
+    const turn = buildTurn([
+      { id: "a-1", type: "agent_message", text: "ignored" },
+      { id: "u-1", type: "user_message", text: "hello" },
+    ]);
+    expect(firstUserMessageAnchor(turn)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-1",
+    });
+  });
+
+  it("returns undefined when the Turn has no user_message", () => {
+    const turn = buildTurn([
+      { id: "a-1", type: "agent_message", text: "answer" },
+    ]);
+    expect(firstUserMessageAnchor(turn)).toBeUndefined();
+  });
 });
 
 describe("threadReplySnippet", () => {
