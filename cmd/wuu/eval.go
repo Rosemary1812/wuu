@@ -635,26 +635,36 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			len(info.BlockKinds) == 0 &&
 			info.MessageCount <= 0 &&
 			info.ToolCount <= 0 &&
+			info.LoadableToolCount <= 0 &&
+			info.LoadableToolSchemaBytes <= 0 &&
 			info.SystemHash == "" &&
 			info.StablePrefixHash == "" &&
-			info.ToolSurfaceHash == "" {
+			info.ToolSurfaceHash == "" &&
+			info.LoadableToolSurfaceHash == "" {
 			continue
 		}
 		out = append(out, evalharness.ContextRequestObservation{
-			StepIndex:         info.StepIndex,
-			TransientMessages: info.TransientMessages,
-			ContentBytes:      info.ContentBytes,
-			BlockKinds:        append([]string(nil), info.BlockKinds...),
-			MessageCount:      info.MessageCount,
-			SystemMessages:    info.SystemMessages,
-			HiddenMessages:    info.HiddenMessages,
-			ToolCount:         info.ToolCount,
-			StablePrefix:      info.StablePrefix,
-			DynamicBytes:      info.DynamicBytes,
-			SystemHash:        info.SystemHash,
-			StablePrefixHash:  info.StablePrefixHash,
-			ToolSurfaceHash:   info.ToolSurfaceHash,
-			PromptCacheKey:    info.PromptCacheKey,
+			StepIndex:               info.StepIndex,
+			TransientMessages:       info.TransientMessages,
+			ContentBytes:            info.ContentBytes,
+			BlockKinds:              append([]string(nil), info.BlockKinds...),
+			MessageCount:            info.MessageCount,
+			SystemMessages:          info.SystemMessages,
+			HiddenMessages:          info.HiddenMessages,
+			ToolCount:               info.ToolCount,
+			StablePrefix:            info.StablePrefix,
+			DynamicBytes:            info.DynamicBytes,
+			SystemBytes:             info.SystemBytes,
+			StablePrefixBytes:       info.StablePrefixBytes,
+			MessageBytes:            info.MessageBytes,
+			ToolSchemaBytes:         info.ToolSchemaBytes,
+			LoadableToolCount:       info.LoadableToolCount,
+			LoadableToolSchemaBytes: info.LoadableToolSchemaBytes,
+			LoadableToolSurfaceHash: info.LoadableToolSurfaceHash,
+			SystemHash:              info.SystemHash,
+			StablePrefixHash:        info.StablePrefixHash,
+			ToolSurfaceHash:         info.ToolSurfaceHash,
+			PromptCacheKey:          info.PromptCacheKey,
 		})
 	}
 	return out

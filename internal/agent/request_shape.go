@@ -32,22 +32,26 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 	if stableEnd > len(messages) {
 		stableEnd = len(messages)
 	}
+	loadableTools := providers.DiscoveredToolsFromMessages(messages)
 
 	info := RequestContextInfo{
-		StepIndex:         stepIndex,
-		MessageCount:      len(messages),
-		SystemMessages:    systemMessages,
-		ToolCount:         len(tools),
-		StablePrefix:      stablePrefix,
-		SystemBytes:       messageBytesForRequestShape(messages[:systemMessages]),
-		StablePrefixBytes: messageBytesForRequestShape(messages[:stableEnd]),
-		MessageBytes:      messageBytesForRequestShape(messages),
-		ToolSchemaBytes:   toolSchemaBytesForRequestShape(tools),
-		SystemHash:        hashMessagesForRequestShape(messages[:systemMessages]),
-		StablePrefixHash:  hashMessagesForRequestShape(messages[:stableEnd]),
-		ToolSurfaceHash:   hashToolsForRequestShape(tools),
-		PromptCacheKey:    promptCacheKey,
-		SystemSections:    cloneSystemPromptSections(systemSections),
+		StepIndex:               stepIndex,
+		MessageCount:            len(messages),
+		SystemMessages:          systemMessages,
+		ToolCount:               len(tools),
+		StablePrefix:            stablePrefix,
+		SystemBytes:             messageBytesForRequestShape(messages[:systemMessages]),
+		StablePrefixBytes:       messageBytesForRequestShape(messages[:stableEnd]),
+		MessageBytes:            messageBytesForRequestShape(messages),
+		ToolSchemaBytes:         toolSchemaBytesForRequestShape(tools),
+		LoadableToolCount:       len(loadableTools),
+		LoadableToolSchemaBytes: loadableToolSchemaBytesForRequestShape(loadableTools),
+		LoadableToolSurfaceHash: hashLoadableToolsForRequestShape(loadableTools),
+		SystemHash:              hashMessagesForRequestShape(messages[:systemMessages]),
+		StablePrefixHash:        hashMessagesForRequestShape(messages[:stableEnd]),
+		ToolSurfaceHash:         hashToolsForRequestShape(tools),
+		PromptCacheKey:          promptCacheKey,
+		SystemSections:          cloneSystemPromptSections(systemSections),
 	}
 
 	seenKinds := make(map[string]struct{})
@@ -204,6 +208,17 @@ func toolSchemaBytesForRequestShape(tools []providers.ToolDefinition) int {
 	return len(raw)
 }
 
+func loadableToolSchemaBytesForRequestShape(tools []providers.LoadableToolDefinition) int {
+	if len(tools) == 0 {
+		return 0
+	}
+	raw, err := json.Marshal(tools)
+	if err != nil {
+		return 0
+	}
+	return len(raw)
+}
+
 func hashToolsForRequestShape(tools []providers.ToolDefinition) string {
 	if len(tools) == 0 {
 		return ""
@@ -217,6 +232,30 @@ func hashToolsForRequestShape(tools []providers.ToolDefinition) string {
 		b.WriteString(strconv.FormatBool(tool.DeferLoading))
 		b.WriteByte('\n')
 		b.WriteString(strconv.FormatBool(tool.CacheStable))
+		b.WriteByte('\n')
+		if tool.InputSchema != nil {
+			if raw, err := json.Marshal(tool.InputSchema); err == nil {
+				b.Write(raw)
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return shortRequestShapeHash(b.String())
+}
+
+func hashLoadableToolsForRequestShape(tools []providers.LoadableToolDefinition) string {
+	if len(tools) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, tool := range tools {
+		b.WriteString(tool.Type)
+		b.WriteByte('\n')
+		b.WriteString(tool.Name)
+		b.WriteByte('\n')
+		b.WriteString(tool.Description)
+		b.WriteByte('\n')
+		b.WriteString(strconv.FormatBool(tool.DeferLoading))
 		b.WriteByte('\n')
 		if tool.InputSchema != nil {
 			if raw, err := json.Marshal(tool.InputSchema); err == nil {

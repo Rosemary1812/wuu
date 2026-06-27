@@ -108,25 +108,28 @@ type CompactInfo struct {
 // RequestContextInfo summarizes request-only model context assembled before a
 // provider call. It intentionally excludes raw prompt text.
 type RequestContextInfo struct {
-	StepIndex         int
-	TransientMessages int
-	ContentBytes      int
-	BlockKinds        []string
-	MessageCount      int
-	SystemMessages    int
-	HiddenMessages    int
-	ToolCount         int
-	StablePrefix      int
-	DynamicBytes      int
-	SystemBytes       int
-	StablePrefixBytes int
-	MessageBytes      int
-	ToolSchemaBytes   int
-	SystemHash        string
-	StablePrefixHash  string
-	ToolSurfaceHash   string
-	PromptCacheKey    string
-	SystemSections    []SystemPromptSectionInfo
+	StepIndex               int
+	TransientMessages       int
+	ContentBytes            int
+	BlockKinds              []string
+	MessageCount            int
+	SystemMessages          int
+	HiddenMessages          int
+	ToolCount               int
+	StablePrefix            int
+	DynamicBytes            int
+	SystemBytes             int
+	StablePrefixBytes       int
+	MessageBytes            int
+	ToolSchemaBytes         int
+	LoadableToolCount       int
+	LoadableToolSchemaBytes int
+	LoadableToolSurfaceHash string
+	SystemHash              string
+	StablePrefixHash        string
+	ToolSurfaceHash         string
+	PromptCacheKey          string
+	SystemSections          []SystemPromptSectionInfo
 }
 
 // SystemPromptSectionInfo describes one section of the assembled system prompt

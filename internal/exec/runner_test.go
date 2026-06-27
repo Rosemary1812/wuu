@@ -157,24 +157,27 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 			Event: appserver.StreamEventPayload{
 				Type: providers.EventRequestContext,
 				RequestContext: &providers.RequestContextSummary{
-					StepIndex:         1,
-					TransientMessages: 2,
-					ContentBytes:      128,
-					BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
-					MessageCount:      4,
-					SystemMessages:    1,
-					HiddenMessages:    2,
-					ToolCount:         9,
-					StablePrefix:      0,
-					DynamicBytes:      128,
-					SystemBytes:       2048,
-					StablePrefixBytes: 2048,
-					MessageBytes:      2304,
-					ToolSchemaBytes:   4096,
-					SystemHash:        "system-hash",
-					StablePrefixHash:  "stable-hash",
-					ToolSurfaceHash:   "tools-hash",
-					PromptCacheKey:    "thread-1",
+					StepIndex:               1,
+					TransientMessages:       2,
+					ContentBytes:            128,
+					BlockKinds:              []string{"ENVIRONMENT", "TOOL_POLICY"},
+					MessageCount:            4,
+					SystemMessages:          1,
+					HiddenMessages:          2,
+					ToolCount:               9,
+					StablePrefix:            0,
+					DynamicBytes:            128,
+					SystemBytes:             2048,
+					StablePrefixBytes:       2048,
+					MessageBytes:            2304,
+					ToolSchemaBytes:         4096,
+					LoadableToolCount:       1,
+					LoadableToolSchemaBytes: 512,
+					LoadableToolSurfaceHash: "loadable-hash",
+					SystemHash:              "system-hash",
+					StablePrefixHash:        "stable-hash",
+					ToolSurfaceHash:         "tools-hash",
+					PromptCacheKey:          "thread-1",
 					SystemSections: []providers.SystemPromptSectionSummary{{
 						Key:    "base",
 						Static: true,
@@ -234,6 +237,9 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		requestContext["stable_prefix_bytes"] != float64(2048) ||
 		requestContext["message_bytes"] != float64(2304) ||
 		requestContext["tool_schema_bytes"] != float64(4096) ||
+		requestContext["loadable_tool_count"] != float64(1) ||
+		requestContext["loadable_tool_schema_bytes"] != float64(512) ||
+		requestContext["loadable_tool_surface_hash"] != "loadable-hash" ||
 		requestContext["system_hash"] != "system-hash" ||
 		requestContext["stable_prefix_hash"] != "stable-hash" ||
 		requestContext["tool_surface_hash"] != "tools-hash" ||
