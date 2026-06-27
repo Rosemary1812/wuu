@@ -2228,6 +2228,37 @@ func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
 	}
 }
 
+func TestGoalContinuationMessageTrimsLongObjective(t *testing.T) {
+	head := strings.Repeat("a", goalContinuationObjectiveHeadBytes*3)
+	tail := strings.Repeat("z", goalContinuationObjectiveTailBytes*3)
+	objective := head + "MIDDLE_SHOULD_NOT_BE_INLINE" + tail
+
+	msg := goalContinuationMessage(goalruntime.Goal{
+		Objective: objective,
+		Status:    goalruntime.StatusActive,
+	})
+
+	if !msg.Hidden || msg.Name != wuucontext.GoalContinuationMessageName {
+		t.Fatalf("unexpected continuation message metadata: %+v", msg)
+	}
+	if strings.Contains(msg.Content, "MIDDLE_SHOULD_NOT_BE_INLINE") {
+		t.Fatalf("long objective should be trimmed from continuation context:\n%s", msg.Content)
+	}
+	for _, want := range []string{
+		strings.Repeat("a", 64),
+		strings.Repeat("z", 64),
+		"[objective trimmed; call get_goal for the full objective]",
+		"call get_goal if the missing details matter",
+	} {
+		if !strings.Contains(msg.Content, want) {
+			t.Fatalf("continuation message missing %q:\n%s", want, msg.Content)
+		}
+	}
+	if len(msg.Content) >= len(objective) {
+		t.Fatalf("continuation content should be shorter than full objective: content=%d objective=%d", len(msg.Content), len(objective))
+	}
+}
+
 func TestServerGoalContinuationSkipsNonActiveGoals(t *testing.T) {
 	tests := []struct {
 		name   string

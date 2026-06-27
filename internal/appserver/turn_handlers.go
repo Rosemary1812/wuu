@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
+	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -1353,23 +1354,49 @@ func (s *Server) goalContinuationInput(th *threadState, threadID string) goalrun
 	}
 }
 
+const (
+	// Goal continuations are hidden request-only reminders that can repeat
+	// across many automatic turns. Keep the inline objective below a small
+	// prompt budget and require get_goal when the full objective matters.
+	goalContinuationObjectiveHeadBytes = 1200
+	goalContinuationObjectiveTailBytes = 600
+)
+
 func goalContinuationMessage(goal goalruntime.Goal) providers.ChatMessage {
+	objective, objectiveNote := goalContinuationObjectivePreview(goal.Objective)
+	if objectiveNote != "" {
+		objectiveNote = "\n" + objectiveNote
+	}
 	content := fmt.Sprintf(`<goal_continuation>
 Continue working toward the active thread goal.
-Objective: %s
+Objective: %s%s
 Status: %s
 Tokens used: %d
 Time used seconds: %d
 Goal turns: %d
 
 Make concrete progress toward the objective. Do not mark the goal complete unless the objective is actually achieved. If the same blocker prevents progress for multiple continuation turns, use the goal status rules instead of pretending the work is complete.
-</goal_continuation>`, goal.Objective, goal.Status, goal.TokensUsed, goal.TimeUsedSeconds, goal.GoalTurns)
+</goal_continuation>`, objective, objectiveNote, goal.Status, goal.TokensUsed, goal.TimeUsedSeconds, goal.GoalTurns)
 	return providers.ChatMessage{
 		Role:    "user",
 		Name:    wuucontext.GoalContinuationMessageName,
 		Content: content,
 		Hidden:  true,
 	}
+}
+
+func goalContinuationObjectivePreview(objective string) (string, string) {
+	objective = strings.TrimSpace(objective)
+	if len([]byte(objective)) <= goalContinuationObjectiveHeadBytes+goalContinuationObjectiveTailBytes {
+		return objective, ""
+	}
+	preview := stringutil.HeadTail(
+		objective,
+		goalContinuationObjectiveHeadBytes,
+		goalContinuationObjectiveTailBytes,
+		"\n\n[objective trimmed; call get_goal for the full objective]\n\n",
+	)
+	return preview, "Full objective omitted from this continuation reminder; call get_goal if the missing details matter."
 }
 
 func combineAgentCompletionMessages(turns []agentCompletionTurn) providers.ChatMessage {
