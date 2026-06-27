@@ -2144,7 +2144,7 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 		t.Fatalf("second request missing goal continuation message: %+v", requests[1].Messages)
 	}
 	if !continuation.Hidden {
-		t.Fatalf("goal continuation should be hidden model context: %+v", continuation)
+		t.Fatalf("goal continuation should be request-only context: %+v", continuation)
 	}
 	if !strings.Contains(continuation.Content, "finish the idle continuation loop") ||
 		!strings.Contains(continuation.Content, "<goal_continuation>") {

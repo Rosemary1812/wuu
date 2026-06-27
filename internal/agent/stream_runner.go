@@ -84,13 +84,12 @@ type StreamRunner struct {
 	// messages are appended to history for that round.
 	BeforeStep func() []providers.ChatMessage
 
-	// BeforeModelContext, when set, is called before each provider
-	// request. Returned messages are appended as hidden model context for
-	// the current request, but are not persisted as durable conversation
-	// history.
-	BeforeModelContext func() []providers.ChatMessage
-	// OnRequestContext receives metadata-only summaries of hidden model
-	// context appended before requests.
+	// BeforeRequestContext, when set, is called before each provider request.
+	// Returned segments are assembled into that request but are not appended
+	// to live or durable conversation history.
+	BeforeRequestContext func() []ContextSegment
+	// OnRequestContext receives metadata-only summaries of request-only model
+	// context assembled before requests.
 	OnRequestContext func(info RequestContextInfo)
 
 	// AfterTurn, when set, is invoked after a successful turn has
@@ -221,7 +220,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		CompactThresholdPct:     r.CompactThresholdPct,
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
 		BeforeStep:              beforeStep,
-		BeforeModelContext:      r.BeforeModelContext,
+		BeforeRequestContext:    r.BeforeRequestContext,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)

@@ -571,10 +571,31 @@ func compactSummaryInputBudgetForBudget(model string, budget Budget) int {
 }
 
 func compactTailBudgetForBudget(model string, budget Budget) int {
+	tailBudget := compactDefaultKeepRecentTokens
 	if budget.KeepRecentTokens > 0 {
-		return budget.KeepRecentTokens
+		tailBudget = budget.KeepRecentTokens
 	}
-	return compactDefaultKeepRecentTokens
+	if usable := compactTailUsableWindow(model, budget); usable > 0 {
+		maxTail := int(float64(usable) * compactSummaryInputFraction)
+		if maxTail <= 0 {
+			maxTail = usable
+		}
+		if tailBudget > maxTail {
+			return maxTail
+		}
+	}
+	return tailBudget
+}
+
+func compactTailUsableWindow(model string, budget Budget) int {
+	usable := compactUsableInputWindow(model, budget)
+	if usable > 0 {
+		return usable
+	}
+	if budget.InputTokens > 0 {
+		return budget.InputTokens
+	}
+	return budget.ContextTokens
 }
 
 func compactUsableWindow(model string, window int) int {

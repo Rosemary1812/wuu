@@ -336,7 +336,7 @@ func NewSession(opts Options) (*Session, error) {
 		CompactThresholdPct:     cfg.Agent.CompactThresholdPct,
 		CompactKeepRecentTokens: cfg.Agent.CompactKeepRecentTokens,
 		DisableAutoCompact:      cfg.Agent.DisableAutoCompact,
-		BeforeModelContext:      EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
+		BeforeRequestContext:    EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:               afterTurn,
 	}
 
@@ -692,7 +692,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.PromptCacheKey = strings.TrimSpace(id)
-	runner.BeforeModelContext = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
+	runner.BeforeRequestContext = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
 		memoryLimit, userLimit := kit.MemoryLimits()
@@ -738,7 +738,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		DisableAutoCompact:      base.DisableAutoCompact,
 		StreamingToolExecution:  base.StreamingToolExecution,
 		BeforeStep:              base.BeforeStep,
-		BeforeModelContext:      base.BeforeModelContext,
+		BeforeRequestContext:    base.BeforeRequestContext,
 		AfterTurn:               base.AfterTurn,
 		Effort:                  base.Effort,
 		Variant:                 base.Variant,
@@ -874,12 +874,10 @@ func codexSubscriptionInputCap(model, providerType string) int {
 	return modelbudget.CodexSubscriptionInputCap(model, providerType)
 }
 
-// EnvContextInjector returns replayable hidden runtime context injected into
-// model requests. Each typed block is emitted as its own hidden message so a
-// changing diff or environment snapshot does not force unrelated runtime
-// context to be appended again.
-func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []providers.ChatMessage {
-	return func() []providers.ChatMessage {
+// EnvContextInjector returns volatile request-only runtime context injected
+// into model requests without appending it to live or durable history.
+func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []agent.ContextSegment {
+	return func() []agent.ContextSegment {
 		env := wuucontext.Snapshot(rootDir)
 		blocks := []wuucontext.Block{wuucontext.EnvironmentBlock(env)}
 		if recentDiff, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
@@ -901,7 +899,7 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 				})
 			}
 		}
-		return hiddenContextMessagesFromBlocks(blocks)
+		return agent.RequestOnlyContextMessages(hiddenContextMessagesFromBlocks(blocks))
 	}
 }
 

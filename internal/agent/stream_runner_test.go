@@ -977,12 +977,12 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 	runner := StreamRunner{
 		Client: client,
 		Model:  "test-model",
-		BeforeModelContext: func() []providers.ChatMessage {
-			return []providers.ChatMessage{{
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextMessages([]providers.ChatMessage{{
 				Role:    "user",
 				Name:    wuucontext.SystemReminderMessageName,
 				Content: reminder,
-			}}
+			}})
 		},
 	}
 
@@ -998,7 +998,7 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 	}
 	sent := client.requests[0].Messages
 	if len(sent) != 4 {
-		t.Fatalf("expected legacy reminder to be filtered and hidden context to be sent, got %+v", sent)
+		t.Fatalf("expected legacy reminder to be filtered and request-only context to be sent, got %+v", sent)
 	}
 	if sent[0].Role != "system" || sent[1].Role != "user" || sent[2].Name != wuucontext.SystemReminderMessageName || !sent[2].Hidden {
 		t.Fatalf("unexpected request messages: %+v", sent)
@@ -1270,13 +1270,14 @@ func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testin
 		t.Fatalf("expected stream, compact, stream requests, got %d", len(client.requests))
 	}
 	finalRequest := client.requests[2]
-	if len(visibleMessagesForTest(finalRequest.Messages)) >= len(history) {
-		t.Fatalf("expected compacted retry request, got %d messages from %d-history input",
-			len(finalRequest.Messages), len(history))
-	}
 	if got := finalRequest.Messages[0].Content; !compact.IsConversationSummaryContent(got) ||
 		!strings.Contains(got, "summarized single-turn tool run") {
 		t.Fatalf("expected compact summary in retry request, got %q", got)
+	}
+	for _, msg := range finalRequest.Messages {
+		if strings.Contains(msg.Content, strings.Repeat("result ", 100)) {
+			t.Fatalf("compacted retry request should not resend raw oversized tool output: %+v", finalRequest.Messages)
+		}
 	}
 }
 

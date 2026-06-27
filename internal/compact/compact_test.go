@@ -620,8 +620,11 @@ func TestCompactTailBudget_UsesPiStyleDefaultAndOverride(t *testing.T) {
 	if got, want := compactTailBudget("gpt-4o", 128_000), compactDefaultKeepRecentTokens; got != want {
 		t.Fatalf("expected default keep-recent budget %d, got %d", want, got)
 	}
-	if got, want := compactTailBudgetForBudget("test-model", Budget{ContextTokens: 1_000, KeepRecentTokens: 5_000}), 5_000; got != want {
+	if got, want := compactTailBudgetForBudget("test-model", Budget{ContextTokens: 20_000, OutputReserveTokens: 4_000, KeepRecentTokens: 5_000}), 5_000; got != want {
 		t.Fatalf("expected configured keep-recent budget %d, got %d", want, got)
+	}
+	if got, want := compactTailBudgetForBudget("test-model", Budget{ContextTokens: 1_000, KeepRecentTokens: 5_000}), 500; got != want {
+		t.Fatalf("expected small-window keep-recent budget cap %d, got %d", want, got)
 	}
 	if got, want := compactUsableInputWindow("gpt-5.5", Budget{ContextTokens: 1_000_000, InputTokens: 272_000, OutputReserveTokens: 128_000}), 252_000; got != want {
 		t.Fatalf("input-limited usable window = %d, want %d", got, want)

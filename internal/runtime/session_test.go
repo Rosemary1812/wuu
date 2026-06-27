@@ -65,12 +65,13 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 	})
 
 	msgs := inject()
-	if len(msgs) != 2 {
+	messages := flattenContextSegmentsForTest(msgs)
+	if len(messages) != 2 {
 		t.Fatalf("expected split context messages, got %+v", msgs)
 	}
 	combined := strings.Builder{}
-	names := make(map[string]bool, len(msgs))
-	for _, msg := range msgs {
+	names := make(map[string]bool, len(messages))
+	for _, msg := range messages {
 		if msg.Role != "user" || !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
 			t.Fatalf("expected hidden context reminder message, got %+v", msg)
 		}
@@ -93,6 +94,14 @@ func (c *sessionRecordingClient) LastRequest() providers.ChatRequest {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.last
+}
+
+func flattenContextSegmentsForTest(segments []agent.ContextSegment) []providers.ChatMessage {
+	var out []providers.ChatMessage
+	for _, segment := range segments {
+		out = append(out, segment.Messages...)
+	}
+	return out
 }
 
 func writeSessionTestFile(t *testing.T, path, content string) {
@@ -347,9 +356,10 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 		}
 	}
 
-	msgs := EnvContextInjector(root, nil, "")()
+	segments := EnvContextInjector(root, nil, "")()
+	msgs := flattenContextSegmentsForTest(segments)
 	if len(msgs) < 2 {
-		t.Fatalf("expected split injected context messages, got %+v", msgs)
+		t.Fatalf("expected split injected context messages, got %+v", segments)
 	}
 	var combined strings.Builder
 	for _, msg := range msgs {

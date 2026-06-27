@@ -23,8 +23,8 @@ const (
 //     without introducing a heavier session-part model
 //
 // The stable prefix is everything before the most recent visible user-role
-// message in the request. Hidden model context is replayable history, but it
-// is not user intent and must not move the volatile turn boundary.
+// message in the request. Hidden request context is model-visible, but it is
+// not user intent and must not move the volatile turn boundary.
 //
 // After compact rewrites history, the synthetic conversation summary at
 // the front of the prompt becomes the best stable anchor we have. We

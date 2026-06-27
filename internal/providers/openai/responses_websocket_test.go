@@ -690,24 +690,17 @@ func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenC
 		Model:          "gpt-test",
 		Tools:          &webSocketAgentLoopTools{},
 		PromptCacheKey: "thread-agent-hidden-context",
-		BeforeModelContext: func() []providers.ChatMessage {
+		BeforeRequestContext: func() []agent.ContextSegment {
 			contextCalls++
-			repoMap := wuucontext.Block{
-				Kind:    wuucontext.BlockRepoMap,
-				Title:   "Compact repository map",
-				Source:  "runtime.repo_map",
-				Content: "files_scanned: 2\nrepresentative_files:\n- go.mod",
-			}
 			env := wuucontext.Block{
 				Kind:    wuucontext.BlockEnvironment,
 				Title:   "Runtime environment",
 				Source:  "runtime.snapshot",
 				Content: "State: step " + strconv.Itoa(contextCalls),
 			}
-			return []providers.ChatMessage{
-				hiddenReminderForWebSocketAgentTest(repoMap),
+			return agent.RequestOnlyContextMessages([]providers.ChatMessage{
 				hiddenReminderForWebSocketAgentTest(env),
-			}
+			})
 		},
 	}
 	res, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{{Role: "user", Content: "read README"}}, nil)
@@ -727,8 +720,8 @@ func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenC
 		t.Fatal(err)
 	}
 	firstInput := string(firstInputRaw)
-	if !strings.Contains(firstInput, "REPO_MAP") || !strings.Contains(firstInput, "State: step 1") {
-		t.Fatalf("first request missing hidden context: %s", firstInput)
+	if !strings.Contains(firstInput, "State: step 1") {
+		t.Fatalf("first request missing request-only context: %s", firstInput)
 	}
 
 	second := <-requests
@@ -746,8 +739,8 @@ func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenC
 	if !strings.Contains(secondInput, "State: step 2") {
 		t.Fatalf("second delta missing changed environment context: %s", secondInput)
 	}
-	if strings.Contains(secondInput, "REPO_MAP") {
-		t.Fatalf("second delta re-sent unchanged repo map: %s", secondInput)
+	if strings.Contains(secondInput, "State: step 1") {
+		t.Fatalf("second delta re-sent stale request-only context: %s", secondInput)
 	}
 }
 

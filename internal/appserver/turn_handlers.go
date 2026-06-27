@@ -463,7 +463,7 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
 	}
 	baseBeforeStep := runner.BeforeStep
-	baseBeforeModelContext := runner.BeforeModelContext
+	baseBeforeRequestContext := runner.BeforeRequestContext
 	baseOnRequestContext := runner.OnRequestContext
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
@@ -558,19 +558,19 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 		return messages
 	}
 	turnModelContext := cloneHistory(modelContext)
-	runner.BeforeModelContext = func() []providers.ChatMessage {
-		var messages []providers.ChatMessage
-		if baseBeforeModelContext != nil {
-			messages = append(messages, baseBeforeModelContext()...)
+	runner.BeforeRequestContext = func() []agent.ContextSegment {
+		var segments []agent.ContextSegment
+		if baseBeforeRequestContext != nil {
+			segments = append(segments, baseBeforeRequestContext()...)
 		}
 		if len(turnModelContext) > 0 {
-			messages = append(messages, cloneHistory(turnModelContext)...)
+			segments = append(segments, agent.RequestOnlyContextMessages(cloneHistory(turnModelContext))...)
 		}
-		return messages
+		return segments
 	}
 	defer func() {
 		runner.BeforeStep = baseBeforeStep
-		runner.BeforeModelContext = baseBeforeModelContext
+		runner.BeforeRequestContext = baseBeforeRequestContext
 		runner.OnRequestContext = baseOnRequestContext
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage

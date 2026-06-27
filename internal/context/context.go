@@ -1,8 +1,8 @@
 // Package context provides dynamic model context for the agent loop. It
-// generates environment information (CWD, date, git status) that gets
-// injected as <system-reminder> blocks in hidden user messages, keeping the
-// system prompt stable for prompt caching without making transient request
-// context part of durable conversation history.
+// generates environment information (CWD, date, git status) that gets assembled
+// into request-only <system-reminder> blocks, keeping the system prompt stable
+// for prompt caching without making transient request context part of durable
+// conversation history.
 //
 // The prompt path stays split:
 //   - System prompt = static role, rules, instructions (cacheable)

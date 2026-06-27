@@ -105,7 +105,7 @@ type CompactInfo struct {
 	MessagesAfter  int
 }
 
-// RequestContextInfo summarizes hidden model context appended before a
+// RequestContextInfo summarizes request-only model context assembled before a
 // provider call. It intentionally excludes raw prompt text.
 type RequestContextInfo struct {
 	StepIndex         int
@@ -171,13 +171,12 @@ type LoopConfig struct {
 	// sub-agent follow-up messaging: send_message queues
 	// user-role messages that are injected on the next round.
 	BeforeStep func() []providers.ChatMessage
-	// BeforeModelContext, when set, is called after live-history updates
-	// and before each provider request. Returned messages are appended to
-	// live history as hidden model context for the current request, then
-	// removed from durable history before the turn result is persisted.
-	BeforeModelContext func() []providers.ChatMessage
-	// OnRequestContext receives a metadata-only summary of hidden model
-	// context appended before a request.
+	// BeforeRequestContext, when set, is called after live-history updates
+	// and before each provider request. Returned segments are assembled into
+	// the provider request without being appended to live or durable history.
+	BeforeRequestContext func() []ContextSegment
+	// OnRequestContext receives a metadata-only summary of request-only model
+	// context assembled before a request.
 	OnRequestContext func(info RequestContextInfo)
 	// OnUsage is invoked once per LLM round-trip with the per-call
 	// token counts when the provider reports them. The loop also
@@ -187,8 +186,8 @@ type LoopConfig struct {
 	// provider token usage, including prompt cache read/write counts.
 	OnTokenUsage func(usage providers.TokenUsage)
 	// OnMessage is invoked whenever the loop appends a visible semantic chat
-	// message to its live history. Hidden model context is returned in
-	// LoopResult for persistence instead of being emitted as a message event.
+	// message to its live history. Request-only context is never emitted as a
+	// message event.
 	OnMessage func(msg providers.ChatMessage)
 	// OnToolResult is invoked after each tool execution with the
 	// (call, JSON result) pair. Used by streaming callers to feed

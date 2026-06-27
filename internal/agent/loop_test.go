@@ -1011,7 +1011,7 @@ func TestRunToolLoop_BeforeStepInjectsMessages(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_BeforeModelContextAppendsHiddenMessages(t *testing.T) {
+func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
 	reminder := wuucontext.FormatSystemReminderBlocks(wuucontext.Block{
 		Kind:    wuucontext.BlockEnvironment,
@@ -1022,12 +1022,12 @@ func TestRunToolLoop_BeforeModelContextAppendsHiddenMessages(t *testing.T) {
 	var contexts []RequestContextInfo
 	cfg := LoopConfig{
 		Model: "m",
-		BeforeModelContext: func() []providers.ChatMessage {
-			return []providers.ChatMessage{{
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextMessages([]providers.ChatMessage{{
 				Role:    "user",
 				Name:    wuucontext.SystemReminderMessageName,
 				Content: reminder,
-			}}
+			}})
 		},
 		OnRequestContext: func(info RequestContextInfo) {
 			contexts = append(contexts, info)
@@ -1042,7 +1042,7 @@ func TestRunToolLoop_BeforeModelContextAppendsHiddenMessages(t *testing.T) {
 	}
 	msgs := step.calls[0].Messages
 	if len(msgs) != 3 || msgs[1].Content != reminder || !msgs[1].Hidden {
-		t.Fatalf("expected hidden model context message, got %+v", msgs)
+		t.Fatalf("expected request-only context message, got %+v", msgs)
 	}
 	if !strings.Contains(msgs[2].Content, "[TASK]") ||
 		!strings.Contains(msgs[2].Content, "[CONSTRAINT_LEDGER]") ||
@@ -1092,11 +1092,11 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 
 	cfg := LoopConfig{
 		Model: "m",
-		BeforeModelContext: func() []providers.ChatMessage {
-			return []providers.ChatMessage{
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextMessages([]providers.ChatMessage{
 				hiddenReminderForTest(repoMap, 0),
 				hiddenReminderForTest(newEnv, 0),
-			}
+			})
 		},
 	}
 	history := []providers.ChatMessage{
@@ -1145,7 +1145,7 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 			defs:    []providers.ToolDefinition{{Name: "read_file"}},
 			results: map[string]string{"call_1": `{"content":"hello"}`},
 		},
-		BeforeModelContext: func() []providers.ChatMessage {
+		BeforeRequestContext: func() []ContextSegment {
 			contextCalls++
 			env := wuucontext.Block{
 				Kind:    wuucontext.BlockEnvironment,
@@ -1153,10 +1153,10 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 				Source:  "runtime.snapshot",
 				Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
 			}
-			return []providers.ChatMessage{
+			return RequestOnlyContextMessages([]providers.ChatMessage{
 				hiddenReminderForTest(repoMap, 0),
 				hiddenReminderForTest(env, 0),
-			}
+			})
 		},
 		OnRequestContext: func(info RequestContextInfo) {
 			contexts = append(contexts, info)
@@ -1179,8 +1179,8 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockRepoMap)) {
 		t.Fatalf("first request should include repo map context: %+v", contexts[0])
 	}
-	if containsString(contexts[1].BlockKinds, string(wuucontext.BlockRepoMap)) {
-		t.Fatalf("second request should not reappend unchanged repo map: %+v", contexts[1])
+	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockRepoMap)) {
+		t.Fatalf("second request should include current request-only repo map context: %+v", contexts[1])
 	}
 	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockEnvironment)) {
 		t.Fatalf("second request should refresh changed environment: %+v", contexts[1])
@@ -1200,7 +1200,7 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 			defs:    []providers.ToolDefinition{{Name: "read_file"}},
 			results: map[string]string{"call_1": `{"content":"hello"}`},
 		},
-		BeforeModelContext: func() []providers.ChatMessage {
+		BeforeRequestContext: func() []ContextSegment {
 			contextCalls++
 			block := wuucontext.Block{
 				Kind:    wuucontext.BlockEnvironment,
@@ -1208,7 +1208,7 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 				Source:  "runtime.snapshot",
 				Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
 			}
-			return []providers.ChatMessage{hiddenReminderForTest(block, 0)}
+			return RequestOnlyContextMessages([]providers.ChatMessage{hiddenReminderForTest(block, 0)})
 		},
 	}
 
@@ -1231,11 +1231,11 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	if err := providers.ValidateToolCallHistory(second); err != nil {
 		t.Fatalf("second request must keep provider-valid tool history: %v\n%+v", err, second)
 	}
-	if got := countMessagesContaining(second, "State: step 1"); got != 1 {
-		t.Fatalf("second request should keep prior hidden context for provider prefix continuity, got %d in %+v", got, second)
+	if got := countMessagesContaining(second, "State: step 1"); got != 0 {
+		t.Fatalf("second request should not retain prior request-only context, got %d in %+v", got, second)
 	}
 	if got := countMessagesContaining(second, "State: step 2"); got != 1 {
-		t.Fatalf("second request should include latest hidden context once, got %d in %+v", got, second)
+		t.Fatalf("second request should include latest request-only context once, got %d in %+v", got, second)
 	}
 	taskContracts := 0
 	for _, msg := range second {
@@ -1251,7 +1251,7 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	}
 	for _, msg := range res.NewMessages {
 		if msg.Hidden {
-			t.Fatalf("transient hidden context should not be returned as durable history: %+v", res.NewMessages)
+			t.Fatalf("request-only context should not be returned as durable history: %+v", res.NewMessages)
 		}
 	}
 }
@@ -1305,12 +1305,12 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 
 	cfg := LoopConfig{
 		Model: "m",
-		BeforeModelContext: func() []providers.ChatMessage {
-			return []providers.ChatMessage{{
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextMessages([]providers.ChatMessage{{
 				Role:    "user",
 				Name:    wuucontext.SystemReminderMessageName,
 				Content: reminder,
-			}}
+			}})
 		},
 	}
 	if _, err := RunToolLoop(context.Background(), history, cfg, step); err != nil {
@@ -1338,7 +1338,7 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 		t.Fatalf("task contract should ignore agent notifications: %s", contract)
 	}
 	if strings.Contains(contract, "should not echo") {
-		t.Fatalf("task contract should ignore hidden model context: %s", contract)
+		t.Fatalf("task contract should ignore request-only context: %s", contract)
 	}
 	for _, want := range []string{"first request", "second request", "final constraint"} {
 		if !strings.Contains(contract, want) {

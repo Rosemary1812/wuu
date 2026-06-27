@@ -166,19 +166,15 @@ func RunToolLoop(
 			appendMessage(anchor)
 			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
 		}
-		modelContext := modelContextMessages(cfg.BeforeModelContext, messages)
+		requestSegments := requestContextSegments(cfg.BeforeRequestContext)
 		if contract, ok := taskContractReminder(messages); ok {
-			modelContext = append(modelContext, contract)
+			requestSegments = append(requestSegments, RequestOnlyContextSegment([]providers.ChatMessage{contract}))
 		}
-		var appendedContext []providers.ChatMessage
-		if len(modelContext) > 0 {
-			appended := appendHiddenModelContext(&messages, appendMessage, modelContext)
-			if len(appended) > 0 {
-				appendedContext = appended
-				usage.RecordPendingMessages(appended)
-			}
+		assembly := assembleModelRequest(messages, requestSegments)
+		if len(assembly.RequestOnlyMessages) > 0 {
+			usage.RecordPendingMessages(assembly.RequestOnlyMessages)
 		}
-		requestMessages := messages
+		requestMessages := assembly.Messages
 		cacheHint := buildCacheHint(requestMessages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req := providers.ChatRequest{
@@ -194,7 +190,7 @@ func RunToolLoop(
 			req.Tools = cfg.Tools.Definitions()
 		}
 		if cfg.OnRequestContext != nil {
-			cfg.OnRequestContext(requestContextInfo(stepIdx, requestMessages, appendedContext, req.Tools, cacheHint))
+			cfg.OnRequestContext(requestContextInfo(stepIdx, requestMessages, assembly.RequestOnlyMessages, req.Tools, cacheHint))
 		}
 
 		result, err := step.Execute(ctx, req)
@@ -567,113 +563,6 @@ func compactChanged(before, after []providers.ChatMessage) bool {
 		return true
 	}
 	return !reflect.DeepEqual(before, after)
-}
-
-func modelContextMessages(provider func() []providers.ChatMessage, history []providers.ChatMessage) []providers.ChatMessage {
-	if provider == nil {
-		return nil
-	}
-	msgs := provider()
-	if len(msgs) == 0 {
-		return nil
-	}
-	out := make([]providers.ChatMessage, 0, len(msgs))
-	for _, msg := range msgs {
-		normalizeHiddenModelContext(&msg)
-		if latestHiddenContextMatches(history, msg) {
-			continue
-		}
-		out = append(out, msg)
-	}
-	return out
-}
-
-func appendHiddenModelContext(messages *[]providers.ChatMessage, appendMessage func(providers.ChatMessage), context []providers.ChatMessage) []providers.ChatMessage {
-	if len(context) == 0 {
-		return nil
-	}
-	appended := make([]providers.ChatMessage, 0, len(context))
-	for _, msg := range context {
-		normalizeHiddenModelContext(&msg)
-		if latestHiddenContextMatches(*messages, msg) {
-			continue
-		}
-		appendMessage(msg)
-		appended = append(appended, msg)
-	}
-	return appended
-}
-
-func normalizeHiddenModelContext(msg *providers.ChatMessage) {
-	if msg == nil {
-		return
-	}
-	if strings.TrimSpace(msg.Role) == "" {
-		msg.Role = "user"
-	}
-	msg.Hidden = true
-}
-
-func latestHiddenContextMatches(history []providers.ChatMessage, msg providers.ChatMessage) bool {
-	key := strings.TrimSpace(msg.Name)
-	if key == "" {
-		key = strings.TrimSpace(msg.Content)
-	}
-	for i := len(history) - 1; i >= 0; i-- {
-		prev := history[i]
-		if !prev.Hidden {
-			continue
-		}
-		prevKey := strings.TrimSpace(prev.Name)
-		if prevKey == "" {
-			prevKey = strings.TrimSpace(prev.Content)
-		}
-		if prevKey != key {
-			continue
-		}
-		return prev.Role == msg.Role && prev.Name == msg.Name && prev.Content == msg.Content
-	}
-	return false
-}
-
-func pruneRefreshableModelContext(messages []providers.ChatMessage) ([]providers.ChatMessage, bool) {
-	if len(messages) == 0 {
-		return messages, false
-	}
-	var out []providers.ChatMessage
-	for i, msg := range messages {
-		if isRefreshableModelContextMessage(msg) {
-			if out == nil {
-				out = make([]providers.ChatMessage, 0, len(messages)-1)
-				out = append(out, messages[:i]...)
-			}
-			continue
-		}
-		if out != nil {
-			out = append(out, msg)
-		}
-	}
-	if out == nil {
-		return messages, false
-	}
-	return out, true
-}
-
-func isRefreshableModelContextMessage(msg providers.ChatMessage) bool {
-	name := strings.TrimSpace(msg.Name)
-	switch name {
-	case wuucontext.TaskContractMessageName, wuucontext.GoalContinuationMessageName:
-		return true
-	}
-	if wuucontext.IsSystemReminder(name, "") {
-		return true
-	}
-	if !msg.Hidden {
-		return false
-	}
-	return compact.IsInternalContextMessage(msg) ||
-		wuucontext.IsSystemReminder("", msg.Content) ||
-		wuucontext.IsGoalContinuation("", msg.Content)
 }
 
 // copyMessages returns an independent copy of msgs so callers can

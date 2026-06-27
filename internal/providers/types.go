@@ -181,8 +181,9 @@ type ChatMessage struct {
 	Content        string
 	DisplayContent string `json:"display_content,omitempty"`
 	Phase          MessagePhase
-	// Hidden marks model-visible context that should be persisted for provider
-	// replay but omitted from user-facing conversation items and previews.
+	// Hidden marks model-visible context that should be omitted from
+	// user-facing conversation items and previews. It does not imply durable
+	// history; request-only context is owned by the agent request assembler.
 	Hidden bool
 	// ProviderItemID preserves provider-native assistant output item identity,
 	// such as OpenAI Responses msg_* ids, for same-model replay.
