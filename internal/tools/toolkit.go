@@ -610,11 +610,11 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 // to inspect every tool the registry knows about, regardless of
 // model context.
 //
-// forMainAgent must be true when configuring a main-agent kit (the
-// surface includes main-agent-only context tools such as helpme and
-// inception). Worker kits built via CloneForRoot pass false so the
-// compiled surface omits them; the same boundary is enforced at
-// runtime by worker tool filtering and tool-specific path checks.
+// forMainAgent must be true when configuring a main-agent kit so the surface
+// can include or hide main-agent-only recovery tools consistently. Worker kits
+// built via CloneForRoot pass false so the compiled surface omits them; the
+// same boundary is enforced at runtime by worker tool filtering and
+// tool-specific path checks.
 func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	if t == nil {
 		return

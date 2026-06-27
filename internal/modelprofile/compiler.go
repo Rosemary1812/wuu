@@ -43,11 +43,10 @@ const (
 )
 
 // Compiler compiles a model profile into a tool surface. Compile is
-// given a forMainAgent flag so it can decide whether the surface
-// should advertise main-agent-only context tools such as helpme and
-// inception or worker-only handoff tools such as agent_report. The
-// surface is therefore consistent with the runtime boundary instead
-// of being filtered downstream.
+// given a forMainAgent flag so it can decide whether the surface should
+// advertise, hide, or omit main-agent-only recovery tools and worker-only
+// handoff tools such as agent_report. The surface is therefore consistent with
+// the runtime boundary instead of being filtered downstream.
 type Compiler interface {
 	Compile(p Profile, forMainAgent bool) capability.Surface
 }
@@ -324,8 +323,12 @@ func addHelpmeTool(b *surfaceBuilder) {
 	b.addDeferred("helpme", capability.CapabilityTaskSpawn)
 }
 
+// addInceptionTool keeps the legacy context rewrite tool in the profile
+// metadata without exposing it to the model by default. Automatic compaction is
+// the normal context-management path; model-visible Inception would force
+// per-step anchors into ordinary histories.
 func addInceptionTool(b *surfaceBuilder) {
-	b.addVisible("inception", capability.CapabilityContextRewrite)
+	b.addHidden("inception", capability.CapabilityContextRewrite)
 }
 
 func addWorkerReportTool(b *surfaceBuilder) {

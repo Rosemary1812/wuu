@@ -89,7 +89,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"checkpoint", "thread_get"} {
+	for _, name := range []string{"checkpoint", "thread_get", "inception"} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("non-surface tool %s should not be visible, got %v", name, sortedProfileDefNames(defs))
 		}

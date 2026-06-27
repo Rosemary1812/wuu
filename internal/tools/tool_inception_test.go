@@ -8,6 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/compact"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -60,6 +61,28 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 	}
 	if !foundContinuation {
 		t.Fatalf("second request missing continuation summary: %+v", step.calls[1].Messages)
+	}
+}
+
+func TestActiveProfileDoesNotAutoInjectInceptionAnchors(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	step := &inceptionLoopStep{results: []agent.StepResult{{Content: "done"}}}
+
+	if _, err := agent.RunToolLoop(context.Background(), []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "start"},
+	}, agent.LoopConfig{Model: "m", Tools: kit}, step); err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("expected one request, got %d", len(step.calls))
+	}
+	if _, ok := compact.FindContextAnchorIndex(step.calls[0].Messages, 0); ok {
+		t.Fatalf("active profile request should not inject Inception anchors: %+v", step.calls[0].Messages)
 	}
 }
 
