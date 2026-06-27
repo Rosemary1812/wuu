@@ -409,7 +409,10 @@ func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactR
 
 func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessage, bool) {
 	directives := recentUserDirectives(messages, taskContractMaxMessages)
-	if len(directives) == 0 {
+	// A single live user directive is already present in the request. The
+	// synthetic contract only earns its dynamic-token cost when it reconciles
+	// multiple real directives from the active history.
+	if len(directives) < 2 {
 		return providers.ChatMessage{}, false
 	}
 

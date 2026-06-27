@@ -1041,15 +1041,8 @@ func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 		t.Fatalf("expected one step call, got %d", len(step.calls))
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != 3 || msgs[1].Content != reminder || !msgs[1].Hidden {
+	if len(msgs) != 2 || msgs[1].Content != reminder || !msgs[1].Hidden {
 		t.Fatalf("expected request-only context message, got %+v", msgs)
-	}
-	if !strings.Contains(msgs[2].Content, "[TASK]") ||
-		!strings.Contains(msgs[2].Content, "[CONSTRAINT_LEDGER]") ||
-		!strings.Contains(msgs[2].Content, "hi") ||
-		msgs[2].Name != wuucontext.TaskContractMessageName ||
-		!msgs[2].Hidden {
-		t.Fatalf("expected task contract reminder, got %+v", msgs[2])
 	}
 	if len(res.NewMessages) != 1 {
 		t.Fatalf("expected only durable assistant reply, got %+v", res.NewMessages)
@@ -1060,15 +1053,17 @@ func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 	if len(contexts) != 1 {
 		t.Fatalf("expected one request context summary, got %+v", contexts)
 	}
-	if contexts[0].StepIndex != 0 || contexts[0].TransientMessages != 2 || contexts[0].ContentBytes == 0 {
+	if contexts[0].StepIndex != 0 || contexts[0].TransientMessages != 1 || contexts[0].ContentBytes == 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contexts[0])
 	}
-	for _, want := range []string{string(wuucontext.BlockEnvironment), string(wuucontext.BlockTask), string(wuucontext.BlockConstraintLedger)} {
-		if !containsString(contexts[0].BlockKinds, want) {
-			t.Fatalf("request context missing block kind %s: %+v", want, contexts[0])
-		}
+	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockEnvironment)) {
+		t.Fatalf("request context missing environment block: %+v", contexts[0])
 	}
-	if len(contexts[0].BlockKinds) != 3 {
+	if containsString(contexts[0].BlockKinds, string(wuucontext.BlockTask)) ||
+		containsString(contexts[0].BlockKinds, string(wuucontext.BlockConstraintLedger)) {
+		t.Fatalf("single-turn request should not synthesize task contract: %+v", contexts[0])
+	}
+	if len(contexts[0].BlockKinds) != 1 {
 		t.Fatalf("unexpected request context block kinds: %+v", contexts[0])
 	}
 }
@@ -1305,8 +1300,8 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 			taskContracts++
 		}
 	}
-	if taskContracts != 1 {
-		t.Fatalf("second request should keep one refreshed task contract, got %d in %+v", taskContracts, second)
+	if taskContracts != 0 {
+		t.Fatalf("single-directive tool loop should not synthesize task contract, got %d in %+v", taskContracts, second)
 	}
 	if len(res.NewMessages) != 3 {
 		t.Fatalf("expected only durable assistant/tool/final messages, got %+v", res.NewMessages)
@@ -1535,7 +1530,10 @@ func TestRunToolLoop_ReturnsInvalidToolArgumentsToModel(t *testing.T) {
 }
 
 func TestTaskContractReminderDoesNotTeachShellPath(t *testing.T) {
-	msg, ok := taskContractReminder([]providers.ChatMessage{{Role: "user", Content: "Please keep the change scoped."}})
+	msg, ok := taskContractReminder([]providers.ChatMessage{
+		{Role: "user", Content: "Update the implementation."},
+		{Role: "user", Content: "Please keep the change scoped."},
+	})
 	if !ok {
 		t.Fatal("expected task contract reminder")
 	}

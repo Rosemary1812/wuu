@@ -1843,7 +1843,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if contextParams.Event.RequestContext == nil {
 		t.Fatalf("request context missing from turn event: %+v", contextParams.Event)
 	}
-	if contextParams.Event.RequestContext.TransientMessages < 2 || contextParams.Event.RequestContext.ContentBytes == 0 {
+	if contextParams.Event.RequestContext.TransientMessages != 2 || contextParams.Event.RequestContext.ContentBytes == 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
 	}
 	if contextParams.Event.RequestContext.MessageCount == 0 ||
@@ -1854,9 +1854,14 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		contextParams.Event.RequestContext.ToolSurfaceHash == "" {
 		t.Fatalf("request context missing request shape metadata: %+v", contextParams.Event.RequestContext)
 	}
-	for _, want := range []string{"ENVIRONMENT", "TASK", "CONSTRAINT_LEDGER"} {
+	for _, want := range []string{"ENVIRONMENT", "TOOL_POLICY"} {
 		if !testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, want) {
 			t.Fatalf("request context missing block kind %s: %+v", want, contextParams.Event.RequestContext)
+		}
+	}
+	for _, unwanted := range []string{"TASK", "CONSTRAINT_LEDGER"} {
+		if testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, unwanted) {
+			t.Fatalf("single-turn request should not include block kind %s: %+v", unwanted, contextParams.Event.RequestContext)
 		}
 	}
 	delta := notificationByMethod(t, msgs, NotificationAgentMessageDelta)
