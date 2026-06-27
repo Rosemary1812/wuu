@@ -268,10 +268,10 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 		t.Fatalf("expected one request shape observation, got %+v", contexts)
 	}
 	shape := contexts[0]
-	if shape.StepIndex != 0 || shape.MessageCount != 5 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.ToolCount != 1 {
+	if shape.StepIndex != 0 || shape.MessageCount != 6 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.ToolCount != 1 {
 		t.Fatalf("unexpected request shape: %+v", shape)
 	}
-	if shape.TransientMessages != 1 || shape.ContentBytes == 0 || shape.DynamicBytes == 0 || shape.HiddenMessages != 1 {
+	if shape.TransientMessages != 2 || shape.ContentBytes == 0 || shape.DynamicBytes == 0 || shape.HiddenMessages != 2 {
 		t.Fatalf("request shape should report task-contract dynamic context: %+v", shape)
 	}
 	for _, want := range []string{string(wuucontext.BlockTask), string(wuucontext.BlockConstraintLedger)} {
@@ -1402,14 +1402,11 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	if got := countMessagesContaining(second, "State: step 2"); got != 1 {
 		t.Fatalf("second request should include latest request-only context once, got %d in %+v", got, second)
 	}
-	taskContracts := 0
-	for _, msg := range second {
-		if msg.Name == wuucontext.TaskContractMessageName {
-			taskContracts++
-		}
+	if got := countMessagesContaining(second, "[TASK]"); got != 0 {
+		t.Fatalf("single-directive tool loop should not synthesize task block, got %d in %+v", got, second)
 	}
-	if taskContracts != 0 {
-		t.Fatalf("single-directive tool loop should not synthesize task contract, got %d in %+v", taskContracts, second)
+	if got := countMessagesContaining(second, "[CONSTRAINT_LEDGER]"); got != 0 {
+		t.Fatalf("single-directive tool loop should not synthesize constraint ledger, got %d in %+v", got, second)
 	}
 	if len(res.NewMessages) != 3 {
 		t.Fatalf("expected only durable assistant/tool/final messages, got %+v", res.NewMessages)
@@ -1482,20 +1479,29 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 		t.Fatal(err)
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != len(history)-1 {
+	if len(msgs) != len(history) {
 		t.Fatalf("expected stale internal context to be replaced before request, got %+v", msgs)
 	}
-	for _, msg := range msgs[:len(msgs)-2] {
+	for _, msg := range msgs[:len(msgs)-3] {
 		if msg.Name == wuucontext.SystemReminderMessageName ||
 			msg.Name == wuucontext.TaskContractMessageName ||
 			msg.Name == wuucontext.GoalContinuationMessageName {
 			t.Fatalf("stale model context should not remain in request history: %+v", msgs)
 		}
 	}
-	if msgs[len(msgs)-2].Name != wuucontext.SystemReminderMessageName || !msgs[len(msgs)-2].Hidden {
-		t.Fatalf("expected refreshed hidden environment context before task contract, got %+v", msgs)
+	env := msgs[len(msgs)-3]
+	task := msgs[len(msgs)-2]
+	ledger := msgs[len(msgs)-1]
+	if env.Name != wuucontext.SystemReminderMessageName || !env.Hidden {
+		t.Fatalf("expected refreshed hidden environment context before task contract blocks, got %+v", msgs)
 	}
-	contract := msgs[len(msgs)-1].Content
+	if task.Name == wuucontext.TaskContractMessageName || !task.Hidden || !wuucontext.IsSystemReminder(task.Name, task.Content) || !strings.Contains(task.Content, "[TASK]") {
+		t.Fatalf("expected typed task block, got %+v", task)
+	}
+	if ledger.Name == wuucontext.TaskContractMessageName || !ledger.Hidden || !wuucontext.IsSystemReminder(ledger.Name, ledger.Content) || !strings.Contains(ledger.Content, "[CONSTRAINT_LEDGER]") {
+		t.Fatalf("expected typed constraint ledger block, got %+v", ledger)
+	}
+	contract := task.Content + "\n" + ledger.Content
 	if strings.Contains(contract, "ignore me") {
 		t.Fatalf("task contract should ignore system reminders: %s", contract)
 	}
@@ -1515,6 +1521,34 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 	}
 	if strings.Contains(contract, strings.Repeat("x", taskContractMaxDirectiveRunes+50)) {
 		t.Fatalf("task contract leaked unbounded directive: %s", contract)
+	}
+}
+
+func TestRunToolLoop_DisableTaskContractOmitsTaskBlocks(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	history := []providers.ChatMessage{
+		userMsg("first directive"),
+		{Role: "assistant", Content: "noted"},
+		userMsg("second directive"),
+	}
+	var contexts []RequestContextInfo
+	if _, err := RunToolLoop(context.Background(), history, LoopConfig{
+		Model:               "m",
+		DisableTaskContract: true,
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
+		},
+	}, step); err != nil {
+		t.Fatal(err)
+	}
+	request := step.calls[0].Messages
+	for _, unexpected := range []string{"[TASK]", "[CONSTRAINT_LEDGER]"} {
+		if got := countMessagesContaining(request, unexpected); got != 0 {
+			t.Fatalf("disabled task contract should omit %s, got %d in %+v", unexpected, got, request)
+		}
+		if len(contexts) != 1 || containsString(contexts[0].BlockKinds, strings.Trim(unexpected, "[]")) {
+			t.Fatalf("disabled task contract should omit %s from request telemetry: %+v", unexpected, contexts)
+		}
 	}
 }
 
@@ -1637,20 +1671,21 @@ func TestRunToolLoop_ReturnsInvalidToolArgumentsToModel(t *testing.T) {
 	}
 }
 
-func TestTaskContractReminderDoesNotTeachShellPath(t *testing.T) {
-	msg, ok := taskContractReminder([]providers.ChatMessage{
+func TestTaskContractBlocksDoNotTeachShellPath(t *testing.T) {
+	blocks := taskContractBlocks([]providers.ChatMessage{
 		{Role: "user", Content: "Update the implementation."},
 		{Role: "user", Content: "Please keep the change scoped."},
 	})
-	if !ok {
-		t.Fatal("expected task contract reminder")
+	if len(blocks) != 2 {
+		t.Fatalf("expected task contract blocks, got %+v", blocks)
 	}
+	content := wuucontext.CompileBlocks(blocks)
 	for _, banned := range []string{"shell", "terminal", "bash", "run_shell", "run_test", "start_process"} {
-		if strings.Contains(msg.Content, banned) {
-			t.Fatalf("task contract reminder must not teach command path %q:\n%s", banned, msg.Content)
+		if strings.Contains(content, banned) {
+			t.Fatalf("task contract blocks must not teach command path %q:\n%s", banned, content)
 		}
 	}
-	if !strings.Contains(msg.Content, "command side effects") {
-		t.Fatalf("task contract reminder missing capability-neutral command guidance:\n%s", msg.Content)
+	if !strings.Contains(content, "command side effects") {
+		t.Fatalf("task contract blocks missing capability-neutral command guidance:\n%s", content)
 	}
 }

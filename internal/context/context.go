@@ -28,8 +28,10 @@ const SystemReminderMessageName = "wuu_system_reminder"
 
 const systemReminderBlockMessageNamePrefix = "wuu_ctx_"
 
-// TaskContractMessageName marks hidden task-contract context derived from
-// recent user directives.
+// TaskContractMessageName marks legacy hidden task-contract context derived
+// from recent user directives. New requests use typed TASK and
+// CONSTRAINT_LEDGER request-only blocks, but older persisted histories can
+// still carry this message name.
 const TaskContractMessageName = "wuu_task_contract"
 
 // AgentNotificationMessageName marks internal sub-agent completion handoffs.

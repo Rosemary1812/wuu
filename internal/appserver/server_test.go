@@ -2062,8 +2062,24 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	}
 	firstInput := firstRequest["input"].([]any)
 	secondInput := secondRequest["input"].([]any)
-	if len(secondInput) >= len(firstInput)+2 {
-		t.Fatalf("second request should send delta input, first=%d second=%d body=%#v", len(firstInput), len(secondInput), secondRequest)
+	if len(firstInput) != firstState.InputItems {
+		t.Fatalf("first request input items drifted from provider state: wire=%d state=%+v", len(firstInput), firstState)
+	}
+	if len(secondInput) != secondState.InputItems || len(secondInput) != secondState.DeltaInputItems {
+		t.Fatalf("second request should send the provider-reported delta input, wire=%d state=%+v body=%#v", len(secondInput), secondState, secondRequest)
+	}
+	if len(secondInput) == 0 {
+		t.Fatalf("second request missing delta input: %#v", secondRequest)
+	}
+	secondUser, ok := secondInput[0].(map[string]any)
+	if !ok || secondUser["role"] != "user" || secondUser["content"] != "say second answer" {
+		t.Fatalf("second request should start with the new user turn, got %#v", secondInput)
+	}
+	secondInputText := fmt.Sprintf("%#v", secondInput)
+	for _, want := range []string{"[ENVIRONMENT]", "[TASK]", "[CONSTRAINT_LEDGER]"} {
+		if !strings.Contains(secondInputText, want) {
+			t.Fatalf("second request missing request-only context block %s: %#v", want, secondInput)
+		}
 	}
 }
 

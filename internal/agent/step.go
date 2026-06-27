@@ -189,6 +189,11 @@ type LoopConfig struct {
 	// and before each provider request. Returned segments are assembled into
 	// the provider request without being appended to live or durable history.
 	BeforeRequestContext func() []ContextSegment
+	// DisableTaskContract disables the request-only TASK and CONSTRAINT_LEDGER
+	// blocks synthesized from recent user directives. Internal specialized
+	// loops that already own a narrow task prompt should set this to avoid
+	// carrying main-conversation steering into background work.
+	DisableTaskContract bool
 	// SystemPromptSections is metadata for the stable system prompt in the
 	// live history. It is emitted as telemetry only and never sent to providers.
 	SystemPromptSections []SystemPromptSectionInfo

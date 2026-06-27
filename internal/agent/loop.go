@@ -175,8 +175,8 @@ func RunToolLoop(
 			requestSegments = append(requestSegments, postToolContextSegments...)
 			postToolContextSegments = nil
 		}
-		if contract, ok := taskContractReminder(messages); ok {
-			requestSegments = append(requestSegments, RequestOnlyContextSegment([]providers.ChatMessage{contract}))
+		if !cfg.DisableTaskContract {
+			requestSegments = append(requestSegments, taskContractSegments(messages)...)
 		}
 		assembly := assembleModelRequest(messages, requestSegments)
 		requestMessages := assembly.Messages
@@ -416,13 +416,17 @@ func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactR
 	return CompactReasonHelpMe
 }
 
-func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessage, bool) {
+func taskContractSegments(messages []providers.ChatMessage) []ContextSegment {
+	return RequestOnlyContextBlocks(taskContractBlocks(messages))
+}
+
+func taskContractBlocks(messages []providers.ChatMessage) []wuucontext.Block {
 	directives := recentUserDirectives(messages, taskContractMaxMessages)
 	// A single live user directive is already present in the request. The
 	// synthetic contract only earns its dynamic-token cost when it reconciles
 	// multiple real directives from the active history.
 	if len(directives) < 2 {
-		return providers.ChatMessage{}, false
+		return nil
 	}
 
 	var task strings.Builder
@@ -443,25 +447,20 @@ func taskContractReminder(messages []providers.ChatMessage) (providers.ChatMessa
 		"- Pre-finish: keep the final answer scoped to what changed, what passed, and what remains.",
 	}, "\n")
 
-	content := wuucontext.FormatSystemReminderBlocks(
-		wuucontext.Block{
+	return []wuucontext.Block{
+		{
 			Kind:    wuucontext.BlockTask,
 			Title:   "Active task contract",
 			Source:  "runtime.task_contract",
 			Content: strings.TrimRight(task.String(), "\n"),
 		},
-		wuucontext.Block{
+		{
 			Kind:    wuucontext.BlockConstraintLedger,
 			Title:   "Constraint ledger",
 			Source:  "runtime.task_contract",
 			Content: ledger,
 		},
-	)
-	return providers.ChatMessage{
-		Role:    "user",
-		Name:    wuucontext.TaskContractMessageName,
-		Content: content,
-	}, true
+	}
 }
 
 func recentUserDirectives(messages []providers.ChatMessage, limit int) []string {
