@@ -74,6 +74,7 @@ export type AdvancedSettingsSummary = {
   max_context_tokens: number;
   temperature: number;
   compact_threshold_pct?: number;
+  compact_keep_recent_tokens?: number;
   disable_auto_compact: boolean;
   provider_context_window?: number;
   context_window_tokens?: number;
@@ -335,6 +336,7 @@ export type RuntimeAdvancedSettingsUpdate = {
   max_context_tokens?: number;
   temperature?: number;
   compact_threshold_pct?: number;
+  compact_keep_recent_tokens?: number;
   disable_auto_compact?: boolean;
   provider_context_window?: number;
 };

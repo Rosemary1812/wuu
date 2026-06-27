@@ -397,7 +397,7 @@ func TestCompact_ChunksSummaryInputForHugeHistory(t *testing.T) {
 	}
 
 	client := &chunkRecordingCompactClient{}
-	budget := Budget{ContextTokens: 20_000, OutputReserveTokens: 4_000}
+	budget := Budget{ContextTokens: 20_000, OutputReserveTokens: 4_000, KeepRecentTokens: 2_000}
 	result, err := CompactWithBudget(context.Background(), messages, client, "gpt-4", budget)
 	if err != nil {
 		t.Fatalf("CompactWithBudget: %v", err)
@@ -436,7 +436,10 @@ func TestCompact_LongSingleUserTurnFallsBackToRecentTail(t *testing.T) {
 	}
 
 	client := &mockCompactClient{response: "single-turn investigation summary"}
-	result, err := CompactWithContextWindow(context.Background(), messages, client, "test-model", 1000)
+	result, err := CompactWithBudget(context.Background(), messages, client, "test-model", Budget{
+		ContextTokens:    1_000,
+		KeepRecentTokens: 1_000,
+	})
 	if err != nil {
 		t.Fatalf("CompactWithContextWindow: %v", err)
 	}
@@ -613,12 +616,12 @@ func TestCompact_RepeatedCompactionKeepsRecentTailAndAnchorsPreviousSummary(t *t
 	}
 }
 
-func TestCompactTailBudget_UsesOpenCodeStyleCap(t *testing.T) {
-	if got, want := compactTailBudget("gpt-4o", 128_000), 8_000; got != want {
-		t.Fatalf("expected large window to cap at %d, got %d", want, got)
+func TestCompactTailBudget_UsesPiStyleDefaultAndOverride(t *testing.T) {
+	if got, want := compactTailBudget("gpt-4o", 128_000), compactDefaultKeepRecentTokens; got != want {
+		t.Fatalf("expected default keep-recent budget %d, got %d", want, got)
 	}
-	if got := compactTailBudget("test-model", 1_000); got != compactTailMinTokens {
-		t.Fatalf("expected small test window to use %d minimum tail budget, got %d", compactTailMinTokens, got)
+	if got, want := compactTailBudgetForBudget("test-model", Budget{ContextTokens: 1_000, KeepRecentTokens: 5_000}), 5_000; got != want {
+		t.Fatalf("expected configured keep-recent budget %d, got %d", want, got)
 	}
 	if got, want := compactUsableInputWindow("gpt-5.5", Budget{ContextTokens: 1_000_000, InputTokens: 272_000, OutputReserveTokens: 128_000}), 252_000; got != want {
 		t.Fatalf("input-limited usable window = %d, want %d", got, want)

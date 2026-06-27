@@ -232,6 +232,9 @@ type AgentConfig struct {
 	// proactive compaction. Zero means auto; custom values are fractions in
 	// (0,1), for example 0.5 for 50%.
 	CompactThresholdPct float64 `json:"compact_threshold_pct,omitempty"`
+	// CompactKeepRecentTokens is the recent raw-history budget kept after
+	// compaction. Zero means use the default 20K tokens.
+	CompactKeepRecentTokens int `json:"compact_keep_recent_tokens,omitempty"`
 	// SystemPrompt is a legacy user-customized prompt field. It is appended
 	// after wuu's built-in base prompt instead of replacing it.
 	SystemPrompt string `json:"system_prompt,omitempty"`
@@ -320,12 +323,13 @@ type ToolPolicyConfig struct {
 }
 
 type AdvancedRuntimeUpdate struct {
-	MaxSteps              *int
-	MaxContextTokens      *int
-	Temperature           *float64
-	CompactThresholdPct   *float64
-	DisableAutoCompact    *bool
-	ProviderContextWindow *int
+	MaxSteps                *int
+	MaxContextTokens        *int
+	Temperature             *float64
+	CompactThresholdPct     *float64
+	CompactKeepRecentTokens *int
+	DisableAutoCompact      *bool
+	ProviderContextWindow   *int
 }
 
 // Load reads config with priority: .wuu.json, wuu.json, ~/.config/wuu/config.json.
@@ -507,6 +511,9 @@ func (c Config) Validate() error {
 	}
 	if c.Agent.CompactThresholdPct < 0 || c.Agent.CompactThresholdPct >= 1 {
 		return errors.New("agent.compact_threshold_pct must be in [0,1)")
+	}
+	if c.Agent.CompactKeepRecentTokens < 0 {
+		return errors.New("agent.compact_keep_recent_tokens cannot be negative (use 0 for default)")
 	}
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
@@ -854,6 +861,7 @@ func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRunti
 	setOptionalInt(agent, "max_context_tokens", update.MaxContextTokens)
 	setOptionalFloat(agent, "temperature", update.Temperature, 0.2)
 	setOptionalFloat(agent, "compact_threshold_pct", update.CompactThresholdPct, 0)
+	setOptionalInt(agent, "compact_keep_recent_tokens", update.CompactKeepRecentTokens)
 	setOptionalBool(agent, "disable_auto_compact", update.DisableAutoCompact)
 	if len(agent) == 0 {
 		delete(raw, "agent")

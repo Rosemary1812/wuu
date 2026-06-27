@@ -74,6 +74,9 @@ type Runner struct {
 	// CompactThresholdPct lets callers compact earlier than the default
 	// usable-window calculation. Zero means auto.
 	CompactThresholdPct float64
+	// CompactKeepRecentTokens overrides the default recent raw-history budget
+	// kept after compaction. Zero means use the Pi-aligned default.
+	CompactKeepRecentTokens int
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -126,21 +129,23 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		}
 	}
 	cfg := LoopConfig{
-		Tools:               r.Tools,
-		Model:               r.Model,
-		Temperature:         r.Temperature,
-		MaxSteps:            r.MaxSteps,
-		MaxContextTokens:    maxCtx,
-		MaxInputTokens:      r.MaxInputTokens,
-		OutputReserveTokens: r.OutputReserveTokens,
-		CompactThresholdPct: r.CompactThresholdPct,
-		OnUsage:             onUsage,
-		PostToolRewrite:     compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		Tools:                   r.Tools,
+		Model:                   r.Model,
+		Temperature:             r.Temperature,
+		MaxSteps:                r.MaxSteps,
+		MaxContextTokens:        maxCtx,
+		MaxInputTokens:          r.MaxInputTokens,
+		OutputReserveTokens:     r.OutputReserveTokens,
+		CompactThresholdPct:     r.CompactThresholdPct,
+		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
+		OnUsage:                 onUsage,
+		PostToolRewrite:         compact.RewriteHistoryFromInternalToolMessagesWithContext,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return compact.CompactWithBudget(ctx, messages, r.Client, r.Model, compact.Budget{
 				ContextTokens:       maxCtx,
 				InputTokens:         r.MaxInputTokens,
 				OutputReserveTokens: r.OutputReserveTokens,
+				KeepRecentTokens:    r.CompactKeepRecentTokens,
 			})
 		},
 	}

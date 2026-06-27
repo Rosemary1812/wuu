@@ -185,6 +185,7 @@ func (s *Server) currentAdvancedSettingsSummary() AdvancedSettingsSummary {
 		summary.MaxSteps = s.rt.StreamRunner.MaxSteps
 		summary.Temperature = s.rt.StreamRunner.Temperature
 		summary.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+		summary.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
 		summary.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
 	}
 	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
@@ -192,6 +193,7 @@ func (s *Server) currentAdvancedSettingsSummary() AdvancedSettingsSummary {
 		summary.MaxContextTokens = cfg.Agent.MaxContextTokens
 		summary.Temperature = cfg.Agent.Temperature
 		summary.CompactThresholdPct = cfg.Agent.CompactThresholdPct
+		summary.CompactKeepRecentTokens = cfg.Agent.CompactKeepRecentTokens
 		summary.DisableAutoCompact = cfg.Agent.DisableAutoCompact
 		if provider, _, err := cfg.ResolveProvider(s.rt.ProviderName); err == nil {
 			summary.ProviderContextWindow = provider.ContextWindow
@@ -328,12 +330,13 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
 	}
 	if err := config.UpdateAdvancedRuntime(s.rt.ConfigPath, s.rt.ProviderName, config.AdvancedRuntimeUpdate{
-		MaxSteps:              params.MaxSteps,
-		MaxContextTokens:      params.MaxContextTokens,
-		Temperature:           params.Temperature,
-		CompactThresholdPct:   params.CompactThresholdPct,
-		DisableAutoCompact:    params.DisableAutoCompact,
-		ProviderContextWindow: params.ProviderContextWindow,
+		MaxSteps:                params.MaxSteps,
+		MaxContextTokens:        params.MaxContextTokens,
+		Temperature:             params.Temperature,
+		CompactThresholdPct:     params.CompactThresholdPct,
+		CompactKeepRecentTokens: params.CompactKeepRecentTokens,
+		DisableAutoCompact:      params.DisableAutoCompact,
+		ProviderContextWindow:   params.ProviderContextWindow,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -355,6 +358,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		s.rt.StreamRunner.MaxSteps = cfg.Agent.MaxSteps
 		s.rt.StreamRunner.Temperature = cfg.Agent.Temperature
 		s.rt.StreamRunner.CompactThresholdPct = cfg.Agent.CompactThresholdPct
+		s.rt.StreamRunner.CompactKeepRecentTokens = cfg.Agent.CompactKeepRecentTokens
 		s.rt.StreamRunner.DisableAutoCompact = cfg.Agent.DisableAutoCompact
 		s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
 		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
@@ -714,6 +718,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 					th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
 					th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+					th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
 					th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
 					th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
 					th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
@@ -745,6 +750,7 @@ func (s *Server) updateIdleThreadAdvancedRuntime() {
 				th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 				th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
 				th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+				th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
 				th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
 			}
 			if s.rt != nil {

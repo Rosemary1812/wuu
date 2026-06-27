@@ -1079,15 +1079,17 @@ func TestUpdateAdvancedRuntimePersistsAgentAndProviderSettings(t *testing.T) {
 	maxContext := 256000
 	temperature := 0.4
 	compactPct := 0.5
+	compactKeepRecent := 20000
 	disableAutoCompact := true
 	providerContext := 512000
 	if err := UpdateAdvancedRuntime(configPath, "main", AdvancedRuntimeUpdate{
-		MaxSteps:              &maxSteps,
-		MaxContextTokens:      &maxContext,
-		Temperature:           &temperature,
-		CompactThresholdPct:   &compactPct,
-		DisableAutoCompact:    &disableAutoCompact,
-		ProviderContextWindow: &providerContext,
+		MaxSteps:                &maxSteps,
+		MaxContextTokens:        &maxContext,
+		Temperature:             &temperature,
+		CompactThresholdPct:     &compactPct,
+		CompactKeepRecentTokens: &compactKeepRecent,
+		DisableAutoCompact:      &disableAutoCompact,
+		ProviderContextWindow:   &providerContext,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1099,6 +1101,7 @@ func TestUpdateAdvancedRuntimePersistsAgentAndProviderSettings(t *testing.T) {
 		cfg.Agent.MaxContextTokens != maxContext ||
 		cfg.Agent.Temperature != temperature ||
 		cfg.Agent.CompactThresholdPct != compactPct ||
+		cfg.Agent.CompactKeepRecentTokens != compactKeepRecent ||
 		!cfg.Agent.DisableAutoCompact {
 		t.Fatalf("advanced agent settings not persisted: %+v", cfg.Agent)
 	}

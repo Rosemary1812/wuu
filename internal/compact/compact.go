@@ -191,28 +191,16 @@ const maxCompactRetries = 3
 // guard, which keeps up to 20K tokens unavailable for retained input.
 const compactReservedMaxTokens = 20_000
 
-// compactTailMaxTokens caps the recent raw history kept after compaction.
-// OpenCode caps preserved recent context at 8K by default, which is a better
-// BYOK default than Pi's larger Codex-specialized tail.
-const compactTailMaxTokens = 8_000
-
-// compactTailMinTokens mirrors OpenCode's lower bound for the recent raw
-// context kept after the anchored summary. Even small models need enough fresh
-// context to preserve the immediate working state.
-const compactTailMinTokens = 2_000
+// compactDefaultKeepRecentTokens is the recent raw history budget kept after
+// compaction. It follows Pi's provider-neutral default; users can override it
+// through agent.compact_keep_recent_tokens.
+const compactDefaultKeepRecentTokens = 20_000
 
 // compactTailAllFitFallbackTurns avoids no-op compaction when the configured
 // tail budget is larger than the whole conversation. Normal budgeted selection
 // can retain more turns; this only chooses a minimal recent tail when no budget
 // boundary was reached.
 const compactTailAllFitFallbackTurns = 2
-
-// compactTailContextFraction keeps the raw tail small relative to the target
-// model window so the generated summary and post-compact context still have
-// room. Wuu keeps complete user-anchored turns and tool chains within this
-// budget rather than enforcing OpenCode's fixed tail-turn limit, so short
-// correction sequences can remain intact without expanding the token cap.
-const compactTailContextFraction = 0.25
 
 // Compact compresses older messages into a summary. It finds an
 // appropriate boundary near the end of the conversation, summarizes
@@ -239,6 +227,7 @@ type Budget struct {
 	ContextTokens       int
 	InputTokens         int
 	OutputReserveTokens int
+	KeepRecentTokens    int
 }
 
 func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, budget Budget) ([]providers.ChatMessage, error) {
@@ -582,15 +571,10 @@ func compactSummaryInputBudgetForBudget(model string, budget Budget) int {
 }
 
 func compactTailBudgetForBudget(model string, budget Budget) int {
-	usable := compactUsableInputWindow(model, budget)
-	tailBudget := int(float64(usable) * compactTailContextFraction)
-	if tailBudget > compactTailMaxTokens {
-		return compactTailMaxTokens
+	if budget.KeepRecentTokens > 0 {
+		return budget.KeepRecentTokens
 	}
-	if tailBudget < compactTailMinTokens {
-		return compactTailMinTokens
-	}
-	return tailBudget
+	return compactDefaultKeepRecentTokens
 }
 
 func compactUsableWindow(model string, window int) int {
@@ -671,7 +655,7 @@ func compactKeepStart(messages []providers.ChatMessage, tailBudgetTokens int) in
 		return -1
 	}
 	if tailBudgetTokens <= 0 {
-		tailBudgetTokens = compactTailMaxTokens
+		tailBudgetTokens = compactDefaultKeepRecentTokens
 	}
 
 	turns := compactTurns(messages)

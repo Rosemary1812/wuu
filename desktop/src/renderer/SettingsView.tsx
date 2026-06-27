@@ -95,6 +95,7 @@ export function SettingsView({
   const [mcpBusyServer, setMCPBusyServer] = useState("");
   const [autoCompactDraft, setAutoCompactDraft] = useState(true);
   const [compactThresholdDraft, setCompactThresholdDraft] = useState("");
+  const [compactKeepRecentDraft, setCompactKeepRecentDraft] = useState("");
   const [providerContextWindowDraft, setProviderContextWindowDraft] = useState("");
   const [maxContextTokensDraft, setMaxContextTokensDraft] = useState("");
   const [maxStepsDraft, setMaxStepsDraft] = useState("0");
@@ -168,6 +169,7 @@ export function SettingsView({
     const advanced = initialized?.advanced_settings;
     setAutoCompactDraft(!(advanced?.disable_auto_compact ?? false));
     setCompactThresholdDraft(formatPercentDraft(advanced?.compact_threshold_pct));
+    setCompactKeepRecentDraft(formatOptionalNumberDraft(advanced?.compact_keep_recent_tokens));
     setProviderContextWindowDraft(formatOptionalNumberDraft(advanced?.provider_context_window));
     setMaxContextTokensDraft(formatOptionalNumberDraft(advanced?.max_context_tokens));
     setMaxStepsDraft(String(advanced?.max_steps ?? 0));
@@ -267,6 +269,7 @@ export function SettingsView({
     const update = parseAdvancedSettingsDraft({
       autoCompact: autoCompactDraft,
       compactThreshold: compactThresholdDraft,
+      compactKeepRecent: compactKeepRecentDraft,
       providerContextWindow: providerContextWindowDraft,
       maxContextTokens: maxContextTokensDraft,
       maxSteps: maxStepsDraft,
@@ -398,6 +401,7 @@ export function SettingsView({
               running={running}
               autoCompact={autoCompactDraft}
               compactThreshold={compactThresholdDraft}
+              compactKeepRecent={compactKeepRecentDraft}
               providerContextWindow={providerContextWindowDraft}
               maxContextTokens={maxContextTokensDraft}
               maxSteps={maxStepsDraft}
@@ -410,6 +414,10 @@ export function SettingsView({
               }}
               onCompactThresholdChange={(value) => {
                 setCompactThresholdDraft(value);
+                setAdvancedSaved(false);
+              }}
+              onCompactKeepRecentChange={(value) => {
+                setCompactKeepRecentDraft(value);
                 setAdvancedSaved(false);
               }}
               onProviderContextWindowChange={(value) => {
@@ -794,6 +802,7 @@ function SettingsAdvancedPage({
   running,
   autoCompact,
   compactThreshold,
+  compactKeepRecent,
   providerContextWindow,
   maxContextTokens,
   maxSteps,
@@ -802,6 +811,7 @@ function SettingsAdvancedPage({
   saved,
   onAutoCompactToggle,
   onCompactThresholdChange,
+  onCompactKeepRecentChange,
   onProviderContextWindowChange,
   onMaxContextTokensChange,
   onMaxStepsChange,
@@ -812,6 +822,7 @@ function SettingsAdvancedPage({
   running: boolean;
   autoCompact: boolean;
   compactThreshold: string;
+  compactKeepRecent: string;
   providerContextWindow: string;
   maxContextTokens: string;
   maxSteps: string;
@@ -820,6 +831,7 @@ function SettingsAdvancedPage({
   saved: boolean;
   onAutoCompactToggle: () => void;
   onCompactThresholdChange: (value: string) => void;
+  onCompactKeepRecentChange: (value: string) => void;
   onProviderContextWindowChange: (value: string) => void;
   onMaxContextTokensChange: (value: string) => void;
   onMaxStepsChange: (value: string) => void;
@@ -867,6 +879,20 @@ function SettingsAdvancedPage({
             inputMode="numeric"
             placeholder="自动"
             onChange={(event) => onCompactThresholdChange(event.target.value)}
+            disabled={running || !initialized}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="保留最近上下文"
+          description="token；留空使用默认 20,000，控制压缩后保留的原文历史"
+          block
+        >
+          <input
+            className="settings-input"
+            value={compactKeepRecent}
+            inputMode="numeric"
+            placeholder="20,000"
+            onChange={(event) => onCompactKeepRecentChange(event.target.value)}
             disabled={running || !initialized}
           />
         </SettingsRow>
@@ -1343,6 +1369,7 @@ function UsageMetric({ label, value, detail }: { label: string; value: number | 
 type AdvancedDraft = {
   autoCompact: boolean;
   compactThreshold: string;
+  compactKeepRecent: string;
   providerContextWindow: string;
   maxContextTokens: string;
   maxSteps: string;
@@ -1382,6 +1409,10 @@ function parseAdvancedSettingsDraft(draft: AdvancedDraft): { settings: RuntimeAd
   if (compactPercent.value < 0 || compactPercent.value >= 100) {
     return { settings: {}, error: "压缩触发阈值必须小于 100" };
   }
+  const compactKeepRecent = parseOptionalInteger(draft.compactKeepRecent, "保留最近上下文");
+  if (compactKeepRecent.error) {
+    return { settings: {}, error: compactKeepRecent.error };
+  }
   const providerContextWindow = parseOptionalInteger(draft.providerContextWindow, "当前服务上下文窗口");
   if (providerContextWindow.error) {
     return { settings: {}, error: providerContextWindow.error };
@@ -1405,6 +1436,7 @@ function parseAdvancedSettingsDraft(draft: AdvancedDraft): { settings: RuntimeAd
     settings: {
       disable_auto_compact: !draft.autoCompact,
       compact_threshold_pct: compactPercent.value > 0 ? compactPercent.value / 100 : 0,
+      compact_keep_recent_tokens: compactKeepRecent.value,
       provider_context_window: providerContextWindow.value,
       max_context_tokens: maxContextTokens.value,
       max_steps: maxSteps.value,

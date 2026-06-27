@@ -66,6 +66,9 @@ type StreamRunner struct {
 	// CompactThresholdPct lets callers compact earlier than the default
 	// usable-window calculation. Zero means auto.
 	CompactThresholdPct float64
+	// CompactKeepRecentTokens overrides the default recent raw-history budget
+	// kept after compaction. Zero means use the Pi-aligned default.
+	CompactKeepRecentTokens int
 
 	// DisableAutoCompact turns off the proactive fill-rate trigger.
 	// The reactive context-overflow recovery still runs. Off by default.
@@ -208,16 +211,17 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		}
 	}
 	cfg := LoopConfig{
-		Tools:               r.Tools,
-		Model:               requestModel,
-		Temperature:         r.Temperature,
-		MaxSteps:            r.MaxSteps,
-		MaxContextTokens:    maxCtx,
-		MaxInputTokens:      r.MaxInputTokens,
-		OutputReserveTokens: r.OutputReserveTokens,
-		CompactThresholdPct: r.CompactThresholdPct,
-		BeforeStep:          beforeStep,
-		BeforeModelContext:  r.BeforeModelContext,
+		Tools:                   r.Tools,
+		Model:                   requestModel,
+		Temperature:             r.Temperature,
+		MaxSteps:                r.MaxSteps,
+		MaxContextTokens:        maxCtx,
+		MaxInputTokens:          r.MaxInputTokens,
+		OutputReserveTokens:     r.OutputReserveTokens,
+		CompactThresholdPct:     r.CompactThresholdPct,
+		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
+		BeforeStep:              beforeStep,
+		BeforeModelContext:      r.BeforeModelContext,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)
@@ -247,6 +251,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				ContextTokens:       maxCtx,
 				InputTokens:         r.MaxInputTokens,
 				OutputReserveTokens: r.OutputReserveTokens,
+				KeepRecentTokens:    r.CompactKeepRecentTokens,
 			})
 		},
 		// Forward each tool result through the streaming callback so

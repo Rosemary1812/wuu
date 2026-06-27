@@ -698,7 +698,7 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
-	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"disable_auto_compact":true,"provider_context_window":512000}}`
+	req := `{"id":"1","method":"config/advanced/update","params":{"max_steps":12,"max_context_tokens":256000,"temperature":0.4,"compact_threshold_pct":0.5,"compact_keep_recent_tokens":20000,"disable_auto_compact":true,"provider_context_window":512000}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/advanced/update: %v", err)
 	}
@@ -709,6 +709,7 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		result.AdvancedSettings.MaxContextTokens != 256000 ||
 		result.AdvancedSettings.Temperature != 0.4 ||
 		result.AdvancedSettings.CompactThresholdPct != 0.5 ||
+		result.AdvancedSettings.CompactKeepRecentTokens != 20000 ||
 		!result.AdvancedSettings.DisableAutoCompact ||
 		result.AdvancedSettings.ProviderContextWindow != 512000 {
 		t.Fatalf("unexpected advanced settings result: %+v", result.AdvancedSettings)
@@ -716,6 +717,7 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	if rt.StreamRunner.MaxSteps != 12 ||
 		rt.StreamRunner.Temperature != 0.4 ||
 		rt.StreamRunner.CompactThresholdPct != 0.5 ||
+		rt.StreamRunner.CompactKeepRecentTokens != 20000 ||
 		!rt.StreamRunner.DisableAutoCompact ||
 		rt.StreamRunner.ContextWindowOverride != 512000 {
 		t.Fatalf("runtime advanced settings not updated: %+v", rt.StreamRunner)
@@ -728,6 +730,7 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		`"max_steps": 12`,
 		`"max_context_tokens": 256000`,
 		`"compact_threshold_pct": 0.5`,
+		`"compact_keep_recent_tokens": 20000`,
 		`"disable_auto_compact": true`,
 		`"context_window": 512000`,
 	} {
@@ -4190,6 +4193,7 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	rt := newTestRuntime(t, client)
 	rt.StreamRunner.Model = "gpt-4-turbo"
 	rt.StreamRunner.ContextWindowOverride = 5000
+	rt.StreamRunner.CompactKeepRecentTokens = 1000
 
 	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
 		t.Fatalf("mkdir session dir: %v", err)

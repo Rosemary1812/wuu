@@ -152,6 +152,9 @@ type LoopConfig struct {
 	// fraction of the configured input/context window. Zero means use the
 	// default usable-window calculation.
 	CompactThresholdPct float64
+	// CompactKeepRecentTokens overrides the default recent raw-history budget
+	// kept after compaction. Zero means use the Pi-aligned default.
+	CompactKeepRecentTokens int
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
 	// before the next provider request is built. This is used by

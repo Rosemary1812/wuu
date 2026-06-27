@@ -222,6 +222,7 @@ describe("SettingsView advanced settings", () => {
           max_context_tokens: 0,
           temperature: 0.2,
           disable_auto_compact: false,
+          compact_keep_recent_tokens: 20000,
           context_window_tokens: 400000,
           context_window_source: "built_in_registry",
           output_reserve_tokens: 128000,
@@ -235,14 +236,16 @@ describe("SettingsView advanced settings", () => {
     });
     expect(container.querySelector("[data-testid=\"settings-advanced\"]")).not.toBeNull();
     expect(rootText()).toContain("压缩触发阈值");
+    expect(rootText()).toContain("保留最近上下文");
     expect(rootText()).toContain("当前服务上下文窗口");
     expect(rootText()).toContain("400,000");
 
     const inputs = Array.from(container.querySelectorAll("input"));
-    expect(inputs.length).toBeGreaterThanOrEqual(5);
-    const [compactThreshold, providerContextWindow, maxContextTokens, maxSteps, temperature] = inputs;
+    expect(inputs.length).toBeGreaterThanOrEqual(6);
+    const [compactThreshold, compactKeepRecent, providerContextWindow, maxContextTokens, maxSteps, temperature] = inputs;
     await act(async () => {
       setInputValue(compactThreshold, "50");
+      setInputValue(compactKeepRecent, "20000");
       setInputValue(providerContextWindow, "512000");
       setInputValue(maxContextTokens, "256000");
       setInputValue(maxSteps, "12");
@@ -261,6 +264,7 @@ describe("SettingsView advanced settings", () => {
     expect(onAdvancedSave).toHaveBeenCalledWith({
       disable_auto_compact: false,
       compact_threshold_pct: 0.5,
+      compact_keep_recent_tokens: 20000,
       provider_context_window: 512000,
       max_context_tokens: 256000,
       max_steps: 12,
