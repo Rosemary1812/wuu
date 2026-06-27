@@ -92,8 +92,20 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		}
 	}
 
+	for _, name := range []string{"checkpoint", "repo_map", "thread_get"} {
+		if containsProfileDef(defs, name) {
+			t.Fatalf("non-surface tool %s should not be visible, got %v", name, sortedProfileDefNames(defs))
+		}
+		info, ok := kit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != ToolExposureHidden {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureHidden)
+		}
+	}
+
 	for _, name := range []string{
-		"repo_map",
 		"ast_search",
 		"semantic_search",
 		"session_memory",

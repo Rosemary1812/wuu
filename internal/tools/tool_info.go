@@ -121,11 +121,14 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 		return ToolExposureHidden
 	}
-	if classifyToolKind(name) == ToolKindMCP && t.activeCompiledSurface().ProfileName != "" {
-		if !activeSurfaceAllowsKnownTool(t.activeCompiledSurface(), t.LookupTool(name)) {
+	surface := t.activeCompiledSurface()
+	if surface.ProfileName != "" {
+		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
 			return ToolExposureHidden
 		}
-		return ToolExposureDeferred
+		if classifyToolKind(name) == ToolKindMCP {
+			return ToolExposureDeferred
+		}
 	}
 	if classifyToolKind(name) == ToolKindMCP {
 		if t.shouldExposeMCPDirectly(name) {

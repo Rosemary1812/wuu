@@ -396,7 +396,7 @@ You are running under the OpenAI / Codex harness. Your editing primitive is appl
 
 All terminal work is unified under the bash tool. The internal capability is command.bash, and the runtime routes permission checks against it.
 
-Use read_file before editing a file so the patch's context anchors match the on-disk content. Use grep / glob / ast_search / semantic_search to find the code you need to change.
+Use read_file before editing a file so the patch's context anchors match the on-disk content. Use visible search tools such as grep and glob to find the code you need to change. If you need specialized AST or semantic search and the tool is not visible, load it with tool_search first.
 ` + bashTerminalGuidance + sharedTail)
 }
 
