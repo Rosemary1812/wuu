@@ -192,9 +192,9 @@ const maxCompactRetries = 3
 const compactReservedMaxTokens = 20_000
 
 // compactTailMaxTokens caps the recent raw history kept after compaction.
-// Pi keeps approximately 20K recent tokens after the anchored summary, which
-// is a better fit for long coding-agent turns than a fixed small-turn tail.
-const compactTailMaxTokens = 20_000
+// OpenCode caps preserved recent context at 8K by default, which is a better
+// BYOK default than Pi's larger Codex-specialized tail.
+const compactTailMaxTokens = 8_000
 
 // compactTailMinTokens mirrors OpenCode's lower bound for the recent raw
 // context kept after the anchored summary. Even small models need enough fresh
@@ -209,9 +209,9 @@ const compactTailAllFitFallbackTurns = 2
 
 // compactTailContextFraction keeps the raw tail small relative to the target
 // model window so the generated summary and post-compact context still have
-// room. Pi uses a token budget rather than a fixed number of turns; the tail
-// selector also keeps complete user-anchored turns and tool chains, so this is
-// a soft budget rather than a hard truncation point.
+// room. Wuu keeps complete user-anchored turns and tool chains within this
+// budget rather than enforcing OpenCode's fixed tail-turn limit, so short
+// correction sequences can remain intact without expanding the token cap.
 const compactTailContextFraction = 0.25
 
 // Compact compresses older messages into a summary. It finds an

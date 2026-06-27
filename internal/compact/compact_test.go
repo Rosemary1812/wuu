@@ -614,8 +614,8 @@ func TestCompact_RepeatedCompactionKeepsRecentTailAndAnchorsPreviousSummary(t *t
 }
 
 func TestCompactTailBudget_UsesOpenCodeStyleCap(t *testing.T) {
-	if got := compactTailBudget("gpt-4o", 128_000); got != compactTailMaxTokens {
-		t.Fatalf("expected large window to cap at %d, got %d", compactTailMaxTokens, got)
+	if got, want := compactTailBudget("gpt-4o", 128_000), 8_000; got != want {
+		t.Fatalf("expected large window to cap at %d, got %d", want, got)
 	}
 	if got := compactTailBudget("test-model", 1_000); got != compactTailMinTokens {
 		t.Fatalf("expected small test window to use %d minimum tail budget, got %d", compactTailMinTokens, got)
