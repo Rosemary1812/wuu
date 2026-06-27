@@ -12,6 +12,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
@@ -502,21 +503,16 @@ description: Legacy user audit workflow.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status"} {
-		if !defs[name] {
-			t.Fatalf("workflow tool %q missing from Definitions()", name)
-		}
-	}
-	for _, name := range []string{"create_workflow", "run_workflow", "workflow_control"} {
+	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status", "create_workflow", "run_workflow", "workflow_control"} {
 		if defs[name] {
-			t.Fatalf("lower-level workflow driver %q should be deferred from Definitions()", name)
+			t.Fatalf("workflow tool %q should be deferred from Definitions()", name)
 		}
 		info, ok := rt.Toolkit.ToolInfo(name)
 		if !ok {
-			t.Fatalf("workflow driver %q missing from ToolInfo()", name)
+			t.Fatalf("workflow tool %q missing from ToolInfo()", name)
 		}
 		if info.Exposure != tools.ToolExposureDeferred {
-			t.Fatalf("workflow driver %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
+			t.Fatalf("workflow tool %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
 		}
 	}
 }
@@ -1574,9 +1570,40 @@ func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 		"Workflow guidance",
 		"Release workflow",
 		"`start_workflow`",
+		"Tool Discovery",
 	} {
 		if strings.Contains(promptText, bad) {
 			t.Fatalf("no-tools prompt should not advertise tool-loaded guidance %q:\n%s", bad, promptText)
+		}
+	}
+}
+
+func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T) {
+	surface := compiledSurfaceForProviderModel("openai", "gpt-5-codex")
+	promptText := buildBaseSystemPrompt(
+		t.TempDir(),
+		"base prompt",
+		"",
+		"openai",
+		"gpt-5-codex",
+		surface,
+		nil,
+		nil,
+		false,
+		0,
+		0,
+		nil,
+		nil,
+	)
+
+	for _, want := range []string{
+		"# Tool Discovery",
+		"`tool_search`",
+		"select:<tool_name>",
+		"Do not use `tool_search` for visible core tools",
+	} {
+		if !strings.Contains(promptText, want) {
+			t.Fatalf("tool-search surface prompt missing %q:\n%s", want, promptText)
 		}
 	}
 }
@@ -1836,6 +1863,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 		t.Fatalf("New toolkit: %v", err)
 	}
 	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
 	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
 	if err != nil {
 		t.Fatalf("agent type: %v", err)
@@ -1865,6 +1893,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 		t.Fatalf("New toolkit: %v", err)
 	}
 	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
 	wt, err := agentcontrol.LookupWorkerType("verification")
 	if err != nil {
 		t.Fatalf("agent type: %v", err)

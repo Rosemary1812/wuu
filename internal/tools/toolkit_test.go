@@ -3542,7 +3542,7 @@ func TestToolkit_DefersOversizedMCPToolEvenInSmallSet(t *testing.T) {
 	}
 }
 
-func TestToolkit_DefinitionsKeepStableCachePrefixBeforeActivatedDeferredTools(t *testing.T) {
+func TestToolkit_LoadedDeferredToolsStayOutOfDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -3553,13 +3553,13 @@ func TestToolkit_DefinitionsKeepStableCachePrefixBeforeActivatedDeferredTools(t 
 		NewScheduleCronTool(kit.env),
 		NewToolSearchTool(kit),
 	)
-	kit.activateDeferredTools("schedule_cron")
+	kit.markDeferredToolsLoaded("schedule_cron")
 
 	defs := kit.Definitions()
-	if len(defs) != 3 {
-		t.Fatalf("expected 3 definitions, got %+v", defs)
+	if len(defs) != 2 {
+		t.Fatalf("expected loaded deferred tool to stay out of definitions, got %+v", defs)
 	}
-	wantNames := []string{"read_file", "tool_search", "schedule_cron"}
+	wantNames := []string{"read_file", "tool_search"}
 	for i, want := range wantNames {
 		if defs[i].Name != want {
 			t.Fatalf("definition %d = %q, want %q; all=%+v", i, defs[i].Name, want, defs)
@@ -3568,12 +3568,13 @@ func TestToolkit_DefinitionsKeepStableCachePrefixBeforeActivatedDeferredTools(t 
 	if !defs[0].CacheStable || !defs[1].CacheStable {
 		t.Fatalf("stable built-in tools should be cache-stable: %+v", defs)
 	}
-	if defs[2].CacheStable {
-		t.Fatalf("activated deferred tool should stay out of cache-stable prefix: %+v", defs[2])
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`})
+	if err == nil || strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("loaded deferred tool should reach tool validation, got %v", err)
 	}
 }
 
-func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
+func TestToolkit_ToolSearchLoadsDeferredTool(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -3628,7 +3629,7 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	}
 	var parsed struct {
 		Action        string                             `json:"action"`
-		ExposedTools  []string                           `json:"exposed_tools"`
+		LoadedTools   []string                           `json:"loaded_tools"`
 		LoadableTools []providers.LoadableToolDefinition `json:"loadable_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
@@ -3637,8 +3638,8 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	if parsed.Action != "tool_search" {
 		t.Fatalf("tool_search action = %q, want tool_search", parsed.Action)
 	}
-	if !reflect.DeepEqual(parsed.ExposedTools, []string{"mcp_docs_search"}) {
-		t.Fatalf("exposed tools = %+v, want mcp_docs_search", parsed.ExposedTools)
+	if !reflect.DeepEqual(parsed.LoadedTools, []string{"mcp_docs_search"}) {
+		t.Fatalf("loaded tools = %+v, want mcp_docs_search", parsed.LoadedTools)
 	}
 	if len(parsed.LoadableTools) != 1 {
 		t.Fatalf("loadable tools = %+v, want one entry", parsed.LoadableTools)
@@ -3654,38 +3655,22 @@ func TestToolkit_ToolSearchActivatesDeferredTool(t *testing.T) {
 	if len(records) == 0 || records[len(records)-1].ResultAction != "tool_search" {
 		t.Fatalf("tool_search telemetry missing result action: %+v", records)
 	}
-	if !definitionNames(kit.Definitions())["mcp_docs_search"] {
-		t.Fatal("mcp_docs_search should be exposed after tool_search")
-	}
-	activatedDefs := kit.Definitions()
-	if len(activatedDefs) != 3 {
-		t.Fatalf("expected activated definition appended after stable prefix, got %+v", activatedDefs)
-	}
-	wantNames := []string{"read_file", "tool_search", "mcp_docs_search"}
-	for i, want := range wantNames {
-		if activatedDefs[i].Name != want {
-			t.Fatalf("definition %d = %q, want %q; all=%+v", i, activatedDefs[i].Name, want, activatedDefs)
-		}
-	}
-	if !activatedDefs[0].CacheStable || !activatedDefs[1].CacheStable {
-		t.Fatalf("activated built-in prefix should stay cache-stable: %+v", activatedDefs)
-	}
-	if activatedDefs[2].CacheStable {
-		t.Fatalf("activated MCP tool should stay outside cache-stable prefix: %+v", activatedDefs[2])
+	if definitionNames(kit.Definitions())["mcp_docs_search"] {
+		t.Fatal("loaded deferred tool should not be appended to top-level definitions")
 	}
 	info, ok := kit.ToolInfo("mcp_docs_search")
 	if !ok {
 		t.Fatal("ToolInfo(mcp_docs_search) not found")
 	}
-	if info.Exposure != ToolExposureDirect {
-		t.Fatalf("mcp_docs_search exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	if info.Exposure != ToolExposureDeferred {
+		t.Fatalf("mcp_docs_search exposure = %s, want %s", info.Exposure, ToolExposureDeferred)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`}); err != nil {
-		t.Fatalf("activated deferred tool should execute: %v", err)
+		t.Fatalf("loaded deferred tool should execute: %v", err)
 	}
 }
 
-func TestToolkit_ToolSearchActivatesWorkflowDriverOverride(t *testing.T) {
+func TestToolkit_ToolSearchLoadsWorkflowDriverOverride(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -3711,30 +3696,98 @@ func TestToolkit_ToolSearchActivatesWorkflowDriverOverride(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		ExposedTools []string `json:"exposed_tools"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search response: %v", err)
 	}
-	if !containsString(parsed.ExposedTools, "run_workflow") {
-		t.Fatalf("tool_search did not expose run_workflow: %s", resp)
+	if !containsString(parsed.LoadedTools, "run_workflow") {
+		t.Fatalf("tool_search did not load run_workflow: %s", resp)
 	}
-	if !definitionNames(kit.Definitions())["run_workflow"] {
-		t.Fatal("run_workflow should be visible after tool_search")
+	if definitionNames(kit.Definitions())["run_workflow"] {
+		t.Fatal("run_workflow should stay out of definitions after tool_search")
 	}
 	info, ok := kit.ToolInfo("run_workflow")
 	if !ok {
 		t.Fatal("ToolInfo(run_workflow) not found")
 	}
-	if info.Exposure != ToolExposureDirect {
-		t.Fatalf("run_workflow exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	if info.Exposure != ToolExposureDeferred {
+		t.Fatalf("run_workflow exposure = %s, want %s", info.Exposure, ToolExposureDeferred)
 	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "run_workflow",
 		Arguments: `{}`,
 	})
 	if err == nil || strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("expected argument validation after activation, got %v", err)
+		t.Fatalf("expected argument validation after loading, got %v", err)
+	}
+}
+
+func TestToolkit_ToolSearchUsesSchemaTextAndSelect(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.registry = NewRegistry(
+		NewToolSearchTool(kit),
+		&stubTool{
+			name: "mcp_api_lookup",
+			def: providers.ToolDefinition{
+				Name:        "mcp_api_lookup",
+				Description: "Lookup reference material through MCP",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"symbol": map[string]any{
+							"type":        "string",
+							"description": "API symbol or exported identifier to find",
+						},
+					},
+				},
+			},
+		},
+		&stubTool{
+			name: "mcp_docs_read",
+			def:  providers.ToolDefinition{Name: "mcp_docs_read", Description: "Read documentation through MCP"},
+		},
+		&stubTool{name: "mcp_other_one", def: providers.ToolDefinition{Name: "mcp_other_one", Description: "Other MCP tool"}},
+		&stubTool{name: "mcp_other_two", def: providers.ToolDefinition{Name: "mcp_other_two", Description: "Other MCP tool"}},
+		&stubTool{name: "mcp_other_three", def: providers.ToolDefinition{Name: "mcp_other_three", Description: "Other MCP tool"}},
+	)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"exported symbol","limit":1}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search schema query: %v", err)
+	}
+	var parsed struct {
+		LoadedTools []string `json:"loaded_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse schema query: %v", err)
+	}
+	if !reflect.DeepEqual(parsed.LoadedTools, []string{"mcp_api_lookup"}) {
+		t.Fatalf("schema query loaded tools = %+v, want mcp_api_lookup; resp=%s", parsed.LoadedTools, resp)
+	}
+
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"select:mcp_docs_read","limit":1}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search select query: %v", err)
+	}
+	parsed = struct {
+		LoadedTools []string `json:"loaded_tools"`
+	}{}
+	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+		t.Fatalf("parse select query: %v", err)
+	}
+	if !reflect.DeepEqual(parsed.LoadedTools, []string{"mcp_docs_read"}) {
+		t.Fatalf("select query loaded tools = %+v, want mcp_docs_read; resp=%s", parsed.LoadedTools, resp)
 	}
 }
 

@@ -51,7 +51,7 @@ type Toolkit struct {
 	registry               *Registry
 	disabledTools          map[string]struct{}
 	exposureMu             sync.RWMutex
-	activatedDeferredTools map[string]struct{}
+	loadedDeferredTools    map[string]struct{}
 	toolPolicy             ToolPolicy
 	permissionBoundary     PermissionBoundary
 	extensionSurfacePolicy ExtensionSurfacePolicy
@@ -180,7 +180,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 			clone.disabledTools[name] = struct{}{}
 		}
 	}
-	clone.activatedDeferredTools = t.cloneActivatedDeferredTools()
+	clone.loadedDeferredTools = t.cloneLoadedDeferredTools()
 	clone.rebuildRegistry()
 	return clone, nil
 }
@@ -519,8 +519,11 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 
 // ── ToolExecutor interface ─────────────────────────────────────────
 
-// Definitions returns JSON-schema tool definitions for every enabled
-// tool the agent can call.
+// Definitions returns JSON-schema tool definitions for tools that are
+// directly visible in the current request. Deferred tools can become
+// executable after tool_search loads their schemas, but they stay out
+// of this top-level list so the provider prompt-cache prefix remains
+// stable.
 //
 // When an active profile has been installed via SetActiveProfile,
 // the visible set is the per-profile compiled surface. Without an
@@ -555,11 +558,6 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				continue
 			}
 			if t.shouldDeferByDefault(d.Name) {
-				if !t.isDeferredToolActive(d.Name) {
-					continue
-				}
-				d.CacheStable = false
-				dynamic = append(dynamic, d)
 				continue
 			}
 			d.CacheStable = true
@@ -589,7 +587,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				if !activeSurfaceAllowsKnownTool(surface, tool) {
 					continue
 				}
-				if t.shouldDeferByDefault(tool.Name()) && !t.isDeferredToolActive(tool.Name()) {
+				if t.shouldDeferByDefault(tool.Name()) {
 					continue
 				}
 				d := tool.Definition()
@@ -735,13 +733,13 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 		if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 			return nil
 		}
-		if t.shouldDeferByDefault(name) && !t.isDeferredToolActive(name) {
-			return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
+		if t.shouldDeferByDefault(name) && !t.isDeferredToolLoaded(name) {
+			return fmt.Errorf("tool %q is deferred; call tool_search first to load it", name)
 		}
 		return nil
 	}
-	if t.toolExposure(name) == ToolExposureDeferred {
-		return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
+	if t.toolExposure(name) == ToolExposureDeferred && !t.isDeferredToolLoaded(name) {
+		return fmt.Errorf("tool %q is deferred; call tool_search first to load it", name)
 	}
 	return nil
 }

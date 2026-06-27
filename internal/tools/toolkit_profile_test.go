@@ -62,6 +62,68 @@ func TestSetActiveProfileCompilesAndExposesBashForAllStandardProfiles(t *testing
 	}
 }
 
+func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	provider, err := memstore.NewFileProvider(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileProvider: %v", err)
+	}
+	kit.SetMemory(provider)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+
+	defs := kit.Definitions()
+	for _, want := range []string{
+		"read_file",
+		"grep",
+		"glob",
+		"bash",
+		"apply_patch",
+		"tool_search",
+		"load_skill",
+		"read_memory",
+		"write_memory",
+		"report_listening_ports",
+	} {
+		if !containsProfileDef(defs, want) {
+			t.Fatalf("Codex profile should keep core tool %s visible, got %v", want, sortedProfileDefNames(defs))
+		}
+	}
+
+	for _, name := range []string{
+		"repo_map",
+		"ast_search",
+		"semantic_search",
+		"session_memory",
+		"list_workflows",
+		"load_workflow",
+		"save_workflow",
+		"start_workflow",
+		"workflow_control",
+		"workflow_status",
+		"create_goal",
+		"get_goal",
+		"update_goal",
+		"web_search",
+		"web_fetch",
+		"spawn_agent",
+		"agent_report",
+	} {
+		if containsProfileDef(defs, name) {
+			t.Fatalf("low-frequency tool %s should stay deferred, got %v", name, sortedProfileDefNames(defs))
+		}
+		info, ok := kit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != ToolExposureDeferred {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureDeferred)
+		}
+	}
+}
+
 func TestCompiledProfileVisibleDefinitionsDoNotTeachLegacyCommandTools(t *testing.T) {
 	for _, tt := range []struct {
 		provider string
@@ -131,20 +193,20 @@ func TestActiveProfileAllowsDeferredMCPThroughToolSearch(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		ExposedTools []string `json:"exposed_tools"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if !containsString(parsed.ExposedTools, "mcp_docs_search") {
-		t.Fatalf("tool_search did not expose MCP tool: %s", resp)
+	if !containsString(parsed.LoadedTools, "mcp_docs_search") {
+		t.Fatalf("tool_search did not load MCP tool: %s", resp)
 	}
-	if !containsProfileDef(kit.Definitions(), "mcp_docs_search") {
-		t.Fatal("activated MCP tool should be visible under MCP-capable active profile")
+	if containsProfileDef(kit.Definitions(), "mcp_docs_search") {
+		t.Fatal("loaded MCP tool should not be appended to active profile definitions")
 	}
 	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
 	if err != nil {
-		t.Fatalf("activated MCP tool should execute: %v", err)
+		t.Fatalf("loaded MCP tool should execute: %v", err)
 	}
 	if !strings.Contains(out, "mcp_docs_search") {
 		t.Fatalf("unexpected MCP result: %s", out)
@@ -200,21 +262,21 @@ func TestLocalNoShellProfileFiltersTerminalMCPTools(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		ExposedTools []string `json:"exposed_tools"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if containsString(parsed.ExposedTools, "mcp_server_execute_command") {
+	if containsString(parsed.LoadedTools, "mcp_server_execute_command") {
 		t.Fatalf("tool_search exposed terminal MCP under no-shell profile: %s", resp)
 	}
-	if !containsString(parsed.ExposedTools, "mcp_docs_search") {
+	if !containsString(parsed.LoadedTools, "mcp_docs_search") {
 		t.Fatalf("non-command MCP should remain discoverable under no-shell profile: %s", resp)
 	}
 
-	kit.activateDeferredTools("mcp_server_execute_command")
+	kit.markDeferredToolsLoaded("mcp_server_execute_command")
 	if containsProfileDef(kit.Definitions(), "mcp_server_execute_command") {
-		t.Fatal("manual activation must not leak terminal MCP tools into no-shell definitions")
+		t.Fatal("manual loading must not leak terminal MCP tools into no-shell definitions")
 	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_server_execute_command", Arguments: `{}`})
 	if err == nil || !strings.Contains(err.Error(), "active model surface") {
@@ -245,15 +307,15 @@ func TestLocalNoShellProfileRequiresExplicitReadOnlyMCPCapability(t *testing.T) 
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		ExposedTools []string `json:"exposed_tools"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if containsString(parsed.ExposedTools, "mcp_docs_search") {
+	if containsString(parsed.LoadedTools, "mcp_docs_search") {
 		t.Fatalf("no-shell profile should fail closed for MCP without explicit capability: %s", resp)
 	}
-	kit.activateDeferredTools("mcp_docs_search")
+	kit.markDeferredToolsLoaded("mcp_docs_search")
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
 	if err == nil || !strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("unclassified MCP execution should be blocked by no-shell surface, got %v", err)
@@ -286,17 +348,17 @@ func TestBashCapableProfileAllowsTerminalMCPTools(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		ExposedTools []string `json:"exposed_tools"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if !containsString(parsed.ExposedTools, "mcp_terminal_exec") {
+	if !containsString(parsed.LoadedTools, "mcp_terminal_exec") {
 		t.Fatalf("bash-capable profile should discover terminal MCP tools: %s", resp)
 	}
 	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_terminal_exec", Arguments: `{}`})
 	if err != nil {
-		t.Fatalf("activated terminal MCP should execute under bash-capable profile: %v", err)
+		t.Fatalf("loaded terminal MCP should execute under bash-capable profile: %v", err)
 	}
 	if !strings.Contains(out, "mcp_terminal_exec") {
 		t.Fatalf("unexpected MCP result: %s", out)
@@ -404,10 +466,10 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "deferred") {
 		t.Fatalf("inactive deferred run_workflow should ask for tool_search, got %v", err)
 	}
-	kit.activateDeferredTools("run_workflow")
+	kit.markDeferredToolsLoaded("run_workflow")
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
 	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
-		t.Fatalf("activated run_workflow should reach tool validation, got %v", err)
+		t.Fatalf("loaded run_workflow should reach tool validation, got %v", err)
 	}
 }
 
@@ -433,8 +495,15 @@ func TestActiveProfileDefersAdvancedToolsUntilToolSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tool_search: %v", err)
 	}
-	if !strings.Contains(resp, "spawn_agent") || !containsProfileDef(kit.Definitions(), "spawn_agent") {
-		t.Fatalf("tool_search should expose spawn_agent, response=%s defs=%v", resp, sortedProfileDefNames(kit.Definitions()))
+	if !strings.Contains(resp, "spawn_agent") {
+		t.Fatalf("tool_search should load spawn_agent, response=%s", resp)
+	}
+	if containsProfileDef(kit.Definitions(), "spawn_agent") {
+		t.Fatalf("loaded spawn_agent should stay out of definitions: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`})
+	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("loaded spawn_agent should reach tool validation, got %v", err)
 	}
 }
 
@@ -603,7 +672,7 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 	}
 	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
-	kit.activateDeferredTools("schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow")
+	kit.markDeferredToolsLoaded("schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow")
 	surface := kit.ActiveSurface()
 	defs := kit.Definitions()
 	visible := make(map[string]struct{}, len(defs))

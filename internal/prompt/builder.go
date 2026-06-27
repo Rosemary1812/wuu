@@ -157,6 +157,22 @@ func (b *Builder) AddSkills(sks []skills.Skill) {
 	b.AddSection("skills", strings.TrimRight(sb.String(), "\n"), false)
 }
 
+// AddToolDiscovery teaches the model the stable contract for deferred
+// tool schemas. The section is static so progressive tool loading does
+// not mutate the system prompt prefix across turns.
+func (b *Builder) AddToolDiscovery() {
+	b.AddSection("tool_discovery", strings.Join([]string{
+		"# Tool Discovery",
+		"",
+		"Some less common tool schemas are deferred so the direct tool list stays small and cacheable.",
+		"- Use `tool_search` when you need a capability that is not currently visible, especially MCP tools, workflows, scheduling, subagents, memory, web access, or specialized search helpers.",
+		"- Search by capability words, or use `select:<tool_name>` when you already know the exact tool name.",
+		"- After `tool_search` returns matching schemas, use the loaded tool normally in the next tool step if it fits the task.",
+		"- Do not use `tool_search` for visible core tools already listed in this session, such as file reading, file editing, grep/glob search, patching, planning, or skill loading.",
+		"- Do not call MCP list/resource tools only to discover available tools; use `tool_search` for tool discovery.",
+	}, "\n"), true)
+}
+
 // AddWorkflows adds reusable workflow definitions to session guidance.
 func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 	visible := make([]workflow.Definition, 0, len(workflows))
@@ -182,6 +198,7 @@ func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 	sb.WriteString("- A completed workflow is evidence for a broader Goal, not automatic completion of that Goal. Use `get_goal` before `update_goal` with status `complete`.\n")
 	sb.WriteString("- For delegated or multi-agent Goals, completion needs independent workflow, subagent, or reviewer evidence. Do not self-certify completion from the lead agent's own claim.\n\n")
 	sb.WriteString("**Entry point:**\n")
+	sb.WriteString("- Workflow tools may be deferred to keep the default tool list small. If a workflow tool named below is not visible in the current tool list, call `tool_search` with `select:<tool_name>` first, then call the loaded tool.\n")
 	sb.WriteString("- Match the user's intent against the workflow catalog below. When a workflow applies, call `load_workflow` with its name and user arguments before starting it.\n")
 	sb.WriteString("- Start new workflow work with `start_workflow`. The `driver` argument defaults to `auto`; use `driver=\"auto\"` unless the user, workflow, or recovery path explicitly requires an override.\n")
 	sb.WriteString("- Use the returned `driver`, tool descriptions, tool result `next_steps`, `workflow_status`, and workflow evidence `goal_id`/`goal_dir` as the source of truth for the exact next action. Use `workflow_control` only after a Workflow Run exists and the run state needs to record planning, worker output, recovery, or final synthesis.\n")

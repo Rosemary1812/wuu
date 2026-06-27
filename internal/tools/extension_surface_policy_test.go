@@ -75,14 +75,14 @@ func TestExtensionSurfacePolicyHidesAndBlocksDeferredMCPTools(t *testing.T) {
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		Matched      int      `json:"matched"`
-		ExposedTools []string `json:"exposed_tools"`
+		Matched     int      `json:"matched"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if parsed.Matched != 0 || len(parsed.ExposedTools) != 0 {
-		t.Fatalf("tool_search should not expose disabled extension tools: %+v", parsed)
+	if parsed.Matched != 0 || len(parsed.LoadedTools) != 0 {
+		t.Fatalf("tool_search should not load disabled extension tools: %+v", parsed)
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
@@ -115,13 +115,13 @@ func TestExtensionSurfacePolicyBlocksMCPEvenWhenProfileAllowsCapability(t *testi
 		t.Fatalf("tool_search: %v", err)
 	}
 	var parsed struct {
-		Matched      int      `json:"matched"`
-		ExposedTools []string `json:"exposed_tools"`
+		Matched     int      `json:"matched"`
+		LoadedTools []string `json:"loaded_tools"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if parsed.Matched != 0 || len(parsed.ExposedTools) != 0 {
+	if parsed.Matched != 0 || len(parsed.LoadedTools) != 0 {
 		t.Fatalf("restricted extension policy should block MCP discovery: %+v", parsed)
 	}
 

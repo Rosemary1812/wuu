@@ -149,6 +149,24 @@ func TestBuilder_AddSkills(t *testing.T) {
 	}
 }
 
+func TestBuilder_AddToolDiscovery(t *testing.T) {
+	var b Builder
+	b.AddToolDiscovery()
+	result := b.Build()
+
+	for _, want := range []string{
+		"# Tool Discovery",
+		"deferred",
+		"`tool_search`",
+		"select:<tool_name>",
+		"Do not use `tool_search` for visible core tools",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("tool discovery prompt missing %q:\n%s", want, result)
+		}
+	}
+}
+
 func TestBuilder_AddWorkflows(t *testing.T) {
 	workflows := []workflow.Definition{
 		{

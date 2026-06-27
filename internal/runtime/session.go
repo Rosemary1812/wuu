@@ -1492,6 +1492,9 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model 
 	pb.AddSection("base", basePrompt, true)
 	pb.AddHarnessAdapter(providerName, model)
 	pb.AddSection("tool_surface", toolSurface.SystemFragment, true)
+	if _, ok := toolSurface.Tools["tool_search"]; ok {
+		pb.AddToolDiscovery()
+	}
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}

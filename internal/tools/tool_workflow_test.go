@@ -27,7 +27,7 @@ func TestToolkitWorkflowToolsCreateAndInspectRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	kit.SetSessionID("thread-workflow")
 	threadStateDir := filepath.Join(stateDir, "sessions", "thread-workflow")
@@ -374,9 +374,10 @@ func TestToolkitWorkflowToolsFilterByActiveSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(t.TempDir())
 	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
+	kit.markDeferredToolsLoaded("list_workflows", "load_workflow", "save_workflow", "start_workflow")
 	kit.SetWorkflows([]workflow.Definition{
 		{
 			Name:        "portable-plan",
@@ -517,7 +518,7 @@ func TestSaveWorkflowWritesProjectDefinitionAndRegistersIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	saveResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -585,7 +586,7 @@ func TestSaveWorkflowCanUseRunPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -631,7 +632,7 @@ func TestSaveAndRunScriptWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	script := `
@@ -837,7 +838,7 @@ func TestRunScriptWorkflowSpawnsAndAwaitsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	control, err := agentcontrol.New(agentcontrol.Config{
@@ -944,7 +945,7 @@ func TestRunScriptWorkflowSupportsSpawnPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	control, err := agentcontrol.New(agentcontrol.Config{
@@ -1031,7 +1032,7 @@ func TestRunScriptWorkflowSupportsSpawnBatchAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	control, err := agentcontrol.New(agentcontrol.Config{
@@ -1115,7 +1116,7 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -1282,7 +1283,7 @@ func TestCreateWorkflowPausesForMissingRequiredProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	kit.SetWorkflows([]workflow.Definition{{
 		Name:                 "feature-delivery",
@@ -1348,7 +1349,7 @@ func TestWorkflowControlResumeStartsInitiallyPausedScriptWorkflow(t *testing.T) 
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	kit.SetWorkflows([]workflow.Definition{{
 		Name:                 "script-profile-gate",
@@ -1443,7 +1444,7 @@ func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	kit.SetWorkflows([]workflow.Definition{{
 		Name:      "release-qa",
@@ -1576,7 +1577,7 @@ func TestWorkflowControlInfersAwaitResultPhaseFromWorkflowTeam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "create_workflow",
@@ -1639,7 +1640,7 @@ func TestWorkflowControlRejectsMissingReuseProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "create_workflow",
@@ -1666,7 +1667,7 @@ func TestWorkflowControlEnforcesMaxAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 	kit.SetWorkflows([]workflow.Definition{{
 		Name:      "tiny-team",
@@ -1711,7 +1712,7 @@ func TestWorkflowControlPauseResumeAndRetryAgentRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -1828,7 +1829,7 @@ func TestWorkflowControlFileCheckpointRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	exposeWorkflowDriverToolsForTest(t, kit)
+	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(stateDir)
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -1926,9 +1927,9 @@ func goalStateHasArtifact(state goalrunner.State, source, sourceID, kind, path s
 	return false
 }
 
-func exposeWorkflowDriverToolsForTest(t *testing.T, kit *Toolkit) {
+func loadWorkflowDriverToolsForTest(t *testing.T, kit *Toolkit) {
 	t.Helper()
-	kit.activateDeferredTools("create_workflow", "run_workflow")
+	kit.markDeferredToolsLoaded("create_workflow", "run_workflow")
 }
 
 type workflowFakeClient struct {

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -24,18 +25,18 @@ func (t *ToolSearchTool) IsConcurrencySafe() bool { return false }
 func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
-		Description: "Search deferred tools and expose matching tools for the next model turn.\n\n" +
-			"Use this when you need a tool that is not currently visible, especially MCP tools, low-frequency scheduling tools, or lower-level workflow driver overrides. The result includes loadable tool definitions for provider-native progressive loading, while the current fallback still exposes matching tools on the next turn.",
+		Description: "Search deferred tools and load matching tool schemas.\n\n" +
+			"Use this when you need a tool that is not currently visible, especially MCP tools, workflows, scheduling, subagents, memory, web access, or specialized search helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Search terms describing the tool you need.",
+					"description": "Search terms describing the tool you need, or select:<tool_name> for exact loading.",
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "Maximum number of tools to expose. Default 8, maximum 20.",
+					"description": "Maximum number of tool schemas to load. Default 8, maximum 20.",
 				},
 			},
 			"required": []string{"query"},
@@ -73,16 +74,16 @@ func (t *ToolSearchTool) Execute(_ context.Context, argsJSON string) (string, er
 		names = append(names, match.Name)
 		loadableTools = append(loadableTools, match.LoadableTool)
 	}
-	t.toolkit.activateDeferredTools(names...)
+	t.toolkit.markDeferredToolsLoaded(names...)
 
 	return mustJSON(map[string]any{
-		"action":            "tool_search",
-		"query":             query,
-		"matched":           len(matches),
-		"exposed_tools":     names,
-		"loadable_tools":    loadableTools,
-		"tools":             matches,
-		"visible_next_turn": len(matches) > 0,
+		"action":         "tool_search",
+		"query":          query,
+		"matched":        len(matches),
+		"loaded_tools":   names,
+		"loadable_tools": loadableTools,
+		"tools":          matches,
+		"schemas_loaded": len(matches) > 0,
 	})
 }
 
@@ -97,6 +98,9 @@ type toolSearchMatch struct {
 }
 
 func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch {
+	if names, ok := toolSearchSelectNames(query); ok {
+		return t.selectDeferredTools(names, limit)
+	}
 	tokens := searchTokens(query)
 	if len(tokens) == 0 || limit <= 0 {
 		return nil
@@ -138,6 +142,57 @@ func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch
 	return matches
 }
 
+func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMatch {
+	if len(names) == 0 || limit <= 0 {
+		return nil
+	}
+	surface := t.activeCompiledSurface()
+	toolsByName := make(map[string]Tool)
+	for _, tool := range t.allKnownTools() {
+		if !activeSurfaceAllowsKnownTool(surface, tool) {
+			continue
+		}
+		if t.toolExposure(tool.Name()) != ToolExposureDeferred {
+			continue
+		}
+		toolsByName[tool.Name()] = tool
+	}
+	matches := make([]toolSearchMatch, 0, min(limit, len(names)))
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		tool := toolsByName[name]
+		if tool == nil {
+			continue
+		}
+		matches = append(matches, buildToolSearchMatch(tool, 1000-len(matches)))
+		if len(matches) >= limit {
+			break
+		}
+	}
+	return matches
+}
+
+func toolSearchSelectNames(query string) ([]string, bool) {
+	query = strings.TrimSpace(query)
+	if !strings.HasPrefix(strings.ToLower(query), "select:") {
+		return nil, false
+	}
+	raw := strings.TrimSpace(query[len("select:"):])
+	if raw == "" {
+		return nil, true
+	}
+	raw = strings.ReplaceAll(raw, ",", " ")
+	return strings.Fields(raw), true
+}
+
 func (t *Toolkit) allKnownTools() []Tool {
 	all := t.registry.All()
 	if t.mcpManager != nil {
@@ -148,46 +203,60 @@ func (t *Toolkit) allKnownTools() []Tool {
 	return all
 }
 
-func (t *Toolkit) activateDeferredTools(names ...string) {
+func buildToolSearchMatch(tool Tool, score int) toolSearchMatch {
+	def := tool.Definition()
+	desc, _ := truncate(def.Description, 600)
+	return toolSearchMatch{
+		Name:            tool.Name(),
+		Kind:            classifyToolKind(tool.Name()),
+		Description:     desc,
+		ReadOnly:        tool.IsReadOnly(),
+		ConcurrencySafe: tool.IsConcurrencySafe(),
+		Score:           score,
+		LoadableTool:    providers.LoadableToolFromDefinition(def),
+	}
+}
+
+func (t *Toolkit) markDeferredToolsLoaded(names ...string) {
 	if len(names) == 0 {
 		return
 	}
-	toActivate := make([]string, 0, len(names))
+	toLoad := make([]string, 0, len(names))
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name == "" || t.isToolDisabled(name) || t.toolExposure(name) != ToolExposureDeferred {
 			continue
 		}
-		toActivate = append(toActivate, name)
+		toLoad = append(toLoad, name)
 	}
-	if len(toActivate) == 0 {
+	if len(toLoad) == 0 {
 		return
 	}
 	t.exposureMu.Lock()
 	defer t.exposureMu.Unlock()
-	if t.activatedDeferredTools == nil {
-		t.activatedDeferredTools = make(map[string]struct{}, len(toActivate))
+	if t.loadedDeferredTools == nil {
+		t.loadedDeferredTools = make(map[string]struct{}, len(toLoad))
 	}
-	for _, name := range toActivate {
-		t.activatedDeferredTools[name] = struct{}{}
+	for _, name := range toLoad {
+		t.loadedDeferredTools[name] = struct{}{}
 	}
 }
 
-func (t *Toolkit) isDeferredToolActive(name string) bool {
+func (t *Toolkit) isDeferredToolLoaded(name string) bool {
 	t.exposureMu.RLock()
 	defer t.exposureMu.RUnlock()
-	_, ok := t.activatedDeferredTools[name]
+	_, ok := t.loadedDeferredTools[name]
 	return ok
 }
 
-func (t *Toolkit) cloneActivatedDeferredTools() map[string]struct{} {
+func (t *Toolkit) cloneLoadedDeferredTools() map[string]struct{} {
 	t.exposureMu.RLock()
 	defer t.exposureMu.RUnlock()
-	if len(t.activatedDeferredTools) == 0 {
+	if len(t.loadedDeferredTools) == 0 {
 		return nil
 	}
-	out := make(map[string]struct{}, len(t.activatedDeferredTools))
-	for name := range t.activatedDeferredTools {
+	out := make(map[string]struct{}, len(t.loadedDeferredTools))
+	for name := range t.loadedDeferredTools {
 		out[name] = struct{}{}
 	}
 	return out
@@ -207,7 +276,7 @@ func searchTokens(query string) []string {
 
 func scoreToolSearchMatch(def providers.ToolDefinition, tokens []string) int {
 	name := strings.ToLower(def.Name)
-	haystack := name + " " + strings.ToLower(def.Description)
+	haystack := toolSearchText(def)
 	score := 0
 	for _, token := range tokens {
 		if token == "" {
@@ -221,4 +290,18 @@ func scoreToolSearchMatch(def providers.ToolDefinition, tokens []string) int {
 		}
 	}
 	return score
+}
+
+func toolSearchText(def providers.ToolDefinition) string {
+	parts := []string{
+		strings.ToLower(def.Name),
+		strings.ToLower(strings.ReplaceAll(def.Name, "_", " ")),
+		strings.ToLower(def.Description),
+	}
+	if len(def.InputSchema) > 0 {
+		if raw, err := json.Marshal(def.InputSchema); err == nil {
+			parts = append(parts, strings.ToLower(string(raw)))
+		}
+	}
+	return strings.Join(parts, " ")
 }

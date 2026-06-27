@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 )
 
 const (
@@ -123,13 +125,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 		if !activeSurfaceAllowsKnownTool(t.activeCompiledSurface(), t.LookupTool(name)) {
 			return ToolExposureHidden
 		}
-		if t.isDeferredToolActive(name) {
-			return ToolExposureDirect
-		}
 		return ToolExposureDeferred
-	}
-	if t.isDeferredToolActive(name) {
-		return ToolExposureDirect
 	}
 	if classifyToolKind(name) == ToolKindMCP {
 		if t.shouldExposeMCPDirectly(name) {
@@ -241,7 +237,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindContext
 	case "spawn_agent", "helpme", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "agent_report":
 		return ToolKindAgent
-	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin":
+	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin", "report_listening_ports":
 		return ToolKindProcess
 	case "schedule_cron", "cancel_cron", "list_cron":
 		return ToolKindSchedule
@@ -266,6 +262,9 @@ func isDeferredByDefault(name string) bool {
 }
 
 func (t *Toolkit) shouldDeferByDefault(name string) bool {
+	if name == "agent_report" && t != nil && t.env != nil && strings.TrimSpace(t.env.AgentID) != "" && currentAgentPath(t.env) != agentthread.RootPath {
+		return false
+	}
 	if isDeferredByDefault(name) {
 		return true
 	}
@@ -277,7 +276,24 @@ func (t *Toolkit) shouldDeferByDefault(name string) bool {
 
 func isProfileDeferredByDefault(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "spawn_agent",
+	case "repo_map",
+		"ast_search",
+		"semantic_search",
+		"web_search",
+		"web_fetch",
+		"session_memory",
+		"create_goal",
+		"get_goal",
+		"update_goal",
+		"list_workflows",
+		"load_workflow",
+		"save_workflow",
+		"list_agent_profiles",
+		"create_agent_profile",
+		"start_workflow",
+		"workflow_control",
+		"workflow_status",
+		"spawn_agent",
 		"helpme",
 		"send_message",
 		"followup_task",
@@ -285,13 +301,7 @@ func isProfileDeferredByDefault(name string) bool {
 		"await_agents",
 		"close_agent",
 		"list_agents",
-		"workflow_control",
-		"create_goal",
-		"get_goal",
-		"update_goal",
-		"web_search",
-		"web_fetch",
-		"create_agent_profile":
+		"agent_report":
 		return true
 	default:
 		return false

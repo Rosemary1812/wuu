@@ -44,7 +44,7 @@ type Surface struct {
 
 	// HiddenCapabilities lists capabilities that exist but are not
 	// surfaced on this profile. They still exist for permission
-	// routing when advanced tools are activated and for telemetry
+	// routing when advanced tools are loaded and for telemetry
 	// that wants to reason about a missing capability.
 	HiddenCapabilities []Capability
 
