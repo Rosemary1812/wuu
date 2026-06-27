@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Turn } from "../shared/protocol";
-import { firstUserMessageAnchor, firstUserMessageText, scrollToUserMessage, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
+import type { QueryHistoryEntry } from "./QueryHistoryPopover";
+import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
 
 // Rail geometry. The macOS Dock magnification model drives the numbers:
 // a default bar is short, the hovered bar grows by ~3x, and the two
@@ -36,9 +37,11 @@ const RAIL_BAR_HOVERED_WIDTH = 40;
 export function ConversationTurnRail({
   turns,
   activeTurnID,
+  onSelectQueryHistory,
 }: {
   turns: Turn[];
   activeTurnID?: string;
+  onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): JSX.Element {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -76,10 +79,10 @@ export function ConversationTurnRail({
       }
 
       const mouseY = event.clientY;
-      let closestBar: HTMLElement | null = null;
+      let closestBar: HTMLElement | undefined;
       let closestDistance = Infinity;
 
-      barElements.forEach((bar) => {
+      for (const bar of barElements) {
         const rect = bar.getBoundingClientRect();
         const barCenterY = rect.top + rect.height / 2;
         const distance = Math.abs(mouseY - barCenterY);
@@ -87,7 +90,7 @@ export function ConversationTurnRail({
           closestDistance = distance;
           closestBar = bar;
         }
-      });
+      }
 
       if (!closestBar) {
         return;
@@ -112,15 +115,21 @@ export function ConversationTurnRail({
     };
   }, [turns]);
 
-  // Click a bar to jump the conversation to the first user message
-  // of that turn. firstUserMessageAnchor returns the same
-  // (turnID, itemID) pair the chat scroll surface uses for its
-  // anchor IDs, so scrollToUserMessage's existing retry/highlight
-  // pipeline does the rest.
+  // Click a bar through the same query-history selection path used by
+  // the docked environment-panel list. That parent path disables
+  // auto-follow before jumping, so streaming cannot snap the view back
+  // to the bottom immediately after the click.
   function handleBarClick(turn: Turn) {
-    const anchor = firstUserMessageAnchor(turn);
-    if (anchor) {
-      scrollToUserMessage(anchor.turnID, anchor.itemID);
+    for (const item of turn.items ?? []) {
+      if (item.type !== "user_message") {
+        continue;
+      }
+      const text = (item.text ?? "").trim();
+      if (!text) {
+        continue;
+      }
+      onSelectQueryHistory({ turnID: turn.id, itemID: item.id, text });
+      return;
     }
   }
 

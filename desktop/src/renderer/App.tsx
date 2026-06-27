@@ -5234,6 +5234,7 @@ export function App(): JSX.Element {
         <ConversationTurnRail
           turns={turns}
           activeTurnID={turns[turns.length - 1]?.id}
+          onSelectQueryHistory={handleQueryHistorySelect}
         />
 
         {debugControlsVisible &&
