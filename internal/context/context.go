@@ -36,8 +36,10 @@ const TaskContractMessageName = "wuu_task_contract"
 // They are model-visible user-role messages, but they are not user intent.
 const AgentNotificationMessageName = "wuu_agent_notification"
 
-// GoalContinuationMessageName marks hidden active-goal continuation prompts.
-// They are model-visible for the current request but not durable user intent.
+// GoalContinuationMessageName marks legacy hidden active-goal continuation
+// prompts. New app-server goal continuations use typed GOAL_CONTINUATION
+// request-only context blocks, but older persisted histories can still carry
+// this message name.
 const GoalContinuationMessageName = "wuu_goal_continuation"
 
 // EnvInfo holds the dynamic environment snapshot for one turn.
@@ -57,6 +59,7 @@ const (
 	BlockTaskState         BlockKind = "TASK_STATE"
 	BlockConstraintLedger  BlockKind = "CONSTRAINT_LEDGER"
 	BlockWorkflowState     BlockKind = "WORKFLOW_STATE"
+	BlockGoalContinuation  BlockKind = "GOAL_CONTINUATION"
 	BlockRepoMap           BlockKind = "REPO_MAP"
 	BlockActiveFiles       BlockKind = "ACTIVE_FILES"
 	BlockRecentDiff        BlockKind = "RECENT_DIFF"

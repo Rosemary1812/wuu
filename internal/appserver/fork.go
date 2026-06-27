@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -243,4 +245,18 @@ func compactedAttachmentOmission(msg providers.ChatMessage) bool {
 
 func cloneHistory(history []providers.ChatMessage) []providers.ChatMessage {
 	return providers.CloneChatMessages(history)
+}
+
+func cloneContextSegments(segments []agent.ContextSegment) []agent.ContextSegment {
+	if len(segments) == 0 {
+		return nil
+	}
+	out := make([]agent.ContextSegment, 0, len(segments))
+	for _, segment := range segments {
+		cloned := segment
+		cloned.Messages = providers.CloneChatMessages(segment.Messages)
+		cloned.Blocks = append([]wuucontext.Block(nil), segment.Blocks...)
+		out = append(out, cloned)
+	}
+	return out
 }

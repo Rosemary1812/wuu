@@ -443,10 +443,10 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage) {
-	s.runTurnWithModelContext(ctx, th, threadRuntime, turnID, history, nil)
+	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, history, nil)
 }
 
-func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, modelContext []providers.ChatMessage) {
+func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, requestContext []agent.ContextSegment) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -564,14 +564,14 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 		}
 		return messages
 	}
-	turnModelContext := cloneHistory(modelContext)
+	turnRequestContext := cloneContextSegments(requestContext)
 	runner.BeforeRequestContext = func() []agent.ContextSegment {
 		var segments []agent.ContextSegment
 		if baseBeforeRequestContext != nil {
 			segments = append(segments, baseBeforeRequestContext()...)
 		}
-		if len(turnModelContext) > 0 {
-			segments = append(segments, agent.RequestOnlyContextMessages(cloneHistory(turnModelContext))...)
+		if len(turnRequestContext) > 0 {
+			segments = append(segments, cloneContextSegments(turnRequestContext)...)
 		}
 		return segments
 	}
@@ -1357,7 +1357,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurnWithModelContext(turnCtx, th, threadRuntime, turnID, history, []providers.ChatMessage{goalContinuationMessage(goal)})
+	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, history, goalContinuationContextSegments(goal))
 	return true, nil
 }
 
@@ -1386,26 +1386,32 @@ const (
 	goalContinuationObjectiveTailBytes = 600
 )
 
-func goalContinuationMessage(goal goalruntime.Goal) providers.ChatMessage {
+func goalContinuationContextSegments(goal goalruntime.Goal) []agent.ContextSegment {
+	return agent.RequestOnlyContextBlocks([]wuucontext.Block{goalContinuationBlock(goal)})
+}
+
+func goalContinuationBlock(goal goalruntime.Goal) wuucontext.Block {
 	objective, objectiveNote := goalContinuationObjectivePreview(goal.Objective)
 	if objectiveNote != "" {
 		objectiveNote = "\n" + objectiveNote
 	}
-	content := fmt.Sprintf(`<goal_continuation>
-Continue working toward the active thread goal.
-Objective: %s%s
-Status: %s
-Tokens used: %d
-Time used seconds: %d
-Goal turns: %d
-
-Make concrete progress toward the objective. Do not mark the goal complete unless the objective is actually achieved. If the same blocker prevents progress for multiple continuation turns, use the goal status rules instead of pretending the work is complete.
-</goal_continuation>`, objective, objectiveNote, goal.Status, goal.TokensUsed, goal.TimeUsedSeconds, goal.GoalTurns)
-	return providers.ChatMessage{
-		Role:    "user",
-		Name:    wuucontext.GoalContinuationMessageName,
+	content := fmt.Sprintf(strings.Join([]string{
+		"<goal_continuation>",
+		"Continue working toward the active thread goal.",
+		"Objective: %s%s",
+		"Status: %s",
+		"Tokens used: %d",
+		"Time used seconds: %d",
+		"Goal turns: %d",
+		"",
+		"Make concrete progress toward the objective. Do not mark the goal complete unless the objective is actually achieved. If the same blocker prevents progress for multiple continuation turns, use the goal status rules instead of pretending the work is complete.",
+		"</goal_continuation>",
+	}, "\n"), objective, objectiveNote, goal.Status, goal.TokensUsed, goal.TimeUsedSeconds, goal.GoalTurns)
+	return wuucontext.Block{
+		Kind:    wuucontext.BlockGoalContinuation,
+		Title:   "Active goal continuation",
+		Source:  "runtime.goal_continuation",
 		Content: content,
-		Hidden:  true,
 	}
 }
 

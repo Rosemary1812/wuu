@@ -2291,7 +2291,7 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	if err := srv.handleLine(context.Background(), raw); err != nil {
 		t.Fatalf("turn/start: %v", err)
 	}
-	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
 	time.Sleep(50 * time.Millisecond)
 	if got := turnCompletedCountForThread(t, out, threadID); got != 2 {
 		t.Fatalf("expected completed goal to stop after 2 completed turns, got %d", got)
@@ -2305,7 +2305,7 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	}
 	var continuation providers.ChatMessage
 	for _, msg := range requests[1].Messages {
-		if msg.Role == "user" && msg.Name == wuucontext.GoalContinuationMessageName {
+		if msg.Role == "user" && strings.Contains(msg.Content, "<goal_continuation>") {
 			continuation = msg
 			break
 		}
@@ -2313,12 +2313,31 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	if continuation.Content == "" {
 		t.Fatalf("second request missing goal continuation message: %+v", requests[1].Messages)
 	}
-	if !continuation.Hidden {
+	if !continuation.Hidden || !wuucontext.IsSystemReminder(continuation.Name, continuation.Content) {
 		t.Fatalf("goal continuation should be request-only context: %+v", continuation)
 	}
 	if !strings.Contains(continuation.Content, "finish the idle continuation loop") ||
-		!strings.Contains(continuation.Content, "<goal_continuation>") {
+		!strings.Contains(continuation.Content, "<goal_continuation>") ||
+		!strings.Contains(continuation.Content, "[GOAL_CONTINUATION]") {
 		t.Fatalf("unexpected goal continuation content:\n%s", continuation.Content)
+	}
+	contexts := turnEventsByTypeForThread(t, msgs, threadID, providers.EventRequestContext)
+	if len(contexts) != 2 {
+		t.Fatalf("request context events = %d, want 2", len(contexts))
+	}
+	secondContext := contexts[1].Event.RequestContext
+	if secondContext == nil {
+		t.Fatalf("missing second request context: %+v", contexts[1])
+	}
+	foundGoalKind := false
+	for _, kind := range secondContext.BlockKinds {
+		if kind == string(wuucontext.BlockGoalContinuation) {
+			foundGoalKind = true
+			break
+		}
+	}
+	if !foundGoalKind {
+		t.Fatalf("goal continuation should be typed request context: %+v", secondContext)
 	}
 
 	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
@@ -2393,17 +2412,35 @@ func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
 	}
 }
 
-func TestGoalContinuationMessageTrimsLongObjective(t *testing.T) {
+func TestGoalContinuationContextTrimsLongObjective(t *testing.T) {
 	head := strings.Repeat("a", goalContinuationObjectiveHeadBytes*3)
 	tail := strings.Repeat("z", goalContinuationObjectiveTailBytes*3)
 	objective := head + "MIDDLE_SHOULD_NOT_BE_INLINE" + tail
 
-	msg := goalContinuationMessage(goalruntime.Goal{
+	segments := goalContinuationContextSegments(goalruntime.Goal{
 		Objective: objective,
 		Status:    goalruntime.StatusActive,
 	})
+	if len(segments) != 1 {
+		t.Fatalf("goal continuation segments = %+v, want one", segments)
+	}
+	segment := segments[0]
+	if segment.Lifecycle != agent.ContextSegmentRequestOnly ||
+		segment.Placement != agent.ContextSegmentAfterHistory ||
+		segment.CachePolicy != agent.ContextSegmentVolatile ||
+		segment.Durable ||
+		segment.VisibleInUI {
+		t.Fatalf("unexpected continuation segment policy: %+v", segment)
+	}
+	if len(segment.Blocks) != 1 || segment.Blocks[0].Kind != wuucontext.BlockGoalContinuation {
+		t.Fatalf("unexpected continuation block: %+v", segment.Blocks)
+	}
+	if len(segment.Messages) != 1 {
+		t.Fatalf("unexpected continuation provider projection: %+v", segment.Messages)
+	}
+	msg := segment.Messages[0]
 
-	if !msg.Hidden || msg.Name != wuucontext.GoalContinuationMessageName {
+	if !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
 		t.Fatalf("unexpected continuation message metadata: %+v", msg)
 	}
 	if strings.Contains(msg.Content, "MIDDLE_SHOULD_NOT_BE_INLINE") {
