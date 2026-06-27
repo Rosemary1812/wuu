@@ -108,33 +108,36 @@ type CompactInfo struct {
 // RequestContextInfo summarizes request-only model context assembled before a
 // provider call. It intentionally excludes raw prompt text.
 type RequestContextInfo struct {
-	StepIndex               int
-	TransientMessages       int
-	ContentBytes            int
-	BlockKinds              []string
-	BlockKindCounts         map[string]int
-	BlockKindBytes          map[string]int
-	MessageCount            int
-	SystemMessages          int
-	HiddenMessages          int
-	ToolCount               int
-	StablePrefix            int
-	TurnPrefix              int
-	DynamicBytes            int
-	SystemBytes             int
-	StablePrefixBytes       int
-	TurnPrefixBytes         int
-	MessageBytes            int
-	ToolSchemaBytes         int
-	LoadableToolCount       int
-	LoadableToolSchemaBytes int
-	LoadableToolSurfaceHash string
-	SystemHash              string
-	StablePrefixHash        string
-	TurnPrefixHash          string
-	ToolSurfaceHash         string
-	PromptCacheKey          string
-	SystemSections          []SystemPromptSectionInfo
+	StepIndex                int
+	TransientMessages        int
+	ContentBytes             int
+	BlockKinds               []string
+	BlockKindCounts          map[string]int
+	BlockKindBytes           map[string]int
+	SegmentLifecycleCounts   map[string]int
+	SegmentPlacementCounts   map[string]int
+	SegmentCachePolicyCounts map[string]int
+	MessageCount             int
+	SystemMessages           int
+	HiddenMessages           int
+	ToolCount                int
+	StablePrefix             int
+	TurnPrefix               int
+	DynamicBytes             int
+	SystemBytes              int
+	StablePrefixBytes        int
+	TurnPrefixBytes          int
+	MessageBytes             int
+	ToolSchemaBytes          int
+	LoadableToolCount        int
+	LoadableToolSchemaBytes  int
+	LoadableToolSurfaceHash  string
+	SystemHash               string
+	StablePrefixHash         string
+	TurnPrefixHash           string
+	ToolSurfaceHash          string
+	PromptCacheKey           string
+	SystemSections           []SystemPromptSectionInfo
 }
 
 // SystemPromptSectionInfo describes one section of the assembled system prompt

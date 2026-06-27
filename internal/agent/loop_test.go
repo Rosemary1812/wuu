@@ -277,6 +277,11 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	if shape.TransientMessages != 2 || shape.ContentBytes == 0 || shape.DynamicBytes == 0 || shape.HiddenMessages != 2 {
 		t.Fatalf("request shape should report task-contract dynamic context: %+v", shape)
 	}
+	if shape.SegmentLifecycleCounts[string(ContextSegmentRequestOnly)] != 1 ||
+		shape.SegmentPlacementCounts[string(ContextSegmentAfterHistory)] != 1 ||
+		shape.SegmentCachePolicyCounts[string(ContextSegmentVolatile)] != 1 {
+		t.Fatalf("request shape should report task-contract segment policy: %+v", shape)
+	}
 	for _, want := range []string{string(wuucontext.BlockTask), string(wuucontext.BlockConstraintLedger)} {
 		if !containsString(shape.BlockKinds, want) {
 			t.Fatalf("request shape missing dynamic block kind %s: %+v", want, shape)
@@ -1141,6 +1146,11 @@ func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 	if len(contexts[0].BlockKinds) != 1 {
 		t.Fatalf("unexpected request context block kinds: %+v", contexts[0])
 	}
+	if contexts[0].SegmentLifecycleCounts[string(ContextSegmentRequestOnly)] != 1 ||
+		contexts[0].SegmentPlacementCounts[string(ContextSegmentAfterHistory)] != 1 ||
+		contexts[0].SegmentCachePolicyCounts[string(ContextSegmentVolatile)] != 1 {
+		t.Fatalf("unexpected request context segment policy metrics: %+v", contexts[0])
+	}
 }
 
 func TestRequestOnlyContextBlocksOwnTypedBlockProjection(t *testing.T) {
@@ -1204,6 +1214,11 @@ func TestRunToolLoop_TypedRequestOnlyBlocksStayOutOfDurableHistory(t *testing.T)
 	}
 	if len(contexts) != 1 || !containsString(contexts[0].BlockKinds, string(wuucontext.BlockEnvironment)) {
 		t.Fatalf("request shape should include typed block kind: %+v", contexts)
+	}
+	if contexts[0].SegmentLifecycleCounts[string(ContextSegmentRequestOnly)] != 1 ||
+		contexts[0].SegmentPlacementCounts[string(ContextSegmentAfterHistory)] != 1 ||
+		contexts[0].SegmentCachePolicyCounts[string(ContextSegmentVolatile)] != 1 {
+		t.Fatalf("request shape should include typed block segment policy: %+v", contexts[0])
 	}
 }
 

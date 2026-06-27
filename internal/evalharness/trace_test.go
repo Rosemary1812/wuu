@@ -56,21 +56,24 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				ContentBytes: 120,
 			}},
 			ContextRequests: []ContextRequestObservation{{
-				StepIndex:               0,
-				TransientMessages:       1,
-				ContentBytes:            512,
-				SystemBytes:             2048,
-				TurnPrefix:              1,
-				TurnPrefixBytes:         2176,
-				TurnPrefixHash:          "turn-hash",
-				MessageBytes:            2560,
-				ToolSchemaBytes:         4096,
-				LoadableToolCount:       1,
-				LoadableToolSchemaBytes: 512,
-				LoadableToolSurfaceHash: "loadable-hash",
-				BlockKinds:              []string{"ENVIRONMENT", "REPO_MAP"},
-				BlockKindCounts:         map[string]int{"ENVIRONMENT": 1, "REPO_MAP": 1},
-				BlockKindBytes:          map[string]int{"ENVIRONMENT": 128, "REPO_MAP": 384},
+				StepIndex:                0,
+				TransientMessages:        1,
+				ContentBytes:             512,
+				SystemBytes:              2048,
+				TurnPrefix:               1,
+				TurnPrefixBytes:          2176,
+				TurnPrefixHash:           "turn-hash",
+				MessageBytes:             2560,
+				ToolSchemaBytes:          4096,
+				LoadableToolCount:        1,
+				LoadableToolSchemaBytes:  512,
+				LoadableToolSurfaceHash:  "loadable-hash",
+				BlockKinds:               []string{"ENVIRONMENT", "REPO_MAP"},
+				BlockKindCounts:          map[string]int{"ENVIRONMENT": 1, "REPO_MAP": 1},
+				BlockKindBytes:           map[string]int{"ENVIRONMENT": 128, "REPO_MAP": 384},
+				SegmentLifecycleCounts:   map[string]int{"request_only": 1},
+				SegmentPlacementCounts:   map[string]int{"after_history": 1},
+				SegmentCachePolicyCounts: map[string]int{"volatile": 1},
 			}},
 			ToolInventory: []ToolInventoryObservation{{
 				Name:     "read_file",
@@ -148,6 +151,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		contextRequests[0].LoadableToolCount != 1 ||
 		contextRequests[0].LoadableToolSchemaBytes != 512 ||
 		contextRequests[0].LoadableToolSurfaceHash != "loadable-hash" ||
+		contextRequests[0].SegmentLifecycleCounts["request_only"] != 1 ||
+		contextRequests[0].SegmentPlacementCounts["after_history"] != 1 ||
+		contextRequests[0].SegmentCachePolicyCounts["volatile"] != 1 ||
 		contextRequests[0].BlockKindCounts["ENVIRONMENT"] != 1 ||
 		contextRequests[0].BlockKindBytes["REPO_MAP"] != 384 {
 		t.Fatalf("context_requests event missing request metadata: %+v", contextRequests)

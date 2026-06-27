@@ -184,13 +184,9 @@ func requestOnlyMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMe
 }
 
 func isRequestOnlyAfterHistorySegment(segment ContextSegment) bool {
-	lifecycle := segment.Lifecycle
-	if lifecycle == "" {
-		lifecycle = ContextSegmentRequestOnly
-	}
-	placement := segment.Placement
-	if placement == "" {
-		placement = ContextSegmentAfterHistory
-	}
-	return lifecycle == ContextSegmentRequestOnly && placement == ContextSegmentAfterHistory && !segment.Durable
+	return segment.Lifecycle == ContextSegmentRequestOnly &&
+		segment.Placement == ContextSegmentAfterHistory &&
+		segment.CachePolicy == ContextSegmentVolatile &&
+		!segment.Durable &&
+		!segment.VisibleInUI
 }

@@ -51,26 +51,29 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 	loadableTools := providers.DiscoveredToolsFromMessages(messages)
 
 	info := RequestContextInfo{
-		StepIndex:               stepIndex,
-		MessageCount:            len(messages),
-		SystemMessages:          systemMessages,
-		ToolCount:               len(tools),
-		StablePrefix:            stablePrefix,
-		TurnPrefix:              turnPrefix,
-		SystemBytes:             messageBytesForRequestShape(messages[:systemMessages]),
-		StablePrefixBytes:       messageBytesForRequestShape(messages[:stableEnd]),
-		TurnPrefixBytes:         messageBytesForRequestShape(messages[:turnEnd]),
-		MessageBytes:            messageBytesForRequestShape(messages),
-		ToolSchemaBytes:         toolSchemaBytesForRequestShape(tools),
-		LoadableToolCount:       len(loadableTools),
-		LoadableToolSchemaBytes: loadableToolSchemaBytesForRequestShape(loadableTools),
-		LoadableToolSurfaceHash: hashLoadableToolsForRequestShape(loadableTools),
-		SystemHash:              hashMessagesForRequestShape(messages[:systemMessages]),
-		StablePrefixHash:        hashMessagesForRequestShape(messages[:stableEnd]),
-		TurnPrefixHash:          hashMessagesForRequestShape(messages[:turnEnd]),
-		ToolSurfaceHash:         hashToolsForRequestShape(tools),
-		PromptCacheKey:          promptCacheKey,
-		SystemSections:          cloneSystemPromptSections(systemSections),
+		StepIndex:                stepIndex,
+		MessageCount:             len(messages),
+		SystemMessages:           systemMessages,
+		ToolCount:                len(tools),
+		StablePrefix:             stablePrefix,
+		TurnPrefix:               turnPrefix,
+		SystemBytes:              messageBytesForRequestShape(messages[:systemMessages]),
+		StablePrefixBytes:        messageBytesForRequestShape(messages[:stableEnd]),
+		TurnPrefixBytes:          messageBytesForRequestShape(messages[:turnEnd]),
+		MessageBytes:             messageBytesForRequestShape(messages),
+		ToolSchemaBytes:          toolSchemaBytesForRequestShape(tools),
+		LoadableToolCount:        len(loadableTools),
+		LoadableToolSchemaBytes:  loadableToolSchemaBytesForRequestShape(loadableTools),
+		LoadableToolSurfaceHash:  hashLoadableToolsForRequestShape(loadableTools),
+		SystemHash:               hashMessagesForRequestShape(messages[:systemMessages]),
+		StablePrefixHash:         hashMessagesForRequestShape(messages[:stableEnd]),
+		TurnPrefixHash:           hashMessagesForRequestShape(messages[:turnEnd]),
+		ToolSurfaceHash:          hashToolsForRequestShape(tools),
+		PromptCacheKey:           promptCacheKey,
+		SystemSections:           cloneSystemPromptSections(systemSections),
+		SegmentLifecycleCounts:   segmentLifecycleCounts(assembly.Segments),
+		SegmentPlacementCounts:   segmentPlacementCounts(assembly.Segments),
+		SegmentCachePolicyCounts: segmentCachePolicyCounts(assembly.Segments),
 	}
 
 	for _, msg := range messages {
@@ -88,6 +91,39 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 	}
 	info.BlockKinds, info.BlockKindCounts, info.BlockKindBytes = requestBlockMetrics(assembly)
 	return info
+}
+
+func segmentLifecycleCounts(segments []ContextSegment) map[string]int {
+	return segmentStringCounts(segments, func(segment ContextSegment) string {
+		return string(segment.Lifecycle)
+	})
+}
+
+func segmentPlacementCounts(segments []ContextSegment) map[string]int {
+	return segmentStringCounts(segments, func(segment ContextSegment) string {
+		return string(segment.Placement)
+	})
+}
+
+func segmentCachePolicyCounts(segments []ContextSegment) map[string]int {
+	return segmentStringCounts(segments, func(segment ContextSegment) string {
+		return string(segment.CachePolicy)
+	})
+}
+
+func segmentStringCounts(segments []ContextSegment, value func(ContextSegment) string) map[string]int {
+	counts := map[string]int{}
+	for _, segment := range segments {
+		key := strings.TrimSpace(value(segment))
+		if key == "" {
+			continue
+		}
+		counts[key]++
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	return counts
 }
 
 func requestBlockMetrics(assembly RequestAssembly) ([]string, map[string]int, map[string]int) {

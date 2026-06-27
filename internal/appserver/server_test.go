@@ -1856,6 +1856,9 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		contextParams.Event.RequestContext.TurnPrefixBytes == 0 ||
 		contextParams.Event.RequestContext.MessageBytes == 0 ||
 		contextParams.Event.RequestContext.ToolSchemaBytes == 0 ||
+		contextParams.Event.RequestContext.SegmentLifecycleCounts[string(agent.ContextSegmentRequestOnly)] == 0 ||
+		contextParams.Event.RequestContext.SegmentPlacementCounts[string(agent.ContextSegmentAfterHistory)] == 0 ||
+		contextParams.Event.RequestContext.SegmentCachePolicyCounts[string(agent.ContextSegmentVolatile)] == 0 ||
 		contextParams.Event.RequestContext.SystemHash == "" ||
 		contextParams.Event.RequestContext.StablePrefixHash == "" ||
 		contextParams.Event.RequestContext.TurnPrefixHash == "" ||

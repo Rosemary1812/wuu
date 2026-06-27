@@ -157,32 +157,35 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 			Event: appserver.StreamEventPayload{
 				Type: providers.EventRequestContext,
 				RequestContext: &providers.RequestContextSummary{
-					StepIndex:               1,
-					TransientMessages:       2,
-					ContentBytes:            128,
-					BlockKinds:              []string{"ENVIRONMENT", "TOOL_POLICY"},
-					BlockKindCounts:         map[string]int{"ENVIRONMENT": 1, "TOOL_POLICY": 1},
-					BlockKindBytes:          map[string]int{"ENVIRONMENT": 80, "TOOL_POLICY": 48},
-					MessageCount:            4,
-					SystemMessages:          1,
-					HiddenMessages:          2,
-					ToolCount:               9,
-					StablePrefix:            0,
-					TurnPrefix:              1,
-					DynamicBytes:            128,
-					SystemBytes:             2048,
-					StablePrefixBytes:       2048,
-					TurnPrefixBytes:         2176,
-					MessageBytes:            2304,
-					ToolSchemaBytes:         4096,
-					LoadableToolCount:       1,
-					LoadableToolSchemaBytes: 512,
-					LoadableToolSurfaceHash: "loadable-hash",
-					SystemHash:              "system-hash",
-					StablePrefixHash:        "stable-hash",
-					TurnPrefixHash:          "turn-hash",
-					ToolSurfaceHash:         "tools-hash",
-					PromptCacheKey:          "thread-1",
+					StepIndex:                1,
+					TransientMessages:        2,
+					ContentBytes:             128,
+					BlockKinds:               []string{"ENVIRONMENT", "TOOL_POLICY"},
+					BlockKindCounts:          map[string]int{"ENVIRONMENT": 1, "TOOL_POLICY": 1},
+					BlockKindBytes:           map[string]int{"ENVIRONMENT": 80, "TOOL_POLICY": 48},
+					SegmentLifecycleCounts:   map[string]int{"request_only": 1},
+					SegmentPlacementCounts:   map[string]int{"after_history": 1},
+					SegmentCachePolicyCounts: map[string]int{"volatile": 1},
+					MessageCount:             4,
+					SystemMessages:           1,
+					HiddenMessages:           2,
+					ToolCount:                9,
+					StablePrefix:             0,
+					TurnPrefix:               1,
+					DynamicBytes:             128,
+					SystemBytes:              2048,
+					StablePrefixBytes:        2048,
+					TurnPrefixBytes:          2176,
+					MessageBytes:             2304,
+					ToolSchemaBytes:          4096,
+					LoadableToolCount:        1,
+					LoadableToolSchemaBytes:  512,
+					LoadableToolSurfaceHash:  "loadable-hash",
+					SystemHash:               "system-hash",
+					StablePrefixHash:         "stable-hash",
+					TurnPrefixHash:           "turn-hash",
+					ToolSurfaceHash:          "tools-hash",
+					PromptCacheKey:           "thread-1",
 					SystemSections: []providers.SystemPromptSectionSummary{{
 						Key:    "base",
 						Static: true,
@@ -257,6 +260,11 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	if !reflect.DeepEqual(requestContext["block_kind_counts"], map[string]any{"ENVIRONMENT": float64(1), "TOOL_POLICY": float64(1)}) ||
 		!reflect.DeepEqual(requestContext["block_kind_bytes"], map[string]any{"ENVIRONMENT": float64(80), "TOOL_POLICY": float64(48)}) {
 		t.Fatalf("unexpected request_context block metrics: %+v", requestContext)
+	}
+	if !reflect.DeepEqual(requestContext["segment_lifecycle_counts"], map[string]any{"request_only": float64(1)}) ||
+		!reflect.DeepEqual(requestContext["segment_placement_counts"], map[string]any{"after_history": float64(1)}) ||
+		!reflect.DeepEqual(requestContext["segment_cache_policy_counts"], map[string]any{"volatile": float64(1)}) {
+		t.Fatalf("unexpected request_context segment policy metrics: %+v", requestContext)
 	}
 	sections, ok := requestContext["system_sections"].([]any)
 	if !ok || len(sections) != 1 {
