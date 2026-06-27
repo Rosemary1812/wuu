@@ -65,7 +65,7 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 	})
 
 	msgs := inject()
-	if len(msgs) != 3 {
+	if len(msgs) != 2 {
 		t.Fatalf("expected split context messages, got %+v", msgs)
 	}
 	combined := strings.Builder{}
@@ -82,7 +82,7 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 		combined.WriteString("\n")
 	}
 	content := combined.String()
-	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[REPO_MAP]", "source: runtime.repo_map", "main.go", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
+	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("injected context missing %q:\n%s", want, content)
 		}
@@ -348,7 +348,7 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 	}
 
 	msgs := EnvContextInjector(root, nil, "")()
-	if len(msgs) < 3 {
+	if len(msgs) < 2 {
 		t.Fatalf("expected split injected context messages, got %+v", msgs)
 	}
 	var combined strings.Builder
@@ -363,8 +363,11 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 	if !strings.Contains(content, "[ENVIRONMENT]") || !strings.Contains(content, "Git status:") {
 		t.Fatalf("per-turn environment context should still carry live git state:\n%s", content)
 	}
-	if !strings.Contains(content, "[REPO_MAP]") || !strings.Contains(content, "[RECENT_DIFF]") {
-		t.Fatalf("per-turn context should keep repo and diff blocks split but present:\n%s", content)
+	if strings.Contains(content, "[REPO_MAP]") || strings.Contains(content, "source: runtime.repo_map") {
+		t.Fatalf("per-turn context should not inject repo map by default:\n%s", content)
+	}
+	if !strings.Contains(content, "[RECENT_DIFF]") {
+		t.Fatalf("per-turn context should still include recent diff when present:\n%s", content)
 	}
 }
 

@@ -1178,7 +1178,7 @@ func TestEvalContextBlockObservationsSummarizeRuntimeBlocks(t *testing.T) {
 		}
 		byKind[block.Kind] = block
 	}
-	for _, kind := range []string{"ENVIRONMENT", "REPO_MAP", "ACTIVE_FILES", "TOOL_RESULT_SUMMARY"} {
+	for _, kind := range []string{"ENVIRONMENT", "ACTIVE_FILES", "TOOL_RESULT_SUMMARY"} {
 		if _, ok := byKind[kind]; !ok {
 			t.Fatalf("missing context block kind %s in %+v", kind, got)
 		}

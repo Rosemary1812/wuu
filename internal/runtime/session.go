@@ -876,15 +876,12 @@ func codexSubscriptionInputCap(model, providerType string) int {
 
 // EnvContextInjector returns replayable hidden runtime context injected into
 // model requests. Each typed block is emitted as its own hidden message so a
-// changing diff or environment snapshot does not force stable blocks like the
-// repo map to be appended again.
+// changing diff or environment snapshot does not force unrelated runtime
+// context to be appended again.
 func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []providers.ChatMessage {
 	return func() []providers.ChatMessage {
 		env := wuucontext.Snapshot(rootDir)
 		blocks := []wuucontext.Block{wuucontext.EnvironmentBlock(env)}
-		if repoMap, ok := wuucontext.RepoMapBlock(rootDir, wuucontext.RepoMapOptions{}); ok {
-			blocks = append(blocks, repoMap)
-		}
 		if recentDiff, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
 			blocks = append(blocks, recentDiff)
 		}

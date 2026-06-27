@@ -600,9 +600,6 @@ func evalContextBlockObservations(rt *runtime.Session) []evalharness.ContextBloc
 	blocks := []wuucontext.Block{
 		wuucontext.EnvironmentBlock(wuucontext.Snapshot(rootDir)),
 	}
-	if block, ok := wuucontext.RepoMapBlock(rootDir, wuucontext.RepoMapOptions{}); ok {
-		blocks = append(blocks, block)
-	}
 	if block, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
 		blocks = append(blocks, block)
 	}
