@@ -76,12 +76,23 @@ type Result struct {
 	WorkflowIssues       []string                 `json:"workflow_issues,omitempty"`
 	InputTokens          int                      `json:"input_tokens"`
 	OutputTokens         int                      `json:"output_tokens"`
+	CacheCreationTokens  int                      `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens      int                      `json:"cache_read_tokens,omitempty"`
+	CacheHitRate         float64                  `json:"cache_hit_rate,omitempty"`
 	VerificationReason   string                   `json:"verification_reason,omitempty"`
 	VerificationEvidence []VerificationEvidence   `json:"verification_evidence,omitempty"`
 	Validation           *ValidationReplaySummary `json:"validation,omitempty"`
 	Error                string                   `json:"error,omitempty"`
 	Workdir              string                   `json:"workdir,omitempty"`
 	Observability        *Observability           `json:"observability,omitempty"`
+}
+
+func CacheHitRate(inputTokens, cacheReadTokens int) float64 {
+	promptTokens := inputTokens + cacheReadTokens
+	if promptTokens <= 0 {
+		return 0
+	}
+	return float64(cacheReadTokens) / float64(promptTokens)
 }
 
 type Observability struct {

@@ -41,9 +41,14 @@ type evalReport struct {
 }
 
 type evalSummary struct {
-	Total  int `json:"total"`
-	Passed int `json:"passed"`
-	Failed int `json:"failed"`
+	Total               int     `json:"total"`
+	Passed              int     `json:"passed"`
+	Failed              int     `json:"failed"`
+	InputTokens         int     `json:"input_tokens,omitempty"`
+	OutputTokens        int     `json:"output_tokens,omitempty"`
+	CacheCreationTokens int     `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int     `json:"cache_read_tokens,omitempty"`
+	CacheHitRate        float64 `json:"cache_hit_rate,omitempty"`
 }
 
 func runEval(args []string) error {
@@ -402,20 +407,29 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 				previous(info)
 			}
 			contextRequests = append(contextRequests, agent.RequestContextInfo{
-				StepIndex:         info.StepIndex,
-				TransientMessages: info.TransientMessages,
-				ContentBytes:      info.ContentBytes,
-				BlockKinds:        append([]string(nil), info.BlockKinds...),
-				MessageCount:      info.MessageCount,
-				SystemMessages:    info.SystemMessages,
-				HiddenMessages:    info.HiddenMessages,
-				ToolCount:         info.ToolCount,
-				StablePrefix:      info.StablePrefix,
-				DynamicBytes:      info.DynamicBytes,
-				SystemHash:        info.SystemHash,
-				StablePrefixHash:  info.StablePrefixHash,
-				ToolSurfaceHash:   info.ToolSurfaceHash,
-				PromptCacheKey:    info.PromptCacheKey,
+				StepIndex:               info.StepIndex,
+				TransientMessages:       info.TransientMessages,
+				ContentBytes:            info.ContentBytes,
+				BlockKinds:              append([]string(nil), info.BlockKinds...),
+				BlockKindCounts:         cloneStringIntMap(info.BlockKindCounts),
+				BlockKindBytes:          cloneStringIntMap(info.BlockKindBytes),
+				MessageCount:            info.MessageCount,
+				SystemMessages:          info.SystemMessages,
+				HiddenMessages:          info.HiddenMessages,
+				ToolCount:               info.ToolCount,
+				StablePrefix:            info.StablePrefix,
+				DynamicBytes:            info.DynamicBytes,
+				SystemBytes:             info.SystemBytes,
+				StablePrefixBytes:       info.StablePrefixBytes,
+				MessageBytes:            info.MessageBytes,
+				ToolSchemaBytes:         info.ToolSchemaBytes,
+				LoadableToolCount:       info.LoadableToolCount,
+				LoadableToolSchemaBytes: info.LoadableToolSchemaBytes,
+				LoadableToolSurfaceHash: info.LoadableToolSurfaceHash,
+				SystemHash:              info.SystemHash,
+				StablePrefixHash:        info.StablePrefixHash,
+				ToolSurfaceHash:         info.ToolSurfaceHash,
+				PromptCacheKey:          info.PromptCacheKey,
 			})
 		}
 	}
@@ -429,6 +443,9 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	runResult, runErr := rt.StreamRunner.RunWithCallback(ctx, history, nil)
 	result.InputTokens = runResult.InputTokens
 	result.OutputTokens = runResult.OutputTokens
+	result.CacheCreationTokens = runResult.CacheCreationTokens
+	result.CacheReadTokens = runResult.CacheReadTokens
+	result.CacheHitRate = evalharness.CacheHitRate(result.InputTokens, result.CacheReadTokens)
 	result.Turns = countAssistantTurns(runResult.NewMessages)
 	if rt.Toolkit != nil {
 		records := rt.Toolkit.ToolTelemetry()
@@ -1025,8 +1042,13 @@ func summarizeEvalResults(results []evalharness.Result) evalSummary {
 		if result.Success {
 			summary.Passed++
 		}
+		summary.InputTokens += result.InputTokens
+		summary.OutputTokens += result.OutputTokens
+		summary.CacheCreationTokens += result.CacheCreationTokens
+		summary.CacheReadTokens += result.CacheReadTokens
 	}
 	summary.Failed = summary.Total - summary.Passed
+	summary.CacheHitRate = evalharness.CacheHitRate(summary.InputTokens, summary.CacheReadTokens)
 	return summary
 }
 
@@ -1316,13 +1338,17 @@ func writeSessionTraceReplaySummary(path string, summary sessiontrace.ReplaySumm
 
 func printEvalReport(report evalReport) {
 	fmt.Printf("eval: %d/%d passed in %dms\n", report.Summary.Passed, report.Summary.Total, report.DurationMS)
+	if report.Summary.InputTokens > 0 || report.Summary.OutputTokens > 0 || report.Summary.CacheReadTokens > 0 || report.Summary.CacheCreationTokens > 0 {
+		fmt.Printf("tokens: input=%d output=%d cache_read=%d cache_creation=%d cache_hit_rate=%.2f\n",
+			report.Summary.InputTokens, report.Summary.OutputTokens, report.Summary.CacheReadTokens, report.Summary.CacheCreationTokens, report.Summary.CacheHitRate)
+	}
 	for _, result := range report.Results {
 		status := "FAIL"
 		if result.Success {
 			status = "PASS"
 		}
-		fmt.Printf("%s %s turns=%d tools=%d input=%d output=%d duration=%dms\n",
-			status, result.TaskID, result.Turns, result.ToolCalls, result.InputTokens, result.OutputTokens, result.DurationMS)
+		fmt.Printf("%s %s turns=%d tools=%d input=%d output=%d cache_read=%d cache_creation=%d cache_hit_rate=%.2f duration=%dms\n",
+			status, result.TaskID, result.Turns, result.ToolCalls, result.InputTokens, result.OutputTokens, result.CacheReadTokens, result.CacheCreationTokens, result.CacheHitRate, result.DurationMS)
 		if len(result.ToolNames) > 0 {
 			fmt.Printf("  tool_names: %s\n", strings.Join(result.ToolNames, ","))
 		}
@@ -1379,6 +1405,10 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	}
 	if summary.ModelProfile != nil {
 		fmt.Printf("  model_profile: %s/%s family=%s write_mode=%s\n", summary.ModelProfile.ProviderName, summary.ModelProfile.Model, summary.ModelProfile.Family, summary.ModelProfile.DefaultWriteMode)
+	}
+	if summary.Task != nil && (summary.Task.InputTokens > 0 || summary.Task.OutputTokens > 0 || summary.Task.CacheReadTokens > 0 || summary.Task.CacheCreationTokens > 0) {
+		fmt.Printf("  tokens: input=%d output=%d cache_read=%d cache_creation=%d cache_hit_rate=%.2f\n",
+			summary.Task.InputTokens, summary.Task.OutputTokens, summary.Task.CacheReadTokens, summary.Task.CacheCreationTokens, summary.Task.CacheHitRate)
 	}
 	if len(summary.ToolInventory) > 0 {
 		fmt.Printf("  tool_inventory: %d tools\n", len(summary.ToolInventory))
@@ -1493,8 +1523,14 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 		} else if summary.LatestTurn.ProviderName != "" || summary.LatestTurn.Model != "" {
 			fmt.Printf("  model_profile: %s/%s api_model=%s\n", summary.LatestTurn.ProviderName, summary.LatestTurn.Model, summary.LatestTurn.APIModel)
 		}
-		if summary.LatestTurn.InputTokens > 0 || summary.LatestTurn.OutputTokens > 0 {
-			fmt.Printf("  tokens: input=%d output=%d\n", summary.LatestTurn.InputTokens, summary.LatestTurn.OutputTokens)
+		if summary.LatestTurn.InputTokens > 0 || summary.LatestTurn.OutputTokens > 0 || summary.LatestTurn.CacheReadTokens > 0 || summary.LatestTurn.CacheCreationTokens > 0 {
+			promptTokens := summary.LatestTurn.InputTokens + summary.LatestTurn.CacheReadTokens
+			cacheHitRate := 0.0
+			if promptTokens > 0 {
+				cacheHitRate = float64(summary.LatestTurn.CacheReadTokens) / float64(promptTokens)
+			}
+			fmt.Printf("  tokens: input=%d output=%d cache_read=%d cache_creation=%d cache_hit_rate=%.2f\n",
+				summary.LatestTurn.InputTokens, summary.LatestTurn.OutputTokens, summary.LatestTurn.CacheReadTokens, summary.LatestTurn.CacheCreationTokens, cacheHitRate)
 		}
 	}
 	if len(summary.ContextRequests) > 0 {

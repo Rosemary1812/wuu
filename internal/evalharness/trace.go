@@ -35,6 +35,9 @@ type TraceTask struct {
 	WorkflowIssues       []string               `json:"workflow_issues,omitempty"`
 	InputTokens          int                    `json:"input_tokens"`
 	OutputTokens         int                    `json:"output_tokens"`
+	CacheCreationTokens  int                    `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens      int                    `json:"cache_read_tokens,omitempty"`
+	CacheHitRate         float64                `json:"cache_hit_rate,omitempty"`
 	VerificationReason   string                 `json:"verification_reason,omitempty"`
 	VerificationEvidence []VerificationEvidence `json:"verification_evidence,omitempty"`
 	Error                string                 `json:"error,omitempty"`
@@ -180,6 +183,9 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 			WorkflowIssues:       append([]string(nil), result.WorkflowIssues...),
 			InputTokens:          result.InputTokens,
 			OutputTokens:         result.OutputTokens,
+			CacheCreationTokens:  result.CacheCreationTokens,
+			CacheReadTokens:      result.CacheReadTokens,
+			CacheHitRate:         result.CacheHitRate,
 			VerificationReason:   result.VerificationReason,
 			VerificationEvidence: append([]VerificationEvidence(nil), result.VerificationEvidence...),
 			Error:                result.Error,

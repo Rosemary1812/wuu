@@ -825,6 +825,22 @@ func TestResolveEvalTasksExplicitIDBypassesSurfaceFilter(t *testing.T) {
 	}
 }
 
+func TestSummarizeEvalResultsIncludesCacheMetrics(t *testing.T) {
+	summary := summarizeEvalResults([]evalharness.Result{
+		{Success: true, InputTokens: 70, OutputTokens: 10, CacheReadTokens: 30, CacheCreationTokens: 20},
+		{Success: false, InputTokens: 30, OutputTokens: 5, CacheReadTokens: 70, CacheCreationTokens: 10},
+	})
+	if summary.Total != 2 || summary.Passed != 1 || summary.Failed != 1 {
+		t.Fatalf("unexpected summary counts: %+v", summary)
+	}
+	if summary.InputTokens != 100 || summary.OutputTokens != 15 || summary.CacheReadTokens != 100 || summary.CacheCreationTokens != 30 {
+		t.Fatalf("unexpected summary token metrics: %+v", summary)
+	}
+	if summary.CacheHitRate != evalharness.CacheHitRate(100, 100) {
+		t.Fatalf("unexpected cache hit rate: %+v", summary)
+	}
+}
+
 func evalTaskIDSet(tasks []evalharness.Task) map[string]bool {
 	out := make(map[string]bool, len(tasks))
 	for _, task := range tasks {

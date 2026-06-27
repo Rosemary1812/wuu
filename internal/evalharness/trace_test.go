@@ -12,21 +12,24 @@ import (
 
 func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	events := TraceEvents(Result{
-		TaskID:             "task-1",
-		TaskName:           "Task One",
-		Success:            true,
-		DurationMS:         123,
-		Turns:              2,
-		ToolCalls:          1,
-		ToolNames:          []string{"run_shell"},
-		ToolSequence:       []string{"read_file", "run_shell", "run_shell"},
-		ForbiddenToolsUsed: []string{"create_workflow"},
-		MissingToolCalls:   []string{"checkpoint action=restore"},
-		MissingToolSeq:     []string{"apply_patch contains=checkpoint_result.txt"},
-		WorkflowIssues:     []string{"run-1:missing_reports=worker-1"},
-		InputTokens:        10,
-		OutputTokens:       20,
-		VerificationReason: "passed",
+		TaskID:              "task-1",
+		TaskName:            "Task One",
+		Success:             true,
+		DurationMS:          123,
+		Turns:               2,
+		ToolCalls:           1,
+		ToolNames:           []string{"run_shell"},
+		ToolSequence:        []string{"read_file", "run_shell", "run_shell"},
+		ForbiddenToolsUsed:  []string{"create_workflow"},
+		MissingToolCalls:    []string{"checkpoint action=restore"},
+		MissingToolSeq:      []string{"apply_patch contains=checkpoint_result.txt"},
+		WorkflowIssues:      []string{"run-1:missing_reports=worker-1"},
+		InputTokens:         10,
+		OutputTokens:        20,
+		CacheReadTokens:     6,
+		CacheCreationTokens: 4,
+		CacheHitRate:        CacheHitRate(10, 6),
+		VerificationReason:  "passed",
 		VerificationEvidence: []VerificationEvidence{{
 			Check:    "go tests",
 			Passed:   true,
@@ -108,6 +111,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	}
 	if len(task.ForbiddenToolsUsed) != 1 || task.ForbiddenToolsUsed[0] != "create_workflow" {
 		t.Fatalf("task event missing forbidden tools: %+v", task)
+	}
+	if task.InputTokens != 10 || task.OutputTokens != 20 || task.CacheReadTokens != 6 || task.CacheCreationTokens != 4 || task.CacheHitRate != CacheHitRate(10, 6) {
+		t.Fatalf("task event missing token/cache metrics: %+v", task)
 	}
 	obs, ok := events[1].Data.(TraceObservability)
 	if !ok {
