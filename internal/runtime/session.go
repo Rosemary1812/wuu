@@ -880,9 +880,6 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 	return func() []agent.ContextSegment {
 		env := wuucontext.Snapshot(rootDir)
 		blocks := []wuucontext.Block{wuucontext.EnvironmentBlock(env)}
-		if recentDiff, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
-			blocks = append(blocks, recentDiff)
-		}
 		for _, provider := range blockProviders {
 			if provider == nil {
 				continue

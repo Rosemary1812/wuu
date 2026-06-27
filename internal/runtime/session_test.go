@@ -365,7 +365,7 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 
 	segments := EnvContextInjector(root, nil, "")()
 	msgs := flattenContextSegmentsForTest(segments)
-	if len(msgs) < 2 {
+	if len(msgs) == 0 {
 		t.Fatalf("expected split injected context messages, got %+v", segments)
 	}
 	var combined strings.Builder
@@ -383,8 +383,8 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 	if strings.Contains(content, "[REPO_MAP]") || strings.Contains(content, "source: runtime.repo_map") {
 		t.Fatalf("per-turn context should not inject repo map by default:\n%s", content)
 	}
-	if !strings.Contains(content, "[RECENT_DIFF]") {
-		t.Fatalf("per-turn context should still include recent diff when present:\n%s", content)
+	if strings.Contains(content, "[RECENT_DIFF]") {
+		t.Fatalf("per-turn context should not inject recent diff by default:\n%s", content)
 	}
 }
 
