@@ -864,6 +864,30 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 	switch params.Event.Type {
 	case "plan_update":
 		emitJSON(opts, map[string]any{"type": "plan_updated", "thread_id": params.ThreadID, "turn_id": params.TurnID, "plan": params.Event.PlanUpdate})
+	case "request_context":
+		rc := params.Event.RequestContext
+		if rc == nil {
+			return
+		}
+		emitJSON(opts, map[string]any{
+			"type":                  "request_context",
+			"thread_id":             params.ThreadID,
+			"turn_id":               params.TurnID,
+			"step_index":            rc.StepIndex,
+			"transient_messages":    rc.TransientMessages,
+			"content_bytes":         rc.ContentBytes,
+			"block_kinds":           rc.BlockKinds,
+			"message_count":         rc.MessageCount,
+			"system_messages":       rc.SystemMessages,
+			"hidden_messages":       rc.HiddenMessages,
+			"tool_count":            rc.ToolCount,
+			"stable_prefix":         rc.StablePrefix,
+			"dynamic_context_bytes": rc.DynamicBytes,
+			"system_hash":           rc.SystemHash,
+			"stable_prefix_hash":    rc.StablePrefixHash,
+			"tool_surface_hash":     rc.ToolSurfaceHash,
+			"prompt_cache_key":      rc.PromptCacheKey,
+		})
 	}
 }
 

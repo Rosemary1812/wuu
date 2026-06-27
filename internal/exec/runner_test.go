@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 type fakeController struct {
@@ -150,6 +151,29 @@ func TestRunDefaultStdoutOnlyFinalMessage(t *testing.T) {
 
 func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	controller := newFakeController(
+		notification(appserver.NotificationTurnEvent, appserver.TurnEventNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Event: appserver.StreamEventPayload{
+				Type: providers.EventRequestContext,
+				RequestContext: &providers.RequestContextSummary{
+					StepIndex:         1,
+					TransientMessages: 2,
+					ContentBytes:      128,
+					BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
+					MessageCount:      4,
+					SystemMessages:    1,
+					HiddenMessages:    2,
+					ToolCount:         9,
+					StablePrefix:      0,
+					DynamicBytes:      128,
+					SystemHash:        "system-hash",
+					StablePrefixHash:  "stable-hash",
+					ToolSurfaceHash:   "tools-hash",
+					PromptCacheKey:    "thread-1",
+				},
+			},
+		}),
 		notification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{ThreadID: "thread-1", TurnID: "turn-1", Delta: "hello"}),
 		notification(appserver.NotificationTurnUsage, appserver.TurnUsageNotification{ThreadID: "thread-1", TurnID: "turn-1", InputTokens: 3, OutputTokens: 4}),
 		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "hello", TracePath: "/trace.jsonl"}),
@@ -173,9 +197,18 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	for _, event := range events {
 		gotTypes = append(gotTypes, event["type"].(string))
 	}
-	wantTypes := []string{"session_configured", "thread_started", "turn_started", "agent_message_delta", "usage_updated", "turn_completed", "result"}
+	wantTypes := []string{"session_configured", "thread_started", "turn_started", "request_context", "agent_message_delta", "usage_updated", "turn_completed", "result"}
 	if !reflect.DeepEqual(gotTypes, wantTypes) {
 		t.Fatalf("event types:\n got: %#v\nwant: %#v\njsonl:\n%s", gotTypes, wantTypes, stdout.String())
+	}
+	requestContext := events[3]
+	if requestContext["tool_count"] != float64(9) ||
+		requestContext["dynamic_context_bytes"] != float64(128) ||
+		requestContext["system_hash"] != "system-hash" ||
+		requestContext["stable_prefix_hash"] != "stable-hash" ||
+		requestContext["tool_surface_hash"] != "tools-hash" ||
+		requestContext["prompt_cache_key"] != "thread-1" {
+		t.Fatalf("unexpected request_context event: %+v", requestContext)
 	}
 	result := events[len(events)-1]
 	if result["status"] != "completed" || result["thread_id"] != "thread-1" || result["turn_id"] != "turn-1" || result["final_message"] != "hello" || result["trace_path"] != "/trace.jsonl" {
