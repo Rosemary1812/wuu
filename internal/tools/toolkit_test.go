@@ -2104,6 +2104,15 @@ func TestToolkit_UpdatePlan_RegisteredInDefinitions(t *testing.T) {
 	}
 	for _, d := range kit.Definitions() {
 		if d.Name == "update_plan" {
+			schema, ok := d.InputSchema["properties"].(map[string]any)
+			if !ok {
+				t.Fatalf("update_plan schema properties missing: %+v", d.InputSchema)
+			}
+			for _, legacy := range []string{"constraints", "pre_write_check", "pre_finish_check"} {
+				if _, ok := schema[legacy]; ok {
+					t.Fatalf("update_plan schema should not expose legacy field %q: %+v", legacy, schema)
+				}
+			}
 			return
 		}
 	}
@@ -2223,44 +2232,7 @@ func TestToolkit_UpdatePlan_StoresCurrentPlan(t *testing.T) {
 	}
 }
 
-func TestToolkit_UpdatePlan_StoresConstraintLedger(t *testing.T) {
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name: "update_plan",
-		Arguments: `{
-			"explanation":"track constraints",
-			"plan":[{"step":"edit","status":"in_progress"}],
-			"constraints":[{"id":"c1","text":"Do not add dependencies","source":"user","status":"active"}],
-			"pre_write_check":["c1"],
-			"pre_finish_check":["tests passed"]
-		}`,
-	})
-	if err != nil {
-		t.Fatalf("update_plan: %v", err)
-	}
-
-	got, ok := kit.CurrentPlan()
-	if !ok {
-		t.Fatal("expected stored plan")
-	}
-	if len(got.Constraints) != 1 || got.Constraints[0].Text != "Do not add dependencies" {
-		t.Fatalf("constraint ledger not stored: %+v", got)
-	}
-	if len(got.PreWriteCheck) != 1 || got.PreWriteCheck[0] != "c1" {
-		t.Fatalf("pre_write_check not stored: %+v", got)
-	}
-	got.Constraints[0].Text = "mutated"
-	gotAgain, _ := kit.CurrentPlan()
-	if gotAgain.Constraints[0].Text != "Do not add dependencies" {
-		t.Fatalf("current plan should defensively copy constraints: %+v", gotAgain)
-	}
-}
-
-func TestToolkit_UpdatePlan_RejectsEmptyConstraintText(t *testing.T) {
+func TestToolkit_UpdatePlan_RejectsLegacyConstraintLedgerFields(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -2268,37 +2240,34 @@ func TestToolkit_UpdatePlan_RejectsEmptyConstraintText(t *testing.T) {
 	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "update_plan",
-		Arguments: `{"plan":[{"step":"edit","status":"in_progress"}],"constraints":[{"id":"c1","text":"  "}]}`,
+		Arguments: `{"plan":[{"step":"edit","status":"in_progress"}],"constraints":[{"id":"c1","text":"Do not add dependencies"}]}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "requires text") {
-		t.Fatalf("expected constraint text validation error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected legacy constraint field rejection, got: %v", err)
 	}
 }
 
-func TestToolkit_PlanContextBlocksIncludeConstraintLedger(t *testing.T) {
+func TestToolkit_PlanContextBlocksOnlyIncludeVisiblePlan(t *testing.T) {
 	blocks := PlanSnapshotContextBlocks(PlanSnapshot{
-		Explanation: "track constraints",
+		Explanation: "track work",
 		Plan: []PlanItem{
 			{Step: "inspect", Status: PlanStatusCompleted},
 			{Step: "edit", Status: PlanStatusInProgress},
 		},
-		Constraints: []PlanConstraint{{
-			ID:     "c1",
-			Text:   "Do not add dependencies",
-			Source: "user",
-			Status: "active",
-		}},
-		PreWriteCheck:  []string{"c1"},
-		PreFinishCheck: []string{"tests passed"},
 	})
 
-	if len(blocks) != 2 {
-		t.Fatalf("expected task state and constraint ledger blocks, got %+v", blocks)
+	if len(blocks) != 1 {
+		t.Fatalf("expected only task state block, got %+v", blocks)
 	}
-	rendered := blocks[0].Content + "\n" + blocks[1].Content
-	for _, want := range []string{"track constraints", "[completed] inspect", "[in_progress] edit", "constraints:", "c1 [active source=user]", "pre_write_check:", "pre_finish_check:"} {
+	rendered := blocks[0].Content
+	for _, want := range []string{"track work", "[completed] inspect", "[in_progress] edit"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("plan context block missing %q:\n%s", want, rendered)
+		}
+	}
+	for _, unwanted := range []string{"constraints:", "pre_write_check:", "pre_finish_check:"} {
+		if strings.Contains(rendered, unwanted) {
+			t.Fatalf("plan context block should not include %q:\n%s", unwanted, rendered)
 		}
 	}
 }
@@ -2345,7 +2314,7 @@ func TestToolkit_RestorePlanFromHistory(t *testing.T) {
 			ToolCalls: []providers.ToolCall{{
 				ID:        "call-new",
 				Name:      "update_plan",
-				Arguments: `{"explanation":"latest","plan":[{"step":"inspect","status":"completed"},{"step":"report","status":"in_progress"}]}`,
+				Arguments: `{"explanation":"latest","plan":[{"step":"inspect","status":"completed"},{"step":"report","status":"in_progress"}],"constraints":[{"id":"c1","text":"legacy"}],"pre_write_check":["c1"],"pre_finish_check":["done"]}`,
 			}},
 		},
 	}

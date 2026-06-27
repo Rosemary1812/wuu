@@ -876,7 +876,7 @@ func TestDefaultSystemPrompt_UpdatePlanDiscipline(t *testing.T) {
 		"visible checklist",
 		"update_plan",
 		"exactly one item in_progress",
-		"constraints that need a visible checklist",
+		"work that needs a visible checklist",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include update_plan guidance %q: %q", want, prompt)

@@ -19,18 +19,8 @@ type PlanItem struct {
 }
 
 type PlanSnapshot struct {
-	Explanation    string           `json:"explanation,omitempty"`
-	Plan           []PlanItem       `json:"plan"`
-	Constraints    []PlanConstraint `json:"constraints,omitempty"`
-	PreWriteCheck  []string         `json:"pre_write_check,omitempty"`
-	PreFinishCheck []string         `json:"pre_finish_check,omitempty"`
-}
-
-type PlanConstraint struct {
-	ID     string `json:"id,omitempty"`
-	Text   string `json:"text"`
-	Source string `json:"source,omitempty"`
-	Status string `json:"status,omitempty"`
+	Explanation string     `json:"explanation,omitempty"`
+	Plan        []PlanItem `json:"plan"`
 }
 
 type PlanStatus string
@@ -64,15 +54,10 @@ func (s *planState) get() (PlanSnapshot, bool) {
 
 func clonePlanSnapshot(snapshot PlanSnapshot) PlanSnapshot {
 	out := PlanSnapshot{
-		Explanation:    snapshot.Explanation,
-		PreWriteCheck:  append([]string(nil), snapshot.PreWriteCheck...),
-		PreFinishCheck: append([]string(nil), snapshot.PreFinishCheck...),
+		Explanation: snapshot.Explanation,
 	}
 	if len(snapshot.Plan) > 0 {
 		out.Plan = append([]PlanItem(nil), snapshot.Plan...)
-	}
-	if len(snapshot.Constraints) > 0 {
-		out.Constraints = append([]PlanConstraint(nil), snapshot.Constraints...)
 	}
 	return out
 }
@@ -91,9 +76,6 @@ func (t *Toolkit) PlanContextBlocks() []wuucontext.Block {
 func PlanSnapshotContextBlocks(snapshot PlanSnapshot) []wuucontext.Block {
 	var blocks []wuucontext.Block
 	if block, ok := planStateBlock(snapshot); ok {
-		blocks = append(blocks, block)
-	}
-	if block, ok := constraintLedgerBlock(snapshot); ok {
 		blocks = append(blocks, block)
 	}
 	return blocks
@@ -121,57 +103,6 @@ func planStateBlock(snapshot PlanSnapshot) (wuucontext.Block, bool) {
 	}, true
 }
 
-func constraintLedgerBlock(snapshot PlanSnapshot) (wuucontext.Block, bool) {
-	if len(snapshot.Constraints) == 0 && len(snapshot.PreWriteCheck) == 0 && len(snapshot.PreFinishCheck) == 0 {
-		return wuucontext.Block{}, false
-	}
-	var b strings.Builder
-	if len(snapshot.Constraints) > 0 {
-		b.WriteString("constraints:\n")
-		for _, c := range snapshot.Constraints {
-			label := strings.TrimSpace(c.ID)
-			if label == "" {
-				label = "constraint"
-			}
-			status := strings.TrimSpace(c.Status)
-			if status == "" {
-				status = "active"
-			}
-			source := strings.TrimSpace(c.Source)
-			if source != "" {
-				source = " source=" + source
-			}
-			fmt.Fprintf(&b, "- %s [%s%s]: %s\n", label, status, source, strings.TrimSpace(c.Text))
-		}
-	}
-	writeChecks := trimStringSlice(snapshot.PreWriteCheck)
-	if len(writeChecks) > 0 {
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString("pre_write_check:\n")
-		for _, item := range writeChecks {
-			fmt.Fprintf(&b, "- %s\n", item)
-		}
-	}
-	finishChecks := trimStringSlice(snapshot.PreFinishCheck)
-	if len(finishChecks) > 0 {
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString("pre_finish_check:\n")
-		for _, item := range finishChecks {
-			fmt.Fprintf(&b, "- %s\n", item)
-		}
-	}
-	return wuucontext.Block{
-		Kind:    wuucontext.BlockConstraintLedger,
-		Title:   "Active task constraints",
-		Source:  "update_plan",
-		Content: strings.TrimRight(b.String(), "\n"),
-	}, true
-}
-
 // RestorePlanFromHistory restores the latest valid update_plan snapshot from
 // persisted assistant tool calls. It does not call OnPlanUpdated because
 // recovery is state hydration, not a fresh tool update.
@@ -189,7 +120,7 @@ func (t *Toolkit) RestorePlanFromHistory(history []providers.ChatMessage) (bool,
 			if call.Name != "update_plan" {
 				continue
 			}
-			snapshot, err := decodePlanSnapshot(call.Arguments)
+			snapshot, err := decodeLegacyPlanSnapshot(call.Arguments)
 			if err != nil {
 				return false, fmt.Errorf("restore update_plan arguments: %w", err)
 			}
@@ -247,30 +178,6 @@ func (t *UpdatePlanTool) Definition() providers.ToolDefinition {
 						"required": []string{"step", "status"},
 					},
 				},
-				"constraints": map[string]any{
-					"type":        "array",
-					"description": "Optional active constraint ledger for this task. Use it to preserve user constraints, acceptance criteria, and non-goals that must be checked before writing or finishing.",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"id":     map[string]any{"type": "string", "description": "Stable short id such as c1."},
-							"text":   map[string]any{"type": "string", "description": "Concrete constraint, acceptance criterion, or non-goal."},
-							"source": map[string]any{"type": "string", "description": "Where the constraint came from, such as user, AGENTS.md, workflow, or test."},
-							"status": map[string]any{"type": "string", "description": "active, satisfied, superseded, or rejected."},
-						},
-						"required": []string{"text"},
-					},
-				},
-				"pre_write_check": map[string]any{
-					"type":        "array",
-					"description": "Optional checklist item ids or text to verify before mutating files, command-execution state, workflow state, or external systems.",
-					"items":       map[string]any{"type": "string"},
-				},
-				"pre_finish_check": map[string]any{
-					"type":        "array",
-					"description": "Optional checklist item ids or text to verify before claiming the task is complete.",
-					"items":       map[string]any{"type": "string"},
-				},
 			},
 			"required": []string{"plan"},
 		},
@@ -293,20 +200,44 @@ func (t *UpdatePlanTool) Execute(_ context.Context, argsJSON string) (string, er
 }
 
 func decodePlanSnapshot(raw string) (PlanSnapshot, error) {
+	var snapshot PlanSnapshot
+	if err := decodeJSONStrict(raw, &snapshot); err != nil {
+		return PlanSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func decodeLegacyPlanSnapshot(raw string) (PlanSnapshot, error) {
+	var legacy struct {
+		Explanation    string          `json:"explanation,omitempty"`
+		Plan           []PlanItem      `json:"plan"`
+		Constraints    json.RawMessage `json:"constraints,omitempty"`
+		PreWriteCheck  json.RawMessage `json:"pre_write_check,omitempty"`
+		PreFinishCheck json.RawMessage `json:"pre_finish_check,omitempty"`
+	}
+	if err := decodeJSONStrict(raw, &legacy); err != nil {
+		return PlanSnapshot{}, err
+	}
+	return PlanSnapshot{
+		Explanation: legacy.Explanation,
+		Plan:        legacy.Plan,
+	}, nil
+}
+
+func decodeJSONStrict(raw string, out any) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		trimmed = "{}"
 	}
 	decoder := json.NewDecoder(strings.NewReader(trimmed))
 	decoder.DisallowUnknownFields()
-	var snapshot PlanSnapshot
-	if err := decoder.Decode(&snapshot); err != nil {
-		return PlanSnapshot{}, fmt.Errorf("invalid tool arguments: %w", err)
+	if err := decoder.Decode(out); err != nil {
+		return fmt.Errorf("invalid tool arguments: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return PlanSnapshot{}, errors.New("invalid tool arguments: multiple JSON values")
+		return errors.New("invalid tool arguments: multiple JSON values")
 	}
-	return snapshot, nil
+	return nil
 }
 
 func validatePlan(snapshot PlanSnapshot) error {
@@ -327,11 +258,6 @@ func validatePlan(snapshot PlanSnapshot) error {
 			inProgress++
 		default:
 			return fmt.Errorf("plan item %d has invalid status %q", i, item.Status)
-		}
-	}
-	for i, constraint := range snapshot.Constraints {
-		if strings.TrimSpace(constraint.Text) == "" {
-			return fmt.Errorf("constraint item %d requires text", i)
 		}
 	}
 	if inProgress > 1 {
