@@ -13,7 +13,7 @@ import (
 
 const requestShapeHashBytes = 16
 
-func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []providers.ToolDefinition, hint *providers.CacheHint) RequestContextInfo {
+func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []providers.ToolDefinition, hint *providers.CacheHint, systemSections []SystemPromptSectionInfo) RequestContextInfo {
 	messages := assembly.Messages
 	systemMessages := systemMessageCount(messages)
 	stablePrefix := 0
@@ -47,6 +47,7 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 		StablePrefixHash:  hashMessagesForRequestShape(messages[:stableEnd]),
 		ToolSurfaceHash:   hashToolsForRequestShape(tools),
 		PromptCacheKey:    promptCacheKey,
+		SystemSections:    cloneSystemPromptSections(systemSections),
 	}
 
 	seenKinds := make(map[string]struct{})
@@ -87,6 +88,20 @@ func requestContextInfo(stepIndex int, assembly RequestAssembly, tools []provide
 		}
 	}
 	return info
+}
+
+func cloneSystemPromptSections(sections []SystemPromptSectionInfo) []SystemPromptSectionInfo {
+	if len(sections) == 0 {
+		return nil
+	}
+	out := make([]SystemPromptSectionInfo, 0, len(sections))
+	for _, section := range sections {
+		if strings.TrimSpace(section.Key) == "" && section.Bytes == 0 && strings.TrimSpace(section.Hash) == "" {
+			continue
+		}
+		out = append(out, section)
+	}
+	return out
 }
 
 func messageBytesForRequestShape(messages []providers.ChatMessage) int {

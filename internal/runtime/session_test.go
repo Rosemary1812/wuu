@@ -2182,6 +2182,16 @@ func TestNewThreadRuntimeCreatesIsolatedMutableRuntime(t *testing.T) {
 	if first.StreamRunner == rt.StreamRunner || second.StreamRunner == rt.StreamRunner || first.StreamRunner == second.StreamRunner {
 		t.Fatal("thread runtimes must not share stream runner instances")
 	}
+	if len(rt.BaseSystemPromptSections) == 0 {
+		t.Fatal("base system prompt should expose section metadata")
+	}
+	if len(first.StreamRunner.SystemPromptSections) != len(rt.BaseSystemPromptSections) {
+		t.Fatalf("thread stream runner lost system prompt sections: got %d want %d", len(first.StreamRunner.SystemPromptSections), len(rt.BaseSystemPromptSections))
+	}
+	if first.StreamRunner.SystemPromptSections[0].Key != rt.BaseSystemPromptSections[0].Key ||
+		first.StreamRunner.SystemPromptSections[0].Hash != rt.BaseSystemPromptSections[0].Hash {
+		t.Fatalf("thread stream runner copied wrong system prompt section: got %+v want %+v", first.StreamRunner.SystemPromptSections[0], rt.BaseSystemPromptSections[0])
+	}
 	if first.StreamRunner.PromptCacheKey != "thread-a" || second.StreamRunner.PromptCacheKey != "thread-b" {
 		t.Fatalf("unexpected thread prompt cache keys: first=%q second=%q", first.StreamRunner.PromptCacheKey, second.StreamRunner.PromptCacheKey)
 	}

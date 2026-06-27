@@ -126,6 +126,16 @@ type RequestContextInfo struct {
 	StablePrefixHash  string
 	ToolSurfaceHash   string
 	PromptCacheKey    string
+	SystemSections    []SystemPromptSectionInfo
+}
+
+// SystemPromptSectionInfo describes one section of the assembled system prompt
+// without exposing the raw prompt text.
+type SystemPromptSectionInfo struct {
+	Key    string
+	Static bool
+	Bytes  int
+	Hash   string
 }
 
 // LoopConfig bundles every knob the shared loop needs. All callbacks
@@ -179,6 +189,9 @@ type LoopConfig struct {
 	// and before each provider request. Returned segments are assembled into
 	// the provider request without being appended to live or durable history.
 	BeforeRequestContext func() []ContextSegment
+	// SystemPromptSections is metadata for the stable system prompt in the
+	// live history. It is emitted as telemetry only and never sent to providers.
+	SystemPromptSections []SystemPromptSectionInfo
 	// OnRequestContext receives a metadata-only summary of request-only model
 	// context assembled before a request.
 	OnRequestContext func(info RequestContextInfo)

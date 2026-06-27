@@ -55,12 +55,13 @@ type ToolContextProvider interface {
 // around RunToolLoop that always executes through the streaming Step
 // path; unary clients are adapted underneath via AdaptStreamClient.
 type Runner struct {
-	Client       providers.Client
-	Tools        ToolExecutor
-	Model        string
-	SystemPrompt string
-	MaxSteps     int
-	Temperature  float64
+	Client               providers.Client
+	Tools                ToolExecutor
+	Model                string
+	SystemPrompt         string
+	SystemPromptSections []SystemPromptSectionInfo
+	MaxSteps             int
+	Temperature          float64
 	// ContextWindowOverride pins the context window for this run
 	// instead of consulting the known-model registry. Zero disables
 	// proactive compaction when the model is unknown.
@@ -138,6 +139,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		OutputReserveTokens:     r.OutputReserveTokens,
 		CompactThresholdPct:     r.CompactThresholdPct,
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
+		SystemPromptSections:    cloneSystemPromptSections(r.SystemPromptSections),
 		OnUsage:                 onUsage,
 		PostToolRewrite:         compact.RewriteHistoryFromInternalToolMessagesWithContext,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {

@@ -32,9 +32,12 @@ type StreamRunner struct {
 	Model        string
 	APIModel     string
 	SystemPrompt string
-	MaxSteps     int
-	Temperature  float64
-	OnEvent      StreamCallback
+	// SystemPromptSections mirrors SystemPrompt as metadata only, allowing
+	// request telemetry to explain the stable prompt without exposing text.
+	SystemPromptSections []SystemPromptSectionInfo
+	MaxSteps             int
+	Temperature          float64
+	OnEvent              StreamCallback
 
 	// Bus, when non-nil, publishes all stream events to the event bus
 	// in addition to OnEvent. This decouples the core agent loop from
@@ -127,9 +130,7 @@ func (r *StreamRunner) Run(ctx context.Context, prompt string) (string, error) {
 		return "", errors.New("prompt is required")
 	}
 	var history []providers.ChatMessage
-	r.sysPromptMu.RLock()
-	sysPrompt := r.SystemPrompt
-	r.sysPromptMu.RUnlock()
+	sysPrompt, _ := r.systemPromptSnapshot()
 	if strings.TrimSpace(sysPrompt) != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: sysPrompt})
 	}
@@ -148,9 +149,22 @@ func (r *StreamRunner) Run(ctx context.Context, prompt string) (string, error) {
 // UpdateSystemPrompt safely updates the system prompt at runtime.
 // The new prompt takes effect on the next turn.
 func (r *StreamRunner) UpdateSystemPrompt(newPrompt string) {
+	r.UpdateSystemPromptWithSections(newPrompt, nil)
+}
+
+// UpdateSystemPromptWithSections safely updates the system prompt and its
+// telemetry metadata at runtime. The new prompt takes effect on the next turn.
+func (r *StreamRunner) UpdateSystemPromptWithSections(newPrompt string, sections []SystemPromptSectionInfo) {
 	r.sysPromptMu.Lock()
 	defer r.sysPromptMu.Unlock()
 	r.SystemPrompt = newPrompt
+	r.SystemPromptSections = cloneSystemPromptSections(sections)
+}
+
+func (r *StreamRunner) systemPromptSnapshot() (string, []SystemPromptSectionInfo) {
+	r.sysPromptMu.RLock()
+	defer r.sysPromptMu.RUnlock()
+	return r.SystemPrompt, cloneSystemPromptSections(r.SystemPromptSections)
 }
 
 func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.ChatMessage, onEvent StreamCallback) (LoopResult, error) {
@@ -203,6 +217,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	if r.DisableAutoCompact {
 		maxCtx = 0 // disables the proactive trigger inside RunToolLoop
 	}
+	_, systemPromptSections := r.systemPromptSnapshot()
 	beforeStep := r.BeforeStep
 	if beforeStep != nil {
 		beforeStep = func() []providers.ChatMessage {
@@ -221,6 +236,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
 		BeforeStep:              beforeStep,
 		BeforeRequestContext:    r.BeforeRequestContext,
+		SystemPromptSections:    systemPromptSections,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)
@@ -464,7 +480,24 @@ func requestContextSummary(info RequestContextInfo) *providers.RequestContextSum
 		StablePrefixHash:  info.StablePrefixHash,
 		ToolSurfaceHash:   info.ToolSurfaceHash,
 		PromptCacheKey:    info.PromptCacheKey,
+		SystemSections:    systemPromptSectionSummaries(info.SystemSections),
 	}
+}
+
+func systemPromptSectionSummaries(sections []SystemPromptSectionInfo) []providers.SystemPromptSectionSummary {
+	if len(sections) == 0 {
+		return nil
+	}
+	out := make([]providers.SystemPromptSectionSummary, 0, len(sections))
+	for _, section := range sections {
+		out = append(out, providers.SystemPromptSectionSummary{
+			Key:    section.Key,
+			Static: section.Static,
+			Bytes:  section.Bytes,
+			Hash:   section.Hash,
+		})
+	}
+	return out
 }
 
 // streamStep adapts providers.StreamClient (with reconnect) to the

@@ -187,7 +187,7 @@ func RunToolLoop(
 			req.Tools = cfg.Tools.Definitions()
 		}
 		if cfg.OnRequestContext != nil {
-			cfg.OnRequestContext(requestContextInfo(stepIdx, assembly, req.Tools, cacheHint))
+			cfg.OnRequestContext(requestContextInfo(stepIdx, assembly, req.Tools, cacheHint, cfg.SystemPromptSections))
 		}
 
 		result, err := step.Execute(ctx, req)

@@ -82,6 +82,7 @@ type Session struct {
 	ModelRoles                  modelroles.Set
 	ModelBudget                 modelbudget.Budget
 	BaseSystemPrompt            string
+	BaseSystemPromptSections    []prompt.SectionInfo
 	UserSystemPrompt            string
 	WuuHome                     string
 	ToolPolicy                  config.ToolPolicyConfig
@@ -215,7 +216,9 @@ func NewSession(opts Options) (*Session, error) {
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
 	mainSurface := activeSurface(toolkit)
-	baseSystemPrompt := buildBaseSystemPrompt(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+	baseSystemPrompt := baseSystemPromptResult.Content
+	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
 
 	if toolkit != nil {
 		if err := agentcontrol.EnsureSharedDir(workspaceStateDir); err != nil {
@@ -325,6 +328,7 @@ func NewSession(opts Options) (*Session, error) {
 		Model:                   providerCfg.Model,
 		APIModel:                modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
 		SystemPrompt:            baseSystemPrompt,
+		SystemPromptSections:    baseSystemPromptSections,
 		MaxSteps:                cfg.Agent.MaxSteps,
 		Temperature:             cfg.Agent.Temperature,
 		Effort:                  mainRole.LegacyEffort,
@@ -365,6 +369,7 @@ func NewSession(opts Options) (*Session, error) {
 		ModelRoles:                  roleSelections,
 		ModelBudget:                 modelBudget,
 		BaseSystemPrompt:            baseSystemPrompt,
+		BaseSystemPromptSections:    baseSystemPromptResult.Sections,
 		UserSystemPrompt:            userSystemPrompt,
 		WuuHome:                     wuuHome,
 		ToolPolicy:                  cfg.Agent.ToolPolicy,
@@ -724,6 +729,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		Model:                   base.Model,
 		APIModel:                base.APIModel,
 		SystemPrompt:            base.SystemPrompt,
+		SystemPromptSections:    append([]agent.SystemPromptSectionInfo(nil), base.SystemPromptSections...),
 		MaxSteps:                base.MaxSteps,
 		Temperature:             base.Temperature,
 		OnEvent:                 base.OnEvent,
@@ -1430,7 +1436,7 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		profileMemoryEnabled = true
 		profileMemoryEntries = recallProfileMemory(context.Background(), s.Toolkit.Memory())
 	}
-	baseSystemPrompt := buildBaseSystemPrompt(
+	baseSystemPromptResult := buildBaseSystemPromptResult(
 		s.RootDir,
 		config.DefaultSystemPrompt(),
 		s.UserSystemPrompt,
@@ -1445,14 +1451,20 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		s.Skills,
 		s.Workflows,
 	)
+	baseSystemPrompt := baseSystemPromptResult.Content
 	s.BaseSystemPrompt = baseSystemPrompt
+	s.BaseSystemPromptSections = baseSystemPromptResult.Sections
 	if s.StreamRunner != nil {
-		s.StreamRunner.SystemPrompt = baseSystemPrompt
+		s.StreamRunner.UpdateSystemPromptWithSections(baseSystemPrompt, agentPromptSections(baseSystemPromptResult.Sections))
 	}
 	return baseSystemPrompt
 }
 
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows).Content
+}
+
+func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	pb.AddHarnessAdapter(providerName, model)
@@ -1473,7 +1485,23 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model 
 			pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
 		}
 	}
-	return pb.Build()
+	return pb.BuildWithInfo()
+}
+
+func agentPromptSections(sections []prompt.SectionInfo) []agent.SystemPromptSectionInfo {
+	if len(sections) == 0 {
+		return nil
+	}
+	out := make([]agent.SystemPromptSectionInfo, 0, len(sections))
+	for _, section := range sections {
+		out = append(out, agent.SystemPromptSectionInfo{
+			Key:    section.Key,
+			Static: section.Static,
+			Bytes:  section.Bytes,
+			Hash:   section.Hash,
+		})
+	}
+	return out
 }
 
 func shouldInjectWorkflowGuidance(toolSurface capability.Surface) bool {

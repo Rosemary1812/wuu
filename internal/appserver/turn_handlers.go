@@ -547,6 +547,7 @@ func (s *Server) runTurnWithModelContext(ctx context.Context, th *threadState, t
 			StablePrefixHash:  info.StablePrefixHash,
 			ToolSurfaceHash:   info.ToolSurfaceHash,
 			PromptCacheKey:    info.PromptCacheKey,
+			SystemSections:    requestContextSystemSections(info.SystemSections),
 		})
 	}
 	runner.BeforeStep = func() []providers.ChatMessage {
@@ -1853,6 +1854,22 @@ func truncateUsageTitle(s string) string {
 		return s
 	}
 	return string(r[:max-1]) + "…"
+}
+
+func requestContextSystemSections(sections []agent.SystemPromptSectionInfo) []sessiontrace.SystemSectionRecord {
+	if len(sections) == 0 {
+		return nil
+	}
+	out := make([]sessiontrace.SystemSectionRecord, 0, len(sections))
+	for _, section := range sections {
+		out = append(out, sessiontrace.SystemSectionRecord{
+			Key:    section.Key,
+			Static: section.Static,
+			Bytes:  section.Bytes,
+			Hash:   section.Hash,
+		})
+	}
+	return out
 }
 
 // validateSettingsUsageRange rejects unknown range strings so the

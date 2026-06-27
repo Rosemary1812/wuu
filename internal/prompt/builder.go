@@ -11,6 +11,8 @@
 package prompt
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -21,6 +23,8 @@ import (
 )
 
 const (
+	sectionInfoHashBytes = 16
+
 	// MaxMemoryLines caps a single memory file at 200 lines.
 	MaxMemoryLines = 200
 	// MaxMemoryBytes caps a single memory file at 25 KB.
@@ -38,6 +42,22 @@ type Section struct {
 	Key     string // unique identifier for dedup / replacement
 	Content string
 	Static  bool // true = part of the fixed built-in prefix
+}
+
+// SectionInfo is metadata about one rendered prompt section. It intentionally
+// excludes raw section text so it can be emitted in request telemetry.
+type SectionInfo struct {
+	Key    string
+	Static bool
+	Bytes  int
+	Hash   string
+}
+
+// BuildResult is the rendered prompt plus metadata for each section in final
+// provider-visible order.
+type BuildResult struct {
+	Content  string
+	Sections []SectionInfo
 }
 
 // Builder assembles the final system prompt from sections.
@@ -242,19 +262,47 @@ func workflowProfileNames(profiles []workflow.ProfileRef) string {
 	return strings.Join(names, ", ")
 }
 
-// Build returns the assembled system prompt. Static sections appear
-// first (sorted by insertion order), then dynamic sections.
+// Build returns the assembled system prompt. Static sections appear first
+// (preserving insertion order), then dynamic sections.
 func (b *Builder) Build() string {
-	var statics, dynamics []string
+	return b.BuildWithInfo().Content
+}
+
+// BuildWithInfo returns the assembled system prompt and section metadata.
+func (b *Builder) BuildWithInfo() BuildResult {
+	ordered := b.orderedSections()
+	contents := make([]string, 0, len(ordered))
+	infos := make([]SectionInfo, 0, len(ordered))
+	for _, s := range ordered {
+		contents = append(contents, s.Content)
+		infos = append(infos, SectionInfo{
+			Key:    s.Key,
+			Static: s.Static,
+			Bytes:  len([]byte(s.Content)),
+			Hash:   shortSectionHash(s.Content),
+		})
+	}
+	return BuildResult{
+		Content:  strings.Join(contents, "\n\n"),
+		Sections: infos,
+	}
+}
+
+func (b *Builder) orderedSections() []Section {
+	var statics, dynamics []Section
 	for _, s := range b.sections {
 		if s.Static {
-			statics = append(statics, s.Content)
+			statics = append(statics, s)
 		} else {
-			dynamics = append(dynamics, s.Content)
+			dynamics = append(dynamics, s)
 		}
 	}
-	all := append(statics, dynamics...)
-	return strings.Join(all, "\n\n")
+	return append(statics, dynamics...)
+}
+
+func shortSectionHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:sectionInfoHashBytes])
 }
 
 // TruncateMemory caps content at maxLines and maxBytes, whichever

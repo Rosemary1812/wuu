@@ -869,7 +869,7 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 		if rc == nil {
 			return
 		}
-		emitJSON(opts, map[string]any{
+		payload := map[string]any{
 			"type":                  "request_context",
 			"thread_id":             params.ThreadID,
 			"turn_id":               params.TurnID,
@@ -891,7 +891,11 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 			"stable_prefix_hash":    rc.StablePrefixHash,
 			"tool_surface_hash":     rc.ToolSurfaceHash,
 			"prompt_cache_key":      rc.PromptCacheKey,
-		})
+		}
+		if len(rc.SystemSections) > 0 {
+			payload["system_sections"] = rc.SystemSections
+		}
+		emitJSON(opts, payload)
 	case "provider_state":
 		state := params.Event.ProviderState
 		if state == nil {

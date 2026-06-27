@@ -175,6 +175,12 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					StablePrefixHash:  "stable-hash",
 					ToolSurfaceHash:   "tools-hash",
 					PromptCacheKey:    "thread-1",
+					SystemSections: []providers.SystemPromptSectionSummary{{
+						Key:    "base",
+						Static: true,
+						Bytes:  512,
+						Hash:   "base-hash",
+					}},
 				},
 			},
 		}),
@@ -233,6 +239,14 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		requestContext["tool_surface_hash"] != "tools-hash" ||
 		requestContext["prompt_cache_key"] != "thread-1" {
 		t.Fatalf("unexpected request_context event: %+v", requestContext)
+	}
+	sections, ok := requestContext["system_sections"].([]any)
+	if !ok || len(sections) != 1 {
+		t.Fatalf("request_context missing system_sections: %+v", requestContext)
+	}
+	section, ok := sections[0].(map[string]any)
+	if !ok || section["key"] != "base" || section["static"] != true || section["bytes"] != float64(512) || section["hash"] != "base-hash" {
+		t.Fatalf("unexpected system section: %+v", sections[0])
 	}
 	providerState := events[4]
 	if providerState["provider"] != "openai" ||

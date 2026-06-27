@@ -54,6 +54,12 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			StablePrefixHash:  "prefix-hash",
 			ToolSurfaceHash:   "tool-hash",
 			PromptCacheKey:    "thread-cache-key",
+			SystemSections: []SystemSectionRecord{{
+				Key:    "memory",
+				Static: false,
+				Bytes:  1024,
+				Hash:   "memory-hash",
+			}},
 		}},
 		[]ProviderStateRecord{{
 			Provider:               "openai",
@@ -109,6 +115,7 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 		`"stable_prefix_hash":"prefix-hash"`,
 		`"tool_surface_hash":"tool-hash"`,
 		`"prompt_cache_key":"thread-cache-key"`,
+		`"system_sections":[{"key":"memory","static":false,"bytes":1024,"hash":"memory-hash"}]`,
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("trace should include request shape field %s:\n%s", want, raw)

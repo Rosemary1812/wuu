@@ -711,6 +711,7 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
 					th.execRuntime.StreamRunner.Model = model
 					th.execRuntime.StreamRunner.APIModel = apiModel
+					th.execRuntime.StreamRunner.UpdateSystemPromptWithSections(systemPrompt, s.rt.StreamRunner.SystemPromptSections)
 					th.execRuntime.StreamRunner.Effort = s.currentEffort()
 					th.execRuntime.StreamRunner.Variant = s.currentVariant()
 					th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
