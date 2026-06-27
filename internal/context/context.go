@@ -241,6 +241,7 @@ func renderBlock(block Block) string {
 	if content == "" {
 		return ""
 	}
+	content = enforceBlockTokenBudget(content, block.TokenBudget)
 	kind := block.Kind
 	if strings.TrimSpace(string(kind)) == "" {
 		kind = BlockAdditionalContext
@@ -261,6 +262,80 @@ func renderBlock(block Block) string {
 	}
 	b.WriteString(content)
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func enforceBlockTokenBudget(content string, tokenBudget int) string {
+	if tokenBudget <= 0 || estimateBlockContentTokens(content) <= tokenBudget {
+		return content
+	}
+
+	originalTokens := estimateBlockContentTokens(content)
+	note := fmt.Sprintf("\n[truncated: block content exceeded token_budget %d; original approx %d tokens]", tokenBudget, originalTokens)
+	contentBudget := tokenBudget - estimateBlockContentTokens(note)
+	if contentBudget < 1 {
+		contentBudget = 1
+	}
+	return strings.TrimRight(truncateBlockContent(content, contentBudget), "\n") + note
+}
+
+func truncateBlockContent(content string, tokenBudget int) string {
+	if tokenBudget <= 0 {
+		return ""
+	}
+	if estimateBlockContentTokens(content) <= tokenBudget {
+		return content
+	}
+
+	lines := strings.SplitAfter(content, "\n")
+	var b strings.Builder
+	used := 0
+	for _, line := range lines {
+		lineTokens := estimateBlockContentTokens(line)
+		if used+lineTokens > tokenBudget {
+			break
+		}
+		b.WriteString(line)
+		used += lineTokens
+	}
+	if b.Len() > 0 {
+		return b.String()
+	}
+	return truncateBlockContentLine(content, tokenBudget)
+}
+
+func truncateBlockContentLine(content string, tokenBudget int) string {
+	runes := []rune(content)
+	if len(runes) == 0 || tokenBudget <= 0 {
+		return ""
+	}
+	limit := min(len(runes), tokenBudget*4)
+	for limit > 1 && estimateBlockContentTokens(string(runes[:limit])) > tokenBudget {
+		limit = max(1, limit*9/10)
+	}
+	return string(runes[:limit])
+}
+
+func estimateBlockContentTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	var cjkCount, totalChars int
+	for _, r := range text {
+		totalChars++
+		if isCJK(r) {
+			cjkCount++
+		}
+	}
+	nonCJK := totalChars - cjkCount
+	return (nonCJK / 4) + (cjkCount / 2) + 1
+}
+
+func isCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) ||
+		(r >= 0x3400 && r <= 0x4DBF) ||
+		(r >= 0x3040 && r <= 0x309F) ||
+		(r >= 0x30A0 && r <= 0x30FF) ||
+		(r >= 0xAC00 && r <= 0xD7AF)
 }
 
 func EnvironmentBlock(env EnvInfo) Block {

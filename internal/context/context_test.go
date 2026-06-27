@@ -87,6 +87,29 @@ func TestCompileBlocksRendersTypedContext(t *testing.T) {
 	}
 }
 
+func TestCompileBlocksEnforcesTokenBudget(t *testing.T) {
+	longContent := strings.Repeat("src/internal/really/long/path/to/file.go\n", 200)
+	got := CompileBlocks([]Block{
+		{Kind: BlockRepoMap, Title: "Repo map", Source: "runtime.repo_map", Content: longContent, TokenBudget: 40},
+	})
+
+	for _, want := range []string{
+		"[REPO_MAP]",
+		"token_budget: 40",
+		"[truncated: block content exceeded token_budget 40;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("compiled context missing %q:\n%s", want, got)
+		}
+	}
+	if len(got) >= len(longContent) {
+		t.Fatalf("expected content to be truncated, got %d chars from %d-char input", len(got), len(longContent))
+	}
+	if strings.Count(got, "src/internal/really/long/path/to/file.go") >= 200 {
+		t.Fatalf("expected repeated paths to be truncated:\n%s", got)
+	}
+}
+
 func TestRepoMapBlockSummarizesWorkspace(t *testing.T) {
 	root := t.TempDir()
 	mustWriteContextTestFile(t, filepath.Join(root, "AGENTS.md"), "rules\n")
