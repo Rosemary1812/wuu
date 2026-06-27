@@ -554,7 +554,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			if !activeSurfaceAllowsKnownTool(surface, t.registry.Lookup(d.Name)) {
 				continue
 			}
-			if isDeferredByDefault(d.Name) {
+			if t.shouldDeferByDefault(d.Name) {
 				if !t.isDeferredToolActive(d.Name) {
 					continue
 				}
@@ -567,7 +567,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			continue
 		}
 		if t.toolExposure(d.Name) == ToolExposureDirect {
-			if isDeferredByDefault(d.Name) {
+			if t.shouldDeferByDefault(d.Name) {
 				d.CacheStable = false
 				dynamic = append(dynamic, d)
 				continue
@@ -589,7 +589,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				if !activeSurfaceAllowsKnownTool(surface, tool) {
 					continue
 				}
-				if isDeferredByDefault(tool.Name()) && !t.isDeferredToolActive(tool.Name()) {
+				if t.shouldDeferByDefault(tool.Name()) && !t.isDeferredToolActive(tool.Name()) {
 					continue
 				}
 				d := tool.Definition()
@@ -735,7 +735,7 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 		if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
 			return nil
 		}
-		if isDeferredByDefault(name) && !t.isDeferredToolActive(name) {
+		if t.shouldDeferByDefault(name) && !t.isDeferredToolActive(name) {
 			return fmt.Errorf("tool %q is deferred; call tool_search first to expose it", name)
 		}
 		return nil

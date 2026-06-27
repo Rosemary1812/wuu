@@ -137,7 +137,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 		}
 		return ToolExposureDeferred
 	}
-	if isDeferredByDefault(name) {
+	if t.shouldDeferByDefault(name) {
 		return ToolExposureDeferred
 	}
 	return ToolExposureDirect
@@ -259,6 +259,39 @@ func isDeferredByDefault(name string) bool {
 	}
 	switch name {
 	case "schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow":
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *Toolkit) shouldDeferByDefault(name string) bool {
+	if isDeferredByDefault(name) {
+		return true
+	}
+	if t != nil && t.activeCompiledSurface().ProfileName != "" && isProfileDeferredByDefault(name) {
+		return true
+	}
+	return false
+}
+
+func isProfileDeferredByDefault(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "spawn_agent",
+		"helpme",
+		"send_message",
+		"followup_task",
+		"wait_agent",
+		"await_agents",
+		"close_agent",
+		"list_agents",
+		"workflow_control",
+		"create_goal",
+		"get_goal",
+		"update_goal",
+		"web_search",
+		"web_fetch",
+		"create_agent_profile":
 		return true
 	default:
 		return false

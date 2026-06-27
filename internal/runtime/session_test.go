@@ -502,12 +502,12 @@ description: Legacy user audit workflow.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_control", "workflow_status"} {
+	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status"} {
 		if !defs[name] {
 			t.Fatalf("workflow tool %q missing from Definitions()", name)
 		}
 	}
-	for _, name := range []string{"create_workflow", "run_workflow"} {
+	for _, name := range []string{"create_workflow", "run_workflow", "workflow_control"} {
 		if defs[name] {
 			t.Fatalf("lower-level workflow driver %q should be deferred from Definitions()", name)
 		}
@@ -1547,6 +1547,37 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	}
 	if strings.Contains(prompt, "old prompt") {
 		t.Fatalf("refreshed prompt should not keep stale runner prompt:\n%s", prompt)
+	}
+}
+
+func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
+	promptText := buildBaseSystemPrompt(
+		t.TempDir(),
+		"base prompt",
+		"",
+		"openai-codex",
+		"gpt-5.5",
+		capability.Surface{},
+		nil,
+		nil,
+		false,
+		0,
+		0,
+		[]skills.Skill{{Name: "commit", Description: "Create a commit."}},
+		[]workflow.Definition{{Name: "release", Description: "Release workflow."}},
+	)
+
+	for _, bad := range []string{
+		"Skills provide specialized instructions",
+		"<available_skills>",
+		"Create a commit",
+		"Workflow guidance",
+		"Release workflow",
+		"`start_workflow`",
+	} {
+		if strings.Contains(promptText, bad) {
+			t.Fatalf("no-tools prompt should not advertise tool-loaded guidance %q:\n%s", bad, promptText)
+		}
 	}
 }
 

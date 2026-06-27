@@ -1499,8 +1499,10 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model 
 	if profileMemoryEnabled {
 		pb.AddProfileMemoryWithLimits(profileMemoryEntries, profileMemoryCharLimit, profileUserMemoryCharLimit)
 	}
-	pb.AddSkills(tools.FilterSkillsForSurface(discoveredSkills, toolSurface))
-	pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
+	if toolSurface.ProfileName != "" {
+		pb.AddSkills(tools.FilterSkillsForSurface(discoveredSkills, toolSurface))
+		pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
+	}
 	return pb.Build()
 }
 

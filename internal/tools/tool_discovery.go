@@ -152,16 +152,23 @@ func (t *Toolkit) activateDeferredTools(names ...string) {
 	if len(names) == 0 {
 		return
 	}
+	toActivate := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" || t.isToolDisabled(name) || t.toolExposure(name) != ToolExposureDeferred {
+			continue
+		}
+		toActivate = append(toActivate, name)
+	}
+	if len(toActivate) == 0 {
+		return
+	}
 	t.exposureMu.Lock()
 	defer t.exposureMu.Unlock()
 	if t.activatedDeferredTools == nil {
-		t.activatedDeferredTools = make(map[string]struct{}, len(names))
+		t.activatedDeferredTools = make(map[string]struct{}, len(toActivate))
 	}
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" || !isDeferredByDefault(name) || t.isToolDisabled(name) {
-			continue
-		}
+	for _, name := range toActivate {
 		t.activatedDeferredTools[name] = struct{}{}
 	}
 }

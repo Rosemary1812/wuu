@@ -96,7 +96,7 @@ func TestCompileBlocksEnforcesTokenBudget(t *testing.T) {
 	for _, want := range []string{
 		"[REPO_MAP]",
 		"token_budget: 40",
-		"[truncated: block content exceeded token_budget 40;",
+		"truncated: block content exceeded token_budget 40;",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("compiled context missing %q:\n%s", want, got)

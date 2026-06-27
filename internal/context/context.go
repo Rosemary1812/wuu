@@ -270,7 +270,7 @@ func enforceBlockTokenBudget(content string, tokenBudget int) string {
 	}
 
 	originalTokens := estimateBlockContentTokens(content)
-	note := fmt.Sprintf("\n[truncated: block content exceeded token_budget %d; original approx %d tokens]", tokenBudget, originalTokens)
+	note := fmt.Sprintf("\ntruncated: block content exceeded token_budget %d; original approx %d tokens", tokenBudget, originalTokens)
 	contentBudget := tokenBudget - estimateBlockContentTokens(note)
 	if contentBudget < 1 {
 		contentBudget = 1

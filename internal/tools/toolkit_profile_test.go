@@ -411,6 +411,33 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 	}
 }
 
+func TestActiveProfileDefersAdvancedToolsUntilToolSearch(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+
+	if containsProfileDef(kit.Definitions(), "spawn_agent") {
+		t.Fatalf("spawn_agent should be deferred by default, got %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`})
+	if err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("inactive spawn_agent should ask for tool_search, got %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"spawn_agent","limit":1}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	if !strings.Contains(resp, "spawn_agent") || !containsProfileDef(kit.Definitions(), "spawn_agent") {
+		t.Fatalf("tool_search should expose spawn_agent, response=%s defs=%v", resp, sortedProfileDefNames(kit.Definitions()))
+	}
+}
+
 func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
@@ -565,7 +592,7 @@ func TestActiveSurfaceReturnsCopy(t *testing.T) {
 	}
 }
 
-func TestDefinitionsFilterMatchesSurfaceToolsExactly(t *testing.T) {
+func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -589,8 +616,11 @@ func TestDefinitionsFilterMatchesSurfaceToolsExactly(t *testing.T) {
 		}
 	}
 	for name := range surface.Tools {
-		if _, ok := visible[name]; !ok {
-			t.Fatalf("surface.Tools has %q but Definitions did not include it", name)
+		if _, ok := visible[name]; ok {
+			continue
+		}
+		if !isDeferredByDefault(name) && !isProfileDeferredByDefault(name) {
+			t.Fatalf("surface.Tools has non-deferred %q but Definitions did not include it", name)
 		}
 	}
 }
