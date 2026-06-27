@@ -20,14 +20,17 @@ import (
 // corresponding beta tag in codex-rs responses_websocket.rs.
 const CodexWebSocketBetaTag = "responses_websockets=2026-02-06"
 
-// resolveCodexWebSocketURL converts an https:// base URL into its
-// WebSocket-equivalent wss:// URL. The path component is preserved so
-// callers can target /responses, /responses/compact, etc. without losing
-// the endpoint.
+// resolveCodexWebSocketURL converts an HTTP Responses base URL into its
+// WebSocket-equivalent endpoint. The regular Responses client stores a base
+// URL and appends /responses at dispatch time; the WebSocket path sends the
+// upgrade directly, so it must resolve to the concrete /responses endpoint.
 func resolveCodexWebSocketURL(baseURL string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if trimmed == "" {
 		return "", errors.New("codex websocket: empty base URL")
+	}
+	if !strings.HasSuffix(trimmed, "/responses") && !strings.Contains(trimmed, "/responses/") {
+		trimmed += "/responses"
 	}
 	switch {
 	case strings.HasPrefix(trimmed, "https://"):

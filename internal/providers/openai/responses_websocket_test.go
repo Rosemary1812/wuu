@@ -22,11 +22,13 @@ func TestResolveCodexWebSocketURL(t *testing.T) {
 		want string
 		err  bool
 	}{
-		{"https://chatgpt.com/backend-api/codex", "wss://chatgpt.com/backend-api/codex", false},
-		{"https://chatgpt.com/backend-api/codex/", "wss://chatgpt.com/backend-api/codex", false},
-		{"http://localhost:8080/codex", "ws://localhost:8080/codex", false},
-		{"wss://chatgpt.com/x", "wss://chatgpt.com/x", false},
-		{"ws://localhost:8080/x", "ws://localhost:8080/x", false},
+		{"https://chatgpt.com/backend-api/codex", "wss://chatgpt.com/backend-api/codex/responses", false},
+		{"https://chatgpt.com/backend-api/codex/", "wss://chatgpt.com/backend-api/codex/responses", false},
+		{"https://chatgpt.com/backend-api/codex/responses", "wss://chatgpt.com/backend-api/codex/responses", false},
+		{"https://chatgpt.com/backend-api/codex/responses/compact", "wss://chatgpt.com/backend-api/codex/responses/compact", false},
+		{"http://localhost:8080/codex", "ws://localhost:8080/codex/responses", false},
+		{"wss://chatgpt.com/x", "wss://chatgpt.com/x/responses", false},
+		{"ws://localhost:8080/x", "ws://localhost:8080/x/responses", false},
 		{"", "", true},
 		{"ftp://chatgpt.com/x", "", true},
 	}

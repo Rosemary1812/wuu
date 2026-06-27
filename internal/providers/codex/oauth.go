@@ -253,8 +253,8 @@ func codexHeaders(accessToken, accountID string) map[string]string {
 		"User-Agent": "codex_cli_rs/0.0.0 (wuu)",
 		"originator": "codex_cli_rs",
 		// The ChatGPT backend rejects requests without this beta tag. The
-		// Responses-over-WebSocket variant uses a different value, but wuu
-		// currently talks HTTP Responses, so the SSE beta tag is correct.
+		// Responses-over-WebSocket uses a different value; the WebSocket
+		// path replaces this header during the upgrade handshake.
 		"OpenAI-Beta": "responses=experimental",
 	}
 	if accountID == "" {

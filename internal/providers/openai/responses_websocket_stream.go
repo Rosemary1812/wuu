@@ -62,6 +62,8 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 
 	fullPayload := payload
 	requestPayload := responsesCachedWebSocketRequest(session, fullPayload)
+	providers.DebugLogf("Responses websocket request: session=%q previous_response_id=%v input_items=%d full_input_items=%d",
+		sessionID, strings.TrimSpace(requestPayload.PreviousResponseID) != "", len(requestPayload.Input), len(fullPayload.Input))
 	body, err := marshalResponsesWebSocketCreate(requestPayload)
 	if err != nil {
 		session.mu.Unlock()
