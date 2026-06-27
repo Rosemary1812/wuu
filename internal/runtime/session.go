@@ -1469,9 +1469,22 @@ func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model 
 	}
 	if toolSurface.ProfileName != "" {
 		pb.AddSkills(tools.FilterSkillsForSurface(discoveredSkills, toolSurface))
-		pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
+		if shouldInjectWorkflowGuidance(toolSurface) {
+			pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
+		}
 	}
 	return pb.Build()
+}
+
+func shouldInjectWorkflowGuidance(toolSurface capability.Surface) bool {
+	if toolSurface.ProfileName == "" {
+		return false
+	}
+	// When progressive tool loading is available, keep workflow definitions out
+	// of the stable system prefix. The model can load list/load/start workflow
+	// schemas through tool_search and inspect the catalog only when needed.
+	_, hasToolSearch := toolSurface.Tools["tool_search"]
+	return !hasToolSearch
 }
 
 func activeSurface(kit *tools.Toolkit) capability.Surface {

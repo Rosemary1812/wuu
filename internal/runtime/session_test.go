@@ -516,8 +516,12 @@ description: Legacy user audit workflow.
 	if !ok || compose.Source != "bundled" || !strings.Contains(compose.Content, "session_memory") {
 		t.Fatalf("bundled compose workflow not discovered: %+v", compose)
 	}
-	if !strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") || !strings.Contains(rt.BaseSystemPrompt, "`start_workflow`") {
-		t.Fatalf("workflow catalog not injected into system prompt:\n%s", rt.BaseSystemPrompt)
+	if strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") ||
+		strings.Contains(rt.BaseSystemPrompt, "Workflow guidance") {
+		t.Fatalf("workflow catalog should stay behind tool_search:\n%s", rt.BaseSystemPrompt)
+	}
+	if !strings.Contains(rt.BaseSystemPrompt, "start_workflow") || !strings.Contains(rt.BaseSystemPrompt, "# Tool Discovery") {
+		t.Fatalf("workflow prompt should keep lightweight orchestration and discovery guidance:\n%s", rt.BaseSystemPrompt)
 	}
 	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 4 {
 		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
@@ -1641,6 +1645,43 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 	}
 }
 
+func TestBuildBaseSystemPromptDefersWorkflowCatalogForToolSearchSurface(t *testing.T) {
+	surface := compiledSurfaceForProviderModel("openai", "gpt-5-codex")
+	promptText := buildBaseSystemPrompt(
+		t.TempDir(),
+		"base prompt",
+		"",
+		"openai",
+		"gpt-5-codex",
+		surface,
+		nil,
+		nil,
+		false,
+		0,
+		0,
+		nil,
+		[]workflow.Definition{{Name: "release", Description: "Release workflow."}},
+	)
+
+	for _, want := range []string{
+		"# Tool Discovery",
+		"workflows",
+		"`tool_search`",
+	} {
+		if !strings.Contains(promptText, want) {
+			t.Fatalf("tool-search workflow prompt missing %q:\n%s", want, promptText)
+		}
+	}
+	for _, bad := range []string{
+		"Workflow guidance",
+		"Release workflow",
+	} {
+		if strings.Contains(promptText, bad) {
+			t.Fatalf("tool-search workflow prompt should defer catalog %q:\n%s", bad, promptText)
+		}
+	}
+}
+
 func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 	surface := compiledSurfaceForProviderModel("ollama", "llama-coder")
 	promptText := buildBaseSystemPrompt(
@@ -1702,7 +1743,12 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 }
 
 func TestBuildBaseSystemPromptFiltersWorkflowsBySurface(t *testing.T) {
-	surface := compiledSurfaceForProviderModel("ollama", "llama-coder")
+	surface := capability.Surface{
+		ProfileName:    "portable_no_shell",
+		Tools:          map[string]capability.Capability{"read_file": capability.CapabilityFileRead},
+		Capabilities:   []capability.Capability{capability.CapabilityFileRead},
+		SystemFragment: "Portable no-shell profile.",
+	}
 	promptText := buildBaseSystemPrompt(
 		t.TempDir(),
 		"base prompt",
