@@ -164,6 +164,26 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+func hiddenReminderForTest(block wuucontext.Block, ordinal int) providers.ChatMessage {
+	rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
+	return providers.ChatMessage{
+		Role:    "user",
+		Name:    wuucontext.SystemReminderBlockMessageName(block, ordinal),
+		Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
+		Hidden:  true,
+	}
+}
+
+func countMessagesContaining(messages []providers.ChatMessage, needle string) int {
+	count := 0
+	for _, msg := range messages {
+		if strings.Contains(msg.Content, needle) {
+			count++
+		}
+	}
+	return count
+}
+
 func TestPartitionToolCallsUsesCallArguments(t *testing.T) {
 	calls := []providers.ToolCall{
 		{ID: "safe_1", Name: "run_shell", Arguments: `{"kind":"safe"}`},
@@ -1020,6 +1040,56 @@ func TestRunToolLoop_BeforeModelContextAppendsHiddenMessages(t *testing.T) {
 	}
 	if len(contexts[0].BlockKinds) != 3 {
 		t.Fatalf("unexpected request context block kinds: %+v", contexts[0])
+	}
+}
+
+func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	repoMap := wuucontext.Block{
+		Kind:    wuucontext.BlockRepoMap,
+		Title:   "Compact repository map",
+		Source:  "runtime.repo_map",
+		Content: "files_scanned: 2\nrepresentative_files:\n- go.mod",
+	}
+	oldEnv := wuucontext.Block{
+		Kind:    wuucontext.BlockEnvironment,
+		Title:   "Runtime environment",
+		Source:  "runtime.snapshot",
+		Content: "# Environment\n- CWD: /tmp/project\n- Git status: clean",
+	}
+	newEnv := oldEnv
+	newEnv.Content = "# Environment\n- CWD: /tmp/project\n- Git status: 1 changed file"
+
+	cfg := LoopConfig{
+		Model: "m",
+		BeforeModelContext: func() []providers.ChatMessage {
+			return []providers.ChatMessage{
+				hiddenReminderForTest(repoMap, 0),
+				hiddenReminderForTest(newEnv, 0),
+			}
+		},
+	}
+	history := []providers.ChatMessage{
+		userMsg("hi"),
+		hiddenReminderForTest(repoMap, 0),
+		hiddenReminderForTest(oldEnv, 0),
+	}
+	res, err := RunToolLoop(context.Background(), history, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := step.calls[0].Messages
+	if got := countMessagesContaining(request, "[REPO_MAP]"); got != 1 {
+		t.Fatalf("unchanged repo map should not be re-appended, got %d repo map messages in %+v", got, request)
+	}
+	if got := countMessagesContaining(request, "1 changed file"); got != 1 {
+		t.Fatalf("changed environment block should be appended once, got %d in %+v", got, request)
+	}
+	for _, msg := range res.NewMessages {
+		if strings.Contains(msg.Content, "[REPO_MAP]") {
+			t.Fatalf("unchanged repo map should not be returned as a new message: %+v", res.NewMessages)
+		}
 	}
 }
 

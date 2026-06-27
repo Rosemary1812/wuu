@@ -872,8 +872,10 @@ func codexSubscriptionInputCap(model, providerType string) int {
 	return modelbudget.CodexSubscriptionInputCap(model, providerType)
 }
 
-// EnvContextInjector returns dynamic runtime context injected into each model
-// request without persisting it in conversation history.
+// EnvContextInjector returns replayable hidden runtime context injected into
+// model requests. Each typed block is emitted as its own hidden message so a
+// changing diff or environment snapshot does not force stable blocks like the
+// repo map to be appended again.
 func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []providers.ChatMessage {
 	return func() []providers.ChatMessage {
 		env := wuucontext.Snapshot(rootDir)
@@ -890,18 +892,45 @@ func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, curr
 			}
 			blocks = append(blocks, provider()...)
 		}
-		reminder := wuucontext.FormatSystemReminderBlocks(blocks...)
 		if control != nil {
 			if agentReminder := control.ActiveTaskReminder(currentPath); agentReminder != "" {
-				reminder += "\n\n" + agentReminder
+				blocks = append(blocks, wuucontext.Block{
+					Kind:    wuucontext.BlockWorkflowState,
+					Title:   "Active child-agent status",
+					Source:  "runtime.subagent_status",
+					Content: agentReminder,
+				})
 			}
 		}
-		return []providers.ChatMessage{{
-			Role:    "user",
-			Name:    wuucontext.SystemReminderMessageName,
-			Content: reminder,
-		}}
+		return hiddenContextMessagesFromBlocks(blocks)
 	}
+}
+
+func hiddenContextMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
+	if len(blocks) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, len(blocks))
+	messages := make([]providers.ChatMessage, 0, len(blocks))
+	for _, block := range blocks {
+		rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
+		if strings.TrimSpace(rendered) == "" {
+			continue
+		}
+		name := wuucontext.SystemReminderBlockMessageName(block, 0)
+		ordinal := counts[name]
+		counts[name] = ordinal + 1
+		if ordinal > 0 {
+			name = wuucontext.SystemReminderBlockMessageName(block, ordinal)
+		}
+		messages = append(messages, providers.ChatMessage{
+			Role:    "user",
+			Name:    name,
+			Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
+			Hidden:  true,
+		})
+	}
+	return messages
 }
 
 func toolkitContextBlockProvider(toolkit *tools.Toolkit) func() []wuucontext.Block {

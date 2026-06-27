@@ -181,6 +181,36 @@ func TestFormatSystemReminderUsesTypedEnvironmentBlock(t *testing.T) {
 	}
 }
 
+func TestSystemReminderBlockMessageNameIsStableAndInternal(t *testing.T) {
+	block := Block{
+		Kind:    BlockRepoMap,
+		Title:   "Compact repository map",
+		Source:  "runtime.repo_map",
+		Content: "files_scanned: 3",
+	}
+	name := SystemReminderBlockMessageName(block, 0)
+	if name == "" || len(name) > 64 {
+		t.Fatalf("unexpected context message name length: %q", name)
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		t.Fatalf("context message name should be provider-safe, got %q", name)
+	}
+	changed := block
+	changed.Content = "files_scanned: 99"
+	if got := SystemReminderBlockMessageName(changed, 0); got != name {
+		t.Fatalf("content changes should not change context message name: got %q want %q", got, name)
+	}
+	if got := SystemReminderBlockMessageName(block, 1); got == name {
+		t.Fatalf("duplicate block ordinals should get distinct names: %q", got)
+	}
+	if !IsSystemReminder(name, "plain content") {
+		t.Fatalf("split context message name should be recognized as internal")
+	}
+}
+
 func TestIsAgentNotificationDetectsNamedAndLegacyHandoffs(t *testing.T) {
 	rawNotification := `<subagent_notification>
 {"agent_path":"/root/worker","status":{"type":"agent_result","result":"done"}}

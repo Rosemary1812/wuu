@@ -247,11 +247,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 			if len(blocks) == 0 {
 				return nil
 			}
-			return []providers.ChatMessage{{
-				Role:    "user",
-				Name:    wuucontext.SystemReminderMessageName,
-				Content: wuucontext.FormatSystemReminderBlocks(blocks...),
-			}}
+			return hiddenContextMessagesFromBlocks(blocks)
 		}
 	}
 
@@ -587,6 +583,30 @@ func initialTurnHistory(opts SpawnOptions) []providers.ChatMessage {
 	}
 	history = append(history, providers.ChatMessage{Role: "user", Content: opts.Prompt})
 	return history
+}
+
+func hiddenContextMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
+	counts := make(map[string]int, len(blocks))
+	messages := make([]providers.ChatMessage, 0, len(blocks))
+	for _, block := range blocks {
+		rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
+		if strings.TrimSpace(rendered) == "" {
+			continue
+		}
+		name := wuucontext.SystemReminderBlockMessageName(block, 0)
+		ordinal := counts[name]
+		counts[name] = ordinal + 1
+		if ordinal > 0 {
+			name = wuucontext.SystemReminderBlockMessageName(block, ordinal)
+		}
+		messages = append(messages, providers.ChatMessage{
+			Role:    "user",
+			Name:    name,
+			Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
+			Hidden:  true,
+		})
+	}
+	return messages
 }
 
 func cloneStreamEvent(ev providers.StreamEvent) providers.StreamEvent {

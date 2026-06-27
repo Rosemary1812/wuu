@@ -64,10 +64,23 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 	})
 
 	msgs := inject()
-	if len(msgs) != 1 {
-		t.Fatalf("expected one context message, got %+v", msgs)
+	if len(msgs) != 3 {
+		t.Fatalf("expected split context messages, got %+v", msgs)
 	}
-	content := msgs[0].Content
+	combined := strings.Builder{}
+	names := make(map[string]bool, len(msgs))
+	for _, msg := range msgs {
+		if msg.Role != "user" || !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+			t.Fatalf("expected hidden context reminder message, got %+v", msg)
+		}
+		if names[msg.Name] {
+			t.Fatalf("context message names should be unique: %+v", msgs)
+		}
+		names[msg.Name] = true
+		combined.WriteString(msg.Content)
+		combined.WriteString("\n")
+	}
+	content := combined.String()
 	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[REPO_MAP]", "source: runtime.repo_map", "main.go", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("injected context missing %q:\n%s", want, content)
@@ -334,11 +347,23 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 	}
 
 	msgs := EnvContextInjector(root, nil, "")()
-	if len(msgs) != 1 {
-		t.Fatalf("expected one injected context message, got %+v", msgs)
+	if len(msgs) < 3 {
+		t.Fatalf("expected split injected context messages, got %+v", msgs)
 	}
-	if !strings.Contains(msgs[0].Content, "[ENVIRONMENT]") || !strings.Contains(msgs[0].Content, "Git status:") {
-		t.Fatalf("per-turn environment context should still carry live git state:\n%s", msgs[0].Content)
+	var combined strings.Builder
+	for _, msg := range msgs {
+		if !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+			t.Fatalf("expected hidden context message, got %+v", msg)
+		}
+		combined.WriteString(msg.Content)
+		combined.WriteString("\n")
+	}
+	content := combined.String()
+	if !strings.Contains(content, "[ENVIRONMENT]") || !strings.Contains(content, "Git status:") {
+		t.Fatalf("per-turn environment context should still carry live git state:\n%s", content)
+	}
+	if !strings.Contains(content, "[REPO_MAP]") || !strings.Contains(content, "[RECENT_DIFF]") {
+		t.Fatalf("per-turn context should keep repo and diff blocks split but present:\n%s", content)
 	}
 }
 

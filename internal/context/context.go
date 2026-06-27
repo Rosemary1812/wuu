@@ -9,6 +9,8 @@
 package context
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,10 +21,13 @@ import (
 	"time"
 )
 
-// SystemReminderMessageName marks hidden environment context injections.
+// SystemReminderMessageName marks legacy hidden context injections that bundled
+// multiple runtime blocks into one model-visible message.
 // They are model-visible and persisted for replay, but omitted from
 // user-facing conversation views.
 const SystemReminderMessageName = "wuu_system_reminder"
+
+const systemReminderBlockMessageNamePrefix = "wuu_ctx_"
 
 // TaskContractMessageName marks hidden task-contract context derived from
 // recent user directives.
@@ -174,6 +179,62 @@ func FormatSystemReminderBlocks(blocks ...Block) string {
 	return "<system-reminder>\n" + CompileBlocks(blocks) + "\n</system-reminder>"
 }
 
+// SystemReminderBlockMessageName returns a stable provider-safe message name
+// for one hidden runtime context block. Keeping distinct blocks on distinct
+// names lets replay skip unchanged blocks instead of re-appending the whole
+// context bundle when only one block changes.
+func SystemReminderBlockMessageName(block Block, ordinal int) string {
+	if ordinal < 0 {
+		ordinal = 0
+	}
+	identity := systemReminderBlockIdentity(block, ordinal)
+	slug := sanitizeMessageNameSlug(string(block.Kind) + "_" + block.Source)
+	if slug == "" {
+		slug = "additional_context"
+	}
+	sum := sha256.Sum256([]byte(identity))
+	hash := hex.EncodeToString(sum[:4])
+
+	const maxNameLen = 64
+	const separatorLen = 1
+	maxSlugLen := maxNameLen - len(systemReminderBlockMessageNamePrefix) - separatorLen - len(hash)
+	if maxSlugLen < 1 {
+		maxSlugLen = 1
+	}
+	if len(slug) > maxSlugLen {
+		slug = slug[:maxSlugLen]
+	}
+	return systemReminderBlockMessageNamePrefix + slug + "_" + hash
+}
+
+func systemReminderBlockIdentity(block Block, ordinal int) string {
+	return strings.Join([]string{
+		strings.TrimSpace(string(block.Kind)),
+		strings.TrimSpace(block.Source),
+		strings.TrimSpace(block.Title),
+		strconv.Itoa(ordinal),
+	}, "\n")
+}
+
+func sanitizeMessageNameSlug(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if ok {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
 func renderBlock(block Block) string {
 	content := strings.TrimSpace(block.Content)
 	if content == "" {
@@ -243,7 +304,8 @@ func FormatSystemReminder(env EnvInfo, sections ...string) string {
 // IsSystemReminder reports whether the given metadata/content belongs to an
 // internal system-reminder block rather than a durable conversation turn.
 func IsSystemReminder(name, content string) bool {
-	if strings.TrimSpace(name) == SystemReminderMessageName {
+	name = strings.TrimSpace(name)
+	if name == SystemReminderMessageName || strings.HasPrefix(name, systemReminderBlockMessageNamePrefix) {
 		return true
 	}
 	trimmed := strings.TrimSpace(content)
