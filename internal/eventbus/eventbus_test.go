@@ -13,6 +13,16 @@ func TestAdaptStreamEventPreservesRequestContext(t *testing.T) {
 		TransientMessages: 1,
 		ContentBytes:      2048,
 		BlockKinds:        []string{"ENVIRONMENT", "REPO_MAP"},
+		MessageCount:      5,
+		SystemMessages:    1,
+		HiddenMessages:    2,
+		ToolCount:         3,
+		StablePrefix:      2,
+		DynamicBytes:      2048,
+		SystemHash:        "sys-hash",
+		StablePrefixHash:  "prefix-hash",
+		ToolSurfaceHash:   "tool-hash",
+		PromptCacheKey:    "thread-cache-key",
 	}
 
 	event := AdaptStreamEvent(providers.StreamEvent{

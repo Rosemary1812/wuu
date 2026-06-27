@@ -120,6 +120,16 @@ type ContextRequestObservation struct {
 	TransientMessages int      `json:"transient_messages,omitempty"`
 	ContentBytes      int      `json:"content_bytes,omitempty"`
 	BlockKinds        []string `json:"block_kinds,omitempty"`
+	MessageCount      int      `json:"message_count,omitempty"`
+	SystemMessages    int      `json:"system_messages,omitempty"`
+	HiddenMessages    int      `json:"hidden_messages,omitempty"`
+	ToolCount         int      `json:"tool_count,omitempty"`
+	StablePrefix      int      `json:"stable_prefix,omitempty"`
+	DynamicBytes      int      `json:"dynamic_context_bytes,omitempty"`
+	SystemHash        string   `json:"system_hash,omitempty"`
+	StablePrefixHash  string   `json:"stable_prefix_hash,omitempty"`
+	ToolSurfaceHash   string   `json:"tool_surface_hash,omitempty"`
+	PromptCacheKey    string   `json:"prompt_cache_key,omitempty"`
 }
 
 type ModelProfileObservation struct {

@@ -170,15 +170,12 @@ func RunToolLoop(
 		if contract, ok := taskContractReminder(messages); ok {
 			modelContext = append(modelContext, contract)
 		}
+		var appendedContext []providers.ChatMessage
 		if len(modelContext) > 0 {
 			appended := appendHiddenModelContext(&messages, appendMessage, modelContext)
 			if len(appended) > 0 {
+				appendedContext = appended
 				usage.RecordPendingMessages(appended)
-				if cfg.OnRequestContext != nil {
-					if info, ok := requestContextInfo(stepIdx, appended); ok {
-						cfg.OnRequestContext(info)
-					}
-				}
 			}
 		}
 		requestMessages := messages
@@ -195,6 +192,9 @@ func RunToolLoop(
 		}
 		if cfg.Tools != nil {
 			req.Tools = cfg.Tools.Definitions()
+		}
+		if cfg.OnRequestContext != nil {
+			cfg.OnRequestContext(requestContextInfo(stepIdx, requestMessages, appendedContext, req.Tools, cacheHint))
 		}
 
 		result, err := step.Execute(ctx, req)
@@ -967,26 +967,6 @@ func enforceAggregateResultBudget(msgs []providers.ChatMessage) {
 			fmt.Sprintf("\n[trimmed: original %d chars, aggregate budget %d]", maxLen, maxAggregateResultChars)
 		total = total - maxLen + len(msgs[maxIdx].Content)
 	}
-}
-
-func requestContextInfo(stepIndex int, messages []providers.ChatMessage) (RequestContextInfo, bool) {
-	info := RequestContextInfo{StepIndex: stepIndex}
-	seenKinds := make(map[string]struct{})
-	for _, msg := range messages {
-		if !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
-			continue
-		}
-		info.TransientMessages++
-		info.ContentBytes += len([]byte(msg.Content))
-		for _, kind := range systemReminderBlockKinds(msg.Content) {
-			if _, ok := seenKinds[kind]; ok {
-				continue
-			}
-			seenKinds[kind] = struct{}{}
-			info.BlockKinds = append(info.BlockKinds, kind)
-		}
-	}
-	return info, info.TransientMessages > 0
 }
 
 func systemReminderBlockKinds(content string) []string {

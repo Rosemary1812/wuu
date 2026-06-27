@@ -40,6 +40,16 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			TransientMessages: 1,
 			ContentBytes:      100,
 			BlockKinds:        []string{"ENVIRONMENT", "TASK"},
+			MessageCount:      4,
+			SystemMessages:    1,
+			HiddenMessages:    2,
+			ToolCount:         3,
+			StablePrefix:      2,
+			DynamicBytes:      100,
+			SystemHash:        "sys-hash",
+			StablePrefixHash:  "prefix-hash",
+			ToolSurfaceHash:   "tool-hash",
+			PromptCacheKey:    "thread-cache-key",
 		}},
 	)
 	if err != nil {
@@ -70,6 +80,22 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"cache_creation_tokens":8`) || !strings.Contains(string(raw), `"cache_read_tokens":5`) {
 		t.Fatalf("trace should include prompt cache usage:\n%s", raw)
+	}
+	for _, want := range []string{
+		`"message_count":4`,
+		`"system_messages":1`,
+		`"hidden_messages":2`,
+		`"tool_count":3`,
+		`"stable_prefix":2`,
+		`"dynamic_context_bytes":100`,
+		`"system_hash":"sys-hash"`,
+		`"stable_prefix_hash":"prefix-hash"`,
+		`"tool_surface_hash":"tool-hash"`,
+		`"prompt_cache_key":"thread-cache-key"`,
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("trace should include request shape field %s:\n%s", want, raw)
+		}
 	}
 }
 

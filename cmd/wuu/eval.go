@@ -406,6 +406,16 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 				TransientMessages: info.TransientMessages,
 				ContentBytes:      info.ContentBytes,
 				BlockKinds:        append([]string(nil), info.BlockKinds...),
+				MessageCount:      info.MessageCount,
+				SystemMessages:    info.SystemMessages,
+				HiddenMessages:    info.HiddenMessages,
+				ToolCount:         info.ToolCount,
+				StablePrefix:      info.StablePrefix,
+				DynamicBytes:      info.DynamicBytes,
+				SystemHash:        info.SystemHash,
+				StablePrefixHash:  info.StablePrefixHash,
+				ToolSurfaceHash:   info.ToolSurfaceHash,
+				PromptCacheKey:    info.PromptCacheKey,
 			})
 		}
 	}
@@ -623,7 +633,14 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 	}
 	out := make([]evalharness.ContextRequestObservation, 0, len(infos))
 	for _, info := range infos {
-		if info.TransientMessages <= 0 && info.ContentBytes <= 0 && len(info.BlockKinds) == 0 {
+		if info.TransientMessages <= 0 &&
+			info.ContentBytes <= 0 &&
+			len(info.BlockKinds) == 0 &&
+			info.MessageCount <= 0 &&
+			info.ToolCount <= 0 &&
+			info.SystemHash == "" &&
+			info.StablePrefixHash == "" &&
+			info.ToolSurfaceHash == "" {
 			continue
 		}
 		out = append(out, evalharness.ContextRequestObservation{
@@ -631,6 +648,16 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			TransientMessages: info.TransientMessages,
 			ContentBytes:      info.ContentBytes,
 			BlockKinds:        append([]string(nil), info.BlockKinds...),
+			MessageCount:      info.MessageCount,
+			SystemMessages:    info.SystemMessages,
+			HiddenMessages:    info.HiddenMessages,
+			ToolCount:         info.ToolCount,
+			StablePrefix:      info.StablePrefix,
+			DynamicBytes:      info.DynamicBytes,
+			SystemHash:        info.SystemHash,
+			StablePrefixHash:  info.StablePrefixHash,
+			ToolSurfaceHash:   info.ToolSurfaceHash,
+			PromptCacheKey:    info.PromptCacheKey,
 		})
 	}
 	return out

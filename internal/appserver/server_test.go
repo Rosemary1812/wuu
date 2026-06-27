@@ -1846,6 +1846,14 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if contextParams.Event.RequestContext.TransientMessages < 2 || contextParams.Event.RequestContext.ContentBytes == 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
 	}
+	if contextParams.Event.RequestContext.MessageCount == 0 ||
+		contextParams.Event.RequestContext.HiddenMessages == 0 ||
+		contextParams.Event.RequestContext.DynamicBytes == 0 ||
+		contextParams.Event.RequestContext.SystemHash == "" ||
+		contextParams.Event.RequestContext.StablePrefixHash == "" ||
+		contextParams.Event.RequestContext.ToolSurfaceHash == "" {
+		t.Fatalf("request context missing request shape metadata: %+v", contextParams.Event.RequestContext)
+	}
 	for _, want := range []string{"ENVIRONMENT", "TASK", "CONSTRAINT_LEDGER"} {
 		if !testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, want) {
 			t.Fatalf("request context missing block kind %s: %+v", want, contextParams.Event.RequestContext)

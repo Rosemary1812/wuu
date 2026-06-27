@@ -112,6 +112,16 @@ type RequestContextInfo struct {
 	TransientMessages int
 	ContentBytes      int
 	BlockKinds        []string
+	MessageCount      int
+	SystemMessages    int
+	HiddenMessages    int
+	ToolCount         int
+	StablePrefix      int
+	DynamicBytes      int
+	SystemHash        string
+	StablePrefixHash  string
+	ToolSurfaceHash   string
+	PromptCacheKey    string
 }
 
 // LoopConfig bundles every knob the shared loop needs. All callbacks

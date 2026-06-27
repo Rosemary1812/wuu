@@ -451,6 +451,16 @@ func requestContextSummary(info RequestContextInfo) *providers.RequestContextSum
 		TransientMessages: info.TransientMessages,
 		ContentBytes:      info.ContentBytes,
 		BlockKinds:        append([]string(nil), info.BlockKinds...),
+		MessageCount:      info.MessageCount,
+		SystemMessages:    info.SystemMessages,
+		HiddenMessages:    info.HiddenMessages,
+		ToolCount:         info.ToolCount,
+		StablePrefix:      info.StablePrefix,
+		DynamicBytes:      info.DynamicBytes,
+		SystemHash:        info.SystemHash,
+		StablePrefixHash:  info.StablePrefixHash,
+		ToolSurfaceHash:   info.ToolSurfaceHash,
+		PromptCacheKey:    info.PromptCacheKey,
 	}
 }
 

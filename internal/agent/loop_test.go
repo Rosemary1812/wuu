@@ -229,7 +229,22 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 		{Role: "assistant", Content: "answer"},
 		{Role: "user", Content: "latest"},
 	}
-	_, err := RunToolLoop(context.Background(), history, LoopConfig{Model: "m", PromptCacheKey: "thread-cache-key"}, step)
+	var contexts []RequestContextInfo
+	_, err := RunToolLoop(context.Background(), history, LoopConfig{
+		Model:          "m",
+		PromptCacheKey: "thread-cache-key",
+		Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{
+			Name:        "read_file",
+			Description: "Read files",
+			InputSchema: map[string]any{
+				"type": "object",
+			},
+			CacheStable: true,
+		}}},
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
+		},
+	}, step)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,6 +263,27 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	}
 	if hint.PromptCacheKey != "thread-cache-key" {
 		t.Fatalf("expected thread prompt cache key, got %q", hint.PromptCacheKey)
+	}
+	if len(contexts) != 1 {
+		t.Fatalf("expected one request shape observation, got %+v", contexts)
+	}
+	shape := contexts[0]
+	if shape.StepIndex != 0 || shape.MessageCount != 5 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.ToolCount != 1 {
+		t.Fatalf("unexpected request shape: %+v", shape)
+	}
+	if shape.TransientMessages != 1 || shape.ContentBytes == 0 || shape.DynamicBytes == 0 || shape.HiddenMessages != 1 {
+		t.Fatalf("request shape should report task-contract dynamic context: %+v", shape)
+	}
+	for _, want := range []string{string(wuucontext.BlockTask), string(wuucontext.BlockConstraintLedger)} {
+		if !containsString(shape.BlockKinds, want) {
+			t.Fatalf("request shape missing dynamic block kind %s: %+v", want, shape)
+		}
+	}
+	if shape.SystemHash == "" || shape.StablePrefixHash == "" || shape.ToolSurfaceHash == "" {
+		t.Fatalf("request shape missing hashes: %+v", shape)
+	}
+	if shape.PromptCacheKey != "thread-cache-key" {
+		t.Fatalf("request shape prompt cache key = %q", shape.PromptCacheKey)
 	}
 }
 
