@@ -370,33 +370,20 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		if !record.Success {
 			status = "error"
 		}
-		fmt.Fprintf(&b, "- #%d name=%s kind=%s status=%s risk=%s duration_ms=%d",
+		fmt.Fprintf(&b, "- #%d name=%s status=%s",
 			start+i+1,
 			strings.TrimSpace(record.Name),
-			record.Kind,
 			status,
-			record.Risk,
-			record.DurationMS,
 		)
-		if record.PolicyAction != "" {
+		if record.PolicyAction != "" && record.PolicyAction != ToolPolicyAllow {
 			fmt.Fprintf(&b, " policy=%s", record.PolicyAction)
-		}
-		if record.ArgumentsSHA256 != "" {
-			fmt.Fprintf(&b, " args_sha256=%s", record.ArgumentsSHA256)
 		}
 		if record.ResultAction != "" {
 			fmt.Fprintf(&b, " result_action=%s", compactContextLine(redactToolOutput(record.ResultAction)))
 		}
-		if record.RevisionBefore != "" {
-			fmt.Fprintf(&b, " revision_before=%s", record.RevisionBefore)
-		}
-		if record.RevisionAfter != "" {
-			fmt.Fprintf(&b, " revision_after=%s", record.RevisionAfter)
-		}
 		if evidenceStatus := toolEvidenceStatus(record, currentRevision); evidenceStatus != "" {
 			fmt.Fprintf(&b, " evidence_status=%s", evidenceStatus)
 		}
-		fmt.Fprintf(&b, " raw_output_bytes=%d returned_output_bytes=%d", record.RawOutputBytes, record.ReturnedOutputBytes)
 		if record.ResultBudgeted {
 			b.WriteString(" result_budgeted=true")
 		}
@@ -427,7 +414,7 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		}
 		b.WriteString("warning: repeated identical tool inputs can indicate a loop; inspect prior evidence before retrying.\n")
 	}
-	b.WriteString("note: tool arguments and output bodies are intentionally omitted; use artifact/result refs when needed.\n")
+	b.WriteString("note: args and bodies omitted; use refs when needed.\n")
 
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockToolResultSummary,

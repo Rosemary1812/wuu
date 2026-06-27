@@ -4155,14 +4155,12 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 	}
 	for _, want := range []string{
 		"recent_tool_calls:",
-		"name=read_file kind=file status=ok",
-		"name=read_file kind=file status=error",
-		"name=run_test kind=test status=ok risk=medium",
-		"args_sha256=" + strings.Repeat("b", 64),
+		"name=read_file status=ok",
+		"name=read_file status=error",
+		"name=run_test status=ok",
 		"result_action=run",
 		"evidence_status=current",
 		"evidence_status=possibly_stale",
-		"raw_output_bytes=4096 returned_output_bytes=512",
 		"result_budgeted=true",
 		"patch_risk=level=medium,files=2,hunks=2,+7/-2,multi_file=true",
 		"repeated_arguments:",
@@ -4170,10 +4168,23 @@ func TestToolkit_ToolResultSummaryContextBlockOmitsToolBodies(t *testing.T) {
 		"repeated identical tool inputs can indicate a loop",
 		"result_ref=/tmp/result-API_KEY=[REDACTED]",
 		"artifact_refs=/tmp/artifact-API_KEY=[REDACTED]",
-		"tool arguments and output bodies are intentionally omitted",
+		"args and bodies omitted",
 	} {
 		if !strings.Contains(block.Content, want) {
 			t.Fatalf("tool summary missing %q:\n%s", want, block.Content)
+		}
+	}
+	for _, unwanted := range []string{
+		" kind=",
+		" risk=",
+		" duration_ms=",
+		" revision_before=",
+		" revision_after=",
+		" raw_output_bytes=",
+		" returned_output_bytes=",
+	} {
+		if strings.Contains(block.Content, unwanted) {
+			t.Fatalf("tool summary should omit telemetry field %q:\n%s", unwanted, block.Content)
 		}
 	}
 	if strings.Contains(block.Content, "secret-value") {
