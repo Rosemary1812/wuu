@@ -213,10 +213,29 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			Success:         false,
 		}},
 		[]RequestContextRecord{{
-			StepIndex:         0,
-			TransientMessages: 2,
-			ContentBytes:      240,
-			BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
+			StepIndex:               0,
+			TransientMessages:       2,
+			ContentBytes:            240,
+			BlockKinds:              []string{"ENVIRONMENT", "TOOL_POLICY"},
+			ToolCount:               9,
+			DynamicBytes:            120,
+			SystemBytes:             1000,
+			StablePrefixBytes:       900,
+			TurnPrefixBytes:         100,
+			MessageBytes:            300,
+			ToolSchemaBytes:         400,
+			LoadableToolCount:       3,
+			LoadableToolSchemaBytes: 150,
+			SystemHash:              "sys-hash",
+			StablePrefixHash:        "stable-hash",
+			TurnPrefixHash:          "turn-hash",
+			ToolSurfaceHash:         "tool-hash",
+			LoadableToolSurfaceHash: "loadable-hash",
+			PromptCacheKey:          "prompt-cache-key",
+			InputTokens:             10,
+			OutputTokens:            2,
+			CacheCreationTokens:     4,
+			CacheReadTokens:         30,
 		}},
 		[]ProviderStateRecord{{
 			StepIndex:              0,
@@ -260,6 +279,32 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		summary.ProviderStates[0].ReplayMode != "full_request" ||
 		summary.ProviderStates[0].FullInputItems != 4 {
 		t.Fatalf("provider states missing: %+v", summary.ProviderStates)
+	}
+	if len(summary.RequestSteps) != 1 {
+		t.Fatalf("request steps missing: %+v", summary.RequestSteps)
+	}
+	step := summary.RequestSteps[0]
+	if step.TurnID != "turn-1" ||
+		step.StepIndex != 0 ||
+		step.InputTokens != 10 ||
+		step.OutputTokens != 2 ||
+		step.CacheCreationTokens != 4 ||
+		step.CacheReadTokens != 30 ||
+		step.CacheHitRate != 0.75 ||
+		step.DynamicBytes != 120 ||
+		step.SystemBytes != 1000 ||
+		step.ToolSchemaBytes != 400 ||
+		step.LoadableToolSchemaBytes != 150 ||
+		step.StablePrefixHash != "stable-hash" ||
+		step.ToolSurfaceHash != "tool-hash" ||
+		step.LoadableToolSurfaceHash != "loadable-hash" ||
+		step.PromptCacheKey != "prompt-cache-key" ||
+		step.ReplayMode != "full_request" ||
+		step.Protocol != "responses_websocket" ||
+		step.PreviousResponseIDUsed == nil ||
+		*step.PreviousResponseIDUsed ||
+		step.FullInputItems != 4 {
+		t.Fatalf("request step summary missing joined detail: %+v", step)
 	}
 	if len(summary.ToolNames) != 4 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "semantic_search" || summary.ToolNames[2] != "run_shell" || summary.ToolNames[3] != "start_process" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)

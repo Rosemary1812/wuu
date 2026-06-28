@@ -146,6 +146,7 @@ type ReplaySummary struct {
 	LatestTurn        *TurnRecord            `json:"latest_turn,omitempty"`
 	ContextRequests   []RequestContextRecord `json:"context_requests,omitempty"`
 	ProviderStates    []ProviderStateRecord  `json:"provider_states,omitempty"`
+	RequestSteps      []RequestStepSummary   `json:"request_steps,omitempty"`
 	ContextBlockKinds []string               `json:"context_block_kinds,omitempty"`
 	ToolInventory     []tools.ToolInfo       `json:"tool_inventory,omitempty"`
 	ToolNames         []string               `json:"tool_names,omitempty"`
@@ -210,6 +211,39 @@ type ProviderStateRecord struct {
 	DeltaInputItems        int    `json:"delta_input_items,omitempty"`
 }
 
+type RequestStepSummary struct {
+	TurnID                  string   `json:"turn_id,omitempty"`
+	StepIndex               int      `json:"step_index"`
+	InputTokens             int      `json:"input_tokens,omitempty"`
+	OutputTokens            int      `json:"output_tokens,omitempty"`
+	CacheCreationTokens     int      `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens         int      `json:"cache_read_tokens,omitempty"`
+	CacheHitRate            float64  `json:"cache_hit_rate,omitempty"`
+	DynamicBytes            int      `json:"dynamic_context_bytes,omitempty"`
+	SystemBytes             int      `json:"system_bytes,omitempty"`
+	MessageBytes            int      `json:"message_bytes,omitempty"`
+	ToolSchemaBytes         int      `json:"tool_schema_bytes,omitempty"`
+	StablePrefixBytes       int      `json:"stable_prefix_bytes,omitempty"`
+	TurnPrefixBytes         int      `json:"turn_prefix_bytes,omitempty"`
+	ToolCount               int      `json:"tool_count,omitempty"`
+	LoadableToolCount       int      `json:"loadable_tool_count,omitempty"`
+	LoadableToolSchemaBytes int      `json:"loadable_tool_schema_bytes,omitempty"`
+	BlockKinds              []string `json:"block_kinds,omitempty"`
+	SystemHash              string   `json:"system_hash,omitempty"`
+	StablePrefixHash        string   `json:"stable_prefix_hash,omitempty"`
+	TurnPrefixHash          string   `json:"turn_prefix_hash,omitempty"`
+	ToolSurfaceHash         string   `json:"tool_surface_hash,omitempty"`
+	LoadableToolSurfaceHash string   `json:"loadable_tool_surface_hash,omitempty"`
+	PromptCacheKey          string   `json:"prompt_cache_key,omitempty"`
+	Provider                string   `json:"provider,omitempty"`
+	Protocol                string   `json:"protocol,omitempty"`
+	ReplayMode              string   `json:"replay_mode,omitempty"`
+	PreviousResponseIDUsed  *bool    `json:"previous_response_id_used,omitempty"`
+	InputItems              int      `json:"input_items,omitempty"`
+	FullInputItems          int      `json:"full_input_items,omitempty"`
+	DeltaInputItems         int      `json:"delta_input_items,omitempty"`
+}
+
 type ToolSummary struct {
 	Total             int                           `json:"total"`
 	Succeeded         int                           `json:"succeeded"`
@@ -269,15 +303,16 @@ func ReplayTrace(path string) (ReplaySummary, error) {
 	for scanner.Scan() {
 		line++
 		var event struct {
-			Type string          `json:"type"`
-			Data json.RawMessage `json:"data,omitempty"`
+			Type   string          `json:"type"`
+			TurnID string          `json:"turn_id,omitempty"`
+			Data   json.RawMessage `json:"data,omitempty"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return ReplaySummary{}, fmt.Errorf("decode trace line %d: %w", line, err)
 		}
 		summary.EventCount++
 		summary.EventTypes[event.Type]++
-		if err := replayEvent(&summary, event.Type, event.Data); err != nil {
+		if err := replayEvent(&summary, event.Type, event.TurnID, event.Data); err != nil {
 			return ReplaySummary{}, fmt.Errorf("replay trace line %d type %q: %w", line, event.Type, err)
 		}
 	}
@@ -295,7 +330,7 @@ func ReplayTrace(path string) (ReplaySummary, error) {
 	return summary, nil
 }
 
-func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage) error {
+func replayEvent(summary *ReplaySummary, eventType, turnID string, data json.RawMessage) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -314,12 +349,14 @@ func replayEvent(summary *ReplaySummary, eventType string, data json.RawMessage)
 		}
 		summary.ContextRequests = append(summary.ContextRequests, records...)
 		summary.addContextBlockKinds(records)
+		summary.addRequestContextSteps(turnID, records)
 	case "provider_states":
 		var records []ProviderStateRecord
 		if err := json.Unmarshal(data, &records); err != nil {
 			return err
 		}
 		summary.ProviderStates = append(summary.ProviderStates, records...)
+		summary.addProviderStateSteps(turnID, records)
 	case "tool_inventory":
 		var inventory []tools.ToolInfo
 		if err := json.Unmarshal(data, &inventory); err != nil {
@@ -362,6 +399,70 @@ func (summary *ReplaySummary) addContextBlockKinds(records []RequestContextRecor
 			summary.ContextBlockKinds = append(summary.ContextBlockKinds, kind)
 		}
 	}
+}
+
+func (summary *ReplaySummary) addRequestContextSteps(turnID string, records []RequestContextRecord) {
+	for _, record := range records {
+		step := summary.requestStep(turnID, record.StepIndex)
+		step.InputTokens = record.InputTokens
+		step.OutputTokens = record.OutputTokens
+		step.CacheCreationTokens = record.CacheCreationTokens
+		step.CacheReadTokens = record.CacheReadTokens
+		step.CacheHitRate = cacheHitRate(record.InputTokens, record.CacheReadTokens)
+		step.DynamicBytes = record.DynamicBytes
+		step.SystemBytes = record.SystemBytes
+		step.MessageBytes = record.MessageBytes
+		step.ToolSchemaBytes = record.ToolSchemaBytes
+		step.StablePrefixBytes = record.StablePrefixBytes
+		step.TurnPrefixBytes = record.TurnPrefixBytes
+		step.ToolCount = record.ToolCount
+		step.LoadableToolCount = record.LoadableToolCount
+		step.LoadableToolSchemaBytes = record.LoadableToolSchemaBytes
+		step.BlockKinds = append([]string(nil), record.BlockKinds...)
+		step.SystemHash = strings.TrimSpace(record.SystemHash)
+		step.StablePrefixHash = strings.TrimSpace(record.StablePrefixHash)
+		step.TurnPrefixHash = strings.TrimSpace(record.TurnPrefixHash)
+		step.ToolSurfaceHash = strings.TrimSpace(record.ToolSurfaceHash)
+		step.LoadableToolSurfaceHash = strings.TrimSpace(record.LoadableToolSurfaceHash)
+		step.PromptCacheKey = strings.TrimSpace(record.PromptCacheKey)
+	}
+}
+
+func (summary *ReplaySummary) addProviderStateSteps(turnID string, records []ProviderStateRecord) {
+	for _, record := range records {
+		step := summary.requestStep(turnID, record.StepIndex)
+		step.Provider = strings.TrimSpace(record.Provider)
+		step.Protocol = strings.TrimSpace(record.Protocol)
+		step.ReplayMode = strings.TrimSpace(record.ReplayMode)
+		previousResponseIDUsed := record.PreviousResponseIDUsed
+		step.PreviousResponseIDUsed = &previousResponseIDUsed
+		step.InputItems = record.InputItems
+		step.FullInputItems = record.FullInputItems
+		step.DeltaInputItems = record.DeltaInputItems
+	}
+}
+
+func (summary *ReplaySummary) requestStep(turnID string, stepIndex int) *RequestStepSummary {
+	turnID = strings.TrimSpace(turnID)
+	for i := range summary.RequestSteps {
+		step := &summary.RequestSteps[i]
+		if step.TurnID == turnID && step.StepIndex == stepIndex {
+			return step
+		}
+	}
+	summary.RequestSteps = append(summary.RequestSteps, RequestStepSummary{
+		TurnID:    turnID,
+		StepIndex: stepIndex,
+	})
+	return &summary.RequestSteps[len(summary.RequestSteps)-1]
+}
+
+func cacheHitRate(inputTokens, cacheReadTokens int) float64 {
+	promptTokens := inputTokens + cacheReadTokens
+	if promptTokens <= 0 {
+		return 0
+	}
+	return float64(cacheReadTokens) / float64(promptTokens)
 }
 
 func (summary *ReplaySummary) addToolRecord(record tools.ToolExecutionRecord) {
