@@ -340,7 +340,7 @@ func NewSession(opts Options) (*Session, error) {
 		CompactThresholdPct:     cfg.Agent.CompactThresholdPct,
 		CompactKeepRecentTokens: cfg.Agent.CompactKeepRecentTokens,
 		DisableAutoCompact:      cfg.Agent.DisableAutoCompact,
-		BeforeRequestContext:    EnvContextInjector(rootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
+		BeforeRequestContext:    RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:               afterTurn,
 	}
 
@@ -697,7 +697,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.PromptCacheKey = strings.TrimSpace(id)
-	runner.BeforeRequestContext = EnvContextInjector(s.RootDir, agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
+	runner.BeforeRequestContext = RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
 		memoryLimit, userLimit := kit.MemoryLimits()
@@ -880,12 +880,12 @@ func codexSubscriptionInputCap(model, providerType string) int {
 	return modelbudget.CodexSubscriptionInputCap(model, providerType)
 }
 
-// EnvContextInjector returns volatile request-only runtime context injected
-// into model requests without appending it to live or durable history.
-func EnvContextInjector(rootDir string, control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []agent.ContextSegment {
+// RuntimeContextInjector returns volatile request-only runtime context injected
+// into model requests without appending it to live or durable history. Stable
+// session environment belongs in the system prompt, not here.
+func RuntimeContextInjector(control *agentcontrol.AgentControl, currentPath string, blockProviders ...func() []wuucontext.Block) func() []agent.ContextSegment {
 	return func() []agent.ContextSegment {
-		env := wuucontext.Snapshot(rootDir)
-		blocks := []wuucontext.Block{wuucontext.EnvironmentBlock(env)}
+		var blocks []wuucontext.Block
 		for _, provider := range blockProviders {
 			if provider == nil {
 				continue
@@ -1475,6 +1475,7 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 	if _, ok := toolSurface.Tools["tool_search"]; ok {
 		pb.AddToolDiscovery()
 	}
+	pb.AddSection("environment", environmentSystemPromptSection(rootDir), true)
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}
@@ -1489,6 +1490,19 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 		}
 	}
 	return pb.BuildWithInfo()
+}
+
+func environmentSystemPromptSection(rootDir string) string {
+	env := wuucontext.Snapshot(rootDir)
+	var b strings.Builder
+	b.WriteString("# Environment\n\n")
+	if cwd := strings.TrimSpace(env.CWD); cwd != "" {
+		fmt.Fprintf(&b, "- Current working directory: %s\n", cwd)
+	}
+	if date := strings.TrimSpace(env.Date); date != "" {
+		fmt.Fprintf(&b, "- Current date: %s\n", date)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func agentPromptSections(sections []prompt.SectionInfo) []agent.SystemPromptSectionInfo {

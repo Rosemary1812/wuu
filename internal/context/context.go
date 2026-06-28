@@ -1,12 +1,11 @@
-// Package context provides dynamic model context for the agent loop. It
-// generates lightweight runtime information that gets assembled into
-// request-only <system-reminder> blocks, keeping the system prompt stable
-// for prompt caching without making transient request context part of durable
-// conversation history.
+// Package context provides typed model context for the agent loop. Stable
+// session context can be rendered into the system prompt, while transient
+// runtime information gets assembled into request-only <system-reminder>
+// blocks without becoming durable conversation history.
 //
 // The prompt path stays split:
-//   - System prompt = static role, rules, instructions (cacheable)
-//   - User context = dynamic environment info, memory, skills (per-turn)
+//   - System prompt = static role, rules, instructions, and session environment
+//   - Request context = dynamic runtime state such as plans, active files, and tool summaries
 package context
 
 import (
@@ -44,7 +43,9 @@ const AgentNotificationMessageName = "wuu_agent_notification"
 // this message name.
 const GoalContinuationMessageName = "wuu_goal_continuation"
 
-// EnvInfo holds the dynamic environment snapshot for one turn.
+// EnvInfo holds a lightweight environment snapshot. CWD and Date are stable
+// session prompt inputs; optional git fields are volatile and are not collected
+// by default.
 type EnvInfo struct {
 	CWD       string
 	Date      string

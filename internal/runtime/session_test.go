@@ -51,11 +51,8 @@ func (c *sessionRecordingClient) StreamChat(_ context.Context, req providers.Cha
 	return ch, nil
 }
 
-func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
-	root := t.TempDir()
-	writeSessionTestFile(t, filepath.Join(root, "go.mod"), "module example.com/runtime\n")
-	writeSessionTestFile(t, filepath.Join(root, "main.go"), "package main\n")
-	inject := EnvContextInjector(root, nil, "", func() []wuucontext.Block {
+func TestRuntimeContextInjectorIncludesOnlyDynamicTypedBlocks(t *testing.T) {
+	inject := RuntimeContextInjector(nil, "", func() []wuucontext.Block {
 		return []wuucontext.Block{{
 			Kind:    wuucontext.BlockTaskState,
 			Title:   "Current visible task plan",
@@ -66,7 +63,7 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 
 	msgs := inject()
 	messages := flattenContextSegmentsForTest(msgs)
-	if len(messages) != 2 {
+	if len(messages) != 1 {
 		t.Fatalf("expected split context messages, got %+v", msgs)
 	}
 	combined := strings.Builder{}
@@ -83,10 +80,13 @@ func TestEnvContextInjectorIncludesExtraTypedBlocks(t *testing.T) {
 		combined.WriteString("\n")
 	}
 	content := combined.String()
-	for _, want := range []string{"<system-reminder>", "[ENVIRONMENT]", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
+	for _, want := range []string{"<system-reminder>", "[TASK_STATE]", "source: update_plan", "[in_progress] edit"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("injected context missing %q:\n%s", want, content)
 		}
+	}
+	if strings.Contains(content, "[ENVIRONMENT]") {
+		t.Fatalf("stable environment should stay out of request-only context:\n%s", content)
 	}
 }
 
@@ -363,31 +363,36 @@ func TestNewSessionKeepsGitContextOutOfBaseSystemPrompt(t *testing.T) {
 		}
 	}
 
-	segments := EnvContextInjector(root, nil, "")()
-	msgs := flattenContextSegmentsForTest(segments)
-	if len(msgs) == 0 {
-		t.Fatalf("expected split injected context messages, got %+v", segments)
+	if !strings.Contains(rt.BaseSystemPrompt, "# Environment") ||
+		!strings.Contains(rt.BaseSystemPrompt, "- Current working directory: "+root) ||
+		!strings.Contains(rt.BaseSystemPrompt, "- Current date:") {
+		t.Fatalf("base system prompt should include stable environment context:\n%s", rt.BaseSystemPrompt)
 	}
-	var combined strings.Builder
-	for _, msg := range msgs {
-		if !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
-			t.Fatalf("expected hidden context message, got %+v", msg)
+	foundEnvironmentSection := false
+	for _, section := range rt.BaseSystemPromptSections {
+		if section.Key == "environment" && section.Static {
+			foundEnvironmentSection = true
+			break
 		}
-		combined.WriteString(msg.Content)
-		combined.WriteString("\n")
 	}
-	content := combined.String()
-	if !strings.Contains(content, "[ENVIRONMENT]") || !strings.Contains(content, "- CWD:") {
-		t.Fatalf("per-turn environment context should carry lightweight runtime state:\n%s", content)
+	if !foundEnvironmentSection {
+		t.Fatalf("base system prompt should report a static environment section: %+v", rt.BaseSystemPromptSections)
 	}
-	if strings.Contains(content, "Git status:") || strings.Contains(content, "Git branch:") {
-		t.Fatalf("default environment context should not inject volatile git state:\n%s", content)
+	if strings.Contains(rt.BaseSystemPrompt, "Git status:") || strings.Contains(rt.BaseSystemPrompt, "Git branch:") {
+		t.Fatalf("base system prompt should not include volatile git state:\n%s", rt.BaseSystemPrompt)
 	}
+
+	segments := RuntimeContextInjector(nil, "")()
+	msgs := flattenContextSegmentsForTest(segments)
+	if len(msgs) != 0 {
+		t.Fatalf("default runtime context should not inject stable environment messages, got %+v", segments)
+	}
+	content := rt.BaseSystemPrompt
 	if strings.Contains(content, "[REPO_MAP]") || strings.Contains(content, "source: runtime.repo_map") {
-		t.Fatalf("per-turn context should not inject repo map by default:\n%s", content)
+		t.Fatalf("base system prompt should not inject repo map by default:\n%s", content)
 	}
 	if strings.Contains(content, "[RECENT_DIFF]") {
-		t.Fatalf("per-turn context should not inject recent diff by default:\n%s", content)
+		t.Fatalf("base system prompt should not inject recent diff by default:\n%s", content)
 	}
 }
 

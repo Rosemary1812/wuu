@@ -1,10 +1,10 @@
 // Package prompt implements a section-based system prompt builder.
 //
-// Static sections (base prompt, coordinator preamble) are placed first
-// so the prompt prefix stays stable across turns, maximizing provider
-// prompt-cache hit rates. Session-scoped discovered sections such as
-// memory, skills, and workflows follow. Volatile environment and git
-// state belong in per-turn context injection, not in this builder.
+// Static sections (base prompt, coordinator preamble, session environment)
+// are placed first so the prompt prefix stays stable across turns, maximizing
+// provider prompt-cache hit rates. Session-scoped discovered sections such as
+// memory, skills, and workflows follow. Volatile repository state belongs in
+// per-turn context injection or tools, not in this builder.
 //
 // Memory files are truncated to MaxMemoryLines / MaxMemoryBytes to prevent
 // prompt explosion from large project instruction files.
