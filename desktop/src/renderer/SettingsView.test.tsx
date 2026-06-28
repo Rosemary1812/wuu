@@ -274,7 +274,7 @@ describe("SettingsView advanced settings", () => {
 });
 
 describe("SettingsView About section", () => {
-  it("renders core and protocol version once initialized", async () => {
+  it("includes core version in the copied version info when initialized", async () => {
     installBuildInfoStub({
       core: {
         version: "v0.2.3",
@@ -282,7 +282,12 @@ describe("SettingsView About section", () => {
         date: "2026-06-04T07:00:00Z",
         dirty: false,
       },
-      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+      desktop: { version: "0.0.0-test", date: "2026-06-28T18:44:52Z" },
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
     });
     const { about, text } = renderSettings({
       initialized: baseInitialized({
@@ -295,83 +300,72 @@ describe("SettingsView About section", () => {
       }),
     });
     expect(about).not.toBeNull();
-    // Wait for the desktop build info effect to resolve.
     await act(async () => {
       await Promise.resolve();
     });
-    expect(text()).toContain("v0.2.3");
-    expect(text()).toContain("abc1234");
-    expect(text()).toContain("wuu-app-server/v0.1");
-  });
-
-  it("marks dirty core builds so the user can tell work-in-progress", async () => {
-    installBuildInfoStub({
-      core: undefined,
-      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
-    });
-    const { text } = renderSettings({
-      initialized: baseInitialized({
-        core: {
-          version: "v0.1.0-dev",
-          commit: "fb3e89e",
-          date: "2026-06-04T07:00:00Z",
-          dirty: true,
-        },
-      }),
-    });
+    // The visible About row only shows the desktop version; the core version
+    // lives in the clipboard payload instead.
+    expect(text()).toContain("v0.0.0-test");
+    expect(text()).not.toContain("v0.2.3");
+    const button = container.querySelector("button.settings-button");
     await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
     });
-    expect(text()).toContain("v0.1.0-dev");
-    expect(text()).toContain("fb3e89e-dirty");
+    expect(writeText).toHaveBeenCalledWith(
+      "wuu v0.0.0-test · 2026-06-28 18:44:52Z · core v0.2.3"
+    );
   });
 
-  it("falls back to a placeholder when the app-server has not reported core info", async () => {
+  it("omits core version from the copy when the app-server has not reported core info", async () => {
     installBuildInfoStub({
       core: undefined,
-      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+      desktop: { version: "0.0.0-test", date: "2026-06-28T18:44:52Z" },
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
     });
     const { text } = renderSettings({ initialized: baseInitialized() });
     await act(async () => {
       await Promise.resolve();
     });
-    expect(text()).toContain("未连接");
+    expect(text()).toContain("关于");
+    expect(text()).not.toContain("未连接");
+    const button = container.querySelector("button.settings-button");
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(writeText).toHaveBeenCalledWith("wuu v0.0.0-test · 2026-06-28 18:44:52Z");
   });
 
-  it("renders extension trust summary", async () => {
+  it("renders About section with desktop version and copy action", async () => {
     installBuildInfoStub({
       core: undefined,
-      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+      desktop: { version: "0.0.0-test", date: "2026-06-28T18:44:52Z" },
     });
-    const { text } = renderSettings({
-      initialized: baseInitialized({
-        extension_trust: {
-          main_session: {
-            mcp: { allowed: true, active: false },
-            hooks: { allowed: true, active: true },
-            plugins: { allowed: true, active: true, count: 1 },
-            skills: { allowed: true, active: true, count: 2, known_tools: 1, visible_tools: 1 },
-            workflows: { allowed: true, active: false },
-            external_tools: { allowed: true, active: false },
-          },
-          reviewer_session: {
-            mcp: { allowed: false, active: false },
-            hooks: { allowed: false, active: false },
-            plugins: { allowed: false, active: false },
-            skills: { allowed: false, active: false },
-            workflows: { allowed: false, active: false },
-            external_tools: { allowed: false, active: false },
-          },
-        },
-      }),
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
     });
+    const { text } = renderSettings({ initialized: baseInitialized() });
     await act(async () => {
       await Promise.resolve();
     });
-    expect(text()).toContain("扩展边界");
-    expect(text()).toContain("Plugins 1");
-    expect(text()).toContain("Skills 2");
-    expect(text()).toContain("Reviewer：关闭扩展");
+    expect(text()).toContain("关于");
+    expect(text()).toContain("v0.0.0-test");
+    expect(text()).not.toContain("更新于");
+    expect(text()).toContain("复制版本信息");
+    const button = container.querySelector("button.settings-button");
+    expect(button?.textContent).toBe("复制");
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(writeText).toHaveBeenCalledWith("wuu v0.0.0-test · 2026-06-28 18:44:52Z");
   });
 
   it("renders MCP server status", async () => {

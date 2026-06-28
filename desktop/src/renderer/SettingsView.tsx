@@ -23,9 +23,6 @@ import {
 } from "react";
 import type {
   DesktopBuildInfo,
-  ExtensionSessionTrustSummary,
-  ExtensionSurfaceTrustSummary,
-  ExtensionTrustSummary,
   InitializeResult,
   MCPServerStatus,
   ProviderSummary,
@@ -36,6 +33,10 @@ import type {
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 
 export type SettingsPage = "providers" | "advanced" | "general" | "usage";
+
+type CopyState = "idle" | "copying" | "copied";
+
+const COPY_RESET_MS = 1500;
 
 export function SettingsView({
   initialized,
@@ -102,6 +103,7 @@ export function SettingsView({
   const [temperatureDraft, setTemperatureDraft] = useState("0.2");
   const [advancedError, setAdvancedError] = useState("");
   const [advancedSaved, setAdvancedSaved] = useState(false);
+  const [copyState, setCopyState] = useState<CopyState>("idle");
 
   useEffect(() => {
     setActivePage(initialPage ?? "providers");
@@ -259,6 +261,40 @@ export function SettingsView({
       setMCPError(err instanceof Error ? err.message : String(err));
     } finally {
       setMCPBusyServer("");
+    }
+  }
+
+  async function copyVersionInfo(): Promise<void> {
+    if (!desktopBuild || copyState === "copying") {
+      return;
+    }
+    setCopyState("copying");
+    const pieces = [`wuu ${versionLabel(desktopBuild.version)}`];
+    if (desktopBuild.date) {
+      pieces.push(formatBuildDate(desktopBuild.date));
+    }
+    if (core?.version) {
+      pieces.push(`core ${versionLabel(core.version)}`);
+    }
+    const text = pieces.join(" · ");
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const fallback = document.createElement("textarea");
+        fallback.value = text;
+        fallback.setAttribute("readonly", "");
+        fallback.style.position = "absolute";
+        fallback.style.left = "-9999px";
+        document.body.appendChild(fallback);
+        fallback.select();
+        document.execCommand("copy");
+        document.body.removeChild(fallback);
+      }
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), COPY_RESET_MS);
+    } catch {
+      setCopyState("idle");
     }
   }
 
@@ -442,7 +478,6 @@ export function SettingsView({
             <SettingsGeneralPage
               initialized={initialized}
               desktopBuild={desktopBuild}
-              core={core}
               showDebugControlsSetting={showDebugControlsSetting}
               debugControlsEnabled={debugControlsEnabled}
               mcpServers={mcpServers}
@@ -451,6 +486,8 @@ export function SettingsView({
               mcpBusyServer={mcpBusyServer}
               onDebugControlsChange={onDebugControlsChange}
               onMCPAction={runMCPAction}
+              copyState={copyState}
+              onCopyVersion={copyVersionInfo}
             />
           ) : (
             <SettingsUsagePage
@@ -848,20 +885,20 @@ function SettingsAdvancedPage({
   return (
     <SettingsSection
       title="高级"
-      description="调整上下文窗口、自动压缩触发点和单轮运行预算。"
+      description="调整上下文窗口、压缩策略与单轮运行上限。"
       testID="settings-advanced"
     >
       <form className="settings-card" onSubmit={onSubmit}>
         <SettingsRow
           title="上下文与压缩"
-          description="用于 BYOK 网关、模型别名和长会话预算控制"
+          description="控制长会话的上下文窗口和压缩行为"
           block
         >
           <span />
         </SettingsRow>
         <SettingsRow
           title="自动压缩"
-          description="接近可用上下文时自动整理旧历史；溢出恢复仍会保留"
+          description="接近上下文上限时自动整理旧历史"
         >
           <button
             className="settings-switch"
@@ -877,7 +914,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="压缩触发阈值"
-          description="百分比；留空使用模型可用窗口，50 表示更早压缩"
+          description="留空使用模型窗口；数值越小越早压缩"
           block
         >
           <input
@@ -891,7 +928,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="保留最近上下文"
-          description="token；留空使用默认 20,000，控制压缩后保留的原文历史"
+          description="留空使用默认 20,000 token"
           block
         >
           <input
@@ -905,7 +942,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="当前服务上下文窗口"
-          description="token；用于自定义模型、网关别名或未收录新模型"
+          description="自定义模型或网关别名时使用"
           block
         >
           <input
@@ -919,7 +956,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="未知模型窗口"
-          description="token；当前 Provider 未覆盖且模型库未知时使用"
+          description="Provider 未覆盖该模型时使用"
           block
         >
           <input
@@ -941,7 +978,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="压缩触发"
-          description="扣除输出预留后，主动整理旧历史的 token 点"
+          description="扣除输出预留后触发压缩的 token 点"
         >
           <span className="settings-row-control-value">
             {formatTokenCount(initialized?.advanced_settings?.compact_threshold_tokens ?? 0)}
@@ -957,14 +994,14 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="Agent 预算"
-          description="控制单轮自动执行的边界"
+          description="单轮自动执行的上限"
           block
         >
           <span />
         </SettingsRow>
         <SettingsRow
           title="最大步数"
-          description="0 表示不设硬上限"
+          description="0 表示不设上限"
           block
         >
           <input
@@ -1006,7 +1043,6 @@ function SettingsAdvancedPage({
 function SettingsGeneralPage({
   initialized,
   desktopBuild,
-  core,
   showDebugControlsSetting,
   debugControlsEnabled,
   mcpServers,
@@ -1014,11 +1050,12 @@ function SettingsGeneralPage({
   mcpError,
   mcpBusyServer,
   onDebugControlsChange,
-  onMCPAction
+  onMCPAction,
+  copyState,
+  onCopyVersion
 }: {
   initialized: InitializeResult | undefined;
   desktopBuild: DesktopBuildInfo | undefined;
-  core: InitializeResult["core"] | undefined;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
   mcpServers: MCPServerStatus[];
@@ -1027,6 +1064,8 @@ function SettingsGeneralPage({
   mcpBusyServer: string;
   onDebugControlsChange: (enabled: boolean) => void;
   onMCPAction: (name: string, action: "connect" | "disconnect" | "refresh") => Promise<void>;
+  copyState: CopyState;
+  onCopyVersion: () => Promise<void>;
 }): JSX.Element {
   return (
     <>
@@ -1056,8 +1095,8 @@ function SettingsGeneralPage({
       ) : null}
 
       <SettingsSection
-        title="模型工具面"
-        description="当前模型实际能看到的能力和文件编辑方式。"
+        title="工具"
+        description="当前模型可调用的能力和文件编辑方式。"
         testID="settings-tool-surface"
       >
         <SettingsCard>
@@ -1071,14 +1110,14 @@ function SettingsGeneralPage({
           </SettingsRow>
           <SettingsRow
             title="编辑方式"
-            description={initialized?.tool_surface?.bash_first ? "终端操作默认走 bash" : "按模型工具面执行"}
+            description={initialized?.tool_surface?.bash_first ? "终端命令默认走 bash" : "按模型原生方式编辑"}
           >
             <span className="settings-row-control-value">
               {initialized?.tool_surface?.edit_primitive ?? initialized?.model_profile?.edit_primitive ?? "—"}
             </span>
           </SettingsRow>
           <SettingsRow
-            title="可见能力"
+            title="可用工具"
             description={formatToolSurfaceCounts(initialized)}
             block
           >
@@ -1091,7 +1130,7 @@ function SettingsGeneralPage({
 
       <SettingsSection
         title="MCP"
-        description="外部 MCP 服务器连接状态。"
+        description="外部 MCP 服务器的连接状态。"
         testID="settings-mcp"
       >
         <SettingsCard>
@@ -1147,36 +1186,31 @@ function SettingsGeneralPage({
 
       <SettingsSection
         title="关于"
-        description="wuu 桌面与核心的构建信息。报问题时带上这一段。"
+        description="查看当前版本号，或复制版本信息用于反馈问题。"
         testID="settings-about"
       >
         <SettingsCard>
           <SettingsRow
-            title="桌面端"
-            description="Electron 客户端构建"
+            title="版本"
+            description="桌面端当前构建版本"
           >
             <span className="settings-row-control-value">
-              {desktopBuild ? `v${desktopBuild.version} · ${formatBuildDate(desktopBuild.date)}` : "加载中…"}
+              {desktopBuild ? versionLabel(desktopBuild.version) : "加载中…"}
             </span>
           </SettingsRow>
           <SettingsRow
-            title="核心"
-            description="wuu app-server 二进制构建"
-          >
-            <span className="settings-row-control-value">{formatCoreBuild(core)}</span>
-          </SettingsRow>
-          <SettingsRow
-            title="App-server 协议"
-            description="桌面与核心的 IPC 协议版本"
-          >
-            <span className="settings-row-control-value">{initialized?.protocol_version ?? "—"}</span>
-          </SettingsRow>
-          <SettingsRow
-            title="扩展边界"
-            description="MCP、Hooks、Plugins、Skills 和 Workflows 的运行时状态"
+            title="复制版本信息"
+            description="反馈问题时附上这段文字。"
             block
           >
-            <span className="settings-row-control-value">{formatExtensionTrust(initialized?.extension_trust)}</span>
+            <button
+              className="settings-button"
+              type="button"
+              onClick={() => void onCopyVersion()}
+              disabled={!desktopBuild || copyState === "copying"}
+            >
+              {copyState === "copied" ? "已复制" : "复制"}
+            </button>
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
@@ -1398,7 +1432,7 @@ function settingsPageMeta(page: SettingsPage): { title: string; description: str
     case "general":
       return {
         title: "常规",
-        description: "查看模型工具面、MCP 服务器状态和构建信息。"
+        description: "查看可用工具、MCP 连接和当前版本。"
       };
     case "usage":
       return {
@@ -1649,6 +1683,14 @@ function localDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function versionLabel(version: string): string {
+  const trimmed = version.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  return trimmed.toLowerCase().startsWith("v") ? trimmed : `v${trimmed}`;
+}
+
 function formatBuildDate(iso: string): string {
   // The build date is a UTC ISO timestamp; render in a compact local form
   // so the user can correlate it with their clock without doing TZ math.
@@ -1657,20 +1699,6 @@ function formatBuildDate(iso: string): string {
     return iso;
   }
   return parsed.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
-}
-
-function formatCoreBuild(core: InitializeResult["core"]): string {
-  if (!core || !core.version) {
-    return "未连接";
-  }
-  const pieces: string[] = [`v${core.version}`];
-  if (core.commit) {
-    pieces.push(core.dirty ? `${core.commit}-dirty` : core.commit);
-  }
-  if (core.date) {
-    pieces.push(formatBuildDate(core.date));
-  }
-  return pieces.join(" · ");
 }
 
 function formatSurfaceRuntime(initialized: InitializeResult | undefined): string {
@@ -1689,7 +1717,7 @@ function formatToolSurfaceCounts(initialized: InitializeResult | undefined): str
   }
   const visible = surface.tool_names.length;
   const hidden = surface.hidden_tool_names.length;
-  return `${visible} 个工具可见，${hidden} 个已隐藏`;
+  return `${visible} 个可用，${hidden} 个已隐藏`;
 }
 
 function formatToolSurfaceCapabilities(initialized: InitializeResult | undefined): string {
@@ -1768,41 +1796,6 @@ function mcpAuthLabel(status: string): string {
     default:
       return status;
   }
-}
-
-function formatExtensionTrust(trust?: ExtensionTrustSummary): string {
-  if (!trust) {
-    return "未连接";
-  }
-  const active: string[] = [];
-  appendExtensionSurface(active, "MCP", trust.main_session?.mcp);
-  appendExtensionSurface(active, "Hooks", trust.main_session?.hooks);
-  appendExtensionSurface(active, "Plugins", trust.main_session?.plugins);
-  appendExtensionSurface(active, "Skills", trust.main_session?.skills);
-  appendExtensionSurface(active, "Workflows", trust.main_session?.workflows);
-  const mainSummary = active.length > 0 ? active.join("，") : "无活跃扩展";
-  const reviewerSummary = extensionSessionAllowsAny(trust.reviewer_session) ? "Reviewer：允许部分扩展" : "Reviewer：关闭扩展";
-  return `主会话：${mainSummary} · ${reviewerSummary}`;
-}
-
-function appendExtensionSurface(parts: string[], label: string, surface?: ExtensionSurfaceTrustSummary): void {
-  if (!surface?.active) {
-    return;
-  }
-  const count = surface.count ?? surface.known_tools ?? surface.visible_tools ?? 0;
-  const disabled = surface.allowed ? "" : "（已禁用）";
-  parts.push(count > 0 ? `${label} ${count}${disabled}` : `${label}${disabled}`);
-}
-
-function extensionSessionAllowsAny(session?: ExtensionSessionTrustSummary): boolean {
-  return Boolean(
-    session?.mcp?.allowed ||
-      session?.hooks?.allowed ||
-      session?.plugins?.allowed ||
-      session?.skills?.allowed ||
-      session?.workflows?.allowed ||
-      session?.external_tools?.allowed
-  );
 }
 
 function providerDisplayLabels(providers: ProviderSummary[]): Map<string, string> {
