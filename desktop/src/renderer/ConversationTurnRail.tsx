@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import type { Turn } from "../shared/protocol";
@@ -105,7 +104,9 @@ export function ConversationTurnRail({
     startScrollTop: number;
     railHeight: number;
     maxScrollTop: number;
+    moved: boolean;
   } | null>(null);
+  const suppressNextClickRef = useRef(false);
   // Mirror of dragStateRef so the mousemove magnet handler can see whether
   // a drag is in progress and stop fighting the pointer-drag-driven
   // highlight. Without this, mousemove keeps setting `hoveredTurnID` to
@@ -347,6 +348,7 @@ export function ConversationTurnRail({
         startScrollTop: scrollNode.scrollTop,
         railHeight,
         maxScrollTop,
+        moved: false,
       };
       isDraggingRef.current = true;
       setHoveredTurnID(undefined);
@@ -355,13 +357,6 @@ export function ConversationTurnRail({
       // the hover state, and the highlight then follows the pointer as
       // we translate the drag into scrollTop changes.
       setDraggingTurnID(closestTurnIDAt(pointerY(event)));
-      try {
-        container.setPointerCapture(event.pointerId);
-      } catch {
-        // Pointer capture is best-effort; native listeners still get the
-        // move events while the pointer is held inside the rail.
-      }
-      event.preventDefault();
       if (event.clientY < railRect.top || event.clientY > railRect.bottom) {
         const ratio = Math.min(
           1,
@@ -395,6 +390,7 @@ export function ConversationTurnRail({
       );
       if (scrollNode.scrollTop !== nextScrollTop) {
         scrollNode.scrollTop = nextScrollTop;
+        drag.moved = true;
         event.preventDefault();
       }
       // Slide the highlight to whichever bar is now under the cursor so
@@ -412,22 +408,25 @@ export function ConversationTurnRail({
       }
       dragStateRef.current = null;
       isDraggingRef.current = false;
-      if (container.hasPointerCapture(event.pointerId)) {
-        container.releasePointerCapture(event.pointerId);
+      if (drag.moved) {
+        suppressNextClickRef.current = true;
+        window.setTimeout(() => {
+          suppressNextClickRef.current = false;
+        }, 0);
       }
       setDraggingTurnID(undefined);
       setHoveredTurnID(undefined);
     }
 
     container.addEventListener("pointerdown", handlePointerDown);
-    container.addEventListener("pointermove", handlePointerMove);
-    container.addEventListener("pointerup", endDrag);
-    container.addEventListener("pointercancel", endDrag);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
     return () => {
       container.removeEventListener("pointerdown", handlePointerDown);
-      container.removeEventListener("pointermove", handlePointerMove);
-      container.removeEventListener("pointerup", endDrag);
-      container.removeEventListener("pointercancel", endDrag);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
     };
   }, [onDragScrollAway, resolveScrollContainer]);
 
@@ -436,6 +435,10 @@ export function ConversationTurnRail({
   // auto-follow before jumping, so streaming cannot snap the view back
   // to the bottom immediately after the click.
   function handleBarClick(turn: Turn) {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
     for (const item of turn.items ?? []) {
       const text = queryTextForUserItem(item);
       if (!text) {

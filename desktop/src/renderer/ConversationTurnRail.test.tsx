@@ -39,6 +39,23 @@ function turn(id: string, query: string): Turn {
   };
 }
 
+function railPointerEvent(
+  type: string,
+  init: MouseEventInit & { pointerId?: number } = {},
+): PointerEvent {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    ...init,
+  }) as PointerEvent;
+  Object.defineProperty(event, "pointerId", {
+    configurable: true,
+    value: init.pointerId ?? 1,
+  });
+  return event;
+}
+
 function renderRail({
   turns,
   activeTurnID,
@@ -103,6 +120,24 @@ describe("ConversationTurnRail", () => {
       itemID: "user-turn-2",
       text: "second query",
     });
+  });
+
+  it("does not cancel pointerdown before a normal bar click can fire", () => {
+    const scrollNode = document.createElement("div");
+    renderRail({
+      scrollContainerRef: { current: scrollNode },
+      onSelectQueryHistory: () => {},
+    });
+
+    const bar = container?.querySelector<HTMLElement>(
+      ".conversation-turn-rail-bar[role='button']",
+    );
+    const event = railPointerEvent("pointerdown", { clientY: 10 });
+    act(() => {
+      bar?.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("stays hidden for an empty conversation", () => {
