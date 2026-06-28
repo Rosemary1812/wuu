@@ -1237,14 +1237,6 @@ export function App(): JSX.Element {
   const environmentPanelVisible = environmentPanelTargetVisible;
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
-  const queryHistoryDocked = Boolean(
-    environmentPanelReserved &&
-      environmentPanelVisible &&
-      !activeThreadReadOnly &&
-      pastQueries.length > 0 &&
-      !showingWorkspaceMode &&
-      !showingSkillsCatalog,
-  );
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     sidebarAnimating ? " sidebar-animating" : ""
@@ -1312,12 +1304,6 @@ export function App(): JSX.Element {
     setRightPanelFilePath(undefined);
     setEnvironmentPanelMenu(null);
   }, []);
-
-  useEffect(() => {
-    if (queryHistoryDocked) {
-      setQueryHistoryOpen(false);
-    }
-  }, [queryHistoryDocked]);
 
   // Mark the active thread's latest completed turn as viewed so the sidebar
   // and session tab strip stop showing the "has-unread" dot. This effect is
@@ -5250,8 +5236,6 @@ export function App(): JSX.Element {
           activeMenu={environmentPanelMenu}
           running={anyThreadIsRunning}
           pullRequestDisabledReason={pullRequestDisabledReason}
-          queryHistoryDocked={queryHistoryDocked}
-          queryHistory={pastQueries}
           onSetActiveMenu={setEnvironmentPanelMenu}
           onClose={() => closeEnvironmentPanel({ dismissed: true })}
           onSelectBranch={(branch) => void checkoutBranch(branch)}
@@ -5267,7 +5251,6 @@ export function App(): JSX.Element {
           onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
           onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
           onOpenBackgroundPreview={openBackgroundProcessPreview}
-          onSelectQueryHistory={handleQueryHistorySelect}
           rightPanelFilePath={rightPanelFilePath}
           onCloseFilePreview={handleCloseFilePreview}
         />
@@ -5300,7 +5283,7 @@ export function App(): JSX.Element {
               />
             ) : (
               <>
-                {!queryHistoryDocked && !activeThreadReadOnly ? (
+                {!activeThreadReadOnly ? (
                   <QueryHistoryRail
                     entries={pastQueries}
                     maxBars={QUERY_HISTORY_RAIL_MAX_BARS}
@@ -5447,7 +5430,6 @@ export function App(): JSX.Element {
       ) : null}
       {debugControlsVisible ? <DesignTokensPanel /> : null}
       {queryHistoryOpen &&
-      !queryHistoryDocked &&
       !activeThreadReadOnly &&
       pastQueries.length > 0 ? (
         <FloatingMenuPortal

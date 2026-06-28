@@ -48,9 +48,7 @@ function initialized(): InitializeResult {
   };
 }
 
-function renderStack(options: {
-  queryHistoryDocked: boolean;
-}): void {
+function renderStack(): void {
   const state: AppState = {
     ...initialState,
     initialized: initialized(),
@@ -71,11 +69,6 @@ function renderStack(options: {
         activeMenu={null}
         running={false}
         pullRequestDisabledReason=""
-        queryHistoryDocked={options.queryHistoryDocked}
-        queryHistory={[
-          { turnID: "turn-1", itemID: "item-1", text: "first query" },
-          { turnID: "turn-2", itemID: "item-2", text: "second query" },
-        ]}
         onSetActiveMenu={() => {}}
         onClose={() => {}}
         onSelectBranch={() => {}}
@@ -85,25 +78,18 @@ function renderStack(options: {
         onOpenPullRequest={() => {}}
         onStopBackgroundProcess={() => {}}
         onOpenBackgroundPreview={() => {}}
-        onSelectQueryHistory={() => {}}
       />,
     );
   });
 }
 
 describe("EnvironmentSideStack", () => {
-  it("docks query history below the environment panel when requested", () => {
-    renderStack({ queryHistoryDocked: true });
+  it("renders the environment panel without a docked query-history card", () => {
+    renderStack();
 
     expect(container.querySelector(".environment-side-stack > .environment-panel")).not.toBeNull();
-    expect(container.querySelector(".environment-side-stack > .query-history-environment-slot")).not.toBeNull();
-    expect(container.querySelectorAll(".query-history-item")).toHaveLength(2);
-  });
-
-  it("does not render the docked query history slot when docking is off", () => {
-    renderStack({ queryHistoryDocked: false });
-
     expect(container.querySelector(".environment-side-stack > .query-history-environment-slot")).toBeNull();
+    expect(container.querySelector(".query-history-popover")).toBeNull();
   });
 
   it("lets branch menus escape the side-stack panel bounds", () => {

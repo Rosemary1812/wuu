@@ -7,8 +7,6 @@ import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
-import type { QueryHistoryEntry } from "./QueryHistoryPopover";
-import { QueryHistoryPopover } from "./QueryHistoryPopover";
 
 export function EnvironmentSideStack({
   visible,
@@ -23,8 +21,6 @@ export function EnvironmentSideStack({
   activeMenu,
   running,
   pullRequestDisabledReason,
-  queryHistoryDocked,
-  queryHistory,
   rightPanelFilePath,
   onCloseFilePreview,
   onSetActiveMenu,
@@ -36,7 +32,6 @@ export function EnvironmentSideStack({
   onOpenPullRequest,
   onStopBackgroundProcess,
   onOpenBackgroundPreview,
-  onSelectQueryHistory,
 }: {
   visible: boolean;
   mounted: boolean;
@@ -50,8 +45,6 @@ export function EnvironmentSideStack({
   activeMenu: EnvironmentPanelMenu;
   running: boolean;
   pullRequestDisabledReason: string;
-  queryHistoryDocked: boolean;
-  queryHistory: QueryHistoryEntry[];
   /**
    * Absolute path of the file the right panel should preview. When set
    * together with `activeMenu === "file"`, the panel swaps to a file
@@ -68,7 +61,6 @@ export function EnvironmentSideStack({
   onOpenPullRequest: () => void;
   onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
   onOpenBackgroundPreview: (process: BackgroundProcessItem) => void;
-  onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): JSX.Element | null {
   if ((!visible && !mounted) || !state.initialized) {
     return null;
@@ -99,14 +91,6 @@ export function EnvironmentSideStack({
         onStopBackgroundProcess={onStopBackgroundProcess}
         onOpenBackgroundPreview={onOpenBackgroundPreview}
       />
-      {queryHistoryDocked ? (
-        <div className="query-history-environment-slot">
-          <QueryHistoryPopover
-            entries={queryHistory}
-            onSelect={onSelectQueryHistory}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
