@@ -4439,8 +4439,10 @@ func TestToolkit_ToolPolicyContextBlock(t *testing.T) {
 		}
 	}
 	blocks := kit.ContextBlocks()
-	if len(blocks) == 0 || blocks[0].Kind != wuucontext.BlockToolPolicy {
-		t.Fatalf("ContextBlocks should inject tool policy first: %+v", blocks)
+	for _, block := range blocks {
+		if block.Kind == wuucontext.BlockToolPolicy {
+			t.Fatalf("ContextBlocks should keep stable tool policy out of request-only context: %+v", blocks)
+		}
 	}
 }
 

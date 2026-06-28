@@ -306,6 +306,10 @@ func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 	if !strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
 		t.Fatalf("default profile should inject the global memory snapshot:\n%s", rt.BaseSystemPrompt)
 	}
+	if !strings.Contains(rt.BaseSystemPrompt, "# Runtime Tool Policy") ||
+		!strings.Contains(rt.BaseSystemPrompt, "approval_policy: on_request") {
+		t.Fatalf("default profile should inject stable tool policy into the system prompt:\n%s", rt.BaseSystemPrompt)
+	}
 	defs := make(map[string]bool)
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true

@@ -216,7 +216,7 @@ func NewSession(opts Options) (*Session, error) {
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
 	mainSurface := activeSurface(toolkit)
-	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
 
@@ -234,7 +234,7 @@ func NewSession(opts Options) (*Session, error) {
 		workerToolProviderName := roleSelections.Worker.RuleProvider
 		workerToolModeModel := roleSelections.Worker.APIModel
 		workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
-		workerBaseSystemPrompt := buildBaseSystemPrompt(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+		workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
@@ -255,7 +255,7 @@ func NewSession(opts Options) (*Session, error) {
 			ReportSink:      loopSink,
 			WorkerSysPrompt: workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := toolkit.CloneForRoot(workerRoot)
@@ -602,13 +602,14 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				workerProfileMemoryEnabled = true
 				workerProfileMemoryEntries = recallProfileMemory(context.Background(), s.Toolkit.Memory())
 			}
-			workerBaseSystemPrompt := buildBaseSystemPrompt(
+			workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(
 				s.RootDir,
 				config.WorkerSystemPrompt(),
 				s.UserSystemPrompt,
 				workerToolProviderName,
 				workerToolModeModel,
 				workerToolSurface,
+				toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 				s.Memory,
 				workerProfileMemoryEntries,
 				workerProfileMemoryEnabled,
@@ -632,7 +633,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				ReportSink:      loopSink,
 				WorkerSysPrompt: workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
+					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions), s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					workerKit, err := s.Toolkit.CloneForRoot(workerRoot)
@@ -1415,7 +1416,7 @@ func newProfileMemoryProvider(wuuHome, _ string) (*memstore.FileProvider, error)
 // with an explicit profile still shares the same store as the main
 // session that spawned it; the gating here is about whether the worker
 // should be memory-bearing at all, not about which store to use.
-func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) (string, error) {
+func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) (string, error) {
 	name := strings.TrimSpace(profileName)
 	var entries []memstore.Entry
 	enabled := name != "" && !strings.EqualFold(name, config.DefaultAgentName)
@@ -1426,7 +1427,7 @@ func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, pro
 		}
 		entries = recallProfileMemory(context.Background(), provider)
 	}
-	return buildBaseSystemPrompt(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, entries, enabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
+	return buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, entries, enabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {
@@ -1446,6 +1447,7 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		providerName,
 		model,
 		activeSurface(s.Toolkit),
+		toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 		s.Memory,
 		profileMemoryEntries,
 		profileMemoryEnabled,
@@ -1464,10 +1466,14 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 }
 
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows).Content
+	return buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, wuucontext.Block{}, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 }
 
-func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
+func buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows).Content
+}
+
+func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	pb.AddHarnessAdapter(providerName, model)
@@ -1476,6 +1482,7 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 		pb.AddToolDiscovery()
 	}
 	pb.AddSection("environment", environmentSystemPromptSection(rootDir), true)
+	pb.AddSection("tool_policy", toolPolicySystemPromptSection(toolPolicyBlock), true)
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}
@@ -1503,6 +1510,25 @@ func environmentSystemPromptSection(rootDir string) string {
 		fmt.Fprintf(&b, "- Current date: %s\n", date)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func toolPolicySystemBlockForToolkit(kit *tools.Toolkit, toolPolicy config.ToolPolicyConfig, permissions config.ResolvedPermissions) wuucontext.Block {
+	if kit == nil {
+		return wuucontext.Block{}
+	}
+	block, _ := tools.ToolPolicyContextBlockFor(
+		ToolPolicyFromConfigAndPermissions(toolPolicy, permissions),
+		tools.PermissionBoundaryForProfile(permissions.PermissionProfile),
+	)
+	return block
+}
+
+func toolPolicySystemPromptSection(block wuucontext.Block) string {
+	content := strings.TrimSpace(block.Content)
+	if block.Kind != wuucontext.BlockToolPolicy || content == "" {
+		return ""
+	}
+	return "# Runtime Tool Policy\n\n" + content
 }
 
 func agentPromptSections(sections []prompt.SectionInfo) []agent.SystemPromptSectionInfo {

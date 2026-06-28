@@ -17,9 +17,6 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		return nil
 	}
 	var blocks []wuucontext.Block
-	if block, ok := t.ToolPolicyContextBlock(); ok {
-		blocks = append(blocks, block)
-	}
 	blocks = append(blocks, t.SessionMemoryContextBlocks()...)
 	blocks = append(blocks, t.PlanContextBlocks()...)
 	if block, ok := t.ActiveFilesContextBlock(); ok {
@@ -49,26 +46,33 @@ func (t *Toolkit) SessionMemoryContextBlocks() []wuucontext.Block {
 }
 
 func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
-	if t == nil || !hasRuntimeToolPolicyContext(t.toolPolicy, t.permissionBoundary) {
+	if t == nil {
+		return wuucontext.Block{}, false
+	}
+	return ToolPolicyContextBlockFor(t.toolPolicy, t.permissionBoundary)
+}
+
+func ToolPolicyContextBlockFor(policy ToolPolicy, boundary PermissionBoundary) (wuucontext.Block, bool) {
+	if !hasRuntimeToolPolicyContext(policy, boundary) {
 		return wuucontext.Block{}, false
 	}
 	var b strings.Builder
-	if profile := strings.TrimSpace(t.permissionBoundary.Profile); profile != "" {
+	if profile := strings.TrimSpace(boundary.Profile); profile != "" {
 		fmt.Fprintf(&b, "permission_profile: %s\n", profile)
 		writePermissionBoundaryContext(&b, profile)
 	}
-	if t.toolPolicy.Profile != "" {
-		fmt.Fprintf(&b, "profile: %s\n", t.toolPolicy.Profile)
+	if policy.Profile != "" {
+		fmt.Fprintf(&b, "profile: %s\n", policy.Profile)
 	}
-	if t.toolPolicy.ApprovalPolicy != "" {
-		fmt.Fprintf(&b, "approval_policy: %s\n", t.toolPolicy.ApprovalPolicy)
+	if policy.ApprovalPolicy != "" {
+		fmt.Fprintf(&b, "approval_policy: %s\n", policy.ApprovalPolicy)
 	}
-	if t.toolPolicy.DefaultAction != "" {
-		fmt.Fprintf(&b, "default_action: %s\n", t.toolPolicy.DefaultAction)
+	if policy.DefaultAction != "" {
+		fmt.Fprintf(&b, "default_action: %s\n", policy.DefaultAction)
 	}
-	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(t.toolPolicy.RiskActions))
-	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(t.toolPolicy.KindActions))
-	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(t.toolPolicy.ToolActions))
+	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(policy.RiskActions))
+	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(policy.KindActions))
+	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(policy.ToolActions))
 	b.WriteString("note: permission_boundary is enforced before policy and approval. Boundary denials require changing profile; approval flags cannot bypass them. require_approval means ask the user; auto_classify means let auto mode decide.\n")
 
 	return wuucontext.Block{

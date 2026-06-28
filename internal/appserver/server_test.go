@@ -1845,20 +1845,17 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if contextParams.Event.RequestContext == nil {
 		t.Fatalf("request context missing from turn event: %+v", contextParams.Event)
 	}
-	if contextParams.Event.RequestContext.TransientMessages != 1 || contextParams.Event.RequestContext.ContentBytes == 0 {
+	if contextParams.Event.RequestContext.TransientMessages != 0 || contextParams.Event.RequestContext.ContentBytes != 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
 	}
 	if contextParams.Event.RequestContext.MessageCount == 0 ||
-		contextParams.Event.RequestContext.HiddenMessages == 0 ||
-		contextParams.Event.RequestContext.DynamicBytes == 0 ||
+		contextParams.Event.RequestContext.HiddenMessages != 0 ||
+		contextParams.Event.RequestContext.DynamicBytes != 0 ||
 		contextParams.Event.RequestContext.SystemBytes == 0 ||
 		contextParams.Event.RequestContext.StablePrefixBytes == 0 ||
 		contextParams.Event.RequestContext.TurnPrefixBytes == 0 ||
 		contextParams.Event.RequestContext.MessageBytes == 0 ||
 		contextParams.Event.RequestContext.ToolSchemaBytes == 0 ||
-		contextParams.Event.RequestContext.SegmentLifecycleCounts[string(agent.ContextSegmentRequestOnly)] == 0 ||
-		contextParams.Event.RequestContext.SegmentPlacementCounts[string(agent.ContextSegmentAfterHistory)] == 0 ||
-		contextParams.Event.RequestContext.SegmentCachePolicyCounts[string(agent.ContextSegmentVolatile)] == 0 ||
 		contextParams.Event.RequestContext.SystemHash == "" ||
 		contextParams.Event.RequestContext.StablePrefixHash == "" ||
 		contextParams.Event.RequestContext.TurnPrefixHash == "" ||
@@ -1875,12 +1872,17 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if !hasEnvironmentSection {
 		t.Fatalf("request context should report stable environment system section: %+v", contextParams.Event.RequestContext.SystemSections)
 	}
-	for _, want := range []string{"TOOL_POLICY"} {
-		if !testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, want) {
-			t.Fatalf("request context missing block kind %s: %+v", want, contextParams.Event.RequestContext)
+	hasToolPolicySection := false
+	for _, section := range contextParams.Event.RequestContext.SystemSections {
+		if section.Key == "tool_policy" && section.Static && section.Bytes > 0 && section.Hash != "" {
+			hasToolPolicySection = true
+			break
 		}
 	}
-	for _, unwanted := range []string{"ENVIRONMENT", "TASK", "CONSTRAINT_LEDGER"} {
+	if !hasToolPolicySection {
+		t.Fatalf("request context should report stable tool policy system section: %+v", contextParams.Event.RequestContext.SystemSections)
+	}
+	for _, unwanted := range []string{"ENVIRONMENT", "TOOL_POLICY", "TASK", "CONSTRAINT_LEDGER"} {
 		if testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, unwanted) {
 			t.Fatalf("single-turn request should not include block kind %s: %+v", unwanted, contextParams.Event.RequestContext)
 		}
@@ -5100,7 +5102,8 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	root := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	environmentSection := "# Environment\n\n- Current working directory: " + root + "\n- Current date: 2026-01-01"
-	systemPrompt := "system prompt\n\n" + environmentSection
+	toolPolicySection := "# Runtime Tool Policy\n\nprofile: agent\napproval_policy: on_request\ndefault_action: allow\nnote: permission_boundary is enforced before policy and approval. Boundary denials require changing profile; approval flags cannot bypass them. require_approval means ask the user; auto_classify means let auto mode decide."
+	systemPrompt := "system prompt\n\n" + environmentSection + "\n\n" + toolPolicySection
 	return &runtime.Session{
 		ProviderName: "fake-provider",
 		Model:        "fake-model",
@@ -5114,6 +5117,7 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 			SystemPromptSections: []agent.SystemPromptSectionInfo{
 				{Key: "base", Static: true, Bytes: len("system prompt"), Hash: "base-hash"},
 				{Key: "environment", Static: true, Bytes: len(environmentSection), Hash: "environment-hash"},
+				{Key: "tool_policy", Static: true, Bytes: len(toolPolicySection), Hash: "tool-policy-hash"},
 			},
 		},
 	}
