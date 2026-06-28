@@ -47,6 +47,9 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 		if _, exists := body["temperature"]; exists {
 			t.Fatalf("Codex request must omit unsupported temperature, got %#v", body["temperature"])
 		}
+		if _, exists := body["max_output_tokens"]; exists {
+			t.Fatalf("Codex request must omit unsupported max_output_tokens, got %#v", body["max_output_tokens"])
+		}
 		if body["instructions"] == "" {
 			t.Fatalf("Codex request must include instructions: %#v", body)
 		}
@@ -76,6 +79,10 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 	resp, err := client.Chat(context.Background(), providers.ChatRequest{
 		Model:       "gpt-5-codex",
 		Temperature: 0.2,
+		MaxTokens:   321,
+		ProviderOptions: map[string]any{
+			"maxOutputTokens": 999,
+		},
 		Messages: []providers.ChatMessage{
 			{Role: "system", Content: "sys"},
 			{Role: "user", Content: "hello"},
@@ -319,6 +326,9 @@ func TestCompactWithCodexClientUsesNormalResponsesEndpoint(t *testing.T) {
 		if _, exists := body["tools"]; exists {
 			t.Fatalf("compact summary request must not include tools: %#v", body["tools"])
 		}
+		if _, exists := body["max_output_tokens"]; exists {
+			t.Fatalf("compact summary request must omit unsupported max_output_tokens: %#v", body["max_output_tokens"])
+		}
 		input, ok := body["input"].([]any)
 		if !ok || len(input) != 1 {
 			t.Fatalf("expected one normal Responses input item, got %#v", body["input"])
@@ -387,9 +397,9 @@ func TestCodexRequestAppliesDefaultsButAllowsOverride(t *testing.T) {
 	// User-provided values must be preserved, not overwritten.
 	custom := codexRequest(providers.ChatRequest{
 		ProviderOptions: map[string]any{
-			"include":          []string{"reasoning.text"},
+			"include":           []string{"reasoning.text"},
 			"parallelToolCalls": false,
-			"textVerbosity":    "high",
+			"textVerbosity":     "high",
 		},
 	})
 	customInclude, _ := custom.ProviderOptions["include"].([]string)
@@ -401,6 +411,18 @@ func TestCodexRequestAppliesDefaultsButAllowsOverride(t *testing.T) {
 	}
 	if custom.ProviderOptions["textVerbosity"] != "high" {
 		t.Fatalf("textVerbosity override lost: %#v", custom.ProviderOptions["textVerbosity"])
+	}
+
+	options := map[string]any{"maxOutputTokens": 999}
+	capped := codexRequest(providers.ChatRequest{MaxTokens: 123, ProviderOptions: options})
+	if capped.MaxTokens != 0 {
+		t.Fatalf("Codex request must clear MaxTokens, got %d", capped.MaxTokens)
+	}
+	if _, ok := capped.ProviderOptions["maxOutputTokens"]; ok {
+		t.Fatalf("Codex request must strip maxOutputTokens option: %#v", capped.ProviderOptions)
+	}
+	if _, ok := options["maxOutputTokens"]; !ok {
+		t.Fatalf("codexRequest should not mutate caller provider options")
 	}
 }
 

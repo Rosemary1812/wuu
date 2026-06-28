@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/openai"
 )
@@ -157,12 +158,17 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 // codexRequest applies ChatGPT-Codex specific request shaping. The defaults
 // here mirror the Codex CLI / pi: ask the backend to surface reasoning
 // encrypted content, allow parallel tool calls, and request concise text.
-// Callers can override each field via req.ProviderOptions before sending.
+// It also removes request fields that the Codex subscription backend rejects.
+// Callers can override supported provider options before sending.
 func codexRequest(req providers.ChatRequest) providers.ChatRequest {
 	req.Temperature = 0
+	req.MaxTokens = 0
+	req.ProviderOptions = provideroptions.Clone(req.ProviderOptions)
 	if req.ProviderOptions == nil {
 		req.ProviderOptions = make(map[string]any)
 	}
+	delete(req.ProviderOptions, "maxOutputTokens")
+	delete(req.ProviderOptions, "max_output_tokens")
 	if _, ok := req.ProviderOptions["include"]; !ok {
 		req.ProviderOptions["include"] = []string{"reasoning.encrypted_content"}
 	}
