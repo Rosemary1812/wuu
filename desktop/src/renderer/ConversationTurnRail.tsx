@@ -10,7 +10,8 @@ import {
 import type { Turn } from "../shared/protocol";
 import { queryTextForUserItem } from "./AppState";
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
-import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
+import { RichContent } from "./RichContent";
+import { firstUserMessageText, turnReplySnippet } from "./TurnViewHelpers";
 
 // Rail geometry. The macOS Dock magnification model drives the numbers:
 // a default bar is short, the hovered bar grows by ~3x, and the two
@@ -533,15 +534,17 @@ function visibleTurnIDForScrollNode(
 function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
   const firstUserText = firstUserMessageText(turn);
   const snippet = turnReplySnippet(turn);
-  const body = snippet ? truncateReplyPreview(snippet.text) : "暂无回复";
+  const body = snippet ? snippet.text : "暂无回复";
   return (
     <div className="conversation-turn-rail-preview" role="tooltip">
       {firstUserText ? (
         <div className="conversation-turn-rail-preview-query">
-          {truncateReplyPreview(firstUserText)}
+          <RichContent text={firstUserText} />
         </div>
       ) : null}
-      <div className="conversation-turn-rail-preview-body">{body}</div>
+      <div className="conversation-turn-rail-preview-body">
+        <RichContent text={body} />
+      </div>
     </div>
   );
 }
