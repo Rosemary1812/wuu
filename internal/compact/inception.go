@@ -17,7 +17,7 @@ const (
 	ContextContinuationName     = "wuu_context_continuation"
 	ContextAnchorPrefix         = "CHECKPOINT"
 	legacyContextAnchorPrefix   = "[Wuu context checkpoint]"
-	InceptionContinuationPrefix = "[D-Mail continuation]"
+	InceptionContinuationPrefix = "[Wuu context continuation]"
 	systemReminderOpen          = "<system-reminder>"
 	systemReminderClose         = "</system-reminder>"
 	systemTagOpen               = "<system>"
@@ -130,7 +130,7 @@ func BuildInceptionContinuationContent(anchorID int, summary string) string {
 	summary = strings.TrimSpace(summary)
 	var b strings.Builder
 	b.WriteString(InceptionContinuationPrefix)
-	fmt.Fprintf(&b, "\nYou just received a D-Mail from your future self at Wuu context checkpoint %d. Only conversation history was rewritten; files, processes, browser state, remote systems, and other external state remain current.\n\n", anchorID)
+	fmt.Fprintf(&b, "\nThis message replaces all conversation history after Wuu context checkpoint %d. Files, processes, browser state, remote systems, and other external state remain current; do not treat them as rolled back.\n\n", anchorID)
 	b.WriteString(summary)
 	return wrapInternalContextContent(b.String())
 }

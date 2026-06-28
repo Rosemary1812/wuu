@@ -69,7 +69,7 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 		}
 		if msg.Name == compact.ContextContinuationName &&
 			msg.Hidden &&
-			strings.Contains(msg.Content, "D-Mail") &&
+			strings.Contains(msg.Content, compact.InceptionContinuationPrefix) &&
 			strings.Contains(msg.Content, "External state") {
 			foundContinuation = true
 		}
@@ -166,15 +166,15 @@ func TestActiveProfileCanCallInceptionDirectlyAndRewrite(t *testing.T) {
 	}
 }
 
-func TestInceptionToolDescriptionTeachesDMailTriggers(t *testing.T) {
+func TestInceptionToolDescriptionTeachesTriggers(t *testing.T) {
 	desc := NewInceptionTool(&Env{AgentPath: agentthread.RootPath}).Definition().Description
 	for _, want := range []string{
-		"<system>CHECKPOINT N</system>",
-		"large file",
-		"web/search result",
-		"dead end",
-		"coding/debugging detour",
-		"do not wait until only the final answer remains",
+		"<system>CHECKPOINT {id}</system>",
+		"You read a file",
+		"searched the web",
+		"if not, rewind",
+		"wrote code that did not work",
+		"Do not wait until only the final answer",
 	} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("inception description missing %q:\n%s", want, desc)
