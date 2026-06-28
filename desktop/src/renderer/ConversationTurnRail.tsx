@@ -122,10 +122,10 @@ export function ConversationTurnRail({
     () => conversationTurnRailWindow(turns, windowFocusTurnID, maxVisibleTurns),
     [maxVisibleTurns, turns, windowFocusTurnID],
   );
-  // A pointer drag reuses the same hover/adjacent visual treatment, so the
-  // active "focused" turn is whichever the cursor last hovered or is now
-  // dragging through.
-  const focusedTurnID = hoveredTurnID ?? draggingTurnID;
+  // A pointer drag reuses the same hover/adjacent visual treatment. Dragging
+  // wins over hover so a stale hover state cannot pin the highlight to the bar
+  // where the press started while the pointer moves through the rail.
+  const focusedTurnID = draggingTurnID ?? hoveredTurnID;
   const hoveredIndex = visibleTurns.findIndex((t) => t.id === focusedTurnID);
   const adjacentIndices = new Set<number>();
   if (hoveredIndex >= 0) {
@@ -200,7 +200,7 @@ export function ConversationTurnRail({
     }
 
     function handleMouseMove(event: MouseEvent) {
-      if (!container) {
+      if (!container || isDraggingRef.current) {
         return;
       }
       const barElements = container.querySelectorAll<HTMLElement>(
@@ -336,6 +336,8 @@ export function ConversationTurnRail({
         railHeight,
         maxScrollTop,
       };
+      isDraggingRef.current = true;
+      setHoveredTurnID(undefined);
       // Lock the visual highlight to whichever bar the pointer is over so
       // the user sees the same "this bar is being dragged" feedback as
       // the hover state, and the highlight then follows the pointer as
@@ -397,10 +399,12 @@ export function ConversationTurnRail({
         return;
       }
       dragStateRef.current = null;
+      isDraggingRef.current = false;
       if (container.hasPointerCapture(event.pointerId)) {
         container.releasePointerCapture(event.pointerId);
       }
       setDraggingTurnID(undefined);
+      setHoveredTurnID(undefined);
     }
 
     container.addEventListener("pointerdown", handlePointerDown);
