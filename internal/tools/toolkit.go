@@ -602,6 +602,26 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	return out
 }
 
+// SupportsTool reports whether the active model surface can use the named
+// tool after any required progressive loading. Deferred tools return true here
+// even before tool_search loads their schema; Execute still enforces the
+// loaded-before-use rule.
+func (t *Toolkit) SupportsTool(name string) bool {
+	name = strings.TrimSpace(name)
+	if t == nil || name == "" || t.isToolDisabled(name) {
+		return false
+	}
+	if t.LookupTool(name) == nil {
+		return false
+	}
+	switch t.toolExposure(name) {
+	case ToolExposureDirect, ToolExposureDeferred:
+		return true
+	default:
+		return false
+	}
+}
+
 // SetActiveProfile installs the model profile that drives
 // Definitions(). The toolkit compiles the profile into a Surface and
 // uses it as the whitelist for visible tool names.

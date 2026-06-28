@@ -160,6 +160,7 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 		"`tool_search`",
 		"select:<tool_name>",
 		"desktop port reporting",
+		"context rewrite/continuation",
 		"Do not use `tool_search` for visible core tools",
 	} {
 		if !strings.Contains(result, want) {

@@ -43,6 +43,7 @@ func BuildContextAnchorMessage(anchorID int) providers.ChatMessage {
 				anchorID,
 			),
 		),
+		Hidden: true,
 	}
 }
 

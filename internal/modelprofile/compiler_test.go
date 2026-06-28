@@ -479,16 +479,19 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := mainSurface.Tools["inception"]; ok {
 			t.Errorf("%s/%s main-agent surface must not directly include inception", tt.provider, tt.model)
 		}
-		if _, ok := mainSurface.DeferredTools["inception"]; ok {
-			t.Errorf("%s/%s main-agent surface must not defer inception without anchors", tt.provider, tt.model)
+		if mainSurface.DeferredTools["inception"] != capability.CapabilityContextRewrite {
+			t.Errorf("%s/%s main-agent deferred inception capability = %s, want %s", tt.provider, tt.model, mainSurface.DeferredTools["inception"], capability.CapabilityContextRewrite)
 		}
-		if mainSurface.HiddenTools["inception"] != capability.CapabilityContextRewrite {
-			t.Errorf("%s/%s hidden inception capability = %s, want %s", tt.provider, tt.model, mainSurface.HiddenTools["inception"], capability.CapabilityContextRewrite)
+		if _, ok := mainSurface.HiddenTools["inception"]; ok {
+			t.Errorf("%s/%s main-agent surface must not hide inception", tt.provider, tt.model)
 		}
 		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), false)
 		for _, name := range []string{"inception"} {
 			if _, ok := workerSurface.Tools[name]; ok {
 				t.Errorf("%s/%s worker surface must NOT include %s", tt.provider, tt.model, name)
+			}
+			if _, ok := workerSurface.DeferredTools[name]; ok {
+				t.Errorf("%s/%s worker surface must NOT defer %s", tt.provider, tt.model, name)
 			}
 		}
 		if _, ok := workerSurface.DeferredTools["helpme"]; ok {

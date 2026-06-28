@@ -109,7 +109,6 @@ func RunToolLoop(
 		usage.RecordPendingMessages(messages)
 	}
 	threshold := proactiveCompactThreshold(cfg)
-	contextAnchorsEnabled := toolDefinitionsContain(cfg.Tools, compact.InceptionToolName)
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
 		if cfg.OnMessage != nil && !msg.Hidden {
@@ -160,7 +159,7 @@ func RunToolLoop(
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
 		}
-		if contextAnchorsEnabled {
+		if toolSurfaceSupports(cfg.Tools, compact.InceptionToolName) {
 			anchor := compact.BuildContextAnchorMessage(compact.NextContextAnchorID(messages))
 			appendMessage(anchor)
 			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
@@ -399,6 +398,16 @@ func toolDefinitionsContain(executor ToolExecutor, name string) bool {
 		}
 	}
 	return false
+}
+
+func toolSurfaceSupports(executor ToolExecutor, name string) bool {
+	if executor == nil || strings.TrimSpace(name) == "" {
+		return false
+	}
+	if support, ok := executor.(ToolSupportProvider); ok {
+		return support.SupportsTool(name)
+	}
+	return toolDefinitionsContain(executor, name)
 }
 
 func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactReason {

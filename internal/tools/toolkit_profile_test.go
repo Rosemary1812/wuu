@@ -89,7 +89,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"checkpoint", "thread_get", "inception"} {
+	for _, name := range []string{"checkpoint", "thread_get"} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("non-surface tool %s should not be visible, got %v", name, sortedProfileDefNames(defs))
 		}
@@ -124,6 +124,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"web_fetch",
 		"report_listening_ports",
 		"spawn_agent",
+		"inception",
 	} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("low-frequency tool %s should stay deferred, got %v", name, sortedProfileDefNames(defs))

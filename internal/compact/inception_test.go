@@ -10,7 +10,7 @@ import (
 
 func TestContextAnchorRoundTrip(t *testing.T) {
 	msg := BuildContextAnchorMessage(7)
-	if msg.Role != "user" || msg.Name != ContextAnchorMessageName {
+	if msg.Role != "user" || msg.Name != ContextAnchorMessageName || !msg.Hidden {
 		t.Fatalf("unexpected anchor message: %+v", msg)
 	}
 	id, ok := ContextAnchorIDFromMessage(msg)

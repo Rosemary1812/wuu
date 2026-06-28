@@ -323,12 +323,12 @@ func addHelpmeTool(b *surfaceBuilder) {
 	b.addDeferred("helpme", capability.CapabilityTaskSpawn)
 }
 
-// addInceptionTool keeps the legacy context rewrite tool in the profile
-// metadata without exposing it to the model by default. Automatic compaction is
-// the normal context-management path; model-visible Inception would force
-// per-step anchors into ordinary histories.
+// addInceptionTool makes the main-agent context rewrite tool discoverable
+// without adding its schema to the stable top-level tool list. The agent loop
+// can still insert hidden anchors for this surface, while the model must load
+// the schema through tool_search before calling the tool.
 func addInceptionTool(b *surfaceBuilder) {
-	b.addHidden("inception", capability.CapabilityContextRewrite)
+	b.addDeferred("inception", capability.CapabilityContextRewrite)
 }
 
 func addWorkerReportTool(b *surfaceBuilder) {

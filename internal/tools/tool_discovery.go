@@ -26,7 +26,7 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
 		Description: "Search deferred tools and load matching tool schemas.\n\n" +
-			"Use this when you need a tool that is not currently visible, especially MCP tools, workflows, scheduling, subagents, memory, web access, or specialized search helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
+			"Use this when you need a tool that is not currently visible, especially MCP tools, workflows, scheduling, subagents, memory, web access, context rewrite/continuation, or specialized search helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

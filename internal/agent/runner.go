@@ -15,6 +15,13 @@ type ToolExecutor interface {
 	Execute(ctx context.Context, call providers.ToolCall) (string, error)
 }
 
+// ToolSupportProvider lets an executor report whether a tool belongs to the
+// current model surface, even when its schema is deferred and must be loaded
+// through discovery before execution.
+type ToolSupportProvider interface {
+	SupportsTool(name string) bool
+}
+
 // ToolMetadata describes a tool's scheduling and policy characteristics.
 type ToolMetadata struct {
 	ReadOnly        bool
