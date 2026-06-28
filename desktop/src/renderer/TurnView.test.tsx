@@ -8,12 +8,17 @@ import { TurnView } from "./TurnView";
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
-function makeTurn(status: Turn["status"], items: ThreadItem[] = []): Turn {
+function makeTurn(
+  status: Turn["status"],
+  items: ThreadItem[] = [],
+  error?: string,
+): Turn {
   return {
     id: "turn-1",
     items,
     items_view: "full",
     status,
+    error: error ? { message: error } : undefined,
   };
 }
 
@@ -162,5 +167,22 @@ describe("TurnView", () => {
     expect(view.textContent).toContain("partial progress");
     expect(view.querySelectorAll(".turn-notice")).toHaveLength(1);
     expect(view.textContent?.match(/已停止/g)).toHaveLength(1);
+  });
+
+  it("renders one failure notice when a failed turn also records an error item", () => {
+    const view = render(
+      makeTurn(
+        "failed",
+        [
+          makeCommentary("partial progress"),
+          makeError("wait: context deadline exceeded"),
+        ],
+        "stream request failed: stream error (previous_response_not_found)",
+      ),
+    );
+
+    expect(view.textContent).toContain("partial progress");
+    expect(view.querySelectorAll(".turn-notice")).toHaveLength(1);
+    expect(view.textContent?.match(/连接暂时不可用/g)).toHaveLength(1);
   });
 });

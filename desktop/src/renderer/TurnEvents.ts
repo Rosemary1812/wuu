@@ -38,7 +38,7 @@ export function turnEventForTurn(
   turn: Turn,
   hasAssistantOutput: boolean,
 ): TurnEventDisplay | undefined {
-  const rawMessage = turn.error?.message;
+  const rawMessage = turn.error?.message || latestTurnItemError(turn);
   const baseDisplay =
     turn.status === "interrupted"
       ? userFacingErrorForMessage("context canceled", "turn")
@@ -93,6 +93,19 @@ export function turnEventForItem(item: ThreadItem): TurnEventDisplay | undefined
       presentation: "notice",
       notice,
     };
+  }
+  return undefined;
+}
+
+function latestTurnItemError(turn: Turn): string | undefined {
+  for (let i = turn.items.length - 1; i >= 0; i--) {
+    const item = turn.items[i];
+    if (item.type === "error") {
+      const error = item.error?.trim();
+      if (error) {
+        return error;
+      }
+    }
   }
   return undefined;
 }

@@ -175,14 +175,7 @@ export function buildAssistantTurnDisplay(
       continue;
     }
 
-    // The turn-level interruption notice already explains user-initiated
-    // stops. Rendering the matching cancellation error item here would show
-    // the same stop twice in one turn.
-    if (
-      turn.status === "interrupted" &&
-      item.type === "error" &&
-      isCancellationMessage((item.error ?? "").toLowerCase())
-    ) {
+    if (shouldSuppressProcessErrorItem(turn, item)) {
       continue;
     }
 
@@ -235,6 +228,22 @@ export function buildAssistantTurnDisplay(
     missingReplyMessage,
     latestProcessPreview,
   };
+}
+
+function shouldSuppressProcessErrorItem(turn: Turn, item: ThreadItem): boolean {
+  if (item.type !== "error") {
+    return false;
+  }
+  if (turn.status === "failed") {
+    return true;
+  }
+  // The turn-level interruption notice already explains user-initiated stops.
+  // Rendering the matching cancellation error item here would show the same
+  // stop twice in one turn.
+  return (
+    turn.status === "interrupted" &&
+    isCancellationMessage((item.error ?? "").toLowerCase())
+  );
 }
 
 function groupProcessEntries(entries: TurnEntry[]): TurnEntry[] {
