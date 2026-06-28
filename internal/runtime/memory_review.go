@@ -136,13 +136,12 @@ func (s *profileMemoryReviewScheduler) run(ctx context.Context, job profileMemor
 	}
 	executor := newProfileMemoryOnlyExecutor(s.provider, s.memoryCharLimit, s.userCharLimit)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
-		Tools:               executor,
-		Model:               job.model,
-		Temperature:         job.temperature,
-		MaxSteps:            profileMemoryReviewMaxSteps,
-		Effort:              job.effort,
-		DisableTaskContract: true,
-		ProviderOptions:     provideroptions.Clone(job.providerOptions),
+		Tools:           executor,
+		Model:           job.model,
+		Temperature:     job.temperature,
+		MaxSteps:        profileMemoryReviewMaxSteps,
+		Effort:          job.effort,
+		ProviderOptions: provideroptions.Clone(job.providerOptions),
 	}, profileMemoryReviewStep{client: job.client})
 	return err
 }

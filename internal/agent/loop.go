@@ -14,11 +14,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-const (
-	taskContractMaxMessages       = 3
-	taskContractMaxDirectiveRunes = 1200
-)
-
 // EmptyAnswerError is returned when the model completes a turn without
 // producing any text content or tool calls. StopReason carries the
 // provider's finish signal (e.g. "stop", "end_turn") when one was
@@ -174,9 +169,6 @@ func RunToolLoop(
 		if len(postToolContextSegments) > 0 {
 			requestSegments = append(requestSegments, postToolContextSegments...)
 			postToolContextSegments = nil
-		}
-		if !cfg.DisableTaskContract {
-			requestSegments = append(requestSegments, taskContractSegments(messages)...)
 		}
 		assembly := assembleModelRequest(messages, requestSegments)
 		requestMessages := assembly.Messages
@@ -414,96 +406,6 @@ func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactR
 		}
 	}
 	return CompactReasonHelpMe
-}
-
-func taskContractSegments(messages []providers.ChatMessage) []ContextSegment {
-	return RequestOnlyContextBlocks(taskContractBlocks(messages))
-}
-
-func taskContractBlocks(messages []providers.ChatMessage) []wuucontext.Block {
-	directives := recentUserDirectives(messages, taskContractMaxMessages)
-	// A single live user directive is already present in the request. The
-	// synthetic contract only earns its dynamic-token cost when it reconciles
-	// multiple real directives from the active history.
-	if len(directives) < 2 {
-		return nil
-	}
-
-	var task strings.Builder
-	task.WriteString("# Active Task Contract\n")
-	task.WriteString("- Treat the newest non-reminder user directive below as the current source of truth.\n")
-	task.WriteString("- Older directives remain active only when they do not conflict with a newer directive.\n")
-	task.WriteString("- Do not broaden scope beyond these directives without asking the user.\n\n")
-	task.WriteString("Recent user directives, newest last:\n")
-	for i, directive := range directives {
-		fmt.Fprintf(&task, "%d. %s\n", i+1, directive)
-	}
-
-	ledger := strings.Join([]string{
-		"# Constraint Ledger",
-		"- Pre-write: re-check explicit user constraints before file edits, command side effects, workflow changes, or commits.",
-		"- Pre-write: if a newer user directive conflicts with an older one, follow the newer directive and do not carry stale work forward.",
-		"- Pre-finish: verify requested deliverables, tests, and atomic commit requirements; report any unmet criterion or skipped verification.",
-		"- Pre-finish: keep the final answer scoped to what changed, what passed, and what remains.",
-	}, "\n")
-
-	return []wuucontext.Block{
-		{
-			Kind:    wuucontext.BlockTask,
-			Title:   "Active task contract",
-			Source:  "runtime.task_contract",
-			Content: strings.TrimRight(task.String(), "\n"),
-		},
-		{
-			Kind:    wuucontext.BlockConstraintLedger,
-			Title:   "Constraint ledger",
-			Source:  "runtime.task_contract",
-			Content: ledger,
-		},
-	}
-}
-
-func recentUserDirectives(messages []providers.ChatMessage, limit int) []string {
-	if limit <= 0 {
-		return nil
-	}
-	out := make([]string, 0, limit)
-	for i := len(messages) - 1; i >= 0 && len(out) < limit; i-- {
-		msg := messages[i]
-		if msg.Hidden ||
-			msg.Role != "user" ||
-			wuucontext.IsSystemReminder(msg.Name, msg.Content) ||
-			wuucontext.IsAgentNotification(msg.Name, msg.Content) ||
-			wuucontext.IsGoalContinuation(msg.Name, msg.Content) ||
-			strings.TrimSpace(msg.Name) == wuucontext.TaskContractMessageName ||
-			compact.IsInternalContextMessage(msg) {
-			continue
-		}
-		content := compactDirectiveContent(msg.Content, taskContractMaxDirectiveRunes)
-		if content == "" {
-			continue
-		}
-		out = append(out, content)
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
-}
-
-func compactDirectiveContent(content string, maxRunes int) string {
-	content = strings.TrimSpace(strings.Join(strings.Fields(content), " "))
-	if content == "" {
-		return ""
-	}
-	if maxRunes <= 0 {
-		return content
-	}
-	runes := []rune(content)
-	if len(runes) <= maxRunes {
-		return content
-	}
-	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }
 
 // proactiveCompactThreshold returns the absolute token count at which

@@ -271,23 +271,20 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 		t.Fatalf("expected one request shape observation, got %+v", contexts)
 	}
 	shape := contexts[0]
-	if shape.StepIndex != 0 || shape.MessageCount != 6 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.TurnPrefix != 3 || shape.ToolCount != 1 {
+	if shape.StepIndex != 0 || shape.MessageCount != 4 || shape.SystemMessages != 1 || shape.StablePrefix != 2 || shape.TurnPrefix != 3 || shape.ToolCount != 1 {
 		t.Fatalf("unexpected request shape: %+v", shape)
 	}
-	if shape.TransientMessages != 2 || shape.ContentBytes == 0 || shape.DynamicBytes == 0 || shape.HiddenMessages != 2 {
-		t.Fatalf("request shape should report task-contract dynamic context: %+v", shape)
+	if shape.TransientMessages != 0 || shape.ContentBytes != 0 || shape.DynamicBytes != 0 || shape.HiddenMessages != 0 {
+		t.Fatalf("request shape should not synthesize default dynamic context: %+v", shape)
 	}
-	if shape.SegmentLifecycleCounts[string(ContextSegmentRequestOnly)] != 1 ||
-		shape.SegmentPlacementCounts[string(ContextSegmentAfterHistory)] != 1 ||
-		shape.SegmentCachePolicyCounts[string(ContextSegmentVolatile)] != 1 {
-		t.Fatalf("request shape should report task-contract segment policy: %+v", shape)
+	if len(shape.SegmentLifecycleCounts) != 0 ||
+		len(shape.SegmentPlacementCounts) != 0 ||
+		len(shape.SegmentCachePolicyCounts) != 0 {
+		t.Fatalf("request shape should not report synthetic context segments: %+v", shape)
 	}
-	for _, want := range []string{string(wuucontext.BlockTask), string(wuucontext.BlockConstraintLedger)} {
-		if !containsString(shape.BlockKinds, want) {
-			t.Fatalf("request shape missing dynamic block kind %s: %+v", want, shape)
-		}
-		if shape.BlockKindCounts[want] != 1 || shape.BlockKindBytes[want] == 0 {
-			t.Fatalf("request shape missing dynamic block metrics for %s: %+v", want, shape)
+	for _, unwanted := range []string{"TASK", "CONSTRAINT_LEDGER"} {
+		if containsString(shape.BlockKinds, unwanted) {
+			t.Fatalf("request shape should not include dynamic block kind %s: %+v", unwanted, shape)
 		}
 	}
 	if shape.SystemHash == "" || shape.StablePrefixHash == "" || shape.TurnPrefixHash == "" || shape.ToolSurfaceHash == "" {
@@ -1139,8 +1136,8 @@ func TestRunToolLoop_BeforeRequestContextAppendsHiddenMessages(t *testing.T) {
 	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockEnvironment)) {
 		t.Fatalf("request context missing environment block: %+v", contexts[0])
 	}
-	if containsString(contexts[0].BlockKinds, string(wuucontext.BlockTask)) ||
-		containsString(contexts[0].BlockKinds, string(wuucontext.BlockConstraintLedger)) {
+	if containsString(contexts[0].BlockKinds, "TASK") ||
+		containsString(contexts[0].BlockKinds, "CONSTRAINT_LEDGER") {
 		t.Fatalf("single-turn request should not synthesize task contract: %+v", contexts[0])
 	}
 	if len(contexts[0].BlockKinds) != 1 {
@@ -1464,21 +1461,13 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.T) {
+func TestRunToolLoop_FiltersStaleInternalContextWithoutTaskContract(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
 	reminder := wuucontext.FormatSystemReminderBlocks(wuucontext.Block{
 		Kind:    wuucontext.BlockEnvironment,
 		Source:  "test",
 		Content: "ignore me",
 	})
-	agentNotificationBody := `<subagent_notification>
-{"agent_path":"/root/worker","status":{"type":"agent_result","result":"agent done"}}
-</subagent_notification>`
-	agentNotificationEnvelope := fmt.Sprintf(
-		`{"author":"/root/worker","recipient":"/root","content":%q,"trigger_turn":true}`,
-		agentNotificationBody,
-	)
-	longDirective := "final constraint " + strings.Repeat("x", taskContractMaxDirectiveRunes+100)
 	history := []providers.ChatMessage{
 		userMsg("first request"),
 		{
@@ -1498,20 +1487,11 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 			Content: "<goal_continuation>hidden goal should not echo</goal_continuation>",
 			Hidden:  true,
 		},
-		{
-			Role:    "user",
-			Content: agentNotificationEnvelope,
-		},
-		{
-			Role:    "user",
-			Name:    wuucontext.AgentNotificationMessageName,
-			Content: "named agent done",
-		},
 		userMsg("second request"),
-		userMsg(longDirective),
 	}
 
-	cfg := LoopConfig{
+	var contexts []RequestContextInfo
+	_, err := RunToolLoop(context.Background(), history, LoopConfig{
 		Model: "m",
 		BeforeRequestContext: func() []ContextSegment {
 			return RequestOnlyContextMessages([]providers.ChatMessage{{
@@ -1520,80 +1500,37 @@ func TestRunToolLoop_TaskContractIgnoresRemindersAndBoundsDirectives(t *testing.
 				Content: reminder,
 			}})
 		},
-	}
-	if _, err := RunToolLoop(context.Background(), history, cfg, step); err != nil {
+		OnRequestContext: func(info RequestContextInfo) {
+			contexts = append(contexts, info)
+		},
+	}, step)
+	if err != nil {
 		t.Fatal(err)
 	}
 	msgs := step.calls[0].Messages
-	if len(msgs) != len(history) {
+	if len(msgs) != 3 {
 		t.Fatalf("expected stale internal context to be replaced before request, got %+v", msgs)
 	}
-	for _, msg := range msgs[:len(msgs)-3] {
+	for _, msg := range msgs[:len(msgs)-1] {
 		if msg.Name == wuucontext.SystemReminderMessageName ||
 			msg.Name == wuucontext.TaskContractMessageName ||
 			msg.Name == wuucontext.GoalContinuationMessageName {
 			t.Fatalf("stale model context should not remain in request history: %+v", msgs)
 		}
 	}
-	env := msgs[len(msgs)-3]
-	task := msgs[len(msgs)-2]
-	ledger := msgs[len(msgs)-1]
+	env := msgs[len(msgs)-1]
 	if env.Name != wuucontext.SystemReminderMessageName || !env.Hidden {
-		t.Fatalf("expected refreshed hidden environment context before task contract blocks, got %+v", msgs)
+		t.Fatalf("expected refreshed request-only context after durable history, got %+v", msgs)
 	}
-	if task.Name == wuucontext.TaskContractMessageName || !task.Hidden || !wuucontext.IsSystemReminder(task.Name, task.Content) || !strings.Contains(task.Content, "[TASK]") {
-		t.Fatalf("expected typed task block, got %+v", task)
+	if len(contexts) != 1 {
+		t.Fatalf("expected one request context summary, got %+v", contexts)
 	}
-	if ledger.Name == wuucontext.TaskContractMessageName || !ledger.Hidden || !wuucontext.IsSystemReminder(ledger.Name, ledger.Content) || !strings.Contains(ledger.Content, "[CONSTRAINT_LEDGER]") {
-		t.Fatalf("expected typed constraint ledger block, got %+v", ledger)
-	}
-	contract := task.Content + "\n" + ledger.Content
-	if strings.Contains(contract, "ignore me") {
-		t.Fatalf("task contract should ignore system reminders: %s", contract)
-	}
-	if strings.Contains(contract, "agent done") {
-		t.Fatalf("task contract should ignore agent notifications: %s", contract)
-	}
-	if strings.Contains(contract, "should not echo") {
-		t.Fatalf("task contract should ignore request-only context: %s", contract)
-	}
-	for _, want := range []string{"first request", "second request", "final constraint"} {
-		if !strings.Contains(contract, want) {
-			t.Fatalf("task contract missing %q: %s", want, contract)
-		}
-	}
-	if !strings.Contains(contract, "...") {
-		t.Fatalf("task contract should truncate long directives: %s", contract)
-	}
-	if strings.Contains(contract, strings.Repeat("x", taskContractMaxDirectiveRunes+50)) {
-		t.Fatalf("task contract leaked unbounded directive: %s", contract)
-	}
-}
-
-func TestRunToolLoop_DisableTaskContractOmitsTaskBlocks(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
-	history := []providers.ChatMessage{
-		userMsg("first directive"),
-		{Role: "assistant", Content: "noted"},
-		userMsg("second directive"),
-	}
-	var contexts []RequestContextInfo
-	if _, err := RunToolLoop(context.Background(), history, LoopConfig{
-		Model:               "m",
-		DisableTaskContract: true,
-		OnRequestContext: func(info RequestContextInfo) {
-			contexts = append(contexts, info)
-		},
-	}, step); err != nil {
-		t.Fatal(err)
-	}
-	request := step.calls[0].Messages
 	for _, unexpected := range []string{"[TASK]", "[CONSTRAINT_LEDGER]"} {
-		if got := countMessagesContaining(request, unexpected); got != 0 {
-			t.Fatalf("disabled task contract should omit %s, got %d in %+v", unexpected, got, request)
+		if got := countMessagesContaining(msgs, unexpected); got != 0 {
+			t.Fatalf("default request should not synthesize %s, got %+v", unexpected, msgs)
 		}
-		if len(contexts) != 1 || containsString(contexts[0].BlockKinds, strings.Trim(unexpected, "[]")) {
-			t.Fatalf("disabled task contract should omit %s from request telemetry: %+v", unexpected, contexts)
+		if containsString(contexts[0].BlockKinds, strings.Trim(unexpected, "[]")) {
+			t.Fatalf("request telemetry should not report %s: %+v", unexpected, contexts[0])
 		}
 	}
 }
@@ -1714,24 +1651,5 @@ func TestRunToolLoop_ReturnsInvalidToolArgumentsToModel(t *testing.T) {
 	retryMessages := step.calls[1].Messages
 	if len(retryMessages) != 2 || len(retryMessages[0].ToolCalls) != 1 || retryMessages[1].ToolCallID != "call_1" {
 		t.Fatalf("retry should include paired invalid tool call and error result, got %+v", retryMessages)
-	}
-}
-
-func TestTaskContractBlocksDoNotTeachShellPath(t *testing.T) {
-	blocks := taskContractBlocks([]providers.ChatMessage{
-		{Role: "user", Content: "Update the implementation."},
-		{Role: "user", Content: "Please keep the change scoped."},
-	})
-	if len(blocks) != 2 {
-		t.Fatalf("expected task contract blocks, got %+v", blocks)
-	}
-	content := wuucontext.CompileBlocks(blocks)
-	for _, banned := range []string{"shell", "terminal", "bash", "run_shell", "run_test", "start_process"} {
-		if strings.Contains(content, banned) {
-			t.Fatalf("task contract blocks must not teach command path %q:\n%s", banned, content)
-		}
-	}
-	if !strings.Contains(content, "command side effects") {
-		t.Fatalf("task contract blocks missing capability-neutral command guidance:\n%s", content)
 	}
 }

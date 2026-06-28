@@ -165,13 +165,12 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	}
 	executor := newSessionDreamExecutor(job.rootDir, job.workspaceStateDir, job.sessionArtifactDir)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
-		Tools:               executor,
-		Model:               job.model,
-		Temperature:         job.temperature,
-		MaxSteps:            sessionDreamMaxSteps,
-		Effort:              job.effort,
-		DisableTaskContract: true,
-		ProviderOptions:     provideroptions.Clone(job.providerOptions),
+		Tools:           executor,
+		Model:           job.model,
+		Temperature:     job.temperature,
+		MaxSteps:        sessionDreamMaxSteps,
+		Effort:          job.effort,
+		ProviderOptions: provideroptions.Clone(job.providerOptions),
 	}, profileMemoryReviewStep{client: job.client})
 	if err != nil {
 		_ = sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err)

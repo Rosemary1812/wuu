@@ -2088,14 +2088,17 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	if len(secondInput) == 0 {
 		t.Fatalf("second request missing delta input: %#v", secondRequest)
 	}
+	if len(secondInput) != 1 {
+		t.Fatalf("second request should not append default request-only context, got %#v", secondInput)
+	}
 	secondUser, ok := secondInput[0].(map[string]any)
 	if !ok || secondUser["role"] != "user" || secondUser["content"] != "say second answer" {
 		t.Fatalf("second request should start with the new user turn, got %#v", secondInput)
 	}
 	secondInputText := fmt.Sprintf("%#v", secondInput)
-	for _, want := range []string{"[TASK]", "[CONSTRAINT_LEDGER]"} {
-		if !strings.Contains(secondInputText, want) {
-			t.Fatalf("second request missing request-only context block %s: %#v", want, secondInput)
+	for _, unwanted := range []string{"[TASK]", "[CONSTRAINT_LEDGER]"} {
+		if strings.Contains(secondInputText, unwanted) {
+			t.Fatalf("second request should not include default request-only context block %s: %#v", unwanted, secondInput)
 		}
 	}
 	if strings.Contains(secondInputText, "[ENVIRONMENT]") {
