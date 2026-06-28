@@ -37,6 +37,8 @@ function makeLongTurns(): Turn[] {
   ];
 }
 
+const SMOOTH_PROBE_TURNS = makeLongTurns();
+
 type StubbedLayout = {
   scrollHeight: number;
   clientHeight: number;
@@ -437,7 +439,7 @@ describe("useConversationScrollState — smooth scroll-to-bottom", () => {
         activeThreadID: "thread-1",
         activePane: "primary",
         splitConversation: false,
-        primaryTurns: makeLongTurns(),
+        primaryTurns: SMOOTH_PROBE_TURNS,
         secondaryTurns: undefined,
         emptyConversation: false,
         previewingLaunch: false,
@@ -604,5 +606,37 @@ describe("useConversationScrollState — smooth scroll-to-bottom", () => {
     }
     // Only the initial scrollTo call from the pill click should have fired.
     expect(scrollToCalls).toHaveLength(1);
+  });
+
+  it("keeps automatic follow updates smooth while the jump is still moving", () => {
+    const { scrollToBottom } = mount({
+      scrollHeight: 2000,
+      clientHeight: 600,
+      initialScrollTop: 2000 - 600,
+    });
+    fireScrollEvent();
+    if (!layout) throw new Error("not mounted");
+    layout.scrollTop = 500;
+    fireWheel(-80);
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      scrollToBottom({ force: true, smooth: true });
+    });
+    expect(scrollToCalls).toEqual([{ top: 2000, behavior: "smooth" }]);
+
+    act(() => {
+      layout!.scrollHeight += 80;
+      scrollToBottom();
+    });
+
+    expect(scrollToCalls).toEqual([
+      { top: 2000, behavior: "smooth" },
+      { top: 2080, behavior: "smooth" },
+    ]);
+    // A direct `scrollTop = scrollHeight` write here would clamp to the new
+    // bottom immediately, which is the visible flash this regression guards.
+    expect(layout.scrollTop).toBe(500);
+    expect(scrollNode!.dataset.userScrolledAway ?? "false").toBe("false");
   });
 });

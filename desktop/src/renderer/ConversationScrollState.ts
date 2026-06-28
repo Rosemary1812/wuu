@@ -253,9 +253,13 @@ export function useConversationScrollState({
       if (!node || (!options.force && !conversationAutoFollowRef.current)) {
         return;
       }
+      const continueSmoothJump =
+        !options.force &&
+        suppressAutoFollowRearmRef.current &&
+        conversationAutoFollowRef.current;
       applyProgrammaticScroll(node, node.scrollHeight, true, {
         revealScrollbar: true,
-        smooth: options.smooth,
+        smooth: options.smooth === true || continueSmoothJump,
       });
     },
     [activePane, activeThreadID, setAutoFollow, splitConversation]
