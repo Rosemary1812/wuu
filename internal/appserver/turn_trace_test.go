@@ -66,8 +66,12 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		StepIndex:              1,
 		Provider:               "openai",
 		Protocol:               "responses_websocket",
+		Transport:              "websocket",
 		ReplayMode:             "previous_response_id",
 		PreviousResponseIDUsed: true,
+		ConnectionReused:       true,
+		FallbackActive:         true,
+		FallbackReason:         "websocket_failed_before_first_event",
 		InputItems:             1,
 		FullInputItems:         4,
 		DeltaInputItems:        1,
@@ -89,7 +93,7 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		t.Fatalf("read session trace: %v", err)
 	}
 	trace := string(data)
-	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"previous_response_id_used":true`, `"tokens_before":252001`} {
+	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"transport":"websocket"`, `"connection_reused":true`, `"fallback_reason":"websocket_failed_before_first_event"`, `"previous_response_id_used":true`, `"tokens_before":252001`} {
 		if !strings.Contains(trace, want) {
 			t.Fatalf("session trace missing %s:\n%s", want, trace)
 		}

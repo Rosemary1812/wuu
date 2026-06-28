@@ -882,10 +882,24 @@ func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenC
 	}
 }
 
-func TestResponsesStreamChatWebSocket_PreservesContinuationAfterTransportClose(t *testing.T) {
-	requests := make(chan map[string]any, 3)
+func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFirstEvent(t *testing.T) {
+	wsRequests := make(chan map[string]any, 2)
+	sseRequests := make(chan map[string]any, 1)
 	var connections atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode SSE request: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			sseRequests <- body
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"resp_sse","status":"completed","output":[],"usage":{"input_tokens":9,"output_tokens":1}}}` + "\n\n"))
+			return
+		}
+
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			t.Errorf("accept websocket: %v", err)
@@ -897,18 +911,13 @@ func TestResponsesStreamChatWebSocket_PreservesContinuationAfterTransportClose(t
 		defer cancel()
 		switch connections.Add(1) {
 		case 1:
-			readWSRequest(t, ctx, conn, requests)
+			readWSRequest(t, ctx, conn, wsRequests)
 			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
 			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"first answer"}]},"output_index":0}`)
 			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2}}}`)
 
-			readWSRequest(t, ctx, conn, requests)
+			readWSRequest(t, ctx, conn, wsRequests)
 			_ = conn.Close(websocket.StatusInternalError, "keepalive ping timeout")
-		case 2:
-			readWSRequest(t, ctx, conn, requests)
-			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
-			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"second answer"}]},"output_index":0}`)
-			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
 		default:
 			t.Errorf("unexpected extra websocket connection")
 		}
@@ -960,47 +969,128 @@ func TestResponsesStreamChatWebSocket_PreservesContinuationAfterTransportClose(t
 	if err != nil {
 		t.Fatalf("second StreamChat: %v", err)
 	}
-	secondStates, streamErr := drainStreamProviderStates(ch)
-	if streamErr == nil {
-		t.Fatal("second stream should fail on transport close")
+	secondStates, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("second stream should fall back to SSE: %v", err)
 	}
-	if len(secondStates) != 1 || secondStates[0].ReplayMode != "previous_response_id" {
-		t.Fatalf("second stream should have attempted delta before transport close: %+v", secondStates)
+	if len(secondStates) != 2 {
+		t.Fatalf("second stream should report websocket attempt and SSE fallback, got %+v", secondStates)
+	}
+	if secondStates[0].Transport != "websocket" ||
+		secondStates[0].ReplayMode != "previous_response_id" ||
+		!secondStates[0].PreviousResponseIDUsed ||
+		secondStates[0].InputItems != 1 ||
+		secondStates[0].FullInputItems != 3 ||
+		secondStates[0].DeltaInputItems != 1 {
+		t.Fatalf("unexpected websocket attempt state: %+v", secondStates[0])
+	}
+	if secondStates[1].Transport != "sse" ||
+		secondStates[1].ReplayMode != "full_request" ||
+		secondStates[1].PreviousResponseIDUsed ||
+		!secondStates[1].FallbackActive ||
+		secondStates[1].FallbackReason != "websocket_failed_before_first_event" ||
+		secondStates[1].InputItems != 3 ||
+		secondStates[1].FullInputItems != 3 {
+		t.Fatalf("unexpected SSE fallback state: %+v", secondStates[1])
 	}
 
-	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
-		Model:     "gpt-test",
-		Messages:  followUp,
-		CacheHint: cache,
-	})
-	if err != nil {
-		t.Fatalf("retry StreamChat: %v", err)
-	}
-	retryStates, err := drainStreamProviderStates(ch)
-	if err != nil {
-		t.Fatalf("retry stream: %v", err)
-	}
-	if len(retryStates) != 1 ||
-		retryStates[0].ReplayMode != "previous_response_id" ||
-		!retryStates[0].PreviousResponseIDUsed ||
-		retryStates[0].InputItems != 1 ||
-		retryStates[0].FullInputItems != 3 ||
-		retryStates[0].DeltaInputItems != 1 {
-		t.Fatalf("retry should preserve previous_response_id delta after transport close: %+v", retryStates)
-	}
-
-	<-requests
-	second := <-requests
+	<-wsRequests
+	second := <-wsRequests
 	if second["previous_response_id"] != "resp_1" {
 		t.Fatalf("second request previous_response_id = %#v; body=%#v", second["previous_response_id"], second)
 	}
-	third := <-requests
-	if third["previous_response_id"] != "resp_1" {
-		t.Fatalf("retry previous_response_id = %#v; body=%#v", third["previous_response_id"], third)
+	fallback := <-sseRequests
+	if _, exists := fallback["previous_response_id"]; exists {
+		t.Fatalf("SSE fallback must not reuse websocket previous_response_id: %#v", fallback)
 	}
-	thirdInput := third["input"].([]any)
-	if len(thirdInput) != 1 {
-		t.Fatalf("retry should send only delta input, got %#v", thirdInput)
+	fallbackInput := fallback["input"].([]any)
+	if len(fallbackInput) != 3 {
+		t.Fatalf("SSE fallback should send the full request input, got %#v", fallbackInput)
+	}
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("unexpected websocket connection count %d", got)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		readWSRequest(t, ctx, conn, requests)
+		writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+		writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"first answer"}]},"output_index":0}`)
+		writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2}}}`)
+
+		readWSRequest(t, ctx, conn, requests)
+		writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+		_ = conn.Close(websocket.StatusInternalError, "closed after start")
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesWebSocket:      true,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cache := &providers.CacheHint{PromptCacheKey: "thread-after-provider-event"}
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "first"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("first StreamChat: %v", err)
+	}
+	if err := drainStream(ch); err != nil {
+		t.Fatalf("first stream: %v", err)
+	}
+
+	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{
+				Role:              "assistant",
+				Content:           "first answer",
+				Phase:             providers.MessagePhaseFinalAnswer,
+				ProviderItemID:    "msg_1",
+				ProviderItemModel: "gpt-test",
+			},
+			{Role: "user", Content: "second"},
+		},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("second StreamChat: %v", err)
+	}
+	states, streamErr := drainStreamProviderStates(ch)
+	if streamErr == nil {
+		t.Fatal("second stream should fail after provider event")
+	}
+	if providers.IsRetryable(streamErr) {
+		t.Fatalf("stream error after provider event must not be retryable: %v", streamErr)
+	}
+	if len(states) != 1 ||
+		states[0].Transport != "websocket" ||
+		states[0].ReplayMode != "previous_response_id" ||
+		!states[0].PreviousResponseIDUsed {
+		t.Fatalf("unexpected second provider state: %+v", states)
 	}
 }
 

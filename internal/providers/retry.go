@@ -101,6 +101,16 @@ func NewIncompleteStreamError(message string) *StreamError {
 	}
 }
 
+// NewNonRetryableStreamError marks a provider stream failure as terminal.
+// Use this when replaying the request could duplicate provider-side work.
+func NewNonRetryableStreamError(message string) *StreamError {
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		msg = "stream failed"
+	}
+	return &StreamError{Message: msg}
+}
+
 // NewProviderStreamError classifies a provider-reported streaming error that
 // arrived as an SSE event payload rather than as an HTTP status code.
 func NewProviderStreamError(code, message string) *StreamError {

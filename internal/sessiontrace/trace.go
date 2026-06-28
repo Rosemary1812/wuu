@@ -205,8 +205,12 @@ type ProviderStateRecord struct {
 	StepIndex              int    `json:"step_index"`
 	Provider               string `json:"provider,omitempty"`
 	Protocol               string `json:"protocol,omitempty"`
+	Transport              string `json:"transport,omitempty"`
 	ReplayMode             string `json:"replay_mode,omitempty"`
 	PreviousResponseIDUsed bool   `json:"previous_response_id_used,omitempty"`
+	ConnectionReused       bool   `json:"connection_reused,omitempty"`
+	FallbackActive         bool   `json:"fallback_active,omitempty"`
+	FallbackReason         string `json:"fallback_reason,omitempty"`
 	InputItems             int    `json:"input_items,omitempty"`
 	FullInputItems         int    `json:"full_input_items,omitempty"`
 	DeltaInputItems        int    `json:"delta_input_items,omitempty"`

@@ -31,14 +31,56 @@ type responsesWebSocketSession struct {
 	mu           sync.Mutex
 	conn         *websocket.Conn
 	wsURL        string
+	generation   uint64
+	busy         bool
+	active       chan responsesWebSocketReadEvent
 	continuation *responsesWebSocketContinuation
+	fallback     responsesWebSocketFallbackState
 }
 
 type responsesWebSocketContinuation struct {
+	generation        uint64
 	lastRequestRest   []byte
 	lastRequestInput  []responsesInputItem
 	lastResponseID    string
 	lastResponseItems []responsesInputItem
+}
+
+type responsesWebSocketReadEvent struct {
+	typ  websocket.MessageType
+	data []byte
+	err  error
+}
+
+type responsesWebSocketFallbackState struct {
+	active bool
+	reason string
+}
+
+type responsesWebSocketRequestMeta struct {
+	connectionReused bool
+}
+
+type responsesWebSocketFallbackError struct {
+	reason string
+	err    error
+}
+
+func (e *responsesWebSocketFallbackError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.err != nil {
+		return "responses websocket fallback (" + e.reason + "): " + e.err.Error()
+	}
+	return "responses websocket fallback (" + e.reason + ")"
+}
+
+func (e *responsesWebSocketFallbackError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
 }
 
 func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload responsesRequest) (<-chan providers.StreamEvent, error) {
@@ -55,15 +97,25 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 	}
 	session := c.responsesWSCache.session(sessionID)
 	session.mu.Lock()
-
-	conn, err := c.responsesWebSocketConnectionLocked(ctx, session, wsURL, payload.ExtraHeaders)
-	if err != nil {
+	if session.fallback.active {
+		reason := session.fallback.reason
 		session.mu.Unlock()
-		return nil, err
+		return nil, newResponsesWebSocketFallbackError(reason, nil)
+	}
+	if session.busy {
+		session.mu.Unlock()
+		return nil, newResponsesWebSocketFallbackError("websocket_busy", nil)
+	}
+
+	conn, generation, reused, err := c.responsesWebSocketConnectionLocked(ctx, session, wsURL, payload.ExtraHeaders)
+	if err != nil {
+		c.responsesWebSocketActivateFallbackLocked(session, "websocket_setup_failed")
+		session.mu.Unlock()
+		return nil, newResponsesWebSocketFallbackError("websocket_setup_failed", err)
 	}
 
 	fullPayload := payload
-	requestPayload := responsesCachedWebSocketRequest(session, fullPayload)
+	requestPayload := responsesCachedWebSocketRequest(session, generation, fullPayload)
 	providers.DebugLogf("Responses websocket request: session=%q previous_response_id=%v input_items=%d full_input_items=%d",
 		sessionID, strings.TrimSpace(requestPayload.PreviousResponseID) != "", len(requestPayload.Input), len(fullPayload.Input))
 	body, err := marshalResponsesWebSocketCreate(requestPayload)
@@ -71,25 +123,31 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 		session.mu.Unlock()
 		return nil, err
 	}
+	readCh := make(chan responsesWebSocketReadEvent, 64)
+	session.busy = true
+	session.active = readCh
 	if err := conn.Write(ctx, websocket.MessageText, body); err != nil {
-		c.responsesWebSocketDropConnectionLocked(session)
+		c.responsesWebSocketReleaseLocked(session, readCh)
+		c.responsesWebSocketActivateFallbackLocked(session, "websocket_write_failed")
 		session.mu.Unlock()
-		return nil, err
+		return nil, newResponsesWebSocketFallbackError("websocket_write_failed", err)
 	}
+	state := responsesWebSocketProviderState(fullPayload, requestPayload, responsesWebSocketRequestMeta{
+		connectionReused: reused,
+	})
+	session.mu.Unlock()
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesWebSocket(ctx, session, fullPayload, requestPayload, conn, ch)
+	go c.readResponsesWebSocket(ctx, session, generation, readCh, fullPayload, requestPayload, state, ch)
 	return ch, nil
 }
 
-func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session *responsesWebSocketSession, wsURL string, extraHeaders map[string]string) (*websocket.Conn, error) {
+func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session *responsesWebSocketSession, wsURL string, extraHeaders map[string]string) (*websocket.Conn, uint64, bool, error) {
 	if session.conn != nil && session.wsURL == wsURL {
-		return session.conn, nil
+		return session.conn, session.generation, true, nil
 	}
 	if session.conn != nil {
-		_ = session.conn.Close(websocket.StatusNormalClosure, "reconnect")
-		session.conn = nil
-		session.continuation = nil
+		c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusNormalClosure, "reconnect")
 	}
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+c.apiKey)
@@ -102,47 +160,140 @@ func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session
 	headers.Set("OpenAI-Beta", CodexWebSocketBetaTag)
 	conn, err := (CodexWebSocketDialer{ConnectTimeout: c.streamConfig.ConnectTimeout}).dialCodexWebSocket(ctx, wsURL, headers)
 	if err != nil {
-		return nil, err
+		return nil, 0, false, err
 	}
 	session.conn = conn
 	session.wsURL = wsURL
-	return conn, nil
+	session.generation++
+	generation := session.generation
+	go c.responsesWebSocketReadPump(session, conn, generation)
+	return conn, generation, false, nil
 }
 
-func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesWebSocketSession, fullPayload, requestPayload responsesRequest, conn *websocket.Conn, ch chan<- providers.StreamEvent) {
+func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, conn *websocket.Conn, generation uint64) {
+	for {
+		typ, data, err := conn.Read(context.Background())
+
+		session.mu.Lock()
+		if session.conn != conn || session.generation != generation {
+			session.mu.Unlock()
+			return
+		}
+		target := session.active
+		if err != nil {
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "read_error")
+			session.mu.Unlock()
+			if target != nil {
+				select {
+				case target <- responsesWebSocketReadEvent{err: err}:
+				default:
+				}
+				close(target)
+			}
+			return
+		}
+		if typ != websocket.MessageText {
+			session.mu.Unlock()
+			continue
+		}
+		if target == nil {
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusPolicyViolation, "unexpected_idle_message")
+			session.mu.Unlock()
+			return
+		}
+		frame := responsesWebSocketReadEvent{typ: typ, data: append([]byte(nil), data...)}
+		session.mu.Unlock()
+
+		select {
+		case target <- frame:
+		default:
+			session.mu.Lock()
+			if session.active == target && session.conn == conn && session.generation == generation {
+				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "read_backpressure")
+				close(target)
+			}
+			session.mu.Unlock()
+			return
+		}
+	}
+}
+
+func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesWebSocketSession, generation uint64, readCh chan responsesWebSocketReadEvent, fullPayload, requestPayload responsesRequest, state *providers.ProviderStateSummary, ch chan<- providers.StreamEvent) {
 	defer close(ch)
-	defer session.mu.Unlock()
 
 	ch <- providers.StreamEvent{
 		Type:          providers.EventProviderState,
-		ProviderState: responsesWebSocketProviderState(fullPayload, requestPayload),
+		ProviderState: state,
 	}
 
 	pending := newResponsesPendingTools()
 	pendingReasoning := newResponsesPendingReasoning()
 	var sawToolCall bool
+	var sawProviderEvent bool
 	var currentTextPhase providers.MessagePhase
 	var currentTextItemID string
 	var responseID string
 	var responseItems []responsesInputItem
 
 	for {
-		typ, data, err := conn.Read(ctx)
-		if err != nil {
-			c.responsesWebSocketDropConnectionLocked(session)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("read websocket stream: %w", err)}
+		var frame responsesWebSocketReadEvent
+		var ok bool
+		select {
+		case <-ctx.Done():
+			session.mu.Lock()
+			c.responsesWebSocketReleaseLocked(session, readCh)
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
+			session.mu.Unlock()
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+			return
+		case frame, ok = <-readCh:
+		}
+		if !ok && frame.err == nil {
+			frame.err = providers.NewIncompleteStreamError("websocket stream closed before response.completed")
+		}
+		if frame.err != nil {
+			if ctx.Err() != nil {
+				session.mu.Lock()
+				c.responsesWebSocketReleaseLocked(session, readCh)
+				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
+				session.mu.Unlock()
+				ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+				return
+			}
+			if !sawProviderEvent {
+				const reason = "websocket_failed_before_first_event"
+				providers.DebugLogf("Responses websocket failed before first provider event; falling back to SSE: %v", frame.err)
+				session.mu.Lock()
+				c.responsesWebSocketReleaseLocked(session, readCh)
+				c.responsesWebSocketActivateFallbackLocked(session, reason)
+				session.mu.Unlock()
+				c.forwardResponsesSSEFallback(ctx, fullPayload, reason, ch)
+				return
+			}
+			session.mu.Lock()
+			c.responsesWebSocketReleaseLocked(session, readCh)
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "stream_error_after_provider_event")
+			session.mu.Unlock()
+			ch <- providers.StreamEvent{
+				Type:  providers.EventError,
+				Error: providers.NewNonRetryableStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err)),
+			}
 			return
 		}
-		if typ != websocket.MessageText {
+		if frame.typ != websocket.MessageText {
 			continue
 		}
-		providers.DebugLogf("Responses websocket raw: %s", string(data))
+		providers.DebugLogf("Responses websocket raw: %s", string(frame.data))
 		var event responsesStreamEvent
-		if err := json.Unmarshal(data, &event); err != nil {
-			c.responsesWebSocketDropLocked(session)
+		if err := json.Unmarshal(frame.data, &event); err != nil {
+			session.mu.Lock()
+			c.responsesWebSocketReleaseLocked(session, readCh)
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "parse_error")
+			session.mu.Unlock()
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("parse websocket event: %w", err)}
 			return
 		}
+		sawProviderEvent = true
 
 		switch event.Type {
 		case "response.created":
@@ -216,7 +367,10 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			}
 			pending.emitEnds(ch)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
-			responsesWebSocketStoreContinuation(session, fullPayload, responseID, responseItems)
+			session.mu.Lock()
+			responsesWebSocketStoreContinuation(session, generation, fullPayload, responseID, responseItems)
+			c.responsesWebSocketReleaseLocked(session, readCh)
+			session.mu.Unlock()
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,
@@ -227,7 +381,10 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			return
 
 		case "response.failed":
-			c.responsesWebSocketDropLocked(session)
+			session.mu.Lock()
+			c.responsesWebSocketReleaseLocked(session, readCh)
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "response_failed")
+			session.mu.Unlock()
 			if event.Response != nil && event.Response.Error != nil {
 				ch <- providers.StreamEvent{Type: providers.EventError, Error: event.Response.Error.asError()}
 				return
@@ -236,7 +393,10 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			return
 
 		case "error":
-			c.responsesWebSocketDropLocked(session)
+			session.mu.Lock()
+			c.responsesWebSocketReleaseLocked(session, readCh)
+			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "response_error")
+			session.mu.Unlock()
 			if event.Error != nil {
 				ch <- providers.StreamEvent{Type: providers.EventError, Error: event.Error.asError()}
 				return
@@ -247,7 +407,18 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 	}
 }
 
-func responsesWebSocketProviderState(fullPayload, requestPayload responsesRequest) *providers.ProviderStateSummary {
+func (c *Client) forwardResponsesSSEFallback(ctx context.Context, payload responsesRequest, reason string, ch chan<- providers.StreamEvent) {
+	sseCh, err := c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, reason))
+	if err != nil {
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+		return
+	}
+	for ev := range sseCh {
+		ch <- ev
+	}
+}
+
+func responsesWebSocketProviderState(fullPayload, requestPayload responsesRequest, meta responsesWebSocketRequestMeta) *providers.ProviderStateSummary {
 	previous := strings.TrimSpace(requestPayload.PreviousResponseID) != ""
 	replayMode := "full_request"
 	deltaItems := 0
@@ -258,24 +429,57 @@ func responsesWebSocketProviderState(fullPayload, requestPayload responsesReques
 	return &providers.ProviderStateSummary{
 		Provider:               "openai",
 		Protocol:               "responses_websocket",
+		Transport:              "websocket",
 		ReplayMode:             replayMode,
 		PreviousResponseIDUsed: previous,
+		ConnectionReused:       meta.connectionReused,
 		InputItems:             len(requestPayload.Input),
 		FullInputItems:         len(fullPayload.Input),
 		DeltaInputItems:        deltaItems,
 	}
 }
 
-func (c *Client) responsesWebSocketDropLocked(session *responsesWebSocketSession) {
-	c.responsesWebSocketDropConnectionLocked(session)
-	session.continuation = nil
+func newResponsesWebSocketFallbackError(reason string, err error) *responsesWebSocketFallbackError {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "websocket_unavailable_before_start"
+	}
+	return &responsesWebSocketFallbackError{reason: reason, err: err}
 }
 
-func (c *Client) responsesWebSocketDropConnectionLocked(session *responsesWebSocketSession) {
+func responsesWebSocketFallbackReason(err error) string {
+	var fallbackErr *responsesWebSocketFallbackError
+	if errors.As(err, &fallbackErr) && strings.TrimSpace(fallbackErr.reason) != "" {
+		return fallbackErr.reason
+	}
+	return "websocket_unavailable_before_start"
+}
+
+func (c *Client) responsesWebSocketReleaseLocked(session *responsesWebSocketSession, readCh chan responsesWebSocketReadEvent) {
+	if session.active == readCh {
+		session.active = nil
+	}
+	session.busy = false
+}
+
+func (c *Client) responsesWebSocketActivateFallbackLocked(session *responsesWebSocketSession, reason string) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "websocket_unavailable_before_start"
+	}
+	session.fallback = responsesWebSocketFallbackState{active: true, reason: reason}
+	c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, reason)
+}
+
+func (c *Client) responsesWebSocketInvalidateConnectionLocked(session *responsesWebSocketSession, status websocket.StatusCode, reason string) {
 	if session.conn != nil {
-		_ = session.conn.Close(websocket.StatusInternalError, "stream_error")
+		_ = session.conn.Close(status, reason)
 	}
 	session.conn = nil
+	session.wsURL = ""
+	session.active = nil
+	session.continuation = nil
+	session.generation++
 }
 
 func (c *ResponsesWebSocketCache) session(sessionID string) *responsesWebSocketSession {
@@ -301,9 +505,13 @@ func responsesWebSocketSessionID(payload responsesRequest) string {
 	return strings.TrimSpace(payload.PromptCacheKey)
 }
 
-func responsesCachedWebSocketRequest(session *responsesWebSocketSession, payload responsesRequest) responsesRequest {
+func responsesCachedWebSocketRequest(session *responsesWebSocketSession, generation uint64, payload responsesRequest) responsesRequest {
 	continuation := session.continuation
 	if continuation == nil || continuation.lastResponseID == "" {
+		return payload
+	}
+	if continuation.generation != generation {
+		session.continuation = nil
 		return payload
 	}
 	rest, err := responsesRequestRestJSON(payload)
@@ -362,8 +570,12 @@ func responsesCachedInputDeltaFromBaseline(current, baseline []responsesInputIte
 	return delta, true
 }
 
-func responsesWebSocketStoreContinuation(session *responsesWebSocketSession, payload responsesRequest, responseID string, responseItems []responsesInputItem) {
+func responsesWebSocketStoreContinuation(session *responsesWebSocketSession, generation uint64, payload responsesRequest, responseID string, responseItems []responsesInputItem) {
 	if strings.TrimSpace(responseID) == "" {
+		session.continuation = nil
+		return
+	}
+	if session.generation != generation || session.conn == nil {
 		session.continuation = nil
 		return
 	}
@@ -373,6 +585,7 @@ func responsesWebSocketStoreContinuation(session *responsesWebSocketSession, pay
 		return
 	}
 	session.continuation = &responsesWebSocketContinuation{
+		generation:        generation,
 		lastRequestRest:   rest,
 		lastRequestInput:  append([]responsesInputItem(nil), payload.Input...),
 		lastResponseID:    responseID,

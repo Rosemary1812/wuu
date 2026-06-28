@@ -204,8 +204,12 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 					StepIndex:              1,
 					Provider:               "openai",
 					Protocol:               "responses_websocket",
+					Transport:              "websocket",
 					ReplayMode:             "previous_response_id",
 					PreviousResponseIDUsed: true,
+					ConnectionReused:       true,
+					FallbackActive:         true,
+					FallbackReason:         "websocket_failed_before_first_event",
 					InputItems:             1,
 					FullInputItems:         3,
 					DeltaInputItems:        1,
@@ -279,8 +283,12 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	if providerState["step_index"] != float64(1) ||
 		providerState["provider"] != "openai" ||
 		providerState["protocol"] != "responses_websocket" ||
+		providerState["transport"] != "websocket" ||
 		providerState["replay_mode"] != "previous_response_id" ||
 		providerState["previous_response_id_used"] != true ||
+		providerState["connection_reused"] != true ||
+		providerState["fallback_active"] != true ||
+		providerState["fallback_reason"] != "websocket_failed_before_first_event" ||
 		providerState["input_items"] != float64(1) ||
 		providerState["full_input_items"] != float64(3) ||
 		providerState["delta_input_items"] != float64(1) {

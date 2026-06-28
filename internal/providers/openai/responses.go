@@ -55,17 +55,22 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 		return nil, err
 	}
 
-	body, err := marshalResponsesRequest(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
 	if c.responsesWebSocket {
 		ch, err := c.responsesStreamChatWebSocket(ctx, payload)
 		if err == nil {
 			return ch, nil
 		}
 		providers.DebugLogf("Responses websocket unavailable before stream start, falling back to SSE: %v", err)
+		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, responsesWebSocketFallbackReason(err)))
+	}
+
+	return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, ""))
+}
+
+func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRequest, state *providers.ProviderStateSummary) (<-chan providers.StreamEvent, error) {
+	body, err := marshalResponsesRequest(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
@@ -75,8 +80,24 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesSSE(resp, ch)
+	go c.readResponsesSSE(resp, ch, state)
 	return ch, nil
+}
+
+func responsesSSEProviderState(payload responsesRequest, fallbackReason string) *providers.ProviderStateSummary {
+	fallbackReason = strings.TrimSpace(fallbackReason)
+	return &providers.ProviderStateSummary{
+		Provider:         "openai",
+		Protocol:         "responses_sse",
+		Transport:        "sse",
+		ReplayMode:       "full_request",
+		FallbackActive:   fallbackReason != "",
+		FallbackReason:   fallbackReason,
+		InputItems:       len(payload.Input),
+		FullInputItems:   len(payload.Input),
+		DeltaInputItems:  0,
+		ConnectionReused: false,
+	}
 }
 
 func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (responsesRequest, error) {
@@ -604,9 +625,16 @@ func (c *Client) doResponsesRequest(
 	return httpResp, nil
 }
 
-func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
+func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.StreamEvent, state *providers.ProviderStateSummary) {
 	defer close(ch)
 	defer resp.Body.Close()
+
+	if state != nil {
+		ch <- providers.StreamEvent{
+			Type:          providers.EventProviderState,
+			ProviderState: state,
+		}
+	}
 
 	idleTimeout := c.streamConfig.IdleTimeout
 	var idleFired atomic.Bool
