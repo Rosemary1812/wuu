@@ -1,6 +1,7 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useRef,
@@ -25,6 +26,7 @@ const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
 type SidebarResizeSession = {
   startX: number;
   startWidth: number;
+  currentWidth: number;
   allowCollapse: boolean;
 };
 
@@ -70,8 +72,10 @@ function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: number): num
 }
 
 export function useAppLayoutState({
+  layoutRootRef,
   onCloseProjectMenu
 }: {
+  layoutRootRef?: RefObject<HTMLElement | null>;
   onCloseProjectMenu: () => void;
 }): {
   sidebarWidth: number;
@@ -138,6 +142,19 @@ export function useAppLayoutState({
   const applySettingsSidebarWidth = useCallback((nextWidth: number): void => {
     setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
   }, []);
+
+  const applyLiveSidebarWidth = useCallback(
+    (nextWidth: number): void => {
+      const root = layoutRootRef?.current;
+      if (!root) {
+        return;
+      }
+      const clampedWidth = clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      root.style.setProperty("--sidebar-width", `${clampedWidth}px`);
+      root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
+    },
+    [layoutRootRef]
+  );
 
   const applySidebarWidth = useCallback(
     (nextWidth: number): void => {
@@ -206,14 +223,23 @@ export function useAppLayoutState({
         return;
       }
       const nextWidth = session.startWidth + event.clientX - session.startX;
+      session.currentWidth = nextWidth;
       if (session.allowCollapse) {
-        applySidebarWidth(nextWidth);
+        if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+          applySidebarWidth(nextWidth);
+          return;
+        }
+        applyLiveSidebarWidth(nextWidth);
         return;
       }
       applySettingsSidebarWidth(nextWidth);
     }
 
     function handlePointerUp(): void {
+      const session = resizeSessionRef.current;
+      if (session?.allowCollapse) {
+        applySidebarWidth(session.currentWidth);
+      }
       resizeSessionRef.current = null;
       setResizingSidebar(false);
     }
@@ -226,7 +252,7 @@ export function useAppLayoutState({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [applySettingsSidebarWidth, applySidebarWidth, resizingSidebar]);
+  }, [applyLiveSidebarWidth, applySettingsSidebarWidth, applySidebarWidth, resizingSidebar]);
 
   useEffect(() => {
     if (!resizingRightPanel) {
@@ -280,6 +306,7 @@ export function useAppLayoutState({
     resizeSessionRef.current = {
       startX: event.clientX,
       startWidth: sidebarCollapsed ? 0 : sidebarWidth,
+      currentWidth: sidebarCollapsed ? 0 : sidebarWidth,
       allowCollapse: true
     };
     onCloseProjectMenu();
@@ -294,6 +321,7 @@ export function useAppLayoutState({
     resizeSessionRef.current = {
       startX: event.clientX,
       startWidth: sidebarWidth,
+      currentWidth: sidebarWidth,
       allowCollapse: false
     };
     onCloseProjectMenu();

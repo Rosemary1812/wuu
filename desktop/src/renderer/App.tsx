@@ -364,6 +364,7 @@ export function App(): JSX.Element {
     useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
+  const appShellRef = useRef<HTMLDivElement>(null);
   const {
     sidebarWidth,
     sidebarCollapsed,
@@ -384,7 +385,10 @@ export function App(): JSX.Element {
     handleSidebarSeparatorKey,
     handleSettingsSidebarSeparatorKey,
     resetSettingsSidebarWidth,
-  } = useAppLayoutState({ onCloseProjectMenu: closeProjectMenu });
+  } = useAppLayoutState({
+    layoutRootRef: appShellRef,
+    onCloseProjectMenu: closeProjectMenu,
+  });
   const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
     initialCollapsedProjectIDs,
   );
@@ -4960,7 +4964,7 @@ export function App(): JSX.Element {
 
   return (
     <ImagePreviewProvider>
-      <div className={shellClassName} style={shellStyle}>
+      <div ref={appShellRef} className={shellClassName} style={shellStyle}>
       <AppSidebar
         state={state}
         pinnedThreads={sidebarPinnedThreads}
