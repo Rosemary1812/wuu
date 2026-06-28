@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -46,6 +47,28 @@ func NewHookedExecutor(inner ToolExecutor, d *Dispatcher, sessionID, cwd string)
 // Definitions delegates to the inner executor.
 func (h *HookedExecutor) Definitions() []providers.ToolDefinition {
 	return h.inner.Definitions()
+}
+
+// SupportsTool forwards tool-surface checks through the hook layer. This keeps
+// deferred tool support visible to the agent loop even when hooks decorate the
+// real Toolkit.
+func (h *HookedExecutor) SupportsTool(name string) bool {
+	if h == nil || h.inner == nil {
+		return false
+	}
+	if sp, ok := h.inner.(agent.ToolSupportProvider); ok {
+		return sp.SupportsTool(name)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, def := range h.inner.Definitions() {
+		if strings.EqualFold(strings.TrimSpace(def.Name), name) {
+			return true
+		}
+	}
+	return false
 }
 
 // ToolMetadata forwards to the inner executor if it implements

@@ -14,12 +14,22 @@ type stubExecutor struct {
 	result string
 	err    error
 	calls  []providers.ToolCall
+	defs   []providers.ToolDefinition
 }
 
-func (s *stubExecutor) Definitions() []providers.ToolDefinition { return nil }
+func (s *stubExecutor) Definitions() []providers.ToolDefinition { return s.defs }
 func (s *stubExecutor) Execute(_ context.Context, call providers.ToolCall) (string, error) {
 	s.calls = append(s.calls, call)
 	return s.result, s.err
+}
+
+type supportStubExecutor struct {
+	stubExecutor
+	supported map[string]bool
+}
+
+func (s *supportStubExecutor) SupportsTool(name string) bool {
+	return s.supported[name]
 }
 
 func TestHookedExecutor_PassThrough(t *testing.T) {
@@ -146,5 +156,29 @@ func TestHookedExecutor_DefinitionsDelegates(t *testing.T) {
 	defs := exec.Definitions()
 	if defs != nil {
 		t.Fatal("expected nil definitions from stub")
+	}
+}
+
+func TestHookedExecutor_SupportsToolDelegates(t *testing.T) {
+	inner := &supportStubExecutor{supported: map[string]bool{"inception": true}}
+	exec := NewHookedExecutor(inner, NewDispatcher(nil), "", "")
+
+	if !exec.SupportsTool("inception") {
+		t.Fatal("expected hooked executor to preserve inner deferred tool support")
+	}
+	if exec.SupportsTool("missing") {
+		t.Fatal("missing tool should not be supported")
+	}
+}
+
+func TestHookedExecutor_SupportsToolFallsBackToDefinitions(t *testing.T) {
+	inner := &stubExecutor{defs: []providers.ToolDefinition{{Name: "read_file"}}}
+	exec := NewHookedExecutor(inner, NewDispatcher(nil), "", "")
+
+	if !exec.SupportsTool("READ_FILE") {
+		t.Fatal("expected hooked executor to support direct definition names")
+	}
+	if exec.SupportsTool("inception") {
+		t.Fatal("unlisted tool should not be supported without inner support provider")
 	}
 }
