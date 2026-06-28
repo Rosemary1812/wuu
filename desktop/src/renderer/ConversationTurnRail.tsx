@@ -348,6 +348,10 @@ export function ConversationTurnRail({
           Math.max(0, (event.clientY - railRect.top) / railHeight),
         );
         scrollNode.scrollTop = ratio * maxScrollTop;
+        // The scroll container just jumped; refresh the highlight so it
+        // lines up with the bar now under the cursor (rail content may
+        // have shifted under a stationary mouse).
+        setDraggingTurnID(closestTurnIDAt(pointerY(event)));
       }
       if (event.clientY > railRect.top + railRect.height / 2) {
         onDragScrollAway?.();
@@ -375,6 +379,9 @@ export function ConversationTurnRail({
       }
       // Slide the highlight to whichever bar is now under the cursor so
       // the user gets continuous hover-style feedback as the rail scrolls.
+      // Always recompute — even when scrollTop didn't change — because the
+      // pointer can move within the rail without triggering a scroll, and
+      // that still needs the bar under the cursor to light up.
       setDraggingTurnID(closestTurnIDAt(pointerY(event)));
     }
 
