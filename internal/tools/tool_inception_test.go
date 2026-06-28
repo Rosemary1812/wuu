@@ -62,6 +62,21 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 	if !foundContinuation {
 		t.Fatalf("second request missing continuation summary: %+v", step.calls[1].Messages)
 	}
+	foundContinuation = false
+	for _, msg := range res.NewMessages {
+		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
+			t.Fatalf("durable rewritten history should not retain old Inception tool chain: %+v", res.NewMessages)
+		}
+		if msg.Name == compact.ContextContinuationName &&
+			msg.Hidden &&
+			strings.Contains(msg.Content, "D-Mail") &&
+			strings.Contains(msg.Content, "External state") {
+			foundContinuation = true
+		}
+	}
+	if !foundContinuation {
+		t.Fatalf("durable rewritten history missing hidden D-Mail continuation: %+v", res.NewMessages)
+	}
 }
 
 func TestActiveProfileInjectsHiddenInceptionAnchors(t *testing.T) {
@@ -73,7 +88,7 @@ func TestActiveProfileInjectsHiddenInceptionAnchors(t *testing.T) {
 	step := &inceptionLoopStep{results: []agent.StepResult{{Content: "done"}}}
 	var visible []providers.ChatMessage
 
-	if _, err := agent.RunToolLoop(context.Background(), []providers.ChatMessage{
+	res, err := agent.RunToolLoop(context.Background(), []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "start"},
 	}, agent.LoopConfig{
@@ -82,7 +97,8 @@ func TestActiveProfileInjectsHiddenInceptionAnchors(t *testing.T) {
 		OnMessage: func(msg providers.ChatMessage) {
 			visible = append(visible, msg)
 		},
-	}, step); err != nil {
+	}, step)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(step.calls) != 1 {
@@ -94,6 +110,16 @@ func TestActiveProfileInjectsHiddenInceptionAnchors(t *testing.T) {
 	}
 	if !step.calls[0].Messages[anchorIndex].Hidden {
 		t.Fatalf("inception anchor must be hidden: %+v", step.calls[0].Messages[anchorIndex])
+	}
+	var durableAnchor bool
+	for _, msg := range res.NewMessages {
+		if msg.Name == compact.ContextAnchorMessageName && msg.Hidden {
+			durableAnchor = true
+			break
+		}
+	}
+	if !durableAnchor {
+		t.Fatalf("inception anchor must be returned as hidden durable history: %+v", res.NewMessages)
 	}
 	for _, msg := range visible {
 		if msg.Name == compact.ContextAnchorMessageName {

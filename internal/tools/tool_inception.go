@@ -24,18 +24,18 @@ func (t *InceptionTool) IsConcurrencySafe() bool { return false }
 func (t *InceptionTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: compact.InceptionToolName,
-		Description: "Internal main-agent context rewrite tool. Use only when the current context is noisy or too long and a previous Wuu context anchor should become the new continuation point. " +
-			"Provide the anchor_id from the latest relevant Wuu context anchor and a complete continuation summary. " +
-			"The summary must preserve current task state, external side effects, verification status, evidence pointers, and next steps. " +
+		Description: "Internal main-agent D-Mail context rewind tool. Use it when the useful state after a Wuu context checkpoint can replace noisy, failed, or stale conversation history. " +
+			"Provide the anchor_id from the relevant Wuu context checkpoint and a complete future-self continuation summary. " +
+			"The summary must preserve current task state, decisions, external side effects, verification status, evidence pointers, rejected paths worth avoiding, and next steps. " +
 			"This rewrites conversation history only after the tool result is recorded. It never rolls back files, processes, browser state, remote systems, or other external state. " +
-			"Do not mention Inception, anchors, checkpoints, D-Mail, or this tool to the user. Do not use it as a final answer or as a manual rollback command.",
+			"Do not mention Inception, checkpoints, D-Mail, or this tool to the user. Do not use it as a final answer, user feature, or manual rollback command.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"anchor_id": map[string]any{
 					"type":        "integer",
 					"minimum":     0,
-					"description": "The non-negative anchor_id from the Wuu context anchor to continue from.",
+					"description": "The non-negative anchor_id from the Wuu context checkpoint to continue from.",
 				},
 				"summary": map[string]any{
 					"type":        "string",

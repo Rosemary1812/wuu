@@ -528,11 +528,12 @@ func filterTransientModelContextHistory(msgs []providers.ChatMessage) []provider
 }
 
 func isTransientModelContextMessage(msg providers.ChatMessage) bool {
+	if compact.IsInternalContextMessage(msg) {
+		return false
+	}
 	name := strings.TrimSpace(msg.Name)
 	switch name {
-	case compact.ContextAnchorMessageName,
-		compact.ContextContinuationName,
-		wuucontext.TaskContractMessageName,
+	case wuucontext.TaskContractMessageName,
 		wuucontext.GoalContinuationMessageName:
 		return true
 	}
@@ -545,8 +546,7 @@ func isTransientModelContextMessage(msg providers.ChatMessage) bool {
 	if !msg.Hidden {
 		return false
 	}
-	return compact.IsInternalContextMessage(msg) ||
-		wuucontext.IsSystemReminder("", msg.Content) ||
+	return wuucontext.IsSystemReminder("", msg.Content) ||
 		wuucontext.IsGoalContinuation("", msg.Content)
 }
 

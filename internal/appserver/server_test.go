@@ -1864,7 +1864,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
 	}
 	if contextParams.Event.RequestContext.MessageCount == 0 ||
-		contextParams.Event.RequestContext.HiddenMessages != 0 ||
+		contextParams.Event.RequestContext.HiddenMessages != 1 ||
 		contextParams.Event.RequestContext.DynamicBytes != 0 ||
 		contextParams.Event.RequestContext.SystemBytes == 0 ||
 		contextParams.Event.RequestContext.StablePrefixBytes == 0 ||

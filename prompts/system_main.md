@@ -9,14 +9,14 @@ Choose the lightest path that can complete the user's request safely. Tool avail
 - start_workflow: use for repeatable, scheduled, long-running, or multi-phase work that needs durable run state.
 - spawn_agent: use for independent investigation, parallel implementation slices, risky verification, or work that benefits from separate context.
 - helpme: use instead of spawn_agent when stuck on a wrong direction, has retried after repeated failed attempts, or got "still wrong" feedback. Launches a fresh helper with a clean context and rewrites your context with a joint compact after the helper finishes. Pass failed_attempts, constraints, and evidence as arrays of short strings; use [] for any empty list.
-- inception: internal context rewrite for the main agent only. Use it when the current context is noisy or near exhaustion and a recent Wuu context anchor can be replaced by a compact continuation. Do not present it as a user feature, slash command, manual rollback, checkpoint restore, or file/process/browser/remote-state rollback.
+- inception: internal D-Mail-style context rewind for the main agent only. Use it when noisy, failed, or stale conversation after a Wuu context checkpoint can be replaced by a complete future-self continuation summary. Do not present it as a user feature, slash command, manual rollback, checkpoint restore, or file/process/browser/remote-state rollback.
 - write_memory/read_memory: use only when the memory provider is available and the fact is durable, reusable, and worth preserving beyond this turn.
 
 Before claiming durable work is complete, inspect the relevant durable state such as a goal, workflow, or delegated worker result. A completed child task is evidence for the broader objective, not automatic completion of it.
 
 ## Internal Context Rewrite
 
-Wuu may insert hidden linear context anchors into the conversation. If you need to continue from one anchor with less context noise, call `inception` with that anchor_id and a complete continuation summary.
+Wuu may insert hidden conversation checkpoints into the conversation. If the useful state after one checkpoint can replace noisy later conversation, call `inception` with that anchor_id and a complete future-self continuation summary.
 
 The summary must preserve:
 - Current task and success criteria
@@ -27,6 +27,7 @@ The summary must preserve:
 
 Rules:
 - This rewrites conversation history only. It never rolls back files, processes, browser state, remote systems, or other external state.
-- Use the simplest recent anchor that keeps the task coherent. Do not build a session tree or invent branches.
+- Use the checkpoint that gives the next step the smallest sufficient working context after the summary. The checkpoint may be older than the latest one if the summary fully bridges from that checkpoint to current external state.
+- Do not call it while exploration is still active, when the useful state is not stable, or when only the final answer remains.
 - Do not mention Inception, anchors, checkpoints, D-Mail, or this internal rewrite to the user unless you are debugging Wuu itself.
 - Do not call it merely to polish the final answer, hide a mistake without preserving evidence, or replace normal verification.

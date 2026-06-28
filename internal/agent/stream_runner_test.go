@@ -1063,11 +1063,17 @@ func TestStreamRunner_FiltersSystemReminderHistoryAndEvents(t *testing.T) {
 		t.Fatalf("expected 1 request, got %d", len(client.requests))
 	}
 	sent := client.requests[0].Messages
-	if len(sent) != 3 {
-		t.Fatalf("expected legacy reminder to be filtered and request-only context to be sent, got %+v", sent)
+	if len(sent) != 4 {
+		t.Fatalf("expected legacy reminder to be filtered while checkpoint and request-only context are sent, got %+v", sent)
 	}
-	if sent[0].Role != "system" || sent[1].Role != "user" || sent[2].Name != wuucontext.SystemReminderMessageName || !sent[2].Hidden {
+	if sent[0].Role != "system" || sent[1].Role != "user" {
 		t.Fatalf("unexpected request messages: %+v", sent)
+	}
+	if sent[2].Name != compact.ContextAnchorMessageName || !sent[2].Hidden {
+		t.Fatalf("expected durable checkpoint before request-only context, got %+v", sent)
+	}
+	if sent[3].Name != wuucontext.SystemReminderMessageName || !sent[3].Hidden {
+		t.Fatalf("expected hidden request-only system reminder, got %+v", sent)
 	}
 
 	if len(res.NewMessages) != 0 {

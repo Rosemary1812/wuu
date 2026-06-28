@@ -15,8 +15,8 @@ const (
 	InceptionHistoryRewriteKind = "inception_context_rewrite"
 	ContextAnchorMessageName    = "wuu_context_anchor"
 	ContextContinuationName     = "wuu_context_continuation"
-	ContextAnchorPrefix         = "[Wuu context anchor]"
-	InceptionContinuationPrefix = "[Continuation summary]"
+	ContextAnchorPrefix         = "[Wuu context checkpoint]"
+	InceptionContinuationPrefix = "[D-Mail continuation]"
 	systemReminderOpen          = "<system-reminder>"
 	systemReminderClose         = "</system-reminder>"
 )
@@ -38,7 +38,7 @@ func BuildContextAnchorMessage(anchorID int) providers.ChatMessage {
 		Role: "user",
 		Name: ContextAnchorMessageName,
 		Content: wrapInternalContextContent(
-			fmt.Sprintf("%s\nanchor_id: %d\nThis is an internal linear context anchor. Use the inception tool with this anchor_id only when replacing noisy later context with a continuation summary. External state is not rolled back.",
+			fmt.Sprintf("%s\nanchor_id: %d\nThis is an internal conversation checkpoint. Use the inception tool with this anchor_id when sending a D-Mail-style continuation summary back here. Conversation context after this checkpoint can be replaced; files, processes, browser state, remote systems, and other external state are not rolled back.",
 				ContextAnchorPrefix,
 				anchorID,
 			),
@@ -108,7 +108,7 @@ func BuildInceptionContinuationContent(anchorID int, summary string) string {
 	summary = strings.TrimSpace(summary)
 	var b strings.Builder
 	b.WriteString(InceptionContinuationPrefix)
-	fmt.Fprintf(&b, "\nThis context continues from Wuu context anchor %d. Only conversation history was rewritten; files, processes, browser state, remote systems, and other external state remain current.\n\n", anchorID)
+	fmt.Fprintf(&b, "\nYou just received a D-Mail from your future self at Wuu context checkpoint %d. Only conversation history was rewritten; files, processes, browser state, remote systems, and other external state remain current.\n\n", anchorID)
 	b.WriteString(summary)
 	return wrapInternalContextContent(b.String())
 }
@@ -214,6 +214,7 @@ func RewriteHistoryWithInceptionContinuation(messages []providers.ChatMessage, a
 		Role:            "user",
 		Name:            ContextContinuationName,
 		Content:         content,
+		Hidden:          true,
 		DiscoveredTools: discovered,
 	})
 	return rewritten, true, nil
