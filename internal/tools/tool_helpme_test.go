@@ -20,8 +20,8 @@ func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
 	if _, ok := props["timeout_ms"]; ok {
 		t.Fatalf("helpme schema should not expose long synchronous timeout: %#v", def.InputSchema)
 	}
-	if _, ok := props["wait_ms"]; !ok {
-		t.Fatalf("helpme schema should expose optional short wait_ms: %#v", def.InputSchema)
+	if _, ok := props["wait_ms"]; ok {
+		t.Fatalf("helpme schema should not ask the model to choose wait duration: %#v", def.InputSchema)
 	}
 	for _, want := range []string{"returns immediately", "await_agents", "inception"} {
 		if !strings.Contains(def.Description, want) {
@@ -53,9 +53,6 @@ func TestDecodeHelpMeArgsAcceptsSingleStringLists(t *testing.T) {
 	}
 	if got := args.Evidence; len(got) != 1 || got[0] != "screenshot shows the rail missing" {
 		t.Fatalf("evidence = %#v", got)
-	}
-	if args.WaitMS != 0 {
-		t.Fatalf("wait_ms default = %d, want 0", args.WaitMS)
 	}
 }
 

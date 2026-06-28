@@ -273,10 +273,6 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 					"description": "String array of important evidence already observed: files, errors, tests, logs, or facts. Prefer references over long raw output. Use [] when there is none.",
 					"items":       map[string]any{"type": "string"},
 				},
-				"wait_ms": map[string]any{
-					"type":        "integer",
-					"description": "Optional short inline wait in milliseconds. Defaults to 0 and is capped at 60000. If the helper is still running after this wait, helpme returns a running/timed_out status instead of failing.",
-				},
 			},
 		},
 	}
@@ -301,7 +297,6 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	if reason == "" {
 		reason = "The main agent requested a fresh-context recovery."
 	}
-	wait := helpMeWait(args.WaitMS)
 	prompt := buildHelpMePrompt(helpMePromptInput{
 		Reason:               reason,
 		OriginalGoal:         originalGoal,
@@ -331,19 +326,6 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 		AgentID:   result.AgentID,
 		AgentPath: result.AgentPath,
 		NextSteps: result.NextSteps,
-	}
-	if wait > 0 {
-		waitCtx, cancel := context.WithTimeout(ctx, wait)
-		awaited, awaitErr := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), waitCtx, []string{result.AgentID})
-		cancel()
-		if awaitErr != nil {
-			return "", awaitErr
-		}
-		response.TimedOut = awaited.TimedOut
-		response.NextSteps = helpMeFirstNonEmptySlice(awaited.NextSteps, response.NextSteps)
-		if len(awaited.Results) > 0 {
-			applyHelpMeAwaitResult(&response, awaited.Results[0])
-		}
 	}
 	report, reportOK := t.env.AgentControl.AgentReportDetailsForTask(response.AgentID)
 	if reportOK {
@@ -419,7 +401,6 @@ type helpMeResponse struct {
 	ResultPath     string                           `json:"result_path,omitempty"`
 	MainTracePath  string                           `json:"main_trace_path,omitempty"`
 	Error          string                           `json:"error,omitempty"`
-	TimedOut       bool                             `json:"timed_out,omitempty"`
 	Report         *agentcontrol.AgentReportDetails `json:"report,omitempty"`
 	ReportMissing  bool                             `json:"report_missing,omitempty"`
 	NextSteps      []string                         `json:"next_steps,omitempty"`
@@ -434,7 +415,6 @@ type helpMeArgs struct {
 	FailedAttempts       []string `json:"failed_attempts"`
 	Constraints          []string `json:"constraints"`
 	Evidence             []string `json:"evidence"`
-	WaitMS               int      `json:"wait_ms"`
 }
 
 func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
@@ -446,7 +426,6 @@ func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
 		FailedAttempts       json.RawMessage `json:"failed_attempts"`
 		Constraints          json.RawMessage `json:"constraints"`
 		Evidence             json.RawMessage `json:"evidence"`
-		WaitMS               int             `json:"wait_ms"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -471,7 +450,6 @@ func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
 		FailedAttempts:       failedAttempts,
 		Constraints:          constraints,
 		Evidence:             evidence,
-		WaitMS:               raw.WaitMS,
 	}
 	return nil
 }
@@ -537,31 +515,6 @@ func writeHelpMePromptList(b *strings.Builder, label string, values []string) {
 		fmt.Fprintf(b, "- %s\n", value)
 	}
 	b.WriteByte('\n')
-}
-
-func helpMeWait(waitMS int) time.Duration {
-	wait := time.Duration(waitMS) * time.Millisecond
-	if wait <= 0 {
-		return 0
-	}
-	maxWait := time.Minute
-	if wait > maxWait {
-		return maxWait
-	}
-	return wait
-}
-
-func applyHelpMeAwaitResult(response *helpMeResponse, result agentcontrol.AwaitAgentResult) {
-	if response == nil {
-		return
-	}
-	response.Status = helpMeFirstNonEmpty(result.Status, response.Status)
-	response.AgentID = helpMeFirstNonEmpty(result.AgentID, response.AgentID)
-	response.AgentPath = helpMeFirstNonEmpty(result.AgentPath, response.AgentPath)
-	response.Result = result.Result
-	response.ResultPath = result.ResultPath
-	response.Error = result.Error
-	response.ReportMissing = result.ReportMissing
 }
 
 func helpMeReportMissing(status string, reportOK bool) bool {
@@ -856,6 +809,9 @@ func (t *FollowupTaskTool) Execute(ctx context.Context, argsJSON string) (string
 
 type WaitAgentTool struct{ env *Env }
 
+// Agent lifecycle waits are runtime policy, not model-chosen durations.
+var waitAgentRuntimeTimeout = 10 * time.Second
+
 func NewWaitAgentTool(env *Env) *WaitAgentTool { return &WaitAgentTool{env: env} }
 
 func (t *WaitAgentTool) Name() string            { return "wait_agent" }
@@ -867,15 +823,11 @@ func (t *WaitAgentTool) Definition() providers.ToolDefinition {
 		Name: "wait_agent",
 		Description: "Wait briefly for a background agent notification only when the current turn is blocked on that signal. " +
 			"This is not a join or result tool: it does not return child output. Do not call wait_agent after spawn_agent just to poll. " +
+			"The runtime owns the wait budget; do not try to estimate elapsed time. " +
 			"Use await_agents when you need child output for synthesis; otherwise continue local work or end the turn and let automatic completion notifications resume you.",
 		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"timeout_ms": map[string]any{
-					"type":        "integer",
-					"description": "Optional timeout in milliseconds. Defaults to 10000.",
-				},
-			},
+			"type":       "object",
+			"properties": map[string]any{},
 		},
 	}
 }
@@ -884,17 +836,11 @@ func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if t.env.AgentControl == nil {
 		return "", errors.New("wait_agent: agent control not configured")
 	}
-	var args struct {
-		TimeoutMS int `json:"timeout_ms"`
-	}
+	var args struct{}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	timeout := time.Duration(args.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, waitAgentRuntimeTimeout)
 	defer cancel()
 	signal, err := t.env.AgentControl.WaitForAgentNotificationFrom(currentAgentPath(t.env), waitCtx)
 	if err != nil {
@@ -963,6 +909,9 @@ func waitAgentMessage(result waitAgentResult) string {
 
 type AwaitAgentsTool struct{ env *Env }
 
+// Agent lifecycle waits are runtime policy, not model-chosen durations.
+const awaitAgentsRuntimeTimeout = time.Minute
+
 func NewAwaitAgentsTool(env *Env) *AwaitAgentsTool { return &AwaitAgentsTool{env: env} }
 
 func (t *AwaitAgentsTool) Name() string            { return "await_agents" }
@@ -978,7 +927,8 @@ func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
 			"parallel tool-call batch as spawn_agent; wait for spawn_agent to return real IDs first. " +
 			"Pass targets to wait for specific agent_ids, task_names, or agent_paths. Omit targets " +
 			"only when you intentionally want to await all active descendant agents under the current " +
-			"agent path. Results can include status='awaiting_report' when a worker produced final " +
+			"agent path. The runtime owns the wait budget; do not try to estimate elapsed time. " +
+			"Results can include status='awaiting_report' when a worker produced final " +
 			"text without the required agent_report; treat that as an incomplete handoff and follow up " +
 			"or verify before relying on it. Results also include changed_files from structured reports " +
 			"and warnings when multiple awaited agents report overlapping changed files.",
@@ -990,10 +940,6 @@ func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
 					"description": "Optional list of agent_id, task_name, or agent_path values to await. Omit only to await all active descendant agents.",
 					"items":       map[string]any{"type": "string"},
 				},
-				"timeout_ms": map[string]any{
-					"type":        "integer",
-					"description": "Optional timeout in milliseconds. Defaults to 600000 (10 minutes). On timeout, returns current per-agent statuses with timed_out=true.",
-				},
 			},
 		},
 	}
@@ -1004,17 +950,12 @@ func (t *AwaitAgentsTool) Execute(ctx context.Context, argsJSON string) (string,
 		return "", errors.New("await_agents: agent control not configured")
 	}
 	var args struct {
-		Targets   []string `json:"targets"`
-		TimeoutMS int      `json:"timeout_ms"`
+		Targets []string `json:"targets"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	timeout := time.Duration(args.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, awaitAgentsRuntimeTimeout)
 	defer cancel()
 	result, err := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), waitCtx, args.Targets)
 	if err != nil {

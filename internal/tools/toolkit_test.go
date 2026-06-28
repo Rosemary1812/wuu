@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
@@ -2002,7 +2003,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "await_agents",
-		Arguments: fmt.Sprintf(`{"targets":["%s"],"timeout_ms":1000}`, spawned.AgentID),
+		Arguments: fmt.Sprintf(`{"targets":["%s"]}`, spawned.AgentID),
 	}); err != nil {
 		t.Fatalf("await_agents: %v", err)
 	}
@@ -5573,11 +5574,14 @@ func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		if _, ok := props["timeout_ms"]; !ok {
-			t.Fatalf("wait_agent schema must expose timeout_ms: %#v", d.InputSchema)
+		if _, ok := props["timeout_ms"]; ok {
+			t.Fatalf("wait_agent schema must not ask the model to choose wait duration: %#v", d.InputSchema)
 		}
 		if _, ok := props["target"]; ok {
 			t.Fatalf("wait_agent signal schema must not expose target: %#v", d.InputSchema)
+		}
+		if !strings.Contains(d.Description, "runtime owns the wait budget") {
+			t.Fatalf("wait_agent description must explain runtime-owned waiting: %q", d.Description)
 		}
 		if _, ok := d.InputSchema["required"]; ok {
 			t.Fatalf("wait_agent signal schema must not require fields: %#v", d.InputSchema)
@@ -5587,7 +5591,38 @@ func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
 	t.Fatal("wait_agent must be present in tool definitions")
 }
 
+func TestToolkit_AwaitAgentsDoesNotExposeTimeout(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name != "await_agents" {
+			continue
+		}
+		props, _ := d.InputSchema["properties"].(map[string]any)
+		if _, ok := props["targets"]; !ok {
+			t.Fatalf("await_agents schema must expose targets: %#v", d.InputSchema)
+		}
+		if _, ok := props["timeout_ms"]; ok {
+			t.Fatalf("await_agents schema must not ask the model to choose wait duration: %#v", d.InputSchema)
+		}
+		if !strings.Contains(d.Description, "runtime owns the wait budget") {
+			t.Fatalf("await_agents description must explain runtime-owned waiting: %q", d.Description)
+		}
+		return
+	}
+	t.Fatal("await_agents must be present in tool definitions")
+}
+
 func TestToolkit_WaitAgentReturnsNarrowTimeoutSignal(t *testing.T) {
+	previousTimeout := waitAgentRuntimeTimeout
+	waitAgentRuntimeTimeout = time.Millisecond
+	defer func() {
+		waitAgentRuntimeTimeout = previousTimeout
+	}()
+
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -5612,7 +5647,7 @@ func TestToolkit_WaitAgentReturnsNarrowTimeoutSignal(t *testing.T) {
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "wait_agent",
-		Arguments: `{"timeout_ms":1}`,
+		Arguments: `{}`,
 	})
 	if err != nil {
 		t.Fatalf("wait_agent: %v", err)
