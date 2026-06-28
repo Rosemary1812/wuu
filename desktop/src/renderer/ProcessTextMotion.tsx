@@ -38,7 +38,9 @@ export function AnimatedProcessText({
         </span>
       ) : null}
       <span
-        className="process-text-motion-copy process-text-motion-current"
+        className={`process-text-motion-copy process-text-motion-current${
+          exitingText ? " process-text-motion-enter" : ""
+        }`}
         key={text}
       >
         {text}

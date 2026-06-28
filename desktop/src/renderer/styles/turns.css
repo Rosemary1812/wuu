@@ -3345,7 +3345,7 @@
   will-change: opacity, transform, filter;
 }
 
-.process-text-motion-current {
+.process-text-motion-current.process-text-motion-enter {
   animation: process-text-rise-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 

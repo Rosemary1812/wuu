@@ -1,12 +1,11 @@
 /**
  * Tests for `ToolActivityRow`.
  *
- * Contract: the row's summary text fake-streams when `streaming` is true
- * and snaps to full text the moment `streaming` flips false (the catch-
- * up signal AssistantTurnShell raises the moment an agent_message in
- * the same turn starts streaming). The speed comes from
- * LightweightStreamingText — these tests assert the wrapping behavior,
- * not the per-character cadence.
+ * Contract: an initial live summary renders in full so switching back
+ * to a running session does not replay old gray text. Summary text
+ * fake-streams when it grows during `streaming`, and snaps to full the
+ * moment `streaming` flips false (the catch-up signal AssistantTurnShell
+ * raises when an agent_message in the same turn starts streaming).
  */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act } from "react";
@@ -43,6 +42,15 @@ function fakeReadFileTool(): ThreadItem {
     status: "completed",
     name: "read_file",
     arguments: JSON.stringify({ path: "foo.ts" }),
+  };
+}
+
+function fakeInFlightReadFileTool(): ThreadItem {
+  return {
+    id: "tool-1",
+    type: "tool_call",
+    status: "in_progress",
+    name: "read_file",
   };
 }
 
@@ -102,8 +110,16 @@ describe("ToolActivityRow", () => {
     expect(surfaceText()).toBe(SUMMARY_TEXT);
   });
 
-  it("renders the summary text progressively while streaming is true", async () => {
+  it("renders an initial live summary in full", () => {
     mount({ items: [fakeReadFileTool()], streaming: true });
+    expect(surfaceText()).toBe(SUMMARY_TEXT);
+  });
+
+  it("renders summary text progressively when it grows during streaming", async () => {
+    mount({ items: [fakeInFlightReadFileTool()], streaming: true });
+    expect(surfaceText()).toBe("查看");
+
+    rerender({ items: [fakeReadFileTool()], streaming: true });
 
     // Mid-reveal: visible is partial (strictly less than full text).
     // The LightweightStreamingText pace is ~12 cps with a 100 ms base,
@@ -125,7 +141,8 @@ describe("ToolActivityRow", () => {
   });
 
   it("snaps to full text when streaming flips to false mid-reveal (catch-up)", async () => {
-    mount({ items: [fakeReadFileTool()], streaming: true });
+    mount({ items: [fakeInFlightReadFileTool()], streaming: true });
+    rerender({ items: [fakeReadFileTool()], streaming: true });
 
     // Let the reveal advance partway.
     await act(async () => {

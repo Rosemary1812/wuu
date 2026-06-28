@@ -1,12 +1,11 @@
 /**
  * Tests for LightweightStreamingText.
  *
- * Contract: short committed snapshots (≤ 2 chars) snap to full
- * instantly; longer snapshots reveal progressively at a steady pace
- * (~12 cps with a 100 ms base) that respects the floor and ceiling;
- * reveal never resets when the target text grows (we always continue
- * forward from the visible position); non-live, shrink, and unmount
- * paths skip animation.
+ * Contract: initial committed snapshots snap to full so remounting a
+ * session does not replay old gray process text. Text that grows after
+ * mount reveals progressively at a steady pace (~12 cps with a 100 ms
+ * base), never resets when the target grows, and snaps on non-live,
+ * shrink, and unmount paths.
  */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act } from "react";
@@ -94,34 +93,23 @@ describe("LightweightStreamingText", () => {
     expect(surfaceText()).toBe("Reading the file now");
   });
 
-  it("reveals mid-length text progressively during live", async () => {
+  it("renders initial live text in full so remounts do not replay", () => {
     mount({
       text: "Looking at the file",
       live: true,
       className: "lightweight-stream",
     });
 
-    // Mid-reveal: visible is partial (strictly less than full text).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
-    const mid = surfaceText();
-    expect(mid.length).toBeGreaterThan(0);
-    expect(mid.length).toBeLessThan("Looking at the file".length);
-    // The visible prefix must match the source text.
-    expect("Looking at the file".startsWith(mid)).toBe(true);
-
-    // After enough wall time, the full text is revealed. 19 chars at
-    // ~12 cps with a 100 ms base lands well under 2000 ms, so 2000 ms
-    // is a safe settle wait that is robust to CI jitter.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    });
     expect(surfaceText()).toBe("Looking at the file");
   });
 
   it("continues reveal when target text grows (never resets visible position)", async () => {
     mount({
+      text: "",
+      live: true,
+      className: "lightweight-stream",
+    });
+    rerender({
       text: "Reading file",
       live: true,
       className: "lightweight-stream",
@@ -183,6 +171,11 @@ describe("LightweightStreamingText", () => {
 
   it("snaps to full text when live flips false mid-reveal", async () => {
     mount({
+      text: "",
+      live: true,
+      className: "lightweight-stream",
+    });
+    rerender({
       text: "Looking at this long content that has not finished revealing",
       live: true,
       className: "lightweight-stream",
@@ -210,6 +203,11 @@ describe("LightweightStreamingText", () => {
   it("respects the duration cap for very long text", async () => {
     const longText = "a".repeat(500);
     mount({
+      text: "",
+      live: true,
+      className: "lightweight-stream",
+    });
+    rerender({
       text: longText,
       live: true,
       className: "lightweight-stream",
@@ -225,6 +223,11 @@ describe("LightweightStreamingText", () => {
 
   it("does not leave a running RAF after unmount", async () => {
     mount({
+      text: "",
+      live: true,
+      className: "lightweight-stream",
+    });
+    rerender({
       text: "Looking at the file",
       live: true,
       className: "lightweight-stream",

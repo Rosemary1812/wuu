@@ -5,8 +5,10 @@ type LightweightStreamingTextProps = {
    * The committed target text from the back-end. Increases trigger a
    * reveal from the current visible position forward (never reset),
    * so the user sees one continuous typing animation as the snapshot
-   * grows. A shorter value snaps the visible text down to the new
-   * length immediately.
+   * grows after mount. Initial non-empty text snaps to full so a
+   * remounted historical process row does not replay old characters.
+   * A shorter value snaps the visible text down to the new length
+   * immediately.
    */
   text: string;
   /**
@@ -59,8 +61,9 @@ function computeRevealDuration(delta: number): number {
  *
  * Used by the process fold header preview where the back-end delivers
  * a committed snapshot of the latest commentary or activity text
- * rather than a live stream. Reusing the streaming metaphor here keeps
- * the fold header from snapping the new text into view all at once.
+ * rather than a live stream. New growth reveals progressively, but
+ * initial text is shown in full so switching back to a mounted history
+ * snapshot does not replay old process text.
  *
  * Distinct from StreamingMarkdown in two ways:
  *   - No markdown parsing, no cursor, no block-level memo. The preview
@@ -76,8 +79,8 @@ export function LightweightStreamingText({
   live,
   className
 }: LightweightStreamingTextProps): JSX.Element {
-  const [visibleLength, setVisibleLength] = useState(0);
-  const visibleRef = useRef(0);
+  const [visibleLength, setVisibleLength] = useState(text.length);
+  const visibleRef = useRef(text.length);
   const rafRef = useRef<number | undefined>(undefined);
 
   // The RAF loop must always see the latest target. Holding the value
