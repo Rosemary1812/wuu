@@ -252,12 +252,13 @@ function buildThread(
     model_provider: "",
     model: "",
     cwd: "",
-    status: "completed",
+    status: "idle",
     created_at: "",
     updated_at: "",
     turns: turns.map((turn) => ({
       id: turn.id,
       status: "completed" as const,
+      items_view: "full" as const,
       items: turn.items.map((item) => item as never),
     })),
   };
@@ -395,6 +396,7 @@ function buildTurn(
   return {
     id: "turn-1",
     status: "completed",
+    items_view: "full",
     items: items.map((item) => item as never),
   };
 }
