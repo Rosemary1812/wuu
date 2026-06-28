@@ -105,6 +105,12 @@ export function ConversationTurnRail({
     railHeight: number;
     maxScrollTop: number;
   } | null>(null);
+  // Mirror of dragStateRef so the mousemove magnet handler can see whether
+  // a drag is in progress and stop fighting the pointer-drag-driven
+  // highlight. Without this, mousemove keeps setting `hoveredTurnID` to
+  // the same bar under a stationary cursor, hiding the dragging
+  // highlight that's also trying to track the cursor.
+  const isDraggingRef = useRef(false);
   const resolveScrollContainer = useCallback(
     () => getScrollContainer?.() ?? scrollContainerRef?.current ?? null,
     [getScrollContainer, scrollContainerRef],
@@ -436,7 +442,7 @@ export function ConversationTurnRail({
     >
       {visibleTurns.map((turn, index) => {
           const globalIndex = startIndex + index;
-          const isHovered = turn.id === hoveredTurnID;
+          const isHovered = turn.id === focusedTurnID;
           const isAdjacent = adjacentIndices.has(index);
           const isActive = turn.id === activeTurnID;
           const className = [
