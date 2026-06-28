@@ -106,6 +106,12 @@ export function ContextCompactionNotice({
 
 function contextCompactionTitle(text?: string): string {
   const normalized = normalizeContextCompactionText(text);
+  if (isFailedCompactNotice(normalized)) {
+    return "上下文压缩失败";
+  }
+  if (isUnchangedCompactNotice(normalized)) {
+    return "上下文未变化";
+  }
   if (/^Recovered from context overflow/i.test(normalized)) {
     return "已从上下文超限中恢复";
   }
@@ -116,6 +122,15 @@ function contextCompactionDetail(text?: string): string {
   const normalized = normalizeContextCompactionText(text);
   if (!normalized) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
+  }
+  if (isFailedCompactNotice(normalized)) {
+    const reason = compactFailureReason(normalized);
+    return reason
+      ? `自动压缩没有完成，当前对话仍保留原上下文。错误：${reason}`
+      : "自动压缩没有完成，当前对话仍保留原上下文。";
+  }
+  if (isUnchangedCompactNotice(normalized)) {
+    return "这次压缩没有改变上下文，后续会继续使用当前上下文。";
   }
   if (/^Compacted history$/i.test(normalized)) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
@@ -129,6 +144,18 @@ function contextCompactionDetail(text?: string): string {
 
 function normalizeContextCompactionText(text?: string): string {
   return (text ?? "").trim().replace(/^[✦*•]\s*/, "");
+}
+
+function isFailedCompactNotice(text: string): boolean {
+  return /^(?:Proactive compact|Context-overflow compact|Compact) failed\b/i.test(text);
+}
+
+function compactFailureReason(text: string): string {
+  return text.replace(/^(?:Proactive compact|Context-overflow compact|Compact) failed:?\s*/i, "").trim();
+}
+
+function isUnchangedCompactNotice(text: string): boolean {
+  return /^(?:Proactive compact|Context-overflow compact|Compact) made no changes\b/i.test(text);
 }
 
 function parseContextCompactionNotice(text: string): string | undefined {
@@ -145,4 +172,3 @@ function parseContextCompactionNotice(text: string): string | undefined {
   }
   return `已压缩较早上下文：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
 }
-

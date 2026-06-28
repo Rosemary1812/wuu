@@ -121,4 +121,23 @@ describe("ContextCompactionNotice", () => {
       "已从上下文超限中恢复",
     );
   });
+
+  it("does not present failed proactive compaction as a successful compact", () => {
+    const failedCompactText =
+      '✦ Proactive compact failed: compact summary failed: HTTP 400: {"detail":"Unsupported parameter: max_output_tokens"}';
+    const host = mount(
+      <ContextCompactionNotice
+        status="completed"
+        text={failedCompactText}
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "上下文压缩失败",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "当前对话仍保留原上下文",
+    );
+    expect(host.textContent).not.toContain("上下文已压缩");
+  });
 });
