@@ -166,6 +166,8 @@ export function EnvironmentPanel({
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
+  const planTotal = planUpdate?.plan.length ?? 0;
+  const planCompleted = planUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
     onSetActiveMenu(activeMenu === menu ? null : menu);
@@ -179,7 +181,21 @@ export function EnvironmentPanel({
       aria-hidden={motionState === "closing" ? true : undefined}
     >
       <div className="environment-panel-header">
-        <h2>{planUpdate ? "进度" : "环境信息"}</h2>
+        <div className="environment-panel-title">
+          {planUpdate ? (
+            <>
+              <h2>进度</h2>
+              <span
+                className="environment-panel-counter"
+                aria-label={`已完成 ${planCompleted} 项，共 ${planTotal} 项`}
+              >
+                {planCompleted}/{planTotal}
+              </span>
+            </>
+          ) : (
+            <h2>环境信息</h2>
+          )}
+        </div>
         <div className="environment-panel-actions">
           <button className="icon-button" type="button" aria-label="关闭环境信息" onClick={onClose}>
             <X className="icon" />
@@ -512,15 +528,9 @@ function stringArrayValue(record: JsonRecord | undefined, key: string): string[]
 }
 
 function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {
-  const total = planUpdate.plan.length;
-  const completed = planUpdate.plan.filter((item) => item.status === "completed").length;
-
   return (
     <section className="environment-plan-section" aria-label="任务进度">
       <div className="environment-plan-scroll">
-        <div className="environment-plan-meta">
-          <span>{completed}/{total}</span>
-        </div>
         {planUpdate.explanation ? <p className="environment-plan-explanation">{planUpdate.explanation}</p> : null}
         <ol className="environment-plan-list">
           {planUpdate.plan.map((item, index) => (
