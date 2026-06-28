@@ -5244,7 +5244,6 @@ export function App(): JSX.Element {
           panelRef={environmentPanelRef}
           closing={environmentPanelClosing}
           motionState={environmentPanelMotionState}
-          activeProject={activeProject}
           planUpdate={activePlanUpdate}
           backgroundProcesses={backgroundProcesses}
           stoppingProcessIDs={stoppingProcessIDs}
@@ -5255,8 +5254,6 @@ export function App(): JSX.Element {
           queryHistory={pastQueries}
           onSetActiveMenu={setEnvironmentPanelMenu}
           onClose={() => closeEnvironmentPanel({ dismissed: true })}
-          onOpenProject={() => void chooseProjectFolder()}
-          onSelectNoProject={() => void useNoProject(false)}
           onSelectBranch={(branch) => void checkoutBranch(branch)}
           onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
           onOpenReview={() => {

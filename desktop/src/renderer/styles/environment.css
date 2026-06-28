@@ -525,12 +525,8 @@
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
-.environment-side-menu.mode {
-  top: 76px;
-}
-
 .environment-side-menu.branch {
-  top: 116px;
+  top: 76px;
   width: 344px;
 }
 

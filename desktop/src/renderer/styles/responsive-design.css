@@ -36,7 +36,6 @@
   }
 
   .environment-side-menu,
-  .environment-side-menu.mode,
   .environment-side-menu.branch {
     top: calc(100% + 8px);
     right: 0;

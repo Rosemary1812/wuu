@@ -6,14 +6,10 @@ import {
   CornerDownRight,
   FileText,
   FileX,
-  Folder,
-  FolderOpen,
   FolderPlus,
-  FolderX,
   Github,
   GitBranch,
   Globe,
-  Laptop,
   Plus,
   Search,
   Square,
@@ -22,18 +18,16 @@ import {
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useEffect, useState } from "react";
 import type {
-  DesktopProject,
   GitStatusResult,
   InitializeResult,
   ManagedProcess,
   PlanUpdate,
-  RuntimeContext,
   Thread,
   WorkspaceFileReadResult
 } from "../shared/protocol";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 
-export type EnvironmentPanelMenu = "mode" | "branch" | "file" | null;
+export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
 
 export type BackgroundProcessItem = {
@@ -106,8 +100,6 @@ export function EnvironmentPanel({
   motionState,
   initialized,
   gitStatus,
-  activeContext,
-  activeProject,
   planUpdate,
   backgroundProcesses,
   stoppingProcessIDs,
@@ -116,8 +108,6 @@ export function EnvironmentPanel({
   pullRequestDisabledReason,
   onSetActiveMenu,
   onClose,
-  onOpenProject,
-  onSelectNoProject,
   onSelectBranch,
   onCreateBranch,
   onOpenReview,
@@ -132,8 +122,6 @@ export function EnvironmentPanel({
   motionState: EnvironmentPanelMotionState;
   initialized: InitializeResult;
   gitStatus?: GitStatusResult;
-  activeContext?: RuntimeContext;
-  activeProject?: DesktopProject;
   planUpdate?: PlanUpdate;
   backgroundProcesses: BackgroundProcessItem[];
   stoppingProcessIDs: Set<string>;
@@ -142,8 +130,6 @@ export function EnvironmentPanel({
   pullRequestDisabledReason: string;
   onSetActiveMenu: (menu: EnvironmentPanelMenu) => void;
   onClose: () => void;
-  onOpenProject: () => void;
-  onSelectNoProject: () => void;
   onSelectBranch: (branch: string) => void;
   onCreateBranch: (branch: string) => Promise<void>;
   onOpenReview: () => void;
@@ -179,12 +165,6 @@ export function EnvironmentPanel({
   const diff = gitStatus?.diff ?? { files: 0, additions: 0, deletions: 0 };
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
-  const contextLabel =
-    activeContext?.kind === "project"
-      ? activeProject?.name ?? "当前项目"
-      : activeContext?.kind === "no_project"
-        ? "无项目"
-        : "未选择";
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
@@ -233,17 +213,6 @@ export function EnvironmentPanel({
         </button>
 
         <button
-          className={`environment-row${activeMenu === "mode" ? " active" : ""}`}
-          type="button"
-          onClick={() => toggleMenu("mode")}
-        >
-          <Laptop className="icon-lg" />
-          <strong>项目</strong>
-          <span>{contextLabel}</span>
-          <ChevronRight className="icon" />
-        </button>
-
-        <button
           className={`environment-row${activeMenu === "branch" ? " active" : ""}`}
           type="button"
           disabled={!gitStatus?.is_repo || running}
@@ -288,14 +257,6 @@ export function EnvironmentPanel({
         ) : null}
       </div>
 
-      {activeMenu === "mode" ? (
-        <EnvironmentModeMenu
-          activeContext={activeContext}
-          activeProject={activeProject}
-          onOpenProject={onOpenProject}
-          onSelectNoProject={onSelectNoProject}
-        />
-      ) : null}
       {activeMenu === "branch" && gitStatus?.is_repo ? (
         <EnvironmentBranchMenu
           gitStatus={gitStatus}
@@ -573,40 +534,6 @@ function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX
         </ol>
       </div>
     </section>
-  );
-}
-
-function EnvironmentModeMenu({
-  activeContext,
-  activeProject,
-  onOpenProject,
-  onSelectNoProject
-}: {
-  activeContext?: RuntimeContext;
-  activeProject?: DesktopProject;
-  onOpenProject: () => void;
-  onSelectNoProject: () => void;
-}): JSX.Element {
-  return (
-    <div className="environment-side-menu mode" role="menu">
-      <div className="environment-side-label">切换项目</div>
-      {activeProject ? (
-        <button role="menuitem" type="button" disabled>
-          <Folder className="icon" />
-          <span>{activeProject.name}</span>
-          <Check className="icon" />
-        </button>
-      ) : null}
-      <button role="menuitem" type="button" onClick={onOpenProject}>
-        <FolderOpen className="icon" />
-        <span>使用现有文件夹</span>
-      </button>
-      <button role="menuitem" type="button" disabled={activeContext?.kind === "no_project"} onClick={onSelectNoProject}>
-        <FolderX className="icon" />
-        <span>不使用项目</span>
-        {activeContext?.kind === "no_project" ? <Check className="icon" /> : null}
-      </button>
-    </div>
   );
 }
 

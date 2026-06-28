@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { DesktopProject, PlanUpdate } from "../shared/protocol";
+import type { PlanUpdate } from "../shared/protocol";
 import type { AppState } from "./AppState";
 import {
   EnvironmentPanel,
@@ -17,7 +17,6 @@ export function EnvironmentSideStack({
   panelRef,
   closing,
   motionState,
-  activeProject,
   planUpdate,
   backgroundProcesses,
   stoppingProcessIDs,
@@ -30,8 +29,6 @@ export function EnvironmentSideStack({
   onCloseFilePreview,
   onSetActiveMenu,
   onClose,
-  onOpenProject,
-  onSelectNoProject,
   onSelectBranch,
   onCreateBranch,
   onOpenReview,
@@ -47,7 +44,6 @@ export function EnvironmentSideStack({
   panelRef: RefObject<HTMLDivElement | null>;
   closing: boolean;
   motionState: EnvironmentPanelMotionState;
-  activeProject?: DesktopProject;
   planUpdate?: PlanUpdate;
   backgroundProcesses: BackgroundProcessItem[];
   stoppingProcessIDs: Set<string>;
@@ -65,8 +61,6 @@ export function EnvironmentSideStack({
   onCloseFilePreview?: () => void;
   onSetActiveMenu: (menu: EnvironmentPanelMenu) => void;
   onClose: () => void;
-  onOpenProject: () => void;
-  onSelectNoProject: () => void;
   onSelectBranch: (branch: string) => void;
   onCreateBranch: (branch: string) => Promise<void>;
   onOpenReview: () => void;
@@ -87,8 +81,6 @@ export function EnvironmentSideStack({
         motionState={closing ? "closing" : motionState}
         initialized={state.initialized}
         gitStatus={state.gitStatus}
-        activeContext={state.activeContext}
-        activeProject={activeProject}
         planUpdate={planUpdate}
         backgroundProcesses={backgroundProcesses}
         stoppingProcessIDs={stoppingProcessIDs}
@@ -99,8 +91,6 @@ export function EnvironmentSideStack({
         onCloseFilePreview={onCloseFilePreview}
         onSetActiveMenu={onSetActiveMenu}
         onClose={onClose}
-        onOpenProject={onOpenProject}
-        onSelectNoProject={onSelectNoProject}
         onSelectBranch={onSelectBranch}
         onCreateBranch={onCreateBranch}
         onOpenReview={onOpenReview}
