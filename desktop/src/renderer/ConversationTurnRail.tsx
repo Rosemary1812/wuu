@@ -186,7 +186,6 @@ function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
   const firstUserText = firstUserMessageText(turn);
   const snippet = turnReplySnippet(turn);
   const body = snippet ? truncateReplyPreview(snippet.text) : "暂无回复";
-  const replyCount = snippet?.totalAgentMessages ?? 0;
   return (
     <div className="conversation-turn-rail-preview" role="tooltip">
       {firstUserText ? (
@@ -195,9 +194,6 @@ function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
         </div>
       ) : null}
       <div className="conversation-turn-rail-preview-body">{body}</div>
-      <div className="conversation-turn-rail-preview-footer">
-        {replyCount > 0 ? `${replyCount} 条回复` : "暂无回复"}
-      </div>
     </div>
   );
 }
