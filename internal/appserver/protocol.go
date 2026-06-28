@@ -792,9 +792,9 @@ type TurnEventNotification struct {
 }
 
 type TurnErrorNotification struct {
-	ThreadID   string           `json:"thread_id"`
-	TurnID     string           `json:"turn_id"`
-	Error      string           `json:"error"`
+	ThreadID string `json:"thread_id"`
+	TurnID   string `json:"turn_id"`
+	Error    string `json:"error"`
 	// Structured error fields surface the Go core's typed classification
 	// (StreamError, HTTPError, ClassifyError) directly to the front-end so
 	// the chip can show provider-specific codes and the renderer can drive
@@ -824,10 +824,18 @@ type TurnErrorAction struct {
 type TurnUsageNotification struct {
 	ThreadID            string `json:"thread_id"`
 	TurnID              string `json:"turn_id"`
+	Model               string `json:"model,omitempty"`
 	InputTokens         int    `json:"input_tokens"`
 	OutputTokens        int    `json:"output_tokens"`
 	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
+	// ContextWindowTokens is the resolved runtime context-window size for
+	// the active model at the time of this usage snapshot. The renderer
+	// uses it to show "已用 / 总数" usage meters next to the token-speed
+	// gauge. Zero means the model has no known window — the UI should
+	// hide the meter in that case instead of computing a misleading
+	// ratio against 0.
+	ContextWindowTokens int `json:"context_window_tokens,omitempty"`
 }
 
 type TurnCompletedNotification struct {

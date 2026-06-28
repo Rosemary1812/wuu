@@ -12,6 +12,7 @@ export type ComposerVariant = "dock" | "hero";
 export type FloatingMenuOwner =
   | "composer-runtime"
   | "composer-access"
+  | "composer-context-meter"
   | "codex-runtime"
   | "composer-query-history";
 export type FloatingMenuPlacement = "above" | "below" | "middle";

@@ -464,6 +464,24 @@ func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *ru
 	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, history, nil)
 }
 
+func usageContextWindowTokens(runner *agent.StreamRunner) int {
+	if runner == nil {
+		return 0
+	}
+	if runner.ContextWindowOverride > 0 {
+		return runner.ContextWindowOverride
+	}
+	if runner.APIModel != "" && runner.APIModel != runner.Model {
+		if window, ok := providers.KnownContextWindowFor(runner.APIModel); ok {
+			return window
+		}
+	}
+	if window, ok := providers.KnownContextWindowFor(runner.Model); ok {
+		return window
+	}
+	return 0
+}
+
 func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, requestContext []agent.ContextSegment) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
@@ -477,6 +495,11 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
 	}
+	// Resolve the real runtime context-window size for the active model so
+	// turn/usage notifications can drive a "已用 / 总数" meter in the UI.
+	// Captured once per turn: the runner is per-thread for its lifetime,
+	// so the model identity does not change between usage samples.
+	contextWindowTokens := usageContextWindowTokens(runner)
 	toolRecordStart := 0
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
@@ -519,10 +542,12 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		notify(NotificationTurnUsage, TurnUsageNotification{
 			ThreadID:            th.ID,
 			TurnID:              turnID,
+			Model:               runner.Model,
 			InputTokens:         snapshot.InputTokens,
 			OutputTokens:        snapshot.OutputTokens,
 			CacheCreationTokens: snapshot.CacheCreationTokens,
 			CacheReadTokens:     snapshot.CacheReadTokens,
+			ContextWindowTokens: contextWindowTokens,
 		})
 	}
 	runner.OnUsage = func(inputTokens, outputTokens int) {

@@ -9,6 +9,7 @@ import {
   initialState,
   isThreadUnread,
   latestCompletedTurnID,
+  latestContextUsageForThread,
   markThreadTurnsViewed,
   queryTextsForThread,
   reduceServerEvent,
@@ -619,5 +620,188 @@ describe("AppState sortThreads (sidebar order)", () => {
 
     expect(sidebarThreads.map((thread) => thread.id)).toEqual(["thread-normal"]);
     expect(renderableThreads.get("child-running")?.turns).toHaveLength(1);
+  });
+});
+
+describe("latestContextUsageForThread", () => {
+  function makeThread(args: {
+    id?: string;
+    model?: string;
+    turns?: Array<{
+      id: string;
+      status?: "in_progress" | "completed" | "failed" | "interrupted";
+    }>;
+  } = {}): Thread {
+    return {
+      id: args.id ?? "thread-1",
+      preview: "",
+      model_provider: "fake",
+      model: args.model ?? "fake-model",
+      cwd: "/tmp",
+      status: "idle",
+      created_at: "2026-06-18T00:00:00Z",
+      updated_at: "2026-06-18T00:00:00Z",
+      turns: (args.turns ?? []).map((t) => ({
+        id: t.id,
+        items: [],
+        items_view: "full" as const,
+        status: t.status ?? "completed",
+      })),
+    };
+  }
+
+  it("returns undefined when the thread is undefined", () => {
+    expect(latestContextUsageForThread(initialState, undefined)).toBeUndefined();
+  });
+
+  it("returns undefined for an empty thread with an unrecognized model", () => {
+    // "fake-model" has no catalog entry — the ring should hide rather
+    // than guess a window size.
+    const t = makeThread({ turns: [] });
+    expect(latestContextUsageForThread(initialState, t)).toBeUndefined();
+  });
+
+  it("falls back to the client catalog when the model is known but no turn has run", () => {
+    // "claude-sonnet-4-5" matches the catalog → 200_000. This is the
+    // 常驻 case: the ring renders at 0% from the moment the user picks
+    // a model, before any turn has emitted a usage snapshot.
+    const t = makeThread({ model: "claude-sonnet-4-5", turns: [] });
+    const result = latestContextUsageForThread(initialState, t);
+    expect(result).toEqual({
+      turnID: "",
+      used: 0,
+      window: 200_000,
+      inputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
+  });
+
+  it("strips OpenRouter-style vendor prefixes before catalog lookup", () => {
+    // "anthropic/claude-sonnet-4-5" should match the bare "claude-sonnet-4-5"
+    // catalog entry. Gateway-style names must not be treated as unknown.
+    const t = makeThread({ model: "anthropic/claude-sonnet-4-5", turns: [] });
+    const result = latestContextUsageForThread(initialState, t);
+    expect(result?.window).toBe(200_000);
+  });
+
+  it("returns real usage from the most recent turn that has one", () => {
+    let state = initialState;
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      10,
+      0,
+      0,
+      0,
+      1_000,
+      200_000,
+    );
+    state = appendTurnTokenSample(
+      state,
+      "turn-2",
+      "thread-1",
+      20,
+      0,
+      0,
+      0,
+      2_000,
+      200_000,
+    );
+    const t = makeThread({
+      turns: [
+        { id: "turn-1", status: "completed" },
+        { id: "turn-2", status: "completed" },
+      ],
+    });
+    const result = latestContextUsageForThread(state, t);
+    expect(result?.turnID).toBe("turn-2");
+    expect(result?.used).toBe(20);
+    // Real usage wins over the catalog fallback.
+    expect(result?.window).toBe(200_000);
+  });
+
+  it("walks back to the previous turn when the most recent has no usage", () => {
+    // The ring is a passive readout — it must keep showing the last
+    // known context after a turn completes. We test that by giving the
+    // thread a most-recent turn with no recorded usage, and verifying
+    // the selector falls through to the previous one.
+    let state = initialState;
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      10,
+      0,
+      0,
+      0,
+      1_000,
+      200_000,
+    );
+    const t = makeThread({
+      turns: [
+        { id: "turn-1", status: "completed" },
+        { id: "turn-2", status: "completed" },
+      ],
+    });
+    const result = latestContextUsageForThread(state, t);
+    expect(result?.turnID).toBe("turn-1");
+    expect(result?.used).toBe(10);
+  });
+
+  it("prefers real usage over the catalog when both are reachable", () => {
+    // Even if the active model is in the catalog, real usage from a
+    // previous turn in the same thread wins — the catalog is a fallback
+    // for "model known, no usage yet", not a default that overrides
+    // observed values.
+    let state = initialState;
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      10,
+      0,
+      0,
+      0,
+      1_000,
+      200_000,
+    );
+    const t = makeThread({
+      model: "claude-sonnet-4-5",
+      turns: [{ id: "turn-1", status: "completed" }],
+    });
+    const result = latestContextUsageForThread(state, t);
+    expect(result?.turnID).toBe("turn-1");
+    expect(result?.used).toBe(10);
+  });
+
+  it("ignores stale usage from a previous model after the thread model changes", () => {
+    let state = initialState;
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      80_000,
+      0,
+      0,
+      0,
+      1_000,
+      200_000,
+      "claude-sonnet-4-5",
+    );
+    const t = makeThread({
+      model: "gpt-5",
+      turns: [{ id: "turn-1", status: "completed" }],
+    });
+    const result = latestContextUsageForThread(state, t);
+    expect(result).toEqual({
+      turnID: "",
+      used: 0,
+      window: 400_000,
+      inputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
   });
 });

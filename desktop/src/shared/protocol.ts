@@ -729,10 +729,15 @@ export type TurnCompletedNotification = {
 export type TurnUsageNotification = {
   thread_id: string;
   turn_id: string;
+  model?: string;
   input_tokens?: number;
   output_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
+  // Resolved runtime context-window size for the active model at the
+  // time this snapshot was emitted. Zero / undefined means the meter
+  // should hide rather than render a divide-by-zero ratio.
+  context_window_tokens?: number;
 };
 
 export type ThreadItem = {

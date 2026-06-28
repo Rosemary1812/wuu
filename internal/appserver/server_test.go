@@ -2236,9 +2236,60 @@ func TestServerTurnStartForwardsStreamingUsage(t *testing.T) {
 	if firstUsage.ThreadID != threadID || firstUsage.InputTokens != 8 || firstUsage.OutputTokens != 2 {
 		t.Fatalf("unexpected first streaming usage: %+v", firstUsage)
 	}
+	if firstUsage.Model != "fake-model" {
+		t.Fatalf("usage notification should carry runner model: %+v", firstUsage)
+	}
+	if firstUsage.ContextWindowTokens != 0 {
+		t.Fatalf("unknown model should not emit fallback context window: %+v", firstUsage)
+	}
 	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
 	if completed.InputTokens != 8 || completed.OutputTokens != 4 {
 		t.Fatalf("unexpected completed usage: %+v", completed)
+	}
+}
+
+func TestServerTurnStartForwardsRuntimeContextWindow(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.ContextWindowOverride = 512000
+	rt.StreamRunner.Client = usageStreamClient{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "hello"},
+		{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 2}},
+		{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 2}},
+	}}
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "hello"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	usageNotifications := notificationsByMethod(msgs, NotificationTurnUsage)
+	if len(usageNotifications) == 0 {
+		t.Fatalf("expected streaming usage notification; messages=%+v", msgs)
+	}
+	firstUsage := remarshal[TurnUsageNotification](t, usageNotifications[0]["params"])
+	if firstUsage.ContextWindowTokens != 512000 {
+		t.Fatalf("context window should come from runtime override: %+v", firstUsage)
 	}
 }
 

@@ -119,6 +119,7 @@ import {
   activeSessionTab,
   activeThreadForState,
   activeThreadIDForState,
+  latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
@@ -1866,6 +1867,11 @@ export function App(): JSX.Element {
       state,
       activeThread ? activeTurnIDForThread(activeThread) : undefined,
     );
+    // Drives the composer context meter. Walks back through the
+    // active thread's turns to find the latest known usage, and falls
+    // back to a client-side catalog lookup so the ring renders at 0%
+    // from the moment a model is picked, before any turn has run.
+    const contextUsage = latestContextUsageForThread(state, activeThread);
     return (
       <Composer
         variant={variant}
@@ -1883,6 +1889,7 @@ export function App(): JSX.Element {
         tokensPerSecond={tokenSpeed.tokensPerSecond}
         tokenSpeedSampledAt={tokenSpeed.sampledAt}
         tokenSpeedSource={tokenSpeed.source}
+        contextUsage={contextUsage}
         status={
           activeThreadReadOnly
             ? activeThreadIsRunning

@@ -36,6 +36,7 @@ import {
   type StreamTextField,
 } from "./StreamText";
 import { statusMessageForError } from "./UserFacingErrors";
+import { clientContextWindowFor } from "./contextWindowCatalog";
 
 type ConversationPaneID = "primary" | "secondary";
 
@@ -148,6 +149,24 @@ type TurnTokenUsage = {
   speedTokens: number;
   speedSource: Exclude<TokenSpeedSource, "none">;
   samples: TurnTokenSample[];
+  // contextWindowTokens is the resolved runtime window size for the active
+  // model at the time of the latest real (provider-reported) usage sample.
+  // Streaming estimates preserve it from the previous real sample so the
+  // context meter does not flicker to "unknown" between provider reports.
+  contextWindowTokens?: number;
+  model?: string;
+};
+
+export type TurnContextUsage = {
+  turnID: string;
+  // used is the token count the model actually consumed as input on the
+  // last real usage snapshot: fresh input + cache-creation writes +
+  // cache-read hits. output tokens are not part of the input context.
+  used: number;
+  window: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
 };
 
 type TurnTokenSpeedSnapshot = {
@@ -575,6 +594,8 @@ function reduceNotification(
         numberValue(params, "cache_creation_tokens") ?? 0,
         numberValue(params, "cache_read_tokens") ?? 0,
         Date.now(),
+        numberValue(params, "context_window_tokens") ?? 0,
+        stringValue(params, "model"),
       );
     }
     default:
@@ -1582,6 +1603,8 @@ function appendTurnTokenSample(
   cacheCreationTokens: number,
   cacheReadTokens: number,
   at: number,
+  contextWindowTokens: number = 0,
+  model?: string,
 ): AppState {
   const turnTokenUsage = state.turnTokenUsage ?? {};
   const previous = turnTokenUsage[turnID];
@@ -1604,6 +1627,16 @@ function appendTurnTokenSample(
   if (shouldAppendSample) {
     samples.push({ tokens: speedTokens, at });
   }
+  // A real usage snapshot is the authoritative source for both the speed
+  // samples and the context-window size. If Go omitted the window (zero
+  // or undefined) we still want the meter to keep showing the last known
+  // window rather than collapse to "unknown" — most providers emit usage
+  // and window together, but a transient omission should not erase state.
+  const resolvedWindow =
+    contextWindowTokens && contextWindowTokens > 0
+      ? contextWindowTokens
+      : previous?.contextWindowTokens;
+  const resolvedModel = model || previous?.model;
   return {
     ...state,
     turnTokenUsage: {
@@ -1617,6 +1650,8 @@ function appendTurnTokenSample(
         speedTokens,
         speedSource: "real",
         samples,
+        ...(resolvedWindow ? { contextWindowTokens: resolvedWindow } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
       },
     },
   };
@@ -1664,6 +1699,14 @@ function appendStreamingTokenSample(
         speedTokens,
         speedSource: "estimated",
         samples,
+        // Streaming estimates are byte-deltas, not real usage; they do not
+        // know the context window. Carry the previously-resolved window
+        // forward so the meter stays visible while we wait for the next
+        // real provider usage snapshot.
+        ...(previous?.contextWindowTokens
+          ? { contextWindowTokens: previous.contextWindowTokens }
+          : {}),
+        ...(previous?.model ? { model: previous.model } : {}),
       },
     },
   };
@@ -1720,11 +1763,98 @@ function activeTurnTokenSpeedSnapshot(
   };
 }
 
+function activeTurnContextUsage(
+  state: AppState,
+  turnID?: string,
+): TurnContextUsage | undefined {
+  if (!turnID) {
+    return undefined;
+  }
+  const usage = state.turnTokenUsage?.[turnID];
+  if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
+    return undefined;
+  }
+  return {
+    turnID,
+    used: usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+    window: usage.contextWindowTokens,
+    inputTokens: usage.inputTokens,
+    cacheCreationTokens: usage.cacheCreationTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+  };
+}
+
+// latestContextUsageForThread walks the thread's turns from newest to
+// oldest and returns the most recent turn that has emitted a turn/usage
+// snapshot with a known context window. Unlike activeTurnContextUsage —
+// which is keyed on the in-progress turn only — this selector is what
+// the context meter should use: the ring is a passive readout of the
+// latest known context, and it should stay visible after a turn
+// completes, fails, or is interrupted. Falls back through the
+// history when the live in-progress turn has not yet reported usage
+// (e.g. mid-flight, before the first provider usage token arrives).
+//
+// When no real usage is available, falls back to the client-side
+// catalog lookup so the ring renders at 0% from the moment a model is
+// picked. Returns undefined only when the model is unrecognized by the
+// catalog — we'd rather hide the ring than mislead the user with a
+// guessed window size.
+function latestContextUsageForThread(
+  state: AppState,
+  thread: Thread | undefined,
+): TurnContextUsage | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  const currentModel = normalizeModelID(thread.model);
+  for (let i = thread.turns.length - 1; i >= 0; i -= 1) {
+    const turn = thread.turns[i];
+    const usage = state.turnTokenUsage?.[turn.id];
+    if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
+      continue;
+    }
+    if (
+      usage.model &&
+      currentModel &&
+      normalizeModelID(usage.model) !== currentModel
+    ) {
+      continue;
+    }
+    return {
+      turnID: turn.id,
+      used:
+        usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+      window: usage.contextWindowTokens,
+      inputTokens: usage.inputTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+    };
+  }
+  const catalogWindow = clientContextWindowFor(thread.model);
+  if (!catalogWindow) {
+    return undefined;
+  }
+  return {
+    turnID: "",
+    used: 0,
+    window: catalogWindow,
+    inputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  };
+}
+
+function normalizeModelID(model: string | undefined): string {
+  return (model ?? "").trim().toLowerCase();
+}
+
 export {
   activeProjectID,
   activeSessionTab,
   activeThreadForState,
   activeThreadIDForState,
+  activeTurnContextUsage,
+  latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,

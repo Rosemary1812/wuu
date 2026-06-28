@@ -78,6 +78,8 @@ import type {
 import { composerStatusText } from "./ComposerTypes";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
+import { ComposerContextMeter } from "./ComposerContextMeter";
+import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
 
 export type {
@@ -156,6 +158,7 @@ export function Composer({
   tokensPerSecond,
   tokenSpeedSampledAt,
   tokenSpeedSource,
+  contextUsage,
   queryHistorySessionID,
   queryHistory = []
 }: {
@@ -221,6 +224,10 @@ export function Composer({
   tokensPerSecond: number;
   tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
+  // contextUsage drives the model-adjacent context meter. When the active
+  // model has no catalog window yet the AppState selector returns
+  // undefined and the meter hides entirely.
+  contextUsage?: TurnContextUsage | null;
   queryHistorySessionID?: string;
   queryHistory?: string[];
 }): JSX.Element {
@@ -666,6 +673,7 @@ export function Composer({
                   sampledAt={tokenSpeedSampledAt}
                   source={tokenSpeedSource}
                 />
+                <ComposerContextMeter usage={contextUsage ?? undefined} />
                 {initialized ? (
                   <RuntimePicker
                     variant={variant}
