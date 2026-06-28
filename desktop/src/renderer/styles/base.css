@@ -46,11 +46,13 @@
 
                                                                     
                                                     
-  --ink-overlay-4: var(--ink-overlay-4);
-  --ink-overlay-6: var(--ink-overlay-6);
-  --ink-overlay-8: var(--ink-overlay-8);
-  --ink-overlay-12: var(--ink-overlay-12);
-  --ink-overlay-18: var(--ink-overlay-18);
+  /* Ink-overlay alpha steps. Pre-tokenised so future opacity tweaks
+     happen here, not scattered across CSS files. */
+  --ink-overlay-4: rgba(31, 35, 40, 0.04);
+  --ink-overlay-6: rgba(31, 35, 40, 0.06);
+  --ink-overlay-8: rgba(31, 35, 40, 0.08);
+  --ink-overlay-12: rgba(31, 35, 40, 0.12);
+  --ink-overlay-18: rgba(31, 35, 40, 0.18);
 
   --shadow-soft: 0 1px 2px rgba(20, 24, 28, 0.06);
   --shadow-card: 0 2px 8px var(--ink-overlay-6);
