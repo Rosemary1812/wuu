@@ -382,6 +382,125 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 	}
 }
 
+func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDeltaAfterFinalAnswer(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	const reasoningItem = `{"id":"rs_1","type":"reasoning","content":[],"encrypted_content":"abc","summary":[]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 2; i++ {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				t.Errorf("read request %d: %v", i+1, err)
+				return
+			}
+			if typ != websocket.MessageText {
+				t.Errorf("request %d type = %v", i+1, typ)
+				return
+			}
+			var body map[string]any
+			if err := json.Unmarshal(data, &body); err != nil {
+				t.Errorf("decode request %d: %v", i+1, err)
+				return
+			}
+			requests <- body
+
+			if i == 0 {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":`+reasoningItem+`,"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":1}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"probe-one","item_id":"msg_1","output_index":1}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"probe-one"}]},"output_index":1}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2}}}`)
+			} else {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"probe-two","item_id":"msg_2","output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"probe-two"}]},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+			}
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:            server.URL,
+		WireAPI:            "responses",
+		APIKey:             "test-key",
+		ResponsesStore:     &store,
+		ResponsesWebSocket: true,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cache := &providers.CacheHint{PromptCacheKey: "thread-final-delta"}
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "first"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("first StreamChat: %v", err)
+	}
+	if err := drainStream(ch); err != nil {
+		t.Fatalf("first stream: %v", err)
+	}
+
+	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{
+				Role:              "assistant",
+				Content:           "probe-one",
+				Phase:             providers.MessagePhaseFinalAnswer,
+				ProviderItemID:    "msg_1",
+				ProviderItemModel: "gpt-test",
+				ReasoningBlocks: []providers.ReasoningBlock{{
+					Type: "reasoning",
+					Data: reasoningItem,
+				}},
+			},
+			{Role: "user", Content: "second"},
+		},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("second StreamChat: %v", err)
+	}
+	secondStates, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("second stream: %v", err)
+	}
+	if len(secondStates) != 1 ||
+		secondStates[0].ReplayMode != "previous_response_id" ||
+		!secondStates[0].PreviousResponseIDUsed ||
+		secondStates[0].InputItems != 1 ||
+		secondStates[0].FullInputItems != 4 ||
+		secondStates[0].DeltaInputItems != 1 {
+		t.Fatalf("unexpected final-answer provider state: %+v", secondStates)
+	}
+
+	<-requests
+	second := <-requests
+	if second["previous_response_id"] != "resp_1" {
+		t.Fatalf("final-answer request previous_response_id = %#v; body=%#v", second["previous_response_id"], second)
+	}
+	secondInput := second["input"].([]any)
+	if len(secondInput) != 1 {
+		t.Fatalf("final-answer request should send only delta input, got %#v", secondInput)
+	}
+}
+
 func TestResponsesStreamChatWebSocket_PreservesDeltaWithHiddenModelContext(t *testing.T) {
 	requests := make(chan map[string]any, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1068,6 +1068,19 @@ func (i responsesInputItem) MarshalJSON() ([]byte, error) {
 	return json.Marshal(alias(i))
 }
 
+func (i *responsesInputItem) UnmarshalJSON(data []byte) error {
+	type alias responsesInputItem
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*i = responsesInputItem(decoded)
+	if json.Valid(data) {
+		i.Raw = append(i.Raw[:0], data...)
+	}
+	return nil
+}
+
 type responsesInputContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`

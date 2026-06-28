@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -398,11 +399,23 @@ func responsesInputItemsEqual(a, b []responsesInputItem) bool {
 	if err != nil {
 		return false
 	}
-	return string(aj) == string(bj)
+	return jsonBytesEqual(aj, bj)
 }
 
 func responsesInputItemEqual(a, b responsesInputItem) bool {
 	return responsesInputItemsEqual([]responsesInputItem{a}, []responsesInputItem{b})
+}
+
+func jsonBytesEqual(a, b []byte) bool {
+	var av any
+	var bv any
+	if err := json.Unmarshal(a, &av); err != nil {
+		return string(a) == string(b)
+	}
+	if err := json.Unmarshal(b, &bv); err != nil {
+		return string(a) == string(b)
+	}
+	return reflect.DeepEqual(av, bv)
 }
 
 func responsesInputCanMatchBaselineWithRefreshableContext(current, baseline []responsesInputItem) bool {
