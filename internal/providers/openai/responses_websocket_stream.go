@@ -72,7 +72,7 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 		return nil, err
 	}
 	if err := conn.Write(ctx, websocket.MessageText, body); err != nil {
-		c.responsesWebSocketDropLocked(session)
+		c.responsesWebSocketDropConnectionLocked(session)
 		session.mu.Unlock()
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
-			c.responsesWebSocketDropLocked(session)
+			c.responsesWebSocketDropConnectionLocked(session)
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("read websocket stream: %w", err)}
 			return
 		}
@@ -267,11 +267,15 @@ func responsesWebSocketProviderState(fullPayload, requestPayload responsesReques
 }
 
 func (c *Client) responsesWebSocketDropLocked(session *responsesWebSocketSession) {
+	c.responsesWebSocketDropConnectionLocked(session)
+	session.continuation = nil
+}
+
+func (c *Client) responsesWebSocketDropConnectionLocked(session *responsesWebSocketSession) {
 	if session.conn != nil {
 		_ = session.conn.Close(websocket.StatusInternalError, "stream_error")
 	}
 	session.conn = nil
-	session.continuation = nil
 }
 
 func (c *ResponsesWebSocketCache) session(sessionID string) *responsesWebSocketSession {
