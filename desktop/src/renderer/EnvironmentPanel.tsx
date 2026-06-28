@@ -180,7 +180,11 @@ export function EnvironmentPanel({
   const hasChanges = Boolean(gitStatus?.is_repo && (gitStatus.dirty_count > 0 || diff.files > 0));
   const branchLabel = gitStatus?.is_repo ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const contextLabel =
-    activeContext?.kind === "project" ? activeProject?.name ?? "当前项目" : activeContext ? "临时对话" : "未连接";
+    activeContext?.kind === "project"
+      ? activeProject?.name ?? "当前项目"
+      : activeContext?.kind === "no_project"
+        ? "无项目"
+        : "未选择";
   const prDisabled = Boolean(pullRequestDisabledReason && !gitStatus?.pr_url);
 
   function toggleMenu(menu: Exclude<EnvironmentPanelMenu, null>): void {
@@ -234,7 +238,7 @@ export function EnvironmentPanel({
           onClick={() => toggleMenu("mode")}
         >
           <Laptop className="icon-lg" />
-          <strong>本地</strong>
+          <strong>项目</strong>
           <span>{contextLabel}</span>
           <ChevronRight className="icon" />
         </button>
@@ -585,7 +589,7 @@ function EnvironmentModeMenu({
 }): JSX.Element {
   return (
     <div className="environment-side-menu mode" role="menu">
-      <div className="environment-side-label">继续使用</div>
+      <div className="environment-side-label">切换项目</div>
       {activeProject ? (
         <button role="menuitem" type="button" disabled>
           <Folder className="icon" />
@@ -595,11 +599,11 @@ function EnvironmentModeMenu({
       ) : null}
       <button role="menuitem" type="button" onClick={onOpenProject}>
         <FolderOpen className="icon" />
-        <span>打开本地项目</span>
+        <span>使用现有文件夹</span>
       </button>
       <button role="menuitem" type="button" disabled={activeContext?.kind === "no_project"} onClick={onSelectNoProject}>
         <FolderX className="icon" />
-        <span>临时对话</span>
+        <span>不使用项目</span>
         {activeContext?.kind === "no_project" ? <Check className="icon" /> : null}
       </button>
     </div>

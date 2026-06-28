@@ -31,7 +31,8 @@
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
-  overflow: hidden;
+  max-height: 100%;
+  overflow: visible;
 }
 
 .environment-side-stack > .query-history-environment-slot {
