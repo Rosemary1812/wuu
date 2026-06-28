@@ -407,7 +407,7 @@ func buildProviderAction(code, message string) *TurnErrorAction {
 		return &TurnErrorAction{
 			Reason:  "view_debug",
 			Title:   "部分回答未完成",
-			Message: "Provider WS 流在 response.completed 前断开；这次回答可能不完整，已生成内容已保留。",
+			Message: "Provider WS 流在 response.completed 前断开；这次回答可能不完整。",
 			Label:   "复制调试信息",
 		}
 	}

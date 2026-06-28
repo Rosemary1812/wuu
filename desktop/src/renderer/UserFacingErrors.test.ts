@@ -54,7 +54,7 @@ describe("userFacingErrorForMessage", () => {
     expect(display.category).toBe("provider");
     expect(display.title).toBe("stream_closed_before_response.completed");
     expect(display.detail).toContain("response.completed");
-    expect(display.detail).toContain("已生成内容已保留");
+    expect(display.detail).toContain("这次回答可能不完整");
   });
 
   it("falls back to the category title when the message has no specific identifier", () => {
@@ -269,7 +269,7 @@ describe("userFacingErrorForMessage", () => {
             reason: "view_debug",
             title: "部分回答未完成",
             message:
-              "Provider WS 流在 response.completed 前断开；这次回答可能不完整，已生成内容已保留。",
+              "Provider WS 流在 response.completed 前断开；这次回答可能不完整。",
             label: "复制调试信息",
           },
         },
@@ -347,6 +347,31 @@ describe("TurnEvents", () => {
     expect(event?.kind).toBe("user_stopped");
     expect(event?.source).toBe("turn");
     expect(event?.presentation).toBe("notice");
+  });
+
+  it("adds preserved-output detail once for partial Responses stream failures", () => {
+    const turn: Turn = {
+      id: "turn-1",
+      items: [],
+      items_view: "full",
+      status: "failed",
+      error: {
+        message:
+          "stream request failed: websocket stream closed after provider event: websocket stream closed before response.completed",
+        code: "stream_closed_before_response.completed",
+        category: "provider",
+      },
+    };
+
+    const event = turnEventForTurn(turn, true);
+
+    expect(event?.presentation).toBe("notice");
+    if (event?.presentation !== "notice") {
+      throw new Error("expected notice event");
+    }
+    expect(event.notice.title).toBe("stream_closed_before_response.completed");
+    expect(event.notice.detail).toContain("这次回答可能不完整");
+    expect(event.notice.detail.match(/已保留已生成内容/g)).toHaveLength(1);
   });
 
   it("maps in-progress compaction to a compaction event instead of an error notice", () => {

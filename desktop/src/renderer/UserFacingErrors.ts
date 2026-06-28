@@ -310,7 +310,7 @@ function specificDetailForMessage(
     (category === "provider" || category === "network") &&
     isResponseCompletedMissingMessage(normalized)
   ) {
-    return "Provider WS 流在 response.completed 前断开；这次回答可能不完整，已生成内容已保留。";
+    return "Provider WS 流在 response.completed 前断开；这次回答可能不完整。";
   }
   return undefined;
 }
