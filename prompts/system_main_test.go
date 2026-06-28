@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSystemMainTeachesInceptionDMailTriggers(t *testing.T) {
+func TestSystemMainTeachesInceptionTriggers(t *testing.T) {
 	prompt := SystemMain()
 	for _, want := range []string{
 		"Use it proactively during the work",
