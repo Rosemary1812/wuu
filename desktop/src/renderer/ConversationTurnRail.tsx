@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import type { Turn } from "../shared/protocol";
@@ -77,6 +78,7 @@ export function ConversationTurnRail({
   getScrollContainer,
   maxVisibleTurns = CONVERSATION_TURN_RAIL_VISIBLE_LIMIT,
   onWheelScrollAway,
+  onDragScrollAway,
   onSelectQueryHistory,
 }: {
   turns: Turn[];
@@ -85,11 +87,19 @@ export function ConversationTurnRail({
   getScrollContainer?: () => HTMLElement | null;
   maxVisibleTurns?: number;
   onWheelScrollAway?: () => void;
+  onDragScrollAway?: () => void;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): JSX.Element | null {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
   const [viewportTurnID, setViewportTurnID] = useState<string | undefined>();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startClientY: number;
+    startScrollTop: number;
+    railHeight: number;
+    maxScrollTop: number;
+  } | null>(null);
   const resolveScrollContainer = useCallback(
     () => getScrollContainer?.() ?? scrollContainerRef?.current ?? null,
     [getScrollContainer, scrollContainerRef],
@@ -242,6 +252,107 @@ export function ConversationTurnRail({
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
   }, [onWheelScrollAway, resolveScrollContainer]);
+
+  // Press-and-drag scrolling: the user presses anywhere on the rail, then
+  // moves the mouse up/down. We translate vertical pointer movement into a
+  // scrollTop change on the actual conversation scroller, so the rail
+  // behaves like a thin scrollbar thumb. Upward drags also disable
+  // auto-follow so streaming never yanks the viewport back to the bottom
+  // mid-gesture.
+  useEffect(() => {
+    const railContainer: HTMLDivElement | null = containerRef.current;
+    if (!railContainer) {
+      return;
+    }
+    const container = railContainer;
+
+    function pointerY(event: PointerEvent): number {
+      return event.clientY;
+    }
+
+    function handlePointerDown(event: PointerEvent): void {
+      if (event.button !== 0) {
+        return;
+      }
+      const scrollNode = resolveScrollContainer();
+      if (!scrollNode) {
+        return;
+      }
+      const railRect = container.getBoundingClientRect();
+      const railHeight = Math.max(1, railRect.height);
+      const maxScrollTop = Math.max(
+        0,
+        scrollNode.scrollHeight - scrollNode.clientHeight,
+      );
+      dragStateRef.current = {
+        pointerId: event.pointerId,
+        startClientY: pointerY(event),
+        startScrollTop: scrollNode.scrollTop,
+        railHeight,
+        maxScrollTop,
+      };
+      try {
+        container.setPointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture is best-effort; native listeners still get the
+        // move events while the pointer is held inside the rail.
+      }
+      event.preventDefault();
+      if (event.clientY < railRect.top || event.clientY > railRect.bottom) {
+        const ratio = Math.min(
+          1,
+          Math.max(0, (event.clientY - railRect.top) / railHeight),
+        );
+        scrollNode.scrollTop = ratio * maxScrollTop;
+      }
+      if (event.clientY > railRect.top + railRect.height / 2) {
+        onDragScrollAway?.();
+      }
+    }
+
+    function handlePointerMove(event: PointerEvent): void {
+      const drag = dragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) {
+        return;
+      }
+      const scrollNode = resolveScrollContainer();
+      if (!scrollNode) {
+        return;
+      }
+      const deltaY = pointerY(event) - drag.startClientY;
+      const railRatio = deltaY / drag.railHeight;
+      const nextScrollTop = Math.min(
+        Math.max(0, drag.startScrollTop + railRatio * drag.maxScrollTop),
+        drag.maxScrollTop,
+      );
+      if (scrollNode.scrollTop !== nextScrollTop) {
+        scrollNode.scrollTop = nextScrollTop;
+        event.preventDefault();
+      }
+    }
+
+    function endDrag(event: PointerEvent): void {
+      const drag = dragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) {
+        return;
+      }
+      dragStateRef.current = null;
+      if (container.hasPointerCapture(event.pointerId)) {
+        container.releasePointerCapture(event.pointerId);
+      }
+    }
+
+    container.addEventListener("pointerdown", handlePointerDown);
+    container.addEventListener("pointermove", handlePointerMove);
+    container.addEventListener("pointerup", endDrag);
+    container.addEventListener("pointercancel", endDrag);
+    return () => {
+      container.removeEventListener("pointerdown", handlePointerDown);
+      container.removeEventListener("pointermove", handlePointerMove);
+      container.removeEventListener("pointerup", endDrag);
+      container.removeEventListener("pointercancel", endDrag);
+    };
+  }, [onDragScrollAway, resolveScrollContainer]);
 
   // Click a bar through the same query-history selection path used by
   // the docked environment-panel list. That parent path disables

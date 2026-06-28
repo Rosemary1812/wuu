@@ -5225,6 +5225,7 @@ export function App(): JSX.Element {
           scrollContainerRef={conversationScrollRef}
           getScrollContainer={conversationRailScrollContainer}
           onWheelScrollAway={disableConversationAutoFollow}
+          onDragScrollAway={disableConversationAutoFollow}
           onSelectQueryHistory={handleQueryHistorySelect}
         />
 
