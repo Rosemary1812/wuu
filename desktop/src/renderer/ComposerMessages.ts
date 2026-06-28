@@ -1,6 +1,20 @@
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
 import type { InputFile, InputImage, Turn } from "../shared/protocol";
 
+// Renderer-side image compression runs on the Electron canvas before the
+// bytes cross the IPC boundary. It is a fast-path optimization, not the
+// authoritative copy. The single source of truth lives in the Go core at
+// internal/imageproc (imageproc.Encode). Three entry points call imageproc:
+// `wuu exec --image` (internal/exec/attachments.go), `wuu app-server`'s
+// `turn/start` (internal/appserver/turn_handlers.go), and any future shell
+// that goes through the app-server. The renderer pre-compresses here to
+// avoid shipping the original file across IPC.
+//
+// IMPORTANT: when changing the constants below, mirror the change in
+// internal/imageproc (and vice versa). The byte-target ladder here is
+// intentionally more aggressive than the core's pixel-and-patch budget
+// because the renderer can afford the extra encode passes; the core path
+// targets a fixed JPEG quality of 85 and a 32×32 patch budget instead.
 const IMAGE_MAX_DIMENSION = 2000;
 const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 
