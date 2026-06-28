@@ -92,6 +92,10 @@ export function ConversationTurnRail({
 }): JSX.Element | null {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
   const [viewportTurnID, setViewportTurnID] = useState<string | undefined>();
+  // Turn currently "carried" by an in-flight pointer drag. Reuses the same
+  // hovered/adjacent visual treatment, so dragging feels like the cursor's
+  // magnetised hover is sliding across the rail instead of snapping.
+  const [draggingTurnID, setDraggingTurnID] = useState<string | undefined>();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -111,7 +115,11 @@ export function ConversationTurnRail({
     () => conversationTurnRailWindow(turns, windowFocusTurnID, maxVisibleTurns),
     [maxVisibleTurns, turns, windowFocusTurnID],
   );
-  const hoveredIndex = visibleTurns.findIndex((t) => t.id === hoveredTurnID);
+  // A pointer drag reuses the same hover/adjacent visual treatment, so the
+  // active "focused" turn is whichever the cursor last hovered or is now
+  // dragging through.
+  const focusedTurnID = hoveredTurnID ?? draggingTurnID;
+  const hoveredIndex = visibleTurns.findIndex((t) => t.id === focusedTurnID);
   const adjacentIndices = new Set<number>();
   if (hoveredIndex >= 0) {
     if (hoveredIndex > 0) {
@@ -130,6 +138,15 @@ export function ConversationTurnRail({
       setHoveredTurnID(undefined);
     }
   }, [hoveredTurnID, visibleTurns]);
+
+  useEffect(() => {
+    if (!draggingTurnID) {
+      return;
+    }
+    if (!visibleTurns.some((turn) => turn.id === draggingTurnID)) {
+      setDraggingTurnID(undefined);
+    }
+  }, [draggingTurnID, visibleTurns]);
 
   useEffect(() => {
     const scrollNode = resolveScrollContainer();
@@ -270,6 +287,27 @@ export function ConversationTurnRail({
       return event.clientY;
     }
 
+    function closestTurnIDAt(clientY: number): string | undefined {
+      const barElements = container.querySelectorAll<HTMLElement>(
+        ".conversation-turn-rail-bar",
+      );
+      let bestID: string | undefined;
+      let bestDistance = Infinity;
+      for (const bar of barElements) {
+        const rect = bar.getBoundingClientRect();
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.abs(clientY - centerY);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestID = bar.getAttribute("data-turn-id") ?? undefined;
+        }
+      }
+      if (!bestID || bestID === "placeholder") {
+        return undefined;
+      }
+      return bestID;
+    }
+
     function handlePointerDown(event: PointerEvent): void {
       if (event.button !== 0) {
         return;
@@ -291,6 +329,11 @@ export function ConversationTurnRail({
         railHeight,
         maxScrollTop,
       };
+      // Lock the visual highlight to whichever bar the pointer is over so
+      // the user sees the same "this bar is being dragged" feedback as
+      // the hover state, and the highlight then follows the pointer as
+      // we translate the drag into scrollTop changes.
+      setDraggingTurnID(closestTurnIDAt(pointerY(event)));
       try {
         container.setPointerCapture(event.pointerId);
       } catch {
@@ -329,6 +372,9 @@ export function ConversationTurnRail({
         scrollNode.scrollTop = nextScrollTop;
         event.preventDefault();
       }
+      // Slide the highlight to whichever bar is now under the cursor so
+      // the user gets continuous hover-style feedback as the rail scrolls.
+      setDraggingTurnID(closestTurnIDAt(pointerY(event)));
     }
 
     function endDrag(event: PointerEvent): void {
@@ -340,6 +386,7 @@ export function ConversationTurnRail({
       if (container.hasPointerCapture(event.pointerId)) {
         container.releasePointerCapture(event.pointerId);
       }
+      setDraggingTurnID(undefined);
     }
 
     container.addEventListener("pointerdown", handlePointerDown);
