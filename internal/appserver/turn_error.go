@@ -10,6 +10,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+const responseCompletedMissingCode = "stream_closed_before_response.completed"
+
 // BuildTurnError inspects the raw error from a failed turn and produces a
 // structured TurnError the front-end can render directly. Mirrors
 // opencode's retryable() pattern: typed-error matching first, JSON body
@@ -25,6 +27,7 @@ func BuildTurnError(err error, provider string) TurnError {
 	}
 
 	message := err.Error()
+	lowerMessage := strings.ToLower(message)
 	out := TurnError{
 		Message:  message,
 		Provider: provider,
@@ -48,6 +51,15 @@ func BuildTurnError(err error, provider string) TurnError {
 		}
 		if out.Category == "" {
 			out.Category = categoryFromStreamError(streamErr)
+		}
+	}
+
+	if isResponseCompletedMissingMessage(lowerMessage) {
+		if out.Code == "" {
+			out.Code = responseCompletedMissingCode
+		}
+		if out.Category == "" {
+			out.Category = "provider"
 		}
 	}
 
@@ -181,6 +193,8 @@ func categoryFromMessage(message string) string {
 		return "local"
 	case isAuthOrPermissionMessage(lower):
 		return "auth"
+	case isResponseCompletedMissingMessage(lower):
+		return "provider"
 	case isProviderBusinessMessage(lower):
 		return "provider"
 	case isNetworkOrUpstreamMessage(lower):
@@ -319,6 +333,9 @@ func extractCodeFromBody(body string) string {
 // wuu-style "stream request failed: stream error (CODE)" wrapping.
 // Mirrors the front-end's extractSpecificTitle logic.
 func extractCodeFromMessage(message string) string {
+	if isResponseCompletedMissingMessage(strings.ToLower(message)) {
+		return responseCompletedMissingCode
+	}
 	idx := strings.LastIndex(message, "(")
 	end := strings.LastIndex(message, ")")
 	if idx < 0 || end < 0 || end <= idx {
@@ -386,6 +403,14 @@ func buildAction(category string, code, message string) *TurnErrorAction {
 // user-facing summary.
 func buildProviderAction(code, message string) *TurnErrorAction {
 	lower := strings.ToLower(code + " " + message)
+	if isResponseCompletedMissingMessage(lower) {
+		return &TurnErrorAction{
+			Reason:  "view_debug",
+			Title:   "部分回答未完成",
+			Message: "Provider WS 流在 response.completed 前断开；这次回答可能不完整，已生成内容已保留。",
+			Label:   "复制调试信息",
+		}
+	}
 	if isRateLimitPattern(lower) {
 		return &TurnErrorAction{
 			Reason:  "wait",
@@ -455,4 +480,8 @@ func isContextOverflowPattern(lower string) bool {
 		strings.Contains(lower, "input is too long") ||
 		strings.Contains(lower, "model_context_window_exceeded") ||
 		strings.Contains(lower, "too many tokens")
+}
+
+func isResponseCompletedMissingMessage(lower string) bool {
+	return strings.Contains(lower, "before response.completed")
 }

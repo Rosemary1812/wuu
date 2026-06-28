@@ -84,6 +84,8 @@ const HTTP_REASON_PHRASES: Record<string, string> = {
   "529": "overloaded",
 };
 
+const RESPONSE_COMPLETED_MISSING_TITLE = "stream_closed_before_response.completed";
+
 function extractHttpCode(message: string): string | undefined {
   const match = message.match(/\b(400|401|403|404|408|413|429|500|502|503|504|529)\b/);
   return match?.[1];
@@ -116,6 +118,9 @@ function extractSpecificTitle(
       // The parenthesized token at the end of the message is the actual
       // provider error code, which is what the user (and support) need to
       // see in the chip and in a screenshot.
+      if (isResponseCompletedMissingMessage(lower)) {
+        return RESPONSE_COMPLETED_MISSING_TITLE;
+      }
       const wrapped = message.match(/\(([^()]+)\)\s*$/);
       if (wrapped) return wrapped[1];
       const code = extractHttpCode(message);
@@ -142,6 +147,9 @@ function extractSpecificTitle(
       return undefined;
     }
     case "provider": {
+      if (isResponseCompletedMissingMessage(lower)) {
+        return RESPONSE_COMPLETED_MISSING_TITLE;
+      }
       if (
         lower.includes("context_length_exceeded") ||
         lower.includes("context window") ||
@@ -219,7 +227,9 @@ export function userFacingErrorForMessage(
   // when the Go side provided one, fall back to the category's
   // Chinese default.
   const detail =
-    structured?.action?.message?.trim() || defaultDetailForCategory(category);
+    structured?.action?.message?.trim() ||
+    specificDetailForMessage(message, category) ||
+    defaultDetailForCategory(category);
 
   // Actions: structured action's `reason` takes precedence, fall back
   // to the category-driven default (e.g. the auth case gets
@@ -289,6 +299,20 @@ function defaultDetailForCategory(category: UserFacingErrorCategory): string {
     case "internal":
       return "没有完成这次请求。调试信息可用于排查。";
   }
+}
+
+function specificDetailForMessage(
+  message: string,
+  category: UserFacingErrorCategory,
+): string | undefined {
+  const normalized = message.toLowerCase();
+  if (
+    (category === "provider" || category === "network") &&
+    isResponseCompletedMissingMessage(normalized)
+  ) {
+    return "Provider WS 流在 response.completed 前断开；这次回答可能不完整，已生成内容已保留。";
+  }
+  return undefined;
 }
 
 // defaultActionsForCategory is the category-driven fallback used when
@@ -501,6 +525,7 @@ function isNetworkOrUpstreamError(message: string): boolean {
 
 function isProviderBusinessError(message: string): boolean {
   return (
+    isResponseCompletedMissingMessage(message) ||
     message.includes("context_length_exceeded") ||
     message.includes("context window") ||
     message.includes("maximum context length") ||
@@ -514,6 +539,10 @@ function isProviderBusinessError(message: string): boolean {
     message.includes("content policy") ||
     message.includes("invalid_request_error")
   );
+}
+
+function isResponseCompletedMissingMessage(message: string): boolean {
+  return message.includes("before response.completed");
 }
 
 function isLocalOperationError(message: string): boolean {
@@ -562,7 +591,14 @@ export function statusToneClass(status: string): string {
   if (trimmed.includes("权限") || trimmed.includes("登录")) {
     return " auth";
   }
-  if (trimmed.includes("失败") || trimmed.includes("错误") || trimmed.includes("不可用") || trimmed.includes("内部")) {
+  if (
+    trimmed.includes("失败") ||
+    trimmed.includes("错误") ||
+    trimmed.includes("不可用") ||
+    trimmed.includes("内部") ||
+    trimmed.includes("stream_closed") ||
+    trimmed.includes("response.completed")
+  ) {
     return " error";
   }
   return "";

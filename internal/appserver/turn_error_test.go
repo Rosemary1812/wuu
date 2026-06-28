@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -141,6 +142,27 @@ func TestBuildTurnError_StreamContextOverflow(t *testing.T) {
 	}
 	if out.Action == nil || out.Action.Reason != "compact" {
 		t.Errorf("expected compact action, got %+v", out.Action)
+	}
+}
+
+// TestBuildTurnError_ResponseCompletedMissing covers a Responses stream that
+// produced partial output but closed before the terminal response.completed
+// event. This should not collapse to the generic network-error chip.
+func TestBuildTurnError_ResponseCompletedMissing(t *testing.T) {
+	err := providers.NewNonRetryableStreamError("websocket stream closed after provider event: websocket stream closed before response.completed")
+
+	out := BuildTurnError(err, "openai-codex")
+	if out.Category != "provider" {
+		t.Errorf("expected category=provider, got %q", out.Category)
+	}
+	if out.Code != "stream_closed_before_response.completed" {
+		t.Errorf("expected stream_closed_before_response.completed code, got %q", out.Code)
+	}
+	if out.Action == nil || out.Action.Reason != "view_debug" {
+		t.Fatalf("expected view_debug action, got %+v", out.Action)
+	}
+	if !strings.Contains(out.Action.Message, "response.completed") {
+		t.Errorf("expected action detail to mention response.completed, got %q", out.Action.Message)
 	}
 }
 

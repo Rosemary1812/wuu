@@ -45,6 +45,18 @@ describe("userFacingErrorForMessage", () => {
     expect(display.title).toBe("connection reset");
   });
 
+  it("shows partial Responses stream closes as a specific provider-stream state", () => {
+    const display = userFacingErrorForMessage(
+      "stream request failed: websocket stream closed after provider event: websocket stream closed before response.completed",
+      "turn",
+    );
+
+    expect(display.category).toBe("provider");
+    expect(display.title).toBe("stream_closed_before_response.completed");
+    expect(display.detail).toContain("response.completed");
+    expect(display.detail).toContain("已生成内容已保留");
+  });
+
   it("falls back to the category title when the message has no specific identifier", () => {
     const display = userFacingErrorForMessage("login required", "turn");
     expect(display.category).toBe("auth");
@@ -242,6 +254,36 @@ describe("userFacingErrorForMessage", () => {
         code: "internal_error",
         provider: "openai",
         status_code: 500,
+      });
+    });
+
+    it("uses the structured partial-stream code and detail from the Go core", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message:
+            "stream request failed: websocket stream closed after provider event: websocket stream closed before response.completed",
+          code: "stream_closed_before_response.completed",
+          category: "provider",
+          provider: "openai-codex",
+          action: {
+            reason: "view_debug",
+            title: "部分回答未完成",
+            message:
+              "Provider WS 流在 response.completed 前断开；这次回答可能不完整，已生成内容已保留。",
+            label: "复制调试信息",
+          },
+        },
+        "turn",
+      );
+
+      expect(display.title).toBe("stream_closed_before_response.completed");
+      expect(display.category).toBe("provider");
+      expect(display.detail).toContain("这次回答可能不完整");
+      expect(display.recommendedActions[0].kind).toBe("copyDebug");
+      expect(display.recommendedActions[0].payload).toMatchObject({
+        category: "provider",
+        provider: "openai-codex",
+        code: "stream_closed_before_response.completed",
       });
     });
 
