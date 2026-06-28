@@ -103,6 +103,7 @@ export function useConversationScrollState({
   }, []);
   const lastConversationScrollTopRef = useRef(0);
   const programmaticScrollTopRef = useRef<number | undefined>(undefined);
+  const suppressAutoFollowRearmRef = useRef(false);
   const userScrollAwayIntentRef = useRef(false);
   const userScrollAwayIntentTimerRef = useRef<number | undefined>(undefined);
   const touchLastYRef = useRef<number | undefined>(undefined);
@@ -185,6 +186,7 @@ export function useConversationScrollState({
     options: { revealScrollbar?: boolean } = {}
   ): void {
     clearUserScrollAwayIntent();
+    suppressAutoFollowRearmRef.current = false;
     node.scrollTop = top;
     const actualTop = clampScrollTop(node, node.scrollTop);
     if (Math.abs(node.scrollTop - actualTop) > 1) {
@@ -232,6 +234,7 @@ export function useConversationScrollState({
   }, [scrollConversationToBottom]);
 
   const enableConversationAutoFollow = useCallback((): void => {
+    suppressAutoFollowRearmRef.current = false;
     setAutoFollow(true);
     const node = conversationViewport();
     if (node) {
@@ -241,6 +244,7 @@ export function useConversationScrollState({
   }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
 
   const disableConversationAutoFollow = useCallback((): void => {
+    suppressAutoFollowRearmRef.current = true;
     setAutoFollow(false);
     const node = conversationViewport();
     if (node) {
@@ -292,7 +296,9 @@ export function useConversationScrollState({
     // the viewport is still at the latest content. Those must keep
     // auto-follow armed; otherwise the next streaming or settle frame will
     // stop sticking to the bottom even though the user never scrolled away.
-    const scrolledUp = node.scrollTop < lastConversationScrollTopRef.current;
+    const previousScrollTop = lastConversationScrollTopRef.current;
+    const scrolledUp = node.scrollTop < previousScrollTop;
+    const scrolledDown = node.scrollTop > previousScrollTop;
     const userScrollAwayIntent = userScrollAwayIntentRef.current;
     lastConversationScrollTopRef.current = clampScrollTop(node, node.scrollTop);
 
@@ -302,18 +308,40 @@ export function useConversationScrollState({
     );
     let nextAutoFollow = conversationAutoFollowRef.current;
     if (scrolledUp && userScrollAwayIntent) {
+      suppressAutoFollowRearmRef.current = false;
       nextAutoFollow = false;
       setAutoFollow(false);
       setAutoFollowOverflowAnchor(node, false);
+    } else if (atLatestView && suppressAutoFollowRearmRef.current) {
+      // Query-history / turn-rail jumps are programmatic smooth scrolls.
+      // The browser can emit an unchanged or tiny upward scroll event while
+      // the viewport is still inside the bottom band. If that re-arms
+      // auto-follow, the next scroll/layout signal yanks the viewport back to
+      // the bottom before the jump reaches its target. Only an actual downward
+      // move back to the latest content should clear this jump guard.
+      if (scrolledDown) {
+        suppressAutoFollowRearmRef.current = false;
+        nextAutoFollow = true;
+        setAutoFollow(true);
+        setAutoFollowOverflowAnchor(node, true);
+      } else {
+        nextAutoFollow = false;
+        setAutoFollow(false);
+        setAutoFollowOverflowAnchor(node, false);
+      }
     } else if (atLatestView) {
+      suppressAutoFollowRearmRef.current = false;
       nextAutoFollow = true;
       setAutoFollow(true);
       setAutoFollowOverflowAnchor(node, true);
     } else if (conversationAutoFollowRef.current && !userScrollAwayIntent) {
+      suppressAutoFollowRearmRef.current = false;
       nextAutoFollow = true;
       applyProgrammaticScroll(node, node.scrollHeight, true, {
         revealScrollbar: true
       });
+    } else {
+      suppressAutoFollowRearmRef.current = false;
     }
     rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
   }

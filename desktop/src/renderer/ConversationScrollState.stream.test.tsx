@@ -423,6 +423,35 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
+  it("keeps auto-follow disabled during smooth jump startup near the bottom", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => {
+      handle!.disableConversationAutoFollow();
+      // Closing the popover or layout settling can produce a scroll event
+      // before smooth scrolling has moved the viewport at all. That event is
+      // still at the latest view, but it must not re-arm follow mode.
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+
+      // A query-history jump uses smooth scrolling. Chromium can emit an
+      // early upward scroll event while the viewport is still inside the
+      // bottom threshold band. That must not re-arm follow mode.
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 8;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(2000 - 600 - 8);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
   it("programmatic scroll-to-bottom keeps auto-follow engaged", () => {
     // Companion case to the dead-zone regression: a stream tick (or
     // fold re-anchor) that lands scrollTop at the max must keep
