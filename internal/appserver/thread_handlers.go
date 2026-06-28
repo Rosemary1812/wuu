@@ -43,13 +43,11 @@ func (s *Server) handleThreadStart(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	id := session.NewID()
-	memoryPath := ""
+	persistHistory := !params.Ephemeral
 	if !params.Ephemeral {
-		sess, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir)
-		if err != nil {
+		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		memoryPath = session.FilePath(s.rt.SessionDir, sess.ID)
 	} else {
 		id = "ephemeral-" + id
 	}
@@ -57,7 +55,7 @@ func (s *Server) handleThreadStart(req Request) error {
 	if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, memoryPath, time.Now().UTC())
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, persistHistory, time.Now().UTC())
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	th.Ephemeral = params.Ephemeral
 
@@ -102,18 +100,19 @@ func (s *Server) handleThreadResume(req Request) error {
 		}
 		return s.writeThreadResumeResult(req, thread)
 	}
-	path, err := session.Load(s.rt.SessionDir, id)
-	if err != nil {
+	if _, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	} else if !ok {
 		thread, ok, agentErr := s.agentSessionThread(id)
 		if agentErr != nil {
 			return s.writeResponse(req.ID, nil, agentErr)
 		}
 		if !ok {
-			return s.writeResponse(req.ID, nil, err)
+			return s.writeResponse(req.ID, nil, session.ErrSessionNotFound)
 		}
 		return s.writeThreadResumeResult(req, thread)
 	}
-	history, err := loadChatMessages(path)
+	history, err := loadChatMessages(s.rt.SessionDir, id)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -122,13 +121,13 @@ func (s *Server) handleThreadResume(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if !reflect.DeepEqual(repaired, history) {
-		if err := rewriteChatHistory(path, repaired); err != nil {
+		if err := rewriteChatHistory(s.rt.SessionDir, id, repaired); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
 	history = repaired
 	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, time.Now().UTC())
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, time.Now().UTC())
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -203,15 +202,14 @@ func (s *Server) handleThreadFork(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	path := session.FilePath(s.rt.SessionDir, sess.ID)
-	if err := rewriteChatHistory(path, history); err != nil {
+	if err := rewriteChatHistory(s.rt.SessionDir, sess.ID, history); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if err := session.UpdateIndex(s.rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
-	th := newThreadState(sess.ID, history, source.modelProvider, source.model, source.cwd, path, now)
+	th := newThreadState(sess.ID, history, source.modelProvider, source.model, source.cwd, true, now)
 	applySessionMetadata(th, *sess)
 	s.mu.Lock()
 	s.threads[th.ID] = th
@@ -260,8 +258,8 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 		th.mu.Unlock()
 		return s.writeResponse(req.ID, nil, err)
 	}
-	if strings.TrimSpace(th.MemoryPath) != "" {
-		if err := rewriteChatHistory(th.MemoryPath, nextHistory); err != nil {
+	if th.PersistHistory {
+		if err := rewriteChatHistory(s.rt.SessionDir, th.ID, nextHistory); err != nil {
 			th.mu.Unlock()
 			return s.writeResponse(req.ID, nil, err)
 		}
@@ -301,11 +299,12 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 		}, nil
 	}
 
-	path, err := session.Load(s.rt.SessionDir, id)
-	if err != nil {
+	if _, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return forkSourceThread{}, err
+	} else if !ok {
+		return forkSourceThread{}, session.ErrSessionNotFound
 	}
-	history, err := loadChatMessages(path)
+	history, err := loadChatMessages(s.rt.SessionDir, id)
 	if err != nil {
 		return forkSourceThread{}, err
 	}
@@ -314,12 +313,12 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 		return forkSourceThread{}, err
 	}
 	if !reflect.DeepEqual(repaired, history) {
-		if err := rewriteChatHistory(path, repaired); err != nil {
+		if err := rewriteChatHistory(s.rt.SessionDir, id, repaired); err != nil {
 			return forkSourceThread{}, err
 		}
 	}
 	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, path, now)
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return forkSourceThread{}, err
 	} else if ok {

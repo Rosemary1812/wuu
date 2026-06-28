@@ -14,11 +14,13 @@ import (
 func TestScanSessionsAndFormatTranscriptHandleLargeToolRecords(t *testing.T) {
 	dir := t.TempDir()
 	sessionID := "20260413-101416-cd82"
-	path := filepath.Join(dir, sessionID+".jsonl")
 	largeToolResult := strings.Repeat("x", 2100*1024)
 	start := time.Date(2026, time.April, 13, 10, 14, 16, 0, time.UTC)
 
-	writeInsightSessionRecords(t, path, []memoryRecord{
+	if _, err := sessionstore.CreateWithMetadata(dir, sessionID, ""); err != nil {
+		t.Fatal(err)
+	}
+	writeInsightSessionRecords(t, dir, sessionID, []memoryRecord{
 		{Role: "user", Content: "restore this session", At: start},
 		{
 			Role:    "assistant",
@@ -93,12 +95,12 @@ func TestScanSessionsForCWDFiltersBySessionIndex(t *testing.T) {
 	if _, err := sessionstore.CreateWithMetadata(dir, "sess-b", cwdB); err != nil {
 		t.Fatal(err)
 	}
-	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-a"), []memoryRecord{
+	writeInsightSessionRecords(t, dir, "sess-a", []memoryRecord{
 		{Role: "user", Content: "work in project a", At: start},
 		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
 		{Role: "user", Content: "continue project a", At: start.Add(2 * time.Minute)},
 	})
-	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-b"), []memoryRecord{
+	writeInsightSessionRecords(t, dir, "sess-b", []memoryRecord{
 		{Role: "user", Content: "work in project b", At: start},
 		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
 		{Role: "user", Content: "continue project b", At: start.Add(2 * time.Minute)},
@@ -129,7 +131,7 @@ func TestScanSessionsAggregatesModelBreakdowns(t *testing.T) {
 
 	// Session 1: two token_usage rows on the same provider/model — should
 	// collapse into a single bucket with summed tokens.
-	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-anthropic"), []memoryRecord{
+	writeInsightSessionRecords(t, dir, "sess-anthropic", []memoryRecord{
 		{Role: "user", Content: "implement feature a", At: start},
 		{Role: "assistant", Content: "ok", At: start.Add(time.Minute)},
 		{Role: "user", Content: "continue feature a", At: start.Add(2 * time.Minute)},
@@ -138,7 +140,7 @@ func TestScanSessionsAggregatesModelBreakdowns(t *testing.T) {
 	})
 
 	// Session 2: a different provider/model entirely.
-	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-openai"), []memoryRecord{
+	writeInsightSessionRecords(t, dir, "sess-openai", []memoryRecord{
 		{Role: "user", Content: "implement feature b", At: start},
 		{Role: "assistant", Content: "ok", At: start.Add(time.Minute)},
 		{Role: "user", Content: "continue feature b", At: start.Add(2 * time.Minute)},
@@ -147,7 +149,7 @@ func TestScanSessionsAggregatesModelBreakdowns(t *testing.T) {
 
 	// Session 3: legacy row with no provider/model — should bucket as
 	// "(unknown)".
-	writeInsightSessionRecords(t, sessionstore.FilePath(dir, "sess-mixed"), []memoryRecord{
+	writeInsightSessionRecords(t, dir, "sess-mixed", []memoryRecord{
 		{Role: "user", Content: "legacy session", At: start},
 		{Role: "assistant", Content: "ok", At: start.Add(time.Minute)},
 		{Role: "user", Content: "more", At: start.Add(2 * time.Minute)},
@@ -259,38 +261,22 @@ func TestUsageDataPathsStayUnderUserState(t *testing.T) {
 	}
 }
 
-func writeInsightSessionRecords(t *testing.T, path string, records []memoryRecord) {
+func writeInsightSessionRecords(t *testing.T, sessDir, id string, records []memoryRecord) {
 	t.Helper()
 
-	if sessDir, id, ok := sessionstore.ParseHistoryPath(path); ok {
-		if _, exists, err := sessionstore.Find(sessDir, id); err != nil {
-			t.Fatalf("find session: %v", err)
-		} else if !exists {
-			if _, err := sessionstore.CreateWithMetadata(sessDir, id, ""); err != nil {
-				t.Fatalf("create session: %v", err)
-			}
+	if _, exists, err := sessionstore.Find(sessDir, id); err != nil {
+		t.Fatalf("find session: %v", err)
+	} else if !exists {
+		if _, err := sessionstore.CreateWithMetadata(sessDir, id, ""); err != nil {
+			t.Fatalf("create session: %v", err)
 		}
-		history := make([]sessionstore.HistoryRecord, 0, len(records))
-		for _, rec := range records {
-			history = append(history, historyRecordFromMemoryRecord(t, rec))
-		}
-		if err := sessionstore.RewriteHistoryRecords(sessDir, id, history); err != nil {
-			t.Fatalf("rewrite session records: %v", err)
-		}
-		return
 	}
-
-	file, err := os.Create(path)
-	if err != nil {
-		t.Fatalf("create session file: %v", err)
-	}
-	defer file.Close()
-
-	enc := json.NewEncoder(file)
+	history := make([]sessionstore.HistoryRecord, 0, len(records))
 	for _, rec := range records {
-		if err := enc.Encode(rec); err != nil {
-			t.Fatalf("encode session record: %v", err)
-		}
+		history = append(history, historyRecordFromMemoryRecord(t, rec))
+	}
+	if err := sessionstore.RewriteHistoryRecords(sessDir, id, history); err != nil {
+		t.Fatalf("rewrite session records: %v", err)
 	}
 }
 

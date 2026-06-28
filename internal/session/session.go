@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -16,15 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/jsonl"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	_ "modernc.org/sqlite"
 )
 
 const (
-	dbFileName            = "sessions.sqlite3"
-	legacyImportStateKey  = "legacy_jsonl_import"
-	legacyImportCompleted = "complete"
+	dbFileName = "sessions.sqlite3"
 )
 
 var ErrSessionNotFound = errors.New("session not found")
@@ -56,10 +52,8 @@ type ForkMetadata struct {
 	ForkedFromItemID string
 }
 
-// HistoryRecord is the durable session message shape. It intentionally mirrors
-// the old JSONL schema so legacy history can be imported without lossy
-// translation, while app-server remains responsible for provider-specific
-// ChatMessage conversion.
+// HistoryRecord is the durable session message shape. App-server remains
+// responsible for provider-specific ChatMessage conversion.
 type HistoryRecord struct {
 	Role                string          `json:"role"`
 	Content             string          `json:"content"`
@@ -113,37 +107,6 @@ func Dir(homeDir string) string {
 // DBPath returns the SQLite database path for session state.
 func DBPath(sessDir string) string {
 	return filepath.Join(sessDir, dbFileName)
-}
-
-// FilePath returns the legacy JSONL path for a session ID.
-//
-// Runtime conversation history is stored in SQLite. The path is retained as a
-// stable handle for older call sites and for importing pre-SQLite history.
-func FilePath(sessDir, id string) string {
-	return filepath.Join(sessDir, id+".jsonl")
-}
-
-// IndexPath returns the legacy index file path.
-func IndexPath(sessDir string) string {
-	return filepath.Join(sessDir, "index.jsonl")
-}
-
-// ParseHistoryPath extracts a session directory and ID from a legacy JSONL
-// history path.
-func ParseHistoryPath(path string) (string, string, bool) {
-	path = strings.TrimSpace(path)
-	if path == "" || filepath.Ext(path) != ".jsonl" {
-		return "", "", false
-	}
-	name := filepath.Base(path)
-	if name == "index.jsonl" {
-		return "", "", false
-	}
-	id := strings.TrimSuffix(name, ".jsonl")
-	if strings.TrimSpace(id) == "" {
-		return "", "", false
-	}
-	return filepath.Dir(path), id, true
 }
 
 // Create initializes a new session.
@@ -253,17 +216,6 @@ func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
 		filtered = filtered[:limit]
 	}
 	return filtered, nil
-}
-
-// Load returns the legacy history handle for a session ID, verifying the
-// session exists in SQLite.
-func Load(sessDir, id string) (string, error) {
-	if _, ok, err := Find(sessDir, id); err != nil {
-		return "", err
-	} else if !ok {
-		return "", fmt.Errorf("%w: %q", ErrSessionNotFound, id)
-	}
-	return FilePath(sessDir, id), nil
 }
 
 // Find returns metadata for a session ID.
@@ -378,9 +330,6 @@ func Delete(sessDir, id string) (Session, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return Session{}, fmt.Errorf("commit session delete: %w", err)
-	}
-	if err := os.Remove(FilePath(sessDir, id)); err != nil && !os.IsNotExist(err) {
-		return deleted, fmt.Errorf("delete legacy history: %w", err)
 	}
 	return deleted, nil
 }
@@ -532,49 +481,6 @@ func LoadHistoryRecords(sessDir, id string, includeMeta bool) ([]HistoryRecord, 
 	return loadHistoryRecordsDB(db, id, includeMeta)
 }
 
-// HistoryPathIsManaged reports whether the legacy path refers to a SQLite
-// session managed by this package.
-func HistoryPathIsManaged(path string) (string, string, bool, error) {
-	sessDir, id, ok := ParseHistoryPath(path)
-	if !ok {
-		return "", "", false, nil
-	}
-	_, exists, err := Find(sessDir, id)
-	if err != nil {
-		return sessDir, id, false, err
-	}
-	return sessDir, id, exists, nil
-}
-
-// ReadLegacyHistoryRecords loads pre-SQLite JSONL history from disk.
-func ReadLegacyHistoryRecords(path string) ([]HistoryRecord, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var records []HistoryRecord
-	line := 0
-	err = jsonl.ForEachLine(file, func(raw []byte) error {
-		line++
-		payload := strings.TrimSpace(string(raw))
-		if payload == "" {
-			return nil
-		}
-		var rec HistoryRecord
-		if err := json.Unmarshal([]byte(payload), &rec); err != nil {
-			return fmt.Errorf("parse session line %d: %w", line, err)
-		}
-		records = append(records, rec)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return records, nil
-}
-
 func openStore(sessDir string) (*sql.DB, error) {
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
@@ -591,10 +497,6 @@ func openStore(sessDir string) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := migrateSchema(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := importLegacyJSONL(db, sessDir); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -676,10 +578,6 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
-		`CREATE TABLE IF NOT EXISTS store_state (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
@@ -748,143 +646,6 @@ func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
 		return fmt.Errorf("add %s.%s column: %w", table, column, err)
 	}
 	return nil
-}
-
-func importLegacyJSONL(db *sql.DB, sessDir string) error {
-	var state string
-	err := db.QueryRow(`SELECT value FROM store_state WHERE key = ?`, legacyImportStateKey).Scan(&state)
-	if err == nil && state == legacyImportCompleted {
-		return nil
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read legacy import state: %w", err)
-	}
-
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin legacy import: %w", err)
-	}
-	defer tx.Rollback()
-
-	sessions, err := readLegacyIndexEntries(sessDir)
-	if err != nil {
-		return err
-	}
-	for _, sess := range sessions {
-		if sess.ID == "" {
-			continue
-		}
-		if sess.CreatedAt.IsZero() {
-			sess.CreatedAt = time.Now().UTC()
-		}
-		if sess.UpdatedAt.IsZero() {
-			sess.UpdatedAt = sess.CreatedAt
-			if info, statErr := os.Stat(FilePath(sessDir, sess.ID)); statErr == nil {
-				sess.UpdatedAt = info.ModTime().UTC()
-			}
-		}
-		if err := insertSessionTx(tx, sess, "OR IGNORE"); err != nil {
-			return err
-		}
-		if err := importLegacyHistoryTx(tx, sessDir, sess.ID); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.Exec(
-		`INSERT INTO store_state(key, value) VALUES(?, ?)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-		legacyImportStateKey, legacyImportCompleted,
-	); err != nil {
-		return fmt.Errorf("write legacy import state: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit legacy import: %w", err)
-	}
-	return nil
-}
-
-func readLegacyIndexEntries(sessDir string) ([]Session, error) {
-	indexPath := IndexPath(sessDir)
-	f, err := os.Open(indexPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("open legacy index: %w", err)
-	}
-	defer f.Close()
-
-	var sessions []Session
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var s Session
-		if err := json.Unmarshal([]byte(line), &s); err != nil {
-			continue
-		}
-		s.CWD = normalizeCWD(s.CWD)
-		sessions = append(sessions, s)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan legacy index: %w", err)
-	}
-	return sessions, nil
-}
-
-func importLegacyHistoryTx(tx *sql.Tx, sessDir, id string) error {
-	path := FilePath(sessDir, id)
-	records, err := readLegacyHistoryRecordsLenient(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if len(records) == 0 {
-		return nil
-	}
-	var existing int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM session_messages WHERE session_id = ?`, id).Scan(&existing); err != nil {
-		return fmt.Errorf("count imported history: %w", err)
-	}
-	if existing > 0 {
-		return nil
-	}
-	for i, rec := range records {
-		if err := insertHistoryRecordTx(tx, id, i+1, rec); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func readLegacyHistoryRecordsLenient(path string) ([]HistoryRecord, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var records []HistoryRecord
-	err = jsonl.ForEachLine(file, func(raw []byte) error {
-		payload := strings.TrimSpace(string(raw))
-		if payload == "" {
-			return nil
-		}
-		var rec HistoryRecord
-		if err := json.Unmarshal([]byte(payload), &rec); err != nil {
-			return nil
-		}
-		records = append(records, rec)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return records, nil
 }
 
 func insertSession(db *sql.DB, sess Session) error {

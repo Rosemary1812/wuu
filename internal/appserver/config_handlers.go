@@ -700,8 +700,8 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 			th.Model = model
 			if strings.TrimSpace(systemPrompt) != "" {
 				th.History = replaceBaseSystemPrompt(th.History, systemPrompt)
-				if strings.TrimSpace(th.MemoryPath) != "" {
-					if err := rewriteChatHistory(th.MemoryPath, th.History); err != nil {
+				if th.PersistHistory {
+					if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
 						providers.DebugLogf("rewrite thread %q system prompt after model update: %v", th.ID, err)
 					}
 				}

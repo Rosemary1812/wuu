@@ -88,7 +88,7 @@ func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
 			continue
 		}
 		entry := threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
-		history, err := loadChatMessages(session.FilePath(s.rt.SessionDir, sess.ID))
+		history, err := loadChatMessages(s.rt.SessionDir, sess.ID)
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
 				return nil, err

@@ -34,16 +34,16 @@ func loadProbeConfig(workdir, homeDir string) (config.Config, string, error) {
 // ProbeTitleOptions controls `wuu probe-title`. It mirrors the flags the CLI
 // accepts and gives tests a single entry point into the title pipeline.
 type ProbeTitleOptions struct {
-	WorkDir  string
-	HomeDir  string
+	WorkDir       string
+	HomeDir       string
 	ProviderName  string
 	ModelOverride string
-	ThreadID string
-	UserPrompt string
-	DryRun   bool
-	Verbose  bool
-	JSON     bool
-	Timeout  time.Duration
+	ThreadID      string
+	UserPrompt    string
+	DryRun        bool
+	Verbose       bool
+	JSON          bool
+	Timeout       time.Duration
 }
 
 // ProbeTitle is the public entry point used by `wuu probe-title` and
@@ -113,7 +113,7 @@ func ProbeTitle(ctx context.Context, opts ProbeTitleOptions) (TitleGenerationRes
 // a synthetic single-turn history is built and the function returns a fake
 // threadID ("probe-synthetic") plus synthetic=true. Otherwise ThreadID is
 // resolved (defaults to the most recent thread in the workspace) and the
-// history is loaded from the session dir via loadChatMessages.
+// history is loaded from the SQLite-backed session store.
 func resolveProbeThread(rt *runtime.Session, opts ProbeTitleOptions) (string, []providers.ChatMessage, bool, error) {
 	if strings.TrimSpace(opts.UserPrompt) != "" {
 		history := []providers.ChatMessage{
@@ -133,7 +133,7 @@ func resolveProbeThread(rt *runtime.Session, opts ProbeTitleOptions) (string, []
 		}
 		target = sessions[0].ID
 	}
-	history, err := loadChatMessages(session.FilePath(rt.SessionDir, target))
+	history, err := loadChatMessages(rt.SessionDir, target)
 	if err != nil {
 		return "", nil, false, fmt.Errorf("load history for thread %q: %w", target, err)
 	}

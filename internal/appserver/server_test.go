@@ -1077,13 +1077,15 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	}
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	thread := newThreadState("thread-1", nil, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "thread-1", rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	thread := newThreadState("thread-1", nil, rt.ProviderName, rt.Model, rt.RootDir, true, time.Now().UTC())
 	thread.History = []providers.ChatMessage{
 		{Role: "system", Content: "old fake-model system prompt"},
 		{Role: "user", Content: "hello"},
 	}
-	thread.MemoryPath = filepath.Join(rt.RootDir, "thread-history.jsonl")
-	if err := rewriteChatHistory(thread.MemoryPath, thread.History); err != nil {
+	if err := rewriteChatHistory(rt.SessionDir, thread.ID, thread.History); err != nil {
 		t.Fatalf("write thread history: %v", err)
 	}
 	thread.execRuntime = &runtime.ThreadRuntime{
@@ -1143,7 +1145,7 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	if thread.execRuntime.Toolkit.ActiveSurface().ProfileName == "" {
 		t.Fatal("idle thread toolkit should install active model surface")
 	}
-	persisted, err := loadChatMessages(thread.MemoryPath)
+	persisted, err := loadChatMessages(rt.SessionDir, thread.ID)
 	if err != nil {
 		t.Fatalf("load thread history: %v", err)
 	}
@@ -1923,7 +1925,7 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		t.Fatalf("unexpected agent-loop messages: %+v", messages)
 	}
 
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -2173,7 +2175,7 @@ func TestServerTurnStartRendersLightweightSlashCommandForModel(t *testing.T) {
 		t.Fatalf("model prompt should not include raw slash command:\n%s", modelPrompt)
 	}
 
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -2397,7 +2399,7 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 		t.Fatalf("goal continuation should be typed request context: %+v", secondContext)
 	}
 
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -2877,7 +2879,7 @@ func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 		t.Fatalf("second provider request missing steer: %+v", requests[1].Messages)
 	}
 
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -2959,7 +2961,7 @@ func TestServerGeneratesThreadTitleFromFirstTurnSnapshot(t *testing.T) {
 		{Role: "assistant", Content: "done"},
 	}
 	currentHistory := append(cloneHistory(firstTurnHistory), providers.ChatMessage{Role: "user", Content: "second task"})
-	th := newThreadState(sess.ID, currentHistory, rt.ProviderName, rt.Model, rt.RootDir, session.FilePath(rt.SessionDir, sess.ID), time.Now().UTC())
+	th := newThreadState(sess.ID, currentHistory, rt.ProviderName, rt.Model, rt.RootDir, true, time.Now().UTC())
 	srv.mu.Lock()
 	srv.threads[th.ID] = th
 	srv.mu.Unlock()
@@ -3169,7 +3171,7 @@ func TestServerRegenerateTitle(t *testing.T) {
 	if err := session.UpdateIndex(rt.SessionDir, sess.ID, len(history), "first task prompt"); err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, sess.ID), history); err != nil {
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, history); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3312,7 +3314,7 @@ func TestServerThreadForkAtAssistantItem(t *testing.T) {
 		t.Fatalf("unexpected fork turn items: %+v", fork.Turns[0].Items)
 	}
 
-	forkHistory, err := loadChatMessages(session.FilePath(rt.SessionDir, fork.ID))
+	forkHistory, err := loadChatMessages(rt.SessionDir, fork.ID)
 	if err != nil {
 		t.Fatalf("load fork history: %v", err)
 	}
@@ -3320,7 +3322,7 @@ func TestServerThreadForkAtAssistantItem(t *testing.T) {
 	if len(visibleForkHistory) != 2 || visibleForkHistory[0].Content != "first prompt" || visibleForkHistory[1].Content != "first answer" {
 		t.Fatalf("unexpected persisted fork history: %+v", forkHistory)
 	}
-	sourceHistory, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	sourceHistory, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load source history: %v", err)
 	}
@@ -3354,7 +3356,6 @@ func TestServerThreadEditMessageRewindsToUserMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
 	history := []providers.ChatMessage{
 		{
 			Role:    "user",
@@ -3366,7 +3367,7 @@ func TestServerThreadEditMessageRewindsToUserMessage(t *testing.T) {
 		{Role: "user", Content: "second prompt"},
 		{Role: "assistant", Content: "second answer"},
 	}
-	if err := rewriteChatHistory(sessionPath, history); err != nil {
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, history); err != nil {
 		t.Fatalf("write history: %v", err)
 	}
 	if err := session.UpdateIndex(rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
@@ -3418,7 +3419,7 @@ func TestServerThreadEditMessageRewindsToUserMessage(t *testing.T) {
 	if len(result.Thread.Turns) != 0 {
 		t.Fatalf("expected thread to rewind before first user message, got %+v", result.Thread.Turns)
 	}
-	persisted, err := loadChatMessages(sessionPath)
+	persisted, err := loadChatMessages(rt.SessionDir, sess.ID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -3440,7 +3441,6 @@ func TestServerThreadEditMessageRespectsCompactionBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
 	history := []providers.ChatMessage{
 		{Role: "system", Content: compact.BuildSummaryContent("older prompts are summarized")},
 		{Role: "user", Content: "after compact"},
@@ -3448,7 +3448,7 @@ func TestServerThreadEditMessageRespectsCompactionBoundary(t *testing.T) {
 		{Role: "user", Content: "latest prompt"},
 		{Role: "assistant", Content: "latest answer"},
 	}
-	if err := rewriteChatHistory(sessionPath, history); err != nil {
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, history); err != nil {
 		t.Fatalf("write history: %v", err)
 	}
 	if err := session.UpdateIndex(rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
@@ -3514,7 +3514,7 @@ func TestServerThreadEditMessageRespectsCompactionBoundary(t *testing.T) {
 	if result.Draft.Prompt != "after compact" {
 		t.Fatalf("unexpected restored draft: %+v", result.Draft)
 	}
-	persisted, err := loadChatMessages(sessionPath)
+	persisted, err := loadChatMessages(rt.SessionDir, sess.ID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -3582,7 +3582,7 @@ func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
 		t.Fatalf("unexpected provider image: %+v", messages[1].Images[0])
 	}
 
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -3658,7 +3658,7 @@ func TestServerTurnStartAcceptsPDFOnlyPrompt(t *testing.T) {
 		t.Fatalf("unexpected provider file: %+v", messages[1].Files[0])
 	}
 
-	persisted, err := loadChatMessages(session.FilePath(rt.SessionDir, threadID))
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
 	if err != nil {
 		t.Fatalf("load persisted history: %v", err)
 	}
@@ -3765,7 +3765,7 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, userThread.ID), []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, userThread.ID, []providers.ChatMessage{
 		{Role: "user", Content: "Investigate the delta-vector login failure"},
 		{Role: "assistant", Content: "The login failure comes from stale config."},
 	}); err != nil {
@@ -3778,7 +3778,7 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, assistantThread.ID), []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, assistantThread.ID, []providers.ChatMessage{
 		{Role: "user", Content: "summarize the deploy"},
 		{Role: "assistant", Content: "The deploy note mentions orion-cache warming."},
 	}); err != nil {
@@ -3791,7 +3791,7 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, archivedThread.ID), []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, archivedThread.ID, []providers.ChatMessage{
 		{Role: "user", Content: "delta-vector archived"},
 	}); err != nil {
 		t.Fatal(err)
@@ -3803,7 +3803,7 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, otherThread.ID), []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, otherThread.ID, []providers.ChatMessage{
 		{Role: "user", Content: "delta-vector other workspace"},
 	}); err != nil {
 		t.Fatal(err)
@@ -4062,7 +4062,7 @@ func TestServerChildAgentSessionIsLiveWhileRunning(t *testing.T) {
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	rootThread := newThreadState(rootID, nil, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	rootThread := newThreadState(rootID, nil, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
 	rootThread.execRuntime = &runtime.ThreadRuntime{AgentControl: coord}
 	srv.mu.Lock()
 	srv.threads[rootID] = rootThread
@@ -4256,7 +4256,7 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, sess.ID), []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, []providers.ChatMessage{
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "done"},
 	}); err != nil {
@@ -4321,7 +4321,7 @@ func TestServerThreadResumeKicksActiveGoalContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := rewriteChatHistory(session.FilePath(rt.SessionDir, sess.ID), []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, []providers.ChatMessage{
 		{Role: "user", Content: "start the goal"},
 		{Role: "assistant", Content: "working"},
 	}); err != nil {
@@ -4371,7 +4371,6 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
 
 	msg := providers.ChatMessage{
 		Role:              "assistant",
@@ -4413,11 +4412,11 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 			InputSchema: map[string]any{"type": "object"},
 		}},
 	}
-	if err := appendChatMessage(sessionPath, msg); err != nil {
+	if err := appendChatMessage(rt.SessionDir, sess.ID, msg); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 
-	history, err := loadChatMessages(sessionPath)
+	history, err := loadChatMessages(rt.SessionDir, sess.ID)
 	if err != nil {
 		t.Fatalf("load history: %v", err)
 	}
@@ -4451,23 +4450,22 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
 
-	if err := appendChatMessage(sessionPath, providers.ChatMessage{Role: "user", Content: "old user"}); err != nil {
+	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "old user"}); err != nil {
 		t.Fatalf("append old user: %v", err)
 	}
-	if err := appendChatMessage(sessionPath, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
+	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
 		t.Fatalf("append old assistant: %v", err)
 	}
-	if err := appendTokenUsage(sessionPath, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}); err != nil {
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
-	if err := rewriteChatHistory(sessionPath, []providers.ChatMessage{{Role: "user", Content: "new user"}}); err != nil {
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, []providers.ChatMessage{{Role: "user", Content: "new user"}}); err != nil {
 		t.Fatalf("rewrite history: %v", err)
 	}
 
-	visible, err := loadChatMessages(sessionPath)
+	visible, err := loadChatMessages(rt.SessionDir, sess.ID)
 	if err != nil {
 		t.Fatalf("load visible history: %v", err)
 	}
@@ -4506,7 +4504,6 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
 	largeToolOutput := strings.Repeat("large output ", 1200)
 	initialHistory := []providers.ChatMessage{
 		{Role: "user", Content: "debug the failing workbench request"},
@@ -4516,7 +4513,7 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 		{Role: "tool", Name: "run_shell", ToolCallID: "call_1", Content: largeToolOutput},
 		{Role: "assistant", Content: "I found the first clue."},
 	}
-	if err := rewriteChatHistory(sessionPath, initialHistory); err != nil {
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, initialHistory); err != nil {
 		t.Fatalf("write initial history: %v", err)
 	}
 	if err := session.UpdateIndex(rt.SessionDir, sess.ID, persistableMessageCount(initialHistory), threadPreview(initialHistory)); err != nil {
@@ -4557,7 +4554,7 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 		t.Fatal("expected compact event during resumed turn")
 	}
 
-	persisted, err := loadChatMessages(sessionPath)
+	persisted, err := loadChatMessages(rt.SessionDir, sess.ID)
 	if err != nil {
 		t.Fatalf("load compacted history: %v", err)
 	}
@@ -4658,8 +4655,7 @@ func TestServerThreadResumeRepairsToolResultOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	sessionPath := session.FilePath(rt.SessionDir, sess.ID)
-	if err := rewriteChatHistory(sessionPath, []providers.ChatMessage{
+	if err := rewriteChatHistory(rt.SessionDir, sess.ID, []providers.ChatMessage{
 		{Role: "user", Content: "inspect"},
 		{
 			Role: "assistant",
@@ -4705,7 +4701,7 @@ func TestServerThreadResumeRepairsToolResultOrder(t *testing.T) {
 		t.Fatalf("unexpected resumed order: got %s want %s", got, want)
 	}
 
-	persisted, err := loadChatMessages(sessionPath)
+	persisted, err := loadChatMessages(rt.SessionDir, sess.ID)
 	if err != nil {
 		t.Fatalf("load rewritten session: %v", err)
 	}
@@ -4857,7 +4853,7 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 	}
 	rootThread := newThreadState(threadID, []providers.ChatMessage{
 		{Role: "user", Content: "please inspect"},
-	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	}, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
 	rootThread.execRuntime = threadRuntime
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
@@ -4945,7 +4941,7 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 	}
 	rootThread := newThreadState(threadID, []providers.ChatMessage{
 		{Role: "user", Content: "please inspect"},
-	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	}, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
 	rootThread.execRuntime = threadRuntime
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
@@ -5016,7 +5012,7 @@ func TestServerSkipsDuplicateAgentCompletionNotificationsAfterAutoResume(t *test
 	}
 	rootThread := newThreadState(threadID, []providers.ChatMessage{
 		{Role: "user", Content: "please inspect"},
-	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	}, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
 	rootThread.execRuntime = threadRuntime
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
@@ -5075,7 +5071,7 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 	}
 	rootThread := newThreadState(threadID, []providers.ChatMessage{
 		{Role: "user", Content: "please inspect"},
-	}, rt.ProviderName, rt.Model, rt.RootDir, "", time.Now().UTC())
+	}, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
 	rootThread.execRuntime = threadRuntime
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread

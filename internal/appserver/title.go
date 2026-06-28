@@ -411,7 +411,7 @@ func (s *Server) handleThreadRegenerateTitle(ctx context.Context, req Request) e
 
 	// Build history from the on-disk session (the in-memory thread state
 	// may be missing — e.g. after a desktop restart).
-	history, err := loadChatMessages(session.FilePath(s.rt.SessionDir, threadID))
+	history, err := loadChatMessages(s.rt.SessionDir, threadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("load history for thread %q: %w", threadID, err))
 	}

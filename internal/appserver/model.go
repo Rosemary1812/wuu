@@ -16,18 +16,18 @@ type outboundNotification struct {
 	params any
 }
 
-func newThreadState(id string, history []providers.ChatMessage, rtProvider, model, cwd, memoryPath string, now time.Time) *threadState {
+func newThreadState(id string, history []providers.ChatMessage, rtProvider, model, cwd string, persistHistory bool, now time.Time) *threadState {
 	return &threadState{
-		ID:            id,
-		History:       cloneHistory(history),
-		CreatedAt:     now,
-		UpdatedAt:     now,
-		ModelProvider: rtProvider,
-		Model:         model,
-		CWD:           cwd,
-		Turns:         turnsFromHistory(id, history, now),
-		MemoryPath:    memoryPath,
-		toolItems:     make(map[string]string),
+		ID:             id,
+		History:        cloneHistory(history),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ModelProvider:  rtProvider,
+		Model:          model,
+		CWD:            cwd,
+		Turns:          turnsFromHistory(id, history, now),
+		PersistHistory: persistHistory,
+		toolItems:      make(map[string]string),
 	}
 }
 

@@ -77,10 +77,12 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		cancel()
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
 	}
-	if err := appendChatMessage(th.MemoryPath, userMsg); err != nil {
-		th.mu.Unlock()
-		cancel()
-		return s.writeResponse(req.ID, nil, err)
+	if th.PersistHistory {
+		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
+			th.mu.Unlock()
+			cancel()
+			return s.writeResponse(req.ID, nil, err)
+		}
 	}
 	history := cloneHistory(th.History)
 	history = append(history, userMsg)
@@ -1060,10 +1062,12 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		cancel()
 		return false, errors.New("thread is read-only")
 	}
-	if err := appendChatMessage(th.MemoryPath, entry.msg); err != nil {
-		th.mu.Unlock()
-		cancel()
-		return false, err
+	if th.PersistHistory {
+		if err := appendChatMessage(s.rt.SessionDir, th.ID, entry.msg); err != nil {
+			th.mu.Unlock()
+			cancel()
+			return false, err
+		}
 	}
 	history := cloneHistory(th.History)
 	history = append(history, entry.msg)
@@ -1231,10 +1235,12 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 		cancel()
 		return false, nil
 	}
-	if err := appendChatMessage(th.MemoryPath, userMsg); err != nil {
-		th.mu.Unlock()
-		cancel()
-		return false, err
+	if th.PersistHistory {
+		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
+			th.mu.Unlock()
+			cancel()
+			return false, err
+		}
 	}
 	history := cloneHistory(th.History)
 	history = append(history, userMsg)
@@ -1620,21 +1626,21 @@ func queuedTurnsFromSteers(msgs []providers.ChatMessage) []queuedTurn {
 }
 
 func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool) error {
-	if strings.TrimSpace(th.MemoryPath) == "" {
+	if !th.PersistHistory {
 		return nil
 	}
 	if rewriteHistory {
-		if err := rewriteChatHistory(th.MemoryPath, th.History); err != nil {
+		if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
 			return err
 		}
 	} else {
 		for _, msg := range res.NewMessages {
-			if err := appendChatMessage(th.MemoryPath, msg); err != nil {
+			if err := appendChatMessage(s.rt.SessionDir, th.ID, msg); err != nil {
 				return err
 			}
 		}
 	}
-	if err := appendTokenUsage(th.MemoryPath, th.ModelProvider, th.Model, providers.TokenUsage{
+	if err := appendTokenUsage(s.rt.SessionDir, th.ID, th.ModelProvider, th.Model, providers.TokenUsage{
 		InputTokens:         res.InputTokens,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,

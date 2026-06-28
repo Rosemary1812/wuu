@@ -2,7 +2,6 @@ package insight
 
 import (
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -168,15 +167,6 @@ func baseSessionID(id string) string {
 	return id
 }
 
-// scanOneSession reads a single legacy JSONL session file and extracts metadata.
-func scanOneSession(path string, id string) (SessionMeta, error) {
-	records, err := sessionstore.ReadLegacyHistoryRecords(path)
-	if err != nil {
-		return SessionMeta{}, err
-	}
-	return scanSessionRecords(records, id), nil
-}
-
 func scanSessionRecords(records []sessionstore.HistoryRecord, id string) SessionMeta {
 	meta := SessionMeta{
 		ID:         id,
@@ -275,15 +265,7 @@ func scanSessionRecords(records []sessionstore.HistoryRecord, id string) Session
 func FormatTranscript(sessDir, sessionID string) (string, error) {
 	records, err := sessionstore.LoadHistoryRecords(sessDir, sessionID, true)
 	if err != nil {
-		if !errors.Is(err, sessionstore.ErrSessionNotFound) {
-			return "", err
-		}
-		legacyPath := filepath.Join(sessDir, sessionID+".jsonl")
-		legacyRecords, legacyErr := sessionstore.ReadLegacyHistoryRecords(legacyPath)
-		if legacyErr != nil {
-			return "", legacyErr
-		}
-		records = legacyRecords
+		return "", err
 	}
 
 	var b strings.Builder

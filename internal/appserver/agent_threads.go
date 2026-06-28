@@ -120,7 +120,7 @@ func (s *Server) ensureAgentThreadState(rootThreadID string, control *agentcontr
 	}
 
 	history := s.agentSnapshotHistory(control, snap)
-	th := newThreadState(snap.ID, history, s.rt.ProviderName, s.rt.Model, firstNonEmpty(snapCWD(rootThreadID, s), s.rt.RootDir), "", now)
+	th := newThreadState(snap.ID, history, s.rt.ProviderName, s.rt.Model, firstNonEmpty(snapCWD(rootThreadID, s), s.rt.RootDir), false, now)
 	th.ParentID = strings.TrimSpace(rootThreadID)
 	th.AgentPath = snap.AgentPath
 	th.ReadOnly = true

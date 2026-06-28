@@ -38,7 +38,7 @@ type threadState struct {
 	PinnedAt         *time.Time
 	ArchivedAt       *time.Time
 	Turns            []Turn
-	MemoryPath       string
+	PersistHistory   bool
 	ReadOnly         bool
 	Ephemeral        bool
 	// ListeningPorts is the deduped, sorted list of localhost ports the

@@ -10,7 +10,7 @@ import (
 
 func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -65,7 +65,7 @@ func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 
 func TestThreadStateLeavesUnresolvedTextPhaseUnknown(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -92,7 +92,7 @@ func TestThreadStateLeavesUnresolvedTextPhaseUnknown(t *testing.T) {
 
 func TestThreadStateUsesProviderPhaseOnStreamingText(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -117,7 +117,7 @@ func TestThreadStateUsesProviderPhaseOnStreamingText(t *testing.T) {
 
 func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -244,7 +244,7 @@ func TestTurnsFromHistoryHidesInceptionArtifacts(t *testing.T) {
 
 func TestThreadStateHidesLiveInceptionEvents(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start"}, now)
 
 	for _, ev := range []providers.StreamEvent{
@@ -306,7 +306,7 @@ func TestTurnsFromHistoryKeepsSteeredUserMessageInCurrentTurn(t *testing.T) {
 
 func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -339,7 +339,7 @@ func TestThreadStateReplacesActiveAgentMessageText(t *testing.T) {
 
 func TestThreadStateLeavesPostToolStreamingTextPhaseUnknownOnFirstDelta(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -381,7 +381,7 @@ func TestThreadStateLeavesPostToolStreamingTextPhaseUnknownOnFirstDelta(t *testi
 
 func TestThreadStateMovesStreamingTextToFinalAnswerOnAssistantMessage(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
 
 	// 1. Stream preamble + tool_use + tool_result + streamed "final" text.
@@ -482,7 +482,7 @@ func TestTurnsFromHistoryPreservesProviderAssistantPhase(t *testing.T) {
 
 func TestThreadStateCapturesListeningPortsFromReport(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start vite"}, now)
 
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -576,7 +576,7 @@ func TestThreadStateCapturesListeningPortsFromReport(t *testing.T) {
 
 func TestThreadStateCapturesBrowserPreviewFromProcessResult(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start vite"}, now)
 
 	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
@@ -604,7 +604,7 @@ func TestThreadStateCapturesBrowserPreviewFromProcessResult(t *testing.T) {
 
 func TestSnapshotIncludesListeningPorts(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
-	th := newThreadState("thread", nil, "provider", "model", "/repo", "", now)
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.ListeningPorts = []int{5173, 3000}
 	snap := th.snapshotLocked()
 	if len(snap.ListeningPorts) != 2 || snap.ListeningPorts[0] != 5173 || snap.ListeningPorts[1] != 3000 {

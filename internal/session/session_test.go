@@ -221,39 +221,6 @@ func TestListOrdersPinnedGroupsByActivity(t *testing.T) {
 	}
 }
 
-func TestListBackfillsActivityFromSessionFileModTime(t *testing.T) {
-	dir := t.TempDir()
-	base := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
-	cwd := "/tmp/project"
-	writeLegacyIndex(t, dir, []Session{
-		{ID: "older", CreatedAt: base.Add(-time.Hour), CWD: cwd},
-		{ID: "newer", CreatedAt: base.Add(-time.Hour), CWD: cwd},
-	})
-	if err := os.WriteFile(FilePath(dir, "older"), []byte{}, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(FilePath(dir, "newer"), []byte{}, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(FilePath(dir, "older"), base, base); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(FilePath(dir, "newer"), base.Add(time.Hour), base.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions, err := List(dir, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sessions) != 2 || sessions[0].ID != "newer" || sessions[1].ID != "older" {
-		t.Fatalf("expected sessions by file activity fallback, got %+v", sessions)
-	}
-	if sessions[0].UpdatedAt.IsZero() || sessions[1].UpdatedAt.IsZero() {
-		t.Fatalf("expected updated_at fallback to be populated, got %+v", sessions)
-	}
-}
-
 func TestPinAndArchiveMetadata(t *testing.T) {
 	dir := t.TempDir()
 	first, err := CreateWithMetadata(dir, "first", "/tmp/project")
@@ -306,10 +273,6 @@ func TestDeleteRemovesSessionAndHistory(t *testing.T) {
 	if err := AppendHistoryRecord(dir, sess.ID, HistoryRecord{Role: "user", Content: "delete me"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(FilePath(dir, sess.ID), []byte(`{"role":"user","content":"legacy"}`+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	deleted, err := Delete(dir, sess.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -322,9 +285,6 @@ func TestDeleteRemovesSessionAndHistory(t *testing.T) {
 	}
 	if _, err := LoadHistoryRecords(dir, sess.ID, true); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("LoadHistoryRecords() error = %v, want ErrSessionNotFound", err)
-	}
-	if _, err := os.Stat(FilePath(dir, sess.ID)); !os.IsNotExist(err) {
-		t.Fatalf("legacy history should be removed, err=%v", err)
 	}
 	if _, err := Delete(dir, sess.ID); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("Delete() error = %v, want ErrSessionNotFound", err)
@@ -416,94 +376,6 @@ func TestRewriteHistoryRecordsReplacesExistingMessages(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].Role != "assistant" || history[0].Content != "new assistant" {
 		t.Fatalf("rewrite should replace old history, got %+v", history)
-	}
-}
-
-func TestLegacyHistoryImportsIntoSQLite(t *testing.T) {
-	dir := t.TempDir()
-	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
-	writeLegacyIndex(t, dir, []Session{{
-		ID:        "legacy-thread",
-		CreatedAt: start,
-		UpdatedAt: start,
-		CWD:       "/tmp/project",
-	}})
-	writeLegacyHistory(t, FilePath(dir, "legacy-thread"), []HistoryRecord{
-		{Role: "user", Content: "hello", At: start},
-		{Role: "assistant", Content: "done", At: start.Add(time.Minute)},
-	})
-
-	sessions, err := List(dir, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sessions) != 1 || sessions[0].ID != "legacy-thread" {
-		t.Fatalf("legacy index not imported: %+v", sessions)
-	}
-	history, err := LoadHistoryRecords(dir, "legacy-thread", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history) != 2 || history[0].Content != "hello" || history[1].Content != "done" {
-		t.Fatalf("legacy history not imported: %+v", history)
-	}
-}
-
-func TestLegacyHistoryImportSkipsCorruptLines(t *testing.T) {
-	dir := t.TempDir()
-	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
-	writeLegacyIndex(t, dir, []Session{{
-		ID:        "legacy-thread",
-		CreatedAt: start,
-		UpdatedAt: start,
-		CWD:       "/tmp/project",
-	}})
-	first := mustMarshalJSONLine(t, HistoryRecord{Role: "user", Content: "hello", At: start})
-	second := mustMarshalJSONLine(t, HistoryRecord{Role: "assistant", Content: "done", At: start.Add(time.Minute)})
-	raw := append(append(append([]byte{}, first...), []byte("\n{not-json}\n")...), second...)
-	raw = append(raw, '\n')
-	if err := os.WriteFile(FilePath(dir, "legacy-thread"), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	history, err := LoadHistoryRecords(dir, "legacy-thread", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history) != 2 || history[0].Content != "hello" || history[1].Content != "done" {
-		t.Fatalf("legacy import should skip corrupt lines and keep valid records, got %+v", history)
-	}
-}
-
-func TestLegacyHistoryImportRunsOnce(t *testing.T) {
-	dir := t.TempDir()
-	start := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
-	writeLegacyIndex(t, dir, []Session{{
-		ID:        "legacy-thread",
-		CreatedAt: start,
-		UpdatedAt: start,
-		CWD:       "/tmp/project",
-	}})
-	writeLegacyHistory(t, FilePath(dir, "legacy-thread"), []HistoryRecord{
-		{Role: "user", Content: "original", At: start},
-	})
-	history, err := LoadHistoryRecords(dir, "legacy-thread", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history) != 1 || history[0].Content != "original" {
-		t.Fatalf("unexpected initial import: %+v", history)
-	}
-
-	writeLegacyHistory(t, FilePath(dir, "legacy-thread"), []HistoryRecord{
-		{Role: "user", Content: "changed after import", At: start.Add(time.Minute)},
-	})
-	history, err = LoadHistoryRecords(dir, "legacy-thread", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history) != 1 || history[0].Content != "original" {
-		t.Fatalf("legacy import should be idempotent after marker is written, got %+v", history)
 	}
 }
 
@@ -742,47 +614,5 @@ func setSessionUpdatedAt(t *testing.T, dir, id string, at time.Time) {
 		s.UpdatedAt = at
 	}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func writeLegacyIndex(t *testing.T, dir string, sessions []Session) {
-	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.Create(IndexPath(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, sess := range sessions {
-		if err := enc.Encode(sess); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func mustMarshalJSONLine(t *testing.T, v any) []byte {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
-
-func writeLegacyHistory(t *testing.T, path string, records []HistoryRecord) {
-	t.Helper()
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, rec := range records {
-		if err := enc.Encode(rec); err != nil {
-			t.Fatal(err)
-		}
 	}
 }
