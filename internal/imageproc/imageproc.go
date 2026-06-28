@@ -12,6 +12,7 @@ package imageproc
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"image"
@@ -154,6 +155,11 @@ func (e *Error) Unwrap() error { return e.Cause }
 // Encode normalizes an image for prompt use. path is used only for error
 // context and may be empty (for in-memory payloads). data must be the raw
 // image bytes; callers are responsible for any base64 decoding before calling.
+//
+// Encode is deterministic given (data, opts.Mode), so identical inputs
+// across the process hit a process-wide LRU keyed by sha1(input)+Mode. The
+// returned *Result must be treated as read-only; callers that mutate
+// Result.Bytes would corrupt the cache for subsequent callers.
 func Encode(path string, data []byte, opts Options) (*Result, error) {
 	opts = opts.withDefaults()
 
@@ -161,6 +167,20 @@ func Encode(path string, data []byte, opts Options) (*Result, error) {
 		return nil, &Error{Kind: KindTooLarge, Path: path, Reason: fmt.Sprintf("input is %d bytes, max is %d", len(data), MaxInputBytes)}
 	}
 
+	key := cacheKey{digest: sha1.Sum(data), mode: opts.Mode}
+	if cached, ok := sharedCache.get(key); ok {
+		return cached, nil
+	}
+
+	result, err := encodeUncached(path, data, opts)
+	if err != nil {
+		return nil, err
+	}
+	sharedCache.put(key, result)
+	return result, nil
+}
+
+func encodeUncached(path string, data []byte, opts Options) (*Result, error) {
 	format, err := detectFormat(data)
 	if err != nil {
 		return nil, &Error{Kind: KindUnsupportedFormat, Path: path, Reason: err.Error()}
@@ -185,13 +205,32 @@ func Encode(path string, data []byte, opts Options) (*Result, error) {
 		return nil, &Error{Kind: KindDecode, Path: path, Cause: err}
 	}
 
+	// v2: bake JPEG EXIF orientation into pixels. Go's image/jpeg
+	// auto-applies EXIF orientation on decode, so to avoid double rotation
+	// we detect the orientation before decode, strip the EXIF APP1 segment
+	// from the input, and run our own applyOrientation on the now-pre-
+	// rotation pixels. PNG/WebP EXIF is deferred — neither stdlib decoder
+	// surfaces it. ModeOriginal forwards raw bytes unchanged.
+	needsReencode := false
+	if format == formatJPEG {
+		if orient := exifOrientation(data); orient != 1 {
+			if stripped, ok := stripExifSegment(data); ok {
+				if img, err = decode(bytes.NewReader(stripped), format); err != nil {
+					return nil, &Error{Kind: KindDecode, Path: path, Cause: err}
+				}
+			}
+			img = applyOrientation(img, orient)
+			needsReencode = true
+		}
+	}
+
 	bounds := img.Bounds()
 	width := uint32(bounds.Dx())
 	height := uint32(bounds.Dy())
 
 	targetW, targetH, needsResize := computeTarget(width, height, opts)
 
-	if !needsResize {
+	if !needsResize && !needsReencode {
 		return &Result{
 			Bytes:     append([]byte(nil), data...),
 			MediaType: formatToMime(format),
@@ -201,8 +240,18 @@ func Encode(path string, data []byte, opts Options) (*Result, error) {
 		}, nil
 	}
 
-	dst := image.NewRGBA(image.Rect(0, 0, int(targetW), int(targetH)))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
+	var dst *image.NRGBA
+	if needsResize {
+		dst = image.NewNRGBA(image.Rect(0, 0, int(targetW), int(targetH)))
+		draw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
+	} else {
+		// needsReencode but no resize: copy pixels into a fresh NRGBA so
+		// the encoder receives the post-orientation image. draw.Src is
+		// the right op here because we want straight copy, not alpha
+		// compositing.
+		dst = image.NewNRGBA(bounds)
+		draw.Draw(dst, dst.Bounds(), img, bounds.Min, draw.Src)
+	}
 
 	outBytes, outMime, err := encodeResized(dst, format, opts.Quality)
 	if err != nil {
@@ -212,9 +261,9 @@ func Encode(path string, data []byte, opts Options) (*Result, error) {
 	return &Result{
 		Bytes:     outBytes,
 		MediaType: outMime,
-		Width:     targetW,
-		Height:    targetH,
-		Resized:   true,
+		Width:     uint32(dst.Bounds().Dx()),
+		Height:    uint32(dst.Bounds().Dy()),
+		Resized:   needsResize || needsReencode,
 	}, nil
 }
 
