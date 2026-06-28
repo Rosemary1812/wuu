@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -559,7 +560,11 @@ function visibleTurnIDForScrollNode(
   return fallbackTurnID ?? turns[turns.length - 1]?.id;
 }
 
-function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
+const TurnHoverPreview = memo(function TurnHoverPreview({
+  turn,
+}: {
+  turn: Turn;
+}): JSX.Element {
   const firstUserText = firstUserMessageText(turn);
   const snippet = turnReplySnippet(turn);
   const body = snippet ? snippet.text : "暂无回复";
@@ -575,4 +580,4 @@ function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
       </div>
     </div>
   );
-}
+});
