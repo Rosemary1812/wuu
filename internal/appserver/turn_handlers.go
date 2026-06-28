@@ -851,6 +851,7 @@ func providerStateRecord(state *providers.ProviderStateSummary) sessiontrace.Pro
 		return sessiontrace.ProviderStateRecord{}
 	}
 	return sessiontrace.ProviderStateRecord{
+		StepIndex:              state.StepIndex,
 		Provider:               state.Provider,
 		Protocol:               state.Protocol,
 		ReplayMode:             state.ReplayMode,

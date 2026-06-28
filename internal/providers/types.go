@@ -258,6 +258,10 @@ type ChatRequest struct {
 	Tools       []ToolDefinition
 	Temperature float64
 	CacheHint   *CacheHint
+	// StepIndex is agent-loop metadata for correlating request-shape,
+	// provider-state, and usage telemetry. Provider clients must not send it
+	// on the wire.
+	StepIndex int
 	// MaxTokens caps the model's output length. Zero means the provider
 	// should use its own default. If the provider hits this cap, the
 	// response completes with FinishReason=length.
@@ -341,6 +345,7 @@ const (
 // ProviderStateSummary carries metadata-only provider replay/request-state
 // details. It intentionally avoids raw provider ids and prompt text.
 type ProviderStateSummary struct {
+	StepIndex              int    `json:"step_index"`
 	Provider               string `json:"provider,omitempty"`
 	Protocol               string `json:"protocol,omitempty"`
 	ReplayMode             string `json:"replay_mode,omitempty"`

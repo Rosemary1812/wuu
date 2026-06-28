@@ -916,6 +916,7 @@ func emitTurnStreamEvent(opts Options, params appserver.TurnEventNotification) {
 			"type":                      "provider_state",
 			"thread_id":                 params.ThreadID,
 			"turn_id":                   params.TurnID,
+			"step_index":                state.StepIndex,
 			"provider":                  state.Provider,
 			"protocol":                  state.Protocol,
 			"replay_mode":               state.ReplayMode,

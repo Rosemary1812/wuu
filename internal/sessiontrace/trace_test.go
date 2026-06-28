@@ -77,6 +77,7 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			}},
 		}},
 		[]ProviderStateRecord{{
+			StepIndex:              1,
 			Provider:               "openai",
 			Protocol:               "responses_websocket",
 			ReplayMode:             "previous_response_id",
@@ -153,6 +154,7 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"type":"provider_states"`,
+		`"step_index":1`,
 		`"protocol":"responses_websocket"`,
 		`"replay_mode":"previous_response_id"`,
 		`"previous_response_id_used":true`,
@@ -217,6 +219,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			BlockKinds:        []string{"ENVIRONMENT", "TOOL_POLICY"},
 		}},
 		[]ProviderStateRecord{{
+			StepIndex:              0,
 			Provider:               "openai",
 			Protocol:               "responses_websocket",
 			ReplayMode:             "full_request",
@@ -252,6 +255,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		t.Fatalf("context requests missing: %+v", summary)
 	}
 	if len(summary.ProviderStates) != 1 ||
+		summary.ProviderStates[0].StepIndex != 0 ||
 		summary.ProviderStates[0].Protocol != "responses_websocket" ||
 		summary.ProviderStates[0].ReplayMode != "full_request" ||
 		summary.ProviderStates[0].FullInputItems != 4 {

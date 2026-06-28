@@ -407,6 +407,72 @@ func TestStreamRunner_EnrichesToolCallDisplay(t *testing.T) {
 	}
 }
 
+func TestStreamRunnerAnnotatesProviderStateWithStepIndex(t *testing.T) {
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{
+				events: []providers.StreamEvent{
+					{
+						Type: providers.EventProviderState,
+						ProviderState: &providers.ProviderStateSummary{
+							Provider:   "openai",
+							Protocol:   "responses_websocket",
+							ReplayMode: "full_request",
+						},
+					},
+					{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: "call-read", Name: "read_file"}},
+					{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call-read", Name: "read_file", Arguments: `{"path":"README.md"}`}},
+					{Type: providers.EventDone},
+				},
+			},
+			{
+				events: []providers.StreamEvent{
+					{
+						Type: providers.EventProviderState,
+						ProviderState: &providers.ProviderStateSummary{
+							Provider:               "openai",
+							Protocol:               "responses_websocket",
+							ReplayMode:             "previous_response_id",
+							PreviousResponseIDUsed: true,
+						},
+					},
+					{Type: providers.EventContentDelta, Content: "done"},
+					{Type: providers.EventDone},
+				},
+			},
+		},
+	}
+	tools := &fakeLoopTools{
+		defs:    []providers.ToolDefinition{{Name: "read_file"}},
+		results: map[string]string{"call-read": `{"content":"hi"}`},
+	}
+	var states []providers.ProviderStateSummary
+	runner := StreamRunner{
+		Client: client,
+		Model:  "test-model",
+		Tools:  tools,
+		OnEvent: func(ev providers.StreamEvent) {
+			if ev.Type == providers.EventProviderState && ev.ProviderState != nil {
+				states = append(states, *ev.ProviderState)
+			}
+		},
+	}
+
+	result, err := runner.Run(context.Background(), "inspect")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("unexpected result: %q", result)
+	}
+	if len(states) != 2 {
+		t.Fatalf("provider states = %+v", states)
+	}
+	if states[0].StepIndex != 0 || states[1].StepIndex != 1 {
+		t.Fatalf("provider state step indexes not aligned with model steps: %+v", states)
+	}
+}
+
 func TestStreamRunner_AllowsNaturalEmptyCompletionWithoutPersistingAssistantMessage(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{

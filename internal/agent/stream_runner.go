@@ -975,6 +975,11 @@ func (s *streamStep) runStreamWithReconnect(
 					*usage = event.Usage
 				}
 
+			case providers.EventProviderState:
+				if event.ProviderState != nil {
+					event.ProviderState.StepIndex = req.StepIndex
+				}
+
 			case providers.EventError:
 				if event.Error != nil {
 					streamErr = event.Error

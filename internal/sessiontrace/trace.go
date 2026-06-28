@@ -200,6 +200,7 @@ type SystemSectionRecord struct {
 }
 
 type ProviderStateRecord struct {
+	StepIndex              int    `json:"step_index"`
 	Provider               string `json:"provider,omitempty"`
 	Protocol               string `json:"protocol,omitempty"`
 	ReplayMode             string `json:"replay_mode,omitempty"`

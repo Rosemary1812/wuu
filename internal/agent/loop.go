@@ -180,6 +180,7 @@ func RunToolLoop(
 			Temperature:     cfg.Temperature,
 			MaxTokens:       currentMaxTokens,
 			CacheHint:       cacheHint,
+			StepIndex:       stepIdx,
 			Effort:          cfg.Effort,
 			ProviderOptions: provideroptions.Clone(cfg.ProviderOptions),
 		}

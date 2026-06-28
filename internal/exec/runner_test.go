@@ -201,6 +201,7 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 			Event: appserver.StreamEventPayload{
 				Type: providers.EventProviderState,
 				ProviderState: &providers.ProviderStateSummary{
+					StepIndex:              1,
 					Provider:               "openai",
 					Protocol:               "responses_websocket",
 					ReplayMode:             "previous_response_id",
@@ -275,7 +276,8 @@ func TestRunJSONLEmitsStableEvents(t *testing.T) {
 		t.Fatalf("unexpected system section: %+v", sections[0])
 	}
 	providerState := events[4]
-	if providerState["provider"] != "openai" ||
+	if providerState["step_index"] != float64(1) ||
+		providerState["provider"] != "openai" ||
 		providerState["protocol"] != "responses_websocket" ||
 		providerState["replay_mode"] != "previous_response_id" ||
 		providerState["previous_response_id_used"] != true ||

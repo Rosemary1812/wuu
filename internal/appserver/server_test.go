@@ -2058,6 +2058,9 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	if secondState == nil || secondState.ReplayMode != "previous_response_id" || !secondState.PreviousResponseIDUsed {
 		t.Fatalf("same app-server thread did not use previous_response_id on second turn: first=%+v second=%+v", firstState, secondState)
 	}
+	if firstState.StepIndex != 0 || secondState.StepIndex != 0 {
+		t.Fatalf("single-step turns should annotate provider state with step_index=0: first=%+v second=%+v", firstState, secondState)
+	}
 	if secondState.FullInputItems <= secondState.InputItems || secondState.DeltaInputItems != secondState.InputItems {
 		t.Fatalf("second provider state should report a smaller delta input: %+v", secondState)
 	}
