@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -72,13 +73,15 @@ export function ConversationTurnRail({
   turns,
   activeTurnID,
   scrollContainerRef,
+  getScrollContainer,
   maxVisibleTurns = CONVERSATION_TURN_RAIL_VISIBLE_LIMIT,
   onWheelScrollAway,
   onSelectQueryHistory,
 }: {
   turns: Turn[];
   activeTurnID?: string;
-  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
+  getScrollContainer?: () => HTMLElement | null;
   maxVisibleTurns?: number;
   onWheelScrollAway?: () => void;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
@@ -86,6 +89,10 @@ export function ConversationTurnRail({
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
   const [viewportTurnID, setViewportTurnID] = useState<string | undefined>();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const resolveScrollContainer = useCallback(
+    () => getScrollContainer?.() ?? scrollContainerRef?.current ?? null,
+    [getScrollContainer, scrollContainerRef],
+  );
 
   const isEmpty = turns.length === 0;
   const windowFocusTurnID = viewportTurnID ?? activeTurnID;
@@ -114,7 +121,7 @@ export function ConversationTurnRail({
   }, [hoveredTurnID, visibleTurns]);
 
   useEffect(() => {
-    const scrollNode = scrollContainerRef?.current;
+    const scrollNode = resolveScrollContainer();
     if (!scrollNode || turns.length === 0) {
       setViewportTurnID(undefined);
       return;
@@ -146,7 +153,7 @@ export function ConversationTurnRail({
       scrollNode.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
     };
-  }, [scrollContainerRef, turns]);
+  }, [resolveScrollContainer, turns]);
 
   // Magnet the hover to the bar closest to the mouse Y. This keeps the
   // hover continuous when the mouse crosses the gap between bars (the
@@ -212,7 +219,7 @@ export function ConversationTurnRail({
     }
 
     function handleWheel(event: WheelEvent): void {
-      const scrollNode = scrollContainerRef?.current;
+      const scrollNode = resolveScrollContainer();
       if (!scrollNode) {
         return;
       }
@@ -233,7 +240,7 @@ export function ConversationTurnRail({
 
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [onWheelScrollAway, scrollContainerRef]);
+  }, [onWheelScrollAway, resolveScrollContainer]);
 
   // Click a bar through the same query-history selection path used by
   // the docked environment-panel list. That parent path disables

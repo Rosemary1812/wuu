@@ -43,12 +43,14 @@ function renderRail({
   turns,
   activeTurnID,
   scrollContainerRef,
+  getScrollContainer,
   onWheelScrollAway,
   onSelectQueryHistory,
 }: {
   turns?: Turn[];
   activeTurnID?: string;
-  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
+  getScrollContainer?: () => HTMLElement | null;
   onWheelScrollAway?: () => void;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): void {
@@ -61,6 +63,7 @@ function renderRail({
         turns={turns ?? [turn("turn-1", "first query"), turn("turn-2", "second query")]}
         activeTurnID={activeTurnID}
         scrollContainerRef={scrollContainerRef}
+        getScrollContainer={getScrollContainer}
         onWheelScrollAway={onWheelScrollAway}
         onSelectQueryHistory={onSelectQueryHistory}
       />,
@@ -157,6 +160,32 @@ describe("ConversationTurnRail", () => {
     expect(scrollNode.scrollTop).toBe(40);
     expect(scrollAwayIntentCount).toBe(1);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("prefers the resolved active scroll container over the wrapper ref", () => {
+    const wrapperNode = document.createElement("div");
+    wrapperNode.scrollTop = 10;
+    const activePaneNode = document.createElement("section");
+    activePaneNode.scrollTop = 120;
+    renderRail({
+      scrollContainerRef: { current: wrapperNode },
+      getScrollContainer: () => activePaneNode,
+      onSelectQueryHistory: () => {},
+    });
+
+    const rail = container?.querySelector<HTMLElement>(".conversation-turn-rail");
+    act(() => {
+      rail?.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          deltaY: -80,
+        }),
+      );
+    });
+
+    expect(activePaneNode.scrollTop).toBe(40);
+    expect(wrapperNode.scrollTop).toBe(10);
   });
 
   it("centers the capped window around the focused turn", () => {

@@ -1153,6 +1153,12 @@ export function App(): JSX.Element {
     showingWorkspaceMode: Boolean(showingWorkspaceMode),
     initialized: Boolean(state.initialized),
   });
+  const conversationRailScrollContainer = useCallback((): HTMLElement | null => {
+    if (splitConversation) {
+      return splitPaneRefs.current[state.activePane] ?? null;
+    }
+    return conversationScrollRef.current;
+  }, [conversationScrollRef, splitConversation, splitPaneRefs, state.activePane]);
   const handleTurnCollapseComplete = useCallback(() => {
     scheduleStreamScroll();
   }, [scheduleStreamScroll]);
@@ -5219,6 +5225,7 @@ export function App(): JSX.Element {
           turns={turns}
           activeTurnID={turns[turns.length - 1]?.id}
           scrollContainerRef={conversationScrollRef}
+          getScrollContainer={conversationRailScrollContainer}
           onWheelScrollAway={disableConversationAutoFollow}
           onSelectQueryHistory={handleQueryHistorySelect}
         />
