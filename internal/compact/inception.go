@@ -38,7 +38,7 @@ func BuildContextAnchorMessage(anchorID int) providers.ChatMessage {
 		Role: "user",
 		Name: ContextAnchorMessageName,
 		Content: wrapInternalContextContent(
-			fmt.Sprintf("%s\nanchor_id: %d\nThis is an internal conversation checkpoint. Use the inception tool with this anchor_id when sending a D-Mail-style continuation summary back here. Conversation context after this checkpoint can be replaced; files, processes, browser state, remote systems, and other external state are not rolled back.",
+			fmt.Sprintf("%s\nanchor_id: %d\nInternal D-Mail checkpoint. When recent context after here can be replaced by a continuation summary, use inception with this anchor_id; if inception is not visible, first call tool_search select:inception. Only conversation history rewinds; files, processes, browser, and remote state stay current.",
 				ContextAnchorPrefix,
 				anchorID,
 			),

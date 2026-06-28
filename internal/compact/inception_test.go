@@ -17,6 +17,11 @@ func TestContextAnchorRoundTrip(t *testing.T) {
 	if !ok || id != 7 {
 		t.Fatalf("ContextAnchorIDFromMessage = %d,%v; want 7,true", id, ok)
 	}
+	for _, want := range []string{"tool_search select:inception", "Only conversation history rewinds"} {
+		if !strings.Contains(msg.Content, want) {
+			t.Fatalf("anchor message missing %q:\n%s", want, msg.Content)
+		}
+	}
 	next := NextContextAnchorID([]providers.ChatMessage{
 		BuildContextAnchorMessage(2),
 		BuildContextAnchorMessage(7),
