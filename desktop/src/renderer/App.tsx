@@ -5219,6 +5219,7 @@ export function App(): JSX.Element {
           turns={turns}
           activeTurnID={turns[turns.length - 1]?.id}
           scrollContainerRef={conversationScrollRef}
+          onWheelScrollAway={disableConversationAutoFollow}
           onSelectQueryHistory={handleQueryHistorySelect}
         />
 

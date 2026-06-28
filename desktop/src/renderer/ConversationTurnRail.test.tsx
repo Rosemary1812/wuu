@@ -43,11 +43,13 @@ function renderRail({
   turns,
   activeTurnID,
   scrollContainerRef,
+  onWheelScrollAway,
   onSelectQueryHistory,
 }: {
   turns?: Turn[];
   activeTurnID?: string;
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  onWheelScrollAway?: () => void;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): void {
   container = document.createElement("div");
@@ -59,6 +61,7 @@ function renderRail({
         turns={turns ?? [turn("turn-1", "first query"), turn("turn-2", "second query")]}
         activeTurnID={activeTurnID}
         scrollContainerRef={scrollContainerRef}
+        onWheelScrollAway={onWheelScrollAway}
         onSelectQueryHistory={onSelectQueryHistory}
       />,
     );
@@ -131,9 +134,13 @@ describe("ConversationTurnRail", () => {
 
   it("scrolls the conversation when the user wheels over the rail", () => {
     const scrollNode = document.createElement("div");
-    scrollNode.scrollTop = 40;
+    scrollNode.scrollTop = 120;
+    let scrollAwayIntentCount = 0;
     renderRail({
       scrollContainerRef: { current: scrollNode },
+      onWheelScrollAway: () => {
+        scrollAwayIntentCount += 1;
+      },
       onSelectQueryHistory: () => {},
     });
 
@@ -141,13 +148,14 @@ describe("ConversationTurnRail", () => {
     const event = new WheelEvent("wheel", {
       bubbles: true,
       cancelable: true,
-      deltaY: 80,
+      deltaY: -80,
     });
     act(() => {
       rail?.dispatchEvent(event);
     });
 
-    expect(scrollNode.scrollTop).toBe(120);
+    expect(scrollNode.scrollTop).toBe(40);
+    expect(scrollAwayIntentCount).toBe(1);
     expect(event.defaultPrevented).toBe(true);
   });
 

@@ -73,12 +73,14 @@ export function ConversationTurnRail({
   activeTurnID,
   scrollContainerRef,
   maxVisibleTurns = CONVERSATION_TURN_RAIL_VISIBLE_LIMIT,
+  onWheelScrollAway,
   onSelectQueryHistory,
 }: {
   turns: Turn[];
   activeTurnID?: string;
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
   maxVisibleTurns?: number;
+  onWheelScrollAway?: () => void;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): JSX.Element | null {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
@@ -220,6 +222,9 @@ export function ConversationTurnRail({
       }
 
       const previousScrollTop = scrollNode.scrollTop;
+      if (deltaY < 0 && previousScrollTop > 0) {
+        onWheelScrollAway?.();
+      }
       scrollNode.scrollTop = previousScrollTop + deltaY;
       if (scrollNode.scrollTop !== previousScrollTop) {
         event.preventDefault();
@@ -228,7 +233,7 @@ export function ConversationTurnRail({
 
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [scrollContainerRef]);
+  }, [onWheelScrollAway, scrollContainerRef]);
 
   // Click a bar through the same query-history selection path used by
   // the docked environment-panel list. That parent path disables
