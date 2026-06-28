@@ -203,7 +203,7 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
       return {
         ...state,
         running: false,
-        status: "wuu 遇到内部错误。后台服务已退出，请重启桌面端。",
+        status: "wuu 内部错误",
       };
   }
 }

@@ -688,7 +688,11 @@ export function Composer({
                     </button>
                   </>
                 )}
-                {statusText ? <span className="status-label">{statusText}</span> : null}
+                {statusText ? (
+                  <span className="status-label" title={statusText}>
+                    <span className="status-label-text">{statusText}</span>
+                  </span>
+                ) : null}
                 <button
                   className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
                   type="button"

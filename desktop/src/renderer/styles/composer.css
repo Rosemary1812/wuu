@@ -691,13 +691,43 @@
   flex: 1 1 8px;
 }
 
-.status-label {
+/* The composer status row is a filled chip — same family as the inline
+   turn notices above. The host sizes to its content (no growth) so the
+   chip sits naturally between the runtime picker and the send button. */
+.status-label,
+.split-composer-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
-  overflow: hidden;
-  color: var(--ink-muted);
+  flex: 0 0 auto;
+  background: var(--surface-3);
+  color: var(--ink);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
   font-size: var(--font-ui);
-  text-overflow: ellipsis;
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  max-width: min(360px, 100%);
+}
+
+.status-label::before,
+.status-label::after,
+.split-composer-status::before,
+.split-composer-status::after {
+  display: none;
+}
+
+.status-label-text,
+.split-composer-status-text {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .composer-action-button {

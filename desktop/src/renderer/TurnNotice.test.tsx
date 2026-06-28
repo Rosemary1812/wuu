@@ -14,7 +14,8 @@
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ContextCompactionNotice } from "./TurnNotice";
+import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
+import { userFacingErrorForMessage } from "./UserFacingErrors";
 
 beforeAll(() => {
   // jsdom does not lay out real heights. Stub getBoundingClientRect so
@@ -139,5 +140,49 @@ describe("ContextCompactionNotice", () => {
       "当前对话仍保留原上下文",
     );
     expect(host.textContent).not.toContain("上下文已压缩");
+  });
+});
+
+describe("TurnNotice compact chip", () => {
+  it("renders the title as the only visible label and moves the full detail into a hover tooltip", () => {
+    const display = userFacingErrorForMessage("connection reset by peer", "turn");
+    const host = mount(<TurnNotice display={display} />);
+    const aside = host.querySelector("aside.turn-event-notice");
+    expect(aside).not.toBeNull();
+    // Tone class drives the visual treatment.
+    expect(aside?.classList.contains(display.tone)).toBe(true);
+    // The title element shows only the short title (single-line).
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(display.title);
+    // The full detail is reachable via the host's `title` attribute and
+    // mirrored on `aria-label` for assistive tech.
+    expect(aside?.getAttribute("title")).toContain(display.title);
+    expect(aside?.getAttribute("title")).toContain(display.detail);
+    expect(aside?.getAttribute("aria-label")).toContain(display.title);
+    expect(aside?.getAttribute("aria-label")).toContain(display.detail);
+    // Detail stays in the DOM for the hover text path, and actions remain
+    // clickable so the recovery path is not lost.
+    expect(host.querySelector(".turn-event-detail")?.textContent).toBe(display.detail);
+    expect(host.querySelector(".turn-notice-actions")).not.toBeNull();
+  });
+
+  it("does not render the actions row when the display has no recommended actions", () => {
+    const display = userFacingErrorForMessage("context canceled", "turn");
+    const host = mount(
+      <TurnNotice display={{ ...display, recommendedActions: [] }} />,
+    );
+    expect(host.querySelector(".turn-notice-actions")).toBeNull();
+    // The host still carries the hover text and title element.
+    const aside = host.querySelector("aside.turn-event-notice");
+    expect(aside?.getAttribute("title")).toContain(display.title);
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(display.title);
+  });
+
+  it("applies the auth tone to the host aside", () => {
+    const display = userFacingErrorForMessage("401 unauthorized", "turn");
+    const host = mount(<TurnNotice display={display} />);
+    const aside = host.querySelector("aside.turn-event-notice");
+    expect(aside?.classList.contains("auth")).toBe(true);
+    // Auth is the only category that resolves to the "auth" tone today.
+    expect(display.tone).toBe("auth");
   });
 });

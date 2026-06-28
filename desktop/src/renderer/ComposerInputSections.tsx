@@ -208,7 +208,13 @@ export function SplitPaneComposer({
           >
             <Paperclip aria-hidden="true" />
           </button>
-          {statusText ? <span className="split-composer-status">{statusText}</span> : <span />}
+          {statusText ? (
+            <span className="split-composer-status" title={statusText}>
+              <span className="split-composer-status-text">{statusText}</span>
+            </span>
+          ) : (
+            <span />
+          )}
           {running ? (
             <button
               className="composer-action-button composer-stop-button"

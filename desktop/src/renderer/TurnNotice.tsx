@@ -29,12 +29,20 @@ export function TurnNotice({
   onAction?: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const actions = display.recommendedActions;
+  // The inline notice is intentionally compact: the full explanation moves
+  // to the `title` attribute so it is available on hover without taking a
+  // second line, while recommended actions stay visible and clickable.
+  const hoverText = display.detail
+    ? `${display.title} — ${display.detail}`
+    : display.title;
   return (
     <aside
       className={`turn-notice turn-event-notice ${display.tone}`}
       role={
         display.tone === "error" || display.tone === "auth" ? "alert" : "status"
       }
+      aria-label={hoverText}
+      title={hoverText}
     >
       <span className="turn-event-content">
         <strong className="turn-event-title">{display.title}</strong>
@@ -71,9 +79,9 @@ export function ContextCompactionNotice({
 }): JSX.Element {
   // in_progress reuses the shared live-gray sweep used by active
   // process rows, reasoning labels, and previews. The host itself is a
-  // centered label flanked by two fading dividers — no Archive icon, no
-  // detail copy. When the item flips to completed the host swaps to the
-  // established icon + copy layout.
+  // centered compact label — no Archive icon, no detail copy. When the
+  // item flips to completed the host swaps to the established icon + copy
+  // layout.
   if (status === "in_progress") {
     return (
       <aside
@@ -90,11 +98,15 @@ export function ContextCompactionNotice({
     );
   }
   const detail = contextCompactionDetail(text);
+  // The inline notice is a compact label. The full breakdown is moved to
+  // the `title` attribute so it is available on hover without taking a
+  // second visual line.
   return (
     <aside
       className="turn-notice turn-event-notice context-compaction-notice"
       role="status"
       aria-live="polite"
+      title={detail}
     >
       <span className="turn-event-content">
         <strong className="turn-event-title">{contextCompactionTitle(text)}</strong>

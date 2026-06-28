@@ -4230,6 +4230,7 @@ pre {
 .turn-notice {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   color: var(--ink-tertiary);
   width: 100%;
@@ -4238,35 +4239,96 @@ pre {
 
 .turn-event-notice::before,
 .turn-event-notice::after {
-  content: "";
-  flex: 1;
-  min-width: 32px;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.32;
+  /* The status is a filled chip; the side lines are gone in favor of a
+     solid background so the user can read the status at a glance. */
+  display: none;
+}
+
+.turn-event-detail {
+  /* The inline notice is a compact chip. The full explanation lives in
+     the `title` attribute for hover, while recovery actions remain
+     visible and clickable. */
+  display: none;
 }
 
 .turn-event-content {
-  display: inline-grid;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   max-width: min(520px, 100%);
-  justify-items: center;
-  gap: 2px;
   text-align: center;
-}
-
-.turn-event-title {
-  color: currentColor;
+  background: var(--surface-3);
+  color: var(--ink);
+  border-radius: var(--radius-pill);
+  padding: 4px 14px;
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.4;
+}
+
+.turn-event-title {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.turn-event-content .turn-notice-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: 0;
+  margin-left: 10px;
+  column-gap: 8px;
+  row-gap: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.turn-event-content .turn-notice-action {
+  color: inherit;
+  opacity: 0.8;
+  border-bottom-color: color-mix(in srgb, currentColor 34%, transparent);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.turn-event-content .turn-notice-action:hover {
+  opacity: 1;
+  border-bottom-color: currentColor;
 }
 
 .turn-event-detail {
   color: color-mix(in srgb, currentColor 72%, var(--ink) 28%);
   font-size: var(--font-ui);
   line-height: 1.45;
+}
+
+/* Tone-aware chip colors. The chip overrides the parent tone color with
+   a soft-tint background and the matching dark text. Reuses the existing
+   design tokens (--danger-soft, --turn-warning-bg, etc.) so the chip
+   reads as the same family as the rest of the app. */
+.turn-notice.warning .turn-event-content {
+  background: var(--turn-warning-bg);
+  color: var(--turn-warning-text);
+}
+
+.turn-notice.auth .turn-event-content {
+  background: color-mix(in srgb, #9a3412 14%, var(--surface-1));
+  color: #9a3412;
+}
+
+.turn-notice.error .turn-event-content {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.turn-notice.context-compaction-notice .turn-event-content {
+  background: var(--surface-2);
+  color: var(--ink-muted);
 }
 
 .turn-notice.warning {
