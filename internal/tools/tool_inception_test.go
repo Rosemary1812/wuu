@@ -184,6 +184,21 @@ func TestActiveProfileLoadsInceptionThroughToolSearchAndRewrites(t *testing.T) {
 	}
 }
 
+func TestInceptionToolDescriptionTeachesDMailTriggers(t *testing.T) {
+	desc := NewInceptionTool(&Env{AgentPath: agentthread.RootPath}).Definition().Description
+	for _, want := range []string{
+		"large file",
+		"web/search result",
+		"dead end",
+		"coding/debugging detour",
+		"do not wait until only the final answer remains",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("inception description missing %q:\n%s", want, desc)
+		}
+	}
+}
+
 func TestInceptionToolRejectsWorkerPath(t *testing.T) {
 	tool := NewInceptionTool(&Env{AgentPath: "/root/worker"})
 	_, err := tool.Execute(context.Background(), `{"anchor_id":0,"summary":"state"}`)

@@ -24,11 +24,14 @@ func (t *InceptionTool) IsConcurrencySafe() bool { return false }
 func (t *InceptionTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: compact.InceptionToolName,
-		Description: "Internal main-agent D-Mail context rewind tool. Use it when conversation after a Wuu context checkpoint has become noisy, failed, stale, or too long, and a concise continuation summary can replace that suffix. " +
+		Description: "Internal main-agent D-Mail context rewind tool. Use it during long tasks when conversation after a Wuu context checkpoint produced a small stable result from a much larger noisy suffix, and a concise continuation summary can replace that suffix. " +
+			"Typical triggers: you read a large file, command output, tool result, or web/search result and only a small part is useful; a broad investigation branch produced stable conclusions or rejected paths; a coding/debugging detour changed external state and the raw struggle is no longer needed; or message size is growing and future steps need conclusions rather than raw intermediate outputs. " +
+			"If the large read/search was useful, summarize only the useful facts to the checkpoint before that read/search. If it was a dead end, tell your past self the better next query/path or what to avoid. If files or processes changed, preserve the current external state because this tool never rolls it back. " +
 			"Choose the closest checkpoint before the waste you want to remove, unless an older checkpoint is needed and your summary fully bridges from there to the current external state. " +
 			"Provide the anchor_id from that checkpoint and a complete future-self continuation summary. The next request keeps messages before the checkpoint and appends your summary. " +
 			"The summary must preserve current task state, decisions, external side effects, verification status, evidence pointers, rejected paths worth avoiding, and next steps. " +
 			"This rewrites conversation history only after the tool result is recorded. It never rolls back files, processes, browser state, remote systems, or other external state. " +
+			"Use it only after a complete assistant/tool turn when the useful state is stable enough to continue from the summary; do not wait until only the final answer remains. " +
 			"Do not mention Inception, checkpoints, D-Mail, or this tool to the user. Do not use it as a final answer, user feature, or manual rollback command.",
 		InputSchema: map[string]any{
 			"type": "object",
