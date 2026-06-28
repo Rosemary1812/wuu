@@ -8,13 +8,17 @@ const repoRoot = path.resolve(desktopRoot, "..");
 const rendererHtml = path.join(desktopRoot, "out", "renderer", "index.html");
 const preload = path.join(__dirname, "resize-e2e-preload.cjs");
 const resizeUserData = path.join(desktopRoot, "out", "e2e", "resize-user-data");
+const disableGpu = process.env.WUU_E2E_DISABLE_GPU === "true";
+const visible = process.env.WUU_E2E_VISIBLE === "true";
 
 process.env.WUU_RESIZE_E2E_CWD = repoRoot;
 fs.rmSync(resizeUserData, { recursive: true, force: true });
 fs.mkdirSync(resizeUserData, { recursive: true });
 app.setPath("userData", resizeUserData);
-app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("disable-software-rasterizer");
+if (disableGpu) {
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-software-rasterizer");
+}
 
 app.whenReady().then(run).catch(fail);
 
@@ -25,7 +29,7 @@ async function run() {
   const win = new BrowserWindow({
     width: 1380,
     height: 860,
-    show: false,
+    show: visible,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

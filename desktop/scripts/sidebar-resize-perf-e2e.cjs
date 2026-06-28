@@ -6,28 +6,35 @@ const { app, BrowserWindow } = require("electron");
 const desktopRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopRoot, "..");
 const rendererHtml = path.join(desktopRoot, "out", "renderer", "index.html");
+const rendererUrl = process.env.WUU_E2E_RENDERER_URL || "";
 const preload = path.join(__dirname, "resize-e2e-preload.cjs");
 const userData = path.join(desktopRoot, "out", "e2e", "sidebar-resize-user-data");
 const disableStorage = process.env.WUU_SIDEBAR_RESIZE_DISABLE_STORAGE === "true";
 const disableBackdrop = process.env.WUU_SIDEBAR_RESIZE_DISABLE_BACKDROP === "true";
+const disableGpu = process.env.WUU_E2E_DISABLE_GPU === "true";
+const visible = process.env.WUU_E2E_VISIBLE === "true";
 
 process.env.WUU_RESIZE_E2E_CWD = repoRoot;
 fs.rmSync(userData, { recursive: true, force: true });
 fs.mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
-app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("disable-software-rasterizer");
+if (disableGpu) {
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-software-rasterizer");
+}
 
 app.whenReady().then(run).catch(fail);
 
 async function run() {
-  assert.ok(fs.existsSync(rendererHtml), "Renderer build is missing. Run npm run build first.");
+  if (!rendererUrl) {
+    assert.ok(fs.existsSync(rendererHtml), "Renderer build is missing. Run npm run build first.");
+  }
   assert.ok(fs.existsSync(preload), "Resize E2E preload is missing.");
 
   const win = new BrowserWindow({
     width: 1380,
     height: 860,
-    show: false,
+    show: visible,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -45,7 +52,7 @@ async function run() {
     }
   });
 
-  await loadFile(win, rendererHtml);
+  await loadRenderer(win);
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 5000);
   await waitFor(win, () => Boolean(document.querySelector(".sidebar-resizer")), 3000);
   await delay(250);
@@ -132,7 +139,9 @@ async function run() {
     minWidth,
     maxWidth,
     disableStorage,
-    disableBackdrop
+    disableBackdrop,
+    disableGpu,
+    visible
   };
   console.log(JSON.stringify(summary, null, 2));
   assert.ok(resizingSamples.length > 0, "Sidebar resize marker should be set while dragging.");
@@ -140,6 +149,19 @@ async function run() {
 
   win.close();
   app.quit();
+}
+
+function loadRenderer(win) {
+  if (rendererUrl) {
+    return new Promise((resolve, reject) => {
+      const finish = () => resolve();
+      const failLoad = (_event, code, description) => reject(new Error(`Failed to load ${rendererUrl}: ${code} ${description}`));
+      win.webContents.once("did-finish-load", finish);
+      win.webContents.once("did-fail-load", failLoad);
+      win.loadURL(rendererUrl).catch(reject);
+    });
+  }
+  return loadFile(win, rendererHtml);
 }
 
 function loadFile(win, file) {
