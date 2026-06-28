@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { Turn } from "../shared/protocol";
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
 import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
@@ -11,7 +17,8 @@ import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./
 const RAIL_BAR_DEFAULT_WIDTH = 18;
 const RAIL_BAR_ADJACENT_WIDTH = 22;
 const RAIL_BAR_HOVERED_WIDTH = 40;
-export const CONVERSATION_TURN_RAIL_VISIBLE_LIMIT = 12;
+const WHEEL_LINE_DELTA_PX = 16;
+export const CONVERSATION_TURN_RAIL_VISIBLE_LIMIT = 36;
 
 export function conversationTurnRailWindow(
   turns: readonly Turn[],
@@ -196,6 +203,33 @@ export function ConversationTurnRail({
     };
   }, [turns]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    function handleWheel(event: WheelEvent): void {
+      const scrollNode = scrollContainerRef?.current;
+      if (!scrollNode) {
+        return;
+      }
+      const deltaY = wheelEventDeltaYPixels(event, scrollNode);
+      if (deltaY === 0) {
+        return;
+      }
+
+      const previousScrollTop = scrollNode.scrollTop;
+      scrollNode.scrollTop = previousScrollTop + deltaY;
+      if (scrollNode.scrollTop !== previousScrollTop) {
+        event.preventDefault();
+      }
+    }
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [scrollContainerRef]);
+
   // Click a bar through the same query-history selection path used by
   // the docked environment-panel list. That parent path disables
   // auto-follow before jumping, so streaming cannot snap the view back
@@ -263,6 +297,22 @@ export function ConversationTurnRail({
         })}
     </div>
   );
+}
+
+function wheelEventDeltaYPixels(
+  event: WheelEvent,
+  scrollNode: HTMLElement,
+): number {
+  if (event.deltaY !== 0) {
+    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+      return event.deltaY * WHEEL_LINE_DELTA_PX;
+    }
+    if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+      return event.deltaY * scrollNode.clientHeight;
+    }
+    return event.deltaY;
+  }
+  return event.deltaX;
 }
 
 function visibleTurnIDForScrollNode(

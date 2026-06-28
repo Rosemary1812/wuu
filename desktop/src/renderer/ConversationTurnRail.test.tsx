@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
@@ -42,10 +42,12 @@ function turn(id: string, query: string): Turn {
 function renderRail({
   turns,
   activeTurnID,
+  scrollContainerRef,
   onSelectQueryHistory,
 }: {
   turns?: Turn[];
   activeTurnID?: string;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): void {
   container = document.createElement("div");
@@ -56,6 +58,7 @@ function renderRail({
       <ConversationTurnRail
         turns={turns ?? [turn("turn-1", "first query"), turn("turn-2", "second query")]}
         activeTurnID={activeTurnID}
+        scrollContainerRef={scrollContainerRef}
         onSelectQueryHistory={onSelectQueryHistory}
       />,
     );
@@ -108,7 +111,7 @@ describe("ConversationTurnRail", () => {
 
   it("caps many turns to the latest visible window by default", () => {
     renderRail({
-      turns: Array.from({ length: 16 }, (_, index) =>
+      turns: Array.from({ length: 40 }, (_, index) =>
         turn(`turn-${index + 1}`, `query ${index + 1}`),
       ),
       onSelectQueryHistory: () => {},
@@ -117,13 +120,35 @@ describe("ConversationTurnRail", () => {
     const bars = container?.querySelectorAll<HTMLElement>(
       ".conversation-turn-rail-bar[role='button']",
     );
-    expect(bars).toHaveLength(12);
+    expect(bars).toHaveLength(36);
     expect(bars?.[0]?.getAttribute("aria-label")).toBe(
       "跳转到第 5 轮对话",
     );
-    expect(bars?.[11]?.getAttribute("aria-label")).toBe(
-      "跳转到第 16 轮对话",
+    expect(bars?.[35]?.getAttribute("aria-label")).toBe(
+      "跳转到第 40 轮对话",
     );
+  });
+
+  it("scrolls the conversation when the user wheels over the rail", () => {
+    const scrollNode = document.createElement("div");
+    scrollNode.scrollTop = 40;
+    renderRail({
+      scrollContainerRef: { current: scrollNode },
+      onSelectQueryHistory: () => {},
+    });
+
+    const rail = container?.querySelector<HTMLElement>(".conversation-turn-rail");
+    const event = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 80,
+    });
+    act(() => {
+      rail?.dispatchEvent(event);
+    });
+
+    expect(scrollNode.scrollTop).toBe(120);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("centers the capped window around the focused turn", () => {
