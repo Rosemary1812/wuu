@@ -5372,7 +5372,9 @@ export function App(): JSX.Element {
             type="button"
             className="jump-to-latest-pill"
             aria-label="跳到最新"
-            onClick={() => scrollConversationToBottom({ force: true })}
+            onClick={() =>
+              scrollConversationToBottom({ force: true, smooth: true })
+            }
           >
             <svg
               width="14"

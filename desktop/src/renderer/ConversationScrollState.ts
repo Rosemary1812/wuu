@@ -62,7 +62,16 @@ export function useConversationScrollState({
   dockComposerRef: (node: HTMLElement | null) => void;
   scheduleStreamScroll: () => void;
   handleConversationScroll: (scrolledNode?: HTMLElement) => void;
-  scrollConversationToBottom: (options?: { force?: boolean }) => void;
+  scrollConversationToBottom: (options?: {
+    force?: boolean;
+    /**
+     * Animate the jump with `scrollTo({ behavior: "smooth" })` so the
+     * viewport glides to the bottom instead of flashing past the content.
+     * Used by the "跳到最新" pill to match the rail-click jump feel.
+     * Falls back to the instant path when the OS asks for reduced motion.
+     */
+    smooth?: boolean;
+  }) => void;
   enableConversationAutoFollow: () => void;
   /**
    * Pause auto-follow so a programmatic scroll (e.g. query-history
@@ -183,17 +192,49 @@ export function useConversationScrollState({
     node: HTMLElement,
     top: number,
     autoFollow: boolean,
-    options: { revealScrollbar?: boolean } = {}
+    options: { revealScrollbar?: boolean; smooth?: boolean } = {}
   ): void {
     clearUserScrollAwayIntent();
-    suppressAutoFollowRearmRef.current = false;
-    node.scrollTop = top;
-    const actualTop = clampScrollTop(node, node.scrollTop);
-    if (Math.abs(node.scrollTop - actualTop) > 1) {
-      node.scrollTop = actualTop;
+    const smooth = options.smooth === true;
+    // Match the rail-click jump in `scrollAnchorIntoContainer`: when the
+    // user has not asked the OS to reduce motion, animate the scroll.
+    // The reduced-motion fallback uses the platform default ("auto"),
+    // which is the same one as the instant path — no extra branch.
+    // The optional chain must cover the whole `matchMedia(...).matches`
+    // expression — jsdom does not implement `matchMedia`, so the bare
+    // `?.(...)` followed by `.matches` would throw on the undefined result.
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    const behavior: ScrollBehavior =
+      smooth && !prefersReducedMotion ? "smooth" : "auto";
+    if (smooth) {
+      // Hold auto-follow re-engagement off until the smooth animation
+      // actually lands at the bottom (or the user takes manual control).
+      // The new "suppress active, not yet at latest" branch in
+      // handleConversationScroll reads this flag to keep the in-flight
+      // autoFollow state untouched while the browser is animating.
+      suppressAutoFollowRearmRef.current = true;
+      // `scrollTo({ behavior: "smooth" })` is asynchronous, so `node.scrollTop`
+      // is still the pre-scroll value here. The scroll event handler will
+      // see the marker on the first event and treat the animation as the
+      // single user-visible motion.
+      node.scrollTo({ top, behavior });
+      programmaticScrollTopRef.current = top;
+      // Leave `lastConversationScrollTopRef` at its previous value so the
+      // first frame of the animation is read as `scrolledDown`, which
+      // routes through the new suppression branch instead of the
+      // instant auto-follow re-engagement path.
+    } else {
+      suppressAutoFollowRearmRef.current = false;
+      node.scrollTop = top;
+      const actualTop = clampScrollTop(node, node.scrollTop);
+      if (Math.abs(node.scrollTop - actualTop) > 1) {
+        node.scrollTop = actualTop;
+      }
+      programmaticScrollTopRef.current = actualTop;
+      lastConversationScrollTopRef.current = actualTop;
     }
-    programmaticScrollTopRef.current = actualTop;
-    lastConversationScrollTopRef.current = actualTop;
     const nextAutoFollow =
       node.scrollHeight <= node.clientHeight ? true : autoFollow;
     setAutoFollow(nextAutoFollow);
@@ -205,13 +246,16 @@ export function useConversationScrollState({
   }
 
   const scrollConversationToBottom = useCallback(
-    (options: { force?: boolean } = {}): void => {
+    (
+      options: { force?: boolean; smooth?: boolean } = {}
+    ): void => {
       const node = conversationViewport();
       if (!node || (!options.force && !conversationAutoFollowRef.current)) {
         return;
       }
       applyProgrammaticScroll(node, node.scrollHeight, true, {
-        revealScrollbar: true
+        revealScrollbar: true,
+        smooth: options.smooth,
       });
     },
     [activePane, activeThreadID, setAutoFollow, splitConversation]
@@ -329,6 +373,27 @@ export function useConversationScrollState({
         setAutoFollow(false);
         setAutoFollowOverflowAnchor(node, false);
       }
+    } else if (suppressAutoFollowRearmRef.current) {
+      // "跳到最新" smooth scroll (or any other smooth programmatic jump)
+      // is in flight, and the viewport has not yet reached the bottom
+      // band. The previous branch already handled the atLatestView case;
+      // this branch covers the in-between frames.
+      //
+      // The smooth animation produces a stream of `scrolledDown` scroll
+      // events as the viewport glides to the bottom. If we let branch 4
+      // fire here, it would call `applyProgrammaticScroll(..., true)`
+      // and instantly snap the scroll back to scrollHeight, breaking the
+      // animation. Instead, track the position only and let the flag be
+      // cleared by the atLatestView branch above when the animation
+      // actually lands at the bottom (or by the user-initiated branches
+      // when the user takes manual control).
+      //
+      // Critically, do NOT call `setAutoFollow` here: doing so would
+      // flip `userScrolledAway` back to `true` mid-animation and make
+      // the "跳到最新" pill reappear while the viewport is still
+      // gliding to the bottom. The pill was hidden when the user
+      // clicked it; it should stay hidden until the animation lands.
+      nextAutoFollow = conversationAutoFollowRef.current;
     } else if (atLatestView) {
       suppressAutoFollowRearmRef.current = false;
       nextAutoFollow = true;
