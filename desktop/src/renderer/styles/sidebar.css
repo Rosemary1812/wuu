@@ -959,16 +959,26 @@
   font: inherit;
   font-weight: inherit;
   line-height: 1;
-  padding: 0 58px 0 0;
+  padding: 0;
   text-align: left;
 }
 
 .thread-row-main > .thread-row-title {
   min-width: 0;
   flex: 1;
+  clip-path: inset(0 0 0 0 round 0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition:
+    clip-path 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 120ms ease;
+}
+
+.thread-row:hover .thread-row-main > .thread-row-title,
+.thread-row:focus-within .thread-row-main > .thread-row-title {
+  clip-path: inset(0 58px 0 0 round 0);
+  opacity: 0.78;
 }
 
   
@@ -1039,6 +1049,13 @@
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, -50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-row-main > .thread-row-title,
+  .thread-row-actions {
+    transition: none;
+  }
 }
 
 .thread-row-action.active {

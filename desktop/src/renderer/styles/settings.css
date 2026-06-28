@@ -347,6 +347,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-width: 0;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink);
@@ -357,6 +358,13 @@
     background 140ms var(--menu-enter-easing),
     color 140ms var(--menu-enter-easing),
     transform 140ms var(--menu-enter-easing);
+}
+
+.settings-button > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-button:hover:not(:disabled) {
