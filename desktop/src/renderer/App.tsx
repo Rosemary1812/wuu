@@ -1423,37 +1423,55 @@ export function App(): JSX.Element {
     }));
   }
 
-  async function buildComposerAttachments(files: File[]): Promise<{
-    images: ComposerImage[];
-    files: ComposerFile[];
-  }> {
+  // Stream each encoded attachment back to the caller as soon as it's ready
+  // instead of waiting for the slowest file in the batch. Previously this
+  // resolved with `{ images, files }` only after `Promise.all` settled, so
+  // a single large paste made every other attachment wait too — the strip
+  // would jump from empty to fully populated, with the visible latency
+  // equal to the slowest file's encode + base64 time.
+  //
+  // Callers get an `onImage`/`onFile` callback per attachment and should
+  // `setState` immediately so React can interleave renders between files.
+  // Errors from any file still reject the returned Promise so the existing
+  // `try/catch` wrappers in the callers keep working.
+  async function buildComposerAttachments(
+    files: File[],
+    onImage: (image: ComposerImage) => void,
+    onFile: (file: ComposerFile) => void,
+  ): Promise<void> {
     const imageFiles = files.filter(isComposerImageFile);
     const pdfFiles = files.filter(isPDFFile);
-    return {
-      images: await Promise.all(
-        imageFiles.map((file) => composerImageFromFile(file)),
-      ),
-      files: await Promise.all(
-        pdfFiles.map((file) => composerFileFromFile(file)),
-      ),
-    };
+    await Promise.all([
+      ...imageFiles.map(async (file) => {
+        const image = await composerImageFromFile(file);
+        onImage(image);
+      }),
+      ...pdfFiles.map(async (file) => {
+        const pdf = await composerFileFromFile(file);
+        onFile(pdf);
+      }),
+    ]);
   }
 
   async function attachComposerAttachmentFiles(files: File[]): Promise<void> {
     if (files.length === 0) {
       return;
     }
+    const imageFiles = files.filter(isComposerImageFile);
+    const pdfFiles = files.filter(isPDFFile);
+    if (imageFiles.length === 0 && pdfFiles.length === 0) {
+      setState((current) => ({
+        ...current,
+        status: "仅支持图片和 PDF",
+      }));
+      return;
+    }
     try {
-      const attachments = await buildComposerAttachments(files);
-      if (attachments.images.length === 0 && attachments.files.length === 0) {
-        setState((current) => ({
-          ...current,
-          status: "仅支持图片和 PDF",
-        }));
-        return;
-      }
-      setComposerImages((current) => [...current, ...attachments.images]);
-      setComposerFiles((current) => [...current, ...attachments.files]);
+      await buildComposerAttachments(
+        files,
+        (image) => setComposerImages((current) => [...current, image]),
+        (file) => setComposerFiles((current) => [...current, file]),
+      );
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -1497,20 +1515,29 @@ export function App(): JSX.Element {
     if (files.length === 0) {
       return;
     }
-    try {
-      const attachments = await buildComposerAttachments(files);
-      if (attachments.images.length === 0 && attachments.files.length === 0) {
-        setState((current) => ({
-          ...current,
-          status: "仅支持图片和 PDF",
-        }));
-        return;
-      }
-      updateSplitComposerDraft(pane, (draft) => ({
-        ...draft,
-        images: [...draft.images, ...attachments.images],
-        files: [...draft.files, ...attachments.files],
+    const imageFiles = files.filter(isComposerImageFile);
+    const pdfFiles = files.filter(isPDFFile);
+    if (imageFiles.length === 0 && pdfFiles.length === 0) {
+      setState((current) => ({
+        ...current,
+        status: "仅支持图片和 PDF",
       }));
+      return;
+    }
+    try {
+      await buildComposerAttachments(
+        files,
+        (image) =>
+          updateSplitComposerDraft(pane, (draft) => ({
+            ...draft,
+            images: [...draft.images, image],
+          })),
+        (file) =>
+          updateSplitComposerDraft(pane, (draft) => ({
+            ...draft,
+            files: [...draft.files, file],
+          })),
+      );
     } catch (error) {
       setState((current) => ({
         ...current,

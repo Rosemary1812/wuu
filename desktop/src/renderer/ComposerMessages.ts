@@ -60,7 +60,7 @@ export async function composerFileFromFile(file: File): Promise<ComposerFile> {
   if (!isPDFFile(file)) {
     throw new Error("仅支持 PDF 文件");
   }
-  const data = arrayBufferToBase64(await file.arrayBuffer());
+  const data = await bufferToBase64(await file.arrayBuffer());
   return {
     id: nextComposerAttachmentID(),
     media_type: "application/pdf",
@@ -86,7 +86,7 @@ async function normalizeImageFileForPrompt(file: File): Promise<InputImage> {
   const original = await file.arrayBuffer();
   const passthrough = async (): Promise<InputImage> => ({
     media_type: mediaType,
-    data: arrayBufferToBase64(original)
+    data: await bufferToBase64(original)
   });
 
   try {
@@ -118,7 +118,7 @@ async function normalizeImageFileForPrompt(file: File): Promise<InputImage> {
         const blob = await canvasToBlob(canvas, strategy.mediaType, strategy.quality);
         const encoded = {
           media_type: strategy.mediaType,
-          data: arrayBufferToBase64(await blob.arrayBuffer())
+          data: await bufferToBase64(await blob.arrayBuffer())
         };
         fallback = encoded;
         if (blob.size <= IMAGE_TARGET_BYTES) {
@@ -168,14 +168,27 @@ function canvasToBlob(canvas: HTMLCanvasElement, mediaType: string, quality?: nu
   });
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
+// Encode ArrayBuffer to base64 via FileReader.readAsDataURL. The native
+// implementation runs off the JS main thread and is significantly faster
+// than a hand-rolled `btoa(String.fromCharCode(...))` loop, especially for
+// the multi-MB buffers we expect from clipboard image pastes. Returning a
+// Promise keeps the call sites uniform with the rest of the pipeline
+// (createImageBitmap, canvas.toBlob, etc.).
+function bufferToBase64(buffer: ArrayBuffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("无法编码图片"));
+        return;
+      }
+      const commaIndex = result.indexOf(",");
+      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("无法编码图片"));
+    reader.readAsDataURL(new Blob([buffer]));
+  });
 }
 
 function nextComposerAttachmentID(): string {
