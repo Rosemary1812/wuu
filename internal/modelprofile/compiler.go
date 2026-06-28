@@ -42,11 +42,11 @@ const (
 	ProfileGeneric ProfileKey = "generic"
 )
 
-// Compiler compiles a model profile into a tool surface. Compile is
-// given a forMainAgent flag so it can decide whether the surface should
-// advertise, hide, or omit main-agent-only recovery tools and worker-only
-// handoff tools such as agent_report. The surface is therefore consistent with
-// the runtime boundary instead of being filtered downstream.
+// Compiler compiles a model profile into a tool surface. Compile is given a
+// forMainAgent flag so it can decide whether the surface should advertise,
+// hide, or omit main-agent-only recovery tools and worker-only handoff tools
+// such as agent_report. The surface is therefore consistent with the runtime
+// boundary instead of being filtered downstream.
 type Compiler interface {
 	Compile(p Profile, forMainAgent bool) capability.Surface
 }
@@ -55,10 +55,10 @@ type Compiler interface {
 // stateless: callers should keep a single instance and reuse it.
 type DefaultCompiler struct{}
 
-// Compile implements Compiler. forMainAgent=true adds main-agent-only
-// recovery/context tools to the surface; forMainAgent=false omits them.
-// All other surface entries come from the profile-specific compileXxx
-// helper.
+// Compile implements Compiler. Both main agents and workers get the context
+// rewrite tool so each agent can compact its own local history. forMainAgent
+// still controls main-only recovery tools such as helpme and worker-only
+// handoff tools such as agent_report.
 func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
@@ -72,9 +72,9 @@ func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface 
 	default:
 		compileGeneric(b, p)
 	}
+	addInceptionTool(b)
 	if forMainAgent {
 		addHelpmeTool(b)
-		addInceptionTool(b)
 	} else {
 		addWorkerReportTool(b)
 	}
@@ -322,12 +322,11 @@ func addHelpmeTool(b *surfaceBuilder) {
 	b.addDeferred("helpme", capability.CapabilityTaskSpawn)
 }
 
-// addInceptionTool makes the main-agent context rewrite tool discoverable
-// without adding its schema to the stable top-level tool list. The agent loop
-// can still insert hidden anchors for this surface, while the model must load
-// the schema through tool_search before calling the tool.
+// addInceptionTool registers the context rewrite tool directly. It rewrites
+// only the current agent's conversation history, so it is safe for workers to
+// use for their own local context.
 func addInceptionTool(b *surfaceBuilder) {
-	b.addDeferred("inception", capability.CapabilityContextRewrite)
+	b.addVisible("inception", capability.CapabilityContextRewrite)
 }
 
 func addWorkerReportTool(b *surfaceBuilder) {

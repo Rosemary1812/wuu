@@ -128,31 +128,13 @@ func TestActiveProfileInjectsHiddenInceptionAnchors(t *testing.T) {
 	}
 }
 
-func TestActiveProfileLoadsInceptionThroughToolSearchAndRewrites(t *testing.T) {
+func TestActiveProfileCanCallInceptionDirectlyAndRewrite(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetAgentIdentity("root", agentthread.RootPath)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      compact.InceptionToolName,
-		Arguments: `{"anchor_id":0,"summary":"state"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("unloaded inception should require tool_search, got %v", err)
-	}
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "tool_search",
-		Arguments: `{"query":"select:inception","limit":1}`,
-	})
-	if err != nil {
-		t.Fatalf("tool_search: %v", err)
-	}
-	if !strings.Contains(resp, compact.InceptionToolName) {
-		t.Fatalf("tool_search should load inception, got %s", resp)
-	}
 
 	step := &inceptionLoopStep{results: []agent.StepResult{
 		{ToolCalls: []providers.ToolCall{{
@@ -200,11 +182,11 @@ func TestInceptionToolDescriptionTeachesDMailTriggers(t *testing.T) {
 	}
 }
 
-func TestInceptionToolRejectsWorkerPath(t *testing.T) {
+func TestInceptionToolAllowsWorkerPath(t *testing.T) {
 	tool := NewInceptionTool(&Env{AgentPath: "/root/worker"})
 	_, err := tool.Execute(context.Background(), `{"anchor_id":0,"summary":"state"}`)
-	if err == nil || !strings.Contains(err.Error(), "only available to the main agent") {
-		t.Fatalf("expected main-agent guard, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "parent history is unavailable") {
+		t.Fatalf("expected worker path to pass agent guard and fail on missing history, got %v", err)
 	}
 }
 

@@ -10,7 +10,7 @@ func TestSystemMainTeachesInceptionDMailTriggers(t *testing.T) {
 	for _, want := range []string{
 		"Use it proactively during the work",
 		"<system>CHECKPOINT N</system>",
-		"select:inception",
+		"available in the current tool list",
 		"large file",
 		"web/search result",
 		"dead end",

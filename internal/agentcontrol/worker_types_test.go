@@ -82,12 +82,12 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	for _, n := range filtered {
 		allowed[n] = true
 	}
-	for _, expected := range []string{"read_file", "write_file", "edit_file", "bash", "grep", "glob", "agent_report"} {
+	for _, expected := range []string{"read_file", "write_file", "edit_file", "bash", "grep", "glob", "inception", "agent_report"} {
 		if !allowed[expected] {
 			t.Errorf("general-purpose agent missing %s", expected)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "helpme", "inception", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+	for _, blocked := range []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
 		if allowed[blocked] {
 			t.Errorf("general-purpose agent should not receive recursive control tool %s", blocked)
 		}

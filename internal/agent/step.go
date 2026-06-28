@@ -90,7 +90,7 @@ const (
 	// CompactReasonHelpMe means a recovery tool produced a validated
 	// replacement context after its tool result was recorded.
 	CompactReasonHelpMe CompactReason = "helpme"
-	// CompactReasonInception means the main agent requested a linear
+	// CompactReasonInception means the current agent requested a linear
 	// anchor-based continuation summary after its tool result was recorded.
 	CompactReasonInception CompactReason = "inception"
 )

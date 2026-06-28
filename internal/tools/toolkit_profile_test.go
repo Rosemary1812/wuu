@@ -83,10 +83,16 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"apply_patch",
 		"tool_search",
 		"load_skill",
+		"inception",
 	} {
 		if !containsProfileDef(defs, want) {
 			t.Fatalf("Codex profile should keep core tool %s visible, got %v", want, sortedProfileDefNames(defs))
 		}
+	}
+	if info, ok := kit.ToolInfo("inception"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "inception")
+	} else if info.Exposure != ToolExposureDirect {
+		t.Fatalf("inception exposure = %s, want %s", info.Exposure, ToolExposureDirect)
 	}
 
 	for _, name := range []string{"checkpoint", "thread_get"} {
@@ -124,7 +130,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"web_fetch",
 		"report_listening_ports",
 		"spawn_agent",
-		"inception",
 	} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("low-frequency tool %s should stay deferred, got %v", name, sortedProfileDefNames(defs))

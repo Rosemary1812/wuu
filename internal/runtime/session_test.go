@@ -1866,11 +1866,12 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 // TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration locks in the
 // split between prompts.System() (base sections shared with workers) and
 // prompts.SystemMain() (the Orchestration path-selection map that lives only
-// in the main agent's prompt). The Orchestration section lists tools that
-// are not on a worker's tool surface (update_plan, create_goal,
-// start_workflow, spawn_agent, helpme, inception, write_memory, read_memory); if it
-// leaked into a worker's system prompt the model would be told to call
-// tools it does not have.
+// in the main agent's prompt). The Orchestration section lists main-agent
+// planning and orchestration paths (update_plan, create_goal,
+// start_workflow, spawn_agent, helpme, write_memory, read_memory); if it
+// leaked into a worker's system prompt the worker would receive the wrong
+// path-selection map. Inception is available to workers through the tool
+// surface, but its worker guidance lives in the tool description.
 func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T) {
 	surface := compiledSurfaceForProviderModel("openai", "gpt-5")
 

@@ -455,12 +455,10 @@ func sortedKeys(m map[string]capability.Capability) []string {
 	return out
 }
 
-// TestCompile_MainOnlyTools locks in the surface-layer contract that
-// main-agent-only tools are omitted from worker surfaces. The runtime
-// also enforces this boundary with worker tool filtering and
-// tool-specific main-agent path checks; this test keeps the compiled
-// surface declaration honest so future consumers match the actual tool
-// list the model sees at runtime.
+// TestCompile_MainOnlyTools locks in the surface-layer contract for tools
+// whose visibility differs between the main agent and workers. Inception is
+// intentionally direct on both surfaces because it rewrites only the current
+// agent's local conversation history.
 func TestCompile_MainOnlyTools(t *testing.T) {
 	cases := []struct {
 		provider string
@@ -476,23 +474,21 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := mainSurface.DeferredTools["helpme"]; !ok {
 			t.Errorf("%s/%s main-agent surface must defer helpme", tt.provider, tt.model)
 		}
-		if _, ok := mainSurface.Tools["inception"]; ok {
-			t.Errorf("%s/%s main-agent surface must not directly include inception", tt.provider, tt.model)
+		if mainSurface.Tools["inception"] != capability.CapabilityContextRewrite {
+			t.Errorf("%s/%s main-agent direct inception capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["inception"], capability.CapabilityContextRewrite)
 		}
-		if mainSurface.DeferredTools["inception"] != capability.CapabilityContextRewrite {
-			t.Errorf("%s/%s main-agent deferred inception capability = %s, want %s", tt.provider, tt.model, mainSurface.DeferredTools["inception"], capability.CapabilityContextRewrite)
+		if _, ok := mainSurface.DeferredTools["inception"]; ok {
+			t.Errorf("%s/%s main-agent surface must not defer inception", tt.provider, tt.model)
 		}
 		if _, ok := mainSurface.HiddenTools["inception"]; ok {
 			t.Errorf("%s/%s main-agent surface must not hide inception", tt.provider, tt.model)
 		}
 		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), false)
-		for _, name := range []string{"inception"} {
-			if _, ok := workerSurface.Tools[name]; ok {
-				t.Errorf("%s/%s worker surface must NOT include %s", tt.provider, tt.model, name)
-			}
-			if _, ok := workerSurface.DeferredTools[name]; ok {
-				t.Errorf("%s/%s worker surface must NOT defer %s", tt.provider, tt.model, name)
-			}
+		if workerSurface.Tools["inception"] != capability.CapabilityContextRewrite {
+			t.Errorf("%s/%s worker direct inception capability = %s, want %s", tt.provider, tt.model, workerSurface.Tools["inception"], capability.CapabilityContextRewrite)
+		}
+		if _, ok := workerSurface.DeferredTools["inception"]; ok {
+			t.Errorf("%s/%s worker surface must not defer inception", tt.provider, tt.model)
 		}
 		if _, ok := workerSurface.DeferredTools["helpme"]; ok {
 			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)
