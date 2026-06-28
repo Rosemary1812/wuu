@@ -75,7 +75,7 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 		}
 	}
 	if !foundContinuation {
-		t.Fatalf("durable rewritten history missing hidden D-Mail continuation: %+v", res.NewMessages)
+		t.Fatalf("durable rewritten history missing hidden Wuu context continuation: %+v", res.NewMessages)
 	}
 }
 
