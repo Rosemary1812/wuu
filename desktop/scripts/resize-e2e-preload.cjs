@@ -116,6 +116,28 @@ contextBridge.exposeInMainWorld("wuu", {
     paths: workspacePaths,
     truncated: false
   }),
+  getSettingsUsage: async (range = "all") => ({
+    range,
+    total_sessions: 0,
+    generated_at: now,
+    metrics: {
+      prompt_tokens: 0,
+      context_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_creation_tokens: 0,
+      cache_hit_rate: 0,
+      turns: 0,
+      agents: 0,
+      date_range: [now.slice(0, 10), now.slice(0, 10)],
+      active_days: 0
+    },
+    model_breakdowns: [],
+    days: [],
+    entries: []
+  }),
+  listMCPServers: async () => ({ servers: [] }),
   listWorkspaceDirectory: async (path = "") => ({
     root: cwd,
     path: path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, ""),

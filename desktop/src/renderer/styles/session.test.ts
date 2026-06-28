@@ -25,7 +25,9 @@ describe("session.css design tokens (single source of truth)", () => {
   });
 
   it("defines --session-composer-width at :root", () => {
-    expect(sessionCss).toMatch(/--session-composer-width:\s*740px/);
+    expect(sessionCss).toMatch(
+      /--session-composer-width:\s*calc\(\s*var\(--session-outer-width\)\s*-\s*var\(--session-outer-padding-inline\)\s*-\s*var\(--session-outer-padding-inline\)\s*\)/,
+    );
   });
 
   it("defines --session-composer-radius at :root", () => {

@@ -145,6 +145,12 @@
   transition: none;
 }
 
+.resizing-sidebar .sidebar {
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .workspace-right-panel-resizer {
   position: absolute;
   top: 0;

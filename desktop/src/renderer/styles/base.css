@@ -312,6 +312,7 @@ body {
 .window-resizing .conversation-pane,
 .window-resizing .scroll-region,
 .window-resizing .composer,
+.window-resizing .dock-composer-wrap,
 .window-resizing .titlebar,
 .window-resizing .environment-panel,
 .window-resizing .workspace-right-panel,

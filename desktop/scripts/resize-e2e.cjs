@@ -521,7 +521,7 @@ async function run() {
     `;
     document.head.append(style);
     const probe = document.createElement("div");
-    probe.className = "resize-e2e-animation-probe";
+    probe.className = "resize-e2e-animation-probe launch-preview-button";
     document.body.append(probe);
   });
   await evaluate(win, () => {
@@ -558,8 +558,8 @@ async function run() {
 
   assert.equal(during.resizing, true, "Window resize marker should be set by programmatic BrowserWindow resizing.");
   assert.equal(during.shellTransitionProperty, "none", "App shell transitions should be disabled only during live resize.");
-  assert.equal(during.animationProbePlayState, "paused", "All CSS animations should pause during live window resize.");
-  assert.equal(during.animationProbeTransitionProperty, "none", "All CSS transitions should be disabled during live window resize.");
+  assert.equal(during.animationProbePlayState, "paused", "Targeted resize animations should pause during live window resize.");
+  assert.equal(during.animationProbeTransitionProperty, "none", "Targeted resize transitions should be disabled during live window resize.");
   assert.ok(during.viewportHeight < before.viewportHeight - 180, "Renderer viewport should shrink with the Electron window.");
   assert.ok(during.frameHeight < before.frameHeight - 180, "File tree frame should shrink with the Electron window.");
   assert.ok(
