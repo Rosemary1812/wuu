@@ -16,7 +16,6 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/config"
-	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
@@ -616,17 +615,10 @@ func evalContextBlockObservations(rt *runtime.Session) []evalharness.ContextBloc
 	if rt == nil {
 		return nil
 	}
-	rootDir := strings.TrimSpace(rt.RootDir)
-	if rootDir == "" {
+	if rt.Toolkit == nil {
 		return nil
 	}
-	var blocks []wuucontext.Block
-	if block, ok := wuucontext.RecentDiffBlock(rootDir, wuucontext.RecentDiffOptions{}); ok {
-		blocks = append(blocks, block)
-	}
-	if rt.Toolkit != nil {
-		blocks = append(blocks, rt.Toolkit.ContextBlocks()...)
-	}
+	blocks := rt.Toolkit.ContextBlocks()
 	out := make([]evalharness.ContextBlockObservation, 0, len(blocks))
 	for _, block := range blocks {
 		content := strings.TrimSpace(block.Content)
