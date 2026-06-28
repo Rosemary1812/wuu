@@ -851,6 +851,26 @@
     background-color 180ms ease;
 }
 
+/* Expand the click / pointer hit area without changing the visual
+   bar or the flex layout. The pseudo-element is absolutely positioned
+   inside the bar (which is position: relative), so the flex item's
+   main-size is still governed by width/height (12×3) and the 6px
+   gap between bars is preserved. The pseudo-element extends 4px above
+   and below, and 14px to either side, so the click target is 40×11
+   and reaches the 14px of empty space on each side of the bar inside
+   the 40px rail. `getBoundingClientRect()` on the bar itself still
+   returns the 12×3 visual rect, so hover / drag / magnet logic are
+   unchanged. The pseudo-element has no background and inherits the
+   bar's pointer-events so clicks on it bubble to the bar's onClick. */
+.conversation-turn-rail-bar::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: -14px;
+  right: -14px;
+}
+
 .conversation-turn-rail-bar.adjacent {
   width: 18px;
 }
