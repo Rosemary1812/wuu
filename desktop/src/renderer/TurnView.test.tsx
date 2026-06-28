@@ -183,6 +183,8 @@ describe("TurnView", () => {
 
     expect(view.textContent).toContain("partial progress");
     expect(view.querySelectorAll(".turn-notice")).toHaveLength(1);
-    expect(view.textContent?.match(/连接暂时不可用/g)).toHaveLength(1);
+    // The chip title now surfaces the wrapped provider error code so a
+    // screenshot carries enough signal to triage whose problem it is.
+    expect(view.textContent?.match(/previous_response_not_found/g)).toHaveLength(1);
   });
 });

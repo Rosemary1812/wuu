@@ -178,15 +178,21 @@ func (s *Server) completeLiveAgentThread(rootThreadID string, control *agentcont
 		return
 	}
 	if status == TurnStatusFailed || status == TurnStatusInterrupted {
-		message := ""
-		if turnErr != nil {
-			message = turnErr.Error()
-		}
+		structured := BuildTurnError(turnErr, th.ModelProvider)
+		turn.Error = &structured
+		th.mu.Lock()
+		th.replaceTurnLocked(turn)
+		th.mu.Unlock()
 		_ = s.writeNotification(NotificationTurnError, TurnErrorNotification{
-			ThreadID: th.ID,
-			TurnID:   turn.ID,
-			Error:    message,
-			Turn:     turn,
+			ThreadID:   th.ID,
+			TurnID:     turn.ID,
+			Error:      structured.Message,
+			Code:       structured.Code,
+			Category:   string(structured.Category),
+			Provider:   structured.Provider,
+			StatusCode: structured.StatusCode,
+			Action:     structured.Action,
+			Turn:       turn,
 		})
 		return
 	}

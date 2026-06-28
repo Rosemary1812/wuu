@@ -725,11 +725,28 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
 	}
 	if err != nil {
+		// Surface the Go core's typed error classification to the front-end
+		// instead of dropping it on the floor. BuildTurnError pulls the
+		// provider-specific code, status code, canonical category, and a
+		// structured next-step action from the typed errors
+		// (HTTPError, StreamError) and the agentcontrol classifier. The
+		// raw `Error` string is preserved for backward compatibility and
+		// for the "copy debug info" payload.
+		structured := BuildTurnError(err, th.ModelProvider)
+		turn.Error = &structured
+		th.mu.Lock()
+		th.replaceTurnLocked(turn)
+		th.mu.Unlock()
 		notify(NotificationTurnError, TurnErrorNotification{
-			ThreadID: th.ID,
-			TurnID:   turnID,
-			Error:    err.Error(),
-			Turn:     turn,
+			ThreadID:   th.ID,
+			TurnID:     turnID,
+			Error:      structured.Message,
+			Code:       structured.Code,
+			Category:   string(structured.Category),
+			Provider:   structured.Provider,
+			StatusCode: structured.StatusCode,
+			Action:     structured.Action,
+			Turn:       turn,
 		})
 		s.kickAgentCompletionDrain(th.ID)
 		s.kickQueuedTurnDrain(th.ID)

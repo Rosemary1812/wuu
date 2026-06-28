@@ -9,6 +9,8 @@ export type UserFacingErrorCategory =
 export type UserFacingErrorTone = "neutral" | "warning" | "auth" | "error";
 export type UserFacingErrorContext = "turn" | "tool" | "status";
 
+import type { TurnError } from "../shared/protocol";
+
 /**
  * Kinds map to renderer-side handlers. The data layer doesn't decide
  * what the action does — it just declares the intent. The UI layer
@@ -62,83 +64,342 @@ export function rawErrorMessage(error: unknown, fallback = ""): string {
   return fallback;
 }
 
-export function userFacingErrorForMessage(
-  rawMessage: string | undefined,
-  context: UserFacingErrorContext
-): UserFacingErrorDisplay {
-  const message = (rawMessage ?? "").trim();
-  const category = classifyUserFacingError(message, context);
+// Reason phrases for the HTTP status codes the classifier can extract from
+// a provider error. The phrase is appended to the code ("401 unauthorized")
+// so screenshots carry enough signal to identify the upstream side of the
+// problem. Kept here so the test file does not need to be updated when the
+// vocabulary grows.
+const HTTP_REASON_PHRASES: Record<string, string> = {
+  "400": "bad request",
+  "401": "unauthorized",
+  "403": "forbidden",
+  "404": "not found",
+  "408": "timeout",
+  "413": "payload too large",
+  "429": "rate limit",
+  "500": "server error",
+  "502": "bad gateway",
+  "503": "unavailable",
+  "504": "gateway timeout",
+  "529": "overloaded",
+};
+
+function extractHttpCode(message: string): string | undefined {
+  const match = message.match(/\b(400|401|403|404|408|413|429|500|502|503|504|529)\b/);
+  return match?.[1];
+}
+
+function httpTitle(code: string): string {
+  return HTTP_REASON_PHRASES[code] ? `${code} ${HTTP_REASON_PHRASES[code]}` : code;
+}
+
+/**
+ * Pull a specific identifier out of the raw error so the chip is readable
+ * at a glance and the screenshot carries enough signal to triage. Returns
+ * undefined when no specific identifier can be pulled — the caller then
+ * falls back to a category-level title.
+ *
+ * The list is intentionally short: anything renderer-specific belongs to
+ * the turn notice, not the error model.
+ */
+function extractSpecificTitle(
+  message: string,
+  category: UserFacingErrorCategory,
+): string | undefined {
+  const lower = message.toLowerCase();
   switch (category) {
     case "cancelled":
-      return {
-        category,
-        tone: "neutral",
-        title: "已停止",
-        detail: "这次请求已停止，可以继续发送消息。",
-        recommendedActions: [],
-      };
-    case "network":
-      return {
-        category,
-        tone: "error",
-        title: "连接暂时不可用",
-        detail: "没有完成这次请求。可以稍后再发，或检查当前 provider 状态。",
-        recommendedActions: [
-          copyDebugAction(category, context, message),
-        ],
-      };
-    case "auth":
-      return {
-        category,
-        tone: "auth",
-        title: "需要重新登录或检查权限",
-        detail: "当前凭据或权限不足，处理没有完成。",
-        recommendedActions: [
-          { kind: "openSettings", label: "查看设置", variant: "primary", payload: { focus: "providers" } },
-        ],
-      };
-    case "provider":
-      return {
-        category,
-        tone: "error",
-        title: "模型没有完成请求",
-        detail:
-          "可能是上下文超出窗口、模型限流或上游中断。",
-        recommendedActions: [
-          copyDebugAction(category, context, message),
-        ],
-      };
-    case "tool":
-      return {
-        category,
-        tone: "error",
-        title: "工具调用失败",
-        detail: "某个工具没有完成。原始错误已留在调试信息中。",
-        recommendedActions: [
-          copyDebugAction(category, context, message),
-        ],
-      };
-    case "local":
-      return {
-        category,
-        tone: "error",
-        title: "本地操作失败",
-        detail: "无法完成本地文件、命令或权限相关操作。",
-        recommendedActions: [
-          { kind: "openSettings", label: "查看权限设置", variant: "primary", payload: { focus: "workspace" } },
-        ],
-      };
+      return undefined;
+    case "network": {
+      // OpenAI/Anthropic-style wrapped errors look like
+      // "stream request failed: stream error (previous_response_not_found)".
+      // The parenthesized token at the end of the message is the actual
+      // provider error code, which is what the user (and support) need to
+      // see in the chip and in a screenshot.
+      const wrapped = message.match(/\(([^()]+)\)\s*$/);
+      if (wrapped) return wrapped[1];
+      const code = extractHttpCode(message);
+      if (code) return httpTitle(code);
+      if (lower.includes("rate limit") || lower.includes("too many requests")) return "rate limit";
+      if (lower.includes("overloaded")) return "overloaded";
+      if (lower.includes("timeout") || lower.includes("deadline exceeded")) return "timeout";
+      if (lower.includes("connection refused")) return "connection refused";
+      if (lower.includes("connection reset")) return "connection reset";
+      if (lower.includes("connection dropped")) return "connection dropped";
+      if (lower.includes("no such host")) return "host not found";
+      if (lower.includes("dns")) return "dns error";
+      if (lower.includes("eof")) return "eof";
+      if (lower.includes("temporarily unavailable")) return "temporarily unavailable";
+      return undefined;
+    }
+    case "auth": {
+      const code = extractHttpCode(message);
+      if (code) return httpTitle(code);
+      if (lower.includes("api key")) return "invalid api key";
+      if (lower.includes("oauth")) return "oauth failed";
+      if (lower.includes("invalid token") || lower.includes("access token")) return "invalid token";
+      if (lower.includes("permission denied")) return "permission denied";
+      return undefined;
+    }
+    case "provider": {
+      if (
+        lower.includes("context_length_exceeded") ||
+        lower.includes("context window") ||
+        lower.includes("maximum context length")
+      ) {
+        return "context_length_exceeded";
+      }
+      if (lower.includes("too many tokens")) return "too many tokens";
+      if (lower.includes("content policy") || lower.includes("content_policy")) return "content_policy";
+      if (lower.includes("rate_limit") || lower.includes("rate limit")) return "rate_limit";
+      if (lower.includes("model_not_found")) return "model_not_found";
+      if (lower.includes("model returned")) return "model error";
+      if (lower.includes("empty response") || lower.includes("empty answer")) return "empty response";
+      if (lower.includes("response failed") || lower.includes("response error")) return "response failed";
+      if (lower.includes("invalid_request_error")) return "invalid_request_error";
+      return undefined;
+    }
+    case "tool": {
+      const first = message.split(/[.\n]/)[0]?.trim();
+      if (!first) return undefined;
+      return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+    }
+    case "local": {
+      if (lower.includes("permission denied")) return "permission denied";
+      if (lower.includes("enoent") || lower.includes("no such file")) return "file not found";
+      if (lower.includes("not a directory")) return "not a directory";
+      if (lower.includes("is a directory")) return "is a directory";
+      if (
+        lower.includes("outside the current workspace") ||
+        lower.includes("outside the current git repository")
+      ) {
+        return "outside workspace";
+      }
+      if (lower.includes("command failed") || lower.includes("exit status")) return "command failed";
+      return undefined;
+    }
     case "internal":
     default:
-      return {
-        category: "internal",
-        tone: "error",
-        title: "wuu 遇到内部错误",
-        detail: "没有完成这次请求。调试信息可用于排查。",
-        recommendedActions: [
-          copyDebugAction("internal", context, message),
-        ],
-      };
+      return undefined;
+  }
+}
+
+export function userFacingErrorForMessage(
+  input: string | TurnError | undefined,
+  context: UserFacingErrorContext
+): UserFacingErrorDisplay {
+  // Accept either a raw string (legacy callers, including server-error
+  // text and the composer status row) or a structured TurnError from the
+  // Go core. The Go side's BuildTurnError is the authoritative source:
+  // when its TurnError arrives, we use it as-is and only fall back to
+  // message-substring matching when fields are missing (so an older app
+  // server or a manual string still produces a sensible display).
+  const structured: TurnError | undefined =
+    typeof input === "object" && input !== null ? input : undefined;
+  const message = (
+    structured?.message ?? (typeof input === "string" ? input : "") ?? ""
+  ).trim();
+
+  // Category: prefer the wire value, fall back to the legacy classifier.
+  // The Go side's 7 categories match UserFacingErrorCategory 1:1, so
+  // the cast is safe.
+  const category: UserFacingErrorCategory =
+    (structured?.category as UserFacingErrorCategory | undefined) ??
+    classifyUserFacingError(message, context);
+
+  // Title: prefer the structured code, then keyword extraction from the
+  // raw message, then the category's default Chinese label. The chip's
+  // user-visible label is always the most specific signal available so
+  // a screenshot carries enough info to triage.
+  const specificTitle = extractSpecificTitle(message, category);
+  const title =
+    structured?.code?.trim() || specificTitle || defaultTitleForCategory(category);
+
+  // Detail (hover): prefer the action's longer user-facing message
+  // when the Go side provided one, fall back to the category's
+  // Chinese default.
+  const detail =
+    structured?.action?.message?.trim() || defaultDetailForCategory(category);
+
+  // Actions: structured action's `reason` takes precedence, fall back
+  // to the category-driven default (e.g. the auth case gets
+  // openSettings, the tool/internal case gets copyDebug). When neither
+  // is useful (cancelled) the array is empty.
+  const recommendedActions = structured?.action
+    ? actionsFromStructuredAction(structured, category, message)
+    : defaultActionsForCategory(category, context, message);
+
+  return {
+    category,
+    tone: toneForCategory(category),
+    title,
+    detail,
+    recommendedActions,
+  };
+}
+
+function toneForCategory(category: UserFacingErrorCategory): UserFacingErrorTone {
+  switch (category) {
+    case "cancelled":
+      return "neutral";
+    case "auth":
+      return "auth";
+    case "network":
+    case "provider":
+    case "tool":
+    case "local":
+    case "internal":
+      return "error";
+  }
+}
+
+function defaultTitleForCategory(category: UserFacingErrorCategory): string {
+  switch (category) {
+    case "cancelled":
+      return "已停止";
+    case "network":
+      return "network error";
+    case "auth":
+      return "auth error";
+    case "provider":
+      return "provider error";
+    case "tool":
+      return "工具调用失败";
+    case "local":
+      return "本地操作失败";
+    case "internal":
+      return "wuu 内部错误";
+  }
+}
+
+function defaultDetailForCategory(category: UserFacingErrorCategory): string {
+  switch (category) {
+    case "cancelled":
+      return "这次请求已停止，可以继续发送消息。";
+    case "network":
+      return "没有完成这次请求。可以稍后再发，或检查当前 provider 状态。";
+    case "auth":
+      return "Provider 凭据或权限不足，请在 Settings → Providers 检查。";
+    case "provider":
+      return "可能是上下文超出窗口、模型限流或上游中断。";
+    case "tool":
+      return "某个工具没有完成。原始错误已留在调试信息中。";
+    case "local":
+      return "无法完成本地文件、命令或权限相关操作。";
+    case "internal":
+      return "没有完成这次请求。调试信息可用于排查。";
+  }
+}
+
+// defaultActionsForCategory is the category-driven fallback used when
+// the Go side did not send a structured action. Mirrors the previous
+// behavior: auth/local open settings; everything else (except
+// cancelled) gets a copy-debug fallback.
+function defaultActionsForCategory(
+  category: UserFacingErrorCategory,
+  context: UserFacingErrorContext,
+  message: string
+): UserFacingErrorAction[] {
+  switch (category) {
+    case "cancelled":
+      return [];
+    case "auth":
+      return [
+        {
+          kind: "openSettings",
+          label: "查看 Provider 设置",
+          variant: "primary",
+          payload: { focus: "providers" },
+        },
+      ];
+    case "local":
+      return [
+        {
+          kind: "openSettings",
+          label: "查看权限设置",
+          variant: "primary",
+          payload: { focus: "workspace" },
+        },
+      ];
+    case "network":
+    case "provider":
+    case "tool":
+    case "internal":
+      return [copyDebugAction(category, context, message)];
+  }
+}
+
+// actionsFromStructuredAction translates the Go side's stable
+// `reason` taxonomy into renderer-side UserFacingErrorActionKind
+// values. The reason values mirror opencode's opencode-ai/opencode
+// `RetryReason` enum (reauth, compact, wait, retry, view_debug, etc.)
+// — keeping the same vocabulary makes cross-tool telemetry easier.
+function actionsFromStructuredAction(
+  structured: TurnError,
+  category: UserFacingErrorCategory,
+  message: string
+): UserFacingErrorAction[] {
+  const action = structured.action;
+  if (!action) {
+    return [];
+  }
+  switch (action.reason) {
+    case "reauth":
+      return [
+        {
+          kind: "openSettings",
+          label: action.label || "查看 Provider 设置",
+          variant: "primary",
+          payload: { focus: "providers" },
+        },
+      ];
+    case "compact":
+      return [
+        {
+          kind: "compactContext",
+          label: action.label || "压缩上下文",
+          variant: "primary",
+        },
+      ];
+    case "wait":
+    case "retry":
+      return [
+        {
+          kind: "retry",
+          label: action.label || "稍后重试",
+          variant: "primary",
+        },
+      ];
+    case "view_debug":
+    case "copy_debug":
+      return [
+        {
+          kind: "copyDebug",
+          label: action.label || "复制调试信息",
+          variant: "secondary",
+          // Include the structured fields so the clipboard payload is
+          // useful for triage: "what provider, what code, what status".
+          payload: {
+            category,
+            context: "turn",
+            message: structured.message,
+            code: structured.code,
+            provider: structured.provider,
+            status_code: structured.status_code,
+          },
+        },
+      ];
+    case "open_settings":
+      return [
+        {
+          kind: "openSettings",
+          label: action.label || "查看权限设置",
+          variant: "primary",
+          payload: { focus: "workspace" },
+        },
+      ];
+    default:
+      return [];
   }
 }
 
@@ -285,8 +546,12 @@ function isLocalOperationError(message: string): boolean {
 }
 
 export function statusMessageForError(error: unknown, fallback: string): string {
+  // The composer status row renders a single-line label between two
+  // dividers, so we return only the classified title. The full detail
+  // is still rendered by the inline turn notice, which has room to
+  // span more than one line when needed.
   const display = userFacingErrorForMessage(rawErrorMessage(error, fallback), "status");
-  return `${display.title}。${display.detail}`;
+  return display.title;
 }
 
 export function statusToneClass(status: string): string {

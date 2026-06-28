@@ -11,7 +11,52 @@ describe("userFacingErrorForMessage", () => {
     );
 
     expect(display.category).toBe("provider");
-    expect(display.title).toBe("模型没有完成请求");
+    // The chip title now shows the specific provider error identifier, not
+    // the category name, so a screenshot carries enough signal to triage.
+    expect(display.title).toBe("context_length_exceeded");
+  });
+
+  it("shows the HTTP status code as the title for network errors", () => {
+    const display = userFacingErrorForMessage(
+      "upstream returned 503 service unavailable",
+      "turn",
+    );
+    expect(display.category).toBe("network");
+    expect(display.title).toBe("503 unavailable");
+  });
+
+  it("shows the HTTP status code as the title for auth errors", () => {
+    const display = userFacingErrorForMessage("401 unauthorized", "turn");
+    expect(display.category).toBe("auth");
+    expect(display.title).toBe("401 unauthorized");
+    // The action label is Provider-specific, not the generic "查看设置".
+    const settingsAction = display.recommendedActions.find(
+      (a) => a.kind === "openSettings",
+    );
+    expect(settingsAction?.label).toBe("查看 Provider 设置");
+    expect(settingsAction?.payload).toEqual({ focus: "providers" });
+    // The detail (hover tooltip) points the user to the Provider settings.
+    expect(display.detail).toContain("Provider");
+  });
+
+  it("uses a keyword-based title when no HTTP code is present in the error", () => {
+    const display = userFacingErrorForMessage("connection reset by peer", "turn");
+    expect(display.category).toBe("network");
+    expect(display.title).toBe("connection reset");
+  });
+
+  it("falls back to the category title when the message has no specific identifier", () => {
+    const display = userFacingErrorForMessage("login required", "turn");
+    expect(display.category).toBe("auth");
+    // "login required" matches the auth classifier but no HTTP code or
+    // keyword matcher fires, so we fall back to the category name.
+    expect(display.title).toBe("auth error");
+  });
+
+  it("uses the internal category title for unrecognized errors", () => {
+    const display = userFacingErrorForMessage("panic: nil pointer", "turn");
+    expect(display.category).toBe("internal");
+    expect(display.title).toBe("wuu 内部错误");
   });
 
   describe("recommendedActions", () => {
@@ -77,6 +122,171 @@ describe("userFacingErrorForMessage", () => {
           expect(action.label.length, `action ${action.kind} missing label`).toBeGreaterThan(0);
         }
       }
+    });
+  });
+
+  describe("structured TurnError input from the Go core", () => {
+    it("uses the structured `code` as the chip title, beating the message-classifier", () => {
+      // The Go core extracts a specific code from the body (e.g.
+      // "insufficient_quota") and ships it as the `code` field. The
+      // front-end should display that, not the string-extracted one.
+      const display = userFacingErrorForMessage(
+        {
+          message: "some raw provider body",
+          code: "insufficient_quota",
+          category: "provider",
+        },
+        "turn",
+      );
+      expect(display.title).toBe("insufficient_quota");
+      expect(display.category).toBe("provider");
+    });
+
+    it("maps the 'reauth' action reason to the openSettings / focus=providers kind", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "401 unauthorized",
+          code: "401 unauthorized",
+          category: "auth",
+          action: {
+            reason: "reauth",
+            title: "Provider 凭据或权限不足",
+            message: "请检查 API 密钥",
+            label: "查看 Provider 设置",
+          },
+        },
+        "turn",
+      );
+      expect(display.title).toBe("401 unauthorized");
+      expect(display.category).toBe("auth");
+      expect(display.tone).toBe("auth");
+      expect(display.detail).toBe("请检查 API 密钥");
+      expect(display.recommendedActions).toHaveLength(1);
+      expect(display.recommendedActions[0].kind).toBe("openSettings");
+      expect(display.recommendedActions[0].payload).toEqual({
+        focus: "providers",
+      });
+    });
+
+    it("maps the 'compact' action reason to the compactContext kind", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "input too long",
+          code: "context_length_exceeded",
+          category: "provider",
+          action: {
+            reason: "compact",
+            title: "上下文超出窗口",
+            message: "压缩后重试",
+            label: "压缩上下文",
+          },
+        },
+        "turn",
+      );
+      expect(display.recommendedActions[0].kind).toBe("compactContext");
+    });
+
+    it("maps the 'wait' and 'retry' action reasons to the retry kind", () => {
+      const wait = userFacingErrorForMessage(
+        {
+          message: "rate limit",
+          code: "rate_limit_error",
+          category: "provider",
+          action: {
+            reason: "wait",
+            title: "Provider 限流",
+            message: "稍后重试",
+            label: "稍后重试",
+          },
+        },
+        "turn",
+      );
+      const retry = userFacingErrorForMessage(
+        {
+          message: "timeout",
+          category: "network",
+          action: {
+            reason: "retry",
+            title: "重试",
+            message: "",
+            label: "重试",
+          },
+        },
+        "turn",
+      );
+      expect(wait.recommendedActions[0].kind).toBe("retry");
+      expect(retry.recommendedActions[0].kind).toBe("retry");
+    });
+
+    it("maps the 'view_debug' and 'copy_debug' action reasons to copyDebug with structured payload", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "raw error body",
+          code: "internal_error",
+          category: "internal",
+          provider: "openai",
+          status_code: 500,
+          action: {
+            reason: "copy_debug",
+            title: "wuu 内部错误",
+            message: "调试信息",
+            label: "复制调试信息",
+          },
+        },
+        "turn",
+      );
+      expect(display.recommendedActions[0].kind).toBe("copyDebug");
+      expect(display.recommendedActions[0].payload).toMatchObject({
+        category: "internal",
+        context: "turn",
+        code: "internal_error",
+        provider: "openai",
+        status_code: 500,
+      });
+    });
+
+    it("falls back to category-driven actions when no structured action is provided", () => {
+      // Auth without an action still opens Provider settings.
+      const auth = userFacingErrorForMessage(
+        { message: "401 unauthorized", category: "auth" },
+        "turn",
+      );
+      expect(auth.recommendedActions[0].kind).toBe("openSettings");
+      expect(auth.recommendedActions[0].payload).toEqual({
+        focus: "providers",
+      });
+      // Internal without an action gets the copyDebug fallback.
+      const internal = userFacingErrorForMessage(
+        { message: "panic", category: "internal" },
+        "turn",
+      );
+      expect(internal.recommendedActions[0].kind).toBe("copyDebug");
+    });
+
+    it("drops the action list for cancelled and forwards the structured detail", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "context canceled",
+          category: "cancelled",
+        },
+        "turn",
+      );
+      expect(display.recommendedActions).toHaveLength(0);
+    });
+
+    it("falls back to the string classifier when the structured input omits `category`", () => {
+      // An older Go core may not yet send the `category` field; the
+      // front-end must still produce a sensible display from the
+      // message alone. "context_length_exceeded" maps to provider.
+      const display = userFacingErrorForMessage(
+        {
+          message: "stream request failed: stream error (context_length_exceeded)",
+          code: "context_length_exceeded",
+        },
+        "turn",
+      );
+      expect(display.category).toBe("provider");
+      expect(display.title).toBe("context_length_exceeded");
     });
   });
 });

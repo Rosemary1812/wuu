@@ -44,8 +44,13 @@ export function turnEventForTurn(
       ? userFacingErrorForMessage("context canceled", "turn")
       : isCancellationMessage((rawMessage ?? "").toLowerCase())
         ? userFacingErrorForMessage(rawMessage, "turn")
+        // For a failed turn, prefer the structured `turn.error` populated
+        // by the Go core's BuildTurnError so the chip surfaces the
+        // provider-specific code and the recommended next-step action.
+        // The legacy string fallback in userFacingErrorForMessage still
+        // works for older app-servers that only send the message.
         : turn.status === "failed"
-          ? userFacingErrorForMessage(rawMessage, "turn")
+          ? userFacingErrorForMessage(turn.error, "turn")
           : undefined;
   if (!baseDisplay) {
     return undefined;

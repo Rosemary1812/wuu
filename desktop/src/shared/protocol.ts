@@ -644,10 +644,75 @@ export type Turn = {
   items: ThreadItem[];
   items_view: TurnItemsView;
   status: TurnStatus;
-  error?: { message: string };
+  // Structured turn-end error populated by the Go core's BuildTurnError.
+  // Older clients that only read `message` still work because every new
+  // field is optional; the front-end prefers `code` and `category` for
+  // the visible chip and uses `action` to drive the recommended
+  // next-step button. Mirrors internal/appserver/protocol.go::TurnError.
+  error?: TurnError;
   started_at?: string | null;
   completed_at?: string | null;
   duration_ms?: number;
+};
+
+// Structured end-of-turn error from the Go core. The `message` is
+// always present; every other field is optional and falls back to the
+// front-end's UserFacingErrors classifier when missing (so a new
+// category added server-side does not break an old front-end).
+export type TurnError = {
+  message: string;
+  code?: string;
+  category?: TurnErrorCategory;
+  provider?: string;
+  status_code?: number;
+  action?: TurnErrorAction;
+};
+
+// Canonical error category taxonomy shared with the Go core. The values
+// are the same strings BuildTurnError emits from
+// internal/appserver/turn_error.go::TurnErrorCategory. The Go side has
+// 7 categories that match the front-end's existing UserFacingErrorCategory
+// 1:1; the front-end keeps its own internal vocabulary for legacy
+// reasons and translates from these wire values when the action
+// surfaces in the chip.
+export type TurnErrorCategory =
+  | "cancelled"
+  | "network"
+  | "auth"
+  | "provider"
+  | "tool"
+  | "local"
+  | "internal";
+
+// Structured next-step the Go core wants the user to see. Mirrors
+// opencode's Retryable.action shape. The `reason` is a stable enum
+// suitable for telemetry; `title` / `message` / `label` are the
+// user-facing strings; `link` is an optional URL or in-app focus hint
+// the front-end can route to.
+export type TurnErrorAction = {
+  reason: string;
+  title: string;
+  message: string;
+  label: string;
+  link?: string;
+};
+
+export type TurnErrorNotification = {
+  thread_id: string;
+  turn_id: string;
+  // Legacy string payload. The `error` field on `turn` (above) is
+  // the structured version; the top-level `error` here stays for
+  // backward compatibility with clients that did not yet read `turn.error`.
+  error: string;
+  // Flattened copy of the structured fields so listeners that only
+  // watch the notification (and not the embedded `turn`) still get the
+  // chip-ready values. Matches TurnErrorNotification in Go.
+  code?: string;
+  category?: TurnErrorCategory;
+  provider?: string;
+  status_code?: number;
+  action?: TurnErrorAction;
+  turn: Turn;
 };
 
 export type TurnCompletedNotification = {
