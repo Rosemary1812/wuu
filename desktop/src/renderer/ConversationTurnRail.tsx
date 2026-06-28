@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import type { Turn } from "../shared/protocol";
+import { queryTextForUserItem } from "./AppState";
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
 import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
 
@@ -248,10 +249,7 @@ export function ConversationTurnRail({
   // to the bottom immediately after the click.
   function handleBarClick(turn: Turn) {
     for (const item of turn.items ?? []) {
-      if (item.type !== "user_message") {
-        continue;
-      }
-      const text = (item.text ?? "").trim();
+      const text = queryTextForUserItem(item);
       if (!text) {
         continue;
       }

@@ -12,6 +12,23 @@ import {
   userMessageAnchorID,
 } from "./TurnViewHelpers";
 
+function handoffText(): string {
+  return JSON.stringify({
+    author: "/root/helpme_recovery",
+    recipient: "/root",
+    content: `<subagent_notification>\n${JSON.stringify({
+      agent_path: "/root/helpme_recovery",
+      status: {
+        type: "agent_result",
+        agent_id: "worker-1",
+        task_name: "helpme_recovery",
+        status: "completed"
+      }
+    })}\n</subagent_notification>`,
+    trigger_turn: true
+  });
+}
+
 /**
  * Build a tiny DOM tree that mimics the conversation scroll container
  * (`.scroll-region` or `.conversation-split-body`) wrapping a
@@ -330,6 +347,17 @@ describe("firstUserMessageAnchor", () => {
     });
   });
 
+  it("skips internal agent handoff anchors", () => {
+    const turn = buildTurn([
+      { id: "handoff", type: "user_message", text: handoffText() },
+      { id: "u-1", type: "user_message", text: "hello" },
+    ]);
+    expect(firstUserMessageAnchor(turn)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-1",
+    });
+  });
+
   it("returns undefined when the Turn has no user_message", () => {
     const turn = buildTurn([
       { id: "a-1", type: "agent_message", text: "answer" },
@@ -407,6 +435,14 @@ describe("firstUserMessageText", () => {
       { id: "a-1", type: "agent_message", text: "ignored" },
       { id: "u-1", type: "user_message", text: "hello" },
       { id: "a-2", type: "agent_message", text: "world" },
+    ]);
+    expect(firstUserMessageText(turn)).toBe("hello");
+  });
+
+  it("skips internal agent handoff text", () => {
+    const turn = buildTurn([
+      { id: "handoff", type: "user_message", text: handoffText() },
+      { id: "u-1", type: "user_message", text: "hello" },
     ]);
     expect(firstUserMessageText(turn)).toBe("hello");
   });

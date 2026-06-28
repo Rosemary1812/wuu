@@ -149,6 +149,7 @@ import {
   persistActiveSessionTabDraft,
   pinnedThreads,
   projectThreads,
+  queryTextForUserItem,
   scratchThreads,
   queryTextsForThread,
   reduceServerEvent,
@@ -1117,11 +1118,8 @@ export function App(): JSX.Element {
     const entries: QueryHistoryEntry[] = [];
     for (const turn of turns) {
       for (const item of turn.items) {
-        if (item.type !== "user_message") {
-          continue;
-        }
-        const text = (item.text ?? "").trim();
-        if (text.length === 0) {
+        const text = queryTextForUserItem(item);
+        if (!text) {
           continue;
         }
         entries.push({ turnID: turn.id, itemID: item.id, text });

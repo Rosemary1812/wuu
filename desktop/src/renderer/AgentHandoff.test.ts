@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { agentHandoffDisplay } from "./AgentHandoff";
+import { agentHandoffDisplay, isAgentHandoffText } from "./AgentHandoff";
 
 function handoffText(status = "completed"): string {
   return JSON.stringify({
@@ -34,5 +34,11 @@ describe("agentHandoffDisplay", () => {
     const payload = JSON.parse(handoffText());
     payload.trigger_turn = false;
     expect(agentHandoffDisplay(JSON.stringify(payload))).toBeUndefined();
+  });
+
+  it("identifies stored mailbox payloads as internal handoffs for history filters", () => {
+    const payload = JSON.parse(handoffText());
+    payload.trigger_turn = false;
+    expect(isAgentHandoffText(JSON.stringify(payload))).toBe(true);
   });
 });

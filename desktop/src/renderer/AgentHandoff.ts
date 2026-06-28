@@ -19,21 +19,17 @@ type AgentNotificationPayload = {
 const NOTIFICATION_OPEN = "<subagent_notification>";
 const NOTIFICATION_CLOSE = "</subagent_notification>";
 
+export function isAgentHandoffText(text: string | undefined): boolean {
+  return parseAgentHandoff(text) !== undefined;
+}
+
 export function agentHandoffDisplay(text: string | undefined): AgentHandoffDisplay | undefined {
-  const trimmed = text?.trim();
-  if (!trimmed) {
+  const handoff = parseAgentHandoff(text);
+  if (!handoff || !handoff.triggerTurn) {
     return undefined;
   }
 
-  const envelope = parseJSON<AgentHandoffEnvelope>(trimmed);
-  if (!envelope || envelope.trigger_turn !== true || typeof envelope.content !== "string") {
-    return undefined;
-  }
-
-  const payload = parseNotificationPayload(envelope.content);
-  if (!payload) {
-    return undefined;
-  }
+  const { payload } = handoff;
 
   const name = compactAgentName(
     stringValue(payload.status?.task_name) ||
@@ -42,6 +38,28 @@ export function agentHandoffDisplay(text: string | undefined): AgentHandoffDispl
   );
   const status = stringValue(payload.status?.status);
   return { label: handoffStatusLabel(name, status) };
+}
+
+function parseAgentHandoff(
+  text: string | undefined,
+): { payload: AgentNotificationPayload; triggerTurn: boolean } | undefined {
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const directPayload = parseNotificationPayload(trimmed);
+  if (directPayload) {
+    return { payload: directPayload, triggerTurn: false };
+  }
+
+  const envelope = parseJSON<AgentHandoffEnvelope>(trimmed);
+  if (!envelope || typeof envelope.content !== "string") {
+    return undefined;
+  }
+
+  const payload = parseNotificationPayload(envelope.content);
+  return payload ? { payload, triggerTurn: envelope.trigger_turn === true } : undefined;
 }
 
 function parseNotificationPayload(content: string): AgentNotificationPayload | undefined {

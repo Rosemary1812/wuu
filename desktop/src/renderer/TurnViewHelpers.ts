@@ -1,4 +1,5 @@
 import type { Thread, ThreadItem, Turn } from "../shared/protocol";
+import { isAgentHandoffText } from "./AgentHandoff";
 import {
   messageFlowFinalTextIndex,
   messageFlowStatusLabel,
@@ -52,7 +53,7 @@ export function firstUserMessageAnchor(
     "turns" in source ? source.turns ?? [] : [source as Turn];
   for (const turn of turns) {
     for (const item of turn.items ?? []) {
-      if (item.type === "user_message") {
+      if (item.type === "user_message" && !isAgentHandoffText(item.text)) {
         return { turnID: turn.id, itemID: item.id };
       }
     }
@@ -151,7 +152,7 @@ export function firstUserMessageText(
       continue;
     }
     const trimmed = (item.text ?? "").trim();
-    if (!trimmed) {
+    if (!trimmed || isAgentHandoffText(trimmed)) {
       continue;
     }
     return trimmed;

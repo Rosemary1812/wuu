@@ -10,9 +10,54 @@ import {
   isThreadUnread,
   latestCompletedTurnID,
   markThreadTurnsViewed,
+  queryTextsForThread,
   reduceServerEvent,
   sortThreads,
 } from "./AppState";
+
+function handoffText(): string {
+  return JSON.stringify({
+    author: "/root/helpme_recovery",
+    recipient: "/root",
+    content: `<subagent_notification>\n${JSON.stringify({
+      agent_path: "/root/helpme_recovery",
+      status: {
+        type: "agent_result",
+        agent_id: "worker-1",
+        task_name: "helpme_recovery",
+        status: "completed"
+      }
+    })}\n</subagent_notification>`,
+    trigger_turn: true
+  });
+}
+
+function threadWithUserTexts(texts: string[]): Thread {
+  return {
+    id: "thread-1",
+    preview: "preview",
+    model_provider: "fake",
+    model: "fake-model",
+    cwd: "/repo",
+    status: "idle",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    turns: [
+      {
+        id: "turn-1",
+        items_view: "full",
+        status: "completed",
+        items: texts.map((text, index) => ({
+          id: `user-${index + 1}`,
+          type: "user_message",
+          status: "completed",
+          role: "user",
+          text
+        }))
+      }
+    ]
+  };
+}
 
 describe("AppState server requests", () => {
   it("keeps tool approval requests pending instead of rejecting them", () => {
@@ -53,6 +98,14 @@ describe("AppState server requests", () => {
     expect(next.pendingToolApproval?.capability_action).toBe("execute");
     expect(next.pendingToolApproval?.capability_rule).toBe("bash-readonly-echo");
     expect(next.status).toBe("等待审批");
+  });
+});
+
+describe("queryTextsForThread", () => {
+  it("skips internal agent handoff messages", () => {
+    const thread = threadWithUserTexts([handoffText(), "真正的用户问题"]);
+
+    expect(queryTextsForThread(thread)).toEqual(["真正的用户问题"]);
   });
 });
 

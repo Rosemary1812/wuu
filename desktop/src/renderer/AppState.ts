@@ -15,6 +15,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
+import { isAgentHandoffText } from "./AgentHandoff";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { sortChildAgents } from "./ThreadAgents";
 import {
@@ -1141,16 +1142,24 @@ function queryTextsForThread(thread: Thread | undefined): string[] {
   const queries: string[] = [];
   for (const turn of thread.turns) {
     for (const item of turn.items) {
-      if (item.type !== "user_message") {
-        continue;
-      }
-      const text = (item.text ?? "").trim();
-      if (text.length > 0) {
+      const text = queryTextForUserItem(item);
+      if (text) {
         queries.push(text);
       }
     }
   }
   return queries;
+}
+
+function queryTextForUserItem(item: ThreadItem): string | undefined {
+  if (item.type !== "user_message") {
+    return undefined;
+  }
+  const text = (item.text ?? "").trim();
+  if (!text || isAgentHandoffText(text)) {
+    return undefined;
+  }
+  return text;
 }
 
 function activeThreadIDForState(state: AppState): string | undefined {
@@ -1759,6 +1768,7 @@ export {
   persistActiveSessionTabDraft,
   pinnedThreads,
   projectThreads,
+  queryTextForUserItem,
   queryTextsForThread,
   reduceNotification,
   reduceServerEvent,
