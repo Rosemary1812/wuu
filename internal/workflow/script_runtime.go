@@ -55,7 +55,6 @@ type ScriptSpawnSpec struct {
 	AgentProfile    string `json:"agentProfile"`
 	Isolation       string `json:"isolation"`
 	RunInBackground bool   `json:"runInBackground"`
-	TimeoutMS       int64  `json:"timeoutMs"`
 }
 
 type ScriptSpawnResult struct {
@@ -72,8 +71,7 @@ type ScriptSpawnResult struct {
 }
 
 type ScriptAwaitArgs struct {
-	Targets   []string `json:"targets"`
-	TimeoutMS int64    `json:"timeoutMs"`
+	Targets []string `json:"targets"`
 }
 
 func NewScriptRuntime(opts ScriptRuntimeOptions) *ScriptRuntime {
@@ -371,10 +369,6 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if err := r.ensureAgentCapacity(1); err != nil {
 		return ScriptSpawnResult{}, err
 	}
-	timeout := time.Duration(0)
-	if spec.TimeoutMS > 0 {
-		timeout = time.Duration(spec.TimeoutMS) * time.Millisecond
-	}
 	result, err := r.opts.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
 		Type:         subagentType,
 		TaskName:     taskName,
@@ -386,7 +380,6 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 		GoalID:       r.opts.GoalID,
 		GoalDir:      r.opts.GoalDir,
 		Synchronous:  foreground,
-		Timeout:      timeout,
 		Isolation:    strings.TrimSpace(spec.Isolation),
 	})
 	if err != nil {
@@ -435,17 +428,11 @@ func (r *ScriptRuntime) awaitAgents(ctx context.Context, vm *goja.Runtime, value
 	if err != nil {
 		return agentcontrol.AwaitAgentsResult{}, err
 	}
-	waitCtx := ctx
-	var cancel context.CancelFunc
-	if args.TimeoutMS > 0 {
-		waitCtx, cancel = context.WithTimeout(ctx, time.Duration(args.TimeoutMS)*time.Millisecond)
-		defer cancel()
-	}
 	targets := args.Targets
 	if len(targets) == 0 {
 		targets = r.defaultAwaitTargets()
 	}
-	result, err := r.awaitAgentTargets(waitCtx, targets)
+	result, err := r.awaitAgentTargets(ctx, targets)
 	if err != nil {
 		return result, err
 	}
@@ -910,7 +897,6 @@ func parseScriptAwaitArgs(vm *goja.Runtime, value goja.Value) (ScriptAwaitArgs, 
 			if err := vm.ExportTo(value, &args); err != nil {
 				return ScriptAwaitArgs{}, fmt.Errorf("parse awaitAgents args: %w", err)
 			}
-			args.TimeoutMS = firstScriptInt64(object, args.TimeoutMS, "timeoutMs", "timeout_ms", "TimeoutMS")
 			return args, nil
 		}
 	}
@@ -937,7 +923,6 @@ func parseScriptSpawnSpec(vm *goja.Runtime, value goja.Value) (ScriptSpawnSpec, 
 		spec.AgentProfile = firstScriptString(object, spec.AgentProfile, "agentProfile", "agent_profile", "AgentProfile")
 		spec.Isolation = firstScriptString(object, spec.Isolation, "isolation", "Isolation")
 		spec.RunInBackground = firstScriptBool(object, spec.RunInBackground, "runInBackground", "run_in_background", "RunInBackground")
-		spec.TimeoutMS = firstScriptInt64(object, spec.TimeoutMS, "timeoutMs", "timeout_ms", "TimeoutMS")
 	}
 	return spec, nil
 }
@@ -971,7 +956,7 @@ func targetsFromValue(vm *goja.Runtime, value goja.Value) ([]string, error) {
 		if err := vm.ExportTo(value, &targets); err == nil {
 			return trimStringSlice(targets), nil
 		}
-		return nil, fmt.Errorf("awaitAgents target must be a string, array, or {targets, timeoutMs}")
+		return nil, fmt.Errorf("awaitAgents target must be a string, array, or {targets}")
 	}
 }
 
@@ -1019,27 +1004,6 @@ func firstScriptBool(object *goja.Object, current bool, keys ...string) bool {
 		}
 		if exported, ok := value.Export().(bool); ok {
 			return exported
-		}
-	}
-	return current
-}
-
-func firstScriptInt64(object *goja.Object, current int64, keys ...string) int64 {
-	if current != 0 {
-		return current
-	}
-	for _, key := range keys {
-		value := object.Get(key)
-		if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
-			continue
-		}
-		switch exported := value.Export().(type) {
-		case int64:
-			return exported
-		case int:
-			return int64(exported)
-		case float64:
-			return int64(exported)
 		}
 	}
 	return current

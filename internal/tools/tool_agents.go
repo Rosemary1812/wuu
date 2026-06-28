@@ -40,7 +40,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 		Description: "Launch a new agent to handle a complex, multi-step task autonomously. " +
 			"Available subagent_type values: " + agentcontrol.WorkerTypeHelp() + ". " +
 			"Specify subagent_type to launch a fresh specialized agent. Omit subagent_type to fork yourself: " +
-			"the child inherits your full conversation context and runs in the background. For a fresh " +
+			"the child inherits your full conversation context and always runs in the background. For a fresh " +
 			"general-purpose agent, set subagent_type='general-purpose'. The child has its own context " +
 			"and its final answer is delivered to you when it finishes. " +
 			"Use a child only when delegation materially improves the task: independent investigation, " +
@@ -66,11 +66,12 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Always include a short description (3-5 words) summarizing what the agent will do. " +
 			"Each fresh subagent_type invocation starts without conversation context, so the `prompt` parameter must be a complete brief. " +
 			"Forks inherit your current context; do not use a fork when a fresh independent second opinion is needed. " +
-			"Use run_in_background=true when you have genuinely independent work to do in parallel. Otherwise keep the " +
-			"agent in the foreground so its result can inform your next step. Verification agents always run in the background. " +
+			"Fresh agents run in the foreground by default, so the tool returns the child result before you continue. " +
+			"Set run_in_background=true only for independent or long-running work that can proceed while you do other work; " +
+			"background agents return quickly and send a completion notification when done. " +
 			"After spawning background agents, continue meaningful non-overlapping local work when available; otherwise end your turn " +
-			"and let the background completion notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
-			"synthesis or integration depends on child output. Spawn multiple independent agents in parallel by calling spawn_agent " +
+			"and let the completion notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
+			"the next step truly depends on child output. Spawn multiple independent agents in parallel by calling spawn_agent " +
 			"multiple times in the same response.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -98,14 +99,14 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Optional Agent Profile name with saved memory. Use only when the user explicitly wants that profile or a workflow/profile policy requires one; omit for ordinary temporary child tasks.",
 				},
+				"run_in_background": map[string]any{
+					"type":        "boolean",
+					"description": "Optional. For fresh subagents only. Set true for independent or long-running work that should return immediately and notify you later. Omit or false when the next step needs the result now. Forks always run in the background.",
+				},
 				"isolation": map[string]any{
 					"type":        "string",
 					"enum":        []string{"worktree"},
 					"description": "Optional. 'worktree' creates a fresh isolated workspace for sandboxed edits. Omit to run in the current repo.",
-				},
-				"run_in_background": map[string]any{
-					"type":        "boolean",
-					"description": "Set to true to run this agent in the background. You will be notified when it completes. Omit or false to keep a fresh specialized agent in the foreground; forks and verification agents run in the background.",
 				},
 				"goal_id": map[string]any{
 					"type":        "string",
@@ -131,8 +132,8 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		SubagentType    string `json:"subagent_type"`
 		Name            string `json:"name"`
 		AgentProfile    string `json:"agent_profile"`
-		Isolation       string `json:"isolation"`
 		RunInBackground bool   `json:"run_in_background"`
+		Isolation       string `json:"isolation"`
 		GoalID          string `json:"goal_id"`
 		GoalDir         string `json:"goal_dir"`
 	}
@@ -804,113 +805,10 @@ func (t *FollowupTaskTool) Execute(ctx context.Context, argsJSON string) (string
 }
 
 // ---------------------------------------------------------------------------
-// wait_agent
-// ---------------------------------------------------------------------------
-
-type WaitAgentTool struct{ env *Env }
-
-// Agent lifecycle waits are runtime policy, not model-chosen durations.
-var waitAgentRuntimeTimeout = 10 * time.Second
-
-func NewWaitAgentTool(env *Env) *WaitAgentTool { return &WaitAgentTool{env: env} }
-
-func (t *WaitAgentTool) Name() string            { return "wait_agent" }
-func (t *WaitAgentTool) IsReadOnly() bool        { return true }
-func (t *WaitAgentTool) IsConcurrencySafe() bool { return true }
-
-func (t *WaitAgentTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "wait_agent",
-		Description: "Wait briefly for a background agent notification only when the current turn is blocked on that signal. " +
-			"This is not a join or result tool: it does not return child output. Do not call wait_agent after spawn_agent just to poll. " +
-			"The runtime owns the wait budget; do not try to estimate elapsed time. " +
-			"Use await_agents when you need child output for synthesis; otherwise continue local work or end the turn and let automatic completion notifications resume you.",
-		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		},
-	}
-}
-
-func (t *WaitAgentTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	if t.env.AgentControl == nil {
-		return "", errors.New("wait_agent: agent control not configured")
-	}
-	var args struct{}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, waitAgentRuntimeTimeout)
-	defer cancel()
-	signal, err := t.env.AgentControl.WaitForAgentNotificationFrom(currentAgentPath(t.env), waitCtx)
-	if err != nil {
-		return "", err
-	}
-	out, err := json.Marshal(waitAgentResultFromSignal(signal))
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-type waitAgentResult struct {
-	Action     string `json:"action"`
-	Message    string `json:"message"`
-	TimedOut   bool   `json:"timed_out"`
-	SignalType string `json:"signal_type"`
-	AgentID    string `json:"agent_id,omitempty"`
-	AgentPath  string `json:"agent_path,omitempty"`
-	TaskName   string `json:"task_name,omitempty"`
-	Status     string `json:"status,omitempty"`
-}
-
-func waitAgentResultFromSignal(signal agentcontrol.WaitAgentSignal) waitAgentResult {
-	result := waitAgentResult{
-		Action:     "wait_agent",
-		TimedOut:   !signal.Received,
-		SignalType: publicWaitAgentSignalType(signal.SignalType),
-		AgentID:    signal.AgentID,
-		AgentPath:  signal.AgentPath,
-		TaskName:   signal.TaskName,
-		Status:     signal.Status,
-	}
-	if result.SignalType == "" {
-		result.SignalType = agentcontrol.WaitAgentSignalTimeout
-	}
-	result.Message = waitAgentMessage(result)
-	return result
-}
-
-func publicWaitAgentSignalType(signalType string) string {
-	if signalType == agentcontrol.WaitAgentSignalQueuedMessage {
-		return "notification_received"
-	}
-	return signalType
-}
-
-func waitAgentMessage(result waitAgentResult) string {
-	switch result.SignalType {
-	case agentcontrol.WaitAgentSignalCompleted:
-		return "Background agent completed."
-	case agentcontrol.WaitAgentSignalFailed:
-		return "Background agent failed."
-	case agentcontrol.WaitAgentSignalCancelled:
-		return "Background agent was cancelled."
-	case agentcontrol.WaitAgentSignalTimeout:
-		return "Wait timed out; no background agent notification arrived before the timeout."
-	default:
-		return "Background agent notification received."
-	}
-}
-
-// ---------------------------------------------------------------------------
 // await_agents
 // ---------------------------------------------------------------------------
 
 type AwaitAgentsTool struct{ env *Env }
-
-// Agent lifecycle waits are runtime policy, not model-chosen durations.
-const awaitAgentsRuntimeTimeout = time.Minute
 
 func NewAwaitAgentsTool(env *Env) *AwaitAgentsTool { return &AwaitAgentsTool{env: env} }
 
@@ -927,7 +825,7 @@ func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
 			"parallel tool-call batch as spawn_agent; wait for spawn_agent to return real IDs first. " +
 			"Pass targets to wait for specific agent_ids, task_names, or agent_paths. Omit targets " +
 			"only when you intentionally want to await all active descendant agents under the current " +
-			"agent path. The runtime owns the wait budget; do not try to estimate elapsed time. " +
+			"agent path. This waits until the selected agents reach a final state, the user stops the turn, or the session ends. " +
 			"Results can include status='awaiting_report' when a worker produced final " +
 			"text without the required agent_report; treat that as an incomplete handoff and follow up " +
 			"or verify before relying on it. Results also include changed_files from structured reports " +
@@ -955,9 +853,7 @@ func (t *AwaitAgentsTool) Execute(ctx context.Context, argsJSON string) (string,
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, awaitAgentsRuntimeTimeout)
-	defer cancel()
-	result, err := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), waitCtx, args.Targets)
+	result, err := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), ctx, args.Targets)
 	if err != nil {
 		return "", err
 	}

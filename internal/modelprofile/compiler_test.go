@@ -120,7 +120,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 	mustDeferred := []string{
 		"ast_search", "semantic_search",
 		"web_search", "web_fetch",
-		"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents", "helpme",
+		"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "helpme",
 		"session_memory", "read_memory", "write_memory",
 		"create_goal", "get_goal", "update_goal",
 		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",

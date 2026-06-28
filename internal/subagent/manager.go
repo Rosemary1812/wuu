@@ -123,10 +123,10 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		id = newAgentID(opts.Type)
 	}
 	lifetime := opts.MaxLifetime
-	if lifetime <= 0 {
-		lifetime = DefaultMaxLifetime
+	subCtx, cancel := context.WithCancel(ctx)
+	if lifetime > 0 {
+		subCtx, cancel = context.WithTimeout(ctx, lifetime)
 	}
-	subCtx, cancel := context.WithTimeout(ctx, lifetime)
 	history := initialTurnHistory(opts)
 
 	sa := &SubAgent{
@@ -270,10 +270,10 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	sa.CompletedAt = time.Now()
 	if err != nil {
 		switch {
-		case errors.Is(err, context.DeadlineExceeded):
+		case errors.Is(err, context.DeadlineExceeded) && sa.maxLifetime > 0:
 			sa.Status = StatusFailed
 			sa.Error = fmt.Errorf("worker exceeded max lifetime (%s)", sa.maxLifetime)
-		case errors.Is(err, context.Canceled):
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 			sa.Status = StatusCancelled
 		default:
 			sa.Status = StatusFailed
@@ -439,10 +439,10 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 	history = append(history, providers.ChatMessage{Role: "user", Content: msg})
 
 	lifetime := sa.maxLifetime
-	if lifetime <= 0 {
-		lifetime = DefaultMaxLifetime
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	if lifetime > 0 {
+		runCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), lifetime)
 	}
-	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lifetime)
 	doneCh := make(chan struct{})
 	sa.Status = StatusRunning
 	sa.CompletedAt = time.Time{}

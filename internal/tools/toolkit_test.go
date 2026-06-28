@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
@@ -2066,7 +2065,6 @@ func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 	want := map[string]bool{
 		"send_message":  false,
 		"followup_task": false,
-		"wait_agent":    false,
 		"await_agents":  false,
 		"close_agent":   false,
 		"agent_report":  false,
@@ -2392,7 +2390,6 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "wait_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
 		{name: "await_agents", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
 		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
@@ -5563,32 +5560,17 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 	t.Fatal("spawn_agent must be present in tool definitions")
 }
 
-func TestToolkit_WaitAgentUsesNotificationSignalSchema(t *testing.T) {
+func TestToolkit_WaitAgentIsNotRegistered(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	for _, d := range kit.Definitions() {
-		if d.Name != "wait_agent" {
-			continue
+		if d.Name == "wait_agent" {
+			t.Fatalf("wait_agent must not be model-visible: %#v", d)
 		}
-		props, _ := d.InputSchema["properties"].(map[string]any)
-		if _, ok := props["timeout_ms"]; ok {
-			t.Fatalf("wait_agent schema must not ask the model to choose wait duration: %#v", d.InputSchema)
-		}
-		if _, ok := props["target"]; ok {
-			t.Fatalf("wait_agent signal schema must not expose target: %#v", d.InputSchema)
-		}
-		if !strings.Contains(d.Description, "runtime owns the wait budget") {
-			t.Fatalf("wait_agent description must explain runtime-owned waiting: %q", d.Description)
-		}
-		if _, ok := d.InputSchema["required"]; ok {
-			t.Fatalf("wait_agent signal schema must not require fields: %#v", d.InputSchema)
-		}
-		return
 	}
-	t.Fatal("wait_agent must be present in tool definitions")
 }
 
 func TestToolkit_AwaitAgentsDoesNotExposeTimeout(t *testing.T) {
@@ -5608,100 +5590,12 @@ func TestToolkit_AwaitAgentsDoesNotExposeTimeout(t *testing.T) {
 		if _, ok := props["timeout_ms"]; ok {
 			t.Fatalf("await_agents schema must not ask the model to choose wait duration: %#v", d.InputSchema)
 		}
-		if !strings.Contains(d.Description, "runtime owns the wait budget") {
-			t.Fatalf("await_agents description must explain runtime-owned waiting: %q", d.Description)
+		if !strings.Contains(d.Description, "user stops the turn") || !strings.Contains(d.Description, "session ends") {
+			t.Fatalf("await_agents description must explain runtime-owned cancellation: %q", d.Description)
 		}
 		return
 	}
 	t.Fatal("await_agents must be present in tool definitions")
-}
-
-func TestToolkit_WaitAgentReturnsNarrowTimeoutSignal(t *testing.T) {
-	previousTimeout := waitAgentRuntimeTimeout
-	waitAgentRuntimeTimeout = time.Millisecond
-	defer func() {
-		waitAgentRuntimeTimeout = previousTimeout
-	}()
-
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	control, err := agentcontrol.New(agentcontrol.Config{
-		Client:       &workflowFakeClient{content: "unused"},
-		DefaultModel: "fake-model",
-		ParentRepo:   root,
-		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
-		SessionID:    "wait-signal-session",
-		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
-			return workflowNoopExecutor{}, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("AgentControl New: %v", err)
-	}
-	defer stopWorkflowAgentControl(control)
-	kit.SetAgentControl(control)
-	kit.SetAgentIdentity("root", agentthread.RootPath)
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "wait_agent",
-		Arguments: `{}`,
-	})
-	if err != nil {
-		t.Fatalf("wait_agent: %v", err)
-	}
-	var parsed struct {
-		Action     string `json:"action"`
-		TimedOut   bool   `json:"timed_out"`
-		SignalType string `json:"signal_type"`
-	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("decode wait_agent result: %v\n%s", err, resp)
-	}
-	if parsed.Action != "wait_agent" || !parsed.TimedOut || parsed.SignalType != agentcontrol.WaitAgentSignalTimeout {
-		t.Fatalf("unexpected wait_agent result: %+v", parsed)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(resp), &raw); err != nil {
-		t.Fatalf("decode wait_agent result map: %v\n%s", err, resp)
-	}
-	for _, key := range []string{"next_steps", "await_target", "details_available_via", "requires_await_agents_for_output"} {
-		if _, ok := raw[key]; ok {
-			t.Fatalf("wait_agent result should stay narrow, found %s in %s", key, resp)
-		}
-	}
-}
-
-func TestWaitAgentResultFromCompletedSignalIsNarrow(t *testing.T) {
-	result := waitAgentResultFromSignal(agentcontrol.WaitAgentSignal{
-		Received:   true,
-		SignalType: agentcontrol.WaitAgentSignalCompleted,
-		AgentID:    "agent-1",
-		AgentPath:  "/root/review",
-		TaskName:   "review",
-		Status:     "completed",
-	})
-	if result.TimedOut || result.SignalType != agentcontrol.WaitAgentSignalCompleted {
-		t.Fatalf("unexpected completed wait result: %+v", result)
-	}
-	if result.AgentPath != "/root/review" || result.AgentID != "agent-1" || result.Status != "completed" {
-		t.Fatalf("completed signal should keep only identity/status fields: %+v", result)
-	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal completed wait result: %v", err)
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("decode completed wait result: %v\n%s", err, raw)
-	}
-	for _, key := range []string{"next_steps", "await_target", "details_available_via", "requires_await_agents_for_output"} {
-		if _, ok := decoded[key]; ok {
-			t.Fatalf("completed wait result should stay narrow, found %s in %s", key, raw)
-		}
-	}
 }
 
 func TestToolkit_SpawnAgent_FailsWithoutAgentControl(t *testing.T) {

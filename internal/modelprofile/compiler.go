@@ -307,7 +307,6 @@ func addTaskTools(b *surfaceBuilder) {
 	b.addDeferred("spawn_agent", capability.CapabilityTaskSpawn)
 	b.addDeferred("send_message", capability.CapabilityTaskCommunicate)
 	b.addDeferred("followup_task", capability.CapabilityTaskCommunicate)
-	b.addDeferred("wait_agent", capability.CapabilityTaskManage)
 	b.addDeferred("await_agents", capability.CapabilityTaskManage)
 	b.addDeferred("close_agent", capability.CapabilityTaskManage)
 	b.addDeferred("list_agents", capability.CapabilityTaskManage)

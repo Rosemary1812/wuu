@@ -310,9 +310,10 @@ type queuedSpawnPayload struct {
 	ParentHistory []providers.ChatMessage `json:"parent_history,omitempty"`
 }
 
-// Spawn launches a sub-agent. In synchronous mode it blocks until
-// the sub-agent finishes; in async mode it returns immediately with
-// status "running" and the agent_id the orchestrator can poll.
+// Spawn launches a sub-agent. In synchronous mode it waits until the child
+// finishes or the caller's context is cancelled; in async mode it returns
+// immediately with status "running" and the agent_id the orchestrator can join
+// later or receive via completion notification.
 func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errors.New("prompt is required")
@@ -491,13 +492,15 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		return result, nil
 	}
 
-	// Synchronous mode: wait for completion.
-	timeout := req.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
+	// Synchronous mode: wait for completion. There is no hidden default
+	// lifetime here; user stop, session shutdown, CLI/app timeout, or an
+	// explicit request timeout owns cancellation.
+	waitCtx := ctx
+	var cancel context.CancelFunc
+	if req.Timeout > 0 {
+		waitCtx, cancel = context.WithTimeout(ctx, req.Timeout)
+		defer cancel()
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	snap, err := c.manager.Wait(waitCtx, sa.ID)
 	if err != nil {
 		return nil, fmt.Errorf("wait: %w", err)
@@ -779,12 +782,12 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		return result, nil
 	}
 
-	timeout := req.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
+	waitCtx := ctx
+	var cancel context.CancelFunc
+	if req.Timeout > 0 {
+		waitCtx, cancel = context.WithTimeout(ctx, req.Timeout)
+		defer cancel()
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	snap, err := c.manager.Wait(waitCtx, sa.ID)
 	if err != nil {
 		return nil, fmt.Errorf("wait: %w", err)
@@ -2174,7 +2177,6 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 - spawn_agent — launch a child agent. Pass description and prompt. Specify subagent_type for a fresh specialized agent, or omit subagent_type to fork yourself with full conversation context.
 - send_message — queue a message for an existing background agent without triggering a new turn.
 - followup_task — send a follow-up task message and trigger the target background agent's next turn.
-- wait_agent — wait briefly for a background agent notification only when the current turn is blocked on that signal. It does not return child output.
 - await_agents — explicitly join specific child agents, or all active descendant agents, and return structured per-agent results.
 - close_agent — stop a running agent that is stuck or off-track.
 - list_agents — see active agents and their status.
@@ -2206,7 +2208,7 @@ Do not delegate understanding. Never hand off vague prompts like "based on your 
 
 Launch independent agents in parallel whenever possible. Read-only or verification tasks can run freely in parallel. Write-heavy tasks should run one at a time per file set to avoid conflicts. When you split code-edit work, assign each agent clear files or modules and avoid overlapping ownership.
 
-Fresh subagents run in the foreground by default so you can use their result immediately. Set run_in_background=true only when you have genuinely independent work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not call wait_agent after spawn_agent just to poll, and do not repeatedly wait by reflex.
+Fresh subagents run in the foreground by default so you can use their result immediately. Foreground child execution has no model-selected wait duration; it continues until the child finishes or the user/runtime cancels the turn. Set run_in_background=true only when you have genuinely independent or long-running work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not sleep, poll, or loop checking status.
 
 Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
 

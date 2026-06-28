@@ -210,8 +210,6 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("agent", "发送给子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "followup_task":
 		return toolDisplay("agent", "追加子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
-	case "wait_agent":
-		return toolDisplay("agent", "等待子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "await_agents":
 		return toolDisplay("agent", "等待子任务")
 	case "close_agent":

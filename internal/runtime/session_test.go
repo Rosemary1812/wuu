@@ -1992,7 +1992,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "wait_agent", "await_agents", "close_agent", "list_agents"} {
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
 		if defs[blocked] {
 			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
 		}
