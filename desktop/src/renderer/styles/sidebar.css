@@ -976,7 +976,7 @@
 }
 
 .thread-row:hover .thread-row-main > .thread-row-title,
-.thread-row:focus-within .thread-row-main > .thread-row-title {
+.thread-row:has(.thread-row-action:focus-visible) .thread-row-main > .thread-row-title {
   clip-path: inset(0 58px 0 0 round 0);
   opacity: 0.78;
 }
@@ -1045,7 +1045,7 @@
 }
 
 .thread-row:hover .thread-row-actions,
-.thread-row:focus-within .thread-row-actions {
+.thread-row:has(.thread-row-action:focus-visible) .thread-row-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, -50%, 0);
