@@ -17,6 +17,22 @@ func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
 	if _, ok := props["mode"]; ok {
 		t.Fatalf("helpme schema should not expose mode: %#v", def.InputSchema)
 	}
+	if _, ok := props["timeout_ms"]; ok {
+		t.Fatalf("helpme schema should not expose long synchronous timeout: %#v", def.InputSchema)
+	}
+	if _, ok := props["wait_ms"]; !ok {
+		t.Fatalf("helpme schema should expose optional short wait_ms: %#v", def.InputSchema)
+	}
+	for _, want := range []string{"returns immediately", "await_agents", "inception"} {
+		if !strings.Contains(def.Description, want) {
+			t.Fatalf("helpme description missing %q:\n%s", want, def.Description)
+		}
+	}
+	for _, unwanted := range []string{"waits for it to finish", "joint compact marker"} {
+		if strings.Contains(def.Description, unwanted) {
+			t.Fatalf("helpme description should not promise synchronous compact path %q:\n%s", unwanted, def.Description)
+		}
+	}
 }
 
 func TestDecodeHelpMeArgsAcceptsSingleStringLists(t *testing.T) {
@@ -26,7 +42,7 @@ func TestDecodeHelpMeArgsAcceptsSingleStringLists(t *testing.T) {
 		"failed_attempts": "CSS visibility changed but the rail still did not render",
 		"constraints": "preserve existing sidebar behavior",
 		"evidence": "screenshot shows the rail missing"
-	}`, &args); err != nil {
+		}`, &args); err != nil {
 		t.Fatalf("decode helpme args: %v", err)
 	}
 	if got := args.FailedAttempts; len(got) != 1 || got[0] != "CSS visibility changed but the rail still did not render" {
@@ -37,6 +53,9 @@ func TestDecodeHelpMeArgsAcceptsSingleStringLists(t *testing.T) {
 	}
 	if got := args.Evidence; len(got) != 1 || got[0] != "screenshot shows the rail missing" {
 		t.Fatalf("evidence = %#v", got)
+	}
+	if args.WaitMS != 0 {
+		t.Fatalf("wait_ms default = %d, want 0", args.WaitMS)
 	}
 }
 
@@ -88,7 +107,7 @@ func TestWriteHelpMeMainTraceArchivesParentHistory(t *testing.T) {
 		AgentID:   "helper-1",
 		AgentPath: "/root/helpme_recovery",
 		Status:    "completed",
-	}, nil, false)
+	}, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}

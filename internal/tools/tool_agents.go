@@ -235,9 +235,10 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "helpme",
 		Description: "Start a HelpMe recovery when the main agent may be stuck in a wrong direction, polluted context, or repeated failed attempts. " +
-			"This launches a fresh general-purpose subagent with a clean context, waits for it to finish, then returns a HelpMe joint compact marker that rewrites the next model-visible context. " +
+			"This launches a fresh general-purpose subagent with a clean context and returns immediately with its agent_id and agent_path. " +
 			"Use this instead of spawn_agent when the purpose is context rescue / second-opinion recovery, especially after user feedback like 'still wrong' or after several unsuccessful local attempts. " +
-			"Include the original goal, the current interpretation, failed attempts, constraints, and concrete evidence so the fresh helper can avoid repeating your mistakes.",
+			"Include the original goal, the current interpretation, failed attempts, constraints, and concrete evidence so the fresh helper can avoid repeating your mistakes. " +
+			"Use await_agents when your next step depends on the helper's output; use inception after consuming the result when the combined context should be rewritten.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -272,9 +273,9 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 					"description": "String array of important evidence already observed: files, errors, tests, logs, or facts. Prefer references over long raw output. Use [] when there is none.",
 					"items":       map[string]any{"type": "string"},
 				},
-				"timeout_ms": map[string]any{
+				"wait_ms": map[string]any{
 					"type":        "integer",
-					"description": "Optional maximum wait time for the helper. Defaults to 600000 and is capped at 1200000.",
+					"description": "Optional short inline wait in milliseconds. Defaults to 0 and is capped at 60000. If the helper is still running after this wait, helpme returns a running/timed_out status instead of failing.",
 				},
 			},
 		},
@@ -300,7 +301,7 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	if reason == "" {
 		reason = "The main agent requested a fresh-context recovery."
 	}
-	timeout := helpMeTimeout(args.TimeoutMS)
+	wait := helpMeWait(args.WaitMS)
 	prompt := buildHelpMePrompt(helpMePromptInput{
 		Reason:               reason,
 		OriginalGoal:         originalGoal,
@@ -318,35 +319,44 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 		Prompt:      prompt,
 		ParentID:    strings.TrimSpace(t.env.AgentID),
 		ParentPath:  currentAgentPath(t.env),
-		Synchronous: true,
-		Timeout:     timeout,
+		Synchronous: false,
 	})
 	if err != nil {
 		return "", err
 	}
 
-	report, reportOK := t.env.AgentControl.AgentReportDetailsForTask(result.AgentID)
 	response := helpMeResponse{
-		Action:        "helpme",
-		Status:        result.Status,
-		AgentID:       result.AgentID,
-		AgentPath:     result.AgentPath,
-		Result:        result.Result,
-		ResultPath:    result.ResultPath,
-		Error:         result.Error,
-		ReportMissing: !reportOK,
-		NextSteps:     result.NextSteps,
+		Action:    "helpme",
+		Status:    result.Status,
+		AgentID:   result.AgentID,
+		AgentPath: result.AgentPath,
+		NextSteps: result.NextSteps,
 	}
+	if wait > 0 {
+		waitCtx, cancel := context.WithTimeout(ctx, wait)
+		awaited, awaitErr := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), waitCtx, []string{result.AgentID})
+		cancel()
+		if awaitErr != nil {
+			return "", awaitErr
+		}
+		response.TimedOut = awaited.TimedOut
+		response.NextSteps = helpMeFirstNonEmptySlice(awaited.NextSteps, response.NextSteps)
+		if len(awaited.Results) > 0 {
+			applyHelpMeAwaitResult(&response, awaited.Results[0])
+		}
+	}
+	report, reportOK := t.env.AgentControl.AgentReportDetailsForTask(response.AgentID)
 	if reportOK {
 		response.Report = &report
 	}
-	mainTracePath, err := writeHelpMeMainTrace(t.env, history, args, result, response.Report, reportOK)
+	response.ReportMissing = helpMeReportMissing(response.Status, reportOK)
+	mainTracePath, err := writeHelpMeMainTrace(t.env, history, args, result, response.Report, response.ReportMissing)
 	if err != nil {
 		return "", err
 	}
 	response.MainTracePath = mainTracePath
 
-	if subagent.Status(result.Status) == subagent.StatusCompleted {
+	if subagent.Status(response.Status) == subagent.StatusCompleted && reportOK {
 		parentEvidence := trimStringSlice(args.Evidence)
 		if mainTracePath != "" {
 			parentEvidence = append(parentEvidence, "Main pre-HelpMe trace: "+mainTracePath)
@@ -363,13 +373,13 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 			Constraints:          args.Constraints,
 			FailedAttempts:       args.FailedAttempts,
 			Evidence:             parentEvidence,
-			HelperStatus:         result.Status,
-			HelperAgentID:        result.AgentID,
-			HelperAgentPath:      result.AgentPath,
-			HelperResult:         result.Result,
-			HelperResultPath:     result.ResultPath,
+			HelperStatus:         response.Status,
+			HelperAgentID:        response.AgentID,
+			HelperAgentPath:      response.AgentPath,
+			HelperResult:         response.Result,
+			HelperResultPath:     response.ResultPath,
 			HelperReportPath:     report.ReportPath,
-			HelperError:          result.Error,
+			HelperError:          response.Error,
 			ReportOutcome:        report.Outcome,
 			ReportSummary:        report.Summary,
 			ChangedFiles:         report.ChangedFiles,
@@ -378,16 +388,16 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 			Risks:                helpMeRisks(report.Risks, reportOK),
 			Verification:         report.Verification,
 			ReportEvidence:       helpMeEvidenceStrings(report.Evidence),
-			NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
+			NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, response.NextSteps),
 			Artifacts:            artifacts,
 		}
 		content := compact.BuildHelpMeJointCompactContent(compactInput)
 		response.HistoryRewrite = &compact.HelpMeHistoryRewrite{
 			Kind:         compact.HelpMeHistoryRewriteKind,
 			Content:      content,
-			AgentID:      result.AgentID,
-			AgentPath:    result.AgentPath,
-			ResultPath:   result.ResultPath,
+			AgentID:      response.AgentID,
+			AgentPath:    response.AgentPath,
+			ResultPath:   response.ResultPath,
 			ReportPath:   report.ReportPath,
 			TraceSummary: "Main history was replaced by HelpMe joint compact; raw main trace is available via main_trace_path, and helper trace is available via agent_path, result_path, and report_path.",
 		}
@@ -409,6 +419,7 @@ type helpMeResponse struct {
 	ResultPath     string                           `json:"result_path,omitempty"`
 	MainTracePath  string                           `json:"main_trace_path,omitempty"`
 	Error          string                           `json:"error,omitempty"`
+	TimedOut       bool                             `json:"timed_out,omitempty"`
 	Report         *agentcontrol.AgentReportDetails `json:"report,omitempty"`
 	ReportMissing  bool                             `json:"report_missing,omitempty"`
 	NextSteps      []string                         `json:"next_steps,omitempty"`
@@ -423,7 +434,7 @@ type helpMeArgs struct {
 	FailedAttempts       []string `json:"failed_attempts"`
 	Constraints          []string `json:"constraints"`
 	Evidence             []string `json:"evidence"`
-	TimeoutMS            int      `json:"timeout_ms"`
+	WaitMS               int      `json:"wait_ms"`
 }
 
 func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
@@ -435,7 +446,7 @@ func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
 		FailedAttempts       json.RawMessage `json:"failed_attempts"`
 		Constraints          json.RawMessage `json:"constraints"`
 		Evidence             json.RawMessage `json:"evidence"`
-		TimeoutMS            int             `json:"timeout_ms"`
+		WaitMS               int             `json:"wait_ms"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -460,7 +471,7 @@ func (a *helpMeArgs) UnmarshalJSON(data []byte) error {
 		FailedAttempts:       failedAttempts,
 		Constraints:          constraints,
 		Evidence:             evidence,
-		TimeoutMS:            raw.TimeoutMS,
+		WaitMS:               raw.WaitMS,
 	}
 	return nil
 }
@@ -528,19 +539,44 @@ func writeHelpMePromptList(b *strings.Builder, label string, values []string) {
 	b.WriteByte('\n')
 }
 
-func helpMeTimeout(timeoutMS int) time.Duration {
-	timeout := time.Duration(timeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
+func helpMeWait(waitMS int) time.Duration {
+	wait := time.Duration(waitMS) * time.Millisecond
+	if wait <= 0 {
+		return 0
 	}
-	maxTimeout := 20 * time.Minute
-	if timeout > maxTimeout {
-		return maxTimeout
+	maxWait := time.Minute
+	if wait > maxWait {
+		return maxWait
 	}
-	return timeout
+	return wait
 }
 
-func writeHelpMeMainTrace(env *Env, history []providers.ChatMessage, args helpMeArgs, result *agentcontrol.SpawnResult, report *agentcontrol.AgentReportDetails, reportOK bool) (string, error) {
+func applyHelpMeAwaitResult(response *helpMeResponse, result agentcontrol.AwaitAgentResult) {
+	if response == nil {
+		return
+	}
+	response.Status = helpMeFirstNonEmpty(result.Status, response.Status)
+	response.AgentID = helpMeFirstNonEmpty(result.AgentID, response.AgentID)
+	response.AgentPath = helpMeFirstNonEmpty(result.AgentPath, response.AgentPath)
+	response.Result = result.Result
+	response.ResultPath = result.ResultPath
+	response.Error = result.Error
+	response.ReportMissing = result.ReportMissing
+}
+
+func helpMeReportMissing(status string, reportOK bool) bool {
+	if reportOK {
+		return false
+	}
+	switch subagent.Status(strings.TrimSpace(status)) {
+	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func writeHelpMeMainTrace(env *Env, history []providers.ChatMessage, args helpMeArgs, result *agentcontrol.SpawnResult, report *agentcontrol.AgentReportDetails, reportMissing bool) (string, error) {
 	if env == nil || strings.TrimSpace(env.SessionDir) == "" {
 		return "", nil
 	}
@@ -569,7 +605,7 @@ func writeHelpMeMainTrace(env *Env, history []providers.ChatMessage, args helpMe
 		MainHistory:   providers.CloneChatMessages(history),
 		HelperResult:  result,
 		Report:        report,
-		ReportMissing: !reportOK,
+		ReportMissing: reportMissing,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
