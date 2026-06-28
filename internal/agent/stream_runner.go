@@ -491,6 +491,10 @@ func requestContextSummary(info RequestContextInfo) *providers.RequestContextSum
 		TurnPrefixHash:           info.TurnPrefixHash,
 		ToolSurfaceHash:          info.ToolSurfaceHash,
 		PromptCacheKey:           info.PromptCacheKey,
+		InputTokens:              info.InputTokens,
+		OutputTokens:             info.OutputTokens,
+		CacheCreationTokens:      info.CacheCreationTokens,
+		CacheReadTokens:          info.CacheReadTokens,
 		SystemSections:           systemPromptSectionSummaries(info.SystemSections),
 	}
 }

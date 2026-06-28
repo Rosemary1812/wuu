@@ -29,6 +29,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -1833,6 +1834,20 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 	if _, err := os.Stat(params.TracePath); err != nil {
 		t.Fatalf("turn trace path should exist: %v", err)
+	}
+	traceSummary, err := sessiontrace.ReplayTrace(params.TracePath)
+	if err != nil {
+		t.Fatalf("replay turn trace: %v", err)
+	}
+	if len(traceSummary.ContextRequests) != 1 {
+		t.Fatalf("expected one context request in trace, got %+v", traceSummary.ContextRequests)
+	}
+	requestRecord := traceSummary.ContextRequests[0]
+	if requestRecord.InputTokens != 10 ||
+		requestRecord.OutputTokens != 3 ||
+		requestRecord.CacheCreationTokens != 6 ||
+		requestRecord.CacheReadTokens != 4 {
+		t.Fatalf("turn trace context request missing per-call usage: %+v", requestRecord)
 	}
 
 	event := turnEventByType(t, msgs, providers.EventContentDelta)

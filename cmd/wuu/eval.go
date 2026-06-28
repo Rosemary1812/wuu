@@ -401,6 +401,7 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	var contextRequests []agent.RequestContextInfo
 	if rt.StreamRunner != nil {
 		previous := rt.StreamRunner.OnRequestContext
+		previousTokenUsage := rt.StreamRunner.OnTokenUsage
 		rt.StreamRunner.OnRequestContext = func(info agent.RequestContextInfo) {
 			if previous != nil {
 				previous(info)
@@ -435,7 +436,17 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 				TurnPrefixHash:           info.TurnPrefixHash,
 				ToolSurfaceHash:          info.ToolSurfaceHash,
 				PromptCacheKey:           info.PromptCacheKey,
+				InputTokens:              info.InputTokens,
+				OutputTokens:             info.OutputTokens,
+				CacheCreationTokens:      info.CacheCreationTokens,
+				CacheReadTokens:          info.CacheReadTokens,
 			})
+		}
+		rt.StreamRunner.OnTokenUsage = func(usage providers.TokenUsage) {
+			if previousTokenUsage != nil {
+				previousTokenUsage(usage)
+			}
+			attachUsageToLatestEvalRequestContext(contextRequests, usage)
 		}
 	}
 
@@ -514,6 +525,17 @@ const (
 var evalSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/\-=]+`),
 	regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret)\s*[:=]\s*["']?[^"'\s,;]+`),
+}
+
+func attachUsageToLatestEvalRequestContext(records []agent.RequestContextInfo, usage providers.TokenUsage) {
+	if len(records) == 0 {
+		return
+	}
+	record := &records[len(records)-1]
+	record.InputTokens = usage.InputTokens
+	record.OutputTokens = usage.OutputTokens
+	record.CacheCreationTokens = usage.CacheCreationTokens
+	record.CacheReadTokens = usage.CacheReadTokens
 }
 
 func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, keepWorkdir bool, finalAnswer string, contextRequests []agent.RequestContextInfo) *evalharness.Observability {
@@ -659,7 +681,11 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			info.StablePrefixHash == "" &&
 			info.TurnPrefixHash == "" &&
 			info.ToolSurfaceHash == "" &&
-			info.LoadableToolSurfaceHash == "" {
+			info.LoadableToolSurfaceHash == "" &&
+			info.InputTokens <= 0 &&
+			info.OutputTokens <= 0 &&
+			info.CacheCreationTokens <= 0 &&
+			info.CacheReadTokens <= 0 {
 			continue
 		}
 		out = append(out, evalharness.ContextRequestObservation{
@@ -692,6 +718,10 @@ func evalContextRequestObservations(infos []agent.RequestContextInfo) []evalharn
 			TurnPrefixHash:           info.TurnPrefixHash,
 			ToolSurfaceHash:          info.ToolSurfaceHash,
 			PromptCacheKey:           info.PromptCacheKey,
+			InputTokens:              info.InputTokens,
+			OutputTokens:             info.OutputTokens,
+			CacheCreationTokens:      info.CacheCreationTokens,
+			CacheReadTokens:          info.CacheReadTokens,
 		})
 	}
 	return out

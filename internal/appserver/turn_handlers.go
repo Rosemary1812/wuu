@@ -511,10 +511,13 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			baseOnUsage(inputTokens, outputTokens)
 		}
 	}
+	var contextRequests []sessiontrace.RequestContextRecord
+	var providerStates []sessiontrace.ProviderStateRecord
 	runner.OnTokenUsage = func(usage providers.TokenUsage) {
 		if baseOnTokenUsage != nil {
 			baseOnTokenUsage(usage)
 		}
+		attachUsageToLatestRequestContext(contextRequests, usage)
 		usagePushMu.Lock()
 		completedUsage = addUsage(completedUsage, usage)
 		liveUsage = providers.TokenUsage{}
@@ -522,8 +525,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		usagePushMu.Unlock()
 		notifyUsage(usageSnapshot, true)
 	}
-	var contextRequests []sessiontrace.RequestContextRecord
-	var providerStates []sessiontrace.ProviderStateRecord
 	runner.OnRequestContext = func(info agent.RequestContextInfo) {
 		if baseOnRequestContext != nil {
 			baseOnRequestContext(info)
@@ -558,6 +559,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			TurnPrefixHash:           info.TurnPrefixHash,
 			ToolSurfaceHash:          info.ToolSurfaceHash,
 			PromptCacheKey:           info.PromptCacheKey,
+			InputTokens:              info.InputTokens,
+			OutputTokens:             info.OutputTokens,
+			CacheCreationTokens:      info.CacheCreationTokens,
+			CacheReadTokens:          info.CacheReadTokens,
 			SystemSections:           requestContextSystemSections(info.SystemSections),
 		})
 	}
@@ -854,6 +859,17 @@ func providerStateRecord(state *providers.ProviderStateSummary) sessiontrace.Pro
 		FullInputItems:         state.FullInputItems,
 		DeltaInputItems:        state.DeltaInputItems,
 	}
+}
+
+func attachUsageToLatestRequestContext(records []sessiontrace.RequestContextRecord, usage providers.TokenUsage) {
+	if len(records) == 0 {
+		return
+	}
+	record := &records[len(records)-1]
+	record.InputTokens = usage.InputTokens
+	record.OutputTokens = usage.OutputTokens
+	record.CacheCreationTokens = usage.CacheCreationTokens
+	record.CacheReadTokens = usage.CacheReadTokens
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, msg providers.ChatMessage) {

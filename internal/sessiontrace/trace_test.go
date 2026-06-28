@@ -65,6 +65,10 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			TurnPrefixHash:           "turn-prefix-hash",
 			ToolSurfaceHash:          "tool-hash",
 			PromptCacheKey:           "thread-cache-key",
+			InputTokens:              12,
+			OutputTokens:             4,
+			CacheCreationTokens:      6,
+			CacheReadTokens:          2,
 			SystemSections: []SystemSectionRecord{{
 				Key:    "memory",
 				Static: false,
@@ -137,6 +141,10 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 		`"turn_prefix_hash":"turn-prefix-hash"`,
 		`"tool_surface_hash":"tool-hash"`,
 		`"prompt_cache_key":"thread-cache-key"`,
+		`"input_tokens":12`,
+		`"output_tokens":4`,
+		`"cache_creation_tokens":6`,
+		`"cache_read_tokens":2`,
 		`"system_sections":[{"key":"memory","static":false,"bytes":1024,"hash":"memory-hash"}]`,
 	} {
 		if !strings.Contains(string(raw), want) {

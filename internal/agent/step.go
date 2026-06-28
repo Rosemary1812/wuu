@@ -137,6 +137,10 @@ type RequestContextInfo struct {
 	TurnPrefixHash           string
 	ToolSurfaceHash          string
 	PromptCacheKey           string
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationTokens      int
+	CacheReadTokens          int
 	SystemSections           []SystemPromptSectionInfo
 }
 

@@ -185,6 +185,10 @@ type RequestContextRecord struct {
 	TurnPrefixHash           string                `json:"turn_prefix_hash,omitempty"`
 	ToolSurfaceHash          string                `json:"tool_surface_hash,omitempty"`
 	PromptCacheKey           string                `json:"prompt_cache_key,omitempty"`
+	InputTokens              int                   `json:"input_tokens,omitempty"`
+	OutputTokens             int                   `json:"output_tokens,omitempty"`
+	CacheCreationTokens      int                   `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens          int                   `json:"cache_read_tokens,omitempty"`
 	SystemSections           []SystemSectionRecord `json:"system_sections,omitempty"`
 }
 

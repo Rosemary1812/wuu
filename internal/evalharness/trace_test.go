@@ -74,6 +74,10 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				SegmentLifecycleCounts:   map[string]int{"request_only": 1},
 				SegmentPlacementCounts:   map[string]int{"after_history": 1},
 				SegmentCachePolicyCounts: map[string]int{"volatile": 1},
+				InputTokens:              10,
+				OutputTokens:             2,
+				CacheCreationTokens:      4,
+				CacheReadTokens:          6,
 			}},
 			ToolInventory: []ToolInventoryObservation{{
 				Name:     "read_file",
@@ -154,6 +158,10 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		contextRequests[0].SegmentLifecycleCounts["request_only"] != 1 ||
 		contextRequests[0].SegmentPlacementCounts["after_history"] != 1 ||
 		contextRequests[0].SegmentCachePolicyCounts["volatile"] != 1 ||
+		contextRequests[0].InputTokens != 10 ||
+		contextRequests[0].OutputTokens != 2 ||
+		contextRequests[0].CacheCreationTokens != 4 ||
+		contextRequests[0].CacheReadTokens != 6 ||
 		contextRequests[0].BlockKindCounts["ENVIRONMENT"] != 1 ||
 		contextRequests[0].BlockKindBytes["REPO_MAP"] != 384 {
 		t.Fatalf("context_requests event missing request metadata: %+v", contextRequests)
