@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { Turn } from "../shared/protocol";
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
 import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./TurnViewHelpers";
@@ -11,6 +11,34 @@ import { firstUserMessageText, truncateReplyPreview, turnReplySnippet } from "./
 const RAIL_BAR_DEFAULT_WIDTH = 18;
 const RAIL_BAR_ADJACENT_WIDTH = 22;
 const RAIL_BAR_HOVERED_WIDTH = 40;
+export const CONVERSATION_TURN_RAIL_VISIBLE_LIMIT = 12;
+
+export function conversationTurnRailWindow(
+  turns: readonly Turn[],
+  focusTurnID: string | undefined,
+  limit = CONVERSATION_TURN_RAIL_VISIBLE_LIMIT,
+): { turns: Turn[]; startIndex: number } {
+  const normalizedLimit = Math.max(1, Math.floor(limit));
+  if (turns.length <= normalizedLimit) {
+    return { turns: [...turns], startIndex: 0 };
+  }
+
+  const focusIndex = focusTurnID
+    ? turns.findIndex((turn) => turn.id === focusTurnID)
+    : -1;
+  const centerIndex = focusIndex >= 0 ? focusIndex : turns.length - 1;
+  const halfWindow = Math.floor(normalizedLimit / 2);
+  const maxStart = Math.max(0, turns.length - normalizedLimit);
+  const startIndex = Math.min(
+    Math.max(0, centerIndex - halfWindow),
+    maxStart,
+  );
+
+  return {
+    turns: turns.slice(startIndex, startIndex + normalizedLimit),
+    startIndex,
+  };
+}
 
 /**
  * Vertical rail of horizontal bars on the left edge of the message stream.
@@ -36,26 +64,80 @@ const RAIL_BAR_HOVERED_WIDTH = 40;
 export function ConversationTurnRail({
   turns,
   activeTurnID,
+  scrollContainerRef,
+  maxVisibleTurns = CONVERSATION_TURN_RAIL_VISIBLE_LIMIT,
   onSelectQueryHistory,
 }: {
   turns: Turn[];
   activeTurnID?: string;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  maxVisibleTurns?: number;
   onSelectQueryHistory: (entry: QueryHistoryEntry) => void;
 }): JSX.Element | null {
   const [hoveredTurnID, setHoveredTurnID] = useState<string | undefined>();
+  const [viewportTurnID, setViewportTurnID] = useState<string | undefined>();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const isEmpty = turns.length === 0;
-  const hoveredIndex = turns.findIndex((t) => t.id === hoveredTurnID);
+  const windowFocusTurnID = viewportTurnID ?? activeTurnID;
+  const { turns: visibleTurns, startIndex } = useMemo(
+    () => conversationTurnRailWindow(turns, windowFocusTurnID, maxVisibleTurns),
+    [maxVisibleTurns, turns, windowFocusTurnID],
+  );
+  const hoveredIndex = visibleTurns.findIndex((t) => t.id === hoveredTurnID);
   const adjacentIndices = new Set<number>();
   if (hoveredIndex >= 0) {
     if (hoveredIndex > 0) {
       adjacentIndices.add(hoveredIndex - 1);
     }
-    if (hoveredIndex < turns.length - 1) {
+    if (hoveredIndex < visibleTurns.length - 1) {
       adjacentIndices.add(hoveredIndex + 1);
     }
   }
+
+  useEffect(() => {
+    if (!hoveredTurnID) {
+      return;
+    }
+    if (!visibleTurns.some((turn) => turn.id === hoveredTurnID)) {
+      setHoveredTurnID(undefined);
+    }
+  }, [hoveredTurnID, visibleTurns]);
+
+  useEffect(() => {
+    const scrollNode = scrollContainerRef?.current;
+    if (!scrollNode || turns.length === 0) {
+      setViewportTurnID(undefined);
+      return;
+    }
+
+    let frameID: number | undefined;
+    const updateViewportTurn = () => {
+      frameID = undefined;
+      const nextTurnID = visibleTurnIDForScrollNode(scrollNode, turns);
+      setViewportTurnID((current) =>
+        current === nextTurnID ? current : nextTurnID,
+      );
+    };
+    const scheduleUpdate = () => {
+      if (frameID !== undefined) {
+        return;
+      }
+      frameID = window.requestAnimationFrame(updateViewportTurn);
+    };
+
+    updateViewportTurn();
+    scrollNode.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frameID !== undefined) {
+        window.cancelAnimationFrame(frameID);
+      }
+      scrollNode.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [scrollContainerRef, turns]);
 
   // Magnet the hover to the bar closest to the mouse Y. This keeps the
   // hover continuous when the mouse crosses the gap between bars (the
@@ -142,7 +224,8 @@ export function ConversationTurnRail({
       className="conversation-turn-rail"
       aria-label="对话回合导航"
     >
-      {turns.map((turn, index) => {
+      {visibleTurns.map((turn, index) => {
+          const globalIndex = startIndex + index;
           const isHovered = turn.id === hoveredTurnID;
           const isAdjacent = adjacentIndices.has(index);
           const isActive = turn.id === activeTurnID;
@@ -168,7 +251,7 @@ export function ConversationTurnRail({
               }}
               role="button"
               tabIndex={0}
-              aria-label={`跳转到第 ${index + 1} 轮对话`}
+              aria-label={`跳转到第 ${globalIndex + 1} 轮对话`}
             >
               <div
                 className="conversation-turn-rail-bridge"
@@ -180,6 +263,53 @@ export function ConversationTurnRail({
         })}
     </div>
   );
+}
+
+function visibleTurnIDForScrollNode(
+  scrollNode: HTMLElement,
+  turns: readonly Turn[],
+): string | undefined {
+  if (turns.length === 0) {
+    return undefined;
+  }
+  const distanceFromBottom = Math.max(
+    0,
+    scrollNode.scrollHeight - scrollNode.scrollTop - scrollNode.clientHeight,
+  );
+  if (distanceFromBottom <= 4) {
+    return turns[turns.length - 1]?.id;
+  }
+
+  const activePane =
+    scrollNode.querySelector<HTMLElement>(
+      '.cached-conversation-pane[data-active="true"]',
+    ) ?? scrollNode;
+  const turnNodes = Array.from(
+    activePane.querySelectorAll<HTMLElement>(".turn[data-turn-id]"),
+  );
+  if (turnNodes.length === 0) {
+    return undefined;
+  }
+
+  const viewportRect = scrollNode.getBoundingClientRect();
+  const anchorY = viewportRect.top + Math.min(viewportRect.height * 0.38, 220);
+  let fallbackTurnID: string | undefined;
+  for (const node of turnNodes) {
+    const turnID = node.dataset.turnId;
+    if (!turnID) {
+      continue;
+    }
+    const rect = node.getBoundingClientRect();
+    if (rect.bottom < viewportRect.top) {
+      fallbackTurnID = turnID;
+      continue;
+    }
+    if (rect.bottom >= anchorY) {
+      return turnID;
+    }
+    fallbackTurnID = turnID;
+  }
+  return fallbackTurnID ?? turns[turns.length - 1]?.id;
 }
 
 function TurnHoverPreview({ turn }: { turn: Turn }): JSX.Element {
