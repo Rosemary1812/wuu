@@ -6,7 +6,7 @@
   gap: var(--conversation-turn-gap);
   font-family: var(--conversation-message-font-family);
   font-weight: 480;
-  margin-bottom: 48px;
+  margin-bottom: 20px;
 }
 
 .turn[data-turn-status="in_progress"] {
