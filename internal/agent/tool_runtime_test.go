@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 )
 
 type runtimeTestTools struct {
@@ -15,6 +16,7 @@ type runtimeTestTools struct {
 	results  map[string]string
 	delays   map[string]time.Duration
 	calls    []providers.ToolCall
+	steps    []int
 }
 
 type cancelAwareRuntimeTools struct {
@@ -41,6 +43,9 @@ func (f *runtimeTestTools) ToolMetadata(call providers.ToolCall) (ToolMetadata, 
 func (f *runtimeTestTools) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, call)
+	if stepIndex, ok := toolctx.StepIndex(ctx); ok {
+		f.steps = append(f.steps, stepIndex)
+	}
 	delay := f.delays[call.ID]
 	f.mu.Unlock()
 
@@ -67,6 +72,14 @@ func (f *runtimeTestTools) recordedCalls() []providers.ToolCall {
 	defer f.mu.Unlock()
 	out := make([]providers.ToolCall, len(f.calls))
 	copy(out, f.calls)
+	return out
+}
+
+func (f *runtimeTestTools) recordedSteps() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]int, len(f.steps))
+	copy(out, f.steps)
 	return out
 }
 
@@ -128,6 +141,26 @@ func TestTurnToolRuntime_PreservesToolSearchKindOnResult(t *testing.T) {
 	}
 }
 
+func TestTurnToolRuntimeAnnotatesToolExecutionStep(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{}
+	runtime := NewTurnToolRuntime(tools)
+	runtime.SetStepIndex(3)
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+		ID:   "call_1",
+		Name: "read_file",
+	}}, nil)
+	if len(msgs) != 1 || msgs[0].ToolCallID != "call_1" {
+		t.Fatalf("unexpected tool result messages: %+v", msgs)
+	}
+	if steps := tools.recordedSteps(); len(steps) != 1 || steps[0] != 3 {
+		t.Fatalf("tool execution steps = %+v, want [3]", steps)
+	}
+}
+
 func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -146,6 +179,7 @@ func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 		},
 	}
 	runtime := NewTurnToolRuntime(tools)
+	runtime.SetStepIndex(5)
 
 	for _, call := range []providers.ToolCall{
 		{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`},
@@ -169,6 +203,9 @@ func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 	calls := tools.recordedCalls()
 	if len(calls) != 2 {
 		t.Fatalf("expected each streamed call to execute once, got %d calls: %+v", len(calls), calls)
+	}
+	if steps := tools.recordedSteps(); len(steps) != 2 || steps[0] != 5 || steps[1] != 5 {
+		t.Fatalf("streamed tool execution steps = %+v, want [5 5]", steps)
 	}
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 tool messages, got %d", len(msgs))

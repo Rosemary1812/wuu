@@ -7,6 +7,7 @@ import (
 
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 )
 
 type toolRunState int
@@ -46,6 +47,7 @@ type TurnToolRuntime struct {
 	canceled bool
 
 	requestContext []ContextSegment
+	stepIndex      *int
 }
 
 func NewTurnToolRuntime(executor ToolExecutor) *TurnToolRuntime {
@@ -54,6 +56,16 @@ func NewTurnToolRuntime(executor ToolExecutor) *TurnToolRuntime {
 		sem:      make(chan struct{}, maxToolConcurrency),
 		byID:     map[string]*toolRun{},
 	}
+}
+
+func (r *TurnToolRuntime) SetStepIndex(stepIndex int) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	value := stepIndex
+	r.stepIndex = &value
 }
 
 // ObserveStreamEvent records streamed tool blocks and starts safe prefix tools
@@ -199,6 +211,9 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 	run.state = toolRunRunning
 	run.streamStarted = run.streamStarted || streamStarted
 	runCtx, cancel := context.WithCancel(ctx)
+	if r.stepIndex != nil {
+		runCtx = toolctx.WithStepIndex(runCtx, *r.stepIndex)
+	}
 	run.cancel = cancel
 	call := run.call
 	run.mu.Unlock()
@@ -477,7 +492,20 @@ func (r *TurnToolRuntime) executeDirect(ctx context.Context, call providers.Tool
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
-	return r.executor.Execute(ctx, call)
+	return r.executor.Execute(r.executionContext(ctx), call)
+}
+
+func (r *TurnToolRuntime) executionContext(ctx context.Context) context.Context {
+	if r == nil {
+		return ctx
+	}
+	r.mu.Lock()
+	stepIndex := r.stepIndex
+	r.mu.Unlock()
+	if stepIndex == nil {
+		return ctx
+	}
+	return toolctx.WithStepIndex(ctx, *stepIndex)
 }
 
 func toolCanRunConcurrently(executor ToolExecutor, call providers.ToolCall) bool {

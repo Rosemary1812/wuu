@@ -560,6 +560,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	var toolRuntime *TurnToolRuntime
 	if s.enableStreamingToolExec && s.tools != nil {
 		toolRuntime = NewTurnToolRuntime(s.tools)
+		toolRuntime.SetStepIndex(req.StepIndex)
 	}
 
 	// Wrap the event callback so streamed tool blocks enter the per-turn
@@ -578,6 +579,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 			toolRuntime = NewTurnToolRuntime(s.tools)
+			toolRuntime.SetStepIndex(req.StepIndex)
 		}
 	}
 	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {

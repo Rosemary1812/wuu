@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -352,6 +353,62 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	}
 }
 
+func TestReplayTraceAttributesToolOutputsToFollowingRequestStep(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session-trace.jsonl")
+	now := time.Now()
+	step0 := 0
+	if err := AppendTurn(path,
+		TurnRecord{
+			ThreadID:     "thread-1",
+			TurnID:       "turn-1",
+			Status:       "completed",
+			ProviderName: "openai",
+			Model:        "gpt-test",
+			StartedAt:    &now,
+		},
+		FinalRecord{Status: "completed"},
+		nil,
+		[]tools.ToolExecutionRecord{{
+			Name:                "grep",
+			StepIndex:           &step0,
+			CallID:              "call-grep",
+			Kind:                tools.ToolKindSearch,
+			ResultAction:        "search",
+			Success:             true,
+			RawOutputBytes:      12000,
+			ReturnedOutputBytes: 8000,
+			ResultBudgeted:      true,
+		}},
+		[]RequestContextRecord{{
+			StepIndex:   0,
+			InputTokens: 100,
+		}, {
+			StepIndex:       1,
+			InputTokens:     2200,
+			CacheReadTokens: 4000,
+		}},
+		nil,
+	); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+
+	summary, err := ReplayTrace(path)
+	if err != nil {
+		t.Fatalf("ReplayTrace: %v", err)
+	}
+	step := findRequestStep(summary.RequestSteps, "turn-1", 1)
+	if step == nil {
+		t.Fatalf("missing request step 1: %+v", summary.RequestSteps)
+	}
+	if step.PrecedingToolResultCount != 1 ||
+		step.PrecedingToolResultRawBytes != 12000 ||
+		step.PrecedingToolResultReturnedBytes != 8000 ||
+		step.PrecedingToolResultBudgetedCount != 1 ||
+		step.PrecedingToolResultMaxReturnedBytes != 8000 {
+		t.Fatalf("missing preceding tool result attribution: %+v", step)
+	}
+}
+
 func readTraceEvents(t *testing.T, path string) []Event {
 	t.Helper()
 	file, err := os.Open(path)
@@ -372,6 +429,15 @@ func readTraceEvents(t *testing.T, path string) []Event {
 		t.Fatalf("scan trace: %v", err)
 	}
 	return events
+}
+
+func findRequestStep(steps []RequestStepSummary, turnID string, stepIndex int) *RequestStepSummary {
+	for i := range steps {
+		if steps[i].TurnID == turnID && steps[i].StepIndex == stepIndex {
+			return &steps[i]
+		}
+	}
+	return nil
 }
 
 func containsString(values []string, want string) bool {

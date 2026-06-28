@@ -18,6 +18,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 )
@@ -1890,7 +1891,7 @@ func TestToolkit_FileToolTelemetryRecordsResultActions(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(root, "a.txt"), "one\n")
 
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "read_file", Arguments: `{"path":"a.txt"}`}); err != nil {
+	if _, err := kit.Execute(toolctx.WithStepIndex(context.Background(), 2), providers.ToolCall{Name: "read_file", Arguments: `{"path":"a.txt"}`}); err != nil {
 		t.Fatalf("read_file: %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_files", Arguments: `{}`}); err != nil {
@@ -1925,6 +1926,12 @@ func TestToolkit_FileToolTelemetryRecordsResultActions(t *testing.T) {
 	want := []string{"read_file:read", "list_files:list", "write_file:create", "edit_file:edit", "write_file:overwrite"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("file tool result actions = %+v, want %+v", got, want)
+	}
+	if records[0].StepIndex == nil || *records[0].StepIndex != 2 {
+		t.Fatalf("read_file step index = %+v, want 2", records[0].StepIndex)
+	}
+	if records[1].StepIndex != nil {
+		t.Fatalf("tool execution without step context should not record step index: %+v", records[1].StepIndex)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 )
 
 // fakeStep is a programmable Step implementation for loop tests.
@@ -47,14 +48,18 @@ type fakeLoopTools struct {
 	defs    []providers.ToolDefinition
 	results map[string]string // call.ID → JSON result
 	calls   []providers.ToolCall
+	steps   []int
 	err     error
 }
 
 func (f *fakeLoopTools) Definitions() []providers.ToolDefinition { return f.defs }
-func (f *fakeLoopTools) Execute(_ context.Context, call providers.ToolCall) (string, error) {
+func (f *fakeLoopTools) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, call)
+	if stepIndex, ok := toolctx.StepIndex(ctx); ok {
+		f.steps = append(f.steps, stepIndex)
+	}
 	if f.err != nil {
 		return "", f.err
 	}
@@ -69,6 +74,14 @@ func (f *fakeLoopTools) recordedCalls() []providers.ToolCall {
 	defer f.mu.Unlock()
 	out := make([]providers.ToolCall, len(f.calls))
 	copy(out, f.calls)
+	return out
+}
+
+func (f *fakeLoopTools) recordedSteps() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]int, len(f.steps))
+	copy(out, f.steps)
 	return out
 }
 
@@ -518,6 +531,9 @@ func TestRunToolLoop_ToolCallThenAnswer(t *testing.T) {
 	}
 	if len(tools.calls) != 1 || tools.calls[0].ID != "c1" {
 		t.Fatalf("unexpected tool calls: %+v", tools.calls)
+	}
+	if steps := tools.recordedSteps(); len(steps) != 1 || steps[0] != 0 {
+		t.Fatalf("tool execution steps = %+v, want [0]", steps)
 	}
 	if len(seenCalls) != 1 {
 		t.Fatalf("expected OnToolResult to fire once, got %d", len(seenCalls))

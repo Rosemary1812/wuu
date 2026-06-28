@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 )
 
 const (
@@ -30,6 +31,7 @@ const (
 // execution. It deliberately excludes arguments and output content.
 type ToolExecutionRecord struct {
 	Name                             string               `json:"name"`
+	StepIndex                        *int                 `json:"step_index,omitempty"`
 	CallID                           string               `json:"call_id,omitempty"`
 	ArgumentsSHA256                  string               `json:"arguments_sha256,omitempty"`
 	ResultAction                     string               `json:"result_action,omitempty"`
@@ -137,12 +139,12 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	approvalReview := ToolApprovalReview{}
 
 	if err := validateToolArgumentsJSON(call.Arguments); err != nil {
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 		return "", err
 	}
 	if validator, ok := tool.(InputValidatingTool); ok {
 		if err := validator.ValidateInput(call.Arguments); err != nil {
-			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 			return "", err
 		}
 	}
@@ -150,14 +152,14 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	if err := t.extensionSurfacePolicy.Check(info); err != nil {
 		decision.Action = ToolPolicyDeny
 		decision.Reason = "extension surface policy"
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 		return "", err
 	}
 
 	if err := t.permissionBoundary.Check(info); err != nil {
 		decision.Action = ToolPolicyDeny
 		decision.Reason = "permission boundary"
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 		return "", err
 	}
 
@@ -165,7 +167,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 
 	if permissionDecision, matched, permApprovalRef, permApprovalReview, err := t.applyPermissionRuleDecision(ctx, call, tool, info, decision, startedAt, revisionBefore); err != nil {
 		decision = permissionDecision
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, permApprovalRef, permApprovalReview, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, permApprovalRef, permApprovalReview, err)
 		return "", err
 	} else if matched {
 		decision = permissionDecision
@@ -174,7 +176,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	} else {
 		if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
 			decision = autoDecision
-			t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 			return "", err
 		} else {
 			decision = autoDecision
@@ -187,7 +189,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 				if errors.Is(approvalErr, errToolApprovalReviewerUnavailable) {
 					approvalErr = err
 				}
-				t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, approvalReview, approvalErr)
+				t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, approvalReview, approvalErr)
 				return "", approvalErr
 			}
 		}
@@ -200,7 +202,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 			PriorRepeats:    priorRepeats,
 			MaxPriorRepeats: repeatedToolInputPriorLimit,
 		}
-		t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
 		return "", err
 	}
 
@@ -216,7 +218,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, approvalRef, approvalReview, err)
+	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, approvalRef, approvalReview, err)
 
 	return returned, err
 }
@@ -334,6 +336,7 @@ func isRepeatablePollingTool(call providers.ToolCall) bool {
 }
 
 func (t *Toolkit) recordToolExecution(
+	ctx context.Context,
 	call providers.ToolCall,
 	info ToolInfo,
 	decision ToolPolicyDecision,
@@ -352,8 +355,14 @@ func (t *Toolkit) recordToolExecution(
 	if approvalRef != "" {
 		artifactRefs = appendUniqueString(artifactRefs, approvalRef)
 	}
+	var stepIndexPtr *int
+	if stepIndex, ok := toolctx.StepIndex(ctx); ok {
+		value := stepIndex
+		stepIndexPtr = &value
+	}
 	record := ToolExecutionRecord{
 		Name:                             call.Name,
+		StepIndex:                        stepIndexPtr,
 		CallID:                           call.ID,
 		ArgumentsSHA256:                  toolArgumentsSHA256(call.Arguments),
 		ResultAction:                     extractToolResultAction(result),
