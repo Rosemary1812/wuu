@@ -3300,6 +3300,60 @@
   }
 }
 
+@keyframes process-text-rise-in {
+  0% {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(5px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes process-text-rise-out {
+  0% {
+    opacity: 0.72;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(1px);
+    transform: translateY(-4px);
+  }
+}
+
+.process-text-motion {
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+  align-items: baseline;
+  line-height: inherit;
+  overflow: hidden;
+  vertical-align: baseline;
+}
+
+.process-text-motion-copy {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  will-change: opacity, transform, filter;
+}
+
+.process-text-motion-current {
+  animation: process-text-rise-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.process-text-motion-exit {
+  pointer-events: none;
+  animation: process-text-rise-out 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
 /* Visible gray process labels sweep while the turn is running. We use
    a `::after` overlay with `mix-blend-mode: lighten` instead of
    painting the text itself: this keeps the label at full opacity
@@ -3447,6 +3501,18 @@
 @media (prefers-reduced-motion: reduce) {
   .process-surface-count.is-changing {
     animation: none;
+  }
+
+  .process-text-motion-current,
+  .process-text-motion-exit {
+    animation: none;
+    filter: none;
+    transform: none;
+    will-change: auto;
+  }
+
+  .process-text-motion-exit {
+    display: none;
   }
 
   .process-surface-row.is-live-gray::after,

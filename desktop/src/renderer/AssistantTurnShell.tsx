@@ -29,6 +29,7 @@ import {
   AUTO_FOLLOW_NESTED_SCROLL_ATTR,
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
+import { AnimatedProcessText } from "./ProcessTextMotion";
 
 /**
  * How long to wait after a turn completes (turn.status → completed)
@@ -540,7 +541,7 @@ function ReasoningFold({
       onToggle={handleToggle}
     >
       <summary className="turn-reasoning-summary">
-        <span className={textClass}>{label}</span>
+        <AnimatedProcessText className={textClass} text={label} />
         <ChevronRight
           className="turn-reasoning-chevron icon-xs"
           aria-hidden

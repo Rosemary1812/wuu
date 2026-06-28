@@ -16,6 +16,7 @@ import {
   AUTO_FOLLOW_NESTED_SCROLL_ATTR,
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
+import { AnimatedProcessText } from "./ProcessTextMotion";
 
 /**
  * How long to wait after the fold opens before snapping the reasoning
@@ -144,9 +145,10 @@ export function ProcessSurface({
           {toolSegments.length > 0 ? (
             <span className="process-surface-separator">·</span>
           ) : null}
-          <span className="process-surface-reasoning-label">
-            {reasoningStreaming ? "正在思考" : "思考过程"}
-          </span>
+          <AnimatedProcessText
+            className="process-surface-reasoning-label"
+            text={reasoningStreaming ? "正在思考" : "思考过程"}
+          />
         </span>
       ) : null}
     </span>
@@ -246,7 +248,7 @@ function ProcessSurfaceSegmentView({
           <span>{segment.countSuffix}</span>
         </>
       ) : (
-        <span>{segment.text}</span>
+        <AnimatedProcessText text={segment.text ?? ""} />
       )}
     </span>
   );

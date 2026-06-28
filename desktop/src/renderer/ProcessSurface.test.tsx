@@ -263,6 +263,56 @@ describe("ProcessSurface", () => {
     expect(label?.textContent).toBe("正在思考");
   });
 
+  it("keeps the previous process label briefly while the new label enters", async () => {
+    const { container } = render({
+      processItems: [makeReadFile("tool-1", "a.ts", "in_progress")],
+      streaming: true,
+    });
+    expect(
+      container.querySelector(".process-text-motion-current")?.textContent,
+    ).toBe("查看 a.ts");
+
+    rerender({
+      processItems: [makeReadFile("tool-1", "b.ts", "in_progress")],
+      streaming: true,
+    });
+
+    expect(
+      container.querySelector(".process-text-motion-current")?.textContent,
+    ).toBe("查看 b.ts");
+    expect(
+      container.querySelector(".process-text-motion-exit")?.textContent,
+    ).toBe("查看 a.ts");
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 220));
+    });
+
+    expect(container.querySelector(".process-text-motion-exit")).toBeNull();
+  });
+
+  it("animates reasoning label changes from active to settled", () => {
+    const { container } = render({
+      processItems: [makeReasoning("reason-1", "thinking aloud", "in_progress")],
+      streaming: true,
+    });
+    expect(
+      container.querySelector(".process-text-motion-current")?.textContent,
+    ).toBe("正在思考");
+
+    rerender({
+      processItems: [makeReasoning("reason-1", "thinking aloud", "completed")],
+      streaming: false,
+    });
+
+    expect(
+      container.querySelector(".process-text-motion-current")?.textContent,
+    ).toBe("思考过程");
+    expect(
+      container.querySelector(".process-text-motion-exit")?.textContent,
+    ).toBe("正在思考");
+  });
+
   it("preserves the user expand choice after they toggle", () => {
     const { container } = render({
       processItems: [
