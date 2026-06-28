@@ -241,9 +241,10 @@
   border-top: 1px solid var(--ink-overlay-6);
 }
 
-.composer-queue-row:hover,
-.composer-queue-row:focus-within {
+.composer-queue-row:hover .composer-queue-preview,
+.composer-queue-row:focus-within .composer-queue-preview {
   background: var(--ink-overlay-4);
+  border-radius: var(--radius-xs);
 }
 
                                                                              
@@ -272,6 +273,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: text;
+  transition: background-color 120ms ease;
 }
 
 .composer-queue-preview:hover {
