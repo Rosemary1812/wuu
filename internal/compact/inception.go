@@ -15,10 +15,13 @@ const (
 	InceptionHistoryRewriteKind = "inception_context_rewrite"
 	ContextAnchorMessageName    = "wuu_context_anchor"
 	ContextContinuationName     = "wuu_context_continuation"
-	ContextAnchorPrefix         = "[Wuu context checkpoint]"
+	ContextAnchorPrefix         = "CHECKPOINT"
+	legacyContextAnchorPrefix   = "[Wuu context checkpoint]"
 	InceptionContinuationPrefix = "[D-Mail continuation]"
 	systemReminderOpen          = "<system-reminder>"
 	systemReminderClose         = "</system-reminder>"
+	systemTagOpen               = "<system>"
+	systemTagClose              = "</system>"
 )
 
 type InceptionHistoryRewrite struct {
@@ -35,15 +38,10 @@ type inceptionToolEnvelope struct {
 
 func BuildContextAnchorMessage(anchorID int) providers.ChatMessage {
 	return providers.ChatMessage{
-		Role: "user",
-		Name: ContextAnchorMessageName,
-		Content: wrapInternalContextContent(
-			fmt.Sprintf("%s\nanchor_id: %d\nInternal D-Mail checkpoint. When recent context after here can be replaced by a continuation summary, use inception with this anchor_id; if inception is not visible, first call tool_search select:inception. Only conversation history rewinds; files, processes, browser, and remote state stay current.",
-				ContextAnchorPrefix,
-				anchorID,
-			),
-		),
-		Hidden: true,
+		Role:    "user",
+		Name:    ContextAnchorMessageName,
+		Content: fmt.Sprintf("%s%s %d%s", systemTagOpen, ContextAnchorPrefix, anchorID, systemTagClose),
+		Hidden:  true,
 	}
 }
 
@@ -74,8 +72,32 @@ func IsContextAnchorContent(content string) bool {
 }
 
 func ContextAnchorIDFromContent(content string) (int, bool) {
+	if id, ok := contextAnchorIDFromKimiMarker(content); ok {
+		return id, true
+	}
+	return contextAnchorIDFromLegacyMarker(content)
+}
+
+func contextAnchorIDFromKimiMarker(content string) (int, bool) {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, systemTagOpen) || !strings.HasSuffix(content, systemTagClose) {
+		return 0, false
+	}
+	content = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(content, systemTagOpen), systemTagClose))
+	fields := strings.Fields(content)
+	if len(fields) != 2 || !strings.EqualFold(fields[0], ContextAnchorPrefix) {
+		return 0, false
+	}
+	id, err := strconv.Atoi(strings.TrimSpace(fields[1]))
+	if err != nil || id < 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+func contextAnchorIDFromLegacyMarker(content string) (int, bool) {
 	lines := strings.Split(unwrapInternalContextContent(content), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != ContextAnchorPrefix {
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != legacyContextAnchorPrefix {
 		return 0, false
 	}
 	for _, line := range lines[1:] {

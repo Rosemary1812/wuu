@@ -9,6 +9,8 @@ func TestSystemMainTeachesInceptionDMailTriggers(t *testing.T) {
 	prompt := SystemMain()
 	for _, want := range []string{
 		"Use it proactively during the work",
+		"<system>CHECKPOINT N</system>",
+		"select:inception",
 		"large file",
 		"web/search result",
 		"dead end",

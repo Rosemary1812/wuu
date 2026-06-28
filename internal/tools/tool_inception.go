@@ -25,6 +25,7 @@ func (t *InceptionTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: compact.InceptionToolName,
 		Description: "Internal main-agent D-Mail context rewind tool. Use it during long tasks when conversation after a Wuu context checkpoint produced a small stable result from a much larger noisy suffix, and a concise continuation summary can replace that suffix. " +
+			"Use the checkpoint id N from a hidden <system>CHECKPOINT N</system> marker as anchor_id. " +
 			"Typical triggers: you read a large file, command output, tool result, or web/search result and only a small part is useful; a broad investigation branch produced stable conclusions or rejected paths; a coding/debugging detour changed external state and the raw struggle is no longer needed; or message size is growing and future steps need conclusions rather than raw intermediate outputs. " +
 			"If the large read/search was useful, summarize only the useful facts to the checkpoint before that read/search. If it was a dead end, tell your past self the better next query/path or what to avoid. If files or processes changed, preserve the current external state because this tool never rolls it back. " +
 			"Choose the closest checkpoint before the waste you want to remove, unless an older checkpoint is needed and your summary fully bridges from there to the current external state. " +

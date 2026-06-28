@@ -187,6 +187,7 @@ func TestActiveProfileLoadsInceptionThroughToolSearchAndRewrites(t *testing.T) {
 func TestInceptionToolDescriptionTeachesDMailTriggers(t *testing.T) {
 	desc := NewInceptionTool(&Env{AgentPath: agentthread.RootPath}).Definition().Description
 	for _, want := range []string{
+		"<system>CHECKPOINT N</system>",
 		"large file",
 		"web/search result",
 		"dead end",

@@ -13,14 +13,12 @@ func TestContextAnchorRoundTrip(t *testing.T) {
 	if msg.Role != "user" || msg.Name != ContextAnchorMessageName || !msg.Hidden {
 		t.Fatalf("unexpected anchor message: %+v", msg)
 	}
+	if msg.Content != "<system>CHECKPOINT 7</system>" {
+		t.Fatalf("unexpected anchor content: %q", msg.Content)
+	}
 	id, ok := ContextAnchorIDFromMessage(msg)
 	if !ok || id != 7 {
 		t.Fatalf("ContextAnchorIDFromMessage = %d,%v; want 7,true", id, ok)
-	}
-	for _, want := range []string{"tool_search select:inception", "Only conversation history rewinds"} {
-		if !strings.Contains(msg.Content, want) {
-			t.Fatalf("anchor message missing %q:\n%s", want, msg.Content)
-		}
 	}
 	next := NextContextAnchorID([]providers.ChatMessage{
 		BuildContextAnchorMessage(2),
@@ -28,6 +26,19 @@ func TestContextAnchorRoundTrip(t *testing.T) {
 	})
 	if next != 8 {
 		t.Fatalf("NextContextAnchorID = %d, want 8", next)
+	}
+}
+
+func TestContextAnchorParsesLegacyMarker(t *testing.T) {
+	msg := providers.ChatMessage{
+		Role:    "user",
+		Name:    ContextAnchorMessageName,
+		Hidden:  true,
+		Content: wrapInternalContextContent("[Wuu context checkpoint]\nanchor_id: 9\nlegacy"),
+	}
+	id, ok := ContextAnchorIDFromMessage(msg)
+	if !ok || id != 9 {
+		t.Fatalf("ContextAnchorIDFromMessage legacy = %d,%v; want 9,true", id, ok)
 	}
 }
 

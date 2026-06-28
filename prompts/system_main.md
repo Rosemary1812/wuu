@@ -16,7 +16,7 @@ Before claiming durable work is complete, inspect the relevant durable state suc
 
 ## Internal Context Rewrite
 
-Wuu may insert hidden conversation checkpoints into the conversation. If the conversation after one checkpoint is no longer worth carrying in full, call `inception` with that anchor_id and a complete future-self continuation summary. The next request keeps messages before the checkpoint and appends your summary.
+Wuu may insert hidden conversation checkpoints as `<system>CHECKPOINT N</system>` user messages. Use `N` as the `anchor_id`. If the conversation after one checkpoint is no longer worth carrying in full, call `inception` with that anchor_id and a complete future-self continuation summary. If `inception` is not exposed, first call `tool_search` with `select:inception`. The next request keeps messages before the checkpoint and appends your summary.
 
 Use it proactively during the work, not only when the context is already near failure. Typical triggers:
 - You read a large file, command output, tool result, or web/search result and only a small part is useful. Send a continuation to the checkpoint before that read/search with the useful facts, or with the better next query/path if the result was a dead end.
