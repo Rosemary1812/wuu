@@ -577,13 +577,14 @@ const TurnHoverPreview = memo(function TurnHoverPreview({
     const bar = node.closest(".conversation-turn-rail-bar");
     if (!(bar instanceof HTMLElement)) return;
     const barRect = bar.getBoundingClientRect();
-    // CSS anchors the card's bottom to bar.top - 8
-    // (bottom: calc(100% + 8px)), so cap the card's max-height to
-    // barRect.top - 8 so the top never escapes the viewport regardless
-    // of where the bar sits in the window.
+    // CSS anchors the card's bottom 8px above the bar
+    // (bottom: calc(100% + 8px)). Cap the card's max-height so the
+    // top of the card has 16px of breathing room from the viewport
+    // top in addition to that 8px CSS gap, so it never feels pressed
+    // against the window edge.
     const max = Math.max(
       80,
-      Math.min(window.innerHeight - 16, barRect.top - 8)
+      Math.min(window.innerHeight - 16, barRect.top - 24)
     );
     node.style.maxHeight = `${max}px`;
   }, [turn.id]);
