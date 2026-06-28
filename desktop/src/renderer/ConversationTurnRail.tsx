@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -568,11 +569,34 @@ const TurnHoverPreview = memo(function TurnHoverPreview({
 }: {
   turn: Turn;
 }): JSX.Element {
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const node = previewRef.current;
+    if (!node) return;
+    const bar = node.closest(".conversation-turn-rail-bar");
+    if (!(bar instanceof HTMLElement)) return;
+    const barRect = bar.getBoundingClientRect();
+    // CSS anchors the card's bottom to bar.top - 8
+    // (bottom: calc(100% + 8px)), so cap the card's max-height to
+    // barRect.top - 8 so the top never escapes the viewport regardless
+    // of where the bar sits in the window.
+    const max = Math.max(
+      80,
+      Math.min(window.innerHeight - 16, barRect.top - 8)
+    );
+    node.style.maxHeight = `${max}px`;
+  }, [turn.id]);
+
   const firstUserText = firstUserMessageText(turn);
   const snippet = turnReplySnippet(turn);
   const body = snippet ? snippet.text : "暂无回复";
   return (
-    <div className="conversation-turn-rail-preview" role="tooltip">
+    <div
+      ref={previewRef}
+      className="conversation-turn-rail-preview"
+      role="tooltip"
+    >
       {firstUserText ? (
         <div className="conversation-turn-rail-preview-query">
           <RichContent text={firstUserText} />

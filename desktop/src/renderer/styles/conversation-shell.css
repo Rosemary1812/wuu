@@ -907,9 +907,10 @@
 .conversation-turn-rail-preview {
   position: absolute;
   left: calc(100% + 12px);
-  top: -8px;
+  bottom: calc(100% + 8px);
+  top: auto;
   width: 360px;
-  max-height: min(60vh, 480px);
+  max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
