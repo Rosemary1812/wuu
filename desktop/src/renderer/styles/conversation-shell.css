@@ -909,6 +909,10 @@
   left: calc(100% + 12px);
   top: -8px;
   width: 360px;
+  max-height: min(60vh, 480px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 12px 14px;
   border-radius: var(--menu-radius);
   background: var(--menu-bg);
@@ -925,14 +929,26 @@
 }
 
 /* The user's question sits above the agent's answer. Muted color and
-   a thin separator set it apart from the answer block below. */
+   a thin separator set it apart from the answer block below.
+   flex: 0 0 auto keeps the query pinned at the top so only the body
+   scrolls when the card hits its max-height. */
 .conversation-turn-rail-preview-query {
+  flex: 0 0 auto;
   font-size: 12px;
   line-height: 1.4;
   color: var(--ink-tertiary, rgba(60, 60, 67, 0.65));
   padding-bottom: 8px;
   margin-bottom: 8px;
   border-bottom: 1px solid var(--menu-border, rgba(0, 0, 0, 0.08));
+}
+
+/* Body is the scrollable region. min-height: 0 is required so flex
+   children can shrink below their content height and the inner
+   scrollbar actually engages near the card's max-height. */
+.conversation-turn-rail-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .conversation-turn-rail-bar.hovered .conversation-turn-rail-preview {
