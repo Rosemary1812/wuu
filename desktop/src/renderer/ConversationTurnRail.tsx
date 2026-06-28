@@ -203,6 +203,17 @@ export function ConversationTurnRail({
       if (!container || isDraggingRef.current) {
         return;
       }
+      // Once the cursor is over the preview card the rail should stop
+      // pinning the highlight — the preview takes over and the user is
+      // reading the snippet, not picking a turn. We only suppress the
+      // magnet for the preview surface; the bridge gap between bar and
+      // preview stays interactive so the user can still slide the cursor
+      // into the card without losing the bar.
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".conversation-turn-rail-preview")) {
+        setHoveredTurnID(undefined);
+        return;
+      }
       const barElements = container.querySelectorAll<HTMLElement>(
         ".conversation-turn-rail-bar"
       );
