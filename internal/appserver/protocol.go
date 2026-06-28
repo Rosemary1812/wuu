@@ -672,6 +672,10 @@ type TurnStartParams struct {
 type TurnStartImage struct {
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
+	// Original asks the core to forward the image at original resolution
+	// without resizing. Maps to Codex's ImageDetail::Original opt-out; only
+	// honored when the target model supports it.
+	Original bool `json:"original,omitempty"`
 }
 
 type TurnStartFile struct {

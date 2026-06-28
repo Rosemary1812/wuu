@@ -3,6 +3,7 @@ package appserver
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -3524,6 +3525,12 @@ func TestServerThreadEditMessageRespectsCompactionBoundary(t *testing.T) {
 }
 
 func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
+	// tinyImageOnlyB64 is a real 1×1 JPEG base64-encoded. imageproc now
+	// runs on every image that crosses the app-server boundary (see
+	// internal/imageproc); the previous "ZmFrZS1pbWFnZQ==" placeholder
+	// was 10 bytes of ASCII and trips the detectFormat sanity guard. The
+	// exact bytes round-trip unchanged because 1×1 fits within MaxDimension.
+	tinyImageOnlyB64 := base64.StdEncoding.EncodeToString(encodeTestJPEG(t, 1, 1, 90))
 	client := &fakeClient{
 		response: providers.ChatResponse{Content: "saw it"},
 	}
@@ -3542,8 +3549,8 @@ func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
 		"params": TurnStartParams{
 			ThreadID: threadID,
 			Images: []TurnStartImage{{
-				MediaType: "image/png",
-				Data:      "ZmFrZS1pbWFnZQ==",
+				MediaType: "image/jpeg",
+				Data:      tinyImageOnlyB64,
 			}},
 		},
 	}
@@ -3578,7 +3585,7 @@ func TestServerTurnStartAcceptsImageOnlyPrompt(t *testing.T) {
 	if len(messages) < 2 || messages[1].Role != "user" || messages[1].Content != "" || len(messages[1].Images) != 1 {
 		t.Fatalf("unexpected provider messages: %+v", messages)
 	}
-	if messages[1].Images[0].MediaType != "image/png" || messages[1].Images[0].Data != "ZmFrZS1pbWFnZQ==" {
+	if messages[1].Images[0].MediaType != "image/jpeg" || messages[1].Images[0].Data != tinyImageOnlyB64 {
 		t.Fatalf("unexpected provider image: %+v", messages[1].Images[0])
 	}
 

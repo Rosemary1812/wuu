@@ -16,6 +16,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/guardian"
+	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -328,7 +329,22 @@ func normalizeTurnStartImages(images []TurnStartImage) ([]providers.InputImage, 
 		if err != nil {
 			return nil, fmt.Errorf("image %d: %w", index+1, err)
 		}
-		out = append(out, providers.InputImage{MediaType: mediaType, Data: data})
+		rawBytes, err := base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			return nil, fmt.Errorf("image %d: base64 decode: %w", index+1, err)
+		}
+		mode := imageproc.ModeDefault
+		if image.Original {
+			mode = imageproc.ModeOriginal
+		}
+		result, err := imageproc.Encode("", rawBytes, imageproc.Options{Mode: mode})
+		if err != nil {
+			return nil, fmt.Errorf("image %d: %w", index+1, err)
+		}
+		out = append(out, providers.InputImage{
+			MediaType: result.MediaType,
+			Data:      base64.StdEncoding.EncodeToString(result.Bytes),
+		})
 	}
 	return out, nil
 }

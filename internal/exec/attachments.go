@@ -2,6 +2,7 @@ package exec
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/imageproc"
 )
 
 func resolveRunAttachments(opts Options) (Attachments, error) {
@@ -22,7 +24,7 @@ func resolveRunAttachments(opts Options) (Attachments, error) {
 		Files:  append([]appserver.TurnStartFile(nil), opts.Attachments.Files...),
 	}
 	for _, path := range opts.ImagePaths {
-		image, err := loadTurnImage(rootDir, path)
+		image, err := loadTurnImage(rootDir, path, opts.ImageOriginal)
 		if err != nil {
 			return Attachments{}, err
 		}
@@ -38,7 +40,7 @@ func resolveRunAttachments(opts Options) (Attachments, error) {
 	return attachments, nil
 }
 
-func loadTurnImage(rootDir, inputPath string) (appserver.TurnStartImage, error) {
+func loadTurnImage(rootDir, inputPath string, original bool) (appserver.TurnStartImage, error) {
 	data, absPath, err := readAttachmentFile(rootDir, inputPath)
 	if err != nil {
 		return appserver.TurnStartImage{}, err
@@ -47,9 +49,21 @@ func loadTurnImage(rootDir, inputPath string) (appserver.TurnStartImage, error) 
 	if !strings.HasPrefix(mediaType, "image/") {
 		return appserver.TurnStartImage{}, fmt.Errorf("--image %s has media type %s, expected image/*", inputPath, mediaType)
 	}
+	mode := imageproc.ModeDefault
+	if original {
+		mode = imageproc.ModeOriginal
+	}
+	result, err := imageproc.Encode(absPath, data, imageproc.Options{Mode: mode})
+	if err != nil {
+		var ipErr *imageproc.Error
+		if errors.As(err, &ipErr) {
+			return appserver.TurnStartImage{}, fmt.Errorf("--image %s: %w", inputPath, ipErr)
+		}
+		return appserver.TurnStartImage{}, fmt.Errorf("--image %s: %w", inputPath, err)
+	}
 	return appserver.TurnStartImage{
-		MediaType: mediaType,
-		Data:      base64.StdEncoding.EncodeToString(data),
+		MediaType: result.MediaType,
+		Data:      base64.StdEncoding.EncodeToString(result.Bytes),
 	}, nil
 }
 

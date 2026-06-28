@@ -69,6 +69,7 @@ func ExitCode(err error) int {
 type Options struct {
 	Prompt            string
 	ImagePaths        []string
+	ImageOriginal     bool
 	FilePaths         []string
 	Attachments       Attachments
 	Workdir           string

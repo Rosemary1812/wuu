@@ -1189,6 +1189,7 @@ type execCLIConfig struct {
 	env               *stringListFlag
 	files             *stringListFlag
 	images            *stringListFlag
+	imageOriginal     *bool
 	allowTools        *stringListFlag
 	denyTools         *stringListFlag
 	approvalHandler   *string
@@ -1401,6 +1402,7 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 	denyTools := stringListFlag{}
 	fs.Var(&files, "file", "attach a local file (repeatable)")
 	fs.Var(&images, "image", "attach a local image (repeatable)")
+	imageOriginal := fs.Bool("image-original", false, "send --image attachments at original resolution without resizing (Codex ImageDetail::Original equivalent)")
 	fs.Var(&env, "env", "set an environment variable for the run (KEY=VALUE, repeatable)")
 	fs.Var(&allowTools, "allow-tool", "allow a tool for this run (repeatable)")
 	fs.Var(&denyTools, "deny-tool", "deny a tool for this run (repeatable)")
@@ -1418,6 +1420,7 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		env:               &env,
 		files:             &files,
 		images:            &images,
+		imageOriginal:     imageOriginal,
 		allowTools:        &allowTools,
 		denyTools:         &denyTools,
 		approvalHandler:   fs.String("approval-handler", "", "command that handles approval requests"),
@@ -1486,6 +1489,7 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 	opts := wuuexec.Options{
 		Prompt:            prompt,
 		ImagePaths:        stringListValues(cfg.images),
+		ImageOriginal:     valueOfBoolFlag(cfg.imageOriginal),
 		FilePaths:         stringListValues(cfg.files),
 		Provider:          valueOfStringFlag(cfg.provider),
 		Model:             valueOfStringFlag(cfg.model),
