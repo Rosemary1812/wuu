@@ -71,6 +71,11 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		InputItems:             1,
 		FullInputItems:         4,
 		DeltaInputItems:        1,
+	}}, []sessiontrace.CompactRecord{{
+		Reason:         "proactive",
+		Status:         "failed",
+		TokensBefore:   252001,
+		MessagesBefore: 42,
 	}})
 	if err != nil {
 		t.Fatalf("persistTurnTrace: %v", err)
@@ -84,7 +89,7 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		t.Fatalf("read session trace: %v", err)
 	}
 	trace := string(data)
-	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"previous_response_id_used":true`} {
+	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"previous_response_id_used":true`, `"tokens_before":252001`} {
 		if !strings.Contains(trace, want) {
 			t.Fatalf("session trace missing %s:\n%s", want, trace)
 		}

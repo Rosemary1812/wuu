@@ -1045,6 +1045,45 @@ func TestProactiveCompactThresholdRespectsInputLimit(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_ProactiveCompactFailureEmitsAttempt(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}},
+		{Content: "ok"},
+	}}
+	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}
+	compactErr := errors.New("compact provider unavailable")
+	var attempts []CompactAttemptInfo
+	var compactInfos []CompactInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: tools,
+		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			return nil, compactErr
+		},
+		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
+		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
+		OnCompact:        func(info CompactInfo) { compactInfos = append(compactInfos, info) },
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	if err != nil {
+		t.Fatalf("loop error: %v", err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("expected model to continue after proactive compact failure, got %q", res.Content)
+	}
+	if len(compactInfos) != 0 {
+		t.Fatalf("failed compact must not emit success callback: %+v", compactInfos)
+	}
+	if len(attempts) != 1 ||
+		attempts[0].Reason != CompactReasonProactive ||
+		attempts[0].Status != CompactAttemptFailed ||
+		!strings.Contains(attempts[0].Error, compactErr.Error()) {
+		t.Fatalf("expected proactive failed attempt, got %+v", attempts)
+	}
+}
+
 func TestRunToolLoop_ProactiveCompactDoesNotLoopOnNoOpCompact(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}}, {ToolCalls: []providers.ToolCall{{ID: "c2", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}}, {Content: "done"}}}
 	compactCalled := 0
@@ -1074,6 +1113,30 @@ func TestRunToolLoop_OverflowCompactFiresOnCompactCallback(t *testing.T) {
 	}
 	if len(infos) != 1 || infos[0].Reason != CompactReasonOverflow {
 		t.Fatalf("expected one overflow OnCompact, got %+v", infos)
+	}
+}
+
+func TestRunToolLoop_OverflowCompactFailureEmitsAttempt(t *testing.T) {
+	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
+	step := &fakeStep{results: []StepResult{{}}, errs: []error{overflow}}
+	compactErr := errors.New("compact failed")
+	var attempts []CompactAttemptInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			return nil, compactErr
+		},
+		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
+	}
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("big")}, cfg, step)
+	if !errors.Is(err, overflow) {
+		t.Fatalf("expected original overflow error, got %v", err)
+	}
+	if len(attempts) != 1 ||
+		attempts[0].Reason != CompactReasonOverflow ||
+		attempts[0].Status != CompactAttemptFailed ||
+		!strings.Contains(attempts[0].Error, compactErr.Error()) {
+		t.Fatalf("expected overflow failed attempt, got %+v", attempts)
 	}
 }
 

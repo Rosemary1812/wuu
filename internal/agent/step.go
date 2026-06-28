@@ -95,6 +95,15 @@ const (
 	CompactReasonInception CompactReason = "inception"
 )
 
+// CompactAttemptStatus records the outcome of a compact attempt for telemetry.
+type CompactAttemptStatus string
+
+const (
+	CompactAttemptSucceeded CompactAttemptStatus = "succeeded"
+	CompactAttemptFailed    CompactAttemptStatus = "failed"
+	CompactAttemptUnchanged CompactAttemptStatus = "unchanged"
+)
+
 // CompactInfo describes a compact pass that just ran. Surfaced via
 // LoopConfig.OnCompact so interactive clients can let the user know
 // what just happened.
@@ -103,6 +112,17 @@ type CompactInfo struct {
 	TokensBefore   int
 	MessagesBefore int
 	MessagesAfter  int
+}
+
+// CompactAttemptInfo describes every compact attempt, including failures and
+// no-op results. It is metadata-only and must not include raw prompt text.
+type CompactAttemptInfo struct {
+	Reason         CompactReason
+	Status         CompactAttemptStatus
+	TokensBefore   int
+	MessagesBefore int
+	MessagesAfter  int
+	Error          string
 }
 
 // RequestContextInfo summarizes request-only model context assembled before a
@@ -233,6 +253,9 @@ type LoopConfig struct {
 	// OnCompact is invoked once per compact pass (proactive or
 	// reactive). Optional; clients can use it to render a status line.
 	OnCompact func(info CompactInfo)
+	// OnCompactAttempt is invoked for every compact attempt, including
+	// failed and no-op attempts. It is intended for diagnostics and traces.
+	OnCompactAttempt func(info CompactAttemptInfo)
 	// UsageTracker, when non-nil, is the caller-owned conversation
 	// usage state to reuse across runs. This lets the loop make the
 	// same compact decision before the first request of a new turn

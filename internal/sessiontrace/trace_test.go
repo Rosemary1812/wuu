@@ -87,16 +87,23 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			FullInputItems:         4,
 			DeltaInputItems:        1,
 		}},
+		[]CompactRecord{{
+			Reason:         "proactive",
+			Status:         "failed",
+			TokensBefore:   1234,
+			MessagesBefore: 10,
+			Error:          "compact failed API_KEY=secret-value-compact",
+		}},
 	)
 	if err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
 
 	events := readTraceEvents(t, path)
-	if len(events) != 6 {
-		t.Fatalf("expected 6 events, got %d: %+v", len(events), events)
+	if len(events) != 7 {
+		t.Fatalf("expected 7 events, got %d: %+v", len(events), events)
 	}
-	wantTypes := []string{"turn", "context_requests", "provider_states", "tool_inventory", "tool_records", "final"}
+	wantTypes := []string{"turn", "context_requests", "provider_states", "compact_attempts", "tool_inventory", "tool_records", "final"}
 	for i, want := range wantTypes {
 		if events[i].Type != want || events[i].ThreadID != "thread-1" || events[i].TurnID != "turn-1" {
 			t.Fatalf("unexpected event %d: %+v", i, events[i])
@@ -164,6 +171,17 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("trace should include provider state field %s:\n%s", want, raw)
+		}
+	}
+	for _, want := range []string{
+		`"type":"compact_attempts"`,
+		`"reason":"proactive"`,
+		`"status":"failed"`,
+		`"tokens_before":1234`,
+		`"messages_before":10`,
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("trace should include compact attempt field %s:\n%s", want, raw)
 		}
 	}
 }
@@ -247,6 +265,13 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 			InputItems:             4,
 			FullInputItems:         4,
 		}},
+		[]CompactRecord{{
+			Reason:         "proactive",
+			Status:         "succeeded",
+			TokensBefore:   2000,
+			MessagesBefore: 8,
+			MessagesAfter:  3,
+		}},
 	); err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
@@ -255,8 +280,13 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayTrace: %v", err)
 	}
-	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 6 {
+	if summary.Mode != "session_trace_replay" || !summary.Complete || summary.EventCount != 7 {
 		t.Fatalf("unexpected replay summary: %+v", summary)
+	}
+	if len(summary.CompactAttempts) != 1 ||
+		summary.CompactAttempts[0].Status != "succeeded" ||
+		summary.CompactAttempts[0].MessagesAfter != 3 {
+		t.Fatalf("compact attempts missing from replay: %+v", summary.CompactAttempts)
 	}
 	if summary.LatestTurn == nil || summary.LatestTurn.ThreadID != "thread-1" || summary.LatestTurn.Model != "gpt-test" {
 		t.Fatalf("latest turn missing: %+v", summary.LatestTurn)
@@ -387,6 +417,7 @@ func TestReplayTraceAttributesToolOutputsToFollowingRequestStep(t *testing.T) {
 			InputTokens:     2200,
 			CacheReadTokens: 4000,
 		}},
+		nil,
 		nil,
 	); err != nil {
 		t.Fatalf("AppendTurn: %v", err)

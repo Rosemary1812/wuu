@@ -94,6 +94,8 @@ type StreamRunner struct {
 	// OnRequestContext receives metadata-only summaries of request-only model
 	// context assembled before requests.
 	OnRequestContext func(info RequestContextInfo)
+	// OnCompactAttempt receives metadata-only compact attempt diagnostics.
+	OnCompactAttempt func(info CompactAttemptInfo)
 
 	// AfterTurn, when set, is invoked after a successful turn has
 	// completed and usage state has been committed. It is best-effort:
@@ -307,6 +309,18 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			effectiveOnEvent(providers.StreamEvent{
 				Type:    providers.EventCompact,
 				Content: formatCompactNotice(info),
+			})
+		},
+		OnCompactAttempt: func(info CompactAttemptInfo) {
+			if r.OnCompactAttempt != nil {
+				r.OnCompactAttempt(info)
+			}
+			if effectiveOnEvent == nil || info.Status == CompactAttemptSucceeded {
+				return
+			}
+			effectiveOnEvent(providers.StreamEvent{
+				Type:    providers.EventCompact,
+				Content: formatCompactAttemptNotice(info),
 			})
 		},
 		UsageTracker:    runUsage,
@@ -707,6 +721,31 @@ func formatCompactNotice(info CompactInfo) string {
 	}
 	return fmt.Sprintf("✦ %s history: %d → %d messages",
 		verb, info.MessagesBefore, info.MessagesAfter)
+}
+
+func formatCompactAttemptNotice(info CompactAttemptInfo) string {
+	action := "Compact"
+	switch info.Reason {
+	case CompactReasonOverflow:
+		action = "Context-overflow compact"
+	case CompactReasonProactive:
+		action = "Proactive compact"
+	}
+	switch info.Status {
+	case CompactAttemptFailed:
+		if strings.TrimSpace(info.Error) != "" {
+			return fmt.Sprintf("✦ %s failed: %s", action, stringutil.Truncate(info.Error, 240, "..."))
+		}
+		return fmt.Sprintf("✦ %s failed", action)
+	case CompactAttemptUnchanged:
+		if info.TokensBefore > 0 {
+			return fmt.Sprintf("✦ %s made no changes: %d messages (was ~%s)",
+				action, info.MessagesBefore, formatTokenCount(info.TokensBefore))
+		}
+		return fmt.Sprintf("✦ %s made no changes: %d messages", action, info.MessagesBefore)
+	default:
+		return ""
+	}
 }
 
 // formatTokenCount renders a token count in a compact form: 1234 →

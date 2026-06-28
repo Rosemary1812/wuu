@@ -466,6 +466,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	baseBeforeStep := runner.BeforeStep
 	baseBeforeRequestContext := runner.BeforeRequestContext
 	baseOnRequestContext := runner.OnRequestContext
+	baseOnCompactAttempt := runner.OnCompactAttempt
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
 	// provider exposes stream-time cumulative usage. We keep completed calls
@@ -513,6 +514,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	}
 	var contextRequests []sessiontrace.RequestContextRecord
 	var providerStates []sessiontrace.ProviderStateRecord
+	var compactAttempts []sessiontrace.CompactRecord
 	runner.OnTokenUsage = func(usage providers.TokenUsage) {
 		if baseOnTokenUsage != nil {
 			baseOnTokenUsage(usage)
@@ -566,6 +568,12 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			SystemSections:           requestContextSystemSections(info.SystemSections),
 		})
 	}
+	runner.OnCompactAttempt = func(info agent.CompactAttemptInfo) {
+		if baseOnCompactAttempt != nil {
+			baseOnCompactAttempt(info)
+		}
+		compactAttempts = append(compactAttempts, compactRecord(info))
+	}
 	runner.BeforeStep = func() []providers.ChatMessage {
 		var messages []providers.ChatMessage
 		if baseBeforeStep != nil {
@@ -595,6 +603,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		runner.BeforeStep = baseBeforeStep
 		runner.BeforeRequestContext = baseBeforeRequestContext
 		runner.OnRequestContext = baseOnRequestContext
+		runner.OnCompactAttempt = baseOnCompactAttempt
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
 	}()
@@ -689,7 +698,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart, contextRequests, providerStates)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
 	if traceErr != nil {
 		tracePath = ""
 	}
@@ -778,7 +787,7 @@ func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr 
 	return nil
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord) (string, error) {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
 		return "", nil
 	}
@@ -840,10 +849,21 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	} else if toolRecordStart >= len(records) {
 		records = nil
 	}
-	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests, providerStates); err != nil {
+	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests, providerStates, compactAttempts); err != nil {
 		return "", err
 	}
 	return tracePath, nil
+}
+
+func compactRecord(info agent.CompactAttemptInfo) sessiontrace.CompactRecord {
+	return sessiontrace.CompactRecord{
+		Reason:         string(info.Reason),
+		Status:         string(info.Status),
+		TokensBefore:   info.TokensBefore,
+		MessagesBefore: info.MessagesBefore,
+		MessagesAfter:  info.MessagesAfter,
+		Error:          info.Error,
+	}
 }
 
 func providerStateRecord(state *providers.ProviderStateSummary) sessiontrace.ProviderStateRecord {

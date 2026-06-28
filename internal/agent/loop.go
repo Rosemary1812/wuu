@@ -129,11 +129,28 @@ func RunToolLoop(
 		if cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
-			if compacted, cerr := cfg.Compact(ctx, messages); cerr == nil && compactChanged(messages, compacted) {
+			compacted, cerr := cfg.Compact(ctx, messages)
+			switch {
+			case cerr != nil:
+				emitCompactAttempt(cfg, CompactAttemptInfo{
+					Reason:         CompactReasonProactive,
+					Status:         CompactAttemptFailed,
+					TokensBefore:   before,
+					MessagesBefore: msgsBefore,
+					Error:          cerr.Error(),
+				})
+			case compactChanged(messages, compacted):
 				messages = compacted
 				historyRewritten = true
 				usage.Reset()
 				usage.RecordPendingMessages(messages)
+				emitCompactAttempt(cfg, CompactAttemptInfo{
+					Reason:         CompactReasonProactive,
+					Status:         CompactAttemptSucceeded,
+					TokensBefore:   before,
+					MessagesBefore: msgsBefore,
+					MessagesAfter:  len(messages),
+				})
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{
 						Reason:         CompactReasonProactive,
@@ -142,6 +159,14 @@ func RunToolLoop(
 						MessagesAfter:  len(messages),
 					})
 				}
+			default:
+				emitCompactAttempt(cfg, CompactAttemptInfo{
+					Reason:         CompactReasonProactive,
+					Status:         CompactAttemptUnchanged,
+					TokensBefore:   before,
+					MessagesBefore: msgsBefore,
+					MessagesAfter:  len(compacted),
+				})
 			}
 		}
 		if repaired, changed, nerr := repairLiveToolCallHistory(messages); nerr != nil {
@@ -206,6 +231,13 @@ func RunToolLoop(
 					historyRewritten = true
 					usage.Reset()
 					usage.RecordPendingMessages(messages)
+					emitCompactAttempt(cfg, CompactAttemptInfo{
+						Reason:         CompactReasonOverflow,
+						Status:         CompactAttemptSucceeded,
+						TokensBefore:   before,
+						MessagesBefore: msgsBefore,
+						MessagesAfter:  len(messages),
+					})
 					if cfg.OnCompact != nil {
 						cfg.OnCompact(CompactInfo{
 							Reason:         CompactReasonOverflow,
@@ -215,6 +247,14 @@ func RunToolLoop(
 						})
 					}
 					continue
+				} else {
+					emitCompactAttempt(cfg, CompactAttemptInfo{
+						Reason:         CompactReasonOverflow,
+						Status:         CompactAttemptFailed,
+						TokensBefore:   before,
+						MessagesBefore: msgsBefore,
+						Error:          cerr.Error(),
+					})
 				}
 			}
 			return LoopResult{
@@ -366,6 +406,13 @@ func RunToolLoop(
 				historyRewritten = true
 				usage.Reset()
 				usage.RecordPendingMessages(messages)
+				emitCompactAttempt(cfg, CompactAttemptInfo{
+					Reason:         reason,
+					Status:         CompactAttemptSucceeded,
+					TokensBefore:   before,
+					MessagesBefore: msgsBefore,
+					MessagesAfter:  len(messages),
+				})
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{
 						Reason:         reason,
@@ -386,6 +433,12 @@ func RunToolLoop(
 		CacheCreationTokens: totalCacheCreation,
 		CacheReadTokens:     totalCacheRead,
 	}, fmt.Errorf("max steps exceeded (%d)", cfg.MaxSteps)
+}
+
+func emitCompactAttempt(cfg LoopConfig, info CompactAttemptInfo) {
+	if cfg.OnCompactAttempt != nil {
+		cfg.OnCompactAttempt(info)
+	}
 }
 
 func toolDefinitionsContain(executor ToolExecutor, name string) bool {

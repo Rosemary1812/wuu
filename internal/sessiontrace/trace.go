@@ -146,6 +146,7 @@ type ReplaySummary struct {
 	LatestTurn        *TurnRecord            `json:"latest_turn,omitempty"`
 	ContextRequests   []RequestContextRecord `json:"context_requests,omitempty"`
 	ProviderStates    []ProviderStateRecord  `json:"provider_states,omitempty"`
+	CompactAttempts   []CompactRecord        `json:"compact_attempts,omitempty"`
 	RequestSteps      []RequestStepSummary   `json:"request_steps,omitempty"`
 	ContextBlockKinds []string               `json:"context_block_kinds,omitempty"`
 	ToolInventory     []tools.ToolInfo       `json:"tool_inventory,omitempty"`
@@ -209,6 +210,15 @@ type ProviderStateRecord struct {
 	InputItems             int    `json:"input_items,omitempty"`
 	FullInputItems         int    `json:"full_input_items,omitempty"`
 	DeltaInputItems        int    `json:"delta_input_items,omitempty"`
+}
+
+type CompactRecord struct {
+	Reason         string `json:"reason,omitempty"`
+	Status         string `json:"status,omitempty"`
+	TokensBefore   int    `json:"tokens_before,omitempty"`
+	MessagesBefore int    `json:"messages_before,omitempty"`
+	MessagesAfter  int    `json:"messages_after,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 type RequestStepSummary struct {
@@ -362,6 +372,12 @@ func replayEvent(summary *ReplaySummary, eventType, turnID string, data json.Raw
 		}
 		summary.ProviderStates = append(summary.ProviderStates, records...)
 		summary.addProviderStateSteps(turnID, records)
+	case "compact_attempts":
+		var records []CompactRecord
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		summary.CompactAttempts = append(summary.CompactAttempts, records...)
 	case "tool_inventory":
 		var inventory []tools.ToolInfo
 		if err := json.Unmarshal(data, &inventory); err != nil {
@@ -639,7 +655,7 @@ func (summary *ReplaySummary) finalizeToolSummary() {
 	summary.ToolSummary.argumentCounts = nil
 }
 
-func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests []RequestContextRecord, providerStates []ProviderStateRecord) error {
+func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests []RequestContextRecord, providerStates []ProviderStateRecord, compactAttempts []CompactRecord) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil
@@ -680,6 +696,15 @@ func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []too
 			Data:      append([]ProviderStateRecord(nil), providerStates...),
 		})
 	}
+	if len(compactAttempts) > 0 {
+		events = append(events, Event{
+			Type:      "compact_attempts",
+			ThreadID:  turn.ThreadID,
+			TurnID:    turn.TurnID,
+			CreatedAt: createdAt,
+			Data:      redactCompactRecords(compactAttempts),
+		})
+	}
 	if len(inventory) > 0 {
 		events = append(events, Event{
 			Type:      "tool_inventory",
@@ -713,6 +738,18 @@ func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []too
 		}
 	}
 	return nil
+}
+
+func redactCompactRecords(records []CompactRecord) []CompactRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]CompactRecord, len(records))
+	copy(out, records)
+	for i := range out {
+		out[i].Error = redactAndTruncate(out[i].Error)
+	}
+	return out
 }
 
 func redactAndTruncate(value string) string {
