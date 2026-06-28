@@ -33,7 +33,7 @@ import type {
   SettingsUsageDay,
   SettingsUsageResponse
 } from "../shared/protocol";
-import { normalizedVariantForProviderModel, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
+import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 
 export type SettingsPage = "providers" | "advanced" | "general" | "usage";
 
@@ -623,6 +623,7 @@ function SettingsProvidersPage({
   onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
   disabled: boolean;
 }): JSX.Element {
+  const reasoningMode = providerModelReasoningMode(selectedProvider, modelDraft);
   return (
     <SettingsSection
       title="模型服务"
@@ -722,14 +723,20 @@ function SettingsProvidersPage({
         </SettingsRow>
         <SettingsRow
           title="思考强度"
-          description={variantOptions.length > 1 ? "当前模型支持的参数档位" : "当前模型没有可调参数档位"}
+          description={
+            reasoningMode === "levels"
+              ? "当前模型支持的参数档位"
+              : reasoningMode === "toggle"
+                ? "可关闭思考"
+                : "当前模型不支持思考"
+          }
           block
         >
           <select
             className="settings-select"
             value={variantDraft}
             onChange={(event) => onVariantDraftChange(event.target.value)}
-            disabled={running || variantOptions.length <= 1}
+            disabled={running || reasoningMode === "off"}
           >
             {variantOptions.map((variant) => (
               <option key={variant || "auto"} value={variant}>

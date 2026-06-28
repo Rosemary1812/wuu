@@ -57,10 +57,32 @@ export function providerModelVariantOptions(
   const variants = (model?.variants ?? []).map((item) => item.id).filter(Boolean);
   const supported = variants.length > 0 ? variants : (model?.supported_efforts ?? []).filter(Boolean);
   const options = ["", ...supported];
+  // When the model supports thinking but exposes no adjustable levels,
+  // still let the user explicitly turn thinking off via "none" instead
+  // of silently locking them to the model's default behavior.
+  if (supported.length === 0 && model?.capabilities?.reasoning === true && !options.includes("none")) {
+    options.push("none");
+  }
   if (currentVariant && !options.includes(currentVariant)) {
     options.push(currentVariant);
   }
   return options;
+}
+
+export function providerModelReasoningMode(
+  provider: ProviderSummary | undefined,
+  modelID: string
+): "off" | "toggle" | "levels" {
+  const model = provider?.models?.find((item) => item.id === modelID);
+  if (!model) {
+    return "off";
+  }
+  const variants = (model.variants ?? []).map((item) => item.id).filter(Boolean);
+  const supported = variants.length > 0 ? variants : (model.supported_efforts ?? []).filter(Boolean);
+  if (supported.length > 0) {
+    return "levels";
+  }
+  return model.capabilities?.reasoning === true ? "toggle" : "off";
 }
 
 export function providerModelEffortOptions(

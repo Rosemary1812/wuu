@@ -39,6 +39,7 @@ import {
   displayCodexModelName,
   isCodexProvider,
   providerModelDisplayName,
+  providerModelReasoningMode,
   providerModelVariantOptions,
   shortCodexModelLabel,
   variantLabel
@@ -191,6 +192,9 @@ export function RuntimePicker({
   const variantOptions = codexProvider
     ? codexEffortOptions(currentCodexModel, currentVariant)
     : providerModelVariantOptions(currentProvider, initialized.model, currentVariant);
+  const reasoningMode = codexProvider
+    ? "levels"
+    : providerModelReasoningMode(currentProvider, initialized.model);
   const placement: FloatingMenuPlacement = variant === "hero" ? "below" : "above";
   return (
     <div className="codex-runtime-anchor" ref={anchorRef}>
@@ -217,6 +221,7 @@ export function RuntimePicker({
           <RuntimeMainMenu
             selectedVariant={currentVariant}
             options={variantOptions}
+            reasoningMode={reasoningMode}
             currentLabel={runtimeModelLabel(initialized, currentProviderModel, currentCodexModel)}
             onSelectEffort={onSelectEffort}
             onOpenModelMenu={() => onToggleMenu("model")}
@@ -248,12 +253,14 @@ export function RuntimePicker({
 function RuntimeMainMenu({
   selectedVariant,
   options,
+  reasoningMode,
   currentLabel,
   onSelectEffort,
   onOpenModelMenu
 }: {
   selectedVariant: string;
   options: string[];
+  reasoningMode: "off" | "toggle" | "levels";
   currentLabel: string;
   onSelectEffort: (variant: string) => void;
   onOpenModelMenu: () => void;
@@ -272,7 +279,9 @@ function RuntimeMainMenu({
           );
         })
       ) : (
-        <div className="composer-menu-empty">当前模型没有可调思考强度</div>
+        <div className="composer-menu-empty">
+          {reasoningMode === "off" ? "当前模型不支持思考" : "当前模型没有可调思考强度"}
+        </div>
       )}
       <div className="codex-menu-separator" />
       <button role="menuitem" type="button" onClick={onOpenModelMenu}>
