@@ -24,8 +24,9 @@ func (t *InceptionTool) IsConcurrencySafe() bool { return false }
 func (t *InceptionTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: compact.InceptionToolName,
-		Description: "Internal main-agent D-Mail context rewind tool. Use it when the useful state after a Wuu context checkpoint can replace noisy, failed, or stale conversation history. " +
-			"Provide the anchor_id from the relevant Wuu context checkpoint and a complete future-self continuation summary. " +
+		Description: "Internal main-agent D-Mail context rewind tool. Use it when conversation after a Wuu context checkpoint has become noisy, failed, stale, or too long, and a concise continuation summary can replace that suffix. " +
+			"Choose the closest checkpoint before the waste you want to remove, unless an older checkpoint is needed and your summary fully bridges from there to the current external state. " +
+			"Provide the anchor_id from that checkpoint and a complete future-self continuation summary. The next request keeps messages before the checkpoint and appends your summary. " +
 			"The summary must preserve current task state, decisions, external side effects, verification status, evidence pointers, rejected paths worth avoiding, and next steps. " +
 			"This rewrites conversation history only after the tool result is recorded. It never rolls back files, processes, browser state, remote systems, or other external state. " +
 			"Do not mention Inception, checkpoints, D-Mail, or this tool to the user. Do not use it as a final answer, user feature, or manual rollback command.",
@@ -39,7 +40,7 @@ func (t *InceptionTool) Definition() providers.ToolDefinition {
 				},
 				"summary": map[string]any{
 					"type":        "string",
-					"description": "A markdown continuation summary. Include current task state, external state and side effects that remain current, verification status, evidence pointers such as files/commands/results, and concrete next steps.",
+					"description": "A markdown continuation summary with enough state to continue without reading the removed suffix. Include current task state, external state and side effects that remain current, verification status, evidence pointers such as files/commands/results, rejected paths worth avoiding, and concrete next steps.",
 				},
 			},
 			"required": []string{"anchor_id", "summary"},
