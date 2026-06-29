@@ -21,6 +21,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/skills"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
@@ -353,8 +354,21 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, s.rt.Model)
 	apiModel := modelcatalog.APIModel(ruleProviderCfg, s.rt.Model)
+	roleSelections, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{
+		ProviderName:   resolvedName,
+		ProviderConfig: providerCfg,
+		Model:          s.rt.Model,
+		Effort:         s.currentEffort(),
+		Variant:        s.currentVariant(),
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	s.rt.ModelRoles = roleSelections
 	modelBudget := runtime.ResolveModelBudget(s.rt.Model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
 	s.rt.ModelBudget = modelBudget
+	workerBudget := runtime.ResolveModelBudget(roleSelections.Worker.Model, roleSelections.Worker.RuleProviderConfig, cfg.Agent.MaxContextTokens)
+	s.rt.WorkerModelBudget = workerBudget
 	if s.rt.StreamRunner != nil {
 		s.rt.StreamRunner.MaxSteps = cfg.Agent.MaxSteps
 		s.rt.StreamRunner.Temperature = cfg.Agent.Temperature
@@ -365,6 +379,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
 		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
 	}
+	s.updateRootAgentControlWorkerDefaults()
 	s.updateIdleThreadAdvancedRuntime()
 	if s.rt.Toolkit != nil {
 		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
@@ -565,6 +580,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
 	modelBudget := runtime.ResolveModelBudget(model, ruleProviderCfg, cfg.Agent.MaxContextTokens)
 	s.rt.ModelBudget = modelBudget
+	workerBudget := runtime.ResolveModelBudget(roleSelections.Worker.Model, roleSelections.Worker.RuleProviderConfig, cfg.Agent.MaxContextTokens)
+	s.rt.WorkerModelBudget = workerBudget
 	if s.rt.StreamRunner != nil {
 		if client != nil {
 			s.rt.StreamRunner.Client = client
@@ -578,6 +595,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
 		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
 	}
+	s.updateRootAgentControlWorkerDefaults()
 	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
@@ -803,6 +821,14 @@ func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, 
 					th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
 				}
 				th.execRuntime.ModelBudget = s.rt.ModelBudget
+				th.execRuntime.WorkerModelBudget = s.rt.WorkerModelBudget
+				if th.execRuntime.AgentControl != nil {
+					th.execRuntime.AgentControl.UpdateWorkerDefaults(
+						s.rt.WorkerClient,
+						s.rt.ModelRoles.Worker.APIModel,
+						s.currentWorkerManagerOptions(),
+					)
+				}
 				if th.execRuntime.Toolkit != nil {
 					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 					if s.rt != nil {
@@ -834,9 +860,52 @@ func (s *Server) updateIdleThreadAdvancedRuntime() {
 			}
 			if s.rt != nil {
 				th.execRuntime.ModelBudget = s.rt.ModelBudget
+				th.execRuntime.WorkerModelBudget = s.rt.WorkerModelBudget
+				if th.execRuntime.AgentControl != nil {
+					th.execRuntime.AgentControl.UpdateWorkerDefaults(
+						s.rt.WorkerClient,
+						s.rt.ModelRoles.Worker.APIModel,
+						s.currentWorkerManagerOptions(),
+					)
+				}
 			}
 		}
 		th.mu.Unlock()
+	}
+}
+
+func (s *Server) updateRootAgentControlWorkerDefaults() {
+	if s == nil || s.rt == nil || s.rt.AgentControl == nil {
+		return
+	}
+	s.rt.AgentControl.UpdateWorkerDefaults(
+		s.rt.WorkerClient,
+		s.rt.ModelRoles.Worker.APIModel,
+		s.currentWorkerManagerOptions(),
+	)
+}
+
+func (s *Server) currentWorkerManagerOptions() subagent.ManagerOptions {
+	if s == nil || s.rt == nil {
+		return subagent.ManagerOptions{}
+	}
+	compactPct := 0.0
+	keepRecent := 0
+	disableCompact := false
+	if s.rt.StreamRunner != nil {
+		compactPct = s.rt.StreamRunner.CompactThresholdPct
+		keepRecent = s.rt.StreamRunner.CompactKeepRecentTokens
+		disableCompact = s.rt.StreamRunner.DisableAutoCompact
+	}
+	return subagent.ManagerOptions{
+		DefaultEffort:           s.rt.ModelRoles.Worker.LegacyEffort,
+		DefaultProviderOptions:  s.rt.ModelRoles.Worker.ProviderOptions,
+		ContextWindowOverride:   s.rt.WorkerModelBudget.ContextWindowTokens,
+		MaxInputTokens:          s.rt.WorkerModelBudget.InputLimitTokens,
+		OutputReserveTokens:     s.rt.WorkerModelBudget.OutputReserveTokens,
+		CompactThresholdPct:     compactPct,
+		CompactKeepRecentTokens: keepRecent,
+		DisableAutoCompact:      disableCompact,
 	}
 }
 

@@ -727,12 +727,11 @@ describe("latestContextUsageForThread", () => {
     });
   });
 
-  it("falls back to the client catalog when no thread exists and runtime window is absent", () => {
+  it("returns undefined when no thread exists and runtime window is absent", () => {
     const result = latestContextUsageForThread(initialState, undefined, {
       model: "claude-sonnet-4-5",
     });
-    expect(result?.used).toBe(0);
-    expect(result?.window).toBe(200_000);
+    expect(result).toBeUndefined();
   });
 
   it("returns undefined for an empty thread with an unrecognized model", () => {
@@ -742,28 +741,16 @@ describe("latestContextUsageForThread", () => {
     expect(latestContextUsageForThread(initialState, t)).toBeUndefined();
   });
 
-  it("falls back to the client catalog when the model is known but no turn has run", () => {
-    // "claude-sonnet-4-5" matches the catalog → 200_000. This is the
-    // 常驻 case: the ring renders at 0% from the moment the user picks
-    // a model, before any turn has emitted a usage snapshot.
+  it("hides the meter when no runtime window is available and no turn has run", () => {
     const t = makeThread({ model: "claude-sonnet-4-5", turns: [] });
     const result = latestContextUsageForThread(initialState, t);
-    expect(result).toEqual({
-      turnID: "",
-      used: 0,
-      window: 200_000,
-      inputTokens: 0,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 0,
-    });
+    expect(result).toBeUndefined();
   });
 
-  it("strips OpenRouter-style vendor prefixes before catalog lookup", () => {
-    // "anthropic/claude-sonnet-4-5" should match the bare "claude-sonnet-4-5"
-    // catalog entry. Gateway-style names must not be treated as unknown.
+  it("does not infer a gateway model window from the client", () => {
     const t = makeThread({ model: "anthropic/claude-sonnet-4-5", turns: [] });
     const result = latestContextUsageForThread(initialState, t);
-    expect(result?.window).toBe(200_000);
+    expect(result).toBeUndefined();
   });
 
   it("does not treat raw provider usage as retained context", () => {
@@ -945,13 +932,6 @@ describe("latestContextUsageForThread", () => {
       turns: [{ id: "turn-1", status: "completed" }],
     });
     const result = latestContextUsageForThread(state, t);
-    expect(result).toEqual({
-      turnID: "",
-      used: 0,
-      window: 400_000,
-      inputTokens: 0,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 0,
-    });
+    expect(result).toBeUndefined();
   });
 });

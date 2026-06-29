@@ -555,9 +555,6 @@ func compactTailBudget(model string, maxContextTokens int) int {
 func compactSummaryInputBudgetForBudget(model string, budget Budget) int {
 	usable := compactUsableInputWindow(model, budget)
 	if usable <= 0 {
-		usable = providers.ContextWindowFor(model) - providers.MaxOutputTokensFor(model)
-	}
-	if usable <= 0 {
 		return compactSummaryInputMinTokens
 	}
 	inputBudget := int(float64(usable) * compactSummaryInputFraction)
@@ -605,15 +602,9 @@ func compactUsableWindow(model string, window int) int {
 func compactUsableInputWindow(model string, budget Budget) int {
 	window := budget.ContextTokens
 	if window <= 0 {
-		window = providers.ContextWindowFor(model)
-	}
-	if window <= 0 {
 		return 0
 	}
 	outputReserve := budget.OutputReserveTokens
-	if outputReserve <= 0 {
-		outputReserve = providers.MaxOutputTokensFor(model)
-	}
 	if budget.InputTokens > 0 {
 		reserved := outputReserve
 		if reserved > compactReservedMaxTokens {

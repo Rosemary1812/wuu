@@ -33,8 +33,11 @@ func TestMatchProviderByBaseURL(t *testing.T) {
 	if model.Reasoning == nil || !*model.Reasoning {
 		t.Fatalf("expected reasoning model metadata: %+v", model)
 	}
-	if enriched.ContextWindow != 1048576 {
-		t.Fatalf("ContextWindow = %d", enriched.ContextWindow)
+	if enriched.ContextWindow != 0 {
+		t.Fatalf("provider ContextWindow = %d, want 0 without explicit provider override", enriched.ContextWindow)
+	}
+	if model.Limit == nil || model.Limit.Context != 1048576 {
+		t.Fatalf("model limit context = %+v, want 1048576", model.Limit)
 	}
 }
 
@@ -244,7 +247,11 @@ func TestMergeProviderPromotesSelectedModelProviderOverride(t *testing.T) {
 	if enriched.APIKeyEnv != "ZENMUX_API_KEY" {
 		t.Fatalf("provider api_key_env = %q", enriched.APIKeyEnv)
 	}
-	if enriched.ContextWindow != 1000000 {
-		t.Fatalf("ContextWindow = %d", enriched.ContextWindow)
+	if enriched.ContextWindow != 0 {
+		t.Fatalf("provider ContextWindow = %d, want 0 without explicit provider override", enriched.ContextWindow)
+	}
+	model := enriched.Models["anthropic/claude-opus-4.7"]
+	if model.Limit == nil || model.Limit.Context != 1000000 {
+		t.Fatalf("model limit context = %+v, want 1000000", model.Limit)
 	}
 }

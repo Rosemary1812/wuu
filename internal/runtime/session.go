@@ -81,6 +81,7 @@ type Session struct {
 	WorkerClient                providers.StreamClient
 	ModelRoles                  modelroles.Set
 	ModelBudget                 modelbudget.Budget
+	WorkerModelBudget           modelbudget.Budget
 	BaseSystemPrompt            string
 	BaseSystemPromptSections    []prompt.SectionInfo
 	UserSystemPrompt            string
@@ -97,11 +98,12 @@ type Session struct {
 // conversation. The desktop app can run multiple ThreadRuntimes at once; each
 // one has its own StreamRunner, Toolkit Env, usage tracker, and AgentControl.
 type ThreadRuntime struct {
-	StreamRunner *agent.StreamRunner
-	Toolkit      *tools.Toolkit
-	AgentControl *agentcontrol.AgentControl
-	GoalRuntime  *goalruntime.Runtime
-	ModelBudget  modelbudget.Budget
+	StreamRunner      *agent.StreamRunner
+	Toolkit           *tools.Toolkit
+	AgentControl      *agentcontrol.AgentControl
+	GoalRuntime       *goalruntime.Runtime
+	ModelBudget       modelbudget.Budget
+	WorkerModelBudget modelbudget.Budget
 }
 
 // NewSession builds the shared runtime for an interactive agent surface.
@@ -229,6 +231,11 @@ func NewSession(opts Options) (*Session, error) {
 	var agentControl *agentcontrol.AgentControl
 	var coordinatorPreamble string
 	var workerClient providers.StreamClient
+	workerModelBudget := ResolveModelBudget(
+		roleSelections.Worker.Model,
+		roleSelections.Worker.RuleProviderConfig,
+		cfg.Agent.MaxContextTokens,
+	)
 	if toolkit != nil {
 		workerRetry := providerfactory.SubAgentRetryConfig()
 		workerToolProviderName := roleSelections.Worker.RuleProvider
@@ -243,17 +250,23 @@ func NewSession(opts Options) (*Session, error) {
 
 		loopSink := goalrunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
-			Client:          workerClient,
-			DefaultModel:    roleSelections.Worker.APIModel,
-			DefaultEffort:   roleSelections.Worker.LegacyEffort,
-			DefaultOptions:  modelvariant.CloneOptions(roleSelections.Worker.ProviderOptions),
-			ParentRepo:      rootDir,
-			WorktreeRoot:    statepath.WorktreeRoot(workspaceStateDir),
-			SessionID:       "session-pending",
-			HistoryDir:      "",
-			FailureSink:     loopSink,
-			ReportSink:      loopSink,
-			WorkerSysPrompt: workerBaseSystemPrompt,
+			Client:                         workerClient,
+			DefaultModel:                   roleSelections.Worker.APIModel,
+			DefaultEffort:                  roleSelections.Worker.LegacyEffort,
+			DefaultOptions:                 modelvariant.CloneOptions(roleSelections.Worker.ProviderOptions),
+			DefaultContextWindow:           workerModelBudget.ContextWindowTokens,
+			DefaultMaxInputTokens:          workerModelBudget.InputLimitTokens,
+			DefaultOutputReserveTokens:     workerModelBudget.OutputReserveTokens,
+			DefaultCompactThresholdPct:     cfg.Agent.CompactThresholdPct,
+			DefaultCompactKeepRecentTokens: cfg.Agent.CompactKeepRecentTokens,
+			DefaultDisableAutoCompact:      cfg.Agent.DisableAutoCompact,
+			ParentRepo:                     rootDir,
+			WorktreeRoot:                   statepath.WorktreeRoot(workspaceStateDir),
+			SessionID:                      "session-pending",
+			HistoryDir:                     "",
+			FailureSink:                    loopSink,
+			ReportSink:                     loopSink,
+			WorkerSysPrompt:                workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 			},
@@ -368,6 +381,7 @@ func NewSession(opts Options) (*Session, error) {
 		WorkerClient:                workerClient,
 		ModelRoles:                  roleSelections,
 		ModelBudget:                 modelBudget,
+		WorkerModelBudget:           workerModelBudget,
 		BaseSystemPrompt:            baseSystemPrompt,
 		BaseSystemPromptSections:    baseSystemPromptResult.Sections,
 		UserSystemPrompt:            userSystemPrompt,
@@ -593,6 +607,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 			if roleModel := strings.TrimSpace(s.ModelRoles.Worker.APIModel); roleModel != "" {
 				workerModel = roleModel
 			}
+			workerModelBudget := s.WorkerModelBudget
 			workerToolProviderName := s.ModelRoles.Worker.RuleProvider
 			workerToolModeModel := workerModel
 			workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
@@ -619,19 +634,25 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				s.Workflows,
 			)
 			control, _ = agentcontrol.New(agentcontrol.Config{
-				Client:          workerClient,
-				DefaultModel:    workerModel,
-				DefaultEffort:   s.ModelRoles.Worker.LegacyEffort,
-				DefaultOptions:  modelvariant.CloneOptions(s.ModelRoles.Worker.ProviderOptions),
-				ParentRepo:      s.RootDir,
-				WorktreeRoot:    statepath.WorktreeRoot(stateDir),
-				SessionID:       id,
-				HistoryDir:      filepath.Join(artifactDir, "workers"),
-				ThreadDir:       filepath.Join(artifactDir, "threads"),
-				HarnessDir:      filepath.Join(artifactDir, "harness"),
-				FailureSink:     loopSink,
-				ReportSink:      loopSink,
-				WorkerSysPrompt: workerBaseSystemPrompt,
+				Client:                         workerClient,
+				DefaultModel:                   workerModel,
+				DefaultEffort:                  s.ModelRoles.Worker.LegacyEffort,
+				DefaultOptions:                 modelvariant.CloneOptions(s.ModelRoles.Worker.ProviderOptions),
+				DefaultContextWindow:           workerModelBudget.ContextWindowTokens,
+				DefaultMaxInputTokens:          workerModelBudget.InputLimitTokens,
+				DefaultOutputReserveTokens:     workerModelBudget.OutputReserveTokens,
+				DefaultCompactThresholdPct:     s.StreamRunner.CompactThresholdPct,
+				DefaultCompactKeepRecentTokens: s.StreamRunner.CompactKeepRecentTokens,
+				DefaultDisableAutoCompact:      s.StreamRunner.DisableAutoCompact,
+				ParentRepo:                     s.RootDir,
+				WorktreeRoot:                   statepath.WorktreeRoot(stateDir),
+				SessionID:                      id,
+				HistoryDir:                     filepath.Join(artifactDir, "workers"),
+				ThreadDir:                      filepath.Join(artifactDir, "threads"),
+				HarnessDir:                     filepath.Join(artifactDir, "harness"),
+				FailureSink:                    loopSink,
+				ReportSink:                     loopSink,
+				WorkerSysPrompt:                workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions), s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
 				},
@@ -712,11 +733,12 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	runner.AfterTurn = chainAfterTurn(afterTurnHooks...)
 
 	return &ThreadRuntime{
-		StreamRunner: runner,
-		Toolkit:      kit,
-		AgentControl: agentControl,
-		GoalRuntime:  goalRuntime,
-		ModelBudget:  s.ModelBudget,
+		StreamRunner:      runner,
+		Toolkit:           kit,
+		AgentControl:      agentControl,
+		GoalRuntime:       goalRuntime,
+		ModelBudget:       s.ModelBudget,
+		WorkerModelBudget: s.WorkerModelBudget,
 	}, nil
 }
 

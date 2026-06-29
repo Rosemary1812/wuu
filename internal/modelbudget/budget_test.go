@@ -6,19 +6,19 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 )
 
-func TestResolveMiniMaxM3UsesKnownLargeWindow(t *testing.T) {
+func TestResolveMiniMaxM3WithoutProviderLimitStaysUnknown(t *testing.T) {
 	budget := Resolve("MiniMax-M3", config.ProviderConfig{Type: "anthropic"}, 0)
-	if budget.ContextWindowTokens != 1_000_000 {
-		t.Fatalf("ContextWindowTokens = %d, want 1000000", budget.ContextWindowTokens)
+	if budget.ContextWindowTokens != 0 {
+		t.Fatalf("ContextWindowTokens = %d, want 0", budget.ContextWindowTokens)
 	}
-	if budget.ContextWindowSource != SourceRegistry || !budget.ContextWindowKnown {
+	if budget.ContextWindowSource != SourceUnknown || budget.ContextWindowKnown {
 		t.Fatalf("unexpected context source: source=%q known=%v", budget.ContextWindowSource, budget.ContextWindowKnown)
 	}
-	if budget.OutputReserveTokens != 131_072 {
-		t.Fatalf("OutputReserveTokens = %d, want 131072", budget.OutputReserveTokens)
+	if budget.OutputReserveTokens != 0 {
+		t.Fatalf("OutputReserveTokens = %d, want 0 without provider metadata", budget.OutputReserveTokens)
 	}
-	if budget.CompactThresholdTokens != 868_928 {
-		t.Fatalf("CompactThresholdTokens = %d, want 868928", budget.CompactThresholdTokens)
+	if budget.CompactThresholdTokens != 0 {
+		t.Fatalf("CompactThresholdTokens = %d, want 0", budget.CompactThresholdTokens)
 	}
 }
 
@@ -77,7 +77,7 @@ func TestResolveProviderOverrideWins(t *testing.T) {
 	}
 }
 
-func TestResolveAliasUsesAPIModelRegistry(t *testing.T) {
+func TestResolveAliasDoesNotUseAPIModelRegistry(t *testing.T) {
 	provider := config.ProviderConfig{
 		Type: "anthropic",
 		Models: map[string]config.ProviderModelConfig{
@@ -88,11 +88,11 @@ func TestResolveAliasUsesAPIModelRegistry(t *testing.T) {
 	if budget.APIModel != "MiniMax-M3" {
 		t.Fatalf("APIModel = %q, want MiniMax-M3", budget.APIModel)
 	}
-	if budget.ContextWindowTokens != 1_000_000 || budget.ContextWindowSource != SourceRegistry {
-		t.Fatalf("alias should use API model context registry: %+v", budget)
+	if budget.ContextWindowTokens != 0 || budget.ContextWindowSource != SourceUnknown {
+		t.Fatalf("alias should not infer API model context registry: %+v", budget)
 	}
-	if budget.OutputReserveTokens != 131_072 {
-		t.Fatalf("alias should use API model output reserve, got %+v", budget)
+	if budget.OutputReserveTokens != 0 {
+		t.Fatalf("alias should not infer API model output reserve, got %+v", budget)
 	}
 }
 

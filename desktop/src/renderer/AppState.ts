@@ -36,7 +36,6 @@ import {
   type StreamTextField,
 } from "./StreamText";
 import { statusMessageForError } from "./UserFacingErrors";
-import { clientContextWindowFor } from "./contextWindowCatalog";
 
 type ConversationPaneID = "primary" | "secondary";
 
@@ -1940,7 +1939,7 @@ function latestContextUsageForThread(
         const turnWindow =
           fallback.contextWindowTokens && fallback.contextWindowTokens > 0
             ? fallback.contextWindowTokens
-            : clientContextWindowFor(turnUsageModel || model);
+            : undefined;
         if (!turnWindow) {
           continue;
         }
@@ -1975,7 +1974,7 @@ function latestContextUsageForThread(
   const fallbackWindow =
     fallback.contextWindowTokens && fallback.contextWindowTokens > 0
       ? fallback.contextWindowTokens
-      : clientContextWindowFor(model);
+      : undefined;
   if (!fallbackWindow) {
     return undefined;
   }

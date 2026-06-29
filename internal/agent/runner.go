@@ -69,9 +69,8 @@ type Runner struct {
 	SystemPromptSections []SystemPromptSectionInfo
 	MaxSteps             int
 	Temperature          float64
-	// ContextWindowOverride pins the context window for this run
-	// instead of consulting the known-model registry. Zero disables
-	// proactive compaction when the model is unknown.
+	// ContextWindowOverride is the resolved provider/model context window.
+	// Zero disables proactive compaction when the limit is unknown.
 	ContextWindowOverride int
 	// MaxInputTokens pins the prompt/input budget when lower than the
 	// model's total context window.
@@ -131,11 +130,6 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 	history = append(history, providers.ChatMessage{Role: "user", Content: prompt})
 
 	maxCtx := r.ContextWindowOverride
-	if maxCtx <= 0 {
-		if window, ok := providers.KnownContextWindowFor(r.Model); ok {
-			maxCtx = window
-		}
-	}
 	cfg := LoopConfig{
 		Tools:                   r.Tools,
 		Model:                   r.Model,

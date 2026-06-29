@@ -133,15 +133,16 @@ type SubAgent struct {
 	ActivityAt time.Time
 
 	// Internal state — read-only from outside.
-	prompt         string
-	systemPrompt   string
-	model          string
-	toolkit        agent.ToolExecutor
-	historyPath    string
-	initialHistory []providers.ChatMessage
-	history        []providers.ChatMessage
-	maxSteps       int
-	maxLifetime    time.Duration
+	prompt          string
+	systemPrompt    string
+	model           string
+	toolkit         agent.ToolExecutor
+	historyPath     string
+	initialHistory  []providers.ChatMessage
+	history         []providers.ChatMessage
+	maxSteps        int
+	maxLifetime     time.Duration
+	runtimeDefaults managerDefaults
 	// Follow-up messages queued by the coordinator while this worker
 	// is already running. Manager.run drains this queue between model
 	// turns and appends each entry as a new user message.

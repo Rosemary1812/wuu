@@ -5,7 +5,6 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
-	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 type Source string
@@ -15,7 +14,6 @@ const (
 	SourceProviderContextWindow Source = "provider_context_window"
 	SourceProviderModelLimit    Source = "provider_model_limit"
 	SourceAgentOverride         Source = "agent_max_context_tokens"
-	SourceRegistry              Source = "built_in_registry"
 )
 
 const CodexSubscriptionGPT5InputCap = 272_000
@@ -43,9 +41,6 @@ func Resolve(model string, provider config.ProviderConfig, agentOverride int) Bu
 	context, source := resolveContextWindow(model, apiModel, provider, agentOverride)
 	input := resolveInputWindow(model, apiModel, provider)
 	output := configuredModelOutputLimit(model, provider)
-	if output <= 0 {
-		output = providers.MaxOutputTokensFor(apiModel)
-	}
 	outputReserve := output
 	usable := 0
 	if input > 0 {
@@ -81,14 +76,6 @@ func resolveContextWindow(model, apiModel string, provider config.ProviderConfig
 	}
 	if agentOverride > 0 {
 		return agentOverride, SourceAgentOverride
-	}
-	if apiModel != "" && apiModel != model {
-		if window, ok := providers.KnownContextWindowFor(apiModel); ok {
-			return window, SourceRegistry
-		}
-	}
-	if window, ok := providers.KnownContextWindowFor(model); ok {
-		return window, SourceRegistry
 	}
 	return 0, SourceUnknown
 }

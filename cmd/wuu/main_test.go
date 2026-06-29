@@ -1703,9 +1703,9 @@ func TestResolveContextWindow_FallsBackToAgentOverride(t *testing.T) {
 	}
 }
 
-func TestResolveContextWindow_UsesModelRegistryByDefault(t *testing.T) {
-	if got := runtime.ResolveContextWindow("gpt-5.4", config.ProviderConfig{}, 0); got != 400000 {
-		t.Fatalf("expected model registry context window, got %d", got)
+func TestResolveContextWindow_UnknownWithoutProviderMetadata(t *testing.T) {
+	if got := runtime.ResolveContextWindow("gpt-5.4", config.ProviderConfig{}, 0); got != 0 {
+		t.Fatalf("expected unknown context window without provider metadata, got %d", got)
 	}
 }
 

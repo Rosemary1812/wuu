@@ -471,14 +471,6 @@ func usageContextWindowTokens(runner *agent.StreamRunner) int {
 	if runner.ContextWindowOverride > 0 {
 		return runner.ContextWindowOverride
 	}
-	if runner.APIModel != "" && runner.APIModel != runner.Model {
-		if window, ok := providers.KnownContextWindowFor(runner.APIModel); ok {
-			return window
-		}
-	}
-	if window, ok := providers.KnownContextWindowFor(runner.Model); ok {
-		return window
-	}
 	return 0
 }
 

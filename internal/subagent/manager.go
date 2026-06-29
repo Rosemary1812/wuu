@@ -23,6 +23,12 @@ type Manager struct {
 	defaultModel           string
 	defaultEffort          string
 	defaultProviderOptions map[string]any
+	defaultContextWindow   int
+	defaultMaxInputTokens  int
+	defaultOutputReserve   int
+	defaultCompactPct      float64
+	defaultKeepRecent      int
+	defaultDisableCompact  bool
 
 	mu        sync.Mutex
 	agents    map[string]*SubAgent
@@ -31,8 +37,27 @@ type Manager struct {
 }
 
 type ManagerOptions struct {
-	DefaultEffort          string
-	DefaultProviderOptions map[string]any
+	DefaultEffort           string
+	DefaultProviderOptions  map[string]any
+	ContextWindowOverride   int
+	MaxInputTokens          int
+	OutputReserveTokens     int
+	CompactThresholdPct     float64
+	CompactKeepRecentTokens int
+	DisableAutoCompact      bool
+}
+
+type managerDefaults struct {
+	client         providers.StreamClient
+	model          string
+	effort         string
+	options        map[string]any
+	contextWindow  int
+	maxInputTokens int
+	outputReserve  int
+	compactPct     float64
+	keepRecent     int
+	disableCompact bool
 }
 
 type toolContextBlockProvider interface {
@@ -53,7 +78,54 @@ func NewManagerWithOptions(client providers.StreamClient, defaultModel string, o
 		defaultModel:           defaultModel,
 		defaultEffort:          strings.TrimSpace(opts.DefaultEffort),
 		defaultProviderOptions: provideroptions.Clone(opts.DefaultProviderOptions),
+		defaultContextWindow:   opts.ContextWindowOverride,
+		defaultMaxInputTokens:  opts.MaxInputTokens,
+		defaultOutputReserve:   opts.OutputReserveTokens,
+		defaultCompactPct:      opts.CompactThresholdPct,
+		defaultKeepRecent:      opts.CompactKeepRecentTokens,
+		defaultDisableCompact:  opts.DisableAutoCompact,
 		agents:                 make(map[string]*SubAgent),
+	}
+}
+
+// UpdateDefaults changes the defaults used by future sub-agent spawns. Running
+// agents keep the runner they were started with.
+func (m *Manager) UpdateDefaults(client providers.StreamClient, defaultModel string, opts ManagerOptions) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if client != nil {
+		m.client = client
+	}
+	if strings.TrimSpace(defaultModel) != "" {
+		m.defaultModel = strings.TrimSpace(defaultModel)
+	}
+	m.defaultEffort = strings.TrimSpace(opts.DefaultEffort)
+	m.defaultProviderOptions = provideroptions.Clone(opts.DefaultProviderOptions)
+	m.defaultContextWindow = opts.ContextWindowOverride
+	m.defaultMaxInputTokens = opts.MaxInputTokens
+	m.defaultOutputReserve = opts.OutputReserveTokens
+	m.defaultCompactPct = opts.CompactThresholdPct
+	m.defaultKeepRecent = opts.CompactKeepRecentTokens
+	m.defaultDisableCompact = opts.DisableAutoCompact
+}
+
+func (m *Manager) defaultsSnapshot() managerDefaults {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return managerDefaults{
+		client:         m.client,
+		model:          m.defaultModel,
+		effort:         m.defaultEffort,
+		options:        provideroptions.Clone(m.defaultProviderOptions),
+		contextWindow:  m.defaultContextWindow,
+		maxInputTokens: m.defaultMaxInputTokens,
+		outputReserve:  m.defaultOutputReserve,
+		compactPct:     m.defaultCompactPct,
+		keepRecent:     m.defaultKeepRecent,
+		disableCompact: m.defaultDisableCompact,
 	}
 }
 
@@ -110,9 +182,10 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		return nil, errors.New("prompt is required")
 	}
 
+	defaults := m.defaultsSnapshot()
 	model := opts.Model
 	if model == "" {
-		model = m.defaultModel
+		model = defaults.model
 	}
 	if model == "" {
 		return nil, errors.New("no model configured")
@@ -130,27 +203,28 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	history := initialTurnHistory(opts)
 
 	sa := &SubAgent{
-		ID:             id,
-		Type:           opts.Type,
-		TaskName:       opts.TaskName,
-		AgentProfile:   opts.AgentProfile,
-		AgentPath:      opts.AgentPath,
-		ParentID:       opts.ParentID,
-		Description:    opts.Description,
-		Status:         StatusRunning, // set synchronously so CountRunning sees it immediately
-		StartedAt:      time.Now(),
-		prompt:         opts.Prompt,
-		systemPrompt:   opts.SystemPrompt,
-		model:          model,
-		toolkit:        opts.Toolkit,
-		historyPath:    opts.HistoryPath,
-		initialHistory: opts.InitialHistory,
-		history:        providers.CloneChatMessages(history),
-		maxSteps:       opts.MaxSteps,
-		maxLifetime:    lifetime,
-		client:         m.client,
-		cancelFunc:     cancel,
-		doneCh:         make(chan struct{}),
+		ID:              id,
+		Type:            opts.Type,
+		TaskName:        opts.TaskName,
+		AgentProfile:    opts.AgentProfile,
+		AgentPath:       opts.AgentPath,
+		ParentID:        opts.ParentID,
+		Description:     opts.Description,
+		Status:          StatusRunning, // set synchronously so CountRunning sees it immediately
+		StartedAt:       time.Now(),
+		prompt:          opts.Prompt,
+		systemPrompt:    opts.SystemPrompt,
+		model:           model,
+		toolkit:         opts.Toolkit,
+		historyPath:     opts.HistoryPath,
+		initialHistory:  opts.InitialHistory,
+		history:         providers.CloneChatMessages(history),
+		maxSteps:        opts.MaxSteps,
+		maxLifetime:     lifetime,
+		runtimeDefaults: defaults,
+		client:          defaults.client,
+		cancelFunc:      cancel,
+		doneCh:          make(chan struct{}),
 	}
 
 	m.mu.Lock()
@@ -163,13 +237,13 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	doneCh := sa.doneCh
 	m.mu.Unlock()
 
-	go m.runTurn(subCtx, cancel, sa, opts.MaxSteps, history, doneCh)
+	go m.runTurn(subCtx, cancel, sa, opts.MaxSteps, history, doneCh, defaults)
 
 	return sa, nil
 }
 
 // runTurn executes one turn for a sub-agent in a goroutine.
-func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *SubAgent, maxSteps int, history []providers.ChatMessage, doneCh chan struct{}) {
+func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *SubAgent, maxSteps int, history []providers.ChatMessage, doneCh chan struct{}, defaults managerDefaults) {
 	defer close(doneCh)
 	defer cancel()
 	defer func() {
@@ -230,16 +304,22 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 
 	runner := &agent.StreamRunner{
-		Client:          sa.client,
-		Tools:           sa.toolkit,
-		Model:           sa.model,
-		SystemPrompt:    sa.systemPrompt,
-		MaxSteps:        maxSteps,
-		Temperature:     0.2,
-		Effort:          m.defaultEffort,
-		ProviderOptions: provideroptions.Clone(m.defaultProviderOptions),
-		OnUsage:         onUsage,
-		OnTokenUsage:    onTokenUsage,
+		Client:                  sa.client,
+		Tools:                   sa.toolkit,
+		Model:                   sa.model,
+		SystemPrompt:            sa.systemPrompt,
+		MaxSteps:                maxSteps,
+		Temperature:             0.2,
+		ContextWindowOverride:   defaults.contextWindow,
+		MaxInputTokens:          defaults.maxInputTokens,
+		OutputReserveTokens:     defaults.outputReserve,
+		CompactThresholdPct:     defaults.compactPct,
+		CompactKeepRecentTokens: defaults.keepRecent,
+		DisableAutoCompact:      defaults.disableCompact,
+		Effort:                  defaults.effort,
+		ProviderOptions:         provideroptions.Clone(defaults.options),
+		OnUsage:                 onUsage,
+		OnTokenUsage:            onTokenUsage,
 	}
 	if provider, ok := sa.toolkit.(toolContextBlockProvider); ok {
 		runner.BeforeRequestContext = func() []agent.ContextSegment {
@@ -454,9 +534,14 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 	sa.doneCh = doneCh
 	snap := snapshotLocked(sa)
 	maxSteps := sa.maxSteps
+	defaults := sa.runtimeDefaults
+	if defaults.client == nil {
+		defaults = m.defaultsSnapshot()
+		defaults.client = sa.client
+	}
 	sa.mu.Unlock()
 
-	go m.runTurn(runCtx, cancel, sa, maxSteps, history, doneCh)
+	go m.runTurn(runCtx, cancel, sa, maxSteps, history, doneCh, defaults)
 	return snap, nil
 }
 

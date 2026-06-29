@@ -83,22 +83,28 @@ type Config struct {
 	// agent control runtime will share. It must be a StreamClient (not just a
 	// Client) so workers run through the same streaming transport as
 	// the interactive main agent.
-	Client          providers.StreamClient
-	DefaultModel    string
-	DefaultEffort   string
-	DefaultOptions  map[string]any
-	ParentRepo      string // absolute path to the user's workspace
-	WorktreeRoot    string // workspace-state worktrees directory (only used when workspace is a git repo)
-	HistoryDir      string // session artifact workers directory
-	ThreadDir       string // session artifact threads directory
-	HarnessDir      string // session artifact harness directory
-	FailureSink     FailureSink
-	ReportSink      ReportSink
-	SessionID       string
-	WorkerSysPrompt string
-	WorkerFactory   WorkerToolkitFactory
-	WorkerPrompt    WorkerSystemPromptFactory
-	MaxParallel     int
+	Client                         providers.StreamClient
+	DefaultModel                   string
+	DefaultEffort                  string
+	DefaultOptions                 map[string]any
+	DefaultContextWindow           int
+	DefaultMaxInputTokens          int
+	DefaultOutputReserveTokens     int
+	DefaultCompactThresholdPct     float64
+	DefaultCompactKeepRecentTokens int
+	DefaultDisableAutoCompact      bool
+	ParentRepo                     string // absolute path to the user's workspace
+	WorktreeRoot                   string // workspace-state worktrees directory (only used when workspace is a git repo)
+	HistoryDir                     string // session artifact workers directory
+	ThreadDir                      string // session artifact threads directory
+	HarnessDir                     string // session artifact harness directory
+	FailureSink                    FailureSink
+	ReportSink                     ReportSink
+	SessionID                      string
+	WorkerSysPrompt                string
+	WorkerFactory                  WorkerToolkitFactory
+	WorkerPrompt                   WorkerSystemPromptFactory
+	MaxParallel                    int
 }
 
 // New constructs an AgentControl. Worktree isolation is only available
@@ -125,8 +131,14 @@ func New(cfg Config) (*AgentControl, error) {
 	}
 
 	mgr := subagent.NewManagerWithOptions(cfg.Client, cfg.DefaultModel, subagent.ManagerOptions{
-		DefaultEffort:          cfg.DefaultEffort,
-		DefaultProviderOptions: cfg.DefaultOptions,
+		DefaultEffort:           cfg.DefaultEffort,
+		DefaultProviderOptions:  cfg.DefaultOptions,
+		ContextWindowOverride:   cfg.DefaultContextWindow,
+		MaxInputTokens:          cfg.DefaultMaxInputTokens,
+		OutputReserveTokens:     cfg.DefaultOutputReserveTokens,
+		CompactThresholdPct:     cfg.DefaultCompactThresholdPct,
+		CompactKeepRecentTokens: cfg.DefaultCompactKeepRecentTokens,
+		DisableAutoCompact:      cfg.DefaultDisableAutoCompact,
 	})
 	threadRegistry := agentthread.NewRegistry()
 
@@ -177,6 +189,15 @@ func New(cfg Config) (*AgentControl, error) {
 // (Subscribe, etc.).
 func (c *AgentControl) Manager() *subagent.Manager {
 	return c.manager
+}
+
+// UpdateWorkerDefaults changes the runtime defaults used by future worker
+// spawns. Running workers keep their existing runners.
+func (c *AgentControl) UpdateWorkerDefaults(client providers.StreamClient, defaultModel string, opts subagent.ManagerOptions) {
+	if c == nil || c.manager == nil {
+		return
+	}
+	c.manager.UpdateDefaults(client, defaultModel, opts)
 }
 
 // Close stops AgentControl-owned background consumers. It does not cancel

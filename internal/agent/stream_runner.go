@@ -54,11 +54,9 @@ type StreamRunner struct {
 	// prompt cache read/write counts.
 	OnTokenUsage func(usage providers.TokenUsage)
 
-	// ContextWindowOverride lets the caller pin a specific context
-	// window for this model instead of consulting the built-in
-	// registry. Use it when a user has configured an unknown or
-	// proxied model that wuu wouldn't otherwise recognize. Zero
-	// means "use the known-model registry if it recognizes Model".
+	// ContextWindowOverride is the resolved provider/model context window.
+	// Zero means the runtime does not know the limit and proactive compaction
+	// stays disabled; reactive provider overflow recovery still runs.
 	ContextWindowOverride int
 	// MaxInputTokens lets callers pass a provider/model prompt limit
 	// when it is smaller than the total context window.
@@ -204,18 +202,6 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	}
 
 	maxCtx := r.ContextWindowOverride
-	if maxCtx <= 0 {
-		if requestModel != "" && requestModel != r.Model {
-			if window, ok := providers.KnownContextWindowFor(requestModel); ok {
-				maxCtx = window
-			}
-		}
-		if maxCtx <= 0 {
-			if window, ok := providers.KnownContextWindowFor(r.Model); ok {
-				maxCtx = window
-			}
-		}
-	}
 	if r.DisableAutoCompact {
 		maxCtx = 0 // disables the proactive trigger inside RunToolLoop
 	}

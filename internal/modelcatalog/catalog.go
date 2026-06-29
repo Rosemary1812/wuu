@@ -176,13 +176,6 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 	if len(models) > 0 {
 		out.Models = models
 	}
-	if len(modelSet) == 1 && out.ContextWindow == 0 {
-		for id := range modelSet {
-			if model := models[id]; model.ContextWindow > 0 {
-				out.ContextWindow = model.ContextWindow
-			}
-		}
-	}
 	if len(modelSet) == 1 {
 		for id := range modelSet {
 			if model := models[id]; len(model.Headers) > 0 {
