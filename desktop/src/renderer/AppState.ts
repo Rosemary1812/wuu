@@ -11,6 +11,7 @@ import type {
   RuntimeContext,
   ServerEvent,
   Thread,
+  ThreadContextCompositionResult,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
@@ -166,9 +167,12 @@ type TurnTokenUsage = {
   speedSource: Exclude<TokenSpeedSource, "none">;
   samples: TurnTokenSample[];
   // contextTokens is the retained conversation estimate produced by the
-  // agent loop after request-only context has been excluded. It is what the
-  // composer context meter displays.
+  // agent loop after request-only context has been excluded. The composer
+  // meter may show it as detail, but its main readout is requestContextTokens.
   contextTokens?: number;
+  // requestContextTokens is the current provider request footprint: the
+  // same numerator used by the /context composition card.
+  requestContextTokens?: number;
   // contextWindowTokens is the resolved runtime window size for the active
   // model at the time of the latest real (provider-reported) usage sample.
   // Streaming estimates preserve it from the previous real sample so the
@@ -190,6 +194,9 @@ export type TurnRequestContextDigest = {
   messageBytes: number;
   dynamicBytes: number;
   toolSchemaBytes: number;
+  inputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
   promptCacheKey?: string;
   stablePrefixHash?: string;
   turnPrefixHash?: string;
@@ -199,14 +206,14 @@ export type TurnRequestContextDigest = {
 
 export type TurnContextUsage = {
   turnID: string;
-  // used is the retained conversation estimate after request-only context
-  // has been excluded. Raw provider input/cache usage is not a proxy for
-  // this number because it can include one-off tool context.
+  // used is the current provider request footprint: the same number shown
+  // as "当前请求" in the /context composition card.
   used: number;
   window: number;
   inputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  retainedTokens?: number;
   requestContext?: TurnRequestContextDigest;
 };
 
@@ -719,8 +726,14 @@ function requestContextDigestFromRecord(
     stablePrefixBytes: numberValue(record, "stable_prefix_bytes") ?? 0,
     turnPrefixBytes: numberValue(record, "turn_prefix_bytes") ?? 0,
     messageBytes: numberValue(record, "message_bytes") ?? 0,
-    dynamicBytes: numberValue(record, "dynamic_bytes") ?? 0,
+    dynamicBytes:
+      numberValue(record, "dynamic_context_bytes") ??
+      numberValue(record, "dynamic_bytes") ??
+      0,
     toolSchemaBytes: numberValue(record, "tool_schema_bytes") ?? 0,
+    inputTokens: numberValue(record, "input_tokens") ?? 0,
+    cacheCreationTokens: numberValue(record, "cache_creation_tokens") ?? 0,
+    cacheReadTokens: numberValue(record, "cache_read_tokens") ?? 0,
     promptCacheKey: stringValue(record, "prompt_cache_key"),
     stablePrefixHash: stringValue(record, "stable_prefix_hash"),
     turnPrefixHash: stringValue(record, "turn_prefix_hash"),
@@ -1871,6 +1884,11 @@ function appendTurnTokenSample(
   const resolvedModel = model || previous?.model;
   const resolvedContextTokens =
     contextTokens && contextTokens > 0 ? contextTokens : previous?.contextTokens;
+  const requestContextTokens = inputTokens + cacheReadTokens;
+  const resolvedRequestContextTokens =
+    requestContextTokens > 0
+      ? requestContextTokens
+      : previous?.requestContextTokens;
   return {
     ...state,
     turnTokenUsage: {
@@ -1886,6 +1904,9 @@ function appendTurnTokenSample(
         samples,
         ...(resolvedContextTokens
           ? { contextTokens: resolvedContextTokens }
+          : {}),
+        ...(resolvedRequestContextTokens
+          ? { requestContextTokens: resolvedRequestContextTokens }
           : {}),
         ...(resolvedWindow ? { contextWindowTokens: resolvedWindow } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
@@ -1938,6 +1959,9 @@ function appendStreamingTokenSample(
         samples,
         ...(previous?.contextTokens
           ? { contextTokens: previous.contextTokens }
+          : {}),
+        ...(previous?.requestContextTokens
+          ? { requestContextTokens: previous.requestContextTokens }
           : {}),
         // Streaming estimates are byte-deltas, not real usage; they do not
         // know the context window. Carry the previously-resolved window
@@ -2013,28 +2037,121 @@ function activeTurnContextUsage(
   const usage = state.turnTokenUsage?.[turnID];
   if (
     !usage?.contextWindowTokens ||
-    usage.contextWindowTokens <= 0 ||
-    !usage.contextTokens ||
-    usage.contextTokens <= 0
+    usage.contextWindowTokens <= 0
   ) {
+    return undefined;
+  }
+  const requestContext = state.turnRequestContext?.[turnID];
+  const used = turnUsageRequestTokens(usage, requestContext);
+  if (used <= 0) {
     return undefined;
   }
   return {
     turnID,
-    used: usage.contextTokens,
+    used,
     window: usage.contextWindowTokens,
     inputTokens: usage.inputTokens,
     cacheCreationTokens: usage.cacheCreationTokens,
     cacheReadTokens: usage.cacheReadTokens,
-    requestContext: state.turnRequestContext?.[turnID],
+    ...(usage.contextTokens ? { retainedTokens: usage.contextTokens } : {}),
+    requestContext,
+  };
+}
+
+function turnUsageRequestTokens(
+  usage: TurnTokenUsage | undefined,
+  requestContext: TurnRequestContextDigest | undefined,
+): number {
+  if (!usage) {
+    return requestContextPromptTokens(requestContext);
+  }
+  if (usage.requestContextTokens && usage.requestContextTokens > 0) {
+    return usage.requestContextTokens;
+  }
+  const promptTokens = usage.inputTokens + usage.cacheReadTokens;
+  if (promptTokens > 0) {
+    return promptTokens;
+  }
+  return requestContextPromptTokens(requestContext);
+}
+
+function turnRequestTokens(
+  turn: Turn,
+  requestContext: TurnRequestContextDigest | undefined,
+): number {
+  if (turn.request_context_tokens && turn.request_context_tokens > 0) {
+    return turn.request_context_tokens;
+  }
+  const promptTokens = (turn.input_tokens ?? 0) + (turn.cache_read_tokens ?? 0);
+  if (promptTokens > 0) {
+    return promptTokens;
+  }
+  return requestContextPromptTokens(requestContext);
+}
+
+function requestContextPromptTokens(
+  requestContext: TurnRequestContextDigest | undefined,
+): number {
+  if (!requestContext) {
+    return 0;
+  }
+  const providerPromptTokens =
+    (requestContext.inputTokens ?? 0) + (requestContext.cacheReadTokens ?? 0);
+  if (providerPromptTokens > 0) {
+    return providerPromptTokens;
+  }
+  const promptBytes =
+    Math.max(0, requestContext.messageBytes) +
+    Math.max(0, requestContext.toolSchemaBytes);
+  return fallbackTokensForBytes(promptBytes);
+}
+
+function fallbackTokensForBytes(bytes: number): number {
+  const safe = Math.max(0, Math.round(bytes));
+  if (safe <= 0) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(safe / 4));
+}
+
+function contextUsageFromCompositionResult(
+  result: ThreadContextCompositionResult | undefined,
+): TurnContextUsage | undefined {
+  if (!result?.available) {
+    return undefined;
+  }
+  const window = result.context_window_tokens ?? 0;
+  if (window <= 0) {
+    return undefined;
+  }
+  const categoryTokens =
+    result.categories?.reduce(
+      (sum, category) =>
+        category.contributes === false ? sum : sum + (category.tokens ?? 0),
+      0,
+    ) ?? 0;
+  const promptTokens = result.prompt_tokens ?? 0;
+  const used = promptTokens > 0 ? promptTokens : categoryTokens;
+  if (used <= 0) {
+    return undefined;
+  }
+  return {
+    turnID: result.turn_id ?? "",
+    used,
+    window,
+    inputTokens: result.input_tokens ?? 0,
+    cacheCreationTokens: result.cache_creation_tokens ?? 0,
+    cacheReadTokens: result.cache_read_tokens ?? 0,
+    ...(result.retained_tokens
+      ? { retainedTokens: result.retained_tokens }
+      : {}),
   };
 }
 
 // latestContextUsageForThread walks the thread's turns from newest to
-// oldest and returns the most recent retained-context estimate with a
-// known context ceiling. Raw provider input/cache usage is intentionally
-// ignored here: it can include request-only tool context that should not
-// be shown as current conversation occupancy.
+// oldest and returns the most recent current-request footprint with a
+// known context ceiling. This is the compact composer counterpart to the
+// detailed /context card; retained history is only secondary detail.
 //
 // When no real usage is available, falls back to the current runtime
 // ceiling even before a thread exists, so the meter renders at 0% from
@@ -2048,70 +2165,71 @@ function latestContextUsageForThread(
 ): TurnContextUsage | undefined {
   const model = thread?.model || fallback.model || "";
   const currentModel = normalizeModelID(model);
+  const fallbackWindow =
+    fallback.contextWindowTokens && fallback.contextWindowTokens > 0
+      ? fallback.contextWindowTokens
+      : undefined;
   if (thread) {
     for (let i = thread.turns.length - 1; i >= 0; i -= 1) {
       const turn = thread.turns[i];
       const usage = state.turnTokenUsage?.[turn.id];
+      const requestContext = state.turnRequestContext?.[turn.id];
       if (
-        !usage?.contextWindowTokens ||
-        usage.contextWindowTokens <= 0 ||
-        !usage.contextTokens ||
-        usage.contextTokens <= 0
-      ) {
-        const turnUsageModel = turn.usage_model;
-        if (
-          turnUsageModel &&
-          currentModel &&
-          normalizeModelID(turnUsageModel) !== currentModel
-        ) {
-          continue;
-        }
-        const contextTokens = turn.context_tokens ?? 0;
-        if (contextTokens <= 0) {
-          continue;
-        }
-        const inputTokens = turn.input_tokens ?? 0;
-        const cacheCreationTokens = turn.cache_creation_tokens ?? 0;
-        const cacheReadTokens = turn.cache_read_tokens ?? 0;
-        const turnWindow =
-          fallback.contextWindowTokens && fallback.contextWindowTokens > 0
-            ? fallback.contextWindowTokens
-            : undefined;
-        if (!turnWindow) {
-          continue;
-        }
-        return {
-          turnID: turn.id,
-          used: contextTokens,
-          window: turnWindow,
-          inputTokens,
-          cacheCreationTokens,
-          cacheReadTokens,
-          requestContext: state.turnRequestContext?.[turn.id],
-        };
-      }
-      if (
-        usage.model &&
+        usage?.model &&
         currentModel &&
         normalizeModelID(usage.model) !== currentModel
       ) {
         continue;
       }
+      const usageWindow =
+        usage?.contextWindowTokens && usage.contextWindowTokens > 0
+          ? usage.contextWindowTokens
+          : undefined;
+      const window = usageWindow ?? fallbackWindow;
+      if (!window) {
+        continue;
+      }
+      if (usage) {
+        const used = turnUsageRequestTokens(usage, requestContext);
+        if (used > 0) {
+          return {
+            turnID: turn.id,
+            used,
+            window,
+            inputTokens: usage.inputTokens,
+            cacheCreationTokens: usage.cacheCreationTokens,
+            cacheReadTokens: usage.cacheReadTokens,
+            ...(usage.contextTokens
+              ? { retainedTokens: usage.contextTokens }
+              : {}),
+            requestContext,
+          };
+        }
+      }
+      const turnUsageModel = turn.usage_model;
+      if (
+        turnUsageModel &&
+        currentModel &&
+        normalizeModelID(turnUsageModel) !== currentModel
+      ) {
+        continue;
+      }
+      const used = turnRequestTokens(turn, requestContext);
+      if (used <= 0) {
+        continue;
+      }
       return {
         turnID: turn.id,
-        used: usage.contextTokens,
-        window: usage.contextWindowTokens,
-        inputTokens: usage.inputTokens,
-        cacheCreationTokens: usage.cacheCreationTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        requestContext: state.turnRequestContext?.[turn.id],
+        used,
+        window,
+        inputTokens: turn.input_tokens ?? 0,
+        cacheCreationTokens: turn.cache_creation_tokens ?? 0,
+        cacheReadTokens: turn.cache_read_tokens ?? 0,
+        ...(turn.context_tokens ? { retainedTokens: turn.context_tokens } : {}),
+        requestContext,
       };
     }
   }
-  const fallbackWindow =
-    fallback.contextWindowTokens && fallback.contextWindowTokens > 0
-      ? fallback.contextWindowTokens
-      : undefined;
   if (!fallbackWindow) {
     return undefined;
   }
@@ -2135,6 +2253,7 @@ export {
   activeThreadForState,
   activeThreadIDForState,
   activeTurnContextUsage,
+  contextUsageFromCompositionResult,
   latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeed,

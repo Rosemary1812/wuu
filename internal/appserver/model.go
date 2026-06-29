@@ -199,13 +199,14 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	return turn
 }
 
-func applyTokenUsageToTurn(turn *Turn, usage providers.TokenUsage, contextTokens int, model string) {
+func applyTokenUsageToTurn(turn *Turn, usage providers.TokenUsage, contextTokens, requestContextTokens int, model string) {
 	if turn == nil {
 		return
 	}
 	turn.InputTokens = usage.InputTokens
 	turn.OutputTokens = usage.OutputTokens
 	turn.ContextTokens = contextTokens
+	turn.RequestContextTokens = requestContextTokens
 	turn.CacheCreationTokens = usage.CacheCreationTokens
 	turn.CacheReadTokens = usage.CacheReadTokens
 	turn.UsageModel = strings.TrimSpace(model)
@@ -224,6 +225,7 @@ func applyTokenUsageMetasToTurns(turns []Turn, metas []persistedMessage) []Turn 
 		if meta.InputTokens == 0 &&
 			meta.OutputTokens == 0 &&
 			meta.ContextTokens == 0 &&
+			meta.RequestContextTokens == 0 &&
 			meta.CacheCreationTokens == 0 &&
 			meta.CacheReadTokens == 0 {
 			continue
@@ -246,7 +248,7 @@ func applyTokenUsageMetasToTurns(turns []Turn, metas []persistedMessage) []Turn 
 			OutputTokens:        meta.OutputTokens,
 			CacheCreationTokens: meta.CacheCreationTokens,
 			CacheReadTokens:     meta.CacheReadTokens,
-		}, meta.ContextTokens, meta.Model)
+		}, meta.ContextTokens, meta.RequestContextTokens, meta.Model)
 		turnIndex++
 		usageIndex++
 	}
@@ -789,12 +791,8 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			continue
 		}
 		if msg.Role == "system" {
-			if compact.IsConversationSummaryContent(msg.Content) {
-				pendingCompactions = append(pendingCompactions, ThreadItem{
-					Type:   ThreadItemContextCompaction,
-					Status: ThreadItemStatusCompleted,
-					Text:   "Compacted history",
-				})
+			if item, ok := contextCompactionItemFromSystemMessage(msg); ok {
+				pendingCompactions = append(pendingCompactions, item)
 			}
 			continue
 		}
@@ -820,6 +818,23 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			turns = append(turns, turn)
 			current = &turns[len(turns)-1]
 			continue
+		}
+		if current == nil && msg.Role == "assistant" && len(pendingCompactions) > 0 {
+			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
+			itemIndex = 0
+			toolItems = make(map[string]int)
+			turn := Turn{
+				ID:        turnID,
+				ItemsView: TurnItemsViewFull,
+				Status:    TurnStatusCompleted,
+			}
+			for _, item := range pendingCompactions {
+				item.ID = nextItemID(turnID)
+				turn.Items = append(turn.Items, item)
+			}
+			pendingCompactions = nil
+			turns = append(turns, turn)
+			current = &turns[len(turns)-1]
 		}
 		if current == nil {
 			continue
@@ -884,6 +899,27 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		}
 	}
 	return turns
+}
+
+func contextCompactionItemFromSystemMessage(msg providers.ChatMessage) (ThreadItem, bool) {
+	content := strings.TrimSpace(msg.Content)
+	switch {
+	case compact.IsConversationSummaryContent(content):
+		return ThreadItem{
+			Type:   ThreadItemContextCompaction,
+			Status: ThreadItemStatusCompleted,
+			Text:   "Compacted history",
+		}, true
+	case compact.IsHelpMeJointCompactContent(content):
+		return ThreadItem{
+			Type:   ThreadItemContextCompaction,
+			Status: ThreadItemStatusCompleted,
+			Text:   "HelpMe recovered and compacted history",
+			Reason: compact.HelpMeToolName,
+		}, true
+	default:
+		return ThreadItem{}, false
+	}
 }
 
 func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {

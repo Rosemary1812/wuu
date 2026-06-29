@@ -113,9 +113,8 @@ describe("ComposerContextMeter", () => {
       container
         .querySelector(".composer-context-meter")
         ?.getAttribute("aria-label") ?? "";
-    expect(aria).toContain("已保留 45k");
-    expect(aria).toContain("200k");
-    expect(aria).toContain("23%");
+    expect(aria).toContain("当前请求 45k / 200k");
+    expect(aria).toContain("占用 23%");
   });
 
   it("mounts a compact tooltip in a portal on focus", () => {
@@ -141,11 +140,28 @@ describe("ComposerContextMeter", () => {
       )?.textContent ?? "",
     ).toContain("23%");
     const text = tooltip?.textContent ?? "";
-    expect(text).toContain("保留历史");
+    expect(text).toContain("当前请求");
     expect(text).toContain("45k / 200k");
+    expect(text).not.toContain("保留历史");
     expect(text).not.toContain("输入");
     expect(text).not.toContain("缓存读取");
     expect(text).not.toContain("新建缓存");
+  });
+
+  it("shows retained history as secondary detail when available", () => {
+    renderMeter(usageWith({ retainedTokens: 103_000 }));
+    const meter = container.querySelector<HTMLElement>(
+      ".composer-context-meter",
+    );
+    act(() => {
+      meter?.focus();
+    });
+    const text =
+      document.body.querySelector(".composer-context-meter-tooltip")
+        ?.textContent ?? "";
+    expect(text).toContain("当前请求");
+    expect(text).toContain("保留历史");
+    expect(text).toContain("103k");
   });
 
   it("adds request-shape diagnostics when the backend emits them", () => {

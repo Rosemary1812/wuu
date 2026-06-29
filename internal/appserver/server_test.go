@@ -2050,6 +2050,9 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if params.ContextTokens != 17 || params.Turn.ContextTokens != 17 {
 		t.Fatalf("completed turn should carry retained context estimate: %+v", params)
 	}
+	if params.Turn.RequestContextTokens != 14 {
+		t.Fatalf("completed turn should carry current request estimate: %+v", params)
+	}
 	if params.TracePath == "" {
 		t.Fatalf("completed turn should include trace path: %+v", params)
 	}
@@ -5148,7 +5151,7 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
 		t.Fatalf("append old assistant: %v", err)
 	}
-	if err := appendTokenUsage(rt.SessionDir, sess.ID, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}, 18); err != nil {
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}, 18, 14); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
@@ -5167,7 +5170,7 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err != nil {
 		t.Fatalf("load raw history: %v", err)
 	}
-	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 11 || all[1].OutputTokens != 7 || all[1].CacheCreationTokens != 5 || all[1].CacheReadTokens != 3 {
+	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 11 || all[1].OutputTokens != 7 || all[1].ContextTokens != 18 || all[1].RequestContextTokens != 14 || all[1].CacheCreationTokens != 5 || all[1].CacheReadTokens != 3 {
 		t.Fatalf("rewrite should preserve token usage metadata, got %+v", all)
 	}
 	if all[1].Provider != "anthropic" || all[1].Model != "claude-sonnet-4-6" {
@@ -5187,7 +5190,7 @@ func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
 	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "done"}); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 19_600, CacheReadTokens: 113_000}, 88_000); err != nil {
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 19_600, CacheReadTokens: 113_000}, 88_000, 132_600); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
@@ -5202,7 +5205,7 @@ func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
 		t.Fatalf("expected one turn, got %+v", result.Thread.Turns)
 	}
 	turn := result.Thread.Turns[0]
-	if turn.InputTokens != 19_600 || turn.CacheReadTokens != 113_000 || turn.ContextTokens != 88_000 || turn.UsageModel != rt.Model {
+	if turn.InputTokens != 19_600 || turn.CacheReadTokens != 113_000 || turn.ContextTokens != 88_000 || turn.RequestContextTokens != 132_600 || turn.UsageModel != rt.Model {
 		t.Fatalf("resume should restore token usage on turn: %+v", turn)
 	}
 }

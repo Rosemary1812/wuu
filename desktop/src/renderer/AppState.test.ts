@@ -5,6 +5,7 @@ import {
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
+  contextUsageFromCompositionResult,
   conversationPaneThreadsByID,
   handleStreamingNotification,
   initialState,
@@ -922,7 +923,7 @@ describe("latestContextUsageForThread", () => {
     expect(result).toBeUndefined();
   });
 
-  it("does not treat raw provider usage as retained context", () => {
+  it("uses raw provider prompt usage as current request context", () => {
     let state = initialState;
     state = appendTurnTokenSample(
       state,
@@ -944,10 +945,10 @@ describe("latestContextUsageForThread", () => {
       contextWindowTokens: 1_000_000,
     });
     expect(result).toEqual({
-      turnID: "",
-      used: 0,
+      turnID: "turn-1",
+      used: 1_300_000,
       window: 1_000_000,
-      inputTokens: 0,
+      inputTokens: 1_300_000,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
     });
@@ -1008,6 +1009,7 @@ describe("latestContextUsageForThread", () => {
     t.turns[0].cache_read_tokens = 113_000;
     t.turns[0].cache_creation_tokens = 0;
     t.turns[0].context_tokens = 88_000;
+    t.turns[0].request_context_tokens = 132_600;
     t.turns[0].usage_model = "minimax-m3";
     const result = latestContextUsageForThread(initialState, t, {
       model: "minimax-m3",
@@ -1015,11 +1017,45 @@ describe("latestContextUsageForThread", () => {
     });
     expect(result).toEqual({
       turnID: "turn-1",
-      used: 88_000,
+      used: 132_600,
       window: 1_000_000,
       inputTokens: 19_600,
       cacheCreationTokens: 0,
       cacheReadTokens: 113_000,
+      retainedTokens: 88_000,
+    });
+  });
+
+  it("converts a loaded context composition result into the same composer readout", () => {
+    const result = contextUsageFromCompositionResult({
+      thread_id: "thread-1",
+      available: true,
+      turn_id: "turn-1",
+      context_window_tokens: 512_000,
+      retained_tokens: 103_000,
+      categories: [
+        {
+          id: "system",
+          label: "系统提示",
+          contributes: true,
+          tokens: 12_000,
+        },
+        {
+          id: "turn_prefix",
+          label: "本轮前缀",
+          contributes: true,
+          tokens: 496_000,
+        },
+      ],
+    });
+    expect(result).toEqual({
+      turnID: "turn-1",
+      used: 508_000,
+      window: 512_000,
+      inputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      retainedTokens: 103_000,
     });
   });
 

@@ -674,6 +674,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	})
 
 	now := time.Now().UTC()
+	requestContextTokens := latestRequestContextPromptTokens(contextRequests, providers.TokenUsage{
+		InputTokens:     res.InputTokens,
+		CacheReadTokens: res.CacheReadTokens,
+	})
 	th.mu.Lock()
 	rewriteHistory := res.HistoryRewritten
 	if res.HistoryRewritten {
@@ -692,7 +696,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if historyErr != nil {
 		persistErr = historyErr
 	} else {
-		persistErr = s.persistTurnResultLocked(th, res, rewriteHistory)
+		persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, requestContextTokens)
 	}
 	status := TurnStatusCompleted
 	if err != nil {
@@ -739,7 +743,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
-	}, res.ContextTokens, th.Model)
+	}, res.ContextTokens, requestContextTokens, th.Model)
 	th.replaceTurnLocked(turn)
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
@@ -959,6 +963,22 @@ func attachUsageToLatestRequestContext(records []sessiontrace.RequestContextReco
 	record.OutputTokens = usage.OutputTokens
 	record.CacheCreationTokens = usage.CacheCreationTokens
 	record.CacheReadTokens = usage.CacheReadTokens
+}
+
+func latestRequestContextPromptTokens(records []sessiontrace.RequestContextRecord, fallback providers.TokenUsage) int {
+	if len(records) > 0 {
+		record := records[len(records)-1]
+		if promptTokens := record.InputTokens + record.CacheReadTokens; promptTokens > 0 {
+			return promptTokens
+		}
+		if promptBytes := record.MessageBytes + record.ToolSchemaBytes; promptBytes > 0 {
+			return fallbackTokensForBytes(promptBytes)
+		}
+	}
+	if promptTokens := fallback.InputTokens + fallback.CacheReadTokens; promptTokens > 0 {
+		return promptTokens
+	}
+	return 0
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, msg providers.ChatMessage) {
@@ -1691,7 +1711,7 @@ func queuedTurnsFromSteers(msgs []providers.ChatMessage) []queuedTurn {
 	return out
 }
 
-func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool) error {
+func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool, requestContextTokens int) error {
 	if !th.PersistHistory {
 		return nil
 	}
@@ -1711,7 +1731,7 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
-	}, res.ContextTokens); err != nil {
+	}, res.ContextTokens, requestContextTokens); err != nil {
 		return err
 	}
 	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))

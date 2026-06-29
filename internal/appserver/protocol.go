@@ -1096,23 +1096,24 @@ type ThreadBrowserState struct {
 }
 
 type Turn struct {
-	ID                  string        `json:"id"`
-	Items               []ThreadItem  `json:"items"`
-	ItemsView           TurnItemsView `json:"items_view"`
-	Status              TurnStatus    `json:"status"`
-	Error               *TurnError    `json:"error,omitempty"`
-	FinishReason        string        `json:"finish_reason,omitempty"`
-	StopReason          string        `json:"stop_reason,omitempty"`
-	Truncated           bool          `json:"truncated,omitempty"`
-	StartedAt           *time.Time    `json:"started_at,omitempty"`
-	CompletedAt         *time.Time    `json:"completed_at,omitempty"`
-	DurationMS          *int64        `json:"duration_ms,omitempty"`
-	InputTokens         int           `json:"input_tokens,omitempty"`
-	OutputTokens        int           `json:"output_tokens,omitempty"`
-	ContextTokens       int           `json:"context_tokens,omitempty"`
-	CacheCreationTokens int           `json:"cache_creation_tokens,omitempty"`
-	CacheReadTokens     int           `json:"cache_read_tokens,omitempty"`
-	UsageModel          string        `json:"usage_model,omitempty"`
+	ID                   string        `json:"id"`
+	Items                []ThreadItem  `json:"items"`
+	ItemsView            TurnItemsView `json:"items_view"`
+	Status               TurnStatus    `json:"status"`
+	Error                *TurnError    `json:"error,omitempty"`
+	FinishReason         string        `json:"finish_reason,omitempty"`
+	StopReason           string        `json:"stop_reason,omitempty"`
+	Truncated            bool          `json:"truncated,omitempty"`
+	StartedAt            *time.Time    `json:"started_at,omitempty"`
+	CompletedAt          *time.Time    `json:"completed_at,omitempty"`
+	DurationMS           *int64        `json:"duration_ms,omitempty"`
+	InputTokens          int           `json:"input_tokens,omitempty"`
+	OutputTokens         int           `json:"output_tokens,omitempty"`
+	ContextTokens        int           `json:"context_tokens,omitempty"`
+	RequestContextTokens int           `json:"request_context_tokens,omitempty"`
+	CacheCreationTokens  int           `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens      int           `json:"cache_read_tokens,omitempty"`
+	UsageModel           string        `json:"usage_model,omitempty"`
 }
 
 type TurnError struct {

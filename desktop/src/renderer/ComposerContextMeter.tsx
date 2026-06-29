@@ -1,9 +1,8 @@
-// Composer-toolbar retained-history meter.
+// Composer-toolbar current-request context meter.
 //
-// Sits next to the live token-speed gauge and shows retained conversation
-// history against the active provider/model input ceiling. The current
-// in-flight request can be larger than this when the user attaches large
-// files or images; /context is the surface for inspecting that full request.
+// Sits next to the live token-speed gauge and shows the latest provider
+// request footprint against the active provider/model input ceiling. The
+// /context card is the detailed version of the same number.
 //
 // The progress stroke reuses the token-speed gauge's color palette so the
 // two meters read as a coordinated pair: idle gray when the window is empty,
@@ -78,8 +77,8 @@ export function ComposerContextMeter({
   )}`;
   const requestContext = usage.requestContext;
   const ariaLabel =
-    `上下文上限 ${formatTokenCount(usage.window)}` +
-    `，已保留 ${formatTokenCount(used)} (${percent}%)`;
+    `当前请求 ${formatTokenCount(used)} / ${formatTokenCount(usage.window)}` +
+    `，占用 ${percent}%`;
   return (
     <div
       ref={anchorRef}
@@ -143,18 +142,28 @@ export function ComposerContextMeter({
           >
             <div className="composer-context-meter-tooltip-headline">
               <span className="composer-context-meter-tooltip-label">
-                保留历史
+                当前请求
               </span>
               <span className="composer-context-meter-tooltip-value">
                 {percentLabel}
               </span>
             </div>
             <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">历史</span>
+              <span className="composer-context-meter-tooltip-label">请求</span>
               <span className="composer-context-meter-tooltip-value">
                 {valueLabel}
               </span>
             </div>
+            {usage.retainedTokens && usage.retainedTokens > 0 ? (
+              <div className="composer-context-meter-tooltip-row">
+                <span className="composer-context-meter-tooltip-label">
+                  保留历史
+                </span>
+                <span className="composer-context-meter-tooltip-value">
+                  {formatTokenCount(usage.retainedTokens)}
+                </span>
+              </div>
+            ) : null}
             {requestContext ? (
               <>
                 <div className="composer-context-meter-tooltip-divider" />

@@ -128,6 +128,7 @@ import {
   activeThreadForState,
   activeThreadIDForState,
   latestContextUsageForThread,
+  contextUsageFromCompositionResult,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
@@ -190,6 +191,7 @@ import {
   type ConversationPaneID,
   type SessionTab,
   type ThreadSummary,
+  type TurnContextUsage,
 } from "./AppState";
 import {
   RIGHT_PANEL_MOTION_MS,
@@ -549,6 +551,8 @@ export function App(): JSX.Element {
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
     ContextCompositionEntry[]
   >([]);
+  const [contextCompositionUsageByThread, setContextCompositionUsageByThread] =
+    useState<Record<string, TurnContextUsage>>({});
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
     [],
   );
@@ -1333,6 +1337,10 @@ export function App(): JSX.Element {
   const activeContextCompositionEntries = activeThreadID
     ? contextCompositionEntries.filter((entry) => entry.threadID === activeThreadID)
     : [];
+  const latestActiveTurn = activeThread?.turns.at(-1);
+  const latestActiveTurnID = latestActiveTurn?.id ?? "";
+  const latestActiveTurnStatus = latestActiveTurn?.status ?? "";
+  const latestActiveTurnCompletedAt = latestActiveTurn?.completed_at ?? "";
   const emptyConversation =
     !showingSkillsCatalog &&
     turns.length === 0 &&
@@ -2217,6 +2225,20 @@ export function App(): JSX.Element {
     );
   }
 
+  function rememberContextCompositionUsage(
+    threadID: string,
+    result: Parameters<typeof contextUsageFromCompositionResult>[0],
+  ): void {
+    const usage = contextUsageFromCompositionResult(result);
+    if (!usage) {
+      return;
+    }
+    setContextCompositionUsageByThread((current) => ({
+      ...current,
+      [threadID]: usage,
+    }));
+  }
+
   function openContextComposition(): void {
     if (!activeThread) {
       setState((current) => ({
@@ -2243,6 +2265,7 @@ export function App(): JSX.Element {
     void (async () => {
       try {
         const result = await window.wuu.getThreadContextComposition(threadID);
+        rememberContextCompositionUsage(threadID, result);
         setContextCompositionEntries((entries) =>
           entries.map((entry) =>
             entry.id === entryID
@@ -2272,6 +2295,41 @@ export function App(): JSX.Element {
     })();
   }
 
+  useEffect(() => {
+    const threadID = activeThreadID;
+    const turnID = latestActiveTurnID;
+    if (!threadID || !turnID || !window.wuu?.getThreadContextComposition) {
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await window.wuu.getThreadContextComposition(threadID);
+        if (cancelled) {
+          return;
+        }
+        const usage = contextUsageFromCompositionResult(result);
+        if (!usage || (usage.turnID && usage.turnID !== turnID)) {
+          return;
+        }
+        setContextCompositionUsageByThread((current) => ({
+          ...current,
+          [threadID]: usage,
+        }));
+      } catch {
+        // The composer meter is passive; /context remains the explicit error surface.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeThreadID,
+    latestActiveTurnID,
+    latestActiveTurnStatus,
+    latestActiveTurnCompletedAt,
+  ]);
+
   function renderComposer(variant: ComposerVariant): JSX.Element {
     const tokenSpeed = activeTurnTokenSpeedSnapshot(
       state,
@@ -2280,11 +2338,21 @@ export function App(): JSX.Element {
     // Drives the composer context meter. Existing threads use the latest
     // known usage; a brand-new session falls back to the current runtime
     // window so the meter can render at 0% before the first turn.
-    const contextUsage = latestContextUsageForThread(state, activeThread, {
+    const stateContextUsage = latestContextUsageForThread(state, activeThread, {
       model: state.initialized?.model,
       contextWindowTokens:
         state.initialized?.advanced_settings?.context_window_tokens,
     });
+    const compositionUsage = activeThreadID
+      ? contextCompositionUsageByThread[activeThreadID]
+      : undefined;
+    const contextUsage =
+      compositionUsage &&
+      (!latestActiveTurnID ||
+        !compositionUsage.turnID ||
+        compositionUsage.turnID === latestActiveTurnID)
+        ? compositionUsage
+        : stateContextUsage;
     return (
       <Composer
         variant={variant}
