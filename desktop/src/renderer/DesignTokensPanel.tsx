@@ -86,7 +86,7 @@ const TOKENS: Token[] = [
     max: 20,
     step: 0.5,
     unit: "px",
-    defaultValue: 14.5,
+    defaultValue: 14,
   },
   {
     key: "prose-line-height",
@@ -96,7 +96,7 @@ const TOKENS: Token[] = [
     max: 2.2,
     step: 0.05,
     unit: "",
-    defaultValue: 1.9,
+    defaultValue: 2.1,
   },
   {
     key: "prose-block-gap",
@@ -106,7 +106,7 @@ const TOKENS: Token[] = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 10,
+    defaultValue: 12,
   },
   {
     key: "meta-line-height",
