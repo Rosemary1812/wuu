@@ -40,6 +40,12 @@ function mount(props: Parameters<typeof StreamingMarkdown>[0]): void {
   });
 }
 
+function rerender(props: Parameters<typeof StreamingMarkdown>[0]): void {
+  act(() => {
+    root!.render(<StreamingMarkdown {...props} />);
+  });
+}
+
 function unmount(): void {
   if (root) {
     act(() => {
@@ -55,7 +61,7 @@ function unmount(): void {
 
 afterEach(() => {
   unmount();
-  for (const itemID of ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"]) {
+  for (const itemID of ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10"]) {
     streamTextStore.clearItem("turn", itemID);
   }
 });
@@ -190,6 +196,53 @@ describe("StreamingMarkdown", () => {
     });
 
     expect(settledCount).toBe(1);
+  });
+
+  it("keeps completed visible text when the stream cache is released before an older parent snapshot updates", async () => {
+    const key = streamTextKey("turn", "s9", "text");
+    streamTextStore.set(key, "Complete answer text");
+    mount({ streamKey: key, initialText: "Complete", isLive: false, phase: "final_answer" });
+
+    expect(document.querySelector(".streaming-markdown")?.textContent).toContain(
+      "Complete answer text",
+    );
+
+    streamTextStore.clearItem("turn", "s9");
+    rerender({ streamKey: key, initialText: "Complete", isLive: false, phase: "final_answer" });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.querySelector(".streaming-markdown")?.textContent).toContain(
+      "Complete answer text",
+    );
+  });
+
+  it("accepts shorter text when the replacement comes from the stream store", async () => {
+    const key = streamTextKey("turn", "s10", "text");
+    streamTextStore.set(key, "stale partial answer");
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(document.querySelector(".streaming-markdown")?.textContent).toContain(
+      "stale partial answer",
+    );
+
+    await act(async () => {
+      streamTextStore.replace(key, "");
+      streamTextStore.append(key, "fresh");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    expect(document.querySelector(".streaming-markdown")?.textContent).toContain(
+      "fresh",
+    );
+    expect(document.querySelector(".streaming-markdown")?.textContent).not.toContain(
+      "stale partial answer",
+    );
   });
 
   it("keeps the cursor inside a streaming list item", async () => {

@@ -314,3 +314,11 @@ export function useStreamedText(streamKey: string, initialValue = ""): string {
     () => streamTextStore.has(streamKey) ? streamTextStore.get(streamKey) : initialValue
   );
 }
+
+export function useStreamedTextHasValue(streamKey: string): boolean {
+  return useSyncExternalStore(
+    (listener) => streamTextStore.subscribe(streamKey, listener),
+    () => streamTextStore.has(streamKey),
+    () => streamTextStore.has(streamKey),
+  );
+}

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { MarkdownContent, type RichTextRenderer } from "./RichContent";
 import {
+  useStreamedTextHasValue,
   useStreamedText
 } from "./StreamText";
 
@@ -80,6 +81,7 @@ export function StreamingMarkdown({
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
   /* ------------------------- External store wiring ------------------------ */
+  const hasStreamValue = useStreamedTextHasValue(streamKey);
   const targetText = useStreamedText(streamKey, initialText);
 
   /* ----------------------------- Sticky text ------------------------------ */
@@ -87,11 +89,22 @@ export function StreamingMarkdown({
   // before the parent unmounts us, so the hook falls back to `initialText`
   // instead of blanking the visible message.
   const [renderedText, setRenderedText] = useState(targetText);
+  const acceptedStreamValueRef = useRef(hasStreamValue);
   useLayoutEffect(() => {
+    if (hasStreamValue) {
+      acceptedStreamValueRef.current = true;
+    }
     if (targetText !== renderedText) {
+      if (
+        acceptedStreamValueRef.current &&
+        !hasStreamValue &&
+        targetText.length < renderedText.length
+      ) {
+        return;
+      }
       setRenderedText(targetText);
     }
-  }, [targetText, renderedText]);
+  }, [hasStreamValue, targetText, renderedText]);
 
   /* ------------------------------ Phase ----------------------------------- */
   // Single internal phase: streaming while upstream is live, settled once
