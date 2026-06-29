@@ -1,5 +1,6 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
@@ -43,6 +44,13 @@ type RightPanelResizeSession = {
   startWidth: number;
 };
 
+type WindowPointerResizeController<Session> = {
+  resizing: boolean;
+  sessionRef: MutableRefObject<Session | null>;
+  onMove: (event: PointerEvent, session: Session) => void;
+  onEnd: (session: Session | null) => void;
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -77,6 +85,42 @@ function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: number): num
     Math.min(WORKSPACE_RIGHT_PANEL_MAX_WIDTH, maxForWindow)
   );
   return clamp(width, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, maxWidth);
+}
+
+function useWindowPointerResize<Session>({
+  resizing,
+  sessionRef,
+  onMove,
+  onEnd,
+}: WindowPointerResizeController<Session>): void {
+  useEffect(() => {
+    if (!resizing) {
+      return;
+    }
+
+    function handlePointerMove(event: PointerEvent): void {
+      const session = sessionRef.current;
+      if (!session) {
+        return;
+      }
+      onMove(event, session);
+    }
+
+    function handlePointerEnd(): void {
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      onEnd(session);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerEnd);
+    window.addEventListener("pointercancel", handlePointerEnd);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+    };
+  }, [onEnd, onMove, resizing, sessionRef]);
 }
 
 export function useAppLayoutState({
@@ -261,16 +305,8 @@ export function useAppLayoutState({
     };
   }, [cancelPendingLiveSidebarWidth]);
 
-  useEffect(() => {
-    if (!resizingSidebar) {
-      return;
-    }
-
-    function handlePointerMove(event: PointerEvent): void {
-      const session = resizeSessionRef.current;
-      if (!session) {
-        return;
-      }
+  const handleSidebarResizeMove = useCallback(
+    (event: PointerEvent, session: SidebarResizeSession): void => {
       const nextWidth = session.startWidth + event.clientX - session.startX;
       session.currentWidth = nextWidth;
       if (session.allowCollapse) {
@@ -294,10 +330,17 @@ export function useAppLayoutState({
         return;
       }
       applySettingsSidebarWidth(nextWidth);
-    }
+    },
+    [
+      applyLiveSidebarWidth,
+      applySettingsSidebarWidth,
+      applySidebarWidth,
+      cancelPendingLiveSidebarWidth,
+    ]
+  );
 
-    function handlePointerUp(): void {
-      const session = resizeSessionRef.current;
+  const handleSidebarResizeEnd = useCallback(
+    (session: SidebarResizeSession | null): void => {
       if (session?.allowCollapse) {
         if (session.currentWidth > SIDEBAR_MIN_WIDTH) {
           flushPendingLiveSidebarWidth();
@@ -306,59 +349,40 @@ export function useAppLayoutState({
         }
         applySidebarWidth(session.currentWidth);
       }
-      resizeSessionRef.current = null;
       setResizingSidebar(false);
-    }
+    },
+    [applySidebarWidth, cancelPendingLiveSidebarWidth, flushPendingLiveSidebarWidth]
+  );
 
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [
-    applyLiveSidebarWidth,
-    applySettingsSidebarWidth,
-    applySidebarWidth,
-    cancelPendingLiveSidebarWidth,
-    flushPendingLiveSidebarWidth,
-    resizingSidebar,
-  ]);
+  useWindowPointerResize({
+    resizing: resizingSidebar,
+    sessionRef: resizeSessionRef,
+    onMove: handleSidebarResizeMove,
+    onEnd: handleSidebarResizeEnd,
+  });
 
-  useEffect(() => {
-    if (!resizingRightPanel) {
-      return;
-    }
-
-    function handlePointerMove(event: PointerEvent): void {
-      const session = rightPanelResizeSessionRef.current;
-      if (!session) {
-        return;
-      }
+  const handleRightPanelResizeMove = useCallback(
+    (event: PointerEvent, session: RightPanelResizeSession): void => {
       setWorkspaceRightPanelWidth(
         clampWorkspaceRightPanelWidth(
           session.startWidth - (event.clientX - session.startX),
           effectiveSidebarWidth
         )
       );
-    }
+    },
+    [effectiveSidebarWidth]
+  );
 
-    function handlePointerUp(): void {
-      rightPanelResizeSessionRef.current = null;
-      setResizingRightPanel(false);
-    }
+  const handleRightPanelResizeEnd = useCallback((): void => {
+    setResizingRightPanel(false);
+  }, []);
 
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [effectiveSidebarWidth, resizingRightPanel]);
+  useWindowPointerResize({
+    resizing: resizingRightPanel,
+    sessionRef: rightPanelResizeSessionRef,
+    onMove: handleRightPanelResizeMove,
+    onEnd: handleRightPanelResizeEnd,
+  });
 
   useEffect(() => {
     function handleResize(): void {
