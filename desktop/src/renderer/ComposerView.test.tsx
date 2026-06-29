@@ -939,10 +939,22 @@ describe("ComposerTokenGauge", () => {
 });
 
 describe("Composer expand button", () => {
-  it("declares expanded width and height rules", () => {
+  it("uses flex column so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
-    expect(composerCSS).toContain("width: min(1040px");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
+    expect(composerCSS).toContain("min-height: clamp(240px, 44vh, 420px)");
+    // Expanded composer is a flex column; the textarea absorbs the extra
+    // height so .composer-bar stays at the dock edge (the "原位" bottom) instead
+    // of getting pushed up by block-flow whitespace below it.
+    expect(composerCSS).toMatch(
+      /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/,
+    );
+    expect(composerCSS).toMatch(
+      /\.composer-stack\.is-expanded\s+\.composer\s+textarea\s*\{[^}]*flex:\s*1\s+1\s+0/,
+    );
+    // Width stays pinned to the session composer width in both dock and hero
+    // variants — the expand button only grows the composer vertically.
+    expect(composerCSS).not.toContain("width: min(1040px");
   });
 
   it("renders the expand button as the last child of the composer frame", () => {

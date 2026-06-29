@@ -108,13 +108,7 @@
   width: var(--session-composer-width);
 }
 
-.composer-stack.is-expanded {
-  width: min(1040px, calc(100% - 48px - var(--conversation-scrollbar-gutter)));
-}
 
-.hero-composer-wrap .composer-stack.is-expanded {
-  width: min(1040px, calc(100vw - 48px));
-}
 
 .composer-expand-button {
   position: absolute;
@@ -129,10 +123,9 @@
   border: 0;
   color: var(--ink-faint);
   border-radius: var(--radius-xs);
-  background: var(--ink-overlay-4);
-  opacity: 0.78;
+  background: transparent;
+  opacity: 1;
   transition:
-    opacity 140ms ease,
     color 140ms ease,
     background-color 140ms ease,
     transform 140ms ease;
@@ -198,6 +191,8 @@
 }
 
 .composer-stack.is-expanded .composer {
+  display: flex;
+  flex-direction: column;
   min-height: clamp(240px, 44vh, 420px);
 }
 
@@ -603,6 +598,7 @@
 }
 
 .composer-stack.is-expanded .composer textarea {
+  flex: 1 1 0;
   min-height: clamp(180px, 34vh, 320px);
 }
 

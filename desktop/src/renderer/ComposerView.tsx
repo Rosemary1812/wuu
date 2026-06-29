@@ -1,6 +1,7 @@
 import {
   Bug,
   ChevronDown,
+  ChevronUp,
   CircleHelp,
   FileText,
   FlaskConical,
@@ -11,9 +12,7 @@ import {
   GitPullRequest,
   Hammer,
   Laptop,
-  Maximize2,
   MessageSquarePlus,
-  Minimize2,
   Paperclip,
   PieChart,
   Plus,
@@ -753,7 +752,7 @@ export function Composer({
             disabled={readOnly}
             onClick={toggleComposerExpansion}
           >
-            {isComposerExpanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+            {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
           </button>
         </div>
       </div>
