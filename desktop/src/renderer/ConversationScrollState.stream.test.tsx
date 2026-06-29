@@ -347,6 +347,44 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
+  it("does not accept a stale programmatic bottom after content grows before the scroll event", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+      flushAnimationFrames();
+      // Chromium can deliver the scroll event from the programmatic bottom
+      // assignment after React has already committed more streamed content.
+      // The old bottom is no longer the latest view and must not be accepted
+      // as "handled".
+      layout!.scrollHeight += 96;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("keeps one settle frame for content that grows after the first stream scroll", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+      flushAnimationFrames();
+      // No scroll event or ResizeObserver callback has fired yet, but the
+      // text commit lands just after the first scheduled bottom scroll.
+      layout!.scrollHeight += 96;
+      flushAnimationFrames();
+    });
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
   it("re-anchors during the turn snapshot commit before the next animation frame", () => {
     mount({
       scrollHeight: 2000,

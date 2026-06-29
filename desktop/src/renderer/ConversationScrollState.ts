@@ -291,8 +291,11 @@ export function useConversationScrollState({
       return;
     }
     streamScrollFrameRef.current = window.requestAnimationFrame(() => {
-      streamScrollFrameRef.current = undefined;
       scrollConversationToBottom();
+      streamScrollFrameRef.current = window.requestAnimationFrame(() => {
+        streamScrollFrameRef.current = undefined;
+        scrollConversationToBottom();
+      });
     });
   }, [scrollConversationToBottom]);
 
@@ -336,6 +339,16 @@ export function useConversationScrollState({
           node,
           node.scrollTop
         );
+        if (
+          conversationAutoFollowRef.current &&
+          !userScrollAwayIntentRef.current &&
+          !atLatestScrollView(node, CONVERSATION_AUTO_SCROLL_THRESHOLD_PX)
+        ) {
+          scrollConversationToBottom({
+            smooth: suppressAutoFollowRearmRef.current,
+          });
+          return;
+        }
         rememberActiveThreadScrollSnapshot(
           node,
           conversationAutoFollowRef.current
