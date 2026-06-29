@@ -738,6 +738,13 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 
 	th.mu.Lock()
 	turn := th.completeTurnLocked(turnID, status, err, now, string(res.FinishReason), res.StopReason, res.Truncated)
+	applyTokenUsageToTurn(&turn, providers.TokenUsage{
+		InputTokens:         res.InputTokens,
+		OutputTokens:        res.OutputTokens,
+		CacheCreationTokens: res.CacheCreationTokens,
+		CacheReadTokens:     res.CacheReadTokens,
+	}, th.Model)
+	th.replaceTurnLocked(turn)
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 

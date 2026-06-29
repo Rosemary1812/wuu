@@ -340,7 +340,11 @@ export function SettingsView({
     "--sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
 
-  const pageMeta = settingsPageMeta(activePage, showDebugControlsSetting);
+  const pageMeta = settingsPageMeta(
+    activePage,
+    showDebugControlsSetting,
+    debugControlsEnabled
+  );
 
   return (
     <div className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
@@ -1094,7 +1098,7 @@ function SettingsGeneralPage({
         </SettingsSection>
       ) : null}
 
-      {showDebugControlsSetting ? (
+      {showDebugControlsSetting && debugControlsEnabled ? (
         <SettingsSection
           title="工具"
           description="当前模型可调用的能力和文件编辑方式。"
@@ -1421,7 +1425,8 @@ type AdvancedDraft = {
 
 function settingsPageMeta(
   page: SettingsPage,
-  showDebugControlsSetting: boolean
+  showDebugControlsSetting: boolean,
+  debugControlsEnabled: boolean
 ): { title: string; description: string } {
   switch (page) {
     case "providers":
@@ -1437,7 +1442,7 @@ function settingsPageMeta(
     case "general":
       return {
         title: "常规",
-        description: showDebugControlsSetting
+        description: showDebugControlsSetting && debugControlsEnabled
           ? "查看可用工具、MCP 连接和当前版本。"
           : "查看 MCP 连接和当前版本。"
       };

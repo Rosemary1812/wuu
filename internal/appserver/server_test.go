@@ -4542,6 +4542,38 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	}
 }
 
+func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260523-000012-usage", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "inspect"}); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "done"}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 19_600, CacheReadTokens: 113_000}); err != nil {
+		t.Fatalf("append token usage: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	req := fmt.Sprintf(`{"id":"1","method":"thread/resume","params":{"session_id":%q}}`, sess.ID)
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+	result := remarshal[ThreadResumeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if len(result.Thread.Turns) != 1 {
+		t.Fatalf("expected one turn, got %+v", result.Thread.Turns)
+	}
+	turn := result.Thread.Turns[0]
+	if turn.InputTokens != 19_600 || turn.CacheReadTokens != 113_000 || turn.UsageModel != rt.Model {
+		t.Fatalf("resume should restore token usage on turn: %+v", turn)
+	}
+}
+
 func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{

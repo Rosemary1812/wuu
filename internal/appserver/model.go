@@ -186,6 +186,58 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	return turn
 }
 
+func applyTokenUsageToTurn(turn *Turn, usage providers.TokenUsage, model string) {
+	if turn == nil {
+		return
+	}
+	turn.InputTokens = usage.InputTokens
+	turn.OutputTokens = usage.OutputTokens
+	turn.CacheCreationTokens = usage.CacheCreationTokens
+	turn.CacheReadTokens = usage.CacheReadTokens
+	turn.UsageModel = strings.TrimSpace(model)
+}
+
+func applyTokenUsageMetasToTurns(turns []Turn, metas []persistedMessage) []Turn {
+	if len(turns) == 0 || len(metas) == 0 {
+		return turns
+	}
+	usages := make([]persistedMessage, 0, len(metas))
+	for _, meta := range metas {
+		if !strings.EqualFold(strings.TrimSpace(meta.Role), "meta") ||
+			strings.TrimSpace(meta.Content) != "token_usage" {
+			continue
+		}
+		if meta.InputTokens == 0 &&
+			meta.OutputTokens == 0 &&
+			meta.CacheCreationTokens == 0 &&
+			meta.CacheReadTokens == 0 {
+			continue
+		}
+		usages = append(usages, meta)
+	}
+	if len(usages) == 0 {
+		return turns
+	}
+	turnIndex := len(turns) - len(usages)
+	usageIndex := 0
+	if turnIndex < 0 {
+		usageIndex = -turnIndex
+		turnIndex = 0
+	}
+	for turnIndex < len(turns) && usageIndex < len(usages) {
+		meta := usages[usageIndex]
+		applyTokenUsageToTurn(&turns[turnIndex], providers.TokenUsage{
+			InputTokens:         meta.InputTokens,
+			OutputTokens:        meta.OutputTokens,
+			CacheCreationTokens: meta.CacheCreationTokens,
+			CacheReadTokens:     meta.CacheReadTokens,
+		}, meta.Model)
+		turnIndex++
+		usageIndex++
+	}
+	return turns
+}
+
 func (th *threadState) takePendingSteersLocked(turnID string, now time.Time) ([]providers.ChatMessage, []outboundNotification) {
 	if len(th.pendingSteers) == 0 || turnID == "" || turnID != th.currentTurn {
 		return nil, nil

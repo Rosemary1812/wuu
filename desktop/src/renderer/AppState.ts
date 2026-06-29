@@ -1816,7 +1816,36 @@ function latestContextUsageForThread(
       const turn = thread.turns[i];
       const usage = state.turnTokenUsage?.[turn.id];
       if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
-        continue;
+        const turnUsageModel = turn.usage_model;
+        if (
+          turnUsageModel &&
+          currentModel &&
+          normalizeModelID(turnUsageModel) !== currentModel
+        ) {
+          continue;
+        }
+        const inputTokens = turn.input_tokens ?? 0;
+        const cacheCreationTokens = turn.cache_creation_tokens ?? 0;
+        const cacheReadTokens = turn.cache_read_tokens ?? 0;
+        const used = inputTokens + cacheCreationTokens + cacheReadTokens;
+        if (used <= 0) {
+          continue;
+        }
+        const turnWindow =
+          fallback.contextWindowTokens && fallback.contextWindowTokens > 0
+            ? fallback.contextWindowTokens
+            : clientContextWindowFor(turnUsageModel || model);
+        if (!turnWindow) {
+          continue;
+        }
+        return {
+          turnID: turn.id,
+          used,
+          window: turnWindow,
+          inputTokens,
+          cacheCreationTokens,
+          cacheReadTokens,
+        };
       }
       if (
         usage.model &&

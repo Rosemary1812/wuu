@@ -653,6 +653,11 @@ export type Turn = {
   started_at?: string | null;
   completed_at?: string | null;
   duration_ms?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
+  usage_model?: string;
 };
 
 // Structured end-of-turn error from the Go core. The `message` is

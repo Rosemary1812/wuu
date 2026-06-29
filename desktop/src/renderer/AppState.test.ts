@@ -745,6 +745,34 @@ describe("latestContextUsageForThread", () => {
     expect(result?.window).toBe(200_000);
   });
 
+  it("uses persisted turn usage after a restart when live usage state is empty", () => {
+    const t = makeThread({
+      model: "minimax-m3",
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+        },
+      ],
+    });
+    t.turns[0].input_tokens = 19_600;
+    t.turns[0].cache_read_tokens = 113_000;
+    t.turns[0].cache_creation_tokens = 0;
+    t.turns[0].usage_model = "minimax-m3";
+    const result = latestContextUsageForThread(initialState, t, {
+      model: "minimax-m3",
+      contextWindowTokens: 1_000_000,
+    });
+    expect(result).toEqual({
+      turnID: "turn-1",
+      used: 132_600,
+      window: 1_000_000,
+      inputTokens: 19_600,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 113_000,
+    });
+  });
+
   it("walks back to the previous turn when the most recent has no usage", () => {
     // The ring is a passive readout — it must keep showing the last
     // known context after a turn completes. We test that by giving the

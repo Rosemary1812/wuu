@@ -128,6 +128,11 @@ func (s *Server) handleThreadResume(req Request) error {
 	history = repaired
 	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, time.Now().UTC())
+	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	} else {
+		th.Turns = applyTokenUsageMetasToTurns(th.Turns, metas)
+	}
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -319,6 +324,11 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	}
 	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
+	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
+		return forkSourceThread{}, err
+	} else {
+		th.Turns = applyTokenUsageMetasToTurns(th.Turns, metas)
+	}
 	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
 		return forkSourceThread{}, err
 	} else if ok {
