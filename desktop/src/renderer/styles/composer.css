@@ -97,7 +97,7 @@
 /* Force the hero composer to the dock composer's dialog width so the
    input box stays the same width whether or not a turn has been sent.
    The dock composer lives at the conversation-pane level (full pane
-   width) so it caps at --conversation-dialog-width naturally; the hero
+   width) so it caps at --session-composer-width naturally; the hero
    composer lives inside the welcome grid where the column tracks are
    narrower, so we have to pin it explicitly. The composer may overflow
    the welcome content area by a few px on each side (well within the

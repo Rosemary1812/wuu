@@ -10,13 +10,12 @@
   /* Conversation-only tokens. Shared session-level tokens
      (outer width, horizontal padding, composer width/radius) live in
      session.css at :root — change them there and nothing else. */
-  --conversation-readable-width: 864px;
   --conversation-content-width: calc(
     var(--session-outer-width) - var(--session-outer-padding-inline) -
       var(--session-outer-padding-inline)
   );
-  --conversation-message-max-width: 656px;
-  --conversation-message-max-inline: 83%;
+  --conversation-message-max-width: 720px;
+  --conversation-message-max-inline: 90%;
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
   --conversation-message-font-family:
@@ -24,13 +23,13 @@
     "Hiragino Sans GB", "Microsoft YaHei", "Microsoft YaHei UI",
     "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
-  --conversation-prose-line-height: 2.1;
-  --conversation-prose-block-gap: 12px;
-  --conversation-message-element-gap: 10px;
+  --conversation-prose-line-height: 1.72;
+  --conversation-prose-block-gap: 14px;
+  --conversation-message-element-gap: 12px;
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 2;
   --conversation-process-control-color: #A4A4A5;
-  --conversation-process-gap: 10px;
+  --conversation-process-gap: 12px;
   --conversation-process-answer-gap: 12px;
   --conversation-answer-action-gap: 8px;
   --conversation-activity-gap: 12px;

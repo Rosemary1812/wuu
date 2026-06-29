@@ -3851,9 +3851,9 @@
 .rich-content ul,
 .rich-content ol {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding-left: 22px;
+  padding-left: 24px;
 }
 
 .rich-content li {
@@ -3867,7 +3867,7 @@
 
 .rich-content li > ul,
 .rich-content li > ol {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .rich-content input[type="checkbox"] {

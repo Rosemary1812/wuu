@@ -135,7 +135,7 @@
   --collapse-chevron-duration: 140ms;
   --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --session-loading-spin-duration: 1400ms;
-  --conversation-turn-gap: 6px;
+  --conversation-turn-gap: 8px;
 --sidebar-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 245, 0.9));
   --sidebar-glass-border: rgba(17, 19, 21, 0.11);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.62);

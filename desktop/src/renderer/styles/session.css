@@ -14,8 +14,8 @@
  */
 
 :root {
-  --session-outer-width: 864px;
-  --session-outer-padding-inline: 68px;
+  --session-outer-width: 928px;
+  --session-outer-padding-inline: 72px;
   --session-composer-width: calc(
     var(--session-outer-width) - var(--session-outer-padding-inline) -
       var(--session-outer-padding-inline)

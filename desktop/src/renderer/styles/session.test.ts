@@ -17,11 +17,11 @@ const sessionCss = readFileSync(
 
 describe("session.css design tokens (single source of truth)", () => {
   it("defines --session-outer-width at :root", () => {
-    expect(sessionCss).toMatch(/--session-outer-width:\s*864px/);
+    expect(sessionCss).toMatch(/--session-outer-width:\s*928px/);
   });
 
   it("defines --session-outer-padding-inline at :root", () => {
-    expect(sessionCss).toMatch(/--session-outer-padding-inline:\s*68px/);
+    expect(sessionCss).toMatch(/--session-outer-padding-inline:\s*72px/);
   });
 
   it("defines --session-composer-width at :root", () => {

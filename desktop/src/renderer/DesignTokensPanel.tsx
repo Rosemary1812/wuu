@@ -39,13 +39,13 @@ type Token = {
 const TOKENS: Token[] = [
   {
     key: "flow-width",
-    cssVar: "--conversation-readable-width",
+    cssVar: "--session-outer-width",
     label: "消息流宽度",
-    min: 720,
+    min: 800,
     max: 1280,
     step: 16,
     unit: "px",
-    defaultValue: 864,
+    defaultValue: 928,
   },
   {
     key: "message-max-width",
@@ -55,22 +55,22 @@ const TOKENS: Token[] = [
     max: 1080,
     step: 16,
     unit: "px",
-    defaultValue: 656,
+    defaultValue: 720,
   },
   {
     // Derived from content-width; the slider here overrides the cascade.
     key: "composer-width",
-    cssVar: "--conversation-dialog-width",
+    cssVar: "--session-composer-width",
     label: "输入框宽度",
     min: 600,
     max: 1200,
     step: 20,
     unit: "px",
-    defaultValue: 740,
+    defaultValue: 784,
   },
   {
     key: "composer-radius",
-    cssVar: "--conversation-dialog-radius",
+    cssVar: "--session-composer-radius",
     label: "输入框圆角",
     min: 0,
     max: 32,
@@ -92,11 +92,11 @@ const TOKENS: Token[] = [
     key: "prose-line-height",
     cssVar: "--conversation-prose-line-height",
     label: "正文行高",
-    min: 1.3,
-    max: 2.2,
-    step: 0.05,
+    min: 1.55,
+    max: 2.1,
+    step: 0.02,
     unit: "",
-    defaultValue: 2.1,
+    defaultValue: 1.72,
   },
   {
     key: "prose-block-gap",
@@ -106,7 +106,7 @@ const TOKENS: Token[] = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 12,
+    defaultValue: 14,
   },
   {
     key: "meta-line-height",
@@ -136,7 +136,7 @@ const TOKENS: Token[] = [
     max: 24,
     step: 1,
     unit: "px",
-    defaultValue: 10,
+    defaultValue: 12,
   },
   {
     key: "message-element-gap",
@@ -146,7 +146,7 @@ const TOKENS: Token[] = [
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 10,
+    defaultValue: 12,
   },
   {
     key: "turn-gap",
@@ -156,21 +156,21 @@ const TOKENS: Token[] = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 6,
+    defaultValue: 8,
   },
   {
     key: "flow-padding",
-    cssVar: "--conversation-flow-padding-inline",
+    cssVar: "--session-outer-padding-inline",
     label: "流两侧留白",
-    min: 16,
+    min: 24,
     max: 96,
     step: 4,
     unit: "px",
-    defaultValue: 68,
+    defaultValue: 72,
   },
 ];
 
-const STORAGE_KEY = "wuu:design-tokens:v2";
+const STORAGE_KEY = "wuu:design-tokens:v3";
 
 type Overrides = Record<string, number>;
 
@@ -183,7 +183,7 @@ function normalizeOverrides(parsed: unknown): Overrides {
   for (const token of TOKENS) {
     const value = source[token.key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      normalized[token.key] = value;
+      normalized[token.key] = Math.min(token.max, Math.max(token.min, value));
     }
   }
   return normalized;
