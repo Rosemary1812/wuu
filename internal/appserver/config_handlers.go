@@ -404,9 +404,6 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if model == "" {
 		return s.writeResponse(req.ID, nil, errors.New("model is required"))
 	}
-	if s.hasRunningThread() {
-		return s.writeResponse(req.ID, nil, errors.New("cannot change model while a turn is running"))
-	}
 	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)

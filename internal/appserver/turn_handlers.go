@@ -792,7 +792,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, th.ModelProvider, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
 	if traceErr != nil {
 		tracePath = ""
 	}
@@ -899,7 +899,7 @@ func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr 
 	return nil
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord) (string, error) {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID, providerName string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
 		return "", nil
 	}
@@ -907,9 +907,9 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	if strings.TrimSpace(tracePath) == "" {
 		return "", nil
 	}
-	providerName := ""
+	providerName = strings.TrimSpace(providerName)
 	if s != nil && s.rt != nil {
-		providerName = s.rt.ProviderName
+		providerName = firstNonEmpty(providerName, s.rt.ProviderName)
 	}
 	model := ""
 	apiModel := ""

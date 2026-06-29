@@ -45,9 +45,9 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 	startedAt := time.Now().UTC().Add(-time.Second)
 	completedAt := time.Now().UTC()
 	duration := int64(1000)
-	srv := &Server{rt: &runtime.Session{ProviderName: "openai"}}
+	srv := &Server{rt: &runtime.Session{ProviderName: "global-provider"}}
 	runner := &agent.StreamRunner{Model: "gpt-test", APIModel: "gpt-test-api"}
-	tracePath, err := srv.persistTurnTrace(&runtime.ThreadRuntime{Toolkit: kit}, runner, "thread-1", Turn{
+	tracePath, err := srv.persistTurnTrace(&runtime.ThreadRuntime{Toolkit: kit}, runner, "thread-1", "openai", Turn{
 		ID:          "turn-1",
 		Status:      TurnStatusCompleted,
 		StartedAt:   &startedAt,

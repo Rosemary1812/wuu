@@ -686,6 +686,68 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	now := time.Now().UTC()
+
+	running := newThreadState("running-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	running.execRuntime = &runtime.ThreadRuntime{
+		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
+	}
+	running.startTurnLocked("running-turn", providers.ChatMessage{Role: "user", Content: "keep running"}, now)
+	idle := newThreadState("idle-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	idle.execRuntime = &runtime.ThreadRuntime{
+		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
+	}
+	srv.threads[running.ID] = running
+	srv.threads[idle.ID] = idle
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model"}}`)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Provider != "fake-provider" || result.Model != "new-model" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	if rt.Model != "new-model" || rt.StreamRunner.Model != "new-model" {
+		t.Fatalf("runtime model not updated: runtime=%q stream_runner=%q", rt.Model, rt.StreamRunner.Model)
+	}
+
+	running.mu.Lock()
+	if running.ModelProvider != "fake-provider" || running.Model != "fake-model" {
+		t.Fatalf("running thread model should stay put: provider=%q model=%q", running.ModelProvider, running.Model)
+	}
+	if running.execRuntime.StreamRunner.Model != "fake-model" || running.execRuntime.StreamRunner.APIModel != "fake-model" {
+		t.Fatalf("running thread runtime should stay put: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
+	}
+	running.mu.Unlock()
+
+	idle.mu.Lock()
+	defer idle.mu.Unlock()
+	if idle.ModelProvider != "fake-provider" || idle.Model != "new-model" {
+		t.Fatalf("idle thread model should update: provider=%q model=%q", idle.ModelProvider, idle.Model)
+	}
+	if idle.execRuntime.StreamRunner.Model != "new-model" || idle.execRuntime.StreamRunner.APIModel != "new-model" {
+		t.Fatalf("idle thread runtime should update: model=%q api=%q", idle.execRuntime.StreamRunner.Model, idle.execRuntime.StreamRunner.APIModel)
+	}
+}
+
 func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
