@@ -124,6 +124,10 @@ type AppState = {
   // is a rolling window used to derive a smoothed tokens-per-second read
   // for the live token-speed gauge in the composer.
   turnTokenUsage: Record<string, TurnTokenUsage>;
+  // turnRequestContext tracks the latest request-shape telemetry emitted
+  // during a turn. It explains cache-sensitive context structure without
+  // treating provider cache counters as retained conversation size.
+  turnRequestContext: Record<string, TurnRequestContextDigest>;
   // lastViewedTurnByThreadID remembers the most recent turn that the user
   // has actually been on the thread for. It is the source of truth for the
   // sidebar / session-tab "has-unread" indicator — a thread is unread when
@@ -161,6 +165,26 @@ type TurnTokenUsage = {
   model?: string;
 };
 
+export type TurnRequestContextDigest = {
+  stepIndex: number;
+  messageCount: number;
+  stablePrefix: number;
+  turnPrefix: number;
+  transientMessages: number;
+  hiddenMessages: number;
+  toolCount: number;
+  stablePrefixBytes: number;
+  turnPrefixBytes: number;
+  messageBytes: number;
+  dynamicBytes: number;
+  toolSchemaBytes: number;
+  promptCacheKey?: string;
+  stablePrefixHash?: string;
+  turnPrefixHash?: string;
+  toolSurfaceHash?: string;
+  loadableToolSurfaceHash?: string;
+};
+
 export type TurnContextUsage = {
   turnID: string;
   // used is the retained conversation estimate after request-only context
@@ -171,6 +195,7 @@ export type TurnContextUsage = {
   inputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  requestContext?: TurnRequestContextDigest;
 };
 
 type TurnTokenSpeedSnapshot = {
@@ -198,6 +223,7 @@ const initialState: AppState = {
   running: false,
   status: "connecting",
   turnTokenUsage: {},
+  turnRequestContext: {},
   lastViewedTurnByThreadID: {},
 };
 
@@ -608,9 +634,68 @@ function reduceNotification(
         numberValue(params, "context_tokens") ?? 0,
       );
     }
+    case "turn/event": {
+      const turnID = stringValue(params, "turn_id");
+      const event = recordValue(params, "event");
+      const digest = requestContextDigestFromRecord(
+        recordValue(event, "request_context"),
+      );
+      if (!turnID || !digest) {
+        return state;
+      }
+      return {
+        ...state,
+        turnRequestContext: {
+          ...state.turnRequestContext,
+          [turnID]: digest,
+        },
+      };
+    }
     default:
       return state;
   }
+}
+
+function requestContextDigestFromRecord(
+  record: JsonRecord | undefined,
+): TurnRequestContextDigest | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const stepIndex = numberValue(record, "step_index");
+  const messageCount = numberValue(record, "message_count");
+  const stablePrefix = numberValue(record, "stable_prefix");
+  const turnPrefix = numberValue(record, "turn_prefix");
+  if (
+    stepIndex === undefined ||
+    messageCount === undefined ||
+    stablePrefix === undefined ||
+    turnPrefix === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    stepIndex,
+    messageCount,
+    stablePrefix,
+    turnPrefix,
+    transientMessages: numberValue(record, "transient_messages") ?? 0,
+    hiddenMessages: numberValue(record, "hidden_messages") ?? 0,
+    toolCount: numberValue(record, "tool_count") ?? 0,
+    stablePrefixBytes: numberValue(record, "stable_prefix_bytes") ?? 0,
+    turnPrefixBytes: numberValue(record, "turn_prefix_bytes") ?? 0,
+    messageBytes: numberValue(record, "message_bytes") ?? 0,
+    dynamicBytes: numberValue(record, "dynamic_bytes") ?? 0,
+    toolSchemaBytes: numberValue(record, "tool_schema_bytes") ?? 0,
+    promptCacheKey: stringValue(record, "prompt_cache_key"),
+    stablePrefixHash: stringValue(record, "stable_prefix_hash"),
+    turnPrefixHash: stringValue(record, "turn_prefix_hash"),
+    toolSurfaceHash: stringValue(record, "tool_surface_hash"),
+    loadableToolSurfaceHash: stringValue(
+      record,
+      "loadable_tool_surface_hash",
+    ),
+  };
 }
 
 function applyDelta(
@@ -1805,6 +1890,7 @@ function activeTurnContextUsage(
     inputTokens: usage.inputTokens,
     cacheCreationTokens: usage.cacheCreationTokens,
     cacheReadTokens: usage.cacheReadTokens,
+    requestContext: state.turnRequestContext?.[turnID],
   };
 }
 
@@ -1865,6 +1951,7 @@ function latestContextUsageForThread(
           inputTokens,
           cacheCreationTokens,
           cacheReadTokens,
+          requestContext: state.turnRequestContext?.[turn.id],
         };
       }
       if (
@@ -1881,6 +1968,7 @@ function latestContextUsageForThread(
         inputTokens: usage.inputTokens,
         cacheCreationTokens: usage.cacheCreationTokens,
         cacheReadTokens: usage.cacheReadTokens,
+        requestContext: state.turnRequestContext?.[turn.id],
       };
     }
   }

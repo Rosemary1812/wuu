@@ -311,6 +311,96 @@ func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_RequestOnlyContextDoesNotChangeCachePrefix(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "answer"},
+		{Role: "user", Content: "latest"},
+	}
+	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{
+		Name:        "read_file",
+		Description: "Read files",
+		InputSchema: map[string]any{
+			"type": "object",
+		},
+		CacheStable: true,
+	}}}
+	run := func(withRequestOnly bool) (RequestContextInfo, providers.ChatRequest) {
+		t.Helper()
+		step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+		var contexts []RequestContextInfo
+		cfg := LoopConfig{
+			Model:          "m",
+			PromptCacheKey: "thread-cache-key",
+			Tools:          tools,
+			OnRequestContext: func(info RequestContextInfo) {
+				contexts = append(contexts, info)
+			},
+		}
+		if withRequestOnly {
+			block := wuucontext.Block{
+				Kind:    wuucontext.BlockEnvironment,
+				Title:   "Runtime environment",
+				Source:  "runtime.snapshot",
+				Content: "# Environment\n- CWD: /tmp/project\n- Git: dirty",
+			}
+			cfg.BeforeRequestContext = func() []ContextSegment {
+				return RequestOnlyContextBlocks([]wuucontext.Block{block})
+			}
+		}
+		if _, err := RunToolLoop(context.Background(), history, cfg, step); err != nil {
+			t.Fatal(err)
+		}
+		if len(contexts) != 1 {
+			t.Fatalf("expected one request context observation, got %+v", contexts)
+		}
+		if len(step.calls) != 1 {
+			t.Fatalf("expected one provider call, got %d", len(step.calls))
+		}
+		return contexts[0], step.calls[0]
+	}
+
+	baseline, baselineReq := run(false)
+	dynamic, dynamicReq := run(true)
+
+	if dynamic.StablePrefix != baseline.StablePrefix || dynamic.TurnPrefix != baseline.TurnPrefix {
+		t.Fatalf("request-only context should not move cache prefixes: baseline=%+v dynamic=%+v", baseline, dynamic)
+	}
+	if dynamic.StablePrefixHash != baseline.StablePrefixHash {
+		t.Fatalf("stable prefix hash changed after request-only context: %q -> %q", baseline.StablePrefixHash, dynamic.StablePrefixHash)
+	}
+	if dynamic.TurnPrefixHash != baseline.TurnPrefixHash {
+		t.Fatalf("turn prefix hash changed after request-only context: %q -> %q", baseline.TurnPrefixHash, dynamic.TurnPrefixHash)
+	}
+	if dynamic.SystemHash != baseline.SystemHash {
+		t.Fatalf("system hash changed after request-only context: %q -> %q", baseline.SystemHash, dynamic.SystemHash)
+	}
+	if dynamic.ToolSurfaceHash != baseline.ToolSurfaceHash {
+		t.Fatalf("tool surface hash changed after request-only context: %q -> %q", baseline.ToolSurfaceHash, dynamic.ToolSurfaceHash)
+	}
+	if dynamic.PromptCacheKey != baseline.PromptCacheKey || dynamic.PromptCacheKey != "thread-cache-key" {
+		t.Fatalf("prompt cache key changed: baseline=%q dynamic=%q", baseline.PromptCacheKey, dynamic.PromptCacheKey)
+	}
+	if dynamic.TransientMessages != 1 || dynamic.HiddenMessages != 1 || dynamic.DynamicBytes == 0 {
+		t.Fatalf("request-only context should still be visible in telemetry as transient: %+v", dynamic)
+	}
+	if !containsString(dynamic.BlockKinds, string(wuucontext.BlockEnvironment)) {
+		t.Fatalf("request-only typed block should be reported in telemetry: %+v", dynamic)
+	}
+	if dynamic.MessageCount <= baseline.MessageCount || dynamic.MessageBytes <= baseline.MessageBytes {
+		t.Fatalf("dynamic request should be larger without changing cache prefix: baseline=%+v dynamic=%+v", baseline, dynamic)
+	}
+	if baselineReq.CacheHint == nil || dynamicReq.CacheHint == nil {
+		t.Fatal("expected cache hints")
+	}
+	if dynamicReq.CacheHint.StablePrefixMessages != baselineReq.CacheHint.StablePrefixMessages ||
+		dynamicReq.CacheHint.TurnPrefixMessages != baselineReq.CacheHint.TurnPrefixMessages ||
+		dynamicReq.CacheHint.PromptCacheKey != baselineReq.CacheHint.PromptCacheKey {
+		t.Fatalf("cache hint changed after request-only context: baseline=%+v dynamic=%+v", baselineReq.CacheHint, dynamicReq.CacheHint)
+	}
+}
+
 func TestRequestContextInfoReportsLoadableToolSchemasSeparately(t *testing.T) {
 	assembly := RequestAssembly{
 		Messages: []providers.ChatMessage{

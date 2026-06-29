@@ -113,6 +113,7 @@ describe("queryTextsForThread", () => {
 describe("AppState token usage", () => {
   it("initializes token usage state before the first usage update", () => {
     expect(initialState.turnTokenUsage).toEqual({});
+    expect(initialState.turnRequestContext).toEqual({});
     expect(activeTurnTokenSpeed(initialState, "turn-1")).toBe(0);
   });
 
@@ -194,6 +195,63 @@ describe("AppState token usage", () => {
     expect(real.turnTokenUsage["turn-1"].samples).toEqual([
       { tokens: 3, at: 1_500 },
     ]);
+  });
+
+  it("attaches request context diagnostics to the latest context usage", () => {
+    const thread = threadWithUserTexts(["hi"]);
+    const stateWithUsage = appendTurnTokenSample(
+      {
+        ...initialState,
+        thread,
+      },
+      "turn-1",
+      "thread-1",
+      100,
+      10,
+      0,
+      0,
+      1_000,
+      200_000,
+      "fake-model",
+      12_000,
+    );
+    const next = reduceServerEvent(stateWithUsage, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            request_context: {
+              step_index: 0,
+              message_count: 8,
+              stable_prefix: 5,
+              turn_prefix: 6,
+              transient_messages: 1,
+              hidden_messages: 1,
+              tool_count: 14,
+              stable_prefix_bytes: 3200,
+              turn_prefix_bytes: 4100,
+              message_bytes: 9800,
+              dynamic_bytes: 1200,
+              tool_schema_bytes: 22000,
+              prompt_cache_key: "thread-1",
+              stable_prefix_hash: "stable",
+              turn_prefix_hash: "turn",
+              tool_surface_hash: "tools",
+            },
+          },
+        },
+      },
+    });
+
+    const usage = latestContextUsageForThread(next, thread);
+    expect(usage?.requestContext?.stablePrefix).toBe(5);
+    expect(usage?.requestContext?.turnPrefix).toBe(6);
+    expect(usage?.requestContext?.toolCount).toBe(14);
+    expect(usage?.requestContext?.promptCacheKey).toBe("thread-1");
   });
 });
 

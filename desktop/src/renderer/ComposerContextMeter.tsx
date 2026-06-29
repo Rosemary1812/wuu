@@ -29,7 +29,7 @@ const RING_RADIUS = 9;
 // The viewBox is intentionally 24 with stroke-width 3 leaving room for
 // the ring stroke.
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-const TOOLTIP_WIDTH = 148;
+const TOOLTIP_WIDTH = 212;
 
 export function ComposerContextMeter({
   usage,
@@ -49,6 +49,7 @@ export function ComposerContextMeter({
   const valueLabel = `${formatTokenCount(used)} / ${formatTokenCount(
     usage.window,
   )}`;
+  const requestContext = usage.requestContext;
   const ariaLabel =
     `上下文窗口 ${formatTokenCount(usage.window)}` +
     `，估算占用 ${formatTokenCount(used)} (${percent}%)`;
@@ -122,11 +123,98 @@ export function ComposerContextMeter({
                 {valueLabel}
               </span>
             </div>
+            {requestContext ? (
+              <>
+                <div className="composer-context-meter-tooltip-divider" />
+                <div className="composer-context-meter-tooltip-row">
+                  <span className="composer-context-meter-tooltip-label">
+                    稳定前缀
+                  </span>
+                  <span className="composer-context-meter-tooltip-value">
+                    {formatMessageShare(
+                      requestContext.stablePrefix,
+                      requestContext.messageCount,
+                    )}
+                  </span>
+                </div>
+                <div className="composer-context-meter-tooltip-row">
+                  <span className="composer-context-meter-tooltip-label">
+                    本轮前缀
+                  </span>
+                  <span className="composer-context-meter-tooltip-value">
+                    {formatMessageShare(
+                      requestContext.turnPrefix,
+                      requestContext.messageCount,
+                    )}
+                  </span>
+                </div>
+                <div className="composer-context-meter-tooltip-row">
+                  <span className="composer-context-meter-tooltip-label">
+                    临时上下文
+                  </span>
+                  <span className="composer-context-meter-tooltip-value">
+                    {formatTransientContext(requestContext)}
+                  </span>
+                </div>
+                <div className="composer-context-meter-tooltip-row">
+                  <span className="composer-context-meter-tooltip-label">
+                    工具面
+                  </span>
+                  <span className="composer-context-meter-tooltip-value">
+                    {formatToolSurface(requestContext)}
+                  </span>
+                </div>
+              </>
+            ) : null}
           </div>
         </FloatingMenuPortal>
       ) : null}
     </div>
   );
+}
+
+function formatMessageShare(value: number, total: number): string {
+  const safeValue = Math.max(0, Math.round(value));
+  const safeTotal = Math.max(0, Math.round(total));
+  return `${safeValue} / ${safeTotal} 条`;
+}
+
+function formatTransientContext(
+  context: NonNullable<TurnContextUsage["requestContext"]>,
+): string {
+  const messageCount = Math.max(
+    0,
+    Math.round(context.transientMessages || context.hiddenMessages || 0),
+  );
+  const byteLabel = formatByteCount(context.dynamicBytes);
+  if (messageCount <= 0) {
+    return byteLabel ? byteLabel : "0 条";
+  }
+  return byteLabel ? `${messageCount} 条 · ${byteLabel}` : `${messageCount} 条`;
+}
+
+function formatToolSurface(
+  context: NonNullable<TurnContextUsage["requestContext"]>,
+): string {
+  const toolCount = Math.max(0, Math.round(context.toolCount));
+  const byteLabel = formatByteCount(context.toolSchemaBytes);
+  if (toolCount <= 0) {
+    return byteLabel ? byteLabel : "0 个";
+  }
+  return byteLabel ? `${toolCount} 个 · ${byteLabel}` : `${toolCount} 个`;
+}
+
+function formatByteCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+  if (value >= 1_000_000) {
+    return `${trimNumber(value / 1_000_000)}MB`;
+  }
+  if (value >= 1_000) {
+    return `${trimNumber(value / 1_000)}kB`;
+  }
+  return `${Math.round(value)}B`;
 }
 
 function formatTokenCount(value: number): string {

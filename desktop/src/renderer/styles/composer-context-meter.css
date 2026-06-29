@@ -76,7 +76,7 @@
 /* Hover/focus popover. Mounted in the shared floating-menu layer so the
    composer toolbar's overflow clipping cannot hide the breakdown. */
 .composer-context-meter-tooltip {
-  width: 148px;
+  width: 212px;
   padding: 8px 10px;
   background: var(--context-meter-tooltip-bg);
   border: 1px solid var(--context-meter-tooltip-border);
@@ -107,14 +107,26 @@
   margin-top: 2px;
 }
 
+.composer-context-meter-tooltip-divider {
+  height: 1px;
+  margin: 6px 0 5px;
+  background: rgba(15, 17, 21, 0.08);
+}
+
 .composer-context-meter-tooltip-label {
   color: var(--ink-muted);
 }
 
 .composer-context-meter-tooltip-value {
+  min-width: 0;
+  max-width: 128px;
+  overflow: hidden;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: var(--ink-strong);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

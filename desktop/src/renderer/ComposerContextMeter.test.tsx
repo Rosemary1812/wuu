@@ -147,6 +147,48 @@ describe("ComposerContextMeter", () => {
     expect(text).not.toContain("新建缓存");
   });
 
+  it("adds request-shape diagnostics when the backend emits them", () => {
+    renderMeter(
+      usageWith({
+        requestContext: {
+          stepIndex: 0,
+          messageCount: 8,
+          stablePrefix: 5,
+          turnPrefix: 6,
+          transientMessages: 1,
+          hiddenMessages: 1,
+          toolCount: 14,
+          stablePrefixBytes: 3200,
+          turnPrefixBytes: 4100,
+          messageBytes: 9800,
+          dynamicBytes: 1200,
+          toolSchemaBytes: 22000,
+          promptCacheKey: "thread-1",
+          stablePrefixHash: "stable",
+          turnPrefixHash: "turn",
+          toolSurfaceHash: "tools",
+        },
+      }),
+    );
+    const meter = container.querySelector<HTMLElement>(
+      ".composer-context-meter",
+    );
+    act(() => {
+      meter?.focus();
+    });
+    const text =
+      document.body.querySelector(".composer-context-meter-tooltip")
+        ?.textContent ?? "";
+    expect(text).toContain("稳定前缀");
+    expect(text).toContain("5 / 8 条");
+    expect(text).toContain("本轮前缀");
+    expect(text).toContain("6 / 8 条");
+    expect(text).toContain("临时上下文");
+    expect(text).toContain("1 条 · 1.2kB");
+    expect(text).toContain("工具面");
+    expect(text).toContain("14 个 · 22kB");
+  });
+
   it("is focusable so keyboard users can reach the tooltip", () => {
     renderMeter(usageWith());
     const root = container.querySelector(".composer-context-meter");
