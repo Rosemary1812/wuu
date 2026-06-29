@@ -13,6 +13,7 @@ import {
   Laptop,
   MessageSquarePlus,
   Paperclip,
+  PieChart,
   Plus,
   Search,
   Send,
@@ -318,6 +319,13 @@ export function Composer({
 
   function submitComposer(): void {
     resetQueryHistoryNavigation();
+    const actionCommand = slashDraft
+      ? exactActionSlashCommand(slashCommands, slashDraft)
+      : undefined;
+    if (actionCommand) {
+      applySlashCommand(actionCommand, slashDraft);
+      return;
+    }
     onSend();
     focusComposerSoon();
   }
@@ -761,6 +769,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
       return <FolderOpen className="icon" />;
     case "no-project":
       return <FolderX className="icon" />;
+    case "context":
+      return <PieChart className="icon" />;
     case "fast":
       return <Zap className="icon" />;
     case "model":
@@ -792,6 +802,15 @@ function exactRunnableSlashCommand(commands: ComposerSlashCommand[], draft: Comp
     (command) =>
       !command.disabledReason &&
       (command.kind === "prompt" || command.kind === "skill") &&
+      command.name.toLowerCase() === draft.query
+  );
+}
+
+function exactActionSlashCommand(commands: ComposerSlashCommand[], draft: ComposerSlashDraft): ComposerSlashCommand | undefined {
+  return commands.find(
+    (command) =>
+      !command.disabledReason &&
+      command.kind === "action" &&
       command.name.toLowerCase() === draft.query
   );
 }

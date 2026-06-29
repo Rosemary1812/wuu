@@ -82,6 +82,7 @@ function renderComposer(props: {
   runtimeControlsDisabled?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
+  onOpenContextComposition?: () => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onRemoveGuideMessage?: (id: string) => void;
   onGuideQueuedMessage?: (id: string) => void;
@@ -149,6 +150,7 @@ function renderComposer(props: {
           onOpenProject={() => {}}
           onStartNewThread={() => {}}
           onOpenWorkspaceTool={() => {}}
+          onOpenContextComposition={props.onOpenContextComposition ?? (() => {})}
           onPasteAttachmentFiles={() => {}}
           onRemoveFile={() => {}}
           onRemoveImage={() => {}}
@@ -507,6 +509,34 @@ describe("Composer send control", () => {
     });
 
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs /context as a local action when the send button is clicked", () => {
+    const onSend = vi.fn();
+    const onOpenContextComposition = vi.fn();
+    const setPrompt = vi.fn();
+    renderComposer({
+      prompt: "/context",
+      setPrompt,
+      onSend,
+      onOpenContextComposition,
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送"]',
+    );
+    expect(sendButton).not.toBeNull();
+
+    act(() => {
+      sendButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onOpenContextComposition).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(setPrompt).toHaveBeenCalledWith("");
   });
 });
 

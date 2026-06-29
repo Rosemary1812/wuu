@@ -1,19 +1,24 @@
-import { Info, X } from "lucide-react";
+import { Gauge, Info, X } from "lucide-react";
 import type { ContextCompositionCategory, ThreadContextCompositionResult } from "../shared/protocol";
 
-export function ContextCompositionDialog({
-  result,
-  loading,
-  error,
-  title,
-  onClose,
-}: {
+export type ContextCompositionEntry = {
+  id: string;
+  threadID: string;
+  afterTurnID?: string;
+  title?: string;
   result?: ThreadContextCompositionResult;
   loading: boolean;
   error?: string;
-  title?: string;
-  onClose: () => void;
+};
+
+export function ContextCompositionCard({
+  entry,
+  onDismiss,
+}: {
+  entry: ContextCompositionEntry;
+  onDismiss?: (id: string) => void;
 }): JSX.Element {
+  const { result, loading, error, title } = entry;
   const categories = result?.categories ?? [];
   const contributing = categories.filter((category) => category.contributes !== false);
   const promptTokens = result?.prompt_tokens ?? contributing.reduce((sum, category) => sum + (category.tokens ?? 0), 0);
@@ -24,17 +29,27 @@ export function ContextCompositionDialog({
   const barTokens = contextWindow > 0 ? contextWindow : promptTokens;
 
   return (
-    <div className="modal-backdrop environment-modal-backdrop context-composition-backdrop">
-      <section className="context-composition-dialog" role="dialog" aria-modal="true" aria-label="上下文组成">
+    <article className="context-composition-card" aria-label="上下文组成">
+      <div className="context-composition-card-inner">
         <div className="context-composition-header">
           <div>
-            <span className="context-composition-eyebrow">/context</span>
+            <span className="context-composition-eyebrow">
+              <Gauge aria-hidden="true" />
+              /context
+            </span>
             <h2>上下文组成</h2>
-            <p>{title ? title : "当前对话"} · 最近一次模型请求</p>
+            <p>{title ? title : "当前对话"} · 最近一次真实请求 · 未进入上下文</p>
           </div>
-          <button className="icon-button" type="button" aria-label="关闭" onClick={onClose}>
-            <X className="icon" />
-          </button>
+          {onDismiss ? (
+            <button
+              className="icon-button context-composition-dismiss"
+              type="button"
+              aria-label="移除上下文组成"
+              onClick={() => onDismiss(entry.id)}
+            >
+              <X className="icon" />
+            </button>
+          ) : null}
         </div>
 
         {loading ? <ContextCompositionState text="正在读取上下文记录" /> : null}
@@ -120,8 +135,8 @@ export function ContextCompositionDialog({
             </div>
           </>
         ) : null}
-      </section>
-    </div>
+      </div>
+    </article>
   );
 }
 

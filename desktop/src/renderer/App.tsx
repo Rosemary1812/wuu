@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
+  Fragment,
   type RefObject,
   memo,
   useCallback,
@@ -53,7 +54,6 @@ import type {
   RuntimeContext,
   ServerEvent,
   Thread,
-  ThreadContextCompositionResult,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
@@ -198,7 +198,10 @@ import {
   useAppLayoutState,
 } from "./AppLayoutState";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
-import { ContextCompositionDialog } from "./ContextCompositionDialog";
+import {
+  ContextCompositionCard,
+  type ContextCompositionEntry,
+} from "./ContextCompositionCard";
 import { DesignTokensPanel } from "./DesignTokensPanel";
 import { useAppDebugState } from "./AppDebugState";
 import {
@@ -273,13 +276,6 @@ const CONVERSATION_GRID_COLUMNS = 12;
 // we collapse the tail into a single bar.
 const QUERY_HISTORY_RAIL_MAX_BARS = 20;
 type EnvironmentDialog = "commit" | "pull-request" | null;
-type ContextCompositionDialogState = {
-  threadID: string;
-  title?: string;
-  loading: boolean;
-  result?: ThreadContextCompositionResult;
-  error?: string;
-};
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
 
 type PendingViewSwitch = {
@@ -287,6 +283,10 @@ type PendingViewSwitch = {
   targetID: string;
   visible: boolean;
 };
+
+function createContextCompositionEntryID(): string {
+  return `context-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 type TurnProgressContent = {
   label: string;
@@ -465,8 +465,9 @@ export function App(): JSX.Element {
   >(undefined);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
-  const [contextCompositionDialog, setContextCompositionDialog] =
-    useState<ContextCompositionDialogState | undefined>(undefined);
+  const [contextCompositionEntries, setContextCompositionEntries] = useState<
+    ContextCompositionEntry[]
+  >([]);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
     [],
   );
@@ -1131,7 +1132,13 @@ export function App(): JSX.Element {
   const emptyThreadTitle = greetingFor(currentHour, greetingContext);
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
-  const emptyConversation = !showingSkillsCatalog && turns.length === 0;
+  const activeContextCompositionEntries = activeThreadID
+    ? contextCompositionEntries.filter((entry) => entry.threadID === activeThreadID)
+    : [];
+  const emptyConversation =
+    !showingSkillsCatalog &&
+    turns.length === 0 &&
+    activeContextCompositionEntries.length === 0;
 
   // Past user queries for the input-box hover popover. We collect them
   // in turn order, oldest first, so the popover mirrors the order in
@@ -1880,6 +1887,12 @@ export function App(): JSX.Element {
     }
   }
 
+  function dismissContextCompositionEntry(id: string): void {
+    setContextCompositionEntries((entries) =>
+      entries.filter((entry) => entry.id !== id),
+    );
+  }
+
   function openContextComposition(): void {
     if (!activeThread) {
       setState((current) => ({
@@ -1890,34 +1903,46 @@ export function App(): JSX.Element {
     }
     const threadID = activeThread.id;
     const title = activeThread.preview || activeTitle;
-    setContextCompositionDialog({
-      threadID,
-      title,
-      loading: true,
-    });
+    const entryID = createContextCompositionEntryID();
+    const afterTurnID = activeThread.turns.at(-1)?.id;
+    setContextCompositionEntries((entries) => [
+      ...entries,
+      {
+        id: entryID,
+        threadID,
+        afterTurnID,
+        title,
+        loading: true,
+      },
+    ]);
+    scheduleStreamScroll();
     void (async () => {
       try {
         const result = await window.wuu.getThreadContextComposition(threadID);
-        setContextCompositionDialog((current) =>
-          current?.threadID === threadID
-            ? {
-                threadID,
-                title,
-                loading: false,
-                result,
-              }
-            : current,
+        setContextCompositionEntries((entries) =>
+          entries.map((entry) =>
+            entry.id === entryID
+              ? {
+                  ...entry,
+                  loading: false,
+                  result,
+                  error: undefined,
+                }
+              : entry,
+          ),
         );
+        scheduleStreamScroll();
       } catch (error) {
-        setContextCompositionDialog((current) =>
-          current?.threadID === threadID
-            ? {
-                threadID,
-                title,
-                loading: false,
-                error: desktopApiErrorMessage(error, "无法读取上下文组成"),
-              }
-            : current,
+        setContextCompositionEntries((entries) =>
+          entries.map((entry) =>
+            entry.id === entryID
+              ? {
+                  ...entry,
+                  loading: false,
+                  error: desktopApiErrorMessage(error, "无法读取上下文组成"),
+                }
+              : entry,
+          ),
         );
       }
     })();
@@ -5415,9 +5440,11 @@ export function App(): JSX.Element {
                 activeThreadID={activeThreadID}
                 activeContextCwd={state.activeContext?.cwd}
                 conversationGridVisible={conversationGridVisible}
+                contextCompositionEntries={contextCompositionEntries}
                 historyMessageEdit={historyMessageEdit}
                 onStreamFrame={scheduleStreamScroll}
                 onCollapseComplete={handleTurnCollapseComplete}
+                onDismissContextComposition={dismissContextCompositionEntry}
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
                 onEditMessage={handleCachedPaneEditMessage}
@@ -5531,15 +5558,6 @@ export function App(): JSX.Element {
           onCreate={createEnvironmentPullRequest}
         />
       ) : null}
-      {contextCompositionDialog ? (
-        <ContextCompositionDialog
-          title={contextCompositionDialog.title}
-          loading={contextCompositionDialog.loading}
-          result={contextCompositionDialog.result}
-          error={contextCompositionDialog.error}
-          onClose={() => setContextCompositionDialog(undefined)}
-        />
-      ) : null}
       {debugControlsVisible ? <DesignTokensPanel /> : null}
       {queryHistoryOpen &&
       !activeThreadReadOnly &&
@@ -5577,9 +5595,11 @@ type CachedConversationPanesProps = {
   activeThreadID?: string;
   activeContextCwd?: string;
   conversationGridVisible: boolean;
+  contextCompositionEntries: ContextCompositionEntry[];
   historyMessageEdit?: HistoryMessageEditState;
   onStreamFrame: () => void;
   onCollapseComplete: () => void;
+  onDismissContextComposition: (id: string) => void;
   canEditThreadMessage: (thread: Thread) => boolean;
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
@@ -5606,9 +5626,11 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   activeThreadID,
   activeContextCwd,
   conversationGridVisible,
+  contextCompositionEntries,
   historyMessageEdit,
   onStreamFrame,
   onCollapseComplete,
+  onDismissContextComposition,
   canEditThreadMessage,
   onForkMessage,
   onEditMessage,
@@ -5625,6 +5647,32 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
         const isActive = threadID === activeThreadID;
         const threadTurns = thread.turns ?? [];
         const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
+        const threadContextEntries = contextCompositionEntries.filter(
+          (entry) => entry.threadID === threadID,
+        );
+        const turnIDs = new Set(threadTurns.map((turn) => turn.id));
+        const entriesBeforeTurns = threadContextEntries.filter(
+          (entry) => !entry.afterTurnID,
+        );
+        const entriesAfterMissingTurn = threadContextEntries.filter(
+          (entry) => entry.afterTurnID && !turnIDs.has(entry.afterTurnID),
+        );
+        const entriesByAfterTurnID = new Map<string, ContextCompositionEntry[]>();
+        for (const entry of threadContextEntries) {
+          if (!entry.afterTurnID || !turnIDs.has(entry.afterTurnID)) {
+            continue;
+          }
+          const existing = entriesByAfterTurnID.get(entry.afterTurnID) ?? [];
+          existing.push(entry);
+          entriesByAfterTurnID.set(entry.afterTurnID, existing);
+        }
+        const renderContextEntry = (entry: ContextCompositionEntry) => (
+          <ContextCompositionCard
+            entry={entry}
+            key={entry.id}
+            onDismiss={onDismissContextComposition}
+          />
+        );
         return (
           <div
             key={threadID}
@@ -5636,42 +5684,46 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
               {isActive && conversationGridVisible ? (
                 <ConversationGridGuides />
               ) : null}
+              {entriesBeforeTurns.map(renderContextEntry)}
               {threadTurns.map((turn) => (
-                <TurnView
-                  key={turn.id}
-                  turn={turn}
-                  cwd={thread.cwd ?? activeContextCwd}
-                  latestAgentMessageID={threadLatestAgentMessageID}
-                  onStreamFrame={onStreamFrame}
-                  onCollapseComplete={onCollapseComplete}
-                  onForkMessage={(turnID, itemID) =>
-                    onForkMessage(thread, turnID, itemID)
-                  }
-                  onEditMessage={
-                    canEditThreadMessage(thread)
-                      ? (turnID, item) => onEditMessage(thread, turnID, item)
-                      : undefined
-                  }
-                  editingMessage={
-                    historyMessageEdit?.threadID === thread.id
-                      ? historyMessageEdit
-                      : undefined
-                  }
-                  onCancelEditMessage={onCancelEditMessage}
-                  onSubmitEditMessage={(turnID, item, text, images, files) =>
-                    onSubmitEditMessage(
-                      thread,
-                      turnID,
-                      item,
-                      text,
-                      images,
-                      files,
-                    )
-                  }
-                  onNoticeAction={onNoticeAction}
-                  onOpenFile={onOpenFile}
-                />
+                <Fragment key={turn.id}>
+                  <TurnView
+                    turn={turn}
+                    cwd={thread.cwd ?? activeContextCwd}
+                    latestAgentMessageID={threadLatestAgentMessageID}
+                    onStreamFrame={onStreamFrame}
+                    onCollapseComplete={onCollapseComplete}
+                    onForkMessage={(turnID, itemID) =>
+                      onForkMessage(thread, turnID, itemID)
+                    }
+                    onEditMessage={
+                      canEditThreadMessage(thread)
+                        ? (turnID, item) => onEditMessage(thread, turnID, item)
+                        : undefined
+                    }
+                    editingMessage={
+                      historyMessageEdit?.threadID === thread.id
+                        ? historyMessageEdit
+                        : undefined
+                    }
+                    onCancelEditMessage={onCancelEditMessage}
+                    onSubmitEditMessage={(turnID, item, text, images, files) =>
+                      onSubmitEditMessage(
+                        thread,
+                        turnID,
+                        item,
+                        text,
+                        images,
+                        files,
+                      )
+                    }
+                    onNoticeAction={onNoticeAction}
+                    onOpenFile={onOpenFile}
+                  />
+                  {(entriesByAfterTurnID.get(turn.id) ?? []).map(renderContextEntry)}
+                </Fragment>
               ))}
+              {entriesAfterMissingTurn.map(renderContextEntry)}
             </div>
           </div>
         );

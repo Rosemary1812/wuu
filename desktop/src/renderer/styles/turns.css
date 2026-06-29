@@ -749,6 +749,139 @@
   line-height: var(--conversation-prose-line-height);
 }
 
+.context-composition-card {
+  width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
+  max-width: 100%;
+  margin: 2px 0 22px;
+}
+
+.conversation-split-width .context-composition-card {
+  width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
+}
+
+.context-composition-card-inner {
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(31, 35, 40, 0.1);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(249, 250, 248, 0.97)),
+    var(--surface-1);
+  box-shadow:
+    0 14px 34px rgba(20, 24, 28, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
+  padding: 16px;
+}
+
+.context-composition-card .context-composition-header {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.context-composition-card .context-composition-header h2 {
+  margin-top: 3px;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.context-composition-card .context-composition-header p {
+  margin-top: 4px;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.context-composition-card .context-composition-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5e666b;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.context-composition-card .context-composition-eyebrow svg {
+  width: 14px;
+  height: 14px;
+  color: #338f98;
+}
+
+.context-composition-card .context-composition-dismiss {
+  width: 30px;
+  height: 30px;
+  color: var(--ink-muted);
+}
+
+.context-composition-card .context-composition-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.context-composition-card .context-composition-stat {
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+
+.context-composition-card .context-composition-stat strong {
+  font-size: 17px;
+}
+
+.context-composition-card .context-composition-bar {
+  height: 14px;
+}
+
+.context-composition-card .context-composition-section {
+  gap: 7px;
+}
+
+.context-composition-card .context-category-row {
+  grid-template-columns: 10px minmax(0, 1fr) minmax(74px, auto) auto;
+  padding: 8px 0;
+}
+
+.context-composition-card .context-category-swatch {
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+}
+
+.context-composition-card .context-composition-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.context-composition-card .context-detail-block {
+  border-radius: 10px;
+  padding: 10px;
+}
+
+@media (max-width: 760px) {
+  .context-composition-card {
+    width: 100%;
+  }
+
+  .context-composition-card .context-composition-stats,
+  .context-composition-card .context-composition-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .context-composition-card .context-category-row {
+    grid-template-columns: 10px minmax(0, 1fr) minmax(70px, auto);
+  }
+
+  .context-composition-card .context-category-badges {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .context-composition-card .context-composition-stats,
+  .context-composition-card .context-composition-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .agent-block-with-action-slot {
   display: grid;
   min-width: 0;
