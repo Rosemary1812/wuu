@@ -41,6 +41,36 @@ func TestMatchProviderByBaseURL(t *testing.T) {
 	}
 }
 
+func TestMatchProviderTreatsTerminalV1AsOptional(t *testing.T) {
+	provider, ok := MatchProvider("minimax", config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://api.minimaxi.com/anthropic",
+		Model:   "MiniMax-M3",
+	})
+	if !ok {
+		t.Fatal("expected MiniMax provider match without terminal /v1")
+	}
+	if provider.ID != "minimax-cn" {
+		t.Fatalf("provider ID = %q, want minimax-cn", provider.ID)
+	}
+
+	ruleName, enriched := EnrichProvider("minimax", config.ProviderConfig{
+		Type:    "anthropic",
+		BaseURL: "https://api.minimaxi.com/anthropic",
+		Model:   "MiniMax-M3",
+	}, "MiniMax-M3")
+	if ruleName != "minimax-cn" {
+		t.Fatalf("rule provider name = %q", ruleName)
+	}
+	model := enriched.Models["MiniMax-M3"]
+	if model.Limit == nil || model.Limit.Context != 512000 {
+		t.Fatalf("model limit context = %+v, want 512000", model.Limit)
+	}
+	if enriched.ContextWindow != 0 {
+		t.Fatalf("provider ContextWindow = %d, want 0 without explicit provider override", enriched.ContextWindow)
+	}
+}
+
 func TestCatalogMatchesOpenCodeDefaultVisibility(t *testing.T) {
 	provider, ok := MatchProvider("openai", config.ProviderConfig{Type: "openai"})
 	if !ok {

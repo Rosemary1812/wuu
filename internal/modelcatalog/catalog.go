@@ -509,11 +509,30 @@ func endpointCandidates(provider config.ProviderConfig) []string {
 	seen := map[string]bool{}
 	for _, value := range raw {
 		normalized := normalizeEndpoint(value)
-		if normalized == "" || seen[normalized] {
-			continue
+		for _, candidate := range endpointVariants(normalized) {
+			if candidate == "" || seen[candidate] {
+				continue
+			}
+			seen[candidate] = true
+			out = append(out, candidate)
 		}
-		seen[normalized] = true
-		out = append(out, normalized)
+	}
+	return out
+}
+
+func endpointVariants(endpoint string) []string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	out := []string{endpoint}
+	if strings.HasSuffix(endpoint, "/v1") {
+		base := strings.TrimSuffix(endpoint, "/v1")
+		if base != "" {
+			out = append(out, base)
+		}
+	} else {
+		out = append(out, endpoint+"/v1")
 	}
 	return out
 }
