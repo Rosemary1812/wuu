@@ -28,6 +28,14 @@ type SidebarResizeSession = {
   startWidth: number;
   currentWidth: number;
   allowCollapse: boolean;
+  // Tracks whether the sidebar collapsed during the current drag (either at
+  // pointerdown or by crossing below SIDEBAR_MIN_WIDTH mid-drag). When true
+  // and the user drags back above the threshold without releasing, the move
+  // handler must route through applySidebarWidth so the collapsed React state
+  // is cleared; otherwise applyLiveSidebarWidth would only mutate the
+  // --sidebar-width inline style while the .sidebar-collapsed class stays on
+  // .app-shell, leaving a white glass slab with no content visible.
+  collapsedDuringDrag: boolean;
 };
 
 type RightPanelResizeSession = {
@@ -227,6 +235,17 @@ export function useAppLayoutState({
       if (session.allowCollapse) {
         if (nextWidth <= SIDEBAR_MIN_WIDTH) {
           applySidebarWidth(nextWidth);
+          session.collapsedDuringDrag = true;
+          return;
+        }
+        if (session.collapsedDuringDrag) {
+          // We crossed below SIDEBAR_MIN_WIDTH earlier in this drag and never
+          // released. Route through applySidebarWidth so setSidebarCollapsed
+          // (false) clears the .sidebar-collapsed class; otherwise the live
+          // inline --sidebar-width would expand the sidebar while its content
+          // stayed opacity: 0, leaving a white glass slab.
+          applySidebarWidth(nextWidth);
+          session.collapsedDuringDrag = false;
           return;
         }
         applyLiveSidebarWidth(nextWidth);
@@ -307,7 +326,8 @@ export function useAppLayoutState({
       startX: event.clientX,
       startWidth: sidebarCollapsed ? 0 : sidebarWidth,
       currentWidth: sidebarCollapsed ? 0 : sidebarWidth,
-      allowCollapse: true
+      allowCollapse: true,
+      collapsedDuringDrag: sidebarCollapsed
     };
     onCloseProjectMenu();
     setResizingSidebar(true);
@@ -322,7 +342,11 @@ export function useAppLayoutState({
       startX: event.clientX,
       startWidth: sidebarWidth,
       currentWidth: sidebarWidth,
-      allowCollapse: false
+      allowCollapse: false,
+      // Settings sidebar resizer never collapses, so this flag is never read
+      // — handlePointerMove short-circuits on !allowCollapse. Set to false
+      // for type clarity.
+      collapsedDuringDrag: false
     };
     onCloseProjectMenu();
     setResizingSidebar(true);
