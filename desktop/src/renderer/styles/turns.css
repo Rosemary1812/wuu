@@ -934,10 +934,11 @@
   opacity: 1;
   padding: 0;
   pointer-events: auto;
+  position: relative;
   transform: none;
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
     transform 120ms ease;
 }
 
@@ -948,6 +949,32 @@
   background: var(--surface-2);
   box-shadow: none;
   color: var(--ink);
+}
+
+/* Like (thumbs up) — green tint on hover and on the active/persistent state. */
+.message-actions .message-action-button--like:hover,
+.message-actions .message-action-button--like:focus-visible {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.message-actions .message-action-button--like.is-active,
+.message-actions .message-action-button--like[aria-pressed="true"] {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* Dislike (thumbs down) — red tint on hover and on the active/persistent state. */
+.message-actions .message-action-button--dislike:hover,
+.message-actions .message-action-button--dislike:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.message-actions .message-action-button--dislike.is-active,
+.message-actions .message-action-button--dislike[aria-pressed="true"] {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .message-actions .message-action-button:disabled {
@@ -962,6 +989,75 @@
 
 .message-actions .message-action-button:active {
   transform: scale(0.94);
+}
+
+/* Transient bounce on the like icon right after a click. */
+.message-actions .message-action-button--like.is-pulsing .icon {
+  animation: message-action-like-bounce 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Transient shake on the dislike icon right after a click. */
+.message-actions .message-action-button--dislike.is-pulsing .icon {
+  animation: message-action-dislike-shake 480ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* Floating "+1" / "−1" burst above the clicked button. */
+.message-action-burst {
+  position: absolute;
+  top: -4px;
+  right: -10px;
+  pointer-events: none;
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
+  animation: message-action-burst-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.message-action-burst--like {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.message-action-burst--dislike {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+@keyframes message-action-like-bounce {
+  0%   { transform: scale(1) rotate(0deg); }
+  35%  { transform: scale(1.35) rotate(-14deg); }
+  60%  { transform: scale(0.92) rotate(6deg); }
+  80%  { transform: scale(1.06) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes message-action-dislike-shake {
+  0%   { transform: translateX(0) rotate(0deg); }
+  20%  { transform: translateX(-2px) rotate(-8deg); }
+  40%  { transform: translateX(2px) rotate(8deg); }
+  60%  { transform: translateX(-2px) rotate(-5deg); }
+  80%  { transform: translateX(1px) rotate(3deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+
+@keyframes message-action-burst-rise {
+  0%   { opacity: 0; transform: translateY(0) scale(0.6); }
+  18%  { opacity: 1; transform: translateY(-4px) scale(1); }
+  100% { opacity: 0; transform: translateY(-20px) scale(0.92); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-actions .message-action-button--like.is-pulsing .icon,
+  .message-actions .message-action-button--dislike.is-pulsing .icon {
+    animation: none;
+  }
+  .message-action-burst {
+    animation: none;
+    display: none;
+  }
 }
 
 .message-actions .message-action-button.copied {
