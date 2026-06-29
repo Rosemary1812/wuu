@@ -2159,7 +2159,7 @@
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
-  padding-bottom: calc(var(--dock-composer-height) + 32px);
+  padding-bottom: calc(var(--dock-composer-height) + 12px);
 }
 
 .conversation-grid-guides {
