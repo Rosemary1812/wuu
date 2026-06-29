@@ -541,9 +541,15 @@
   flex: 0 0 auto;
   color: var(--ink-muted);
   margin-right: -2px;
+  /* Must match the .thread-list-collapse timing (190ms, linear-ish ease)
+   * so the chevron and the content settle as one continuous motion. The
+   * previous 160ms cubic-bezier(0.16, 1, 0.3, 1) was an aggressive ease-out
+   * that finished first and read as a two-stage animation — most visible on
+   * empty projects, where the height transition is 0 → 0 and the chevron is
+   * the only motion the user can see against the margin/opacity tail. */
   transition:
-    color 140ms ease,
-    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    color 190ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 190ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .project-row.expanded .project-row-chevron {
@@ -641,6 +647,14 @@
 .project-empty-note {
   color: var(--ink-muted);
   padding: 2px 12px;
+}
+
+.project-thread-empty-note {
+  color: var(--ink-muted);
+  padding: 4px 12px 4px 0;
+  margin-left: 25px;
+  font-size: var(--font-sm);
+  line-height: 1.4;
 }
 
 .thread-list-collapse {

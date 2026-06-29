@@ -143,21 +143,30 @@ export function ProjectList({
             </button>
             {threadListMounted ? (
               <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
-                <ThreadList
-                  threads={projectThreads}
-                  activeID={activeThreadID}
-                  pendingThreadID={pendingThreadID}
-                  archiveConfirmThreadID={archiveConfirmThreadID}
-                  lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-                  visibleCount={visibleThreadCountForProject(project.id)}
-                  onSelect={(threadID) => onSelectThread(project.id, threadID)}
-                  onSelectChildAgent={(agent) => onSelectChildAgent(project.id, agent)}
-                  onTogglePinned={onToggleThreadPinned}
-                  onArchive={onArchiveThread}
-                  onClearArchiveConfirm={onClearArchiveConfirm}
-                  onShowMore={() => showMoreProjectThreads(project.id)}
-                  onCollapse={() => collapseProjectThreads(project.id)}
-                />
+                {projectThreads.length === 0 ? (
+                  // Empty projects would otherwise render a 0-height .thread-list,
+                  // which makes grid-template-rows animate 0 → 0 (invisible) and
+                  // leaves the user with only a margin/opacity tail. Rendering
+                  // a small note gives the wrapper real content to collapse, so
+                  // the height animation matches what non-empty projects get.
+                  <div className="project-thread-empty-note">还没有会话</div>
+                ) : (
+                  <ThreadList
+                    threads={projectThreads}
+                    activeID={activeThreadID}
+                    pendingThreadID={pendingThreadID}
+                    archiveConfirmThreadID={archiveConfirmThreadID}
+                    lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+                    visibleCount={visibleThreadCountForProject(project.id)}
+                    onSelect={(threadID) => onSelectThread(project.id, threadID)}
+                    onSelectChildAgent={(agent) => onSelectChildAgent(project.id, agent)}
+                    onTogglePinned={onToggleThreadPinned}
+                    onArchive={onArchiveThread}
+                    onClearArchiveConfirm={onClearArchiveConfirm}
+                    onShowMore={() => showMoreProjectThreads(project.id)}
+                    onCollapse={() => collapseProjectThreads(project.id)}
+                  />
+                )}
               </div>
             ) : null}
           </div>
