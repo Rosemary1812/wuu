@@ -110,46 +110,58 @@
 /* Corner-grip resize handle: a small diagonal grip anchored to the top-right
    of the composer frame. Dragging it downward grows the textarea height
    (and therefore the whole dialog), giving the user more vertical room to
-   read and edit long prompts. Patterned after WeChat's input-box resize. */
+   read and edit long prompts. Patterned after WeChat's input-box resize.
+   The grip stays subtly visible at rest so users can discover it; hover
+   and drag brighten it. */
 .composer-resize-handle {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 18px;
-  height: 18px;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
   z-index: 3;
   display: grid;
   place-items: center;
   cursor: ns-resize;
   touch-action: none;
   color: var(--ink-faint);
-  opacity: 0;
-  border-bottom-left-radius: var(--radius-xs);
+  opacity: 0.55;
+  border-radius: var(--radius-xs);
   transition:
     opacity 140ms ease,
     color 140ms ease,
-    background-color 140ms ease;
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+/* Pull the visible SVG in a touch so the hit area extends past the painted
+   region — makes the grip easier to grab without enlarging the visual. */
+.composer-resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
 }
 
 .composer-frame:hover .composer-resize-handle,
-.composer-frame:focus-within .composer-resize-handle,
-.composer-resize-handle.is-dragging {
+.composer-resize-handle:hover,
+.composer-resize-handle:focus-visible {
   opacity: 1;
+  color: var(--ink-muted);
 }
 
 .composer-resize-handle:hover {
-  color: var(--ink-muted);
   background-color: var(--ink-overlay-6);
 }
 
 .composer-resize-handle.is-dragging {
   color: var(--ink);
-  background-color: var(--ink-overlay-8);
+  background-color: var(--ink-overlay-12);
+  transform: scale(1.08);
 }
 
 .composer-resize-handle:focus-visible {
   outline: 2px solid var(--ink-overlay-18);
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 
 .composer-resize-handle.is-readonly {
@@ -160,6 +172,8 @@
 
 .composer-resize-handle svg {
   display: block;
+  width: 14px;
+  height: 14px;
   pointer-events: none;
 }
 
