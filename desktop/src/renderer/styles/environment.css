@@ -1074,7 +1074,7 @@
 .context-composition-header h2 {
   margin: 2px 0 0;
   color: var(--ink);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   line-height: 1.2;
@@ -1125,11 +1125,11 @@
 .context-composition-stat {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 2px;
   border: 1px solid var(--ink-overlay-8);
   border-radius: var(--radius-md);
   background: var(--surface-1);
-  padding: 11px 12px;
+  padding: 7px 10px;
 }
 
 .context-composition-stat span,
@@ -1137,7 +1137,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink-tertiary);
-  font-size: var(--font-xs);
+  font-size: 11px;
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1147,10 +1147,11 @@
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--ink);
-  font-size: 21px;
+  font-size: 15px;
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
-  line-height: 1.1;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 
 .context-composition-bar {
@@ -1216,7 +1217,8 @@
 .context-composition-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 2px 10px;
+  font-size: var(--font-xs);
 }
 
 .context-composition-meta span {
@@ -1227,91 +1229,92 @@
 .context-composition-section {
   display: grid;
   min-height: 0;
-  gap: 8px;
+  gap: 6px;
 }
 
 .context-composition-section h3,
 .context-detail-block h3 {
   margin: 0;
-  color: var(--ink);
-  font-size: var(--font-ui);
+  color: var(--ink-muted);
+  font-size: 11px;
   font-weight: var(--weight-semibold);
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .context-category-list {
   display: grid;
   min-height: 0;
-  gap: 6px;
   overflow-y: auto;
-  padding-right: 2px;
+  border: 1px solid var(--ink-overlay-6);
+  border-radius: var(--radius-md);
+  background: var(--paper);
 }
 
 .context-category-row {
   display: grid;
-  min-height: 50px;
-  grid-template-columns: 12px minmax(0, 1fr) minmax(82px, auto) auto;
+  min-height: 28px;
+  grid-template-columns: 10px minmax(0, 1fr) minmax(70px, auto) auto;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--ink-overlay-6);
-  border-radius: var(--radius-md);
-  background: var(--paper);
-  padding: 8px 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--ink-overlay-6);
+}
+
+.context-category-row:last-child {
+  border-bottom: none;
 }
 
 .context-category-swatch {
-  width: 10px;
-  height: 26px;
-  border-radius: var(--radius-pill);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
-.context-category-main {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.context-category-main strong,
+.context-category-label,
 .context-category-values strong {
-  color: var(--ink);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-}
-
-.context-category-main span,
-.context-category-values span {
   min-width: 0;
   overflow: hidden;
-  color: var(--ink-tertiary);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .context-category-values {
   display: grid;
-  min-width: 82px;
+  min-width: 70px;
   justify-items: end;
-  gap: 3px;
+  gap: 1px;
+}
+
+.context-category-values span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .context-category-badges {
   display: flex;
-  max-width: 220px;
   flex-wrap: wrap;
   justify-content: end;
-  gap: 4px;
+  gap: 3px;
 }
 
 .context-category-badges span {
   border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--ink-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: var(--weight-semibold);
-  line-height: 18px;
-  padding: 0 7px;
+  line-height: 14px;
+  padding: 0 6px;
   white-space: nowrap;
 }
 
@@ -1319,7 +1322,7 @@
   display: grid;
   min-height: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 6px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -1327,11 +1330,11 @@
 .context-detail-block {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 4px;
   border: 1px solid var(--ink-overlay-6);
   border-radius: var(--radius-md);
   background: var(--surface-1);
-  padding: 10px;
+  padding: 8px 10px;
 }
 
 .context-detail-row {
@@ -1373,7 +1376,7 @@
   }
 
   .context-category-row {
-    grid-template-columns: 12px minmax(0, 1fr) minmax(70px, auto);
+    grid-template-columns: 10px minmax(0, 1fr) minmax(60px, auto);
   }
 
   .context-category-badges {

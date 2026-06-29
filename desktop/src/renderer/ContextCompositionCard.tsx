@@ -27,6 +27,16 @@ export function ContextCompositionCard({
   const cacheReadTokens = result?.cache_read_tokens ?? 0;
   const freeTokens = contextWindow > 0 ? Math.max(0, contextWindow - promptTokens) : 0;
   const barTokens = contextWindow > 0 ? contextWindow : promptTokens;
+  const subtitle = [title ?? "当前对话", "最近一次真实请求"].filter(Boolean).join(" · ");
+  const metaParts = [runtimeLabel(result)];
+  if (result.token_estimate_source === "provider_usage") {
+    metaParts.push("按 provider usage 估算");
+  } else if (result.token_estimate_source) {
+    metaParts.push("按字节估算");
+  }
+  if (result.prompt_cache_key) {
+    metaParts.push(`cache key ${result.prompt_cache_key}`);
+  }
 
   return (
     <article className="context-composition-card" aria-label="上下文组成">
@@ -38,7 +48,7 @@ export function ContextCompositionCard({
               /context
             </span>
             <h2>上下文组成</h2>
-            <p>{title ? title : "当前对话"} · 最近一次真实请求 · 未进入上下文</p>
+            <p>{subtitle}</p>
           </div>
           {onDismiss ? (
             <button
@@ -86,9 +96,9 @@ export function ContextCompositionCard({
             </div>
 
             <div className="context-composition-meta">
-              <span>{runtimeLabel(result)}</span>
-              <span>{result.token_estimate_source === "provider_usage" ? "按 provider usage 分摊估算" : "按字节估算"}</span>
-              {result.prompt_cache_key ? <span>cache key {result.prompt_cache_key}</span> : null}
+              {metaParts.map((part) => (
+                <span key={part}>{part}</span>
+              ))}
             </div>
 
             <div className="context-composition-section">
@@ -160,22 +170,25 @@ function ContextStat({ label, value, detail }: { label: string; value: string; d
 }
 
 function ContextCategoryRow({ category, promptTokens }: { category: ContextCompositionCategory; promptTokens: number }): JSX.Element {
+  const badges: JSX.Element[] = [];
+  if (category.request_only) {
+    badges.push(<span key="request-only">request-only</span>);
+  }
+  if (category.cache_scope) {
+    badges.push(<span key={category.cache_scope}>{cacheScopeLabel(category.cache_scope)}</span>);
+  }
+  if (category.deferred) {
+    badges.push(<span key="deferred">按需</span>);
+  }
   return (
     <div className={`context-category-row tone-${category.tone ?? "default"}`}>
       <span className="context-category-swatch" aria-hidden="true" />
-      <div className="context-category-main">
-        <strong>{category.label}</strong>
-        <span>{category.description}</span>
-      </div>
+      <strong className="context-category-label">{category.label}</strong>
       <div className="context-category-values">
         <strong>{formatTokens(category.tokens ?? 0)}</strong>
         <span>{category.contributes === false ? "未计入" : formatPercent(category.tokens ?? 0, promptTokens)}</span>
       </div>
-      <div className="context-category-badges">
-        {category.request_only ? <span>request-only</span> : null}
-        {category.cache_scope ? <span>{cacheScopeLabel(category.cache_scope)}</span> : null}
-        {category.deferred ? <span>按需</span> : null}
-      </div>
+      {badges.length > 0 ? <div className="context-category-badges">{badges}</div> : null}
     </div>
   );
 }
