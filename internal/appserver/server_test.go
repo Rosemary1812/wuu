@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -3670,6 +3671,145 @@ func TestServerThreadForkAtAssistantItem(t *testing.T) {
 	}
 }
 
+func TestServerThreadForkToWorktree(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{Content: "first answer"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	initAppserverGitRepo(t, rt.RootDir)
+	stateDir := filepath.Join(rt.RootDir, ".wuu", "state")
+	rt.StateDir = stateDir
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	rt.Toolkit = kit
+	rt.StreamRunner.Tools = kit
+	manager, err := process.NewManager(rt.RootDir, filepath.Join(stateDir, "runtime"))
+	if err != nil {
+		t.Fatalf("process.NewManager: %v", err)
+	}
+	rt.ProcessManager = manager
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	startReq, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "first prompt"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), startReq); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, waitForMethod(t, out, NotificationTurnCompleted), NotificationTurnCompleted)["params"])
+
+	forkReq, err := json.Marshal(map[string]any{
+		"id":     "3",
+		"method": MethodThreadFork,
+		"params": ThreadForkParams{
+			ThreadID: threadID,
+			TurnID:   completed.Turn.ID,
+			Mode:     "worktree",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal fork request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), forkReq); err != nil {
+		t.Fatalf("thread/fork: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	response := responseByID(t, msgs, "3")
+	if response["error"] != nil {
+		t.Fatalf("thread/fork returned error: %+v", response["error"])
+	}
+	result := remarshal[ThreadForkResult](t, response["result"])
+	fork := result.Thread
+	if result.Worktree == nil || fork.Worktree == nil {
+		t.Fatalf("expected worktree info in fork result: %+v", result)
+	}
+	if fork.CWD == rt.RootDir || fork.CWD != result.Worktree.Path {
+		t.Fatalf("fork should run from worktree cwd, got fork=%+v worktree=%+v", fork, result.Worktree)
+	}
+	if result.Worktree.BaseHEAD == "" || result.Worktree.BaseRepo != rt.RootDir {
+		t.Fatalf("unexpected worktree base info: %+v", result.Worktree)
+	}
+	if _, err := os.Stat(filepath.Join(result.Worktree.Path, ".git")); err != nil {
+		t.Fatalf("worktree .git missing: %v", err)
+	}
+
+	metadata, ok, err := session.Find(rt.SessionDir, fork.ID)
+	if err != nil {
+		t.Fatalf("find fork metadata: %v", err)
+	}
+	if !ok || metadata.CWD != result.Worktree.Path || metadata.WorktreePath != result.Worktree.Path || metadata.WorktreeBaseRepo != rt.RootDir {
+		t.Fatalf("worktree metadata not persisted: ok=%v metadata=%+v", ok, metadata)
+	}
+
+	listReq := []byte(`{"id":"4","method":"thread/list"}`)
+	if err := srv.handleLine(context.Background(), listReq); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+	list := remarshal[ThreadListResult](t, responseByID(t, parseOutput(t, out.String()), "4")["result"])
+	var listedFork *Thread
+	for i := range list.Threads {
+		if list.Threads[i].ID == fork.ID {
+			listedFork = &list.Threads[i]
+			break
+		}
+	}
+	if listedFork == nil || listedFork.Worktree == nil {
+		t.Fatalf("thread/list should include worktree fork under parent repo, got %+v", list.Threads)
+	}
+
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(fork.ID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	if threadRuntime.Toolkit == nil {
+		t.Fatal("expected toolkit on fork runtime")
+	}
+	if _, err := threadRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
+		Name:      "write_file",
+		Arguments: `{"path":"isolated.txt","content":"worktree only\n"}`,
+	}); err != nil {
+		t.Fatalf("write_file in worktree runtime: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(result.Worktree.Path, "isolated.txt")); err != nil {
+		t.Fatalf("expected file in worktree: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(rt.RootDir, "isolated.txt")); !os.IsNotExist(err) {
+		t.Fatalf("parent repo should not contain isolated file, stat err=%v", err)
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"5","method":"thread/list"}`)); err != nil {
+		t.Fatalf("thread/list after worktree write: %v", err)
+	}
+	afterWrite := remarshal[ThreadListResult](t, responseByID(t, parseOutput(t, out.String()), "5")["result"])
+	var dirtyInfo *WorktreeInfo
+	for i := range afterWrite.Threads {
+		if afterWrite.Threads[i].ID == fork.ID {
+			dirtyInfo = afterWrite.Threads[i].Worktree
+			break
+		}
+	}
+	if dirtyInfo == nil || !dirtyInfo.Dirty || !containsTestString(dirtyInfo.ChangedFiles, "isolated.txt") {
+		t.Fatalf("thread/list should report dirty worktree, got %+v", dirtyInfo)
+	}
+}
+
 func TestServerThreadEditMessageRewindsToUserMessage(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
@@ -5529,6 +5669,35 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 			},
 		},
 	}
+}
+
+func initAppserverGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	run("add", ".")
+	run("commit", "-q", "-m", "init")
+}
+
+func containsTestString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func attachTestProcessManager(t *testing.T, rt *runtime.Session) *process.Manager {

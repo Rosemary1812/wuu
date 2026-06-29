@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
 // workspaceKindForCWD classifies a thread by where its working directory lives.
@@ -186,6 +188,13 @@ func (s *Server) handleThreadFork(req Request) error {
 	if sourceID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
+	mode := strings.TrimSpace(params.Mode)
+	if mode == "" {
+		mode = "local"
+	}
+	if mode != "local" && mode != "worktree" {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("unsupported fork mode %q", mode))
+	}
 
 	now := time.Now().UTC()
 	source, err := s.loadForkSourceThread(sourceID, now)
@@ -203,18 +212,56 @@ func (s *Server) handleThreadFork(req Request) error {
 		ForkedFromTurnID: strings.TrimSpace(params.TurnID),
 		ForkedFromItemID: strings.TrimSpace(params.ItemID),
 	}
-	sess, err := session.CreateForkWithMetadata(s.rt.SessionDir, id, source.cwd, fork)
+	forkCWD := source.cwd
+	var createdWorktree *worktree.Worktree
+	var forkWorktree session.WorktreeInfo
+	if mode == "worktree" {
+		manager, mgrErr := s.worktreeManager(source.cwd)
+		if mgrErr != nil {
+			return s.writeResponse(req.ID, nil, mgrErr)
+		}
+		createdWorktree, err = manager.Create(id, "fork", "")
+		if err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("worktree create: %w", err))
+		}
+		forkCWD = createdWorktree.Path
+		forkWorktree = session.WorktreeInfo{
+			Path:     createdWorktree.Path,
+			BaseHEAD: createdWorktree.HEAD,
+			BaseRepo: firstNonEmpty(worktreeBaseRepo(source.thread.Worktree), source.cwd),
+		}
+	}
+	cleanupWorktree := func() {
+		if createdWorktree == nil {
+			return
+		}
+		if manager, mgrErr := s.worktreeManager(source.cwd); mgrErr == nil {
+			_ = manager.Cleanup(createdWorktree)
+		}
+	}
+
+	var sess *session.Session
+	if mode == "worktree" {
+		sess, err = session.CreateWithWorktree(s.rt.SessionDir, id, forkCWD, fork, forkWorktree)
+	} else {
+		sess, err = session.CreateForkWithMetadata(s.rt.SessionDir, id, forkCWD, fork)
+	}
 	if err != nil {
+		cleanupWorktree()
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if err := rewriteChatHistory(s.rt.SessionDir, sess.ID, history); err != nil {
+		_, _ = session.Delete(s.rt.SessionDir, sess.ID)
+		cleanupWorktree()
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if err := session.UpdateIndex(s.rt.SessionDir, sess.ID, persistableMessageCount(history), threadPreview(history)); err != nil {
+		_, _ = session.Delete(s.rt.SessionDir, sess.ID)
+		cleanupWorktree()
 		return s.writeResponse(req.ID, nil, err)
 	}
 
-	th := newThreadState(sess.ID, history, source.modelProvider, source.model, source.cwd, true, now)
+	th := newThreadState(sess.ID, history, source.modelProvider, source.model, forkCWD, true, now)
 	applySessionMetadata(th, *sess)
 	s.mu.Lock()
 	s.threads[th.ID] = th
@@ -223,7 +270,8 @@ func (s *Server) handleThreadFork(req Request) error {
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
-	if err := s.writeResponse(req.ID, ThreadForkResult{Thread: thread}, nil); err != nil {
+	thread = s.threadWithWorktreeStatus(thread)
+	if err := s.writeResponse(req.ID, ThreadForkResult{Thread: thread, Worktree: thread.Worktree}, nil); err != nil {
 		return err
 	}
 	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
@@ -380,7 +428,7 @@ func (s *Server) handleThreadList(req Request) error {
 			delete(entries, thread.ID)
 			continue
 		}
-		if sameThreadListCWD(thread.CWD, targetCWD) {
+		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) {
 			entries[thread.ID] = entry
 		}
 	}
@@ -507,6 +555,9 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.ForkedFromID = metadata.ForkedFromID
 	th.ForkedFromTurnID = metadata.ForkedFromTurnID
 	th.ForkedFromItemID = metadata.ForkedFromItemID
+	th.WorktreePath = metadata.WorktreePath
+	th.WorktreeBaseHEAD = metadata.WorktreeBaseHEAD
+	th.WorktreeBaseRepo = metadata.WorktreeBaseRepo
 	th.PinnedAt = metadata.PinnedAt
 	th.ArchivedAt = metadata.ArchivedAt
 }
@@ -530,6 +581,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 			ForkedFromID:     sess.ForkedFromID,
 			ForkedFromTurnID: sess.ForkedFromTurnID,
 			ForkedFromItemID: sess.ForkedFromItemID,
+			Worktree:         threadWorktreeInfo(sess.WorktreePath, sess.WorktreeBaseHEAD, sess.WorktreeBaseRepo),
 			CreatedAt:        sess.CreatedAt,
 			UpdatedAt:        updatedAt,
 			Turns:            []Turn{},
@@ -544,7 +596,42 @@ func (s *Server) threadWithChildAgents(thread Thread) (Thread, error) {
 		return thread, err
 	}
 	thread.ChildAgents = agents
-	return thread, nil
+	return s.threadWithWorktreeStatus(thread), nil
+}
+
+func (s *Server) threadWithWorktreeStatus(thread Thread) Thread {
+	if thread.Worktree == nil || strings.TrimSpace(thread.Worktree.Path) == "" {
+		return thread
+	}
+	info := *thread.Worktree
+	manager, err := s.worktreeManager(firstNonEmpty(info.BaseRepo, thread.CWD, s.rt.RootDir))
+	if err == nil {
+		if status, statusErr := manager.Status(info.Path); statusErr == nil {
+			info.Dirty = status.Dirty
+			info.ChangedFiles = append([]string(nil), status.ChangedFiles...)
+		}
+	}
+	thread.Worktree = &info
+	return thread
+}
+
+func (s *Server) worktreeManager(parentRepo string) (*worktree.Manager, error) {
+	if s == nil || s.rt == nil {
+		return nil, errors.New("runtime session is required")
+	}
+	parentRepo = firstNonEmpty(parentRepo, s.rt.RootDir)
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return nil, err
+	}
+	return worktree.NewManager(parentRepo, statepath.WorktreeRoot(stateDir))
+}
+
+func worktreeBaseRepo(info *WorktreeInfo) string {
+	if info == nil {
+		return ""
+	}
+	return strings.TrimSpace(info.BaseRepo)
 }
 
 func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {

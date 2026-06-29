@@ -35,6 +35,9 @@ type threadState struct {
 	ForkedFromID     string
 	ForkedFromTurnID string
 	ForkedFromItemID string
+	WorktreePath     string
+	WorktreeBaseHEAD string
+	WorktreeBaseRepo string
 	PinnedAt         *time.Time
 	ArchivedAt       *time.Time
 	Turns            []Turn

@@ -271,6 +271,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	th.mu.Lock()
 	existing := th.execRuntime
 	history := cloneHistory(th.History)
+	rootDir := th.CWD
 	th.mu.Unlock()
 	if existing != nil {
 		return existing, nil
@@ -278,7 +279,7 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	if s.rt == nil {
 		return nil, errors.New("runtime session is required")
 	}
-	threadRuntime, err := s.rt.NewThreadRuntime(th.ID)
+	threadRuntime, err := s.rt.NewThreadRuntimeForRoot(th.ID, firstNonEmpty(rootDir, s.rt.RootDir))
 	if err != nil {
 		return nil, err
 	}

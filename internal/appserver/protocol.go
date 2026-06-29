@@ -639,10 +639,12 @@ type ThreadForkParams struct {
 	ThreadID string `json:"thread_id"`
 	TurnID   string `json:"turn_id,omitempty"`
 	ItemID   string `json:"item_id,omitempty"`
+	Mode     string `json:"mode,omitempty"`
 }
 
 type ThreadForkResult struct {
-	Thread Thread `json:"thread"`
+	Thread   Thread        `json:"thread"`
+	Worktree *WorktreeInfo `json:"worktree,omitempty"`
 }
 
 type ThreadEditMessageParams struct {
@@ -1057,6 +1059,7 @@ type Thread struct {
 	ForkedFromID     string        `json:"forked_from_id,omitempty"`
 	ForkedFromTurnID string        `json:"forked_from_turn_id,omitempty"`
 	ForkedFromItemID string        `json:"forked_from_item_id,omitempty"`
+	Worktree         *WorktreeInfo `json:"worktree,omitempty"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 	Turns            []Turn        `json:"turns"`
@@ -1068,6 +1071,14 @@ type Thread struct {
 	// and renders the full list as clickable chips in the sidebar.
 	ListeningPorts []int               `json:"listening_ports,omitempty"`
 	BrowserState   *ThreadBrowserState `json:"browser_state,omitempty"`
+}
+
+type WorktreeInfo struct {
+	Path         string   `json:"path"`
+	BaseHEAD     string   `json:"base_head,omitempty"`
+	BaseRepo     string   `json:"base_repo,omitempty"`
+	Dirty        bool     `json:"dirty,omitempty"`
+	ChangedFiles []string `json:"changed_files,omitempty"`
 }
 
 type ThreadBrowserState struct {

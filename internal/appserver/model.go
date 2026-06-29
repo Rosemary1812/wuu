@@ -54,11 +54,24 @@ func (th *threadState) snapshotLocked() Thread {
 		ForkedFromID:     th.ForkedFromID,
 		ForkedFromTurnID: th.ForkedFromTurnID,
 		ForkedFromItemID: th.ForkedFromItemID,
+		Worktree:         threadWorktreeInfo(th.WorktreePath, th.WorktreeBaseHEAD, th.WorktreeBaseRepo),
 		CreatedAt:        th.CreatedAt,
 		UpdatedAt:        th.UpdatedAt,
 		Turns:            cloneTurns(th.Turns),
 		ListeningPorts:   cloneListeningPorts(th.ListeningPorts),
 		BrowserState:     cloneThreadBrowserState(th.BrowserState),
+	}
+}
+
+func threadWorktreeInfo(path, baseHEAD, baseRepo string) *WorktreeInfo {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	return &WorktreeInfo{
+		Path:     path,
+		BaseHEAD: strings.TrimSpace(baseHEAD),
+		BaseRepo: strings.TrimSpace(baseRepo),
 	}
 }
 

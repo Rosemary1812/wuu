@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -558,6 +560,13 @@ func scheduledCronSessionID(prefix, taskID string) string {
 // Session.AgentControl; those remain the legacy single-session runtime used by
 // CLI and older call sites.
 func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
+	return s.NewThreadRuntimeForRoot(sessionID, s.RootDir)
+}
+
+// NewThreadRuntimeForRoot creates a per-conversation execution runtime whose
+// tools are rooted at rootDir while durable artifacts stay in the parent
+// workspace state directory.
+func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRuntime, error) {
 	if s == nil {
 		return nil, fmt.Errorf("runtime session is required")
 	}
@@ -567,6 +576,16 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 	}
 	if s.StreamRunner == nil {
 		return nil, fmt.Errorf("stream runner is required")
+	}
+	threadRoot := strings.TrimSpace(rootDir)
+	if threadRoot == "" {
+		threadRoot = s.RootDir
+	}
+	if abs, err := filepath.Abs(threadRoot); err == nil {
+		threadRoot = abs
+	}
+	if ev, err := filepath.EvalSymlinks(threadRoot); err == nil {
+		threadRoot = ev
 	}
 
 	stateDir := strings.TrimSpace(s.StateDir)
@@ -588,6 +607,14 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		agentControl *agentcontrol.AgentControl
 		toolExecutor = s.StreamRunner.Tools
 	)
+	threadProcessManager := s.ProcessManager
+	if !sameRuntimeRoot(threadRoot, s.RootDir) && threadProcessManager != nil {
+		manager, err := process.NewManager(threadRoot, statepath.RuntimeDir(stateDir))
+		if err != nil {
+			return nil, fmt.Errorf("thread process manager: %w", err)
+		}
+		threadProcessManager = manager
+	}
 
 	if s.Toolkit != nil {
 		workerClient := s.WorkerClient
@@ -618,7 +645,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				workerProfileMemoryEntries = recallProfileMemory(context.Background(), s.Toolkit.Memory())
 			}
 			workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(
-				s.RootDir,
+				threadRoot,
 				config.WorkerSystemPrompt(),
 				s.UserSystemPrompt,
 				workerToolProviderName,
@@ -644,7 +671,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 				DefaultCompactThresholdPct:     s.StreamRunner.CompactThresholdPct,
 				DefaultCompactKeepRecentTokens: s.StreamRunner.CompactKeepRecentTokens,
 				DefaultDisableAutoCompact:      s.StreamRunner.DisableAutoCompact,
-				ParentRepo:                     s.RootDir,
+				ParentRepo:                     threadRoot,
 				WorktreeRoot:                   statepath.WorktreeRoot(stateDir),
 				SessionID:                      id,
 				HistoryDir:                     filepath.Join(artifactDir, "workers"),
@@ -663,7 +690,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 					}
 					workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
 					workerStateDir := stateDir
-					if workerRoot != s.RootDir {
+					if !sameRuntimeRoot(workerRoot, threadRoot) {
 						if home, err := statepath.Home(""); err == nil {
 							if dir, err := statepath.WorkspaceDir(home, workerRoot); err == nil {
 								workerStateDir = dir
@@ -671,7 +698,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 						}
 					}
 					workerKit.SetStateDir(workerStateDir)
-					workerKit.SetProcessManager(s.ProcessManager)
+					workerKit.SetProcessManager(threadProcessManager)
 					workerKit.SetSkills(s.Skills)
 					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
@@ -700,12 +727,12 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		}
 
 		var err error
-		kit, err = s.Toolkit.CloneForRoot(s.RootDir)
+		kit, err = s.Toolkit.CloneForRoot(threadRoot)
 		if err != nil {
 			return nil, err
 		}
 		kit.SetStateDir(stateDir)
-		kit.SetProcessManager(s.ProcessManager)
+		kit.SetProcessManager(threadProcessManager)
 		kit.SetSkills(s.Skills)
 		kit.SetWorkflows(s.Workflows)
 		kit.SetAgentControl(agentControl)
@@ -714,10 +741,11 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		kit.SetSessionDir(artifactDir)
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
-		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", s.RootDir)
+		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", threadRoot)
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
+	runner.SystemPrompt, runner.SystemPromptSections = systemPromptForThreadRoot(runner.SystemPrompt, runner.SystemPromptSections, threadRoot)
 	runner.PromptCacheKey = strings.TrimSpace(id)
 	runner.BeforeRequestContext = RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
@@ -726,7 +754,7 @@ func (s *Session) NewThreadRuntime(sessionID string) (*ThreadRuntime, error) {
 		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval, memoryLimit, userLimit); memoryReviewer != nil {
 			afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
 		}
-		if dreamScheduler := newSessionDreamScheduler(s.RootDir, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
+		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
 	}
@@ -777,6 +805,58 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
 		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
 	}
+}
+
+func sameRuntimeRoot(left, right string) bool {
+	left = cleanRuntimeRoot(left)
+	right = cleanRuntimeRoot(right)
+	return left != "" && left == right
+}
+
+func cleanRuntimeRoot(root string) string {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	if ev, err := filepath.EvalSymlinks(root); err == nil {
+		root = ev
+	}
+	return filepath.Clean(root)
+}
+
+func systemPromptForThreadRoot(promptText string, sections []agent.SystemPromptSectionInfo, rootDir string) (string, []agent.SystemPromptSectionInfo) {
+	envSection := environmentSystemPromptSection(rootDir)
+	if strings.TrimSpace(promptText) == "" || strings.TrimSpace(envSection) == "" {
+		return promptText, append([]agent.SystemPromptSectionInfo(nil), sections...)
+	}
+	const marker = "# Environment"
+	start := strings.Index(promptText, marker)
+	if start < 0 {
+		return promptText, append([]agent.SystemPromptSectionInfo(nil), sections...)
+	}
+	end := len(promptText)
+	if next := strings.Index(promptText[start+len(marker):], "\n\n# "); next >= 0 {
+		end = start + len(marker) + next
+	}
+	updated := promptText[:start] + envSection + promptText[end:]
+	return updated, updateEnvironmentSectionInfo(sections, envSection)
+}
+
+func updateEnvironmentSectionInfo(sections []agent.SystemPromptSectionInfo, envSection string) []agent.SystemPromptSectionInfo {
+	out := append([]agent.SystemPromptSectionInfo(nil), sections...)
+	sum := sha256.Sum256([]byte(envSection))
+	hash := hex.EncodeToString(sum[:16])
+	for i := range out {
+		if out[i].Key == "environment" {
+			out[i].Bytes = len([]byte(envSection))
+			out[i].Hash = hash
+			return out
+		}
+	}
+	return out
 }
 
 func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)) func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) {
