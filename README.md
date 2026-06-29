@@ -1,103 +1,61 @@
 # wuu
 
-[中文](README_zh.md)
+Wuu 是一个桌面优先的 AI 编程伙伴。它可以在你的真实项目里阅读代码、理解上下文、修改文件、运行检查，并把过程保存在会话里，方便之后继续。
 
-GUI-first AI coding agent with a Go backend and an Electron desktop shell.
-The Go core (agent runtime, providers, tool loop, sessions, config) is the
-reusable foundation; the Electron desktop is the current shell. Future
-shells (VS Code, JetBrains) can reuse the core by spawning the
-`wuu app-server` process.
+Wuu is a desktop-first AI coding companion. It works inside your real project: reading code, understanding context, editing files, running checks, and keeping the session easy to continue later.
 
-Wuu has no TUI. Use Electron for human interaction and `wuu exec` for agents,
-scripts, CI, and automation.
+名字来自作者 Wu，也带一点小小的惊喜感：希望有一天它好用到让开发者发出 "wuuuuu!"。
 
-Named after its author (Wu) — the goal is to build a coding companion so good that every developer goes *wuuuuu!*
+The name comes from Wu, with a little bit of delight baked in: the goal is to make coding feel good enough to go "wuuuuu!".
 
-## Install
+## 中文
+
+### Wuu 适合做什么
+
+- 理解一个陌生仓库，并解释它是怎么组织的。
+- 修 bug、改功能、补测试，完成后说明改了什么。
+- 根据截图、日志、PDF 或现有代码继续推进工作。
+- 审查本地改动或 PR，优先指出真正会影响结果的问题。
+- 在桌面应用里做交互式开发，也可以用命令行把同样的能力接到脚本或 CI。
+
+### 安装
 
 ```bash
 # Homebrew
 brew install blueberrycongee/tap/wuu
 
-# Shell script
+# 脚本安装
 curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
 
 # npm
 npx wuu@latest
 
-# From source
+# 从源码安装
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
 
-## Quick Start
+### 快速开始
 
 ```bash
-wuu init                         # write .wuu.json
-wuu exec "describe this repo"    # agent-friendly text task
-wuu exec --json "review this PR" # machine-readable JSONL
-wuu exec --file report.pdf "summarize this PDF"
-wuu exec --image screenshot.png "find the UI issue"
-wuu session list --json          # inspect sessions from scripts
-wuu app-server --workdir .       # backend used by the desktop GUI
-cd desktop && npm install && npm run dev  # local desktop GUI
+wuu init
+wuu exec "描述一下这个仓库"
+wuu exec --file report.pdf "总结这个 PDF"
+wuu exec --image screenshot.png "找出这个界面的问题"
 ```
 
-Interactive work runs through the Electron desktop GUI. The `wuu` binary
-provides the app-server backend (used by the desktop shell and any future
-shell) plus the `wuu exec` text entrypoint for non-interactive automation.
+交互式工作适合放在桌面应用里；脚本、CI 或其他自动化流程适合使用 `wuu exec`。
 
-## Versioning
-
-- `VERSION` is the single source of truth for the next SemVer release (for example `0.1.0`).
-- Local builds use `vX.Y.Z-dev` by default:
+如果你正在本仓库里开发桌面端，可以这样启动本地应用：
 
 ```bash
-make install
-wuu version --long
+cd desktop
+npm install
+npm run dev
 ```
 
-- Release flow:
+### 配置模型
 
-```bash
-# 1) update VERSION
-# 2) create release tag from VERSION
-make tag-release
-
-# 3) push tag to trigger GitHub Release workflow
-git push origin v$(cat VERSION)
-```
-
-When a `v*` tag is pushed, GitHub Actions + GoReleaser publishes release artifacts.
-
-## What It Does
-
-- Go core: agent runtime, providers (Anthropic, OpenAI-compatible), tool loop, sessions, config, app-server
-- Electron desktop GUI backed by the Go app-server for conversations, workspace context, and session streaming
-- Reusable core: future shells (VS Code, JetBrains) consume the same `wuu app-server` process
-- Agent-friendly text entrypoint: `wuu exec` for agents, scripts, CI, and automation
-- Session inspection commands: `wuu session list/show/trace --json`
-- Agentic tool-calling loop — reads, writes, edits, searches, and runs shell commands in your repo
-- Supports OpenAI-compatible APIs (OpenAI / OpenRouter / one-api / etc.) and Anthropic Messages API
-- Built-in tools: `run_shell`, `git`, `read_file`, `write_file`, `edit_file`, `apply_patch`, `list_files`, `grep`, `glob`, `ast_search`, `semantic_search`, `web_search`, `web_fetch`
-- Orchestration and session tools: `spawn_agent`, `fork_agent`, `send_message`, `followup_task`, `wait_agent`, `close_agent`, `list_agents`, `load_skill`
-- Managed process tools: `start_process`, `list_processes`, `stop_process`, `read_process_output`
-- Scheduling tools: `schedule_cron`, `cancel_cron`, `list_cron`
-- Tool availability model:
-  - Main GUI/app-server session: full tool set
-  - Sub-agents: no orchestration tools (`spawn_agent`, `fork_agent`, `send_message`, `followup_task`, `wait_agent`, `close_agent`, `list_agents`)
-- Clarifying questions: when the user's intent is unclear, the model surfaces a clarifying question in plain text in its reply — there is no separate `ask_user` tool
-- Follow-up control: `send_message` queues short instructions for workers; `followup_task` starts a new worker turn from saved history when a task is idle
-- File tools are sandboxed to the current workspace
-- Session isolation with resume support
-- Context compaction for long conversations
-
-## Configuration
-
-Config is loaded from (highest priority first):
-
-1. `.wuu.json` (project-local)
-2. `wuu.json`
-3. `~/.config/wuu/config.json` (global)
+Wuu 支持 OpenAI 兼容接口和 Anthropic。项目级配置通常放在 `.wuu.json`，全局配置可以放在 `~/.config/wuu/config.json`。
 
 ```json
 {
@@ -117,6 +75,114 @@ Config is loaded from (highest priority first):
   }
 }
 ```
+
+把对应的 API key 放进环境变量后就可以使用：
+
+```bash
+export OPENROUTER_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+```
+
+### 常用命令
+
+```bash
+wuu exec "修复失败的测试并验证"
+wuu exec --json "review this PR"
+wuu exec resume --last "继续刚才的任务"
+wuu session list --json
+```
+
+### 当前状态
+
+Wuu 仍在快速迭代中。它的重点不是做一个只会聊天的窗口，而是成为一个能真正进入项目、理解上下文、完成修改、留下记录的编程伙伴。
+
+## English
+
+### What Wuu Is For
+
+- Understand an unfamiliar repository and explain how it is organized.
+- Fix bugs, build features, add tests, and report what changed.
+- Continue work from screenshots, logs, PDFs, or existing code.
+- Review local changes or PRs, focusing on issues that can affect the result.
+- Work interactively in the desktop app, or use the same agent from scripts and CI.
+
+### Install
+
+```bash
+# Homebrew
+brew install blueberrycongee/tap/wuu
+
+# Shell script
+curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
+
+# npm
+npx wuu@latest
+
+# From source
+go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+```
+
+### Quick Start
+
+```bash
+wuu init
+wuu exec "describe this repo"
+wuu exec --file report.pdf "summarize this PDF"
+wuu exec --image screenshot.png "find the UI issue"
+```
+
+Use the desktop app for interactive work. Use `wuu exec` when you want scripts, CI, or another agent to call Wuu directly.
+
+If you are developing the desktop app from this repository, start it locally with:
+
+```bash
+cd desktop
+npm install
+npm run dev
+```
+
+### Configure a Model
+
+Wuu supports OpenAI-compatible APIs and Anthropic. Project config usually lives in `.wuu.json`; global config can live in `~/.config/wuu/config.json`.
+
+```json
+{
+  "default_provider": "openrouter",
+  "providers": {
+    "openrouter": {
+      "type": "openai-compatible",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "model": "openai/gpt-4.1-mini"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "model": "claude-sonnet-4-20250514"
+    }
+  }
+}
+```
+
+Set the matching API key in your environment:
+
+```bash
+export OPENROUTER_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+```
+
+### Useful Commands
+
+```bash
+wuu exec "fix the failing test and verify it"
+wuu exec --json "review this PR"
+wuu exec resume --last "continue the previous task"
+wuu session list --json
+```
+
+### Status
+
+Wuu is moving quickly. The goal is not just another chat window, but a coding companion that can enter a project, understand the context, make changes, and leave a useful trail behind.
 
 ## License
 
