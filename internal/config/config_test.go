@@ -889,6 +889,9 @@ func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 	if !strings.Contains(prompt, "Keep progress updates short") {
 		t.Fatalf("default system prompt must teach concise progress updates: %q", prompt)
 	}
+	if !strings.Contains(prompt, "A progress update is not a final answer") || !strings.Contains(prompt, "do not end the turn on that promise") {
+		t.Fatalf("default system prompt must prevent progress-only final answers: %q", prompt)
+	}
 	if !strings.Contains(prompt, "Default to concise") || !strings.Contains(prompt, "user-facing impact first") {
 		t.Fatalf("default system prompt must teach concise final answers: %q", prompt)
 	}

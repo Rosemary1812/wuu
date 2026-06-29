@@ -29,7 +29,7 @@ This section exists to tell the model how to rank workspace rules, tool rules, a
 
 ### Section 4: Doing tasks
 
-This section exists to preserve the default coding-agent loop: inspect, change, and verify. It prevents answers that only describe a fix, edits made before reading the relevant code, and narrow symptom patches that miss the root cause. The Codex source is the task execution and validation guidance in `default.md`. The Wuu alignment point is the root `AGENTS.md` instruction to complete tasks end to end and ask only for irreversible or high-impact choices.
+This section exists to preserve the default coding-agent loop: inspect, change, and verify. It prevents answers that only describe a fix, edits made before reading the relevant code, progress promises treated as final answers, and narrow symptom patches that miss the root cause. The Codex source is the task execution and validation guidance in `default.md`. The Wuu alignment point is the root `AGENTS.md` instruction to complete tasks end to end and ask only for irreversible or high-impact choices.
 
 ### Section 5: Ambition vs. precision
 
