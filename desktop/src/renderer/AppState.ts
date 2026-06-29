@@ -481,41 +481,75 @@ function syncStreamItem(params: Record<string, unknown> | undefined): void {
     (item.type === "agent_message" || item.type === "reasoning") &&
     !hasFinalText;
   if (typeof item.text === "string") {
-    // For in-progress items, don't clobber the accumulated stream
-    // value with a snapshot that has less content than the deltas
-    // already produced. `item.text` here is usually the initial
-    // snapshot the back-end sends on `item/started`, which is empty
-    // for streaming reasoning and commentary. Overwriting with that
-    // empty string is what makes the fold body collapse mid-stream —
-    // the visible text drops to "" and then re-grows from the
-    // post-reset point, which the user describes as "only see
-    // content after [the reset]". We still let `item.text` seed an
-    // empty store (initial snapshot is non-empty in some flows), and
-    // we still overwrite when the item completes (the final text is
-    // authoritative). The guard only blocks the destructive path
-    // where deltas have produced more than the snapshot offers.
-    const textKey = streamTextKey(turnID, item.id, "text");
-    if (
-      completed ||
-      streamTextStore.get(textKey).length < item.text.length
-    ) {
-      streamTextStore.set(textKey, item.text);
+    // Snapshots can arrive behind the delta stream, including completed
+    // snapshots. Never let an older snapshot shrink the text the user is
+    // already reading; release the stream cache only after snapshots catch up.
+    if (streamSnapshotCoversCachedValue(turnID, item.id, "text", item.text)) {
+      streamTextStore.set(streamTextKey(turnID, item.id, "text"), item.text);
     }
   }
   if (typeof item.arguments === "string") {
-    streamTextStore.set(
-      streamTextKey(turnID, item.id, "arguments"),
-      item.arguments,
-    );
+    if (
+      streamSnapshotCoversCachedValue(
+        turnID,
+        item.id,
+        "arguments",
+        item.arguments,
+      )
+    ) {
+      streamTextStore.set(
+        streamTextKey(turnID, item.id, "arguments"),
+        item.arguments,
+      );
+    }
   }
   if (typeof item.result === "string") {
-    streamTextStore.set(streamTextKey(turnID, item.id, "result"), item.result);
+    if (streamSnapshotCoversCachedValue(turnID, item.id, "result", item.result)) {
+      streamTextStore.set(streamTextKey(turnID, item.id, "result"), item.result);
+    }
   }
-  if (completed && !retainTextStream) {
+  if (
+    completed &&
+    !retainTextStream &&
+    itemStreamSnapshotsCoverCachedValues(turnID, item)
+  ) {
     window.requestAnimationFrame(() =>
       streamTextStore.clearItem(turnID, item.id),
     );
   }
+}
+
+function streamSnapshotCoversCachedValue(
+  turnID: string,
+  itemID: string,
+  field: StreamTextField,
+  snapshotValue: string,
+): boolean {
+  const key = streamTextKey(turnID, itemID, field);
+  if (!streamTextStore.has(key)) {
+    return true;
+  }
+  return snapshotValue.length >= streamTextStore.get(key).length;
+}
+
+function itemStreamSnapshotsCoverCachedValues(
+  turnID: string,
+  item: ThreadItem,
+): boolean {
+  for (const field of STREAM_TEXT_FIELDS) {
+    const key = streamTextKey(turnID, item.id, field);
+    if (!streamTextStore.has(key)) {
+      continue;
+    }
+    const value = item[field];
+    if (typeof value !== "string") {
+      return false;
+    }
+    if (!streamSnapshotCoversCachedValue(turnID, item.id, field, value)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function reduceNotification(
@@ -683,7 +717,11 @@ function releaseSettledTurnStreams(turn: Turn): void {
     }
     for (const field of STREAM_TEXT_FIELDS) {
       const value = item[field];
-      if (typeof value === "string" && value.length > 0) {
+      if (
+        typeof value === "string" &&
+        value.length > 0 &&
+        streamSnapshotCoversCachedValue(turn.id, item.id, field, value)
+      ) {
         streamTextStore.clearField(turn.id, item.id, field);
       }
     }

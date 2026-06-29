@@ -374,7 +374,44 @@ describe("AppState stream cache lifecycle", () => {
 
       raf.flush();
       expect(streamTextStore.has(key)).toBe(true);
-      expect(streamTextStore.get(key)).toBe("");
+      expect(streamTextStore.get(key)).toBe("Final answer");
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("keeps completed agent text cached while the completed snapshot is behind the stream", () => {
+    const raf = installManualRAF();
+    const key = streamTextKey("turn-1", "agent-1", "text");
+    streamTextStore.set(key, "Final answer");
+    try {
+      handleStreamingNotification(
+        {
+          kind: "notification",
+          workdir: "/repo",
+          message: {
+            method: "item/completed",
+            params: {
+              thread_id: "thread-1",
+              turn_id: "turn-1",
+              item: {
+                id: "agent-1",
+                type: "agent_message",
+                status: "completed",
+                text: "Final",
+              },
+            },
+          },
+        },
+        {
+          ...initialState,
+          thread: threadWithUserTexts(["hi"]),
+        },
+      );
+
+      raf.flush();
+      expect(streamTextStore.has(key)).toBe(true);
+      expect(streamTextStore.get(key)).toBe("Final answer");
     } finally {
       raf.restore();
     }
@@ -421,6 +458,51 @@ describe("AppState stream cache lifecycle", () => {
 
     expect(streamTextStore.has(textKey)).toBe(false);
     expect(streamTextStore.has(resultKey)).toBe(false);
+  });
+
+  it("keeps buffered streams when a completed turn snapshot is behind the stream", () => {
+    const textKey = streamTextKey("turn-1", "agent-1", "text");
+    const resultKey = streamTextKey("turn-1", "agent-1", "result");
+    streamTextStore.set(textKey, "Final answer");
+    streamTextStore.set(resultKey, "Tool result");
+
+    reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread: threadWithUserTexts(["hi"]),
+        threads: [threadWithUserTexts(["hi"])],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/completed",
+          params: {
+            thread_id: "thread-1",
+            turn: {
+              id: "turn-1",
+              items_view: "full",
+              status: "completed",
+              items: [
+                {
+                  id: "agent-1",
+                  type: "agent_message",
+                  status: "completed",
+                  text: "Final",
+                  result: "Tool",
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    expect(streamTextStore.has(textKey)).toBe(true);
+    expect(streamTextStore.get(textKey)).toBe("Final answer");
+    expect(streamTextStore.has(resultKey)).toBe(true);
+    expect(streamTextStore.get(resultKey)).toBe("Tool result");
   });
 });
 
