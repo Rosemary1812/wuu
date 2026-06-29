@@ -4389,7 +4389,7 @@ pre {
   /* Outer width, horizontal padding, and 12-col grid come from .session-flow
      (applied via className in JSX). View-specific rules stay here. */
   justify-items: center;
-  row-gap: clamp(96px, 13vh, 144px);
+  row-gap: clamp(132px, 18vh, 192px);
 }
 
 .empty-home h2 {
