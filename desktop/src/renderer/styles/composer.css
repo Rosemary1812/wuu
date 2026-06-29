@@ -45,6 +45,9 @@
 }
 
 .composer-stack {
+  --composer-collapsed-min-height: 128px;
+  --composer-expanded-min-height: clamp(240px, 44vh, 420px);
+  --composer-expanded-delta: calc(var(--composer-expanded-min-height) - var(--composer-collapsed-min-height));
   display: flex;
   width: min(
     var(--session-composer-width),
@@ -105,6 +108,7 @@
    empty-home-inner's outer padding), which is the price of matching
    the dock composer exactly. */
 .hero-composer-wrap .composer-stack {
+  --composer-collapsed-min-height: 136px;
   width: var(--session-composer-width);
 }
 
@@ -183,20 +187,25 @@
 
 .composer {
   width: 100%;
-  min-height: 128px;
+  min-height: var(--composer-collapsed-min-height);
   border-radius: 0;
   background: var(--paper);
   overflow: visible;
 }
 
+.composer-stack.is-expanded .composer-frame {
+  margin-bottom: calc(var(--composer-expanded-offset, var(--composer-expanded-delta)) * -1);
+  transform: translateY(calc(var(--composer-expanded-offset, var(--composer-expanded-delta)) * -1));
+}
+
 .composer-stack.is-expanded .composer {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: clamp(240px, 44vh, 420px);
+  min-height: var(--composer-expanded-min-height);
 }
 
 .hero-composer-wrap .composer {
-  min-height: 136px;
+  min-height: var(--composer-collapsed-min-height);
 }
 
 .composer-attachments {

@@ -942,7 +942,11 @@ describe("Composer expand button", () => {
   it("uses a bounded grid layout so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
-    expect(composerCSS).toContain("min-height: clamp(240px, 44vh, 420px)");
+    expect(composerCSS).toContain("--composer-collapsed-min-height: 128px");
+    expect(composerCSS).toContain("--composer-expanded-min-height: clamp(240px, 44vh, 420px)");
+    expect(composerCSS).toMatch(
+      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*136px/,
+    );
     expect(composerCSS).toMatch(
       /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,
     );
@@ -955,6 +959,12 @@ describe("Composer expand button", () => {
       /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/,
     );
     expect(composerCSS).toMatch(
+      /\.composer-stack\.is-expanded\s+\.composer-frame\s*\{[^}]*margin-bottom:\s*calc\(var\(--composer-expanded-offset,\s*var\(--composer-expanded-delta\)\) \* -1\)[^}]*transform:\s*translateY\(calc\(var\(--composer-expanded-offset,\s*var\(--composer-expanded-delta\)\) \* -1\)\)/,
+    );
+    expect(composerCSS).toMatch(
+      /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*min-height:\s*var\(--composer-expanded-min-height\)/,
+    );
+    expect(composerCSS).toMatch(
       /\.composer-stack\.is-expanded\s+\.composer\s+textarea\s*\{[^}]*height:\s*100%/,
     );
     expect(composerCSS).not.toContain("flex: 1 1 0");
@@ -963,6 +973,35 @@ describe("Composer expand button", () => {
     // Width stays pinned to the session composer width in both dock and hero
     // variants — the expand button only grows the composer vertically.
     expect(composerCSS).not.toContain("width: min(1040px");
+  });
+
+  it("anchors the expanded frame to the original bottom edge in the hero composer", () => {
+    renderComposer({ variant: "hero" });
+    const stack = container.querySelector(".composer-stack");
+    const frame = container.querySelector<HTMLDivElement>(".composer-frame");
+    const button = container.querySelector<HTMLButtonElement>(".composer-expand-button");
+    expect(stack).not.toBeNull();
+    expect(frame).not.toBeNull();
+    expect(button).not.toBeNull();
+
+    Object.defineProperty(frame!, "offsetHeight", {
+      configurable: true,
+      get: () => (stack?.classList.contains("is-expanded") ? 420 : 136),
+    });
+
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(stack?.classList.contains("is-expanded")).toBe(true);
+    expect(frame?.style.getPropertyValue("--composer-expanded-offset")).toBe("284px");
+
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(stack?.classList.contains("is-expanded")).toBe(false);
+    expect(frame?.style.getPropertyValue("--composer-expanded-offset")).toBe("");
   });
 
   it("renders the expand button as the last child of the composer frame", () => {

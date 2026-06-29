@@ -30,6 +30,7 @@ import {
   type Ref,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -240,6 +241,8 @@ export function Composer({
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerFrameRef = useRef<HTMLDivElement>(null);
+  const collapsedComposerFrameHeightRef = useRef<number | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
@@ -321,6 +324,32 @@ export function Composer({
     }
   }, [readOnly]);
 
+  useLayoutEffect(() => {
+    const frame = composerFrameRef.current;
+    if (!frame) {
+      return;
+    }
+    if (!isComposerExpanded) {
+      frame.style.removeProperty("--composer-expanded-offset");
+      return;
+    }
+    const collapsedHeight = collapsedComposerFrameHeightRef.current;
+    if (!collapsedHeight) {
+      frame.style.removeProperty("--composer-expanded-offset");
+      return;
+    }
+    const expandedHeight = Math.ceil(frame.offsetHeight);
+    const offset = Math.max(0, expandedHeight - collapsedHeight);
+    frame.style.setProperty("--composer-expanded-offset", `${offset}px`);
+  }, [
+    files.length,
+    goalSummary?.id,
+    guideMessages.length,
+    images.length,
+    isComposerExpanded,
+    queuedMessages.length
+  ]);
+
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
@@ -329,7 +358,14 @@ export function Composer({
     if (readOnly) {
       return;
     }
-    setIsComposerExpanded((expanded) => !expanded);
+    setIsComposerExpanded((expanded) => {
+      if (!expanded) {
+        collapsedComposerFrameHeightRef.current = composerFrameRef.current
+          ? Math.ceil(composerFrameRef.current.offsetHeight)
+          : null;
+      }
+      return !expanded;
+    });
     focusComposerSoon();
   }
 
@@ -499,7 +535,7 @@ export function Composer({
             )}
           </div>
         ) : null}
-        <div className="composer-frame">
+        <div className="composer-frame" ref={composerFrameRef}>
           <ComposerGoalStrip
             summary={goalSummary ?? null}
             disabled={readOnly || running}
