@@ -645,7 +645,13 @@
 
 .conversation-search-dialog {
   display: grid;
-  width: min(760px, calc(100vw - 48px));
+  /* Default 50vw keeps the dialog proportionate to typical desktop windows
+     (640px @ 1280, 720px @ 1440) instead of always pegging at the 760px cap.
+     The 760px ceiling matches the previous max — hit only on displays ≥
+     1520px wide — and the 480px floor prevents the dialog from collapsing
+     below usable width on small windows; the (max-width: 720px) media query
+     below still overrides this for phone-sized viewports. */
+  width: clamp(480px, 50vw, 760px);
   max-height: min(680px, calc(100vh - 96px));
   grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
