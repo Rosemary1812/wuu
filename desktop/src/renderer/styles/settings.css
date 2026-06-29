@@ -544,6 +544,98 @@
   color: var(--ink);
 }
 
+.settings-provider-card {
+  position: relative;
+  display: flex;
+}
+
+.settings-provider-card .settings-provider-button {
+  width: 100%;
+}
+
+.settings-provider-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  /* Always visible so the delete affordance is discoverable; hover/focus sharpens it. */
+  opacity: 0.55;
+  transition:
+    opacity 140ms var(--menu-enter-easing),
+    background 140ms var(--menu-enter-easing),
+    color 140ms var(--menu-enter-easing),
+    border-color 140ms var(--menu-enter-easing);
+}
+
+.settings-provider-card:hover .settings-provider-remove,
+.settings-provider-card:focus-within .settings-provider-remove,
+.settings-provider-remove:hover:not(:disabled),
+.settings-provider-remove:focus-visible {
+  opacity: 1;
+}
+
+.settings-provider-remove:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink-strong);
+  border-color: var(--ink-overlay-18);
+}
+
+.settings-provider-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.settings-provider-add-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 80px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px dashed var(--ink-overlay-18);
+  padding: 14px 16px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color 140ms var(--menu-enter-easing),
+    background 140ms var(--menu-enter-easing),
+    color 140ms var(--menu-enter-easing),
+    transform 140ms var(--menu-enter-easing);
+}
+
+.settings-provider-add-card:hover:not(:disabled) {
+  border-color: var(--ink-strong);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.settings-provider-add-card:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.settings-provider-add-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.settings-provider-add-card-empty {
+  border-style: solid;
+}
+
 /* --- Status pill (MCP, etc.) -------------------------------------------- */
 
 .settings-status-pill {
