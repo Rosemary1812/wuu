@@ -1549,7 +1549,7 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := CreateProviderRuntime(path, "custom-1", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
+	if err := CreateProviderRuntime(path, "custom-1", nil, "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
 		t.Fatalf("CreateProviderRuntime: %v", err)
 	}
 

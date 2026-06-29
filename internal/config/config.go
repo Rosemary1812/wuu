@@ -823,25 +823,28 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, false, nil)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, false)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, false, nil)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
 func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, false)
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, false, nil)
 }
 
-// CreateProviderRuntime creates a new OpenAI-compatible provider, selects it,
-// and persists its editable runtime fields.
-func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, true)
+// CreateProviderRuntime creates a new provider with the requested type
+// (e.g. "openai-compatible", "anthropic"), selects it, and persists its
+// editable runtime fields. A nil or empty providerType defaults to
+// "openai-compatible". The caller is responsible for whitelisting allowed
+// type values before invocation; this function writes the type verbatim.
+func CreateProviderRuntime(configPath, providerName string, providerType *string, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, true, providerType)
 }
 
 // RemoveProvider deletes a configured provider from the config file and,
@@ -1032,7 +1035,7 @@ func setOptionalBool(target map[string]any, key string, value *bool) {
 	target[key] = true
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string, createProvider bool) error {
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string, createProvider bool, providerType *string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -1058,8 +1061,17 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		if baseURL == nil || strings.TrimSpace(*baseURL) == "" {
 			return fmt.Errorf("base_url is required")
 		}
+		// Resolve the requested type. Nil or empty defaults to
+		// "openai-compatible" to preserve the legacy behavior for
+		// callers that have not been updated to send a type yet.
+		providerTypeValue := "openai-compatible"
+		if providerType != nil {
+			if requested := strings.ToLower(strings.TrimSpace(*providerType)); requested != "" {
+				providerTypeValue = requested
+			}
+		}
 		provider = map[string]any{
-			"type":     "openai-compatible",
+			"type":     providerTypeValue,
 			"base_url": strings.TrimSpace(*baseURL),
 		}
 		if apiKey != nil && strings.TrimSpace(*apiKey) != "" {

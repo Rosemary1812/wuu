@@ -252,6 +252,11 @@ type ConfigModelUpdateParams struct {
 	PermissionMode *string `json:"permission_mode,omitempty"`
 	BaseURL        *string `json:"base_url,omitempty"`
 	APIKey         *string `json:"api_key,omitempty"`
+	// Type is the provider protocol type used when CreateProvider is true.
+	// Accepted values: "openai", "openai-compatible", "anthropic", "claude",
+	// "anthropic-official". Codex OAuth types are intentionally excluded here
+	// because they require a separate OAuth-managed connection flow.
+	Type           *string `json:"type,omitempty"`
 	CreateProvider bool    `json:"create_provider,omitempty"`
 }
 

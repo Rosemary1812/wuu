@@ -412,6 +412,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	}
 	var providerCfg config.ProviderConfig
 	var resolvedName string
+	// providerTypeValue is populated below when creatingProvider is true;
+	// it is hoisted out of the if-block so the later CreateProviderRuntime
+	// call can pass it as the new optional provider-type argument.
+	providerTypeValue := ""
 	creatingProvider := params.CreateProvider
 	if creatingProvider {
 		if providerName == "" {
@@ -428,8 +432,26 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		if apiKey == "" {
 			return s.writeResponse(req.ID, nil, errors.New("api_key is required"))
 		}
+		// Resolve the requested provider type. Empty / missing falls back to
+		// "openai-compatible" (preserves the historical default). Unknown
+		// values are rejected so the UI cannot accidentally create a
+		// provider that the factory cannot service.
+		providerTypeValue = "openai-compatible"
+		if params.Type != nil {
+			requested := strings.ToLower(strings.TrimSpace(*params.Type))
+			switch requested {
+			case "", "openai", "openai-compatible":
+				if requested != "" {
+					providerTypeValue = requested
+				}
+			case "anthropic", "claude", "anthropic-official":
+				providerTypeValue = requested
+			default:
+				return s.writeResponse(req.ID, nil, fmt.Errorf("unsupported provider type %q", requested))
+			}
+		}
 		providerCfg = config.ProviderConfig{
-			Type:    "openai-compatible",
+			Type:    providerTypeValue,
 			BaseURL: baseURL,
 			APIKey:  apiKey,
 			Model:   model,
@@ -520,7 +542,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if creatingProvider {
-		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, &providerTypeValue, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
 	} else {
 		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
 	}
