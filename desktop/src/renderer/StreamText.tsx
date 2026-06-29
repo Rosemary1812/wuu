@@ -16,6 +16,8 @@ interface StreamEntry {
   seed: string;
   /** Whether this entry has an actual stream value, not only listeners. */
   hasValue: boolean;
+  /** Latest value waiting to be published to subscribers on the next frame. */
+  pendingValue: string | undefined;
   /** Subscribers for value changes. */
   valueListeners: Set<StreamTextListener>;
 }
@@ -30,6 +32,8 @@ const STREAM_FIELD_KEYS = ["text", "arguments", "result"] as const satisfies rea
  */
 class StreamTextStore {
   private entries = new Map<string, StreamEntry>();
+  private dirtyEntries = new Set<StreamEntry>();
+  private notifyScheduled = false;
 
   key(turnID: string, itemID: string, field: StreamTextField): string {
     return `${turnID}\u0000${itemID}\u0000${field}`;
@@ -69,6 +73,7 @@ class StreamTextStore {
       value,
       seed: value,
       hasValue: true,
+      pendingValue: undefined,
       valueListeners: new Set()
     };
     this.entries.set(key, entry);
@@ -113,6 +118,7 @@ class StreamTextStore {
       if (!entry) {
         continue;
       }
+      this.dirtyEntries.delete(entry);
       entry.valueListeners.clear();
       this.entries.delete(key);
     }
@@ -144,11 +150,53 @@ class StreamTextStore {
       value: "",
       seed: "",
       hasValue,
+      pendingValue: undefined,
       valueListeners: new Set()
     });
   }
 
   private notifyValue(entry: StreamEntry, value: string): void {
+    if (entry.valueListeners.size === 0) {
+      return;
+    }
+    entry.pendingValue = value;
+    this.dirtyEntries.add(entry);
+    this.scheduleNotify();
+  }
+
+  private scheduleNotify(): void {
+    if (this.notifyScheduled) {
+      return;
+    }
+    this.notifyScheduled = true;
+    const flush = (): void => {
+      this.notifyScheduled = false;
+      this.flushNotifications();
+    };
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(flush);
+      return;
+    }
+    globalThis.setTimeout(flush, 16);
+  }
+
+  private flushNotifications(): void {
+    const entries = Array.from(this.dirtyEntries);
+    this.dirtyEntries.clear();
+    for (const entry of entries) {
+      const value = entry.pendingValue ?? entry.value;
+      entry.pendingValue = undefined;
+      if (!entry.hasValue) {
+        continue;
+      }
+      if (entry.valueListeners.size === 0) {
+        continue;
+      }
+      this.notifyListeners(entry, value);
+    }
+  }
+
+  private notifyListeners(entry: StreamEntry, value: string): void {
     for (const listener of entry.valueListeners) {
       listener(value);
     }
