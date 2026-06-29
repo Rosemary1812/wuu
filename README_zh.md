@@ -1,8 +1,6 @@
 <h1 align="center">wuu</h1>
 
-<p align="center">
-  <strong>用桌面应用协作，也能用命令行自动化的 AI 编程工作台。</strong>
-</p>
+<p align="center">开源的 AI Coding Agent，提供桌面应用和可脚本调用的 CLI。</p>
 
 <p align="center">
   <a href="https://github.com/blueberrycongee/wuu/releases"><img alt="Release" src="https://img.shields.io/github/v/release/blueberrycongee/wuu?style=flat-square"></a>
@@ -14,48 +12,15 @@
 <p align="center">
   <a href="README.md">English</a> |
   <a href="README_zh.md">简体中文</a> |
-  <a href="docs/exec.md">Exec 文档</a> |
+  <a href="docs/exec.md">文档</a> |
   <a href="CONTRIBUTING.md">贡献指南</a>
 </p>
 
 ---
 
-Wuu 把 AI 编程助手放在你的仓库旁边。你可以打开桌面应用和它一起推进任务，也可以在终端、CI 或其他 agent 里调用 `wuu exec` 跑同一套工作流。
+Wuu 用来在本地仓库里处理软件开发任务。它可以阅读和修改文件、运行命令、审查改动、接收文件或截图，并恢复之前的会话。
 
-它可以阅读和修改文件、运行命令、接收截图和 PDF、审查改动，并在之后恢复项目会话。给 Wuu 一个可验证的信号时，它会更稳：测试、构建命令、截图、日志，或者任何能说明任务是否完成的命令输出。
-
-## 一次典型的使用方式
-
-先让 Wuu 进入仓库，再描述你想完成的改动。Wuu 会先收集上下文，再编辑文件，并用你指定的检查结果继续迭代。会话变长后，可以从桌面应用继续，也可以用 `wuu exec` 恢复。
-
-```bash
-wuu init
-wuu exec "找出测试失败的原因，修掉根因，然后重新运行测试"
-```
-
-任务需要更多上下文时，可以直接传入文件：
-
-```bash
-wuu exec --file report.pdf "总结这份 PDF，并更新相关文档"
-wuu exec --image screenshot.png "定位这个界面问题，并提出修复方案"
-```
-
-自动化场景可以使用 JSONL 输出：
-
-```bash
-wuu exec --json "review 当前 diff"
-wuu exec resume --last "从上一次失败处继续"
-wuu session list --json
-```
-
-## 现在适合处理的工作
-
-- 探索陌生仓库，并解释代码之间的关系。
-- 完成范围明确的代码修改，然后运行你指定的检查。
-- 结合仓库上下文审查本地改动、分支或提交。
-- 在后续任务里继续使用已有会话历史。
-- 把文件和图片传给 agent，减少手动复制粘贴。
-- 为脚本和 CI 输出 JSONL。
+交互式工作用桌面应用；脚本、CI 或其他工具调用用 `wuu exec`。
 
 ## 安装
 
@@ -73,17 +38,63 @@ curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
 
-也可以直接运行 npm 包：
+也可以不全局安装，直接运行：
 
 ```bash
 npx @blueberrycongee/wuu@latest --version
 ```
 
-发布包可以在 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 下载。
+二进制文件可以在 [releases 页面](https://github.com/blueberrycongee/wuu/releases) 下载。
 
-## 配置模型
+## 快速开始
 
-Wuu 会读取项目级 `.wuu.json`，也会读取全局配置 `~/.config/wuu/config.json`。
+```bash
+wuu init
+wuu exec "描述一下这个仓库"
+wuu exec "修复失败的测试"
+```
+
+任务需要本地文件时，可以作为附件传入：
+
+```bash
+wuu exec --file report.pdf "总结这个 PDF"
+wuu exec --image screenshot.png "找出这个界面的问题"
+```
+
+恢复或查看会话：
+
+```bash
+wuu exec resume --last "继续"
+wuu session list --json
+```
+
+## 桌面应用
+
+桌面应用是 Wuu 的主要交互界面。如果你正在本仓库里开发桌面端，可以这样启动：
+
+```bash
+cd desktop
+npm install
+npm run dev
+```
+
+## CLI 和自动化
+
+`wuu exec` 是非交互入口，适合脚本、CI、review 任务和其他 agent 调用。
+
+```bash
+wuu exec --json "review 当前 diff"
+wuu exec --file plan.md "实现这个计划"
+wuu exec review --uncommitted
+```
+
+JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`docs/exec.md`](docs/exec.md)。
+
+## 模型提供商
+
+Wuu 支持 Anthropic 和 OpenAI 兼容提供商，例如 OpenAI、OpenRouter、one-api、本地网关等。
+
+项目配置通常放在 `.wuu.json`，全局配置可以放在 `~/.config/wuu/config.json`。
 
 ```json
 {
@@ -104,35 +115,23 @@ Wuu 会读取项目级 `.wuu.json`，也会读取全局配置 `~/.config/wuu/con
 }
 ```
 
-然后设置对应的 API key：
+然后设置对应的环境变量：
 
 ```bash
 export OPENROUTER_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 ```
 
-## 桌面应用
-
-桌面应用是 Wuu 的主要交互界面。如果你正在本仓库里开发桌面端，可以这样启动：
-
-```bash
-cd desktop
-npm install
-npm run dev
-```
-
-`wuu` 二进制也提供桌面 shell 使用的 app-server，后续 shell 和本地工具可以复用同一个运行时。
-
 ## 文档
 
-- [`wuu exec`](docs/exec.md)：非交互运行、JSONL 输出、附件、恢复和 review 命令。
-- [`app-server` 协议](docs/app-server-protocol.md)：桌面应用和外部 shell 使用的协议。
-- [`jsonl-events`](docs/jsonl-events.md)：自动化事件流参考。
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发环境和贡献说明。
+- [`wuu exec`](docs/exec.md)
+- [`app-server` 协议](docs/app-server-protocol.md)
+- [`jsonl-events`](docs/jsonl-events.md)
+- [贡献指南](CONTRIBUTING.md)
 
 ## 状态
 
-Wuu 还没有到 1.0。桌面应用、自动化入口、模型 provider 和配置格式都还在迭代。
+Wuu 还没有到 1.0，正在持续开发中。接口、配置和桌面端行为都可能继续调整。
 
 ## 许可证
 
