@@ -340,7 +340,7 @@ export function SettingsView({
     "--sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
 
-  const pageMeta = settingsPageMeta(activePage);
+  const pageMeta = settingsPageMeta(activePage, showDebugControlsSetting);
 
   return (
     <div className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
@@ -1094,39 +1094,41 @@ function SettingsGeneralPage({
         </SettingsSection>
       ) : null}
 
-      <SettingsSection
-        title="工具"
-        description="当前模型可调用的能力和文件编辑方式。"
-        testID="settings-tool-surface"
-      >
-        <SettingsCard>
-          <SettingsRow
-            title="Profile"
-            description={formatSurfaceRuntime(initialized)}
-          >
-            <span className="settings-row-control-value">
-              {initialized?.tool_surface?.profile_name ?? initialized?.model_profile?.profile_name ?? "—"}
-            </span>
-          </SettingsRow>
-          <SettingsRow
-            title="编辑方式"
-            description={initialized?.tool_surface?.bash_first ? "终端命令默认走 bash" : "按模型原生方式编辑"}
-          >
-            <span className="settings-row-control-value">
-              {initialized?.tool_surface?.edit_primitive ?? initialized?.model_profile?.edit_primitive ?? "—"}
-            </span>
-          </SettingsRow>
-          <SettingsRow
-            title="可用工具"
-            description={formatToolSurfaceCounts(initialized)}
-            block
-          >
-            <span className="settings-row-control-value">
-              {formatToolSurfaceCapabilities(initialized)}
-            </span>
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
+      {showDebugControlsSetting ? (
+        <SettingsSection
+          title="工具"
+          description="当前模型可调用的能力和文件编辑方式。"
+          testID="settings-tool-surface"
+        >
+          <SettingsCard>
+            <SettingsRow
+              title="Profile"
+              description={formatSurfaceRuntime(initialized)}
+            >
+              <span className="settings-row-control-value">
+                {initialized?.tool_surface?.profile_name ?? initialized?.model_profile?.profile_name ?? "—"}
+              </span>
+            </SettingsRow>
+            <SettingsRow
+              title="编辑方式"
+              description={initialized?.tool_surface?.bash_first ? "终端命令默认走 bash" : "按模型原生方式编辑"}
+            >
+              <span className="settings-row-control-value">
+                {initialized?.tool_surface?.edit_primitive ?? initialized?.model_profile?.edit_primitive ?? "—"}
+              </span>
+            </SettingsRow>
+            <SettingsRow
+              title="可用工具"
+              description={formatToolSurfaceCounts(initialized)}
+              block
+            >
+              <span className="settings-row-control-value">
+                {formatToolSurfaceCapabilities(initialized)}
+              </span>
+            </SettingsRow>
+          </SettingsCard>
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection
         title="MCP"
@@ -1417,7 +1419,10 @@ type AdvancedDraft = {
   temperature: string;
 };
 
-function settingsPageMeta(page: SettingsPage): { title: string; description: string } {
+function settingsPageMeta(
+  page: SettingsPage,
+  showDebugControlsSetting: boolean
+): { title: string; description: string } {
   switch (page) {
     case "providers":
       return {
@@ -1432,7 +1437,9 @@ function settingsPageMeta(page: SettingsPage): { title: string; description: str
     case "general":
       return {
         title: "常规",
-        description: "查看可用工具、MCP 连接和当前版本。"
+        description: showDebugControlsSetting
+          ? "查看可用工具、MCP 连接和当前版本。"
+          : "查看 MCP 连接和当前版本。"
       };
     case "usage":
       return {
