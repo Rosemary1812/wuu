@@ -337,6 +337,26 @@ app.whenReady().then(() => {
         settings ?? {},
       ),
   );
+  ipcMain.handle(
+    "wuu:config-provider-remove",
+    (
+      _event,
+      provider: string,
+      options?: { fallbackProvider?: string; fallbackModel?: string },
+    ) =>
+      appServerClientPool.request<ConfigModelUpdateResult>(
+        "config/provider/remove",
+        {
+          provider,
+          ...(options?.fallbackProvider
+            ? { fallback_provider: options.fallbackProvider }
+            : {}),
+          ...(options?.fallbackModel
+            ? { fallback_model: options.fallbackModel }
+            : {}),
+        },
+      ),
+  );
   ipcMain.handle("wuu:skill-list", () => appServerClientPool.request("skill/list"));
   ipcMain.handle(
     "wuu:settings-usage",

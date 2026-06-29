@@ -59,6 +59,10 @@ const api: WuuDesktopApi = {
       variant,
       permissionMode,
     ),
+  removeProvider: (
+    provider: string,
+    options?: { fallbackProvider?: string; fallbackModel?: string },
+  ) => ipcRenderer.invoke("wuu:config-provider-remove", provider, options),
   updateAdvancedSettings: (settings) =>
     ipcRenderer.invoke("wuu:config-advanced-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
