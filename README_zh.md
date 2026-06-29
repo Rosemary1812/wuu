@@ -1,11 +1,9 @@
 <h1 align="center">wuu</h1>
 
-<p align="center">开源的 AI Coding Agent，提供桌面应用和可脚本调用的 CLI。</p>
+<p align="center">开源的 AI Coding Agent，提供源码运行的桌面应用和可脚本调用的 CLI。</p>
 
 <p align="center">
-  <a href="https://github.com/blueberrycongee/wuu/releases"><img alt="Release" src="https://img.shields.io/github/v/release/blueberrycongee/wuu?style=flat-square"></a>
   <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
-  <a href="https://www.npmjs.com/package/@blueberrycongee/wuu"><img alt="npm" src="https://img.shields.io/npm/v/@blueberrycongee/wuu?style=flat-square"></a>
   <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
 </p>
 
@@ -20,31 +18,23 @@
 
 Wuu 用来在本地仓库里处理软件开发任务。它可以阅读和修改文件、运行命令、审查改动、接收文件或截图，并恢复之前的会话。
 
-交互式工作用桌面应用；脚本、CI 或其他工具调用用 `wuu exec`。
+桌面应用目前需要从源码启动；脚本、CI 或其他工具调用用 `wuu exec`。
 
 ## 安装
 
+Wuu 还没有发布 npm、Homebrew 或 release 二进制包。CLI 可以从源码安装：
+
 ```bash
-# Homebrew
-brew install blueberrycongee/tap/wuu
-
-# npm
-npm install -g @blueberrycongee/wuu
-
-# 安装脚本
-curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
-
-# 从源码安装
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
 
-也可以不全局安装，直接运行：
+也可以从本地 checkout 直接运行：
 
 ```bash
-npx @blueberrycongee/wuu@latest --version
+git clone https://github.com/blueberrycongee/wuu.git
+cd wuu
+go run ./cmd/wuu --version
 ```
-
-二进制文件可以在 [releases 页面](https://github.com/blueberrycongee/wuu/releases) 下载。
 
 ## 快速开始
 
@@ -70,7 +60,7 @@ wuu session list --json
 
 ## 桌面应用
 
-桌面应用是 Wuu 的主要交互界面。如果你正在本仓库里开发桌面端，可以这样启动：
+桌面端代码在 `desktop/`。从源码启动：
 
 ```bash
 cd desktop
@@ -131,7 +121,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## 状态
 
-Wuu 还没有到 1.0，正在持续开发中。接口、配置和桌面端行为都可能继续调整。
+Wuu 还没有到 1.0，正在持续开发中。包管理器安装和 release 二进制包还没有发布。接口、配置和桌面端行为都可能继续调整。
 
 ## 许可证
 

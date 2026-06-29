@@ -1,11 +1,9 @@
 <h1 align="center">wuu</h1>
 
-<p align="center">Open source AI coding agent with a desktop app and a scriptable CLI.</p>
+<p align="center">Open source AI coding agent with a source-built desktop app and a scriptable CLI.</p>
 
 <p align="center">
-  <a href="https://github.com/blueberrycongee/wuu/releases"><img alt="Release" src="https://img.shields.io/github/v/release/blueberrycongee/wuu?style=flat-square"></a>
   <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
-  <a href="https://www.npmjs.com/package/@blueberrycongee/wuu"><img alt="npm" src="https://img.shields.io/npm/v/@blueberrycongee/wuu?style=flat-square"></a>
   <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
 </p>
 
@@ -20,31 +18,23 @@
 
 Wuu helps with software development tasks inside a local repository. It can read and edit files, run commands, review changes, attach files or screenshots, and resume previous sessions.
 
-Use the desktop app for interactive work. Use `wuu exec` when you want the same agent from scripts, CI, or another tool.
+The desktop app currently runs from a source checkout. Use `wuu exec` when you want the same agent from scripts, CI, or another tool.
 
 ## Installation
 
+Wuu does not have published npm, Homebrew, or release binaries yet. Install the CLI from source:
+
 ```bash
-# Homebrew
-brew install blueberrycongee/tap/wuu
-
-# npm
-npm install -g @blueberrycongee/wuu
-
-# Install script
-curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
-
-# From source
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
 
-You can also run it without a global install:
+Or run it directly from a checkout:
 
 ```bash
-npx @blueberrycongee/wuu@latest --version
+git clone https://github.com/blueberrycongee/wuu.git
+cd wuu
+go run ./cmd/wuu --version
 ```
-
-Release binaries are available on the [releases page](https://github.com/blueberrycongee/wuu/releases).
 
 ## Quickstart
 
@@ -70,7 +60,7 @@ wuu session list --json
 
 ## Desktop App
 
-The desktop app is the primary interactive interface for Wuu. To run it from this repository:
+The desktop app is developed in `desktop/`. Run it from a source checkout:
 
 ```bash
 cd desktop
@@ -131,7 +121,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## Status
 
-Wuu is pre-1.0 and under active development. Interfaces, configuration, and desktop behavior may change.
+Wuu is pre-1.0 and under active development. Package-manager installs and release binaries are not published yet. Interfaces, configuration, and desktop behavior may change.
 
 ## License
 
