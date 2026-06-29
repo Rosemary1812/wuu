@@ -7,6 +7,10 @@ import {
   useMemo,
   useRef,
 } from "react";
+import {
+  createWindowResizeSettleScheduler,
+  isWindowResizing,
+} from "./WindowResizeState";
 
 export const AUTO_FOLLOW_BOTTOM_THRESHOLD_PX = 16;
 export const AUTO_FOLLOW_SCROLLBAR_HIDE_DELAY_MS = 700;
@@ -283,11 +287,17 @@ export function useAutoFollowScrollContainer({
     if (!node || typeof ResizeObserver === "undefined") {
       return undefined;
     }
+    const windowResizeScroll = createWindowResizeSettleScheduler(scrollToBottom);
     const resizeObserver = new ResizeObserver(() => {
+      if (isWindowResizing()) {
+        windowResizeScroll.schedule();
+        return;
+      }
       scrollToBottom();
     });
     observeAutoFollowResizeTargets(node, resizeObserver);
     return () => {
+      windowResizeScroll.cancel();
       resizeObserver.disconnect();
     };
   }, [observeKey, scrollToBottom]);

@@ -13,6 +13,10 @@ import { queryTextForUserItem } from "./AppState";
 import type { QueryHistoryEntry } from "./QueryHistoryPopover";
 import { RichContent } from "./RichContent";
 import { firstUserMessageText, turnReplySnippet } from "./TurnViewHelpers";
+import {
+  createWindowResizeSettleScheduler,
+  isWindowResizing,
+} from "./WindowResizeState";
 
 // Rail geometry. The macOS Dock magnification model drives the numbers:
 // a default bar is short, the hovered bar grows by ~3x, and the two
@@ -166,21 +170,33 @@ export function ConversationTurnRail({
     }
 
     let frameID: number | undefined;
+    let resizeSettleUpdate: ReturnType<
+      typeof createWindowResizeSettleScheduler
+    > | undefined;
     const updateViewportTurn = () => {
       frameID = undefined;
+      if (isWindowResizing()) {
+        resizeSettleUpdate?.schedule();
+        return;
+      }
       const nextTurnID = visibleTurnIDForScrollNode(scrollNode, turns);
       setViewportTurnID((current) =>
         current === nextTurnID ? current : nextTurnID,
       );
     };
     const scheduleUpdate = () => {
+      if (isWindowResizing()) {
+        resizeSettleUpdate?.schedule();
+        return;
+      }
       if (frameID !== undefined) {
         return;
       }
       frameID = window.requestAnimationFrame(updateViewportTurn);
     };
 
-    updateViewportTurn();
+    resizeSettleUpdate = createWindowResizeSettleScheduler(scheduleUpdate);
+    scheduleUpdate();
     scrollNode.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
 
@@ -188,6 +204,7 @@ export function ConversationTurnRail({
       if (frameID !== undefined) {
         window.cancelAnimationFrame(frameID);
       }
+      resizeSettleUpdate?.cancel();
       scrollNode.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
     };

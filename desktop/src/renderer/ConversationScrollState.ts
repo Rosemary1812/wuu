@@ -20,6 +20,10 @@ import {
   observeAutoFollowResizeTargets,
   setAutoFollowOverflowAnchor,
 } from "./AutoFollowScroll";
+import {
+  createWindowResizeSettleScheduler,
+  isWindowResizing,
+} from "./WindowResizeState";
 
 // Tight threshold so the conversation only re-engages auto-follow when the
 // user is effectively parked at the bottom. The previous 48px band let one
@@ -120,6 +124,9 @@ export function useConversationScrollState({
     new Map<string, ConversationScrollSnapshot>()
   );
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
+  const resizeSettleStreamScrollRef = useRef<ReturnType<
+    typeof createWindowResizeSettleScheduler
+  > | null>(null);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
 
   function conversationViewport(): HTMLElement | undefined {
@@ -272,6 +279,14 @@ export function useConversationScrollState({
     if (!conversationAutoFollowRef.current) {
       return;
     }
+    if (isWindowResizing()) {
+      if (!resizeSettleStreamScrollRef.current) {
+        resizeSettleStreamScrollRef.current =
+          createWindowResizeSettleScheduler(scrollConversationToBottom);
+      }
+      resizeSettleStreamScrollRef.current.schedule();
+      return;
+    }
     if (streamScrollFrameRef.current !== undefined) {
       return;
     }
@@ -279,6 +294,11 @@ export function useConversationScrollState({
       streamScrollFrameRef.current = undefined;
       scrollConversationToBottom();
     });
+  }, [scrollConversationToBottom]);
+
+  useEffect(() => {
+    resizeSettleStreamScrollRef.current?.cancel();
+    resizeSettleStreamScrollRef.current = null;
   }, [scrollConversationToBottom]);
 
   const enableConversationAutoFollow = useCallback((): void => {
@@ -406,6 +426,11 @@ export function useConversationScrollState({
     } else if (conversationAutoFollowRef.current && !userScrollAwayIntent) {
       suppressAutoFollowRearmRef.current = false;
       nextAutoFollow = true;
+      if (isWindowResizing()) {
+        scheduleStreamScroll();
+        rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
+        return;
+      }
       applyProgrammaticScroll(node, node.scrollHeight, true, {
         revealScrollbar: true
       });
@@ -439,8 +464,18 @@ export function useConversationScrollState({
     }
     // Turn snapshots can add non-token content (for example a gray process
     // row). Re-anchor before paint so the bottom never flashes at old scrollTop.
+    if (isWindowResizing()) {
+      scheduleStreamScroll();
+      return;
+    }
     scrollConversationToBottom();
-  }, [activeThreadID, primaryTurns, secondaryTurns, scrollConversationToBottom]);
+  }, [
+    activeThreadID,
+    primaryTurns,
+    scheduleStreamScroll,
+    scrollConversationToBottom,
+    secondaryTurns,
+  ]);
 
   useLayoutEffect(() => {
     const node = conversationViewport();
@@ -521,11 +556,19 @@ export function useConversationScrollState({
     if (!node || typeof ResizeObserver === "undefined") {
       return undefined;
     }
+    const windowResizeScroll = createWindowResizeSettleScheduler(
+      scrollConversationToBottom,
+    );
     const resizeObserver = new ResizeObserver(() => {
+      if (isWindowResizing()) {
+        windowResizeScroll.schedule();
+        return;
+      }
       scrollConversationToBottom();
     });
     observeAutoFollowResizeTargets(node, resizeObserver);
     return () => {
+      windowResizeScroll.cancel();
       resizeObserver.disconnect();
     };
   }, [
@@ -544,6 +587,9 @@ export function useConversationScrollState({
   useLayoutEffect(() => {
     const node = dockComposerNode;
     const pane = conversationPaneRef.current;
+    let windowResizeHeight: ReturnType<
+      typeof createWindowResizeSettleScheduler
+    > | undefined;
     const applyHeight = (nextHeight: number): void => {
       const nextValue = `${nextHeight}px`;
       if (
@@ -572,14 +618,22 @@ export function useConversationScrollState({
     }
 
     const updateHeight = (): void => {
+      if (isWindowResizing()) {
+        windowResizeHeight?.schedule();
+        return;
+      }
       const nextHeight = Math.ceil(node.getBoundingClientRect().height);
       applyHeight(nextHeight);
     };
 
+    windowResizeHeight = createWindowResizeSettleScheduler(updateHeight);
     updateHeight();
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(node);
-    return () => resizeObserver.disconnect();
+    return () => {
+      windowResizeHeight?.cancel();
+      resizeObserver.disconnect();
+    };
   }, [
     dockComposerNode,
     emptyConversation,
@@ -595,6 +649,8 @@ export function useConversationScrollState({
         window.cancelAnimationFrame(streamScrollFrameRef.current);
         streamScrollFrameRef.current = undefined;
       }
+      resizeSettleStreamScrollRef.current?.cancel();
+      resizeSettleStreamScrollRef.current = null;
       if (conversationScrollbarHideTimerRef.current !== undefined) {
         window.clearTimeout(conversationScrollbarHideTimerRef.current);
       }

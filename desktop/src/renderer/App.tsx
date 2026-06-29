@@ -268,6 +268,7 @@ import {
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
+import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
@@ -922,7 +923,7 @@ export function App(): JSX.Element {
       }
       resizing = nextResizing;
       windowResizingRef.current = nextResizing;
-      root.classList.toggle("window-resizing", nextResizing);
+      root.classList.toggle(WINDOW_RESIZING_CLASS, nextResizing);
       if (
         !nextResizing &&
         pendingEnvironmentPanelHasRoomRef.current !== undefined
@@ -983,7 +984,7 @@ export function App(): JSX.Element {
       const nextHasRoom = query.matches;
       if (
         windowResizingRef.current ||
-        document.documentElement.classList.contains("window-resizing")
+        document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)
       ) {
         pendingEnvironmentPanelHasRoomRef.current = nextHasRoom;
         return;
