@@ -26,7 +26,7 @@ export function ContextCompositionCard({
   const cacheReadTokens = result?.cache_read_tokens ?? 0;
   const retainedTokens = result?.retained_tokens ?? 0;
   const historyFreeTokens = contextWindow > 0 ? Math.max(0, contextWindow - retainedTokens) : 0;
-  const barTokens = promptTokens;
+  const barTokens = compositionBarTokens(promptTokens, retainedTokens, contextWindow);
   const headlineTokens = contextWindow > 0
     ? `${formatTokens(retainedTokens)} / ${formatTokens(contextWindow)}`
     : formatTokens(retainedTokens);
@@ -84,7 +84,7 @@ export function ContextCompositionCard({
               ) : null}
             </div>
 
-            <div className="context-composition-bar" aria-label="最近请求组成条">
+            <div className="context-composition-bar" aria-label="上下文占用组成条">
               {contributing.map((category) => (
                 <span
                   className={`context-composition-segment tone-${category.tone ?? "default"}`}
@@ -148,7 +148,17 @@ function segmentWidth(tokens: number, total: number): number {
   if (tokens <= 0 || total <= 0) {
     return 0;
   }
-  return Math.max(1, Math.min(100, (tokens / total) * 100));
+  return Math.min(100, (tokens / total) * 100);
+}
+
+function compositionBarTokens(promptTokens: number, retainedTokens: number, contextWindow: number): number {
+  if (promptTokens <= 0) {
+    return 0;
+  }
+  if (retainedTokens <= 0 || contextWindow <= 0) {
+    return promptTokens;
+  }
+  return (promptTokens * contextWindow) / retainedTokens;
 }
 
 function formatPercent(value: number, total: number): string {

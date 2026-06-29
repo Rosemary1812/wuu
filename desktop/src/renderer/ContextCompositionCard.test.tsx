@@ -62,4 +62,41 @@ describe("ContextCompositionCard", () => {
     expect(text).toContain("最近请求组成");
     expect(text).not.toContain("压缩线");
   });
+
+  it("scales the composition bar to retained context occupancy", () => {
+    renderCard({
+      id: "entry-2",
+      threadID: "thread-1",
+      loading: false,
+      result: {
+        thread_id: "thread-1",
+        available: true,
+        prompt_tokens: 400_000,
+        context_window_tokens: 500_000,
+        retained_tokens: 100_000,
+        categories: [
+          {
+            id: "system",
+            label: "系统提示",
+            contributes: true,
+            tokens: 100_000,
+            tone: "system",
+          },
+          {
+            id: "stable_history",
+            label: "稳定历史",
+            contributes: true,
+            tokens: 300_000,
+            tone: "stable",
+          },
+        ],
+      },
+    });
+
+    const segments = Array.from(container.querySelectorAll<HTMLElement>(".context-composition-segment"));
+
+    expect(segments).toHaveLength(2);
+    expect(Number.parseFloat(segments[0]?.style.width ?? "")).toBeCloseTo(5);
+    expect(Number.parseFloat(segments[1]?.style.width ?? "")).toBeCloseTo(15);
+  });
 });
