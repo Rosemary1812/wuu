@@ -45,6 +45,9 @@ func TestNormalizeTurnStartImagesCompressesLargeImage(t *testing.T) {
 	if cfg.Width != 2048 || cfg.Height != 2048 {
 		t.Fatalf("output dims = %dx%d, want 2048x2048", cfg.Width, cfg.Height)
 	}
+	if out[0].Width != uint32(cfg.Width) || out[0].Height != uint32(cfg.Height) {
+		t.Fatalf("metadata dims = %dx%d, want %dx%d", out[0].Width, out[0].Height, cfg.Width, cfg.Height)
+	}
 }
 
 // TestNormalizeTurnStartImagesOriginalBypassesResize verifies the Original
@@ -68,6 +71,9 @@ func TestNormalizeTurnStartImagesOriginalBypassesResize(t *testing.T) {
 	}
 	if !bytes.Equal(decoded, large) {
 		t.Fatalf("Original=true must return original bytes unchanged (got %d bytes, want %d)", len(decoded), len(large))
+	}
+	if out[0].Width != 3000 || out[0].Height != 3000 {
+		t.Fatalf("metadata dims = %dx%d, want 3000x3000", out[0].Width, out[0].Height)
 	}
 }
 

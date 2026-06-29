@@ -131,6 +131,8 @@ type ToolCall struct {
 type InputImage struct {
 	MediaType string
 	Data      string
+	Width     uint32
+	Height    uint32
 }
 
 // InputFile carries one user-provided file attachment in base64 form.

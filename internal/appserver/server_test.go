@@ -5144,6 +5144,8 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 		Images: []providers.InputImage{{
 			MediaType: "image/png",
 			Data:      "image-data",
+			Width:     640,
+			Height:    480,
 		}},
 		Files: []providers.InputFile{{
 			MediaType: "application/pdf",
@@ -5183,7 +5185,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 	if len(got.ReasoningBlocks) != 1 || got.ReasoningBlocks[0].Signature != "sig-1" || got.ReasoningBlocks[0].Data != "opaque" {
 		t.Fatalf("reasoning blocks did not round-trip: %+v", got.ReasoningBlocks)
 	}
-	if len(got.Images) != 1 || got.Images[0].MediaType != "image/png" || got.Images[0].Data != "image-data" {
+	if len(got.Images) != 1 || got.Images[0].MediaType != "image/png" || got.Images[0].Data != "image-data" || got.Images[0].Width != 640 || got.Images[0].Height != 480 {
 		t.Fatalf("images did not round-trip: %+v", got.Images)
 	}
 	if len(got.Files) != 1 || got.Files[0].MediaType != "application/pdf" || got.Files[0].Data != "file-data" || got.Files[0].Filename != "brief.pdf" {

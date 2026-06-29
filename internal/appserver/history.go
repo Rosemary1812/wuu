@@ -26,6 +26,8 @@ type persistedToolCall struct {
 type persistedImage struct {
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
+	Width     uint32 `json:"width,omitempty"`
+	Height    uint32 `json:"height,omitempty"`
 }
 
 type persistedFile struct {
@@ -130,6 +132,8 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 			msg.Images = append(msg.Images, providers.InputImage{
 				MediaType: image.MediaType,
 				Data:      image.Data,
+				Width:     image.Width,
+				Height:    image.Height,
 			})
 		}
 		for _, file := range rec.Files {
@@ -255,6 +259,8 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		out.Images = append(out.Images, persistedImage{
 			MediaType: image.MediaType,
 			Data:      data,
+			Width:     image.Width,
+			Height:    image.Height,
 		})
 	}
 	for _, file := range msg.Files {

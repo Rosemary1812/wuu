@@ -393,6 +393,8 @@ func normalizeTurnStartImages(images []TurnStartImage) ([]providers.InputImage, 
 		out = append(out, providers.InputImage{
 			MediaType: result.MediaType,
 			Data:      base64.StdEncoding.EncodeToString(result.Bytes),
+			Width:     result.Width,
+			Height:    result.Height,
 		})
 	}
 	return out, nil

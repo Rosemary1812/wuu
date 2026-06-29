@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"strings"
 	"sync"
 
+	"github.com/blueberrycongee/wuu/internal/contextbudget"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -12,8 +12,8 @@ import (
 // shipping a tokenizer per model, it treats the most recent successful
 // API response's `usage.input_tokens + output_tokens` as ground truth
 // for everything sent up to and including that round, then adds a
-// cheap byte-based estimate for messages added afterwards (the user's
-// next prompt + tool results that haven't been sent yet).
+// cheap local estimate for messages added afterwards (the user's next
+// prompt + tool results that haven't been sent yet).
 //
 // Errors are bounded: the estimate only ever covers messages from the LAST
 // round onward, so the worst-case undercount is one turn's delta. The next
@@ -161,54 +161,5 @@ func (t *UsageTracker) Clone() *UsageTracker {
 // pessimistic so it tends to over-count rather than miss a compact
 // trigger.
 func estimateMessages(msgs []providers.ChatMessage) int {
-	total := 0
-	for _, m := range msgs {
-		// 4 bytes per token is the standard rough rule for English.
-		// CJK packs ~2 bytes per token, but byte-based counting
-		// already accounts for that since CJK runes are 3 bytes in
-		// UTF-8 and pack to 1.5-2 tokens.
-		total += len(m.Content) / 4
-		total += len(m.ReasoningContent) / 4
-		// Per-message overhead (role marker, separators, JSON wrapping
-		// in providers' wire format).
-		total += 4
-		for _, tc := range m.ToolCalls {
-			total += len(tc.Name) / 4
-			// Tool call arguments are JSON — denser, ~2 bytes/token.
-			total += len(tc.Arguments) / 2
-			// Tool call envelope cost.
-			total += 8
-		}
-		for _, image := range m.Images {
-			total += estimateImageTokens(image)
-		}
-		for _, file := range m.Files {
-			total += estimateFileTokens(file)
-		}
-	}
-	return total
-}
-
-func estimateImageTokens(image providers.InputImage) int {
-	dataLen := len(strings.TrimSpace(image.Data))
-	if dataLen == 0 {
-		return 0
-	}
-	payloadEstimate := dataLen / 4
-	if payloadEstimate > 2000 {
-		return payloadEstimate
-	}
-	return 2000
-}
-
-func estimateFileTokens(file providers.InputFile) int {
-	dataLen := len(strings.TrimSpace(file.Data))
-	if dataLen == 0 {
-		return 0
-	}
-	payloadEstimate := dataLen / 4
-	if payloadEstimate > 2000 {
-		return payloadEstimate
-	}
-	return 2000
+	return contextbudget.EstimateMessagesTokens(msgs)
 }

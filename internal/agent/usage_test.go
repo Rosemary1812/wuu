@@ -113,6 +113,23 @@ func TestUsageTracker_ToolCallEnvelopeCounted(t *testing.T) {
 	}
 }
 
+func TestUsageTracker_ImagePendingDeltaUsesVisualBudget(t *testing.T) {
+	tr := NewUsageTracker()
+	tr.RecordPendingMessages([]providers.ChatMessage{{
+		Role: "user",
+		Images: []providers.InputImage{{
+			MediaType: "image/png",
+			Data:      strings.Repeat("a", 1_000_000),
+			Width:     2048,
+			Height:    2048,
+		}},
+	}})
+
+	if got := tr.PendingDelta(); got > 5000 {
+		t.Fatalf("image delta should use visual budget, got %d", got)
+	}
+}
+
 func TestUsageTracker_CacheReadCountsTowardContext(t *testing.T) {
 	// Critical regression: cached tokens still occupy context. A
 	// session with 100k of cache_read + 1k of fresh input must

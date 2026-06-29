@@ -309,6 +309,18 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			if r.OnCompactAttempt != nil {
 				r.OnCompactAttempt(info)
 			}
+			if effectiveOnEvent == nil {
+				return
+			}
+			notice, ok := formatCompactAttemptNotice(info)
+			if !ok {
+				return
+			}
+			effectiveOnEvent(providers.StreamEvent{
+				Type:          providers.EventCompact,
+				Content:       notice,
+				CompactReason: string(info.Reason),
+			})
 		},
 		UsageTracker:    runUsage,
 		Effort:          r.Effort,
@@ -730,6 +742,13 @@ func formatCompactNotice(info CompactInfo) string {
 	}
 	return fmt.Sprintf("✦ %s history: %d → %d messages",
 		verb, info.MessagesBefore, info.MessagesAfter)
+}
+
+func formatCompactAttemptNotice(info CompactAttemptInfo) (string, bool) {
+	if info.Reason != CompactReasonProactive || info.Status != CompactAttemptFailed {
+		return "", false
+	}
+	return "Context compaction failed; continuing without compacting history.", true
 }
 
 // formatTokenCount renders a token count in a compact form: 1234 →

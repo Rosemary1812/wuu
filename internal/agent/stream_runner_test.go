@@ -1190,7 +1190,7 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	}
 }
 
-func TestStreamRunner_ProactiveCompactFailureStaysDiagnostic(t *testing.T) {
+func TestStreamRunner_ProactiveCompactFailureEmitsVisibleEvent(t *testing.T) {
 	client := &mockStreamClient{
 		events: []providers.StreamEvent{
 			{Type: providers.EventContentDelta, Content: "ok"},
@@ -1227,10 +1227,36 @@ func TestStreamRunner_ProactiveCompactFailureStaysDiagnostic(t *testing.T) {
 	if len(attempts) != 1 || attempts[0].Reason != CompactReasonProactive || attempts[0].Status != CompactAttemptFailed {
 		t.Fatalf("expected failed proactive compact diagnostic, got %+v", attempts)
 	}
+	var compactEvents []providers.StreamEvent
 	for _, event := range events {
 		if event.Type == providers.EventCompact {
-			t.Fatalf("failed proactive compact should not emit a user-visible compact event: %+v", event)
+			compactEvents = append(compactEvents, event)
 		}
+	}
+	if len(compactEvents) != 1 {
+		t.Fatalf("expected one visible compact failure event, got %+v", compactEvents)
+	}
+	if !strings.Contains(compactEvents[0].Content, "compaction failed") {
+		t.Fatalf("expected failure notice content, got %+v", compactEvents[0])
+	}
+	if compactEvents[0].CompactReason != string(CompactReasonProactive) {
+		t.Fatalf("expected proactive compact reason, got %+v", compactEvents[0])
+	}
+}
+
+func TestFormatCompactAttemptNoticeOnlyShowsProactiveFailures(t *testing.T) {
+	cases := []CompactAttemptInfo{
+		{Reason: CompactReasonProactive, Status: CompactAttemptUnchanged},
+		{Reason: CompactReasonOverflow, Status: CompactAttemptFailed},
+		{Reason: CompactReasonProactive, Status: CompactAttemptSucceeded},
+	}
+	for _, tc := range cases {
+		if notice, ok := formatCompactAttemptNotice(tc); ok || notice != "" {
+			t.Fatalf("unexpected visible notice for %+v: %q", tc, notice)
+		}
+	}
+	if notice, ok := formatCompactAttemptNotice(CompactAttemptInfo{Reason: CompactReasonProactive, Status: CompactAttemptFailed}); !ok || notice == "" {
+		t.Fatalf("expected proactive failure notice, got ok=%v notice=%q", ok, notice)
 	}
 }
 

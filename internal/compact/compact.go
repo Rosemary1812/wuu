@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
+	"github.com/blueberrycongee/wuu/internal/contextbudget"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
@@ -79,105 +79,33 @@ func withCompactTimeout(ctx context.Context) (context.Context, context.CancelFun
 // matching the behavior of utf8.RuneCountInString, so the count is
 // identical to the previous two-pass implementation.
 func EstimateTokens(text string) int {
-	if text == "" {
-		return 0
-	}
-
-	var cjkCount, totalChars int
-	for _, r := range text {
-		totalChars++
-		if isCJK(r) {
-			cjkCount++
-		}
-	}
-
-	nonCJK := totalChars - cjkCount
-	return (nonCJK / 4) + (cjkCount / 2) + 1
+	return contextbudget.EstimateTokens(text)
 }
 
 // EstimateJSONTokens estimates tokens for JSON content. JSON is denser than
 // prose because single-character structural tokens ({, }, :, ,, ") each
 // consume one token.
 func EstimateJSONTokens(text string) int {
-	if text == "" {
-		return 0
-	}
-	return utf8.RuneCountInString(text)/2 + 1
+	return contextbudget.EstimateJSONTokens(text)
 }
-
-// imageTokenEstimate is the minimum token budget for an image content
-// block. We also account for large inline base64 payloads so resumed
-// sessions with old screenshots compact before the request body itself
-// becomes the dominant context risk.
-const imageTokenEstimate = 2000
-
-// toolDefinitionOverhead is the approximate token cost the API adds for tool
-// definitions in the request (schema preamble, JSON wrapping).
-const toolDefinitionOverhead = 500
 
 // EstimateMessagesTokens estimates total tokens for a message list.
 // Counts content, reasoning, tool calls (name + arguments + envelope),
 // images, and per-message overhead. Slightly pessimistic so proactive
 // compact fires before the hard overflow.
 func EstimateMessagesTokens(messages []providers.ChatMessage) int {
-	total := 0
-	hasTools := false
-	for _, msg := range messages {
-		// Tool call arguments are JSON — use denser ratio.
-		total += EstimateTokens(msg.Content)
-		total += EstimateTokens(msg.ReasoningContent)
-		total += 4 // per-message overhead (role, separators)
-		for _, tc := range msg.ToolCalls {
-			hasTools = true
-			total += EstimateTokens(tc.Name)
-			total += EstimateJSONTokens(tc.Arguments)
-			total += 8 // tool call envelope (id, type, JSON wrapping)
-		}
-		for _, image := range msg.Images {
-			total += estimateImageTokens(image)
-		}
-		for _, file := range msg.Files {
-			total += estimateFileTokens(file)
-		}
-	}
-	if hasTools {
-		total += toolDefinitionOverhead
-	}
-	return total
+	return contextbudget.EstimateMessagesTokens(messages)
 }
 
-func estimateImageTokens(image providers.InputImage) int {
-	dataLen := len(strings.TrimSpace(image.Data))
-	if dataLen == 0 {
-		return 0
-	}
-	payloadEstimate := dataLen / 4
-	if payloadEstimate > imageTokenEstimate {
-		return payloadEstimate
-	}
-	return imageTokenEstimate
-}
-
-func estimateFileTokens(file providers.InputFile) int {
-	dataLen := len(strings.TrimSpace(file.Data))
-	if dataLen == 0 {
-		return 0
-	}
-	payloadEstimate := dataLen / 4
-	if payloadEstimate > imageTokenEstimate {
-		return payloadEstimate
-	}
-	return imageTokenEstimate
+// EstimateImageTokens estimates the model-visible budget for an image. It is
+// deliberately based on visual patches, not on base64 transport bytes.
+func EstimateImageTokens(image providers.InputImage) int {
+	return contextbudget.EstimateImageTokens(image)
 }
 
 // ShouldCompact returns true if messages exceed the threshold.
 func ShouldCompact(messages []providers.ChatMessage, maxContextTokens int) bool {
-	if maxContextTokens <= 0 {
-		return false
-	}
-	estimated := EstimateMessagesTokens(messages)
-	threshold := int(float64(maxContextTokens) * 0.8)
-	return estimated > threshold
+	return contextbudget.ShouldCompact(messages, maxContextTokens)
 }
 
 // maxCompactRetries caps how many times Compact will defensively trim
@@ -1013,15 +941,6 @@ func writeSummaryPromptMessage(b *strings.Builder, msg providers.ChatMessage) {
 		fmt.Fprintf(b, "  (result for tool call %s)\n", msg.ToolCallID)
 	}
 	b.WriteString("\n")
-}
-
-func isCJK(r rune) bool {
-	return (r >= 0x4E00 && r <= 0x9FFF) || // CJK Unified Ideographs
-		(r >= 0x3400 && r <= 0x4DBF) || // CJK Extension A
-		(r >= 0x3000 && r <= 0x303F) || // CJK Symbols
-		(r >= 0x3040 && r <= 0x309F) || // Hiragana
-		(r >= 0x30A0 && r <= 0x30FF) || // Katakana
-		(r >= 0xAC00 && r <= 0xD7AF) // Hangul
 }
 
 func truncate(s string, maxLen int) string {
