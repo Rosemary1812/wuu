@@ -58,8 +58,9 @@ import type {
   Turn,
 } from "../shared/protocol";
 import {
+  awaitComposerImages,
   composerFileFromFile,
-  composerImageFromFile,
+  composerImagePlaceholder,
   createComposerMessage,
   createOptimisticTurn,
   dropOptimisticTurn,
@@ -69,6 +70,7 @@ import {
   isComposerImageFile,
   isPDFFile,
   replaceOptimisticTurn,
+  revokeComposerImagePreview,
   type ComposerFile,
   type ComposerImage,
   type QueuedComposerMessage,
@@ -1773,28 +1775,34 @@ export function App(): JSX.Element {
     }));
   }
 
-  // Stream each encoded attachment back to the caller as soon as it's ready
-  // instead of waiting for the slowest file in the batch. Previously this
-  // resolved with `{ images, files }` only after `Promise.all` settled, so
-  // a single large paste made every other attachment wait too — the strip
-  // would jump from empty to fully populated, with the visible latency
-  // equal to the slowest file's encode + base64 time.
+  // Encode each image attachment in parallel and stream both the
+  // optimistic placeholder and its resolved encoded payload back to the
+  // caller. The split into two callbacks is what makes the strip show the
+  // image the instant the user pastes: the placeholder fires synchronously
+  // with the raw File's blob URL, and the encoded callback replaces the
+  // placeholder in place once `normalizeImageFileForPrompt` finishes. PDF
+  // attachments stay synchronous (no useful preview, fast encode).
   //
-  // Callers get an `onImage`/`onFile` callback per attachment and should
-  // `setState` immediately so React can interleave renders between files.
-  // Errors from any file still reject the returned Promise so the existing
-  // `try/catch` wrappers in the callers keep working.
+  // Callers should *not* await this promise to drive a "load indicator"
+  // — they only await it so any error from the encode can still surface in
+  // the existing status/error paths. The visible feedback lives in the
+  // `onImagePlaceholder` callback landing immediately on the first image.
   async function buildComposerAttachments(
     files: File[],
-    onImage: (image: ComposerImage) => void,
+    onImagePlaceholder: (placeholder: ComposerImage) => void,
+    onImageEncoded: (encoded: ComposerImage) => void,
     onFile: (file: ComposerFile) => void,
   ): Promise<void> {
     const imageFiles = files.filter(isComposerImageFile);
     const pdfFiles = files.filter(isPDFFile);
     await Promise.all([
       ...imageFiles.map(async (file) => {
-        const image = await composerImageFromFile(file);
-        onImage(image);
+        const placeholder = composerImagePlaceholder(file);
+        onImagePlaceholder(placeholder);
+        const encoded = await placeholder.encodePromise;
+        if (encoded) {
+          onImageEncoded(encoded);
+        }
       }),
       ...pdfFiles.map(async (file) => {
         const pdf = await composerFileFromFile(file);
@@ -1819,7 +1827,18 @@ export function App(): JSX.Element {
     try {
       await buildComposerAttachments(
         files,
-        (image) => setComposerImages((current) => [...current, image]),
+        // Synchronous: drop the placeholder into state so the attachment
+        // strip renders the raw file as a preview the moment paste lands,
+        // instead of waiting for the image encode + base64 conversion to
+        // finish in the background.
+        (placeholder) => setComposerImages((current) => [...current, placeholder]),
+        // Fires later (per image, in parallel): replace the placeholder in
+        // place by id. Same `id` is preserved by composerImagePlaceholder
+        // so the swap is invisible to React's keying.
+        (encoded) =>
+          setComposerImages((current) =>
+            current.map((existing) => (existing.id === encoded.id ? encoded : existing)),
+          ),
         (file) => setComposerFiles((current) => [...current, file]),
       );
     } catch (error) {
@@ -1831,7 +1850,14 @@ export function App(): JSX.Element {
   }
 
   function removeComposerImage(id: string): void {
-    setComposerImages((current) => current.filter((image) => image.id !== id));
+    setComposerImages((current) => {
+      const removed = current.find((image) => image.id === id);
+      // Free the blob URL for any optimistic placeholder we're dropping.
+      // Encoded entries have no previewSrc and the helper is a no-op for
+      // them.
+      revokeComposerImagePreview(removed);
+      return current.filter((image) => image.id !== id);
+    });
   }
 
   function removeComposerFile(id: string): void {
@@ -1877,10 +1903,20 @@ export function App(): JSX.Element {
     try {
       await buildComposerAttachments(
         files,
-        (image) =>
+        (placeholder) =>
           updateSplitComposerDraft(pane, (draft) => ({
             ...draft,
-            images: [...draft.images, image],
+            images: [...draft.images, placeholder],
+          })),
+        // Replace the placeholder by id once the encode resolves so the
+        // strip transitions from the raw file preview to the encoded data:
+        // URL without disturbing ordering.
+        (encoded) =>
+          updateSplitComposerDraft(pane, (draft) => ({
+            ...draft,
+            images: draft.images.map((existing) =>
+              existing.id === encoded.id ? encoded : existing,
+            ),
           })),
         (file) =>
           updateSplitComposerDraft(pane, (draft) => ({
@@ -1900,10 +1936,15 @@ export function App(): JSX.Element {
     pane: ConversationPaneID,
     id: string,
   ): void {
-    updateSplitComposerDraft(pane, (draft) => ({
-      ...draft,
-      images: draft.images.filter((image) => image.id !== id),
-    }));
+    updateSplitComposerDraft(pane, (draft) => {
+      const removed = draft.images.find((image) => image.id === id);
+      // Release the blob URL of any optimistic placeholder being dropped.
+      revokeComposerImagePreview(removed);
+      return {
+        ...draft,
+        images: draft.images.filter((image) => image.id !== id),
+      };
+    });
   }
 
   function removeSplitComposerFile(pane: ConversationPaneID, id: string): void {
@@ -4720,10 +4761,10 @@ export function App(): JSX.Element {
   ): Promise<boolean> {
     const currentState = appStateRef.current;
     const text = message.text.trim();
-    const images = inputImagesFromComposer(message.images);
+    const imageCount = message.images.length;
     const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0 && files.length === 0) ||
+      (!text && imageCount === 0 && files.length === 0) ||
       !targetThread ||
       targetThread.read_only ||
       !currentState.activeContext ||
@@ -4765,10 +4806,10 @@ export function App(): JSX.Element {
         ? "secondary"
         : "primary";
     const text = message.text.trim();
-    const images = inputImagesFromComposer(message.images);
+    const imageCount = message.images.length;
     const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0 && files.length === 0) ||
+      (!text && imageCount === 0 && files.length === 0) ||
       !currentState.activeContext ||
       !currentState.initialized ||
       targetThread?.read_only ||
@@ -4782,7 +4823,7 @@ export function App(): JSX.Element {
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
-      detail: composerSubmissionDetail(images.length, files.length),
+      detail: composerSubmissionDetail(imageCount, files.length),
       tone: "running",
       threadID: targetThread?.id,
     });
@@ -4830,6 +4871,8 @@ export function App(): JSX.Element {
         allowThreadAutoActivation: true,
         sessionTabs:
           targetPane === "primary"
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
             ? bindActiveSessionTabToThread(
                 current.sessionTabs,
                 current.activeSessionTabID,
@@ -4840,6 +4883,7 @@ export function App(): JSX.Element {
         activeSessionTabID:
           targetPane === "primary"
             ? threadSessionTabID(thread.id)
+        images: encodedImages,
             : current.activeSessionTabID,
         threads: upsertThread(current.threads, thread),
       }));
@@ -4960,6 +5004,8 @@ export function App(): JSX.Element {
         }));
         setState((current) => ({
           ...current,
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
           activePane: pane,
         }));
       }
@@ -4989,10 +5035,10 @@ export function App(): JSX.Element {
     const currentState = appStateRef.current;
     const targetThread = threadForPane(currentState, pane);
     const text = message.text.trim();
-    const images = inputImagesFromComposer(message.images);
+    const imageCount = message.images.length;
     const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0 && files.length === 0) ||
+      (!text && imageCount === 0 && files.length === 0) ||
       !targetThread ||
       targetThread.read_only ||
       !currentState.activeContext ||
@@ -5006,7 +5052,7 @@ export function App(): JSX.Element {
     resetRunDebugEvents({
       source: "client",
       method: "client/send",
-      detail: composerSubmissionDetail(images.length, files.length),
+      detail: composerSubmissionDetail(imageCount, files.length),
       tone: "running",
       threadID: targetThread.id,
     });
@@ -5111,10 +5157,10 @@ export function App(): JSX.Element {
   ): Promise<boolean> {
     const currentState = appStateRef.current;
     const text = message.text.trim();
-    const images = inputImagesFromComposer(message.images);
+    const imageCount = message.images.length;
     const files = inputFilesFromComposer(message.files);
     if (
-      (!text && images.length === 0 && files.length === 0) ||
+      (!text && imageCount === 0 && files.length === 0) ||
       targetThread.read_only ||
       !currentState.activeContext ||
       !currentState.initialized ||
@@ -5129,7 +5175,7 @@ export function App(): JSX.Element {
       resetRunDebugEvents({
         source: "client",
         method: "client/send",
-        detail: composerSubmissionDetail(images.length, files.length),
+        detail: composerSubmissionDetail(imageCount, files.length),
         tone: "running",
         threadID: targetThread.id,
       });
@@ -5140,6 +5186,8 @@ export function App(): JSX.Element {
       };
       setState((current) => ({
         ...current,
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
         running: true,
         status: "正在发送请求",
       }));
@@ -5262,6 +5310,8 @@ export function App(): JSX.Element {
     const currentProvider = state.initialized?.providers?.find(
       (item) => item.name === nextProvider,
     );
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
     const connectionChanged =
       Boolean(nextConnection?.create_provider) ||
       Boolean(nextConnection?.api_key) ||

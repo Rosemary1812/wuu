@@ -20,6 +20,23 @@ const IMAGE_TARGET_BYTES = (5 * 1024 * 1024 * 3) / 4;
 
 export type ComposerImage = InputImage & {
   id: string;
+  /**
+   * Optimistic placeholder preview source. Set the moment the user pastes or
+   * selects a file so the attachment strip can render the raw file via
+   * URL.createObjectURL while the JPEG/PNG encode + base64 conversion runs in
+   * the background. Stripped from the entry (and the blob URL revoked) once
+   * the encode resolves; consumer code should fall through to the data:
+   * URL built from `media_type` + `data` in that case.
+   */
+  previewSrc?: string;
+  /**
+   * Encode completion promise for an optimistic placeholder. Resolves to the
+   * final `ComposerImage` (same `id`, real `media_type` + `data`, no
+   * `previewSrc` / `encodePromise`). Undefined on already-encoded entries.
+   * Send code awaits this before extracting `InputImage` payloads, otherwise
+   * a fast paste-and-send would silently drop the still-encoding attachment.
+   */
+  encodePromise?: Promise<ComposerImage>;
 };
 
 export type ComposerFile = InputFile & {
@@ -46,6 +63,47 @@ export function clipboardAttachmentFiles(event: ReactClipboardEvent<HTMLTextArea
     }
   }
   return files;
+}
+
+/**
+ * Build an optimistic `ComposerImage` placeholder for a freshly pasted or
+ * selected image. The returned entry:
+ *   - is fully ready to drop into `composerImages` synchronously (the strip
+ *     renders `previewSrc` via `imageSource()`),
+ *   - carries `encodePromise` so background encodes can be awaited at send
+ *     time and so the placeholder can be replaced in place once the real
+ *     encoded payload lands,
+ *   - revokes its blob URL automatically once the encode resolves. The
+ *     resolved `ComposerImage` has no `previewSrc` / `encodePromise`, so
+ *     callers can overwrite the placeholder by id without leaking the URL.
+ *
+ * The encoding pass itself is unchanged: `normalizeImageFileForPrompt`
+ * still produces a compressed + base64 result, the Go core still re-encodes
+ * on receive, and the byte/pixel budget constants at the top of this file
+ * are the single source of truth.
+ */
+export function composerImagePlaceholder(file: File): ComposerImage {
+  const mediaType = normalizeImageMediaType(file.type);
+  const id = nextComposerAttachmentID();
+  const previewSrc = URL.createObjectURL(file);
+  const encodePromise: Promise<ComposerImage> = (async () => {
+    try {
+      const encoded = await normalizeImageFileForPrompt(file);
+      return { id, ...encoded };
+    } finally {
+      // Revoke the blob URL after the caller's await continuation has had a
+      // macrotask to swap the placeholder for the encoded data URL. Immediate
+      // revocation can make the optimistic preview flash broken first.
+      window.setTimeout(() => URL.revokeObjectURL(previewSrc), 0);
+    }
+  })();
+  return {
+    id,
+    media_type: mediaType,
+    data: "",
+    previewSrc,
+    encodePromise
+  };
 }
 
 export async function composerImageFromFile(file: File): Promise<ComposerImage> {
@@ -200,9 +258,79 @@ function nextComposerMessageID(): string {
   return nextComposerAttachmentID();
 }
 
-export function imageSource(image: InputImage): string {
+type ImageSourceInput = InputImage & { previewSrc?: string };
+
+export function imageSource(image: ImageSourceInput): string {
+  // Optimistic placeholders carry a blob URL of the raw file so the
+  // attachment strip can render the screenshot/photo the moment it lands,
+  // without waiting on JPEG/PNG encode + base64. Once the encode resolves
+  // the swap entry has no previewSrc and we fall through to the data: URL
+  // built from the encoded `media_type` + `data`.
+  if (image.previewSrc) {
+    return image.previewSrc;
+  }
   const mediaType = normalizeImageMediaType(image.media_type);
   return `data:${mediaType};base64,${image.data}`;
+}
+
+/**
+ * Await every optimistic image placeholder's `encodePromise` and return a new
+ * array with placeholders replaced by their resolved, fully-encoded values.
+ * Already-encoded entries pass through unchanged. Used at every send site
+ * (startTurn, steerTurn, queue dispatch) so a paste-and-send the user hits
+ * within a few hundred ms of the paste still ships the attachments over the
+ * wire — without this, `inputImagesFromComposer` would strip them to
+ * `media_type + "" data` and the server would see an empty images array.
+ *
+ * Output preserves the input order and reuses each input slot's identity
+ * when no encode was pending, so React state updates can key off `id` and
+ * still detect "this slot is now an encoded image" without a full reorder.
+ */
+export async function awaitComposerImages(
+  images: ComposerImage[]
+): Promise<ComposerImage[]> {
+  if (images.length === 0) {
+    return images;
+  }
+  const resolved = await Promise.all(
+    images.map((image) => image.encodePromise ?? Promise.resolve(image))
+  );
+  return images.map((placeholder, index) => {
+    const replacement = resolved[index];
+    if (!replacement || replacement === placeholder) {
+      return placeholder;
+    }
+    return {
+      id: placeholder.id,
+      media_type: replacement.media_type,
+      data: replacement.data
+    };
+  });
+}
+
+function optimisticInputImagesFromComposer(images: ComposerImage[]): InputImage[] {
+  return images.map(({ media_type, data, previewSrc }) => {
+    if (previewSrc) {
+      return { media_type, data, previewSrc } as InputImage & { previewSrc: string };
+    }
+    return { media_type, data };
+  });
+}
+
+/**
+ * Revoke any blob URL owned by an optimistic placeholder on removal.
+ * The encoded replacement and any non-optimistic entry are no-ops, so this
+ * is safe to call from `removeComposerImage` for every deletion.
+ */
+export function revokeComposerImagePreview(image: ComposerImage | undefined): void {
+  if (image?.previewSrc) {
+    URL.revokeObjectURL(image.previewSrc);
+  }
+}
+
+/** True when an image is still in its optimistic placeholder phase. */
+export function isComposerImagePending(image: ComposerImage): boolean {
+  return Boolean(image.encodePromise);
 }
 
 export function createComposerMessage(
@@ -298,7 +426,7 @@ export function createOptimisticTurn(
         type: "user_message",
         status: "completed",
         text: message.text,
-        images: inputImagesFromComposer(message.images),
+        images: optimisticInputImagesFromComposer(message.images),
         files: inputFilesFromComposer(message.files),
       },
     ],
