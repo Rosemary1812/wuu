@@ -939,19 +939,27 @@ describe("ComposerTokenGauge", () => {
 });
 
 describe("Composer expand button", () => {
-  it("uses flex column so the bottom toolbar stays pinned when expanded", () => {
+  it("uses a bounded grid layout so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
     expect(composerCSS).toContain("min-height: clamp(240px, 44vh, 420px)");
-    // Expanded composer is a flex column; the textarea absorbs the extra
-    // height so .composer-bar stays at the dock edge (the "原位" bottom) instead
-    // of getting pushed up by block-flow whitespace below it.
     expect(composerCSS).toMatch(
-      /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/,
+      /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,
+    );
+    // Expanded composer is a fixed-row grid; the textarea absorbs the extra
+    // height so .composer-bar stays at the original dock edge instead
+    // of getting pushed up by block-flow whitespace below it. Avoid flex sizing
+    // here because typing in the expanded textarea should not repeatedly
+    // renegotiate the toolbar row.
+    expect(composerCSS).toMatch(
+      /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/,
     );
     expect(composerCSS).toMatch(
-      /\.composer-stack\.is-expanded\s+\.composer\s+textarea\s*\{[^}]*flex:\s*1\s+1\s+0/,
+      /\.composer-stack\.is-expanded\s+\.composer\s+textarea\s*\{[^}]*height:\s*100%/,
     );
+    expect(composerCSS).not.toContain("flex: 1 1 0");
+    expect(composerCSS).not.toContain("transition: min-height");
+    expect(composerCSS).not.toContain("transition: width");
     // Width stays pinned to the session composer width in both dock and hero
     // variants — the expand button only grows the composer vertically.
     expect(composerCSS).not.toContain("width: min(1040px");
