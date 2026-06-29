@@ -23,9 +23,9 @@
     "Hiragino Sans GB", "Microsoft YaHei", "Microsoft YaHei UI",
     "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
-  --conversation-prose-line-height: 1.72;
-  --conversation-prose-block-gap: 14px;
-  --conversation-message-element-gap: 12px;
+  --conversation-reading-line-height: 1.9;
+  --conversation-prose-block-gap: 16px;
+  --conversation-message-element-gap: 14px;
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 2;
   --conversation-process-control-color: #A4A4A5;

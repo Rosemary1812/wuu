@@ -203,7 +203,7 @@
   font-size: var(--conversation-message-font-size);
   /* inherit from .turn so commentary tracks the message weight tuning */
   font-weight: inherit;
-  line-height: var(--conversation-prose-line-height);
+  line-height: var(--conversation-reading-line-height);
 }
 
 .turn-process-entry-commentary .agent-text,
@@ -248,7 +248,7 @@
   border-radius: var(--radius-sm);
   padding: 8px 16px;
   font-size: var(--conversation-message-font-size);
-  line-height: var(--conversation-prose-line-height);
+  line-height: var(--conversation-reading-line-height);
 }
 
 .user-message {
@@ -358,7 +358,7 @@
   width: 100%;
   min-width: 0;
   color: var(--ink);
-  line-height: 1.55;
+  line-height: var(--conversation-reading-line-height);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
@@ -455,7 +455,7 @@
   background: transparent;
   color: var(--ink);
   font: inherit;
-  line-height: var(--conversation-prose-line-height);
+  line-height: var(--conversation-reading-line-height);
   outline: none;
   padding: 6px 2px;
 }
@@ -746,7 +746,7 @@
   min-width: 0;
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
-  line-height: var(--conversation-prose-line-height);
+  line-height: var(--conversation-reading-line-height);
 }
 
 .context-composition-card {
@@ -3198,7 +3198,7 @@
   font-size: var(--conversation-message-font-size);
   /* inherit from .turn so commentary tracks the message weight tuning */
   font-weight: inherit;
-  line-height: var(--conversation-prose-line-height);
+  line-height: var(--conversation-reading-line-height);
 }
 
 .turn-process-entry-commentary::before {
@@ -3819,7 +3819,7 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--conversation-prose-block-gap, 10px);
-  line-height: var(--conversation-prose-line-height, var(--line-body));
+  line-height: var(--conversation-reading-line-height, var(--line-body));
   white-space: normal;
 }
 
@@ -3836,13 +3836,13 @@
   color: var(--ink);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
-  line-height: var(--conversation-prose-line-height, inherit);
+  line-height: var(--conversation-reading-line-height, inherit);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .rich-paragraph {
-  line-height: var(--conversation-prose-line-height, inherit);
+  line-height: var(--conversation-reading-line-height, inherit);
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -3851,7 +3851,7 @@
 .rich-content ul,
 .rich-content ol {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding-left: 24px;
 }
@@ -3867,7 +3867,7 @@
 
 .rich-content li > ul,
 .rich-content li > ol {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .rich-content input[type="checkbox"] {

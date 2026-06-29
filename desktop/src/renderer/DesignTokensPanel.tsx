@@ -90,13 +90,13 @@ const TOKENS: Token[] = [
   },
   {
     key: "prose-line-height",
-    cssVar: "--conversation-prose-line-height",
+    cssVar: "--conversation-reading-line-height",
     label: "正文行高",
-    min: 1.55,
-    max: 2.1,
+    min: 1.65,
+    max: 2.3,
     step: 0.02,
     unit: "",
-    defaultValue: 1.72,
+    defaultValue: 1.9,
   },
   {
     key: "prose-block-gap",
@@ -106,7 +106,7 @@ const TOKENS: Token[] = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 14,
+    defaultValue: 16,
   },
   {
     key: "meta-line-height",
@@ -136,7 +136,7 @@ const TOKENS: Token[] = [
     max: 24,
     step: 1,
     unit: "px",
-    defaultValue: 12,
+    defaultValue: 14,
   },
   {
     key: "message-element-gap",
@@ -146,7 +146,7 @@ const TOKENS: Token[] = [
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 12,
+    defaultValue: 14,
   },
   {
     key: "turn-gap",
@@ -170,7 +170,18 @@ const TOKENS: Token[] = [
   },
 ];
 
-const STORAGE_KEY = "wuu:design-tokens:v3";
+const STORAGE_KEY = "wuu:design-tokens:v4";
+const LEGACY_STORAGE_KEYS = [
+  "wuu:design-tokens:v2",
+  "wuu:design-tokens:v3",
+];
+const LEGACY_CSS_VARS = [
+  "--conversation-readable-width",
+  "--conversation-flow-padding-inline",
+  "--conversation-dialog-width",
+  "--conversation-dialog-radius",
+  "--conversation-prose-line-height",
+];
 
 type Overrides = Record<string, number>;
 
@@ -204,6 +215,13 @@ function loadOverrides(): Overrides {
   return {};
 }
 
+function clearLegacyStorage(): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  for (const key of LEGACY_STORAGE_KEYS) {
+    window.localStorage.removeItem(key);
+  }
+}
+
 function saveOverrides(overrides: Overrides): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   try {
@@ -230,6 +248,9 @@ function clearFromDOM(): void {
   for (const token of TOKENS) {
     pane.style.removeProperty(token.cssVar);
   }
+  for (const cssVar of LEGACY_CSS_VARS) {
+    pane.style.removeProperty(cssVar);
+  }
 }
 
 export function DesignTokensPanel(): JSX.Element {
@@ -240,6 +261,8 @@ export function DesignTokensPanel(): JSX.Element {
   // take effect even if the user navigates between threads (which
   // unmounts the App's children but keeps the renderer alive).
   useEffect(() => {
+    clearLegacyStorage();
+    clearFromDOM();
     const loaded = loadOverrides();
     if (Object.keys(loaded).length > 0) {
       setOverrides(loaded);
