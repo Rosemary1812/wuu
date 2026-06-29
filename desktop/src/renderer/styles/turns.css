@@ -759,19 +759,21 @@
   width: 100%;
 }
 
+/* The card is a system artifact, not a primary message. Keep a hairline
+ * border so it reads as a discrete surface inside the conversation flow,
+ * but drop the gradient and the heavy shadow — the dual layered backgrounds
+ * were making the card look like a sub-card stacked on the message. The
+ * surface-1 background gives it a softer tint than the conversation paper
+ * without competing with it. Padding and inner gap are intentionally
+ * generous so the headline, bar, and category list have room to breathe. */
 .context-composition-card-inner {
   display: grid;
-  gap: 14px;
+  gap: 18px;
   overflow: hidden;
-  border: 1px solid rgba(31, 35, 40, 0.1);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: 14px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(249, 250, 248, 0.97)),
-    var(--surface-1);
-  box-shadow:
-    0 14px 34px rgba(20, 24, 28, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  padding: 16px;
+  background: var(--surface-1);
+  padding: 18px 22px;
 }
 
 .context-composition-card .context-composition-header {
@@ -852,25 +854,45 @@
 }
 
 .context-composition-card .context-composition-bar {
-  height: 14px;
+  /* Match the environment.css base height (12px) so the card bar and any
+   * non-card bar render the same. The 12px is the minimum at which the
+   * diagonal stripe pattern in the free segment is visibly striped
+   * rather than a flat tint — going thinner turns it into a wash. */
+  height: 12px;
 }
 
 .context-composition-card .context-composition-section {
-  gap: 7px;
+  /* Extra breathing room between the "组成" header and the first row.
+   * Without the inner sub-card border, the header needs a bit more air
+   * to anchor the section. */
+  gap: 10px;
 }
 
+/* Category row: flex layout stays (label + tag + tokens + percent flow
+ * inline), but the row claims left padding to host the swatch as an
+ * absolutely positioned accent stripe. Padding top/bottom is intentionally
+ * generous (7px) so the rows feel like distinct lines, not a packed table.
+ * min-height keeps short rows (e.g. "本轮前缀 91 0%") from collapsing. */
 .context-composition-card .context-category-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 0;
+  gap: 12px;
+  min-height: 30px;
+  padding: 7px 0 7px 14px;
 }
 
 .context-composition-card .context-category-swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  /* The swatch is no longer a chip — it is a 2px vertical accent stripe
+   * anchored to the row's left edge. It uses zero horizontal text space,
+   * so the label can claim the full row width. top/bottom insets keep the
+   * stripe from kissing the row's edges. */
+  position: absolute;
+  left: 2px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 1px;
 }
 
 .context-composition-card .context-category-label {
@@ -888,6 +910,9 @@
   font-size: var(--font-xs);
   color: var(--ink-muted);
   flex-shrink: 0;
+  /* Pull the tag slightly toward the label so the chip reads as a
+   * qualifier of that label rather than a sibling at full flex gap. */
+  margin-left: -2px;
 }
 
 .context-composition-card .context-category-tokens {
@@ -911,6 +936,13 @@
 @media (max-width: 760px) {
   .context-composition-card {
     width: 100%;
+  }
+  /* Drop the percent column on narrow widths — the row is already carrying
+   * swatch, label, optional tag, and tokens, and the percent repeats the
+   * headline's ratio. Removing it lets the tokens number align to the
+   * right edge without the row needing to wrap. */
+  .context-category-percent {
+    display: none;
   }
 }
 

@@ -1254,12 +1254,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The bar carries a hairline border again — without one, the track (a soft
+ * surface-2 on a soft surface-1 card) loses its edge and the used/free
+ * boundary inside it reads as mush. A 12px height gives the diagonal
+ * stripe pattern enough room to actually look striped; 10px collapsed
+ * the pattern into a flat tint. The card-specific override in turns.css
+ * keeps this same height for the context card. */
 .context-composition-bar {
   display: flex;
   width: 100%;
-  height: 18px;
+  height: 12px;
   overflow: hidden;
-  border: 1px solid var(--ink-overlay-8);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-pill);
   background: var(--surface-2);
 }
@@ -1305,12 +1311,18 @@
 }
 
 .context-composition-segment.free {
+  /* The diagonal stripe contrast is the only thing telling the user "this
+   * part of the bar is still available, not used". 0.06 vs 0.02 (4-point
+   * delta) was too subtle to read on the surface-2 track — the pattern
+   * collapsed into a flat tint and the used/free boundary disappeared.
+   * 0.14 vs 0.04 (10-point delta) keeps the same neutral feel but the
+   * stripes are visibly diagonal at 12px bar height. */
   background: repeating-linear-gradient(
     135deg,
-    rgba(31, 35, 40, 0.06) 0,
-    rgba(31, 35, 40, 0.06) 6px,
-    rgba(31, 35, 40, 0.02) 6px,
-    rgba(31, 35, 40, 0.02) 12px
+    rgba(31, 35, 40, 0.14) 0,
+    rgba(31, 35, 40, 0.14) 6px,
+    rgba(31, 35, 40, 0.04) 6px,
+    rgba(31, 35, 40, 0.04) 12px
   );
 }
 
@@ -1330,33 +1342,31 @@
   text-transform: uppercase;
 }
 
+/* The list is no longer a sub-card inside the context card. Removing the
+ * border, radius, and paper background lets the rows breathe against the
+ * card's surface-1 background, so the only chrome is the row's own
+ * vertical accent stripe (see turns.css). overflow-y stays so a long
+ * list can still scroll within the card without overflowing it. */
 .context-category-list {
   display: grid;
   min-height: 0;
   overflow-y: auto;
-  border: 1px solid var(--ink-overlay-6);
-  border-radius: var(--radius-md);
-  background: var(--paper);
 }
 
-.context-category-row {
-  display: grid;
-  min-height: 28px;
-  grid-template-columns: 10px minmax(0, 1fr) minmax(70px, auto) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--ink-overlay-6);
-}
+/* Row layout lives in turns.css — that file's
+ * `.context-composition-card .context-category-row` rule has higher
+ * specificity and runs after this one in cascade order, so the old grid
+ * template + border-bottom here were dead code. Removed to keep the
+ * cascade clean and prevent a future reader from being misled by an
+ * unused rule. */
 
-.context-category-row:last-child {
-  border-bottom: none;
-}
-
+/* The swatch is a 2px-wide vertical accent stripe. Position/size and
+ * the top/bottom insets that compute its height are set on the
+ * card-specific override in turns.css; this base only fixes the
+ * stripe's width and corner radius. */
 .context-category-swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 2px;
+  border-radius: 1px;
 }
 
 .context-category-label,
@@ -1463,9 +1473,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .context-category-row {
-    grid-template-columns: 10px minmax(0, 1fr) minmax(60px, auto);
-  }
+  /* The category row layout is owned by turns.css (display: flex), so the
+   * old grid-template-columns override here was inert. The narrow-screen
+   * handling for the row now lives in turns.css's matching @media block,
+   * which hides the percent column instead of reshaping the grid. */
 
   .context-category-badges {
     grid-column: 2 / -1;
