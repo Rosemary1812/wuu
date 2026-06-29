@@ -123,7 +123,7 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
-  it("uses the same completed title for inception compaction", () => {
+  it("labels inception compaction as context continuation", () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -133,11 +133,14 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "上下文已压缩",
+      "已续接上下文",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "续接摘要",
     );
   });
 
-  it("uses the same completed title for HelpMe compaction", () => {
+  it("labels HelpMe compaction as merged recovery result", () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -147,7 +150,10 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "上下文已压缩",
+      "已合并求助结果",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "HelpMe 恢复结果",
     );
   });
 

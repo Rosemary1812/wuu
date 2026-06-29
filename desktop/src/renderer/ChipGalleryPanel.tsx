@@ -138,6 +138,30 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
     ),
   },
   {
+    label: "已续接上下文",
+    kind: "context_inception · gray",
+    description: "Inception 续接摘要已写入上下文",
+    render: () => (
+      <ContextCompactionNotice
+        status="completed"
+        reason="inception"
+        text="✦ Inception rewrote history: 227 → 3 messages (was ~175k tokens)"
+      />
+    ),
+  },
+  {
+    label: "已合并求助结果",
+    kind: "context_helpme · gray",
+    description: "HelpMe 恢复结果已合并进上下文",
+    render: () => (
+      <ContextCompactionNotice
+        status="completed"
+        reason="helpme"
+        text="✦ HelpMe recovered and compacted history: 42 → 2 messages (was ~90k tokens)"
+      />
+    ),
+  },
+  {
     label: "上下文压缩失败",
     kind: "context_compaction_failed · gray",
     description: "自动压缩失败,保留原上下文",

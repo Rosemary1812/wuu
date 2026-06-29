@@ -118,21 +118,33 @@ export function ContextCompactionNotice({
   );
 }
 
-function contextCompactionTitle(text?: string, _reason?: string): string {
+function contextCompactionTitle(text?: string, reason?: string): string {
   const normalized = normalizeContextCompactionText(text);
   if (isFailedCompactNotice(normalized)) {
     return "上下文压缩失败";
   }
+  if (isInceptionCompact(reason, normalized)) {
+    return "已续接上下文";
+  }
+  if (isHelpMeCompact(reason, normalized)) {
+    return "已合并求助结果";
+  }
   return "上下文已压缩";
 }
 
-function contextCompactionDetail(text?: string, _reason?: string): string {
+function contextCompactionDetail(text?: string, reason?: string): string {
   const normalized = normalizeContextCompactionText(text);
   if (!normalized) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
   }
   if (isFailedCompactNotice(normalized)) {
     return "自动压缩没有完成，当前对话仍保留原上下文。";
+  }
+  if (isInceptionCompact(reason, normalized)) {
+    return "已生成续接摘要，后续回复会沿用保留下来的任务状态。";
+  }
+  if (isHelpMeCompact(reason, normalized)) {
+    return "已把 HelpMe 恢复结果整理进上下文，后续回复会沿用新的任务状态。";
   }
   if (/^Compacted history$/i.test(normalized)) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
@@ -150,6 +162,14 @@ function normalizeContextCompactionText(text?: string): string {
 
 function isFailedCompactNotice(text: string): boolean {
   return /^(?:Context compaction|Proactive compact|Context-overflow compact|Compact) failed\b/i.test(text);
+}
+
+function isInceptionCompact(reason: string | undefined, text: string): boolean {
+  return reason === "inception" || /^Inception rewrote history\b/i.test(text);
+}
+
+function isHelpMeCompact(reason: string | undefined, text: string): boolean {
+  return reason === "helpme" || /^HelpMe recovered and compacted history\b/i.test(text);
 }
 
 function parseContextCompactionNotice(text: string): string | undefined {
