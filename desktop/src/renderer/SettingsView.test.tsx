@@ -92,6 +92,7 @@ function renderSettings(props: {
         resizingSidebar={false}
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
+        onRemoveProvider={async () => {}}
         onAdvancedSave={props.onAdvancedSave ?? (async () => {})}
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
@@ -138,7 +139,7 @@ describe("SettingsView provider configuration", () => {
     expect(rootText()).toContain("openrouter");
     expect(rootText()).toContain("Base URL");
     expect(rootText()).toContain("API key 已配置");
-    expect(rootText()).toContain("新增 OpenAI-compatible");
+    expect(rootText()).toContain("新增服务");
   });
 
   it("submits a new OpenAI-compatible provider with editable connection fields", async () => {
@@ -165,7 +166,7 @@ describe("SettingsView provider configuration", () => {
       onSave,
     });
     const addButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("新增 OpenAI-compatible"),
+      button.textContent?.includes("新增服务"),
     );
     expect(addButton).not.toBeUndefined();
     await act(async () => {
@@ -198,6 +199,7 @@ describe("SettingsView provider configuration", () => {
       {
         base_url: "https://openrouter.ai/api/v1",
         api_key: "sk-test",
+        type: "openai-compatible",
         create_provider: true,
       },
       "",

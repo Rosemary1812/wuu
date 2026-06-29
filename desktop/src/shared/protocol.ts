@@ -328,6 +328,12 @@ export type MCPServerActionResult = {
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
+  // Optional provider protocol type used when creating a new provider.
+  // Supported values: "openai", "openai-compatible", "anthropic", "claude",
+  // "anthropic-official". Omitted or empty keeps the default of
+  // "openai-compatible". OAuth-managed Codex types are intentionally not
+  // listed because they require a separate connection flow.
+  type?: string;
   create_provider?: boolean;
 };
 
@@ -1055,6 +1061,10 @@ export type WuuDesktopApi = {
     connection?: RuntimeConnectionUpdate,
     variant?: string,
     permissionMode?: string
+  ) => Promise<ConfigModelUpdateResult>;
+  removeProvider: (
+    provider: string,
+    options?: { fallbackProvider?: string; fallbackModel?: string }
   ) => Promise<ConfigModelUpdateResult>;
   updateAdvancedSettings: (
     settings: RuntimeAdvancedSettingsUpdate

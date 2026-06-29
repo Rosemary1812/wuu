@@ -51,6 +51,7 @@ export function SettingsView({
   resizingSidebar,
   onBack,
   onSave,
+  onRemoveProvider,
   onAdvancedSave,
   onDebugControlsChange,
   onSidebarResizeStart,
@@ -73,6 +74,7 @@ export function SettingsView({
   resizingSidebar: boolean;
   onBack: () => void;
   onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
+  onRemoveProvider: (provider: string) => Promise<void>;
   onAdvancedSave: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -85,6 +87,11 @@ export function SettingsView({
   const [variantDraft, setVariantDraft] = useState(initialized?.variant ?? initialized?.effort ?? "");
   const [baseURLDraft, setBaseURLDraft] = useState("");
   const [apiKeyDraft, setAPIKeyDraft] = useState("");
+  // Draft for the protocol type of a brand-new provider (only used while
+  // addingProvider is true). Defaults to "openai-compatible" to preserve
+  // the historical behavior; the user can switch to "anthropic" before
+  // saving.
+  const [providerTypeDraft, setProviderTypeDraft] = useState("openai-compatible");
   const [addingProvider, setAddingProvider] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -183,6 +190,9 @@ export function SettingsView({
   function changeProvider(provider: string): void {
     setAddingProvider(false);
     setProviderDraft(provider);
+    // Reset the type draft: it is only meaningful when creating a provider,
+    // and leaving add mode via card click should drop any pending type pick.
+    setProviderTypeDraft("openai-compatible");
     setSaved(false);
     const summary = providers.find((item) => item.name === provider);
     if (summary) {
@@ -196,6 +206,7 @@ export function SettingsView({
   function startAddingProvider(): void {
     setAddingProvider(true);
     setProviderDraft(nextCustomProviderName(providers));
+    setProviderTypeDraft("openai-compatible");
     setModelDraft("");
     setVariantDraft("");
     setBaseURLDraft("");
@@ -207,6 +218,7 @@ export function SettingsView({
   function cancelAddingProvider(): void {
     setAddingProvider(false);
     setProviderDraft(initialized?.provider ?? "");
+    setProviderTypeDraft("openai-compatible");
     setModelDraft(initialized?.model ?? "");
     setVariantDraft(initialized?.variant ?? initialized?.effort ?? "");
     const summary = initialized?.providers?.find((item) => item.name === initialized.provider);
@@ -226,6 +238,7 @@ export function SettingsView({
         connection = {
           base_url: baseURLDraft.trim(),
           api_key: apiKeyDraft.trim(),
+          type: providerTypeDraft,
           create_provider: true
         };
       } else if (!connectionLocked) {
@@ -243,6 +256,28 @@ export function SettingsView({
       setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "保存失败");
+    }
+  }
+
+  async function requestRemoveProvider(name: string): Promise<void> {
+    if (running || !name) {
+      return;
+    }
+    setError("");
+    setSaved(false);
+    try {
+      await onRemoveProvider(name);
+      // The parent's state update will refresh initialized.providers
+      // and active provider/model; sync the local drafts so the form
+      // does not show the now-deleted provider as selected.
+      setAddingProvider(false);
+      setSaved(true);
+    } catch (removeError) {
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "删除服务失败",
+      );
     }
   }
 
@@ -397,6 +432,7 @@ export function SettingsView({
               providerLabels={providerLabels}
               running={running}
               providerDraft={providerDraft}
+              providerTypeDraft={providerTypeDraft}
               modelDraft={modelDraft}
               variantDraft={variantDraft}
               baseURLDraft={baseURLDraft}
@@ -413,6 +449,10 @@ export function SettingsView({
               onCancelAddingProvider={cancelAddingProvider}
               onProviderDraftChange={(value) => {
                 setProviderDraft(value);
+                setSaved(false);
+              }}
+              onProviderTypeDraftChange={(value) => {
+                setProviderTypeDraft(value);
                 setSaved(false);
               }}
               onModelDraftChange={(value) => {
@@ -433,6 +473,7 @@ export function SettingsView({
                 setSaved(false);
               }}
               onSubmit={submit}
+              onRemoveProvider={requestRemoveProvider}
               disabled={disabled}
             />
           ) : activePage === "advanced" ? (
@@ -616,6 +657,7 @@ function SettingsProvidersPage({
   providerLabels,
   running,
   providerDraft,
+  providerTypeDraft,
   modelDraft,
   variantDraft,
   baseURLDraft,
@@ -631,17 +673,20 @@ function SettingsProvidersPage({
   onStartAddingProvider,
   onCancelAddingProvider,
   onProviderDraftChange,
+  onProviderTypeDraftChange,
   onModelDraftChange,
   onVariantDraftChange,
   onBaseURLDraftChange,
   onAPIKeyDraftChange,
   onSubmit,
+  onRemoveProvider,
   disabled
 }: {
   providers: ProviderSummary[];
   providerLabels: Map<string, string>;
   running: boolean;
   providerDraft: string;
+  providerTypeDraft: string;
   modelDraft: string;
   variantDraft: string;
   baseURLDraft: string;
@@ -657,11 +702,13 @@ function SettingsProvidersPage({
   onStartAddingProvider: () => void;
   onCancelAddingProvider: () => void;
   onProviderDraftChange: (value: string) => void;
+  onProviderTypeDraftChange: (value: string) => void;
   onModelDraftChange: (value: string) => void;
   onVariantDraftChange: (value: string) => void;
   onBaseURLDraftChange: (value: string) => void;
   onAPIKeyDraftChange: (value: string) => void;
   onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
+  onRemoveProvider?: (provider: string) => Promise<void> | void;
   disabled: boolean;
 }): JSX.Element {
   const reasoningMode = providerModelReasoningMode(selectedProvider, modelDraft);
@@ -674,25 +721,73 @@ function SettingsProvidersPage({
       {providers.length > 0 ? (
         <div className="settings-provider-overview" data-testid="settings-provider-overview">
           {providers.map((provider) => (
-            <button
-              className={`settings-provider-button${!addingProvider && providerDraft === provider.name ? " active" : ""}`}
-              type="button"
-              key={provider.name}
-              disabled={running}
-              onClick={() => onProviderChange(provider.name)}
-            >
-              <strong>{providerServiceLabel(provider)}</strong>
-              <small>{provider.name}</small>
-              <small>{provider.model || "未选择模型"}</small>
-              <small>{providerConnectionStatus(provider)}</small>
-            </button>
+            <div className="settings-provider-card" key={provider.name}>
+              <button
+                className={`settings-provider-button${!addingProvider && providerDraft === provider.name ? " active" : ""}`}
+                type="button"
+                disabled={running}
+                onClick={() => onProviderChange(provider.name)}
+              >
+                <strong>{providerServiceLabel(provider)}</strong>
+                <small>{provider.name}</small>
+                <small>{provider.model || "未选择模型"}</small>
+                <small>{providerConnectionStatus(provider)}</small>
+              </button>
+              {onRemoveProvider && !provider.connection_locked ? (
+                <button
+                  className="settings-provider-remove"
+                  type="button"
+                  aria-label={`删除 ${providerServiceLabel(provider)}`}
+                  title="删除这个模型服务"
+                  disabled={running}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (
+                      typeof window !== "undefined" &&
+                      typeof window.confirm === "function" &&
+                      !window.confirm(
+                        `确定要删除 “${providerServiceLabel(provider)}” 吗?这个操作会从配置中移除该服务。`,
+                      )
+                    ) {
+                      return;
+                    }
+                    void onRemoveProvider(provider.name);
+                  }}
+                >
+                  <X className="icon" />
+                </button>
+              ) : null}
+            </div>
           ))}
+          {onStartAddingProvider ? (
+            <button
+              className="settings-provider-add-card"
+              type="button"
+              data-testid="settings-provider-add-card"
+              disabled={running || addingProvider}
+              onClick={onStartAddingProvider}
+            >
+              <Plus className="icon-lg" />
+              <span>新增服务</span>
+            </button>
+          ) : null}
         </div>
+      ) : onStartAddingProvider ? (
+        <button
+          className="settings-provider-add-card settings-provider-add-card-empty"
+          type="button"
+          data-testid="settings-provider-add-card"
+          disabled={running || addingProvider}
+          onClick={onStartAddingProvider}
+        >
+          <Plus className="icon-lg" />
+          <span>新增服务</span>
+        </button>
       ) : null}
       <form className="settings-card" onSubmit={onSubmit}>
         <SettingsRow
-          title={addingProvider ? "新增 OpenAI-compatible 服务" : "选择当前会话使用的服务"}
-          description={addingProvider ? "添加一个新的 OpenAI-compatible 服务" : "切换 service 不会丢失 Base URL 和 API key。"}
+          title={addingProvider ? "新增服务" : "选择当前会话使用的服务"}
+          description={addingProvider ? "选择协议并填写连接信息;Base URL 和 API key 会保存到本地配置。" : "切换 service 不会丢失 Base URL 和 API key。"}
         >
           <div className="settings-row-control-block">
             {addingProvider ? (
@@ -727,12 +822,29 @@ function SettingsProvidersPage({
               ) : (
                 <>
                   <Plus className="icon" />
-                  <span>新增 OpenAI-compatible</span>
+                  <span>新增服务</span>
                 </>
               )}
             </button>
           </div>
         </SettingsRow>
+        {addingProvider ? (
+          <SettingsRow
+            title="服务类型"
+            description="选择协议,后续的请求会按这个协议走。"
+          >
+            <select
+              className="settings-select"
+              value={providerTypeDraft}
+              onChange={(event) => onProviderTypeDraftChange(event.target.value)}
+              disabled={running}
+              data-testid="settings-provider-type-select"
+            >
+              <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="anthropic">Anthropic 兼容</option>
+            </select>
+          </SettingsRow>
+        ) : null}
         {addingProvider ? (
           <SettingsRow
             title="服务标识"
@@ -1561,9 +1673,7 @@ function advancedContextSourceLabel(source: string | undefined): string {
     case "provider_model_limit":
       return "来自模型配置";
     case "agent_max_context_tokens":
-      return "来自未知模型窗口";
-    case "built_in_registry":
-      return "来自内置模型库";
+      return "来自手动上限";
     case "unknown":
     case "":
     case undefined:
