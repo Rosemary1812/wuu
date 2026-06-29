@@ -239,7 +239,8 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 			"This launches a fresh general-purpose subagent with a clean context and returns immediately with its agent_id and agent_path. " +
 			"Use this instead of spawn_agent when the purpose is context rescue / second-opinion recovery, especially after user feedback like 'still wrong' or after several unsuccessful local attempts. " +
 			"Include the original goal, the current interpretation, failed attempts, constraints, and concrete evidence so the fresh helper can avoid repeating your mistakes. " +
-			"Use await_agents when your next step depends on the helper's output; use inception after consuming the result when the combined context should be rewritten.",
+			"Use await_agents when your next step depends on the helper's output; when a structured HelpMe report is available, the await result can replace polluted parent context with a bounded HelpMe recovery summary. " +
+			"If you manually use inception after HelpMe, summarize only durable facts, report/result paths, and trace references; do not paste or merge raw parent/helper transcripts.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -408,6 +409,28 @@ type helpMeResponse struct {
 	HistoryRewrite *compact.HelpMeHistoryRewrite    `json:"history_rewrite,omitempty"`
 }
 
+type helpMeMainTraceRecord struct {
+	SchemaVersion   string                           `json:"schema_version"`
+	CreatedAt       time.Time                        `json:"created_at"`
+	ParentAgentID   string                           `json:"parent_agent_id,omitempty"`
+	ParentPath      string                           `json:"parent_path,omitempty"`
+	HelperAgentID   string                           `json:"helper_agent_id,omitempty"`
+	HelperAgentPath string                           `json:"helper_agent_path,omitempty"`
+	Args            helpMeArgs                       `json:"args"`
+	MainHistory     []providers.ChatMessage          `json:"main_history,omitempty"`
+	HelperResult    *agentcontrol.SpawnResult        `json:"helper_result,omitempty"`
+	Report          *agentcontrol.AgentReportDetails `json:"report,omitempty"`
+	ReportMissing   bool                             `json:"report_missing,omitempty"`
+}
+
+type helpMeMainTraceLookup struct {
+	SchemaVersion   string                    `json:"schema_version"`
+	HelperAgentID   string                    `json:"helper_agent_id,omitempty"`
+	HelperAgentPath string                    `json:"helper_agent_path,omitempty"`
+	Args            helpMeArgs                `json:"args"`
+	HelperResult    *agentcontrol.SpawnResult `json:"helper_result,omitempty"`
+}
+
 type helpMeArgs struct {
 	Reason               string   `json:"reason"`
 	OriginalGoal         string   `json:"original_goal"`
@@ -539,27 +562,19 @@ func writeHelpMeMainTrace(env *Env, history []providers.ChatMessage, args helpMe
 		return "", fmt.Errorf("helpme: create trace dir: %w", err)
 	}
 	now := time.Now().UTC()
-	path := filepath.Join(dir, fmt.Sprintf("%d-main-trace.json", now.UnixNano()))
-	payload := struct {
-		SchemaVersion string                           `json:"schema_version"`
-		CreatedAt     time.Time                        `json:"created_at"`
-		ParentAgentID string                           `json:"parent_agent_id,omitempty"`
-		ParentPath    string                           `json:"parent_path,omitempty"`
-		Args          helpMeArgs                       `json:"args"`
-		MainHistory   []providers.ChatMessage          `json:"main_history"`
-		HelperResult  *agentcontrol.SpawnResult        `json:"helper_result,omitempty"`
-		Report        *agentcontrol.AgentReportDetails `json:"report,omitempty"`
-		ReportMissing bool                             `json:"report_missing,omitempty"`
-	}{
-		SchemaVersion: "wuu/helpme-main-trace/v0.1",
-		CreatedAt:     now,
-		ParentAgentID: strings.TrimSpace(env.AgentID),
-		ParentPath:    currentAgentPath(env),
-		Args:          args,
-		MainHistory:   providers.CloneChatMessages(history),
-		HelperResult:  result,
-		Report:        report,
-		ReportMissing: reportMissing,
+	path := filepath.Join(dir, helpMeMainTraceFilename(now, result))
+	payload := helpMeMainTraceRecord{
+		SchemaVersion:   "wuu/helpme-main-trace/v0.1",
+		CreatedAt:       now,
+		ParentAgentID:   strings.TrimSpace(env.AgentID),
+		ParentPath:      currentAgentPath(env),
+		HelperAgentID:   helpMeResultAgentID(result),
+		HelperAgentPath: helpMeResultAgentPath(result),
+		Args:            args,
+		MainHistory:     providers.CloneChatMessages(history),
+		HelperResult:    result,
+		Report:          report,
+		ReportMissing:   reportMissing,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -582,6 +597,109 @@ func helpMeSessionRef(sessionDir, path string) string {
 		return path
 	}
 	return "$SESSION_DIR/" + filepath.ToSlash(rel)
+}
+
+func helpMeMainTraceFilename(now time.Time, result *agentcontrol.SpawnResult) string {
+	agentID := safeHelpMeTraceID(helpMeResultAgentID(result))
+	if agentID == "" {
+		return fmt.Sprintf("%d-main-trace.json", now.UnixNano())
+	}
+	return fmt.Sprintf("%d-%s-main-trace.json", now.UnixNano(), agentID)
+}
+
+func safeHelpMeTraceID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+		if b.Len() >= 96 {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "_-")
+}
+
+func helpMeResultAgentID(result *agentcontrol.SpawnResult) string {
+	if result == nil {
+		return ""
+	}
+	return strings.TrimSpace(result.AgentID)
+}
+
+func helpMeResultAgentPath(result *agentcontrol.SpawnResult) string {
+	if result == nil {
+		return ""
+	}
+	return strings.TrimSpace(result.AgentPath)
+}
+
+func readHelpMeMainTraceForAgent(sessionDir, agentID string) (helpMeMainTraceLookup, string, bool) {
+	sessionDir = strings.TrimSpace(sessionDir)
+	agentID = strings.TrimSpace(agentID)
+	if sessionDir == "" || agentID == "" {
+		return helpMeMainTraceLookup{}, "", false
+	}
+	dir := filepath.Join(sessionDir, "helpme")
+	paths := helpMeTraceCandidatePaths(dir, agentID)
+	for i := len(paths) - 1; i >= 0; i-- {
+		trace, ok := readHelpMeMainTraceCandidate(paths[i], agentID)
+		if !ok {
+			continue
+		}
+		return trace, helpMeSessionRef(sessionDir, paths[i]), true
+	}
+	return helpMeMainTraceLookup{}, "", false
+}
+
+func helpMeTraceCandidatePaths(dir, agentID string) []string {
+	var paths []string
+	if safeID := safeHelpMeTraceID(agentID); safeID != "" {
+		matches, _ := filepath.Glob(filepath.Join(dir, "*-"+safeID+"-main-trace.json"))
+		paths = append(paths, matches...)
+	}
+	if len(paths) > 0 {
+		return paths
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "-main-trace.json") {
+			continue
+		}
+		paths = append(paths, filepath.Join(dir, entry.Name()))
+	}
+	return paths
+}
+
+func readHelpMeMainTraceCandidate(path, agentID string) (helpMeMainTraceLookup, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return helpMeMainTraceLookup{}, false
+	}
+	var trace helpMeMainTraceLookup
+	if err := json.Unmarshal(data, &trace); err != nil {
+		return helpMeMainTraceLookup{}, false
+	}
+	if strings.TrimSpace(trace.SchemaVersion) != "wuu/helpme-main-trace/v0.1" {
+		return helpMeMainTraceLookup{}, false
+	}
+	if strings.TrimSpace(trace.HelperAgentID) == agentID {
+		return trace, true
+	}
+	if trace.HelperResult != nil && strings.TrimSpace(trace.HelperResult.AgentID) == agentID {
+		return trace, true
+	}
+	return helpMeMainTraceLookup{}, false
 }
 
 func latestUserGoalFromHistory(history []providers.ChatMessage) string {
@@ -829,7 +947,9 @@ func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
 			"Results can include status='awaiting_report' when a worker produced final " +
 			"text without the required agent_report; treat that as an incomplete handoff and follow up " +
 			"or verify before relying on it. Results also include changed_files from structured reports " +
-			"and warnings when multiple awaited agents report overlapping changed files.",
+			"and warnings when multiple awaited agents report overlapping changed files. For HelpMe recovery, " +
+			"use the structured report, result/report paths, and original main_trace_path as bounded handoff material; " +
+			"do not paste or merge raw parent/helper transcripts into the parent context.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -857,11 +977,122 @@ func (t *AwaitAgentsTool) Execute(ctx context.Context, argsJSON string) (string,
 	if err != nil {
 		return "", err
 	}
-	out, err := json.Marshal(result)
+	rewrite := buildHelpMeAwaitHistoryRewrite(t.env, result)
+	appendHelpMeAwaitGuidance(&result, rewrite)
+	out, err := json.Marshal(awaitAgentsToolResponse{
+		AwaitAgentsResult: result,
+		HistoryRewrite:    rewrite,
+	})
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
+}
+
+type awaitAgentsToolResponse struct {
+	agentcontrol.AwaitAgentsResult
+	HistoryRewrite *compact.HelpMeHistoryRewrite `json:"history_rewrite,omitempty"`
+}
+
+func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsResult) *compact.HelpMeHistoryRewrite {
+	if env == nil || env.AgentControl == nil || currentAgentPath(env) != agentthread.RootPath {
+		return nil
+	}
+	if result.TimedOut || len(result.Results) != 1 {
+		return nil
+	}
+	agentResult := result.Results[0]
+	if !isHelpMeAwaitResult(agentResult) || strings.TrimSpace(agentResult.Status) != string(subagent.StatusCompleted) || agentResult.ReportMissing {
+		return nil
+	}
+	report, reportOK := env.AgentControl.AgentReportDetailsForTask(agentResult.AgentID)
+	if !reportOK {
+		return nil
+	}
+	trace, tracePath, traceOK := readHelpMeMainTraceForAgent(env.SessionDir, agentResult.AgentID)
+	if !traceOK {
+		return nil
+	}
+
+	args := trace.Args
+	parentEvidence := trimStringSlice(args.Evidence)
+	if tracePath != "" {
+		parentEvidence = append(parentEvidence, "Main pre-HelpMe trace: "+tracePath)
+	}
+	artifacts := trimStringSlice(report.Artifacts)
+	if tracePath != "" {
+		artifacts = append(artifacts, tracePath)
+	}
+	reason := strings.TrimSpace(args.Reason)
+	if reason == "" {
+		reason = "The main agent requested a fresh-context recovery."
+	}
+	originalGoal := helpMeFirstNonEmpty(args.OriginalGoal, "Continue the user's current coding task.")
+	ask := helpMeFirstNonEmpty(args.Ask, originalGoal)
+	content := compact.BuildHelpMeJointCompactContent(compact.HelpMeJointCompactInput{
+		OriginalGoal:         originalGoal,
+		CurrentUnderstanding: args.CurrentUnderstanding,
+		Ask:                  ask,
+		Reason:               reason,
+		Constraints:          args.Constraints,
+		FailedAttempts:       args.FailedAttempts,
+		Evidence:             parentEvidence,
+		HelperStatus:         agentResult.Status,
+		HelperAgentID:        agentResult.AgentID,
+		HelperAgentPath:      agentResult.AgentPath,
+		HelperResult:         agentResult.Result,
+		HelperResultPath:     agentResult.ResultPath,
+		HelperReportPath:     report.ReportPath,
+		HelperError:          agentResult.Error,
+		ReportOutcome:        report.Outcome,
+		ReportSummary:        report.Summary,
+		ChangedFiles:         report.ChangedFiles,
+		WorkDone:             report.WorkDone,
+		Blockers:             report.Blockers,
+		Risks:                helpMeRisks(report.Risks, reportOK),
+		Verification:         report.Verification,
+		ReportEvidence:       helpMeEvidenceStrings(report.Evidence),
+		NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
+		Artifacts:            artifacts,
+	})
+	return &compact.HelpMeHistoryRewrite{
+		Kind:         compact.HelpMeHistoryRewriteKind,
+		Content:      content,
+		AgentID:      agentResult.AgentID,
+		AgentPath:    agentResult.AgentPath,
+		ResultPath:   agentResult.ResultPath,
+		ReportPath:   report.ReportPath,
+		TraceSummary: "Main history was replaced by a bounded HelpMe compact built from the helper report, result references, and the saved main trace; raw main/helper transcripts were not merged.",
+	}
+}
+
+func appendHelpMeAwaitGuidance(result *agentcontrol.AwaitAgentsResult, rewrite *compact.HelpMeHistoryRewrite) {
+	if result == nil || !awaitResultsIncludeHelpMe(result.Results) {
+		return
+	}
+	if rewrite != nil {
+		result.NextSteps = append(result.NextSteps, "HelpMe recovery will continue from a bounded context rewrite built from agent_report, result/report paths, and the original main_trace_path; inspect raw traces only when details are needed.")
+		return
+	}
+	result.NextSteps = append(result.NextSteps,
+		"For HelpMe recovery, synthesize from agent_report, result/report paths, and the original main_trace_path; do not paste or merge raw parent/helper transcripts.",
+		"If the parent context is polluted after consuming HelpMe, call inception with a bounded recovery summary that keeps only durable facts, rejected paths, verification, and evidence paths.",
+	)
+}
+
+func awaitResultsIncludeHelpMe(results []agentcontrol.AwaitAgentResult) bool {
+	for _, result := range results {
+		if isHelpMeAwaitResult(result) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHelpMeAwaitResult(result agentcontrol.AwaitAgentResult) bool {
+	taskName := strings.TrimSpace(result.TaskName)
+	agentPath := strings.TrimSpace(result.AgentPath)
+	return strings.HasPrefix(taskName, "helpme_recovery_") || strings.Contains(agentPath, "/helpme_recovery")
 }
 
 // ---------------------------------------------------------------------------

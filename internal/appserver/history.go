@@ -420,7 +420,8 @@ func shouldPersistMessage(msg providers.ChatMessage) bool {
 	case "user", "assistant", "tool":
 		return true
 	case "system":
-		return strings.HasPrefix(strings.TrimSpace(msg.Content), compact.ConversationSummaryPrefix)
+		content := strings.TrimSpace(msg.Content)
+		return strings.HasPrefix(content, compact.ConversationSummaryPrefix) || compact.IsHelpMeJointCompactContent(content)
 	default:
 		return false
 	}

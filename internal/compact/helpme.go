@@ -12,6 +12,7 @@ import (
 
 const (
 	HelpMeToolName               = "helpme"
+	AwaitAgentsToolName          = "await_agents"
 	HelpMeHistoryRewriteKind     = "helpme_joint_compact"
 	HelpMeJointCompactPrefix     = "[HelpMe joint compact]"
 	helpMeCompactMaxSectionBytes = 6000
@@ -129,7 +130,7 @@ func RewriteHistoryFromHelpMeToolMessagesWithContext(_ context.Context, messages
 
 func HelpMeRewriteFromToolMessages(toolMessages []providers.ChatMessage) (HelpMeHistoryRewrite, bool, error) {
 	for _, msg := range toolMessages {
-		if !strings.EqualFold(strings.TrimSpace(msg.Name), HelpMeToolName) {
+		if !isHelpMeRewriteCarrier(msg.Name) {
 			continue
 		}
 		rewrite, ok, err := HelpMeRewriteFromToolMessage(msg)
@@ -141,7 +142,10 @@ func HelpMeRewriteFromToolMessages(toolMessages []providers.ChatMessage) (HelpMe
 }
 
 func HelpMeRewriteFromToolMessage(msg providers.ChatMessage) (HelpMeHistoryRewrite, bool, error) {
-	if !strings.EqualFold(strings.TrimSpace(msg.Name), HelpMeToolName) {
+	if !isHelpMeRewriteCarrier(msg.Name) {
+		return HelpMeHistoryRewrite{}, false, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(msg.Name), AwaitAgentsToolName) && !strings.Contains(msg.Content, `"history_rewrite"`) {
 		return HelpMeHistoryRewrite{}, false, nil
 	}
 	var envelope helpMeToolEnvelope
@@ -160,6 +164,11 @@ func HelpMeRewriteFromToolMessage(msg providers.ChatMessage) (HelpMeHistoryRewri
 		return HelpMeHistoryRewrite{}, false, nil
 	}
 	return rewrite, true, nil
+}
+
+func isHelpMeRewriteCarrier(name string) bool {
+	name = strings.TrimSpace(name)
+	return strings.EqualFold(name, HelpMeToolName) || strings.EqualFold(name, AwaitAgentsToolName)
 }
 
 func RewriteHistoryWithHelpMeCompact(messages []providers.ChatMessage, content string) []providers.ChatMessage {

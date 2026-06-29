@@ -73,3 +73,45 @@ func TestRewriteHistoryFromHelpMeToolMessagesDropsToolChain(t *testing.T) {
 		t.Fatalf("unexpected rewritten summary: %+v", rewritten[1])
 	}
 }
+
+func TestRewriteHistoryFromAwaitAgentsToolMessagesAcceptsHelpMeRewrite(t *testing.T) {
+	toolResult := providers.ChatMessage{
+		Role:       "tool",
+		Name:       AwaitAgentsToolName,
+		ToolCallID: "call_await",
+		Content:    `{"action":"await_agents","results":[{"agent_id":"agent-1","status":"completed"}],"history_rewrite":{"kind":"helpme_joint_compact","content":"[HelpMe joint compact]\nRecovered from awaited helper"}}`,
+	}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_await", Name: AwaitAgentsToolName}}},
+		toolResult,
+	}
+
+	rewritten, ok, err := RewriteHistoryFromHelpMeToolMessages(history, []providers.ChatMessage{toolResult})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected await_agents HelpMe rewrite")
+	}
+	if len(rewritten) != 2 || rewritten[1].Role != "system" || !strings.Contains(rewritten[1].Content, "awaited helper") {
+		t.Fatalf("unexpected rewritten history: %+v", rewritten)
+	}
+}
+
+func TestAwaitAgentsWithoutHelpMeRewriteIsIgnoredEvenWhenNonJSON(t *testing.T) {
+	toolResult := providers.ChatMessage{
+		Role:       "tool",
+		Name:       AwaitAgentsToolName,
+		ToolCallID: "call_await",
+		Content:    "await_agents: agent control not configured",
+	}
+
+	_, ok, err := HelpMeRewriteFromToolMessages([]providers.ChatMessage{toolResult})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected await_agents result without history_rewrite to be ignored")
+	}
+}

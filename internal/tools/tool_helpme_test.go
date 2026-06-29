@@ -23,7 +23,7 @@ func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
 	if _, ok := props["wait_ms"]; ok {
 		t.Fatalf("helpme schema should not ask the model to choose wait duration: %#v", def.InputSchema)
 	}
-	for _, want := range []string{"returns immediately", "await_agents", "inception"} {
+	for _, want := range []string{"returns immediately", "await_agents", "inception", "bounded HelpMe recovery summary", "raw parent/helper transcripts"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("helpme description missing %q:\n%s", want, def.Description)
 		}
@@ -132,5 +132,38 @@ func TestWriteHelpMeMainTraceArchivesParentHistory(t *testing.T) {
 	}
 	if !payload.ReportMissing {
 		t.Fatal("expected missing report to be recorded")
+	}
+
+	trace, traceRef, ok := readHelpMeMainTraceForAgent(sessionDir, "helper-1")
+	if !ok {
+		t.Fatal("expected trace lookup by helper id")
+	}
+	if trace.Args.OriginalGoal != "original task" {
+		t.Fatalf("trace args not loaded: %+v", trace.Args)
+	}
+	if !strings.HasPrefix(traceRef, "$SESSION_DIR/helpme/") {
+		t.Fatalf("expected session trace ref, got %q", traceRef)
+	}
+}
+
+func TestAppendHelpMeAwaitGuidanceWarnsAgainstRawTranscriptMerge(t *testing.T) {
+	result := agentcontrol.AwaitAgentsResult{
+		Action: "await_agents",
+		Results: []agentcontrol.AwaitAgentResult{{
+			AgentID:    "helper-1",
+			TaskName:   "helpme_recovery_abc123",
+			AgentPath:  "/root/helpme_recovery_abc123",
+			Status:     "completed",
+			ReportPath: "$SESSION_DIR/harness/reports/helper-1.md",
+		}},
+	}
+
+	appendHelpMeAwaitGuidance(&result, nil)
+
+	joined := strings.Join(result.NextSteps, "\n")
+	for _, want := range []string{"agent_report", "main_trace_path", "do not paste or merge raw parent/helper transcripts", "inception"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("HelpMe await guidance missing %q:\n%s", want, joined)
+		}
 	}
 }
