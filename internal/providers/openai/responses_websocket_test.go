@@ -1114,7 +1114,7 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 		!states[1].PreviousResponseIDUsed ||
 		states[1].Diagnostic != "provider_transport_failure" ||
 		states[1].TransportFailurePhase != "after_message_stream_start" ||
-		states[1].FallbackTransport != "sse" ||
+		states[1].FallbackTransport != "" ||
 		!states[1].EventsEmitted ||
 		!states[1].FallbackActive ||
 		states[1].FallbackReason != "stream_error_after_provider_event" {
