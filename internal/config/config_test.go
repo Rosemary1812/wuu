@@ -1569,3 +1569,226 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 		t.Fatalf("old provider changed: %+v", old)
 	}
 }
+
+func TestRemoveProviderInactiveKeepsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "keep",
+  "providers": {
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.com/v1",
+      "model": "keep-model"
+    },
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.com/v1",
+      "model": "drop-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	newDefault, err := RemoveProvider(path, "drop", "", "")
+	if err != nil {
+		t.Fatalf("RemoveProvider: %v", err)
+	}
+	if newDefault != "" {
+		t.Fatalf("expected empty newDefault when inactive provider is removed, got %q", newDefault)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.DefaultProvider != "keep" {
+		t.Fatalf("default provider changed: %q", cfg.DefaultProvider)
+	}
+	if _, _, err := cfg.ResolveProvider("drop"); err == nil {
+		t.Fatal("expected drop provider to be removed")
+	}
+	if _, _, err := cfg.ResolveProvider("keep"); err != nil {
+		t.Fatalf("keep provider unexpectedly removed: %v", err)
+	}
+}
+
+func TestRemoveProviderActiveSwapsDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "drop",
+  "providers": {
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.com/v1",
+      "model": "drop-model"
+    },
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.com/v1",
+      "model": "keep-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	newDefault, err := RemoveProvider(path, "drop", "keep", "")
+	if err != nil {
+		t.Fatalf("RemoveProvider: %v", err)
+	}
+	if newDefault != "keep" {
+		t.Fatalf("expected newDefault=keep, got %q", newDefault)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.DefaultProvider != "keep" {
+		t.Fatalf("default provider not swapped: %q", cfg.DefaultProvider)
+	}
+	keep, _, _ := cfg.ResolveProvider("keep")
+	if keep.Model != "keep-model" {
+		t.Fatalf("keep provider model unexpectedly changed: %q", keep.Model)
+	}
+}
+
+func TestRemoveProviderActiveAppliesFallbackModel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "drop",
+  "providers": {
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.com/v1",
+      "model": "drop-model"
+    },
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.com/v1",
+      "model": "keep-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveProvider(path, "drop", "keep", "fallback-model"); err != nil {
+		t.Fatalf("RemoveProvider: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	keep, _, _ := cfg.ResolveProvider("keep")
+	if keep.Model != "fallback-model" {
+		t.Fatalf("expected fallback model applied, got %q", keep.Model)
+	}
+}
+
+func TestRemoveProviderRejectsLastProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "only",
+  "providers": {
+    "only": {
+      "type": "openai-compatible",
+      "base_url": "https://only.example.com/v1",
+      "model": "only-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveProvider(path, "only", "", ""); err == nil {
+		t.Fatal("expected error when removing the only provider without fallback")
+	}
+
+	cfg, _, err := LoadFrom(dir, "")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg.DefaultProvider != "only" {
+		t.Fatalf("default provider changed on failed removal: %q", cfg.DefaultProvider)
+	}
+	if _, _, err := cfg.ResolveProvider("only"); err != nil {
+		t.Fatalf("only provider should still exist: %v", err)
+	}
+}
+
+func TestRemoveProviderRejectsUnknownProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "real",
+  "providers": {
+    "real": {
+      "type": "openai-compatible",
+      "base_url": "https://real.example.com/v1",
+      "model": "real-model"
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveProvider(path, "ghost", "", ""); err == nil {
+		t.Fatal("expected error when removing a non-existent provider")
+	}
+}
+
+func TestRemoveProviderClearsModelRoleReferences(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".wuu.json")
+	orig := `{
+  "default_provider": "keep",
+  "providers": {
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.com/v1",
+      "model": "keep-model"
+    },
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.com/v1",
+      "model": "drop-model"
+    }
+  },
+  "agent": {
+    "model_roles": {
+      "review": { "provider": "drop", "model": "drop-model" },
+      "compact": { "provider": "keep", "model": "keep-model" }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RemoveProvider(path, "drop", "", ""); err != nil {
+		t.Fatalf("RemoveProvider: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"provider": "drop"`) {
+		t.Fatalf("review role provider was not cleared: %s", data)
+	}
+	if !strings.Contains(string(data), `"provider": "keep"`) {
+		t.Fatalf("compact role provider was unexpectedly removed: %s", data)
+	}
+}

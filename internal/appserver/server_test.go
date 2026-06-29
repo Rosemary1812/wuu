@@ -1585,6 +1585,180 @@ func TestServerConfigCodexModels(t *testing.T) {
 	}
 }
 
+func TestServerConfigProviderRemoveInactive(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "keep",
+  "providers": {
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.test/v1",
+      "api_key": "keep-key",
+      "model": "keep-model"
+    },
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.test/v1",
+      "api_key": "drop-key",
+      "model": "drop-model"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/provider/remove","params":{"provider":"drop"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/provider/remove: %v", err)
+	}
+
+	if got := responseByID(t, parseOutput(t, out.String()), "1")["error"]; got != nil {
+		t.Fatalf("unexpected error response: %+v", got)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"drop"`) {
+		t.Fatalf("drop provider was not removed: %s", data)
+	}
+	if !strings.Contains(string(data), `"keep"`) {
+		t.Fatalf("keep provider was unexpectedly removed: %s", data)
+	}
+	if !strings.Contains(string(data), `"default_provider": "keep"`) {
+		t.Fatalf("default provider changed unexpectedly: %s", data)
+	}
+	if rt.ProviderName != "fake-provider" || rt.Model != "fake-model" {
+		t.Fatalf("runtime selection changed for inactive removal: provider=%q model=%q", rt.ProviderName, rt.Model)
+	}
+}
+
+func TestServerConfigProviderRemoveActiveSwapsDefault(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "drop",
+  "providers": {
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.test/v1",
+      "api_key": "drop-key",
+      "model": "drop-model"
+    },
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.test/v1",
+      "api_key": "keep-key",
+      "model": "keep-model"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	rt.ProviderName = "drop"
+	rt.Model = "drop-model"
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/provider/remove","params":{"provider":"drop","fallback_provider":"keep","fallback_model":"keep-model"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/provider/remove: %v", err)
+	}
+
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected error response: %+v", response["error"])
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), `"drop"`) {
+		t.Fatalf("drop provider was not removed: %s", data)
+	}
+	if !strings.Contains(string(data), `"default_provider": "keep"`) {
+		t.Fatalf("default provider not swapped to keep: %s", data)
+	}
+	if rt.ProviderName != "keep" || rt.Model != "keep-model" {
+		t.Fatalf("runtime selection not updated: provider=%q model=%q", rt.ProviderName, rt.Model)
+	}
+}
+
+func TestServerConfigProviderRemoveRejectsOAuth(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "real",
+  "providers": {
+    "real": {
+      "type": "openai-compatible",
+      "base_url": "https://real.example.test/v1",
+      "model": "real-model"
+    },
+    "codex": {
+      "type": "openai-codex",
+      "base_url": "https://chatgpt.example.test/backend-api/codex",
+      "model": "codex-model"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/provider/remove","params":{"provider":"codex"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/provider/remove: %v", err)
+	}
+
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] == nil {
+		t.Fatal("expected OAuth removal to fail, got success")
+	}
+	if !strings.Contains(fmt.Sprint(response["error"]), "OAuth") {
+		t.Fatalf("expected OAuth error, got %+v", response["error"])
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"codex"`) {
+		t.Fatalf("OAuth provider was removed despite rejection: %s", data)
+	}
+}
+
+func TestServerConfigProviderRemoveRejectsLastProvider(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "only",
+  "providers": {
+    "only": {
+      "type": "openai-compatible",
+      "base_url": "https://only.example.test/v1",
+      "model": "only-model"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/provider/remove","params":{"provider":"only"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/provider/remove: %v", err)
+	}
+
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] == nil {
+		t.Fatal("expected last-provider removal to fail, got success")
+	}
+	if !strings.Contains(fmt.Sprint(response["error"]), "last") {
+		t.Fatalf("expected last-provider error, got %+v", response["error"])
+	}
+}
+
 func TestServerSkillList(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.Skills = []skills.Skill{{
@@ -3873,6 +4047,36 @@ func TestServerThreadListUsesSessionIndexMetadata(t *testing.T) {
 	}
 	if result.Threads[1].ID != "new-thread" || result.Threads[1].Archived {
 		t.Fatalf("unexpected second thread: %+v", result.Threads[1])
+	}
+}
+
+func TestServerThreadListCanTargetDifferentCWD(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	otherCWD := filepath.Join(rt.RootDir, "other")
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "root-thread", rt.RootDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "other-thread", otherCWD); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, "other-thread", 2, "other summary"); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	raw := fmt.Sprintf(`{"id":"1","method":"thread/list","params":{"cwd":%q}}`, otherCWD)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/list: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadListResult](t, responseByID(t, msgs, "1")["result"])
+	if len(result.Threads) != 1 {
+		t.Fatalf("expected one targeted workspace thread, got %+v", result.Threads)
+	}
+	if result.Threads[0].ID != "other-thread" || result.Threads[0].Preview != "other summary" {
+		t.Fatalf("unexpected targeted thread: %+v", result.Threads[0])
 	}
 }
 

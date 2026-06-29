@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -655,6 +656,83 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 		Variant:  variant,
 		Models:   out,
 	}, nil)
+}
+
+func (s *Server) handleConfigProviderRemove(req Request) error {
+	var params ConfigProviderRemoveParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	providerName := strings.TrimSpace(params.Provider)
+	if providerName == "" {
+		return s.writeResponse(req.ID, nil, errors.New("provider is required"))
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot remove provider while a turn is running"))
+	}
+	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	existing, _, lookupErr := cfg.ResolveProvider(providerName)
+	if lookupErr != nil {
+		return s.writeResponse(req.ID, nil, lookupErr)
+	}
+	if isCodexProviderType(existing.Type) {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("provider %q is managed by OpenAI OAuth and cannot be removed", providerName))
+	}
+	// Refuse to remove the last remaining provider when no fallback is
+	// supplied — config.RemoveProvider would surface a similar error but
+	// doing the check here gives the renderer a clearer 4xx-style error.
+	if len(cfg.Providers) <= 1 && strings.TrimSpace(params.FallbackProvider) == "" {
+		return s.writeResponse(req.ID, nil, errors.New("cannot remove the last configured provider"))
+	}
+	removedWasDefault := cfg.DefaultProvider == providerName
+	newDefault, removeErr := config.RemoveProvider(s.rt.ConfigPath, providerName, params.FallbackProvider, params.FallbackModel)
+	if removeErr != nil {
+		return s.writeResponse(req.ID, nil, removeErr)
+	}
+	if !removedWasDefault {
+		// Removed an inactive provider; nothing in the runtime needs
+		// reconfiguring because the active selection is unchanged.
+		return s.writeResponse(req.ID, ConfigProviderRemoveResult{
+			Provider:         s.rt.ProviderName,
+			Model:            s.rt.Model,
+			Variant:          s.currentVariant(),
+			ToolPolicy:       s.currentToolPolicySummary(),
+			Permissions:      s.currentPermissionSummary(),
+			ExtensionTrust:   s.currentExtensionTrustSummary(),
+			ModelProfile:     nil,
+			ToolSurface:      nil,
+			ModelRoles:       s.currentModelRoleSummaries(),
+			Providers:        s.providerSummaries(),
+			AdvancedSettings: s.currentAdvancedSettingsSummary(),
+		}, nil)
+	}
+	// Default provider changed — reload the config and rebuild the
+	// runtime for the new default. Falling back to the removed
+	// provider's model when the caller did not supply fallbackModel
+	// keeps the renderer from showing an empty model after the swap.
+	fallbackName := strings.TrimSpace(newDefault)
+	if fallbackName == "" {
+		return s.writeResponse(req.ID, nil, errors.New("provider removal left no default_provider configured"))
+	}
+	fallbackModel := strings.TrimSpace(params.FallbackModel)
+	if fallbackModel == "" {
+		if fb, ok := cfg.Providers[fallbackName]; ok {
+			fallbackModel = fb.Model
+		}
+	}
+	synthetic := req
+	synthetic.Method = MethodConfigModelUpdate
+	synthetic.Params, err = json.Marshal(ConfigModelUpdateParams{
+		Provider: fallbackName,
+		Model:    fallbackModel,
+	})
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("marshal fallback params: %w", err))
+	}
+	return s.handleConfigModelUpdate(synthetic)
 }
 
 func (s *Server) handleSkillList(req Request) error {

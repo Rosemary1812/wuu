@@ -844,6 +844,99 @@ func CreateProviderRuntime(configPath, providerName, newModel string, baseURL, a
 	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, true)
 }
 
+// RemoveProvider deletes a configured provider from the config file and,
+// when the removed provider was the active default, atomically promotes
+// fallbackName to default_provider with fallbackModel. fallbackName must
+// exist in the providers map after deletion; passing "" skips the swap
+// when the removed provider was not the active default.
+//
+// The function preserves unknown top-level fields and formatting by
+// editing the raw JSON map directly, mirroring UpdateProviderModel and
+// UpdateAdvancedRuntime. Callers are responsible for refusing the
+// removal before this point (last provider, OAuth-locked, running
+// thread, etc.) — this function only handles the on-disk mutation.
+func RemoveProvider(configPath, providerName, fallbackName, fallbackModel string) (newDefault string, err error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", fmt.Errorf("read config: %w", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "", fmt.Errorf("parse config: %w", err)
+	}
+
+	providers, ok := raw["providers"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("providers section not found")
+	}
+	if _, exists := providers[providerName]; !exists {
+		return "", fmt.Errorf("provider %q not found", providerName)
+	}
+
+	currentDefault, _ := raw["default_provider"].(string)
+	removedWasDefault := currentDefault == providerName
+
+	delete(providers, providerName)
+
+	if removedWasDefault {
+		if strings.TrimSpace(fallbackName) == "" {
+			// No fallback supplied — pick any remaining provider to keep
+			// the runtime consistent. Callers should normally pick a
+			// sensible default, but this fallback keeps the config
+			// usable even if the caller skips that step.
+			for name := range providers {
+				fallbackName = name
+				break
+			}
+		}
+		if strings.TrimSpace(fallbackName) == "" {
+			// No providers left to fall back to; refuse the deletion so
+			// the runtime never ends up with an empty default_provider.
+			return "", errors.New("cannot remove the last configured provider")
+		}
+		if _, ok := providers[fallbackName].(map[string]any); !ok {
+			return "", fmt.Errorf("fallback provider %q not found", fallbackName)
+		}
+		raw["default_provider"] = fallbackName
+		if strings.TrimSpace(fallbackModel) != "" {
+			fb, _ := providers[fallbackName].(map[string]any)
+			if fb != nil {
+				fb["model"] = strings.TrimSpace(fallbackModel)
+			}
+		}
+		newDefault = fallbackName
+	}
+
+	// Clean up any model_role entries that pointed at the removed
+	// provider. Empty roles fall back to the main selection per the
+	// existing resolver, so dropping the name is the right default
+	// rather than erroring.
+	if agent, ok := raw["agent"].(map[string]any); ok {
+		if roles, ok := agent["model_roles"].(map[string]any); ok {
+			for roleKey, raw := range roles {
+				role, _ := raw.(map[string]any)
+				if role == nil {
+					continue
+				}
+				if name, _ := role["provider"].(string); name == providerName {
+					delete(role, "provider")
+				}
+				_ = roleKey
+			}
+		}
+	}
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(configPath, append(out, '\n'), 0644); err != nil {
+		return "", err
+	}
+	return newDefault, nil
+}
+
 // UpdateAdvancedRuntime changes low-level runtime knobs without switching the
 // selected provider/model. Zero values mean "auto/default" for numeric knobs.
 func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRuntimeUpdate) error {

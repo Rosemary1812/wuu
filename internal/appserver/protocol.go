@@ -270,6 +270,49 @@ type ConfigModelUpdateResult struct {
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
 }
 
+// ConfigProviderRemoveParams requests the deletion of a configured
+// provider. The handler enforces the same safety guards as the
+// existing config handlers (no removal of the last provider, no
+// removal of OAuth/connection-locked providers, no removal while
+// a turn is running) and atomically swaps the default provider to
+// FallbackProvider when the removed provider was active.
+//
+// FallbackModel is applied to the new default after the swap so
+// the runtime has a model to use. When the caller does not
+// specify a fallback, the server picks another existing provider
+// (or, in the single-provider removal path, returns an error).
+type ConfigProviderRemoveParams struct {
+	// Provider is the configured provider name to delete. Required.
+	Provider string `json:"provider"`
+	// FallbackProvider becomes the new default_provider if the removed
+	// provider was the active one. Optional; server picks another
+	// existing provider when empty. Required when removing the last
+	// remaining provider so the runtime still has a model to use.
+	FallbackProvider string `json:"fallback_provider,omitempty"`
+	// FallbackModel is applied to the new default provider after the
+	// swap so the runtime has a model to use. Optional; server reuses
+	// the removed provider's model when empty.
+	FallbackModel string `json:"fallback_model,omitempty"`
+}
+
+// ConfigProviderRemoveResult mirrors ConfigModelUpdateResult. The
+// renderer reuses its existing updateRuntimeSettings reducer to
+// merge provider/model/toolpolicy/permissions into the initialized
+// state, so the shape intentionally matches that result.
+type ConfigProviderRemoveResult struct {
+	Provider         string                  `json:"provider"`
+	Model            string                  `json:"model"`
+	Variant          string                  `json:"variant,omitempty"`
+	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
+	Permissions      PermissionSummary       `json:"permissions"`
+	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
+	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
+	ToolSurface      *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
+	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
+	Providers        []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
+}
+
 type ConfigAdvancedUpdateParams struct {
 	MaxSteps                *int     `json:"max_steps,omitempty"`
 	MaxContextTokens        *int     `json:"max_context_tokens,omitempty"`
@@ -690,6 +733,10 @@ type ContextSegmentCountSummary struct {
 
 type ThreadListResult struct {
 	Threads []Thread `json:"threads"`
+}
+
+type ThreadListParams struct {
+	CWD string `json:"cwd,omitempty"`
 }
 
 type ThreadSearchParams struct {
