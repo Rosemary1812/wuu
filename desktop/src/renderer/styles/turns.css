@@ -639,6 +639,13 @@
   transform: var(--message-copy-active-transform);
 }
 
+.user-message-actions {
+  justify-self: end;
+  justify-content: flex-end;
+  width: max-content;
+  max-width: 100%;
+}
+
 .message-images {
   display: flex;
   flex-wrap: wrap;
