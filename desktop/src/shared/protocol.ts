@@ -655,6 +655,7 @@ export type Turn = {
   duration_ms?: number;
   input_tokens?: number;
   output_tokens?: number;
+  context_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
   usage_model?: string;
@@ -726,6 +727,7 @@ export type TurnCompletedNotification = {
   content: string;
   input_tokens?: number;
   output_tokens?: number;
+  context_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
   trace_path?: string;
@@ -737,6 +739,7 @@ export type TurnUsageNotification = {
   model?: string;
   input_tokens?: number;
   output_tokens?: number;
+  context_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
   // Resolved runtime context-window size for the active model at the

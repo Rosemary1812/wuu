@@ -827,6 +827,7 @@ type TurnUsageNotification struct {
 	Model               string `json:"model,omitempty"`
 	InputTokens         int    `json:"input_tokens"`
 	OutputTokens        int    `json:"output_tokens"`
+	ContextTokens       int    `json:"context_tokens,omitempty"`
 	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
 	// ContextWindowTokens is the resolved runtime context-window size for
@@ -844,6 +845,7 @@ type TurnCompletedNotification struct {
 	Content             string `json:"content"`
 	InputTokens         int    `json:"input_tokens"`
 	OutputTokens        int    `json:"output_tokens"`
+	ContextTokens       int    `json:"context_tokens,omitempty"`
 	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
 	FinishReason        string `json:"finish_reason,omitempty"`
@@ -970,6 +972,7 @@ type Turn struct {
 	DurationMS          *int64        `json:"duration_ms,omitempty"`
 	InputTokens         int           `json:"input_tokens,omitempty"`
 	OutputTokens        int           `json:"output_tokens,omitempty"`
+	ContextTokens       int           `json:"context_tokens,omitempty"`
 	CacheCreationTokens int           `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int           `json:"cache_read_tokens,omitempty"`
 	UsageModel          string        `json:"usage_model,omitempty"`

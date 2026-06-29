@@ -59,6 +59,7 @@ type persistedMessage struct {
 	At                  time.Time                          `json:"at,omitempty"`
 	InputTokens         int                                `json:"input_tokens,omitempty"`
 	OutputTokens        int                                `json:"output_tokens,omitempty"`
+	ContextTokens       int                                `json:"context_tokens,omitempty"`
 	CacheCreationTokens int                                `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int                                `json:"cache_read_tokens,omitempty"`
 	// Provider and Model carry which provider/model produced this row's
@@ -205,8 +206,8 @@ func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error 
 // history. provider and model tag the row so the insight scanner can aggregate
 // usage per provider/model across sessions. Empty values are preserved as empty
 // strings, which the scanner interprets as "unknown provider/model".
-func appendTokenUsage(sessDir, id, provider, model string, usage providers.TokenUsage) error {
-	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || (usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CacheCreationTokens == 0 && usage.CacheReadTokens == 0) {
+func appendTokenUsage(sessDir, id, provider, model string, usage providers.TokenUsage, contextTokens int) error {
+	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || (usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CacheCreationTokens == 0 && usage.CacheReadTokens == 0 && contextTokens == 0) {
 		return nil
 	}
 	rec := persistedMessage{
@@ -217,6 +218,7 @@ func appendTokenUsage(sessDir, id, provider, model string, usage providers.Token
 		At:                  time.Now().UTC(),
 		InputTokens:         usage.InputTokens,
 		OutputTokens:        usage.OutputTokens,
+		ContextTokens:       contextTokens,
 		CacheCreationTokens: usage.CacheCreationTokens,
 		CacheReadTokens:     usage.CacheReadTokens,
 	}
@@ -340,6 +342,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		At:                  rec.At,
 		InputTokens:         rec.InputTokens,
 		OutputTokens:        rec.OutputTokens,
+		ContextTokens:       rec.ContextTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
 		Provider:            rec.Provider,
@@ -368,6 +371,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		At:                  rec.At,
 		InputTokens:         rec.InputTokens,
 		OutputTokens:        rec.OutputTokens,
+		ContextTokens:       rec.ContextTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
 		Provider:            rec.Provider,

@@ -493,6 +493,7 @@ func TestApplyTokenUsageMetasToTurnsAlignsFromNewestTurn(t *testing.T) {
 		Content:         "token_usage",
 		Model:           "minimax-m3",
 		InputTokens:     19_600,
+		ContextTokens:   88_000,
 		CacheReadTokens: 113_000,
 	}})
 
@@ -502,7 +503,7 @@ func TestApplyTokenUsageMetasToTurnsAlignsFromNewestTurn(t *testing.T) {
 	if turns[0].InputTokens != 0 || turns[0].CacheReadTokens != 0 {
 		t.Fatalf("usage should not attach to legacy first turn: %+v", turns[0])
 	}
-	if turns[1].InputTokens != 19_600 || turns[1].CacheReadTokens != 113_000 || turns[1].UsageModel != "minimax-m3" {
+	if turns[1].InputTokens != 19_600 || turns[1].CacheReadTokens != 113_000 || turns[1].ContextTokens != 88_000 || turns[1].UsageModel != "minimax-m3" {
 		t.Fatalf("usage should attach to newest turn: %+v", turns[1])
 	}
 }

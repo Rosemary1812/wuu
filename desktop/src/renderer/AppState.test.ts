@@ -708,6 +708,37 @@ describe("latestContextUsageForThread", () => {
     expect(result?.window).toBe(200_000);
   });
 
+  it("does not treat raw provider usage as retained context", () => {
+    let state = initialState;
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      1_300_000,
+      0,
+      0,
+      0,
+      1_000,
+      1_000_000,
+    );
+    const t = makeThread({
+      model: "minimax-m3",
+      turns: [{ id: "turn-1", status: "completed" }],
+    });
+    const result = latestContextUsageForThread(state, t, {
+      model: "minimax-m3",
+      contextWindowTokens: 1_000_000,
+    });
+    expect(result).toEqual({
+      turnID: "",
+      used: 0,
+      window: 1_000_000,
+      inputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
+  });
+
   it("returns real usage from the most recent turn that has one", () => {
     let state = initialState;
     state = appendTurnTokenSample(
@@ -720,6 +751,8 @@ describe("latestContextUsageForThread", () => {
       0,
       1_000,
       200_000,
+      undefined,
+      10,
     );
     state = appendTurnTokenSample(
       state,
@@ -731,6 +764,8 @@ describe("latestContextUsageForThread", () => {
       0,
       2_000,
       200_000,
+      undefined,
+      20,
     );
     const t = makeThread({
       turns: [
@@ -758,6 +793,7 @@ describe("latestContextUsageForThread", () => {
     t.turns[0].input_tokens = 19_600;
     t.turns[0].cache_read_tokens = 113_000;
     t.turns[0].cache_creation_tokens = 0;
+    t.turns[0].context_tokens = 88_000;
     t.turns[0].usage_model = "minimax-m3";
     const result = latestContextUsageForThread(initialState, t, {
       model: "minimax-m3",
@@ -765,7 +801,7 @@ describe("latestContextUsageForThread", () => {
     });
     expect(result).toEqual({
       turnID: "turn-1",
-      used: 132_600,
+      used: 88_000,
       window: 1_000_000,
       inputTokens: 19_600,
       cacheCreationTokens: 0,
@@ -789,6 +825,8 @@ describe("latestContextUsageForThread", () => {
       0,
       1_000,
       200_000,
+      undefined,
+      10,
     );
     const t = makeThread({
       turns: [
@@ -817,6 +855,8 @@ describe("latestContextUsageForThread", () => {
       0,
       1_000,
       200_000,
+      undefined,
+      10,
     );
     const t = makeThread({
       model: "claude-sonnet-4-5",
@@ -840,6 +880,7 @@ describe("latestContextUsageForThread", () => {
       1_000,
       200_000,
       "claude-sonnet-4-5",
+      80_000,
     );
     const t = makeThread({
       model: "gpt-5",

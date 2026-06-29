@@ -1832,6 +1832,9 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if params.InputTokens != 10 || params.OutputTokens != 3 || params.CacheCreationTokens != 6 || params.CacheReadTokens != 4 {
 		t.Fatalf("unexpected usage: %+v", params)
 	}
+	if params.ContextTokens != 17 || params.Turn.ContextTokens != 17 {
+		t.Fatalf("completed turn should carry retained context estimate: %+v", params)
+	}
 	if params.TracePath == "" {
 		t.Fatalf("completed turn should include trace path: %+v", params)
 	}
@@ -4515,7 +4518,7 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
 		t.Fatalf("append old assistant: %v", err)
 	}
-	if err := appendTokenUsage(rt.SessionDir, sess.ID, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}); err != nil {
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}, 18); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
@@ -4554,7 +4557,7 @@ func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
 	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "done"}); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 19_600, CacheReadTokens: 113_000}); err != nil {
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 19_600, CacheReadTokens: 113_000}, 88_000); err != nil {
 		t.Fatalf("append token usage: %v", err)
 	}
 
@@ -4569,7 +4572,7 @@ func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
 		t.Fatalf("expected one turn, got %+v", result.Thread.Turns)
 	}
 	turn := result.Thread.Turns[0]
-	if turn.InputTokens != 19_600 || turn.CacheReadTokens != 113_000 || turn.UsageModel != rt.Model {
+	if turn.InputTokens != 19_600 || turn.CacheReadTokens != 113_000 || turn.ContextTokens != 88_000 || turn.UsageModel != rt.Model {
 		t.Fatalf("resume should restore token usage on turn: %+v", turn)
 	}
 }

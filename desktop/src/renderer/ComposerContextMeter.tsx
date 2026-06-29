@@ -1,9 +1,10 @@
 // Composer-toolbar context-window meter.
 //
-// Sits next to the live token-speed gauge and shows how much of the active
-// model's context window the most recent request consumed. The toolbar keeps
-// this aligned with the token-speed gauge: the ring shows the proportion, the
-// label shows used/window, and hover reveals only the percentage.
+// Sits next to the live token-speed gauge and shows the retained conversation
+// context estimate against the active model's context window. The toolbar
+// keeps this aligned with the token-speed gauge: the ring shows the
+// proportion, the label shows used/window, and hover reveals the concise
+// details.
 //
 // The fill color stays a single neutral gray regardless of fill level:
 // the meter is a passive readout, not a warning. Color-coded urgency
@@ -50,7 +51,7 @@ export function ComposerContextMeter({
   )}`;
   const ariaLabel =
     `上下文窗口 ${formatTokenCount(usage.window)}` +
-    `，最近占用 ${formatTokenCount(used)} (${percent}%)`;
+    `，估算占用 ${formatTokenCount(used)} (${percent}%)`;
   return (
     <div
       ref={anchorRef}
@@ -109,14 +110,14 @@ export function ComposerContextMeter({
           >
             <div className="composer-context-meter-tooltip-headline">
               <span className="composer-context-meter-tooltip-label">
-                上下文已用
+                上下文估算
               </span>
               <span className="composer-context-meter-tooltip-value">
                 {percentLabel}
               </span>
             </div>
             <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">已用</span>
+              <span className="composer-context-meter-tooltip-label">已保留</span>
               <span className="composer-context-meter-tooltip-value">
                 {valueLabel}
               </span>

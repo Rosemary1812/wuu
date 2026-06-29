@@ -186,12 +186,13 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	return turn
 }
 
-func applyTokenUsageToTurn(turn *Turn, usage providers.TokenUsage, model string) {
+func applyTokenUsageToTurn(turn *Turn, usage providers.TokenUsage, contextTokens int, model string) {
 	if turn == nil {
 		return
 	}
 	turn.InputTokens = usage.InputTokens
 	turn.OutputTokens = usage.OutputTokens
+	turn.ContextTokens = contextTokens
 	turn.CacheCreationTokens = usage.CacheCreationTokens
 	turn.CacheReadTokens = usage.CacheReadTokens
 	turn.UsageModel = strings.TrimSpace(model)
@@ -209,6 +210,7 @@ func applyTokenUsageMetasToTurns(turns []Turn, metas []persistedMessage) []Turn 
 		}
 		if meta.InputTokens == 0 &&
 			meta.OutputTokens == 0 &&
+			meta.ContextTokens == 0 &&
 			meta.CacheCreationTokens == 0 &&
 			meta.CacheReadTokens == 0 {
 			continue
@@ -231,7 +233,7 @@ func applyTokenUsageMetasToTurns(turns []Turn, metas []persistedMessage) []Turn 
 			OutputTokens:        meta.OutputTokens,
 			CacheCreationTokens: meta.CacheCreationTokens,
 			CacheReadTokens:     meta.CacheReadTokens,
-		}, meta.Model)
+		}, meta.ContextTokens, meta.Model)
 		turnIndex++
 		usageIndex++
 	}

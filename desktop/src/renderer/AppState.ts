@@ -149,6 +149,10 @@ type TurnTokenUsage = {
   speedTokens: number;
   speedSource: Exclude<TokenSpeedSource, "none">;
   samples: TurnTokenSample[];
+  // contextTokens is the retained conversation estimate produced by the
+  // agent loop after request-only context has been excluded. It is what the
+  // composer context meter displays.
+  contextTokens?: number;
   // contextWindowTokens is the resolved runtime window size for the active
   // model at the time of the latest real (provider-reported) usage sample.
   // Streaming estimates preserve it from the previous real sample so the
@@ -159,9 +163,9 @@ type TurnTokenUsage = {
 
 export type TurnContextUsage = {
   turnID: string;
-  // used is the token count the model actually consumed as input on the
-  // last real usage snapshot: fresh input + cache-creation writes +
-  // cache-read hits. output tokens are not part of the input context.
+  // used is the retained conversation estimate after request-only context
+  // has been excluded. Raw provider input/cache usage is not a proxy for
+  // this number because it can include one-off tool context.
   used: number;
   window: number;
   inputTokens: number;
@@ -601,6 +605,7 @@ function reduceNotification(
         Date.now(),
         numberValue(params, "context_window_tokens") ?? 0,
         stringValue(params, "model"),
+        numberValue(params, "context_tokens") ?? 0,
       );
     }
     default:
@@ -1610,6 +1615,7 @@ function appendTurnTokenSample(
   at: number,
   contextWindowTokens: number = 0,
   model?: string,
+  contextTokens: number = 0,
 ): AppState {
   const turnTokenUsage = state.turnTokenUsage ?? {};
   const previous = turnTokenUsage[turnID];
@@ -1642,6 +1648,8 @@ function appendTurnTokenSample(
       ? contextWindowTokens
       : previous?.contextWindowTokens;
   const resolvedModel = model || previous?.model;
+  const resolvedContextTokens =
+    contextTokens && contextTokens > 0 ? contextTokens : previous?.contextTokens;
   return {
     ...state,
     turnTokenUsage: {
@@ -1655,6 +1663,9 @@ function appendTurnTokenSample(
         speedTokens,
         speedSource: "real",
         samples,
+        ...(resolvedContextTokens
+          ? { contextTokens: resolvedContextTokens }
+          : {}),
         ...(resolvedWindow ? { contextWindowTokens: resolvedWindow } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
       },
@@ -1704,6 +1715,9 @@ function appendStreamingTokenSample(
         speedTokens,
         speedSource: "estimated",
         samples,
+        ...(previous?.contextTokens
+          ? { contextTokens: previous.contextTokens }
+          : {}),
         // Streaming estimates are byte-deltas, not real usage; they do not
         // know the context window. Carry the previously-resolved window
         // forward so the meter stays visible while we wait for the next
@@ -1776,12 +1790,17 @@ function activeTurnContextUsage(
     return undefined;
   }
   const usage = state.turnTokenUsage?.[turnID];
-  if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
+  if (
+    !usage?.contextWindowTokens ||
+    usage.contextWindowTokens <= 0 ||
+    !usage.contextTokens ||
+    usage.contextTokens <= 0
+  ) {
     return undefined;
   }
   return {
     turnID,
-    used: usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+    used: usage.contextTokens,
     window: usage.contextWindowTokens,
     inputTokens: usage.inputTokens,
     cacheCreationTokens: usage.cacheCreationTokens,
@@ -1790,14 +1809,10 @@ function activeTurnContextUsage(
 }
 
 // latestContextUsageForThread walks the thread's turns from newest to
-// oldest and returns the most recent turn that has emitted a turn/usage
-// snapshot with a known context window. Unlike activeTurnContextUsage —
-// which is keyed on the in-progress turn only — this selector is what
-// the context meter should use: the ring is a passive readout of the
-// latest known context, and it should stay visible after a turn
-// completes, fails, or is interrupted. Falls back through the
-// history when the live in-progress turn has not yet reported usage
-// (e.g. mid-flight, before the first provider usage token arrives).
+// oldest and returns the most recent retained-context estimate with a
+// known context window. Raw provider input/cache usage is intentionally
+// ignored here: it can include request-only tool context that should not
+// be shown as current conversation occupancy.
 //
 // When no real usage is available, falls back to the current runtime
 // window (even before a thread exists), then to the client-side catalog
@@ -1815,7 +1830,12 @@ function latestContextUsageForThread(
     for (let i = thread.turns.length - 1; i >= 0; i -= 1) {
       const turn = thread.turns[i];
       const usage = state.turnTokenUsage?.[turn.id];
-      if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
+      if (
+        !usage?.contextWindowTokens ||
+        usage.contextWindowTokens <= 0 ||
+        !usage.contextTokens ||
+        usage.contextTokens <= 0
+      ) {
         const turnUsageModel = turn.usage_model;
         if (
           turnUsageModel &&
@@ -1824,13 +1844,13 @@ function latestContextUsageForThread(
         ) {
           continue;
         }
+        const contextTokens = turn.context_tokens ?? 0;
+        if (contextTokens <= 0) {
+          continue;
+        }
         const inputTokens = turn.input_tokens ?? 0;
         const cacheCreationTokens = turn.cache_creation_tokens ?? 0;
         const cacheReadTokens = turn.cache_read_tokens ?? 0;
-        const used = inputTokens + cacheCreationTokens + cacheReadTokens;
-        if (used <= 0) {
-          continue;
-        }
         const turnWindow =
           fallback.contextWindowTokens && fallback.contextWindowTokens > 0
             ? fallback.contextWindowTokens
@@ -1840,7 +1860,7 @@ function latestContextUsageForThread(
         }
         return {
           turnID: turn.id,
-          used,
+          used: contextTokens,
           window: turnWindow,
           inputTokens,
           cacheCreationTokens,
@@ -1856,8 +1876,7 @@ function latestContextUsageForThread(
       }
       return {
         turnID: turn.id,
-        used:
-          usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+        used: usage.contextTokens,
         window: usage.contextWindowTokens,
         inputTokens: usage.inputTokens,
         cacheCreationTokens: usage.cacheCreationTokens,

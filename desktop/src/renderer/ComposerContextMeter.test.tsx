@@ -113,7 +113,7 @@ describe("ComposerContextMeter", () => {
       container
         .querySelector(".composer-context-meter")
         ?.getAttribute("aria-label") ?? "";
-    expect(aria).toContain("最近占用 45k");
+    expect(aria).toContain("估算占用 45k");
     expect(aria).toContain("200k");
     expect(aria).toContain("23%");
   });

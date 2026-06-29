@@ -330,6 +330,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)
+	res.ContextTokens = runUsage.EstimateCurrent()
 	res.NewMessages = filterDurableHistory(res.NewMessages)
 	if err != nil {
 		r.commitUsageTracker(runUsage, baseHistoryLen)

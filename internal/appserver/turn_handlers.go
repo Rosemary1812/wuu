@@ -743,7 +743,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
-	}, th.Model)
+	}, res.ContextTokens, th.Model)
 	th.replaceTurnLocked(turn)
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
@@ -790,6 +790,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		Content:             res.Content,
 		InputTokens:         res.InputTokens,
 		OutputTokens:        res.OutputTokens,
+		ContextTokens:       res.ContextTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
 		FinishReason:        string(res.FinishReason),
@@ -1714,7 +1715,7 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
-	}); err != nil {
+	}, res.ContextTokens); err != nil {
 		return err
 	}
 	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
