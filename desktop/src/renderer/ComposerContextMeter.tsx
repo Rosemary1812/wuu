@@ -78,7 +78,7 @@ export function ComposerContextMeter({
   )}`;
   const requestContext = usage.requestContext;
   const ariaLabel =
-    `保留历史上限 ${formatTokenCount(usage.window)}` +
+    `上下文上限 ${formatTokenCount(usage.window)}` +
     `，已保留 ${formatTokenCount(used)} (${percent}%)`;
   return (
     <div

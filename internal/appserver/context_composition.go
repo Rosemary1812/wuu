@@ -133,6 +133,7 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	if inputLimitTokens <= 0 {
 		inputLimitTokens = s.contextCompositionRuntimeInputLimit(provider, model)
 	}
+	contextCeilingTokens := effectiveContextCeilingTokens(contextWindowTokens, inputLimitTokens)
 
 	promptTokens := request.InputTokens + request.CacheReadTokens
 	totalContextTokens := promptTokens + request.OutputTokens
@@ -149,7 +150,7 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	result.StepIndex = request.StepIndex
 	result.Provider = provider
 	result.Model = model
-	result.ContextWindowTokens = contextWindowTokens
+	result.ContextWindowTokens = contextCeilingTokens
 	result.InputLimitTokens = inputLimitTokens
 	result.UsableInputTokens = usableInputTokens
 	result.CompactThresholdTokens = compactThresholdTokens
@@ -320,6 +321,16 @@ func (s *Server) contextCompositionRuntimeInputLimit(provider, model string) int
 	}
 	if contextWindow, _ := budget.EffectiveContextWindow(); contextWindow > 0 {
 		return contextWindow
+	}
+	return 0
+}
+
+func effectiveContextCeilingTokens(contextWindowTokens, inputLimitTokens int) int {
+	if inputLimitTokens > 0 && (contextWindowTokens <= 0 || inputLimitTokens < contextWindowTokens) {
+		return inputLimitTokens
+	}
+	if contextWindowTokens > 0 {
+		return contextWindowTokens
 	}
 	return 0
 }

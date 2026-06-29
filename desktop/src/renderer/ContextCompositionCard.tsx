@@ -23,24 +23,19 @@ export function ContextCompositionCard({
   const contributing = categories.filter((category) => category.contributes !== false);
   const promptTokens = result?.prompt_tokens ?? contributing.reduce((sum, category) => sum + (category.tokens ?? 0), 0);
   const contextWindow = result?.context_window_tokens ?? 0;
-  const inputLimit = result?.input_limit_tokens ?? 0;
-  const compactThreshold = result?.compact_threshold_tokens ?? 0;
-  const requestWindow = firstPositive(inputLimit, contextWindow);
   const cacheReadTokens = result?.cache_read_tokens ?? 0;
   const retainedTokens = result?.retained_tokens ?? 0;
-  const freeTokens = requestWindow > 0 ? Math.max(0, requestWindow - promptTokens) : 0;
-  const barTokens = requestWindow > 0 ? requestWindow : promptTokens;
-  const headlineTokens = requestWindow > 0
-    ? `${formatTokens(promptTokens)} / ${formatTokens(requestWindow)}`
+  const freeTokens = contextWindow > 0 ? Math.max(0, contextWindow - promptTokens) : 0;
+  const barTokens = contextWindow > 0 ? contextWindow : promptTokens;
+  const headlineTokens = contextWindow > 0
+    ? `${formatTokens(promptTokens)} / ${formatTokens(contextWindow)}`
     : formatTokens(promptTokens);
-  const headlinePercent = requestWindow > 0 ? formatPercent(promptTokens, requestWindow) : null;
+  const headlinePercent = contextWindow > 0 ? formatPercent(promptTokens, contextWindow) : null;
   const runtime = [result?.provider, result?.model].filter(Boolean).join(" · ");
   const summaryMeta = [
-    contextWindow > 0 && contextWindow !== requestWindow ? `模型窗口 ${formatTokens(contextWindow)}` : "",
-    compactThreshold > 0 ? `压缩线 ${formatTokens(compactThreshold)}` : "",
     freeTokens > 0 ? `请求余量 ${formatTokens(freeTokens)}` : "",
-    cacheReadTokens > 0 ? `缓存命中 ${formatTokens(cacheReadTokens)}` : "",
     retainedTokens > 0 ? `保留历史 ${formatTokens(retainedTokens)}` : "",
+    cacheReadTokens > 0 ? `缓存命中 ${formatTokens(cacheReadTokens)}` : "",
   ].filter(Boolean);
 
   return (
@@ -75,7 +70,7 @@ export function ContextCompositionCard({
             <div className="context-composition-summary">
               <div className="context-composition-headline">
                 <strong>{headlineTokens}</strong>
-                <span className="context-composition-headline-unit">当前请求 / 输入上限</span>
+                <span className="context-composition-headline-unit">当前请求 / 上下文上限</span>
                 {headlinePercent ? (
                   <span className="context-composition-headline-percent">{headlinePercent}</span>
                 ) : null}
@@ -183,8 +178,4 @@ function formatCompactNumber(value: number): string {
     return `${(safe / 1_000).toFixed(safe >= 100_000 ? 0 : 1)}k`;
   }
   return safe.toLocaleString();
-}
-
-function firstPositive(...values: number[]): number {
-  return values.find((value) => value > 0) ?? 0;
 }

@@ -2239,6 +2239,9 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	if result.InputTokens != 10 || result.OutputTokens != 3 || result.CacheCreationTokens != 6 || result.CacheReadTokens != 4 {
 		t.Fatalf("unexpected provider usage: %+v", result)
 	}
+	if result.ContextWindowTokens != 512_000 {
+		t.Fatalf("context composition should expose the unified context ceiling: %+v", result)
+	}
 	if result.InputLimitTokens != 512_000 || result.UsableInputTokens != 384_000 || result.CompactThresholdTokens != 384_000 {
 		t.Fatalf("unexpected runtime context limits: %+v", result)
 	}
@@ -2263,6 +2266,52 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	}
 	if len(result.SystemSections) == 0 {
 		t.Fatalf("expected system sections: %+v", result)
+	}
+}
+
+func TestContextCompositionFromTraceExposesUnifiedContextCeiling(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	srv := New(rt, &lockedBuffer{})
+	summary := sessiontrace.ReplaySummary{
+		LatestTurn: &sessiontrace.TurnRecord{
+			TurnID:       "turn-1",
+			ProviderName: "custom-provider",
+			Model:        "bring-your-own-model",
+			ModelProfile: &sessiontrace.ModelProfileRecord{
+				ContextWindowTokens:    1_000_000,
+				InputLimitTokens:       512_000,
+				UsableInputTokens:      384_000,
+				CompactThresholdTokens: 384_000,
+			},
+		},
+		ContextRequests: []sessiontrace.RequestContextRecord{{
+			StepIndex:         0,
+			MessageBytes:      2_000,
+			SystemBytes:       100,
+			StablePrefixBytes: 400,
+			TurnPrefixBytes:   1_600,
+			InputTokens:       508_000,
+			MessageCount:      4,
+		}},
+		RequestSteps: []sessiontrace.RequestStepSummary{{
+			TurnID:    "turn-1",
+			StepIndex: 0,
+			Provider:  "custom-provider",
+		}},
+	}
+
+	result := srv.contextCompositionFromTrace("thread-1", "trace.jsonl", summary)
+	if !result.Available {
+		t.Fatalf("expected context composition to be available: %+v", result)
+	}
+	if result.ContextWindowTokens != 512_000 {
+		t.Fatalf("context composition should expose the unified context ceiling: %+v", result)
+	}
+	if result.InputLimitTokens != 512_000 || result.UsableInputTokens != 384_000 || result.CompactThresholdTokens != 384_000 {
+		t.Fatalf("unexpected runtime context limits: %+v", result)
+	}
+	if result.Provider != "custom-provider" || result.Model != "bring-your-own-model" {
+		t.Fatalf("unexpected BYOK runtime identity: %+v", result)
 	}
 }
 

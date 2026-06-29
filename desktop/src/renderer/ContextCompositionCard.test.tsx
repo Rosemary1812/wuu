@@ -27,7 +27,7 @@ function renderCard(entry: ContextCompositionEntry): void {
 }
 
 describe("ContextCompositionCard", () => {
-  it("uses the request input limit as the current-request denominator", () => {
+  it("uses the unified context ceiling as the current-request denominator", () => {
     renderCard({
       id: "entry-1",
       threadID: "thread-1",
@@ -35,10 +35,10 @@ describe("ContextCompositionCard", () => {
       result: {
         thread_id: "thread-1",
         available: true,
-        provider: "minimax",
-        model: "MiniMax-M3",
+        provider: "custom-provider",
+        model: "bring-your-own-model",
         prompt_tokens: 508_000,
-        context_window_tokens: 1_000_000,
+        context_window_tokens: 512_000,
         input_limit_tokens: 512_000,
         compact_threshold_tokens: 384_000,
         retained_tokens: 103_000,
@@ -56,9 +56,8 @@ describe("ContextCompositionCard", () => {
 
     const text = container.textContent ?? "";
     expect(text).toContain("508k / 512k");
-    expect(text).toContain("当前请求 / 输入上限");
-    expect(text).toContain("模型窗口 1.0M");
-    expect(text).toContain("压缩线 384k");
+    expect(text).toContain("当前请求 / 上下文上限");
     expect(text).toContain("保留历史 103k");
+    expect(text).not.toContain("压缩线");
   });
 });
