@@ -199,8 +199,8 @@
 }
 
 .composer-stack.is-expanded .composer {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-height: var(--composer-expanded-min-height);
 }
 
@@ -605,7 +605,8 @@
 }
 
 .composer-stack.is-expanded .composer textarea {
-  height: 100%;
+  flex: 1 1 0;
+  height: auto;
   min-height: clamp(180px, 34vh, 320px);
 }
 

@@ -30,6 +30,10 @@ const composerCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/composer.css"),
   "utf8",
 );
+const turnsCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/turns.css"),
+  "utf8",
+);
 const responsiveDesignCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/responsive-design.css"),
   "utf8",
@@ -939,7 +943,7 @@ describe("ComposerTokenGauge", () => {
 });
 
 describe("Composer expand button", () => {
-  it("uses a bounded grid layout so the bottom toolbar stays pinned when expanded", () => {
+  it("uses anchored flex layouts so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
     expect(composerCSS).toContain("--composer-collapsed-min-height: 128px");
@@ -948,15 +952,19 @@ describe("Composer expand button", () => {
       /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*136px/,
     );
     expect(composerCSS).toMatch(
+      /\.dock-composer-wrap\s*\{[^}]*align-self:\s*end/,
+    );
+    expect(turnsCSS).toMatch(
+      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*136px[^}]*align-items:\s*flex-end/,
+    );
+    expect(composerCSS).toMatch(
       /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,
     );
-    // Expanded composer is a fixed-row grid; the textarea absorbs the extra
-    // height so .composer-bar stays at the original dock edge instead
-    // of getting pushed up by block-flow whitespace below it. Avoid flex sizing
-    // here because typing in the expanded textarea should not repeatedly
-    // renegotiate the toolbar row.
+    // Expanded composer is a flex column; the textarea absorbs the extra
+    // height so .composer-bar stays at the original bottom edge instead
+    // of floating above block-flow whitespace.
     expect(composerCSS).toMatch(
-      /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/,
+      /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/,
     );
     expect(composerCSS).toMatch(
       /\.composer-stack\.is-expanded\s+\.composer-frame\s*\{[^}]*margin-bottom:\s*calc\(var\(--composer-expanded-offset,\s*var\(--composer-expanded-delta\)\) \* -1\)[^}]*transform:\s*translateY\(calc\(var\(--composer-expanded-offset,\s*var\(--composer-expanded-delta\)\) \* -1\)\)/,
@@ -965,9 +973,9 @@ describe("Composer expand button", () => {
       /\.composer-stack\.is-expanded\s+\.composer\s*\{[^}]*min-height:\s*var\(--composer-expanded-min-height\)/,
     );
     expect(composerCSS).toMatch(
-      /\.composer-stack\.is-expanded\s+\.composer\s+textarea\s*\{[^}]*height:\s*100%/,
+      /\.composer-stack\.is-expanded\s+\.composer\s+textarea\s*\{[^}]*flex:\s*1\s+1\s+0[^}]*height:\s*auto/,
     );
-    expect(composerCSS).not.toContain("flex: 1 1 0");
+    expect(composerCSS).not.toContain("grid-template-rows: auto minmax(0, 1fr) auto");
     expect(composerCSS).not.toContain("transition: min-height");
     expect(composerCSS).not.toContain("transition: width");
     // Width stays pinned to the session composer width in both dock and hero

@@ -4699,9 +4699,13 @@ pre {
   /* Span the full content width so the hero composer can hit the dock
      composer's dialog width (740px) without being squeezed by the
      narrower title/action card column tracks (cols 2-12). Flex centering
-     keeps the composer-stack visually centered when it overflows. */
+     keeps the composer-stack visually centered when it overflows.
+     The fixed anchor height matches the collapsed hero composer so expanding
+     grows upward from the original toolbar edge instead of pushing it down. */
   grid-column: 1 / -1;
   display: flex;
+  height: 136px;
+  align-items: flex-end;
   justify-content: center;
 }
 
