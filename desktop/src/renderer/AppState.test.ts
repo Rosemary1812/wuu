@@ -303,6 +303,7 @@ describe("AppState token usage", () => {
 describe("AppState stream cache lifecycle", () => {
   afterEach(() => {
     streamTextStore.clearItem("turn-1", "agent-1");
+    streamTextStore.clearItem("turn-bg", "agent-bg");
   });
 
   it("keeps visible text through an empty replace while resetting the next delta base", () => {
@@ -365,6 +366,84 @@ describe("AppState stream cache lifecycle", () => {
     );
 
     expect(streamTextStore.get(key)).toBe("fresh answer");
+  });
+
+  it("keeps stream deltas for a known background thread", () => {
+    const key = streamTextKey("turn-bg", "agent-bg", "text");
+    const activeThread = threadWithUserTexts(["active"]);
+    const backgroundThread = {
+      ...threadWithUserTexts(["background"]),
+      id: "thread-bg",
+    };
+
+    const handling = handleStreamingNotification(
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "item/agentMessage/delta",
+          params: {
+            thread_id: "thread-bg",
+            turn_id: "turn-bg",
+            item_id: "agent-bg",
+            delta: "background text",
+          },
+        },
+      },
+      {
+        ...initialState,
+        thread: activeThread,
+        threads: [activeThread, backgroundThread],
+      },
+    );
+
+    expect(handling).toBe("background-stream");
+    expect(streamTextStore.get(key)).toBe("background text");
+  });
+
+  it("syncs completed snapshots for a known background thread", () => {
+    const raf = installManualRAF();
+    const key = streamTextKey("turn-bg", "agent-bg", "text");
+    const activeThread = threadWithUserTexts(["active"]);
+    const backgroundThread = {
+      ...threadWithUserTexts(["background"]),
+      id: "thread-bg",
+    };
+    streamTextStore.set(key, "partial");
+
+    try {
+      const handling = handleStreamingNotification(
+        {
+          kind: "notification",
+          workdir: "/repo",
+          message: {
+            method: "item/completed",
+            params: {
+              thread_id: "thread-bg",
+              turn_id: "turn-bg",
+              item: {
+                id: "agent-bg",
+                type: "agent_message",
+                status: "completed",
+                text: "partial complete",
+              },
+            },
+          },
+        },
+        {
+          ...initialState,
+          thread: activeThread,
+          threads: [activeThread, backgroundThread],
+        },
+      );
+
+      expect(handling).toBe("state");
+      expect(streamTextStore.get(key)).toBe("partial complete");
+      raf.flush();
+      expect(streamTextStore.has(key)).toBe(false);
+    } finally {
+      raf.restore();
+    }
   });
 
   it("releases completed agent text from the stream cache once a final snapshot exists", () => {

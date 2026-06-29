@@ -335,7 +335,12 @@ function serverEventTargetsActiveContext(
   return event.workdir === state.activeContext?.cwd;
 }
 
-type StreamingNotificationHandling = "state" | "stream" | "stream-state" | "skip";
+type StreamingNotificationHandling =
+  | "state"
+  | "stream"
+  | "stream-state"
+  | "background-stream"
+  | "skip";
 
 function handleStreamingNotification(
   event: ServerEvent,
@@ -347,51 +352,78 @@ function handleStreamingNotification(
   const notification = event.message;
   const params = notification.params as Record<string, unknown> | undefined;
   switch (notification.method) {
-    case "item/agentMessage/delta":
-      if (!notificationTargetsActiveThread(params, state)) {
+    case "item/agentMessage/delta": {
+      const active = notificationTargetsActiveThread(params, state);
+      if (!active && !notificationTargetsKnownThread(params, state)) {
         return "skip";
       }
-      return appendStreamDelta(params, "text") ? "stream-state" : "stream";
-    case "item/agentMessage/replace":
-      if (!notificationTargetsActiveThread(params, state)) {
+      const hasVisibleText = appendStreamDelta(params, "text");
+      return streamHandlingForThread(active, hasVisibleText);
+    }
+    case "item/agentMessage/replace": {
+      const active = notificationTargetsActiveThread(params, state);
+      if (!active && !notificationTargetsKnownThread(params, state)) {
         return "skip";
       }
-      return replaceStreamText(params, "text") ? "stream-state" : "stream";
-    case "item/reasoning/delta":
-      if (!notificationTargetsActiveThread(params, state)) {
+      const hasVisibleText = replaceStreamText(params, "text");
+      return streamHandlingForThread(active, hasVisibleText);
+    }
+    case "item/reasoning/delta": {
+      const active = notificationTargetsActiveThread(params, state);
+      if (!active && !notificationTargetsKnownThread(params, state)) {
         return "skip";
       }
-      return appendStreamDelta(params, "text") ? "stream-state" : "stream";
-    case "item/reasoning/replace":
-      if (!notificationTargetsActiveThread(params, state)) {
+      const hasVisibleText = appendStreamDelta(params, "text");
+      return streamHandlingForThread(active, hasVisibleText);
+    }
+    case "item/reasoning/replace": {
+      const active = notificationTargetsActiveThread(params, state);
+      if (!active && !notificationTargetsKnownThread(params, state)) {
         return "skip";
       }
-      return replaceStreamText(params, "text") ? "stream-state" : "stream";
-    case "item/toolCall/delta":
-      if (!notificationTargetsActiveThread(params, state)) {
+      const hasVisibleText = replaceStreamText(params, "text");
+      return streamHandlingForThread(active, hasVisibleText);
+    }
+    case "item/toolCall/delta": {
+      const active = notificationTargetsActiveThread(params, state);
+      if (!active && !notificationTargetsKnownThread(params, state)) {
         return "skip";
       }
       appendStreamDelta(params, "arguments");
-      return "stream";
-    case "item/toolCall/outputDelta":
-      if (!notificationTargetsActiveThread(params, state)) {
+      return active ? "stream" : "background-stream";
+    }
+    case "item/toolCall/outputDelta": {
+      const active = notificationTargetsActiveThread(params, state);
+      if (!active && !notificationTargetsKnownThread(params, state)) {
         return "skip";
       }
       appendStreamDelta(params, "result");
-      return "stream";
+      return active ? "stream" : "background-stream";
+    }
     case "turn/event":
       return "skip";
     case "turn/usage":
       return "state";
     case "item/started":
     case "item/completed":
-      if (notificationTargetsActiveThread(params, state)) {
-        syncStreamItem(params);
+      if (!notificationTargetsKnownThread(params, state)) {
+        return "skip";
       }
+      syncStreamItem(params);
       return "state";
     default:
       return "state";
   }
+}
+
+function streamHandlingForThread(
+  active: boolean,
+  hasVisibleText: boolean,
+): StreamingNotificationHandling {
+  if (!active) {
+    return "background-stream";
+  }
+  return hasVisibleText ? "stream-state" : "stream";
 }
 
 function serverEventShouldRefreshGit(event: ServerEvent): boolean {
@@ -433,6 +465,19 @@ function notificationTargetsActiveThread(
     !threadID ||
     threadID === state.thread?.id ||
     threadID === state.secondaryThread?.id
+  );
+}
+
+function notificationTargetsKnownThread(
+  params: Record<string, unknown> | undefined,
+  state: AppState,
+): boolean {
+  const threadID = threadIDFromParams(params);
+  return (
+    !threadID ||
+    threadID === state.thread?.id ||
+    threadID === state.secondaryThread?.id ||
+    state.threads.some((thread) => thread.id === threadID)
   );
 }
 

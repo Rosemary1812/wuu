@@ -1079,6 +1079,9 @@ export function App(): JSX.Element {
       if (handling === "stream") {
         return;
       }
+      if (handling === "background-stream") {
+        return;
+      }
       if (handling === "skip") {
         return;
       }
