@@ -81,6 +81,11 @@ import {
   type ThreadPendingComposerMessages,
 } from "./ComposerPendingMessages";
 import {
+  greetingFor,
+  useCurrentHour,
+  type GreetingContext,
+} from "./greetings";
+import {
   Composer,
   FloatingMenuPortal,
   isInsideFloatingMenu,
@@ -1107,10 +1112,12 @@ export function App(): JSX.Element {
     : workspaceMode
       ? workspaceModeTitle(workspaceMode)
       : activeThread?.preview || "新对话";
-  const emptyThreadTitle =
+  const currentHour = useCurrentHour();
+  const greetingContext: GreetingContext =
     state.activeContext?.kind === "project"
-      ? `我们应该在 ${activeProject?.name ?? "这个项目"} 中构建什么？`
-      : "我们应该在 wuu 中构建什么？";
+      ? { kind: "project", projectName: activeProject?.name ?? "这个项目" }
+      : { kind: "wuu" };
+  const emptyThreadTitle = greetingFor(currentHour, greetingContext);
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
   const emptyConversation = !showingSkillsCatalog && turns.length === 0;
