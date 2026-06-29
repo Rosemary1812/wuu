@@ -103,6 +103,89 @@ func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
 	}
 }
 
+func TestCreateWithWorktreePersistsBinding(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(t.TempDir(), "project")
+	wtPath := filepath.Join(t.TempDir(), "worktree")
+	fork, err := CreateWithWorktree(dir, "forked-worktree", wtPath, ForkMetadata{
+		ForkedFromID: "source",
+	}, WorktreeInfo{
+		Path:     wtPath,
+		BaseHEAD: "abc123",
+		BaseRepo: parent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fork.CWD != wtPath || fork.WorktreePath != wtPath || fork.WorktreeBaseHEAD != "abc123" || fork.WorktreeBaseRepo != parent {
+		t.Fatalf("worktree binding not set on create: %+v", fork)
+	}
+
+	found, ok, err := Find(dir, "forked-worktree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected fork in index")
+	}
+	info, bound := found.WorktreeInfo()
+	if !bound {
+		t.Fatalf("expected worktree binding: %+v", found)
+	}
+	if info.Path != wtPath || info.BaseHEAD != "abc123" || info.BaseRepo != parent {
+		t.Fatalf("unexpected worktree info: %+v", info)
+	}
+}
+
+func TestBindWorktreeUpdatesExistingSession(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(t.TempDir(), "project")
+	wtPath := filepath.Join(t.TempDir(), "worktree")
+	if _, err := CreateWithMetadata(dir, "thread-1", parent); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := BindWorktree(dir, "thread-1", WorktreeInfo{
+		Path:     wtPath,
+		BaseHEAD: "def456",
+		BaseRepo: parent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.CWD != parent {
+		t.Fatalf("BindWorktree should not rewrite an existing cwd, got %+v", updated)
+	}
+
+	info, bound, err := WorktreeInfoForSession(dir, "thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound || info.Path != wtPath || info.BaseHEAD != "def456" || info.BaseRepo != parent {
+		t.Fatalf("unexpected persisted worktree info: bound=%v info=%+v", bound, info)
+	}
+}
+
+func TestListForCWDIncludesWorktreeBaseRepo(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(t.TempDir(), "project")
+	wtPath := filepath.Join(t.TempDir(), "worktree")
+	if _, err := CreateWithWorktree(dir, "forked-worktree", wtPath, ForkMetadata{}, WorktreeInfo{
+		Path:     wtPath,
+		BaseHEAD: "abc123",
+		BaseRepo: parent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := ListForCWD(dir, parent, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != "forked-worktree" {
+		t.Fatalf("expected worktree session under parent repo, got %+v", sessions)
+	}
+}
+
 func TestUpdateIndex(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Create(dir)

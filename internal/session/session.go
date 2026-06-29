@@ -44,12 +44,21 @@ type Session struct {
 	ForkedFromItemID string     `json:"forked_from_item_id,omitempty"`
 	PinnedAt         *time.Time `json:"pinned_at,omitempty"`
 	ArchivedAt       *time.Time `json:"archived_at,omitempty"`
+	WorktreePath     string     `json:"worktree_path,omitempty"`
+	WorktreeBaseHEAD string     `json:"worktree_base_head,omitempty"`
+	WorktreeBaseRepo string     `json:"worktree_base_repo,omitempty"`
 }
 
 type ForkMetadata struct {
 	ForkedFromID     string
 	ForkedFromTurnID string
 	ForkedFromItemID string
+}
+
+type WorktreeInfo struct {
+	Path     string
+	BaseHEAD string
+	BaseRepo string
 }
 
 // HistoryRecord is the durable session message shape. App-server remains
@@ -130,7 +139,16 @@ func CreateForkWithMetadata(sessDir, id, cwd string, fork ForkMetadata) (*Sessio
 	return createWithMetadata(sessDir, id, cwd, fork)
 }
 
+// CreateWithWorktree initializes a forked session bound to an isolated git worktree.
+func CreateWithWorktree(sessDir, id, cwd string, fork ForkMetadata, worktree WorktreeInfo) (*Session, error) {
+	return createWithMetadataAndWorktree(sessDir, id, cwd, fork, worktree)
+}
+
 func createWithMetadata(sessDir, id, cwd string, fork ForkMetadata) (*Session, error) {
+	return createWithMetadataAndWorktree(sessDir, id, cwd, fork, WorktreeInfo{})
+}
+
+func createWithMetadataAndWorktree(sessDir, id, cwd string, fork ForkMetadata, worktree WorktreeInfo) (*Session, error) {
 	db, err := openStore(sessDir)
 	if err != nil {
 		return nil, err
@@ -151,6 +169,9 @@ func createWithMetadata(sessDir, id, cwd string, fork ForkMetadata) (*Session, e
 		ForkedFromID:     strings.TrimSpace(fork.ForkedFromID),
 		ForkedFromTurnID: strings.TrimSpace(fork.ForkedFromTurnID),
 		ForkedFromItemID: strings.TrimSpace(fork.ForkedFromItemID),
+		WorktreePath:     normalizeCWD(worktree.Path),
+		WorktreeBaseHEAD: strings.TrimSpace(worktree.BaseHEAD),
+		WorktreeBaseRepo: normalizeCWD(worktree.BaseRepo),
 	}
 	storeWriteMu.Lock()
 	defer storeWriteMu.Unlock()
@@ -171,7 +192,8 @@ func List(sessDir string, limit int) ([]Session, error) {
 	rows, err := db.Query(`
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
-       pinned_at, archived_at
+       pinned_at, archived_at,
+       worktree_path, worktree_base_head, worktree_base_repo
 FROM sessions`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -209,7 +231,7 @@ func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
 	}
 	filtered := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
-		if normalizeCWD(s.CWD) == target {
+		if normalizeCWD(s.CWD) == target || normalizeCWD(s.WorktreeBaseRepo) == target {
 			filtered = append(filtered, s)
 		}
 	}
@@ -296,6 +318,38 @@ func UpdateArchived(sessDir, id string, archived bool) (Session, error) {
 			s.ArchivedAt = nil
 		}
 	})
+}
+
+func BindWorktree(sessDir, id string, worktree WorktreeInfo) (Session, error) {
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.WorktreePath = normalizeCWD(worktree.Path)
+		s.WorktreeBaseHEAD = strings.TrimSpace(worktree.BaseHEAD)
+		s.WorktreeBaseRepo = normalizeCWD(worktree.BaseRepo)
+		if s.CWD == "" {
+			s.CWD = s.WorktreePath
+		}
+	})
+}
+
+func WorktreeInfoForSession(sessDir, id string) (WorktreeInfo, bool, error) {
+	sess, ok, err := Find(sessDir, id)
+	if err != nil || !ok {
+		return WorktreeInfo{}, false, err
+	}
+	info, bound := sess.WorktreeInfo()
+	return info, bound, nil
+}
+
+func (s Session) WorktreeInfo() (WorktreeInfo, bool) {
+	path := normalizeCWD(s.WorktreePath)
+	if path == "" {
+		return WorktreeInfo{}, false
+	}
+	return WorktreeInfo{
+		Path:     path,
+		BaseHEAD: strings.TrimSpace(s.WorktreeBaseHEAD),
+		BaseRepo: normalizeCWD(s.WorktreeBaseRepo),
+	}, true
 }
 
 // Delete removes a session and its durable history records.
@@ -543,7 +597,10 @@ func migrateSchema(db *sql.DB) error {
 			forked_from_turn_id TEXT NOT NULL DEFAULT '',
 			forked_from_item_id TEXT NOT NULL DEFAULT '',
 			pinned_at TEXT,
-			archived_at TEXT
+			archived_at TEXT,
+			worktree_path TEXT NOT NULL DEFAULT '',
+			worktree_base_head TEXT NOT NULL DEFAULT '',
+			worktree_base_repo TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at, id)`,
@@ -622,6 +679,15 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "session_messages", "model", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "sessions", "worktree_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "sessions", "worktree_base_head", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "sessions", "worktree_base_repo", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -677,8 +743,8 @@ func insertSessionSQL(conflict string) string {
 	return `INSERT` + conflict + ` INTO sessions (
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
-		pinned_at, archived_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 }
 
 func updateSessionTx(tx *sql.Tx, sess Session) error {
@@ -686,11 +752,12 @@ func updateSessionTx(tx *sql.Tx, sess Session) error {
 UPDATE sessions
 SET created_at = ?, updated_at = ?, title = ?, summary = ?, entries = ?, cwd = ?,
     forked_from_id = ?, forked_from_turn_id = ?, forked_from_item_id = ?,
-    pinned_at = ?, archived_at = ?
+    pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?
 WHERE id = ?`,
 		timeText(sess.CreatedAt), timeText(sess.UpdatedAt), sess.Title, sess.Summary, sess.Entries, normalizeCWD(sess.CWD),
 		sess.ForkedFromID, sess.ForkedFromTurnID, sess.ForkedFromItemID,
-		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt), sess.ID,
+		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt),
+		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo), sess.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update session: %w", err)
@@ -712,6 +779,9 @@ func sessionArgs(sess Session) []any {
 		sess.ForkedFromItemID,
 		nullableTimeText(sess.PinnedAt),
 		nullableTimeText(sess.ArchivedAt),
+		normalizeCWD(sess.WorktreePath),
+		sess.WorktreeBaseHEAD,
+		normalizeCWD(sess.WorktreeBaseRepo),
 	}
 }
 
@@ -719,7 +789,8 @@ func findSessionDB(db *sql.DB, id string) (Session, bool, error) {
 	row := db.QueryRow(`
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
-       pinned_at, archived_at
+       pinned_at, archived_at,
+       worktree_path, worktree_base_head, worktree_base_repo
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -729,7 +800,8 @@ func findSessionTx(tx *sql.Tx, id string) (Session, bool, error) {
 	row := tx.QueryRow(`
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
-       pinned_at, archived_at
+       pinned_at, archived_at,
+       worktree_path, worktree_base_head, worktree_base_repo
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -758,6 +830,7 @@ func scanSession(scanner interface {
 		&s.ID, &createdAt, &updatedAt, &s.Title, &s.Summary, &s.Entries, &s.CWD,
 		&s.ForkedFromID, &s.ForkedFromTurnID, &s.ForkedFromItemID,
 		&pinnedAt, &archivedAt,
+		&s.WorktreePath, &s.WorktreeBaseHEAD, &s.WorktreeBaseRepo,
 	); err != nil {
 		return Session{}, err
 	}
