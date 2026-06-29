@@ -819,7 +819,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			current = &turns[len(turns)-1]
 			continue
 		}
-		if current == nil && msg.Role == "assistant" && len(pendingCompactions) > 0 {
+		if current == nil && msg.Role == "assistant" && pendingCompactionsContainReason(pendingCompactions, compact.HelpMeToolName) {
 			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
 			itemIndex = 0
 			toolItems = make(map[string]int)
@@ -899,6 +899,15 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		}
 	}
 	return turns
+}
+
+func pendingCompactionsContainReason(items []ThreadItem, reason string) bool {
+	for _, item := range items {
+		if item.Reason == reason {
+			return true
+		}
+	}
+	return false
 }
 
 func contextCompactionItemFromSystemMessage(msg providers.ChatMessage) (ThreadItem, bool) {

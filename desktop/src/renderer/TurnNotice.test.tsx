@@ -140,6 +140,23 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
+  it("names HelpMe recovery separately from routine compaction", () => {
+    const host = mount(
+      <ContextCompactionNotice
+        status="completed"
+        reason="helpme"
+        text="✦ HelpMe recovered and compacted history: 42 → 2 messages (was ~90k tokens)"
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "HelpMe 已整理上下文",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "HelpMe 已合并恢复结果并整理上下文",
+    );
+  });
+
   it("does not present failed proactive compaction as a successful compact", () => {
     const failedCompactText =
       '✦ Proactive compact failed: compact summary failed: HTTP 400: {"detail":"Unsupported parameter: max_output_tokens"}';

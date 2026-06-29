@@ -123,6 +123,9 @@ function contextCompactionTitle(text?: string, reason?: string): string {
   if (isInceptionCompact(reason, normalized)) {
     return "上下文已续行";
   }
+  if (isHelpMeCompact(reason, normalized)) {
+    return "HelpMe 已整理上下文";
+  }
   if (isFailedCompactNotice(normalized)) {
     return "上下文压缩失败";
   }
@@ -142,6 +145,12 @@ function contextCompactionDetail(text?: string, reason?: string): string {
     return compactNotice
       ? compactNotice.replace(/^已压缩较早上下文/, "已按 Inception 摘要续接上下文")
       : "已按 Inception 摘要续接上下文，后续回复会沿用保留下来的关键状态。";
+  }
+  if (isHelpMeCompact(reason, normalized)) {
+    const compactNotice = parseContextCompactionNotice(normalized);
+    return compactNotice
+      ? compactNotice.replace(/^已压缩较早上下文/, "HelpMe 已合并恢复结果并整理上下文")
+      : "HelpMe 已把恢复结果合并成新的任务状态，后续回复会沿用这份摘要继续。";
   }
   if (!normalized) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
@@ -173,6 +182,10 @@ function isInceptionCompact(reason: string | undefined, text: string): boolean {
   return reason === "inception" || /^Inception rewrote history\b/i.test(text);
 }
 
+function isHelpMeCompact(reason: string | undefined, text: string): boolean {
+  return reason === "helpme" || /^HelpMe recovered and compacted history\b/i.test(text);
+}
+
 function isFailedCompactNotice(text: string): boolean {
   return /^(?:Proactive compact|Context-overflow compact|Compact) failed\b/i.test(text);
 }
@@ -187,7 +200,7 @@ function isUnchangedCompactNotice(text: string): boolean {
 
 function parseContextCompactionNotice(text: string): string | undefined {
   const match = text.match(
-    /^(Recovered from context overflow\s+[—-]\s+compacted|Compacted)\s+history:\s*(\d+)\s*(?:→|->)\s*(\d+)\s+messages(?:\s+\(was\s+~?([^)]+)\))?$/i,
+    /^(Recovered from context overflow\s+[—-]\s+compacted|HelpMe recovered and compacted|Inception rewrote|Compacted)\s+history:\s*(\d+)\s*(?:→|->)\s*(\d+)\s+messages(?:\s+\(was\s+~?([^)]+)\))?$/i,
   );
   if (!match) {
     return undefined;

@@ -36,6 +36,15 @@ func TestBuildHelpMeJointCompactContentIncludesTraceAndEvidence(t *testing.T) {
 	}
 }
 
+func TestIsHelpMeJointCompactContent(t *testing.T) {
+	if !IsHelpMeJointCompactContent("  " + HelpMeJointCompactPrefix + "\nRecovered") {
+		t.Fatal("expected HelpMe joint compact prefix to be recognized")
+	}
+	if IsHelpMeJointCompactContent(ConversationSummaryPrefix + "\nRecovered") {
+		t.Fatal("conversation summary must not be classified as HelpMe joint compact")
+	}
+}
+
 func TestRewriteHistoryFromHelpMeToolMessagesDropsToolChain(t *testing.T) {
 	toolResult := providers.ChatMessage{
 		Role:       "tool",

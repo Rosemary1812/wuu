@@ -111,6 +111,10 @@ func BuildHelpMeJointCompactContent(input HelpMeJointCompactInput) string {
 	return strings.TrimSpace(b.String())
 }
 
+func IsHelpMeJointCompactContent(content string) bool {
+	return strings.HasPrefix(strings.TrimSpace(content), HelpMeJointCompactPrefix)
+}
+
 func RewriteHistoryFromHelpMeToolMessages(messages []providers.ChatMessage, toolMessages []providers.ChatMessage) ([]providers.ChatMessage, bool, error) {
 	rewrite, ok, err := HelpMeRewriteFromToolMessages(toolMessages)
 	if err != nil || !ok {
