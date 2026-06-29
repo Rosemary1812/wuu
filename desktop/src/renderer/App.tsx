@@ -1867,11 +1867,14 @@ export function App(): JSX.Element {
       state,
       activeThread ? activeTurnIDForThread(activeThread) : undefined,
     );
-    // Drives the composer context meter. Walks back through the
-    // active thread's turns to find the latest known usage, and falls
-    // back to a client-side catalog lookup so the ring renders at 0%
-    // from the moment a model is picked, before any turn has run.
-    const contextUsage = latestContextUsageForThread(state, activeThread);
+    // Drives the composer context meter. Existing threads use the latest
+    // known usage; a brand-new session falls back to the current runtime
+    // window so the meter can render at 0% before the first turn.
+    const contextUsage = latestContextUsageForThread(state, activeThread, {
+      model: state.initialized?.model,
+      contextWindowTokens:
+        state.initialized?.advanced_settings?.context_window_tokens,
+    });
     return (
       <Composer
         variant={variant}

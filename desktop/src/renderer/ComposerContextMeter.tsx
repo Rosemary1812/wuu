@@ -2,8 +2,8 @@
 //
 // Sits next to the live token-speed gauge and shows how much of the active
 // model's context window the most recent request consumed. The toolbar keeps
-// this deliberately small: the ring and label show the percentage, and hover
-// reveals the used/window counts.
+// this aligned with the token-speed gauge: the ring shows the proportion, the
+// label shows used/window, and hover reveals only the percentage.
 //
 // The fill color stays a single neutral gray regardless of fill level:
 // the meter is a passive readout, not a warning. Color-coded urgency
@@ -92,7 +92,7 @@ export function ComposerContextMeter({
           transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
         />
       </svg>
-      <span className="composer-context-meter-label">{percentLabel}</span>
+      <span className="composer-context-meter-label">{valueLabel}</span>
       {tooltipOpen ? (
         <FloatingMenuPortal
           anchorRef={anchorRef}

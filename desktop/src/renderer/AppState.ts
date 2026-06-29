@@ -175,6 +175,11 @@ type TurnTokenSpeedSnapshot = {
   sampledAt?: number;
 };
 
+type ContextUsageFallback = {
+  model?: string;
+  contextWindowTokens?: number;
+};
+
 const TOKEN_SPEED_WINDOW_MS = 2000;
 
 const INITIAL_DRAFT_SESSION_TAB_ID = "draft:initial";
@@ -1794,50 +1799,54 @@ function activeTurnContextUsage(
 // history when the live in-progress turn has not yet reported usage
 // (e.g. mid-flight, before the first provider usage token arrives).
 //
-// When no real usage is available, falls back to the client-side
-// catalog lookup so the ring renders at 0% from the moment a model is
-// picked. Returns undefined only when the model is unrecognized by the
-// catalog — we'd rather hide the ring than mislead the user with a
-// guessed window size.
+// When no real usage is available, falls back to the current runtime
+// window (even before a thread exists), then to the client-side catalog
+// lookup so the meter renders at 0% from the moment a model is picked.
+// Returns undefined only when the model has no known window — we'd
+// rather hide the meter than mislead the user with a guessed size.
 function latestContextUsageForThread(
   state: AppState,
   thread: Thread | undefined,
+  fallback: ContextUsageFallback = {},
 ): TurnContextUsage | undefined {
-  if (!thread) {
-    return undefined;
-  }
-  const currentModel = normalizeModelID(thread.model);
-  for (let i = thread.turns.length - 1; i >= 0; i -= 1) {
-    const turn = thread.turns[i];
-    const usage = state.turnTokenUsage?.[turn.id];
-    if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
-      continue;
+  const model = thread?.model || fallback.model || "";
+  const currentModel = normalizeModelID(model);
+  if (thread) {
+    for (let i = thread.turns.length - 1; i >= 0; i -= 1) {
+      const turn = thread.turns[i];
+      const usage = state.turnTokenUsage?.[turn.id];
+      if (!usage?.contextWindowTokens || usage.contextWindowTokens <= 0) {
+        continue;
+      }
+      if (
+        usage.model &&
+        currentModel &&
+        normalizeModelID(usage.model) !== currentModel
+      ) {
+        continue;
+      }
+      return {
+        turnID: turn.id,
+        used:
+          usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
+        window: usage.contextWindowTokens,
+        inputTokens: usage.inputTokens,
+        cacheCreationTokens: usage.cacheCreationTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+      };
     }
-    if (
-      usage.model &&
-      currentModel &&
-      normalizeModelID(usage.model) !== currentModel
-    ) {
-      continue;
-    }
-    return {
-      turnID: turn.id,
-      used:
-        usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens,
-      window: usage.contextWindowTokens,
-      inputTokens: usage.inputTokens,
-      cacheCreationTokens: usage.cacheCreationTokens,
-      cacheReadTokens: usage.cacheReadTokens,
-    };
   }
-  const catalogWindow = clientContextWindowFor(thread.model);
-  if (!catalogWindow) {
+  const fallbackWindow =
+    fallback.contextWindowTokens && fallback.contextWindowTokens > 0
+      ? fallback.contextWindowTokens
+      : clientContextWindowFor(model);
+  if (!fallbackWindow) {
     return undefined;
   }
   return {
     turnID: "",
     used: 0,
-    window: catalogWindow,
+    window: fallbackWindow,
     inputTokens: 0,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,

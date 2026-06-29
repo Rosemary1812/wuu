@@ -654,6 +654,29 @@ describe("latestContextUsageForThread", () => {
     expect(latestContextUsageForThread(initialState, undefined)).toBeUndefined();
   });
 
+  it("falls back to the active runtime model when no thread exists yet", () => {
+    const result = latestContextUsageForThread(initialState, undefined, {
+      model: "gpt-5",
+      contextWindowTokens: 400_000,
+    });
+    expect(result).toEqual({
+      turnID: "",
+      used: 0,
+      window: 400_000,
+      inputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    });
+  });
+
+  it("falls back to the client catalog when no thread exists and runtime window is absent", () => {
+    const result = latestContextUsageForThread(initialState, undefined, {
+      model: "claude-sonnet-4-5",
+    });
+    expect(result?.used).toBe(0);
+    expect(result?.window).toBe(200_000);
+  });
+
   it("returns undefined for an empty thread with an unrecognized model", () => {
     // "fake-model" has no catalog entry — the ring should hide rather
     // than guess a window size.

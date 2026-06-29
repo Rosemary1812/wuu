@@ -71,11 +71,11 @@ describe("ComposerContextMeter", () => {
     ).not.toBeNull();
   });
 
-  it("renders the latest used percentage inline", () => {
+  it("renders the latest used / window value inline", () => {
     renderMeter(usageWith({ used: 45_000, window: 200_000 }));
     expect(
       container.querySelector(".composer-context-meter-label")?.textContent,
-    ).toBe("23%");
+    ).toBe("45k / 200k");
   });
 
   it("does not render any center text — the ring is the readout", () => {
