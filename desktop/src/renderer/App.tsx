@@ -156,10 +156,9 @@ import {
   markThreadTurnsViewed,
   notificationTargetsActiveThread,
   persistActiveSessionTabDraft,
-  pinnedThreads,
-  projectThreads,
+  pinnedThreadSummaries,
   queryTextForUserItem,
-  scratchThreads,
+  scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
   removeSessionTab,
@@ -173,6 +172,7 @@ import {
   sessionTabDraftForThread,
   setThreadForPane,
   sortThreads,
+  summarizeThreadsForSidebar,
   threadForTab,
   threadForPane,
   threadItemFromRecord,
@@ -189,6 +189,7 @@ import {
   type ComposerDraftState,
   type ConversationPaneID,
   type SessionTab,
+  type ThreadSummary,
 } from "./AppState";
 import {
   RIGHT_PANEL_MOTION_MS,
@@ -1448,8 +1449,31 @@ export function App(): JSX.Element {
     }
     return sortThreads([...byID.values()]);
   }, [sidebarProjectThreadsByProjectID, state.threads]);
-  const sidebarPinnedThreads = pinnedThreads(sidebarProjectThreads);
-  const sidebarScratchThreads = scratchThreads(state.threads, state.projects);
+  const sidebarProjectThreadSummariesByProjectID = useMemo(() => {
+    const next: Record<string, ThreadSummary[]> = {};
+    for (const [projectID, threads] of Object.entries(
+      sidebarProjectThreadsByProjectID,
+    )) {
+      next[projectID] = summarizeThreadsForSidebar(threads);
+    }
+    return next;
+  }, [sidebarProjectThreadsByProjectID]);
+  const sidebarThreadSummaries = useMemo(
+    () => summarizeThreadsForSidebar(sidebarProjectThreads),
+    [sidebarProjectThreads],
+  );
+  const stateThreadSummaries = useMemo(
+    () => summarizeThreadsForSidebar(state.threads),
+    [state.threads],
+  );
+  const sidebarPinnedThreads = useMemo(
+    () => pinnedThreadSummaries(sidebarThreadSummaries),
+    [sidebarThreadSummaries],
+  );
+  const sidebarScratchThreads = useMemo(
+    () => scratchThreadSummaries(stateThreadSummaries, state.projects),
+    [stateThreadSummaries, state.projects],
+  );
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
       ? pendingViewSwitch.targetID
@@ -4478,13 +4502,14 @@ export function App(): JSX.Element {
     }
   }
 
-  async function toggleThreadPinned(thread: Thread): Promise<void> {
+  async function toggleThreadPinned(thread: ThreadSummary): Promise<void> {
     if (!state.activeContext) {
       return;
     }
     setArchiveConfirmThreadID(undefined);
-    if (localDemoThreadsRef.current.has(thread.id)) {
-      const nextThread = { ...thread, pinned: !thread.pinned };
+    const localDemoThread = localDemoThreadsRef.current.get(thread.id);
+    if (localDemoThread) {
+      const nextThread = { ...localDemoThread, pinned: !thread.pinned };
       localDemoThreadsRef.current = new Map([
         ...localDemoThreadsRef.current,
         [thread.id, nextThread],
@@ -4526,7 +4551,7 @@ export function App(): JSX.Element {
     }
   }
 
-  async function archiveThread(thread: Thread): Promise<void> {
+  async function archiveThread(thread: ThreadSummary): Promise<void> {
     const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
     if (
       !state.activeContext ||
@@ -5616,7 +5641,7 @@ export function App(): JSX.Element {
         collapsedProjectIDs={collapsedProjectIDs}
         expandedProjectIDs={expandedProjectIDs}
         collapsingProjectIDs={collapsingProjectIDs}
-        projectThreadsByProjectID={sidebarProjectThreadsByProjectID}
+        projectThreadsByProjectID={sidebarProjectThreadSummariesByProjectID}
         projectMenuOpen={projectMenuOpen}
         projectMenuRef={projectMenuRef}
         searchOpen={conversationSearch.open}

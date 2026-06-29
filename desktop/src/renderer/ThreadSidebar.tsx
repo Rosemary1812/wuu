@@ -1,6 +1,6 @@
 import { Archive, ChevronRight, CornerDownRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
-import type { Agent, DesktopProject, Thread } from "../shared/protocol";
+import type { Agent, DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import {
   agentLabel,
@@ -11,13 +11,16 @@ import {
   sortChildAgents
 } from "./ThreadAgents";
 import { threadDisplayTitle } from "./ThreadTitles";
-import { isThreadUnread } from "./AppState";
+import { isThreadUnread, type ThreadSummary } from "./AppState";
 
-function projectThreads(threads: Thread[]): Thread[] {
+function projectThreads(threads: ThreadSummary[]): ThreadSummary[] {
   return threads.filter((thread) => !thread.pinned);
 }
 
-function threadsForProjectPath(threads: Thread[], projectPath: string): Thread[] {
+function threadsForProjectPath(
+  threads: ThreadSummary[],
+  projectPath: string,
+): ThreadSummary[] {
   return threads.filter((thread) => sameSidebarPath(thread.cwd, projectPath));
 }
 
@@ -60,7 +63,7 @@ export function ProjectList({
   collapsedProjectIDs: Set<string>;
   expandedProjectIDs: Set<string>;
   collapsingProjectIDs: Set<string>;
-  threadsByProjectID: Record<string, Thread[]>;
+  threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
@@ -69,8 +72,8 @@ export function ProjectList({
   onStartNewThread: (id: string) => void;
   onSelectThread: (projectID: string, threadID: string) => void;
   onSelectChildAgent: (projectID: string, agent: Agent) => void;
-  onToggleThreadPinned: (thread: Thread) => void;
-  onArchiveThread: (thread: Thread) => void;
+  onToggleThreadPinned: (thread: ThreadSummary) => void;
+  onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
   const [visibleThreadCountsByProjectID, setVisibleThreadCountsByProjectID] = useState<Record<string, number>>({});
@@ -180,7 +183,7 @@ function ThreadList({
   onShowMore,
   onCollapse
 }: {
-  threads: Thread[];
+  threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
@@ -188,8 +191,8 @@ function ThreadList({
   visibleCount: number;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
-  onTogglePinned: (thread: Thread) => void;
-  onArchive: (thread: Thread) => void;
+  onTogglePinned: (thread: ThreadSummary) => void;
+  onArchive: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   // Forwarded so ThreadRows can report which row is currently hovered; the
   // conversation pane owns the preview render so the card lives in the
@@ -244,11 +247,11 @@ function ThreadList({
 }
 
 function limitedProjectThreads(
-  threads: Thread[],
+  threads: ThreadSummary[],
   visibleCount: number,
   activeID: string | undefined,
   pendingThreadID: string | undefined
-): Thread[] {
+): ThreadSummary[] {
   const visibleIDs = new Set(threads.slice(0, Math.max(0, visibleCount)).map((thread) => thread.id));
   return threads.filter((thread) => {
     if (visibleIDs.has(thread.id) || importantThreadVisible(thread, activeID, pendingThreadID)) {
@@ -259,7 +262,7 @@ function limitedProjectThreads(
 }
 
 function importantThreadVisible(
-  thread: Thread,
+  thread: ThreadSummary,
   activeID: string | undefined,
   pendingThreadID: string | undefined
 ): boolean {
@@ -271,7 +274,7 @@ function importantThreadVisible(
   );
 }
 
-function threadRunning(thread: Thread): boolean {
+function threadRunning(thread: ThreadSummary): boolean {
   return thread.status === "in_progress" || thread.turns.some((turn) => turn.status === "in_progress");
 }
 
@@ -287,15 +290,15 @@ export function PinnedThreadList({
   onArchive,
   onClearArchiveConfirm
 }: {
-  threads: Thread[];
+  threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
-  onTogglePinned: (thread: Thread) => void;
-  onArchive: (thread: Thread) => void;
+  onTogglePinned: (thread: ThreadSummary) => void;
+  onArchive: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
   return (
@@ -329,15 +332,15 @@ export function ScratchThreadSection({
   onClearArchiveConfirm,
   onCreateScratchThread
 }: {
-  threads: Thread[];
+  threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
-  onToggleThreadPinned: (thread: Thread) => void;
-  onArchiveThread: (thread: Thread) => void;
+  onToggleThreadPinned: (thread: ThreadSummary) => void;
+  onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   onCreateScratchThread: () => void;
 }): JSX.Element {
@@ -403,15 +406,15 @@ function ThreadRows({
   onClearArchiveConfirm,
   onSidebarThreadHover,
 }: {
-  threads: Thread[];
+  threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
-  onTogglePinned: (thread: Thread) => void;
-  onArchive: (thread: Thread) => void;
+  onTogglePinned: (thread: ThreadSummary) => void;
+  onArchive: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   // Fires when a row is hovered/unhovered so the conversation pane can
   // render a "what did this thread actually do" preview without the card
@@ -419,10 +422,10 @@ function ThreadRows({
   // panel rather than in the message stream).
   onSidebarThreadHover?: (threadID: string | undefined) => void;
 }): JSX.Element {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; thread: Thread } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; thread: ThreadSummary } | null>(null);
 
   function handleContextMenu(
-    targetThread: Thread,
+    targetThread: ThreadSummary,
     e: { clientX: number; clientY: number; preventDefault: () => void }
   ): void {
     e.preventDefault();

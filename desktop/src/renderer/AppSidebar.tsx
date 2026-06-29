@@ -13,8 +13,8 @@ import {
   Wrench,
 } from "lucide-react";
 import type { RefObject } from "react";
-import type { Agent, Thread } from "../shared/protocol";
-import type { AppState } from "./AppState";
+import type { Agent } from "../shared/protocol";
+import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { PinnedThreadList, ProjectList, ScratchThreadSection } from "./ThreadSidebar";
 
@@ -56,8 +56,8 @@ export function AppSidebar({
   onOpenSettings,
 }: {
   state: AppState;
-  pinnedThreads: Thread[];
-  scratchThreads: Thread[];
+  pinnedThreads: ThreadSummary[];
+  scratchThreads: ThreadSummary[];
   activeThreadID?: string;
   pendingThreadID?: string;
   pendingProjectID?: string;
@@ -65,7 +65,7 @@ export function AppSidebar({
   collapsedProjectIDs: Set<string>;
   expandedProjectIDs: Set<string>;
   collapsingProjectIDs: Set<string>;
-  projectThreadsByProjectID: Record<string, Thread[]>;
+  projectThreadsByProjectID: Record<string, ThreadSummary[]>;
   projectMenuOpen: boolean;
   projectMenuRef: RefObject<HTMLDivElement | null>;
   searchOpen: boolean;
@@ -78,8 +78,8 @@ export function AppSidebar({
   onOpenChipGallery: () => void;
   onSelectThread: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
-  onTogglePinned: (thread: Thread) => void;
-  onArchiveThread: (thread: Thread) => void;
+  onTogglePinned: (thread: ThreadSummary) => void;
+  onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   onToggleProjectMenu: () => void;
   onCreateProject: () => void;

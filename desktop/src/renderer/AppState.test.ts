@@ -15,6 +15,7 @@ import {
   queryTextsForThread,
   reduceServerEvent,
   sortThreads,
+  summarizeThreadsForSidebar,
 } from "./AppState";
 import { streamTextKey, streamTextStore } from "./StreamText";
 
@@ -133,6 +134,24 @@ describe("queryTextsForThread", () => {
     const thread = threadWithUserTexts([handoffText(), "真正的用户问题"]);
 
     expect(queryTextsForThread(thread)).toEqual(["真正的用户问题"]);
+  });
+});
+
+describe("summarizeThreadsForSidebar", () => {
+  it("keeps sidebar thread data free of turn item payloads", () => {
+    const [summary] = summarizeThreadsForSidebar([
+      threadWithUserTexts(["secret message body"]),
+    ]);
+
+    expect(summary.turn_count).toBe(1);
+    expect(summary.turns[0]).toEqual({
+      id: "turn-1",
+      status: "completed",
+      started_at: undefined,
+      completed_at: undefined,
+      duration_ms: undefined,
+    });
+    expect(JSON.stringify(summary)).not.toContain("secret message body");
   });
 });
 

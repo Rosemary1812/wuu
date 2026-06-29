@@ -136,6 +136,19 @@ type AppState = {
   lastViewedTurnByThreadID: Record<string, string>;
 };
 
+export type ThreadTurnSummary = Pick<
+  Turn,
+  "id" | "status" | "started_at" | "completed_at" | "duration_ms"
+>;
+
+export type ThreadSummary = Omit<
+  Thread,
+  "turns" | "browser_state" | "listening_ports"
+> & {
+  turns: ThreadTurnSummary[];
+  turn_count: number;
+};
+
 type TurnTokenSample = {
   tokens: number;
   at: number;
@@ -857,7 +870,78 @@ function sortThreads(threads: Thread[]): Thread[] {
   return [...running, ...settled];
 }
 
-function threadCreatedTime(thread: Thread): number {
+function summarizeAgentForSidebar(agent: Agent): Agent {
+  return {
+    id: agent.id,
+    type: agent.type,
+    task_name: agent.task_name,
+    agent_profile: agent.agent_profile,
+    agent_path: agent.agent_path,
+    parent_id: agent.parent_id,
+    description: agent.description,
+    status: agent.status,
+    nested_count: agent.nested_count,
+    nested_running_count: agent.nested_running_count,
+    started_at: agent.started_at,
+    completed_at: agent.completed_at,
+  };
+}
+
+function summarizeTurnForSidebar(turn: Turn): ThreadTurnSummary {
+  return {
+    id: turn.id,
+    status: turn.status,
+    started_at: turn.started_at,
+    completed_at: turn.completed_at,
+    duration_ms: turn.duration_ms,
+  };
+}
+
+function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
+  return {
+    id: thread.id,
+    parent_id: thread.parent_id,
+    agent_path: thread.agent_path,
+    preview: thread.preview,
+    title: thread.title,
+    model_provider: thread.model_provider,
+    model: thread.model,
+    cwd: thread.cwd,
+    workspace_kind: thread.workspace_kind,
+    status: thread.status,
+    read_only: thread.read_only,
+    pinned: thread.pinned,
+    archived: thread.archived,
+    forked_from_id: thread.forked_from_id,
+    forked_from_turn_id: thread.forked_from_turn_id,
+    forked_from_item_id: thread.forked_from_item_id,
+    created_at: thread.created_at,
+    updated_at: thread.updated_at,
+    turns: thread.turns.map(summarizeTurnForSidebar),
+    turn_count: thread.turns.length,
+    child_agents: thread.child_agents?.map(summarizeAgentForSidebar),
+  };
+}
+
+function summarizeThreadsForSidebar(threads: Thread[]): ThreadSummary[] {
+  return threads.map(summarizeThreadForSidebar);
+}
+
+function sortThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
+  const valid = threads.filter(
+    (thread): thread is ThreadSummary =>
+      Boolean(thread && typeof thread.id === "string") &&
+      !thread.archived &&
+      !thread.read_only,
+  );
+  const running = valid.filter(isThreadRunning);
+  const settled = valid.filter((thread) => !isThreadRunning(thread));
+  running.sort((left, right) => threadCreatedTime(right) - threadCreatedTime(left));
+  settled.sort((left, right) => threadTime(right) - threadTime(left));
+  return [...running, ...settled];
+}
+
+function threadCreatedTime(thread: Pick<Thread, "created_at" | "updated_at">): number {
   const createdAt = Date.parse(thread.created_at);
   return Number.isFinite(createdAt) ? createdAt : 0;
 }
@@ -939,8 +1023,16 @@ function pinnedThreads(threads: Thread[]): Thread[] {
   return sortThreads(threads).filter((thread) => thread.pinned);
 }
 
+function pinnedThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
+  return sortThreadSummaries(threads).filter((thread) => thread.pinned);
+}
+
 function projectThreads(threads: Thread[]): Thread[] {
   return sortThreads(threads).filter((thread) => !thread.pinned);
+}
+
+function projectThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
+  return sortThreadSummaries(threads).filter((thread) => !thread.pinned);
 }
 
 // isScratchThread classifies a thread as belonging to the scratch (no-project)
@@ -949,7 +1041,7 @@ function projectThreads(threads: Thread[]): Thread[] {
 // registered project list. Anything whose cwd is not a known project path
 // must have come from the desktop-managed scratch root.
 export function isScratchThread(
-  thread: Thread,
+  thread: Pick<Thread, "workspace_kind" | "cwd">,
   projects: DesktopProject[],
 ): boolean {
   if (thread.workspace_kind === "scratch") {
@@ -968,6 +1060,15 @@ export function scratchThreads(
   projects: DesktopProject[],
 ): Thread[] {
   return sortThreads(threads).filter(
+    (thread) => !thread.pinned && isScratchThread(thread, projects),
+  );
+}
+
+export function scratchThreadSummaries(
+  threads: ThreadSummary[],
+  projects: DesktopProject[],
+): ThreadSummary[] {
+  return sortThreadSummaries(threads).filter(
     (thread) => !thread.pinned && isScratchThread(thread, projects),
   );
 }
@@ -1219,7 +1320,7 @@ function fileNameFromPath(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
-function threadTime(thread: Thread): number {
+function threadTime(thread: Pick<Thread, "updated_at" | "created_at">): number {
   const updatedAt = Date.parse(thread.updated_at);
   if (Number.isFinite(updatedAt)) {
     return updatedAt;
@@ -1388,14 +1489,23 @@ function isThread(value: unknown): value is Thread {
   );
 }
 
-function isThreadRunning(thread: Thread | undefined): boolean {
+function isThreadRunning(
+  thread:
+    | {
+        status: Thread["status"];
+        turns: Array<Pick<Turn, "status">>;
+      }
+    | undefined,
+): boolean {
   return Boolean(
     thread?.status === "in_progress" ||
     thread?.turns.some((turn) => turn.status === "in_progress"),
   );
 }
 
-function latestCompletedTurnID(thread: Thread): string | undefined {
+function latestCompletedTurnID(thread: {
+  turns: Array<Pick<Turn, "id" | "status">>;
+}): string | undefined {
   // Walk newest → oldest. Most threads end with a non-in_progress turn so the
   // first hit is the answer; we still guard against an in_progress tail so a
   // thread that was reset to running does not get pinned to a stale ID.
@@ -1410,7 +1520,12 @@ function latestCompletedTurnID(thread: Thread): string | undefined {
 }
 
 function isThreadUnread(
-  thread: Thread | undefined,
+  thread:
+    | {
+        status: Thread["status"];
+        turns: Array<Pick<Turn, "id" | "status">>;
+      }
+    | undefined,
   lastViewedTurnID: string | undefined,
 ): boolean {
   if (!thread) return false;
@@ -2044,7 +2159,9 @@ export {
   parsePlanUpdateArguments,
   persistActiveSessionTabDraft,
   pinnedThreads,
+  pinnedThreadSummaries,
   projectThreads,
+  projectThreadSummaries,
   queryTextForUserItem,
   queryTextsForThread,
   reduceNotification,
@@ -2064,6 +2181,7 @@ export {
   setThreadForPane,
   skillsSessionTabID,
   sortThreads,
+  summarizeThreadsForSidebar,
   threadItemFromRecord,
   threadForPane,
   threadForTab,

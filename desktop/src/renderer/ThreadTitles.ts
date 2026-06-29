@@ -3,9 +3,14 @@ import type { Thread } from "../shared/protocol";
 const DEFAULT_THREAD_TITLE = "未命名对话";
 const FORK_TITLE_SUFFIX = " · 分叉";
 
+export type ThreadTitleSource = Pick<
+  Thread,
+  "id" | "preview" | "title" | "forked_from_id"
+>;
+
 export function threadDisplayTitle(
-  thread: Thread | undefined,
-  threads: Thread[] = [],
+  thread: ThreadTitleSource | undefined,
+  threads: ThreadTitleSource[] = [],
   fallback = DEFAULT_THREAD_TITLE
 ): string {
   if (!thread) {
@@ -18,7 +23,11 @@ export function threadDisplayTitle(
   return `${baseTitle}${FORK_TITLE_SUFFIX}`;
 }
 
-function baseThreadTitle(thread: Thread, threads: Thread[], fallback: string): string {
+function baseThreadTitle(
+  thread: ThreadTitleSource,
+  threads: ThreadTitleSource[],
+  fallback: string,
+): string {
   if (thread.forked_from_id) {
     const source = threads.find((candidate) => candidate.id === thread.forked_from_id);
     // Prefer source.title (set by the right-click Rename menu) over

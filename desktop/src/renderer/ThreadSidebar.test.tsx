@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 import { ProjectList, ScratchThreadSection, ThreadRowTitle } from "./ThreadSidebar";
 import type { DesktopProject, Thread } from "../shared/protocol";
+import { summarizeThreadsForSidebar } from "./AppState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -228,10 +229,10 @@ describe("ProjectList", () => {
           expandedProjectIDs={new Set(["project-2"])}
           collapsingProjectIDs={new Set()}
           threadsByProjectID={{
-            "project-1": [
+            "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-wuu", "/repo/wuu", "Wuu session"),
-            ],
-            "project-2": [
+            ]),
+            "project-2": summarizeThreadsForSidebar([
               makeProjectThread(
                 "thread-wrong-project",
                 "/repo/wuu",
@@ -242,7 +243,7 @@ describe("ProjectList", () => {
                 "/repo/interview",
                 "Interview session",
               ),
-            ],
+            ]),
           }}
           activeThreadID={undefined}
           pendingThreadID={undefined}
@@ -292,7 +293,7 @@ describe("ScratchThreadSection", () => {
       root = createRoot(container);
       root.render(
         <ScratchThreadSection
-          threads={props.threads ?? []}
+          threads={summarizeThreadsForSidebar(props.threads ?? [])}
           activeID={undefined}
           pendingThreadID={undefined}
           archiveConfirmThreadID={undefined}
