@@ -294,28 +294,6 @@ func TestThreadStateLabelsInceptionCompactEvent(t *testing.T) {
 	}
 }
 
-func TestTurnsFromHistorySurfacesHelpMeJointCompactWithoutUserTail(t *testing.T) {
-	now := time.Unix(0, 0).UTC()
-	turns := turnsFromHistory("thread", []providers.ChatMessage{
-		{Role: "system", Content: compact.HelpMeJointCompactPrefix + "\nRecovered state"},
-		{Role: "assistant", Content: "continued from HelpMe"},
-	}, now)
-
-	if len(turns) != 1 {
-		t.Fatalf("expected one synthetic compacted turn, got %+v", turns)
-	}
-	items := turns[0].Items
-	if len(items) != 2 {
-		t.Fatalf("expected HelpMe compact item and assistant message, got %+v", items)
-	}
-	if items[0].Type != ThreadItemContextCompaction || items[0].Reason != compact.HelpMeToolName {
-		t.Fatalf("expected HelpMe context compaction item, got %+v", items[0])
-	}
-	if items[1].Type != ThreadItemAgentMessage || items[1].Text != "continued from HelpMe" {
-		t.Fatalf("expected assistant continuation after HelpMe compact, got %+v", items[1])
-	}
-}
-
 func TestTurnsFromHistoryKeepsSteeredUserMessageInCurrentTurn(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{
@@ -535,13 +513,12 @@ func TestApplyTokenUsageMetasToTurnsAlignsFromNewestTurn(t *testing.T) {
 		{Role: "assistant", Content: "new done"},
 	}, now)
 	turns = applyTokenUsageMetasToTurns(turns, []persistedMessage{{
-		Role:                 "meta",
-		Content:              "token_usage",
-		Model:                "minimax-m3",
-		InputTokens:          19_600,
-		ContextTokens:        88_000,
-		RequestContextTokens: 132_600,
-		CacheReadTokens:      113_000,
+		Role:            "meta",
+		Content:         "token_usage",
+		Model:           "minimax-m3",
+		InputTokens:     19_600,
+		ContextTokens:   88_000,
+		CacheReadTokens: 113_000,
 	}})
 
 	if len(turns) != 2 {
@@ -550,7 +527,7 @@ func TestApplyTokenUsageMetasToTurnsAlignsFromNewestTurn(t *testing.T) {
 	if turns[0].InputTokens != 0 || turns[0].CacheReadTokens != 0 {
 		t.Fatalf("usage should not attach to legacy first turn: %+v", turns[0])
 	}
-	if turns[1].InputTokens != 19_600 || turns[1].CacheReadTokens != 113_000 || turns[1].ContextTokens != 88_000 || turns[1].RequestContextTokens != 132_600 || turns[1].UsageModel != "minimax-m3" {
+	if turns[1].InputTokens != 19_600 || turns[1].CacheReadTokens != 113_000 || turns[1].ContextTokens != 88_000 || turns[1].UsageModel != "minimax-m3" {
 		t.Fatalf("usage should attach to newest turn: %+v", turns[1])
 	}
 }

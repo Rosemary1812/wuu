@@ -25,16 +25,16 @@ export function ContextCompositionCard({
   const contextWindow = result?.context_window_tokens ?? 0;
   const cacheReadTokens = result?.cache_read_tokens ?? 0;
   const retainedTokens = result?.retained_tokens ?? 0;
-  const freeTokens = contextWindow > 0 ? Math.max(0, contextWindow - promptTokens) : 0;
-  const barTokens = contextWindow > 0 ? contextWindow : promptTokens;
+  const historyFreeTokens = contextWindow > 0 ? Math.max(0, contextWindow - retainedTokens) : 0;
+  const barTokens = promptTokens;
   const headlineTokens = contextWindow > 0
-    ? `${formatTokens(promptTokens)} / ${formatTokens(contextWindow)}`
-    : formatTokens(promptTokens);
-  const headlinePercent = contextWindow > 0 ? formatPercent(promptTokens, contextWindow) : null;
+    ? `${formatTokens(retainedTokens)} / ${formatTokens(contextWindow)}`
+    : formatTokens(retainedTokens);
+  const headlinePercent = contextWindow > 0 ? formatPercent(retainedTokens, contextWindow) : null;
   const runtime = [result?.provider, result?.model].filter(Boolean).join(" · ");
   const summaryMeta = [
-    freeTokens > 0 ? `请求余量 ${formatTokens(freeTokens)}` : "",
-    retainedTokens > 0 ? `保留历史 ${formatTokens(retainedTokens)}` : "",
+    historyFreeTokens > 0 ? `历史余量 ${formatTokens(historyFreeTokens)}` : "",
+    promptTokens > 0 ? `最近请求 ${formatTokens(promptTokens)}` : "",
     cacheReadTokens > 0 ? `缓存命中 ${formatTokens(cacheReadTokens)}` : "",
   ].filter(Boolean);
 
@@ -70,7 +70,7 @@ export function ContextCompositionCard({
             <div className="context-composition-summary">
               <div className="context-composition-headline">
                 <strong>{headlineTokens}</strong>
-                <span className="context-composition-headline-unit">当前请求 / 上下文上限</span>
+                <span className="context-composition-headline-unit">历史占用 / 上下文上限</span>
                 {headlinePercent ? (
                   <span className="context-composition-headline-percent">{headlinePercent}</span>
                 ) : null}
@@ -84,7 +84,7 @@ export function ContextCompositionCard({
               ) : null}
             </div>
 
-            <div className="context-composition-bar" aria-label="上下文组成条">
+            <div className="context-composition-bar" aria-label="最近请求组成条">
               {contributing.map((category) => (
                 <span
                   className={`context-composition-segment tone-${category.tone ?? "default"}`}
@@ -93,17 +93,10 @@ export function ContextCompositionCard({
                   title={`${category.label}: ${formatTokens(category.tokens ?? 0)}`}
                 />
               ))}
-              {freeTokens > 0 ? (
-                <span
-                  className="context-composition-segment free"
-                  style={{ width: `${segmentWidth(freeTokens, barTokens)}%` }}
-                  title={`剩余: ${formatTokens(freeTokens)}`}
-                />
-              ) : null}
             </div>
 
             <div className="context-composition-section">
-              <h3>组成</h3>
+              <h3>最近请求组成</h3>
               <div className="context-category-list">
                 {categories.map((category) => (
                   <ContextCategoryRow category={category} promptTokens={promptTokens} key={category.id} />

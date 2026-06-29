@@ -27,7 +27,7 @@ function renderCard(entry: ContextCompositionEntry): void {
 }
 
 describe("ContextCompositionCard", () => {
-  it("uses the unified context ceiling as the current-request denominator", () => {
+  it("uses retained history as the primary context occupancy", () => {
     renderCard({
       id: "entry-1",
       threadID: "thread-1",
@@ -55,9 +55,11 @@ describe("ContextCompositionCard", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text).toContain("508k / 512k");
-    expect(text).toContain("当前请求 / 上下文上限");
-    expect(text).toContain("保留历史 103k");
+    expect(text).toContain("103k / 512k");
+    expect(text).toContain("历史占用 / 上下文上限");
+    expect(text).toContain("历史余量 409k");
+    expect(text).toContain("最近请求 508k");
+    expect(text).toContain("最近请求组成");
     expect(text).not.toContain("压缩线");
   });
 });

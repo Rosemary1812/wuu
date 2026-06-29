@@ -738,7 +738,6 @@ export type Turn = {
   input_tokens?: number;
   output_tokens?: number;
   context_tokens?: number;
-  request_context_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
   usage_model?: string;

@@ -35,34 +35,33 @@ type persistedFile struct {
 }
 
 type persistedMessage struct {
-	Role                 string                             `json:"role"`
-	Content              string                             `json:"content"`
-	DisplayContent       string                             `json:"display_content,omitempty"`
-	Phase                string                             `json:"phase,omitempty"`
-	ProviderItemID       string                             `json:"provider_item_id,omitempty"`
-	ProviderItemModel    string                             `json:"provider_item_model,omitempty"`
-	ClientID             string                             `json:"client_id,omitempty"`
-	Hidden               bool                               `json:"hidden,omitempty"`
-	Steered              bool                               `json:"steered,omitempty"`
-	ReasoningContent     string                             `json:"reasoning_content,omitempty"`
-	ReasoningBlocks      []providers.ReasoningBlock         `json:"reasoning_blocks,omitempty"`
-	Images               []persistedImage                   `json:"images,omitempty"`
-	Files                []persistedFile                    `json:"files,omitempty"`
-	ToolCalls            []persistedToolCall                `json:"tool_calls,omitempty"`
-	DiscoveredTools      []providers.LoadableToolDefinition `json:"discovered_tools,omitempty"`
-	ToolCallID           string                             `json:"tool_call_id,omitempty"`
-	ToolResultKind       string                             `json:"tool_result_kind,omitempty"`
-	FinishReason         string                             `json:"finish_reason,omitempty"`
-	StopReason           string                             `json:"stop_reason,omitempty"`
-	Truncated            bool                               `json:"truncated,omitempty"`
-	Name                 string                             `json:"name,omitempty"`
-	At                   time.Time                          `json:"at,omitempty"`
-	InputTokens          int                                `json:"input_tokens,omitempty"`
-	OutputTokens         int                                `json:"output_tokens,omitempty"`
-	ContextTokens        int                                `json:"context_tokens,omitempty"`
-	RequestContextTokens int                                `json:"request_context_tokens,omitempty"`
-	CacheCreationTokens  int                                `json:"cache_creation_tokens,omitempty"`
-	CacheReadTokens      int                                `json:"cache_read_tokens,omitempty"`
+	Role                string                             `json:"role"`
+	Content             string                             `json:"content"`
+	DisplayContent      string                             `json:"display_content,omitempty"`
+	Phase               string                             `json:"phase,omitempty"`
+	ProviderItemID      string                             `json:"provider_item_id,omitempty"`
+	ProviderItemModel   string                             `json:"provider_item_model,omitempty"`
+	ClientID            string                             `json:"client_id,omitempty"`
+	Hidden              bool                               `json:"hidden,omitempty"`
+	Steered             bool                               `json:"steered,omitempty"`
+	ReasoningContent    string                             `json:"reasoning_content,omitempty"`
+	ReasoningBlocks     []providers.ReasoningBlock         `json:"reasoning_blocks,omitempty"`
+	Images              []persistedImage                   `json:"images,omitempty"`
+	Files               []persistedFile                    `json:"files,omitempty"`
+	ToolCalls           []persistedToolCall                `json:"tool_calls,omitempty"`
+	DiscoveredTools     []providers.LoadableToolDefinition `json:"discovered_tools,omitempty"`
+	ToolCallID          string                             `json:"tool_call_id,omitempty"`
+	ToolResultKind      string                             `json:"tool_result_kind,omitempty"`
+	FinishReason        string                             `json:"finish_reason,omitempty"`
+	StopReason          string                             `json:"stop_reason,omitempty"`
+	Truncated           bool                               `json:"truncated,omitempty"`
+	Name                string                             `json:"name,omitempty"`
+	At                  time.Time                          `json:"at,omitempty"`
+	InputTokens         int                                `json:"input_tokens,omitempty"`
+	OutputTokens        int                                `json:"output_tokens,omitempty"`
+	ContextTokens       int                                `json:"context_tokens,omitempty"`
+	CacheCreationTokens int                                `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int                                `json:"cache_read_tokens,omitempty"`
 	// Provider and Model carry which provider/model produced this row's
 	// token_usage. Only populated when Role=="meta" and Content=="token_usage";
 	// empty for chat records and for legacy token_usage rows written before
@@ -207,22 +206,21 @@ func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error 
 // history. provider and model tag the row so the insight scanner can aggregate
 // usage per provider/model across sessions. Empty values are preserved as empty
 // strings, which the scanner interprets as "unknown provider/model".
-func appendTokenUsage(sessDir, id, provider, model string, usage providers.TokenUsage, contextTokens, requestContextTokens int) error {
-	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || (usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CacheCreationTokens == 0 && usage.CacheReadTokens == 0 && contextTokens == 0 && requestContextTokens == 0) {
+func appendTokenUsage(sessDir, id, provider, model string, usage providers.TokenUsage, contextTokens int) error {
+	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || (usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CacheCreationTokens == 0 && usage.CacheReadTokens == 0 && contextTokens == 0) {
 		return nil
 	}
 	rec := persistedMessage{
-		Role:                 "meta",
-		Content:              "token_usage",
-		Provider:             strings.TrimSpace(provider),
-		Model:                strings.TrimSpace(model),
-		At:                   time.Now().UTC(),
-		InputTokens:          usage.InputTokens,
-		OutputTokens:         usage.OutputTokens,
-		ContextTokens:        contextTokens,
-		RequestContextTokens: requestContextTokens,
-		CacheCreationTokens:  usage.CacheCreationTokens,
-		CacheReadTokens:      usage.CacheReadTokens,
+		Role:                "meta",
+		Content:             "token_usage",
+		Provider:            strings.TrimSpace(provider),
+		Model:               strings.TrimSpace(model),
+		At:                  time.Now().UTC(),
+		InputTokens:         usage.InputTokens,
+		OutputTokens:        usage.OutputTokens,
+		ContextTokens:       contextTokens,
+		CacheCreationTokens: usage.CacheCreationTokens,
+		CacheReadTokens:     usage.CacheReadTokens,
 	}
 	return sessionstore.AppendHistoryRecord(sessDir, id, historyRecordFromPersistedMessage(rec))
 }
@@ -320,66 +318,64 @@ func loadPersistedMessages(sessDir, id string, includeMeta bool) ([]persistedMes
 
 func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.HistoryRecord {
 	return sessionstore.HistoryRecord{
-		Role:                 rec.Role,
-		Content:              rec.Content,
-		DisplayContent:       rec.DisplayContent,
-		Phase:                rec.Phase,
-		ProviderItemID:       rec.ProviderItemID,
-		ProviderItemModel:    rec.ProviderItemModel,
-		ClientID:             rec.ClientID,
-		Hidden:               rec.Hidden,
-		Steered:              rec.Steered,
-		ReasoningContent:     rec.ReasoningContent,
-		ReasoningBlocks:      mustJSON(rec.ReasoningBlocks),
-		Images:               mustJSON(rec.Images),
-		Files:                mustJSON(rec.Files),
-		ToolCalls:            mustJSON(rec.ToolCalls),
-		DiscoveredTools:      mustJSON(rec.DiscoveredTools),
-		ToolCallID:           rec.ToolCallID,
-		ToolResultKind:       rec.ToolResultKind,
-		FinishReason:         rec.FinishReason,
-		StopReason:           rec.StopReason,
-		Truncated:            rec.Truncated,
-		Name:                 rec.Name,
-		At:                   rec.At,
-		InputTokens:          rec.InputTokens,
-		OutputTokens:         rec.OutputTokens,
-		ContextTokens:        rec.ContextTokens,
-		RequestContextTokens: rec.RequestContextTokens,
-		CacheCreationTokens:  rec.CacheCreationTokens,
-		CacheReadTokens:      rec.CacheReadTokens,
-		Provider:             rec.Provider,
-		Model:                rec.Model,
+		Role:                rec.Role,
+		Content:             rec.Content,
+		DisplayContent:      rec.DisplayContent,
+		Phase:               rec.Phase,
+		ProviderItemID:      rec.ProviderItemID,
+		ProviderItemModel:   rec.ProviderItemModel,
+		ClientID:            rec.ClientID,
+		Hidden:              rec.Hidden,
+		Steered:             rec.Steered,
+		ReasoningContent:    rec.ReasoningContent,
+		ReasoningBlocks:     mustJSON(rec.ReasoningBlocks),
+		Images:              mustJSON(rec.Images),
+		Files:               mustJSON(rec.Files),
+		ToolCalls:           mustJSON(rec.ToolCalls),
+		DiscoveredTools:     mustJSON(rec.DiscoveredTools),
+		ToolCallID:          rec.ToolCallID,
+		ToolResultKind:      rec.ToolResultKind,
+		FinishReason:        rec.FinishReason,
+		StopReason:          rec.StopReason,
+		Truncated:           rec.Truncated,
+		Name:                rec.Name,
+		At:                  rec.At,
+		InputTokens:         rec.InputTokens,
+		OutputTokens:        rec.OutputTokens,
+		ContextTokens:       rec.ContextTokens,
+		CacheCreationTokens: rec.CacheCreationTokens,
+		CacheReadTokens:     rec.CacheReadTokens,
+		Provider:            rec.Provider,
+		Model:               rec.Model,
 	}
 }
 
 func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persistedMessage, error) {
 	out := persistedMessage{
-		Role:                 rec.Role,
-		Content:              rec.Content,
-		DisplayContent:       rec.DisplayContent,
-		Phase:                rec.Phase,
-		ProviderItemID:       rec.ProviderItemID,
-		ProviderItemModel:    rec.ProviderItemModel,
-		ClientID:             rec.ClientID,
-		Hidden:               rec.Hidden,
-		Steered:              rec.Steered,
-		ReasoningContent:     rec.ReasoningContent,
-		ToolCallID:           rec.ToolCallID,
-		ToolResultKind:       rec.ToolResultKind,
-		FinishReason:         rec.FinishReason,
-		StopReason:           rec.StopReason,
-		Truncated:            rec.Truncated,
-		Name:                 rec.Name,
-		At:                   rec.At,
-		InputTokens:          rec.InputTokens,
-		OutputTokens:         rec.OutputTokens,
-		ContextTokens:        rec.ContextTokens,
-		RequestContextTokens: rec.RequestContextTokens,
-		CacheCreationTokens:  rec.CacheCreationTokens,
-		CacheReadTokens:      rec.CacheReadTokens,
-		Provider:             rec.Provider,
-		Model:                rec.Model,
+		Role:                rec.Role,
+		Content:             rec.Content,
+		DisplayContent:      rec.DisplayContent,
+		Phase:               rec.Phase,
+		ProviderItemID:      rec.ProviderItemID,
+		ProviderItemModel:   rec.ProviderItemModel,
+		ClientID:            rec.ClientID,
+		Hidden:              rec.Hidden,
+		Steered:             rec.Steered,
+		ReasoningContent:    rec.ReasoningContent,
+		ToolCallID:          rec.ToolCallID,
+		ToolResultKind:      rec.ToolResultKind,
+		FinishReason:        rec.FinishReason,
+		StopReason:          rec.StopReason,
+		Truncated:           rec.Truncated,
+		Name:                rec.Name,
+		At:                  rec.At,
+		InputTokens:         rec.InputTokens,
+		OutputTokens:        rec.OutputTokens,
+		ContextTokens:       rec.ContextTokens,
+		CacheCreationTokens: rec.CacheCreationTokens,
+		CacheReadTokens:     rec.CacheReadTokens,
+		Provider:            rec.Provider,
+		Model:               rec.Model,
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err
@@ -424,7 +420,7 @@ func shouldPersistMessage(msg providers.ChatMessage) bool {
 	case "user", "assistant", "tool":
 		return true
 	case "system":
-		return compact.IsConversationSummaryContent(msg.Content) || compact.IsHelpMeJointCompactContent(msg.Content)
+		return strings.HasPrefix(strings.TrimSpace(msg.Content), compact.ConversationSummaryPrefix)
 	default:
 		return false
 	}
