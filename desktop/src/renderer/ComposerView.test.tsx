@@ -35,25 +35,6 @@ const responsiveDesignCSS = readFileSync(
   "utf8",
 );
 
-// jsdom does not ship a PointerEvent constructor, but React's pointer
-// listeners dispatch through the native event system so a polyfill is enough
-// to drive our resize-grip drag tests.
-if (typeof globalThis.PointerEvent === "undefined") {
-  class PointerEventPolyfill extends MouseEvent {
-    public readonly pointerId: number;
-    public readonly pointerType: string;
-    public readonly isPrimary: boolean;
-    constructor(type: string, init: PointerEventInit = {}) {
-      super(type, init);
-      this.pointerId = init.pointerId ?? 1;
-      this.pointerType = init.pointerType ?? "mouse";
-      this.isPrimary = init.isPrimary ?? true;
-    }
-  }
-  (globalThis as { PointerEvent: typeof PointerEvent }).PointerEvent =
-    PointerEventPolyfill as unknown as typeof PointerEvent;
-}
-
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -957,159 +938,66 @@ describe("ComposerTokenGauge", () => {
   });
 });
 
-describe("Composer resize handle", () => {
-  function textareaHeight(textarea: HTMLTextAreaElement): string {
-    return textarea.style.height;
-  }
-
-  beforeEach(() => {
-    // Each test may temporarily set body.style.cursor/userSelect; reset so
-    // failures don't leak state into the next test.
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
+describe("Composer expand button", () => {
+  it("declares expanded width and height rules", () => {
+    expect(composerCSS).toContain(".composer-stack.is-expanded");
+    expect(composerCSS).toContain("width: min(1040px");
+    expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
   });
 
-  it("renders the grip as the last child of the composer frame", () => {
+  it("renders the expand button as the last child of the composer frame", () => {
     renderComposer({});
 
     const frame = container.querySelector(".composer-frame");
-    const handle = container.querySelector<HTMLDivElement>(".composer-resize-handle");
+    const button = container.querySelector<HTMLButtonElement>(".composer-expand-button");
 
-    expect(handle).not.toBeNull();
-    expect(handle?.getAttribute("aria-label")).toBe("调整输入框高度");
-    expect(handle?.getAttribute("title")).toBe("拖动调整输入框高度");
-    // Sits inside .composer-frame so it visually anchors to the dialog corner.
-    expect(frame?.lastElementChild?.classList.contains("composer-resize-handle")).toBe(true);
-    // Grip is drawn with an SVG so it stays sharp on hi-DPI displays.
-    expect(handle?.querySelector("svg")).not.toBeNull();
+    expect(button).not.toBeNull();
+    expect(button?.getAttribute("aria-label")).toBe("展开输入框");
+    expect(button?.getAttribute("aria-pressed")).toBe("false");
+    expect(button?.getAttribute("title")).toBe("展开输入框");
+    expect(frame?.lastElementChild?.classList.contains("composer-expand-button")).toBe(true);
+    expect(button?.querySelector("svg")).not.toBeNull();
   });
 
-  it("grows the textarea height when the grip is dragged downward", () => {
+  it("toggles the expanded composer state from one click", async () => {
     renderComposer({});
+    const stack = container.querySelector(".composer-stack");
     const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    const handle = container.querySelector<HTMLDivElement>(".composer-resize-handle");
+    const button = container.querySelector<HTMLButtonElement>(".composer-expand-button");
+    expect(stack).not.toBeNull();
     expect(textarea).not.toBeNull();
-    expect(handle).not.toBeNull();
-
-    // jsdom returns 0 for offsetHeight; stub it so the drag math has a
-    // non-zero starting point that mirrors a real layout.
-    Object.defineProperty(textarea!, "offsetHeight", { configurable: true, value: 100 });
+    expect(button).not.toBeNull();
 
     act(() => {
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientY: 200 }),
-      );
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
-    expect(document.body.style.cursor).toBe("ns-resize");
-    expect(handle!.classList.contains("is-dragging")).toBe(true);
+
+    await act(async () => {
+      await nextAnimationFrame();
+    });
+
+    expect(stack?.classList.contains("is-expanded")).toBe(true);
+    expect(button?.getAttribute("aria-label")).toBe("收起输入框");
+    expect(button?.getAttribute("aria-pressed")).toBe("true");
+    expect(button?.getAttribute("title")).toBe("收起输入框");
+    expect(document.activeElement).toBe(textarea);
 
     act(() => {
-      window.dispatchEvent(new PointerEvent("pointermove", { clientY: 280 }));
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
-    // delta = +80, so the textarea grows by 80px.
-    expect(textareaHeight(textarea!)).toBe("180px");
 
-    act(() => {
-      window.dispatchEvent(new PointerEvent("pointerup", { clientY: 280 }));
-    });
-    expect(document.body.style.cursor).toBe("");
-    expect(handle!.classList.contains("is-dragging")).toBe(false);
+    expect(stack?.classList.contains("is-expanded")).toBe(false);
+    expect(button?.getAttribute("aria-label")).toBe("展开输入框");
+    expect(button?.getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("clamps the height to the upper bound so the conversation area never collapses", () => {
-    renderComposer({});
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    const handle = container.querySelector<HTMLDivElement>(".composer-resize-handle");
-
-    Object.defineProperty(textarea!, "offsetHeight", { configurable: true, value: 200 });
-    // A short viewport caps the max-height aggressively — any large drag
-    // delta should land on the ceiling, not the raw sum.
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
-
-    act(() => {
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientY: 0 }),
-      );
-    });
-    act(() => {
-      window.dispatchEvent(new PointerEvent("pointermove", { clientY: 9999 }));
-    });
-    // max-height = min(innerHeight * 0.5, 520) = min(300, 520) = 300.
-    expect(textareaHeight(textarea!)).toBe("300px");
-
-    act(() => {
-      window.dispatchEvent(new PointerEvent("pointerup", { clientY: 9999 }));
-    });
-  });
-
-  it("clamps the height to the CSS min-height when the user drags upward past the floor", () => {
-    renderComposer({});
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    const handle = container.querySelector<HTMLDivElement>(".composer-resize-handle");
-
-    Object.defineProperty(textarea!, "offsetHeight", { configurable: true, value: 200 });
-
-    act(() => {
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientY: 500 }),
-      );
-    });
-    act(() => {
-      // A huge upward drag — without the floor clamp, the textarea would
-      // collapse to a negative height.
-      window.dispatchEvent(new PointerEvent("pointermove", { clientY: 0 }));
-    });
-    // CSS min-height for .composer textarea is 80px.
-    expect(textareaHeight(textarea!)).toBe("80px");
-
-    act(() => {
-      window.dispatchEvent(new PointerEvent("pointerup", { clientY: 0 }));
-    });
-  });
-
-  it("ignores the drag and hides the grip in read-only mode", () => {
+  it("disables expansion in read-only mode", () => {
     renderComposer({ readOnly: true });
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    const handle = container.querySelector<HTMLDivElement>(".composer-resize-handle");
-    expect(handle).not.toBeNull();
-    expect(handle?.classList.contains("is-readonly")).toBe(true);
-    expect(handle?.getAttribute("aria-hidden")).toBe("true");
-    expect(handle?.getAttribute("title")).toBe("只读会话不可调整高度");
-
-    Object.defineProperty(textarea!, "offsetHeight", { configurable: true, value: 120 });
-
-    act(() => {
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientY: 50 }),
-      );
-    });
-    // Handler returns early when readOnly; cursor never changes and the
-    // dragging class never lands on the grip.
-    expect(document.body.style.cursor).not.toBe("ns-resize");
-    expect(handle!.classList.contains("is-dragging")).toBe(false);
-    expect(textareaHeight(textarea!)).toBe("");
-  });
-
-  it("ends the drag on pointercancel", () => {
-    renderComposer({});
-    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
-    const handle = container.querySelector<HTMLDivElement>(".composer-resize-handle");
-
-    Object.defineProperty(textarea!, "offsetHeight", { configurable: true, value: 100 });
-
-    act(() => {
-      handle!.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientY: 100 }),
-      );
-    });
-    expect(handle!.classList.contains("is-dragging")).toBe(true);
-
-    // pointercancel can fire if the OS interrupts the gesture (system alert,
-    // screen lock, etc.). The drag must still be released cleanly.
-    act(() => {
-      window.dispatchEvent(new PointerEvent("pointercancel", { clientY: 100 }));
-    });
-    expect(handle!.classList.contains("is-dragging")).toBe(false);
-    expect(document.body.style.cursor).toBe("");
+    const stack = container.querySelector(".composer-stack");
+    const button = container.querySelector<HTMLButtonElement>(".composer-expand-button");
+    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute("title")).toBe("只读会话不可展开");
+    expect(stack?.classList.contains("is-expanded")).toBe(false);
   });
 });

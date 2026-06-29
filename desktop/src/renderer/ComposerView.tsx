@@ -11,7 +11,9 @@ import {
   GitPullRequest,
   Hammer,
   Laptop,
+  Maximize2,
   MessageSquarePlus,
+  Minimize2,
   Paperclip,
   PieChart,
   Plus,
@@ -26,7 +28,6 @@ import {
 } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
   type Ref,
   type RefObject,
   useEffect,
@@ -241,10 +242,7 @@ export function Composer({
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  // Mirrors textarea.style.height while the user drags the corner grip so
-  // sibling layout (composer-frame, dock-composer-wrap) can react if needed.
-  const composerResizeSessionRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const [isResizingComposer, setIsResizingComposer] = useState(false);
+  const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
   const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
@@ -318,73 +316,22 @@ export function Composer({
     }
   }, [readOnly, slashRuntimeReady, slashSkillContextKey, slashSkillCountKey]);
 
-  // Corner-grip resize: while the user is dragging, listen for pointermove
-  // and pointerup at window level so the gesture survives even if the cursor
-  // leaves the handle. We mutate textarea.style.height directly during the
-  // drag — no React state — so the gesture stays smooth regardless of how
-  // much conversation is being painted above.
   useEffect(() => {
-    if (!isResizingComposer) {
-      return;
+    if (readOnly) {
+      setIsComposerExpanded(false);
     }
-    const previousBodyCursor = document.body.style.cursor;
-    const previousBodyUserSelect = document.body.style.userSelect;
-    document.body.style.cursor = "ns-resize";
-    document.body.style.userSelect = "none";
-
-    function handlePointerMove(event: PointerEvent): void {
-      const session = composerResizeSessionRef.current;
-      const textarea = textareaRef.current;
-      if (!session || !textarea) {
-        return;
-      }
-      const minHeight = parseFloat(getComputedStyle(textarea).minHeight) || 80;
-      // Cap the grown composer at ~half the viewport so the conversation
-      // scroll area above never collapses to nothing.
-      const maxHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.5, 520));
-      const delta = event.clientY - session.startY;
-      const next = Math.min(maxHeight, Math.max(minHeight, session.startHeight + delta));
-      textarea.style.height = `${next}px`;
-    }
-
-    function endResize(): void {
-      composerResizeSessionRef.current = null;
-      setIsResizingComposer(false);
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", endResize);
-    window.addEventListener("pointercancel", endResize);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", endResize);
-      window.removeEventListener("pointercancel", endResize);
-      document.body.style.cursor = previousBodyCursor;
-      document.body.style.userSelect = previousBodyUserSelect;
-    };
-  }, [isResizingComposer]);
-
-  function handleComposerResizeStart(event: ReactPointerEvent<HTMLDivElement>): void {
-    if (event.button !== 0 || readOnly) {
-      return;
-    }
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      return;
-    }
-    // Prevent the handle from being treated as a stray click and stop
-    // text-selection rubber-banding on macOS while the user is dragging.
-    event.preventDefault();
-    event.stopPropagation();
-    composerResizeSessionRef.current = {
-      startY: event.clientY,
-      startHeight: textarea.offsetHeight
-    };
-    setIsResizingComposer(true);
-  }
+  }, [readOnly]);
 
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function toggleComposerExpansion(): void {
+    if (readOnly) {
+      return;
+    }
+    setIsComposerExpanded((expanded) => !expanded);
+    focusComposerSoon();
   }
 
   function submitComposer(): void {
@@ -510,7 +457,7 @@ export function Composer({
   }
 
   const content = (
-    <div className="composer-stack">
+    <div className={`composer-stack${isComposerExpanded ? " is-expanded" : ""}`}>
       <div className="composer-shell">
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
@@ -797,19 +744,17 @@ export function Composer({
               </div>
             </div>
           </div>
-          <div
-            className={`composer-resize-handle${readOnly ? " is-readonly" : ""}${isResizingComposer ? " is-dragging" : ""}`}
-            aria-hidden={readOnly || undefined}
-            aria-label="调整输入框高度"
-            title={readOnly ? "只读会话不可调整高度" : "拖动调整输入框高度"}
-            onPointerDown={handleComposerResizeStart}
+          <button
+            className="composer-expand-button"
+            type="button"
+            aria-label={isComposerExpanded ? "收起输入框" : "展开输入框"}
+            aria-pressed={isComposerExpanded}
+            title={readOnly ? "只读会话不可展开" : isComposerExpanded ? "收起输入框" : "展开输入框"}
+            disabled={readOnly}
+            onClick={toggleComposerExpansion}
           >
-            <svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
-              <path d="M 13 4 L 4 13" />
-              <path d="M 13 8 L 8 13" />
-              <path d="M 13 12 L 12 13" />
-            </svg>
-          </div>
+            {isComposerExpanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+          </button>
         </div>
       </div>
     </div>

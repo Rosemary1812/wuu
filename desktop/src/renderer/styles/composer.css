@@ -56,6 +56,7 @@
   min-width: 0;
   flex-direction: column;
   margin: 0 auto;
+  transition: width 180ms var(--menu-enter-easing);
 }
 
 /* Hero (welcome) composer inherits the same dialog width as the dock composer
@@ -107,26 +108,29 @@
   width: var(--session-composer-width);
 }
 
-/* Corner-grip resize handle: a small diagonal grip anchored to the top-right
-   of the composer frame. Dragging it downward grows the textarea height
-   (and therefore the whole dialog), giving the user more vertical room to
-   read and edit long prompts. Patterned after WeChat's input-box resize.
-   The grip stays subtly visible at rest so users can discover it; hover
-   and drag brighten it. */
-.composer-resize-handle {
+.composer-stack.is-expanded {
+  width: min(1040px, calc(100% - 48px - var(--conversation-scrollbar-gutter)));
+}
+
+.hero-composer-wrap .composer-stack.is-expanded {
+  width: min(1040px, calc(100vw - 48px));
+}
+
+.composer-expand-button {
   position: absolute;
-  top: 3px;
-  right: 3px;
+  top: 5px;
+  right: 5px;
   width: 20px;
   height: 20px;
   z-index: 3;
   display: grid;
   place-items: center;
-  cursor: ns-resize;
-  touch-action: none;
+  padding: 0;
+  border: 0;
   color: var(--ink-faint);
-  opacity: 0.55;
   border-radius: var(--radius-xs);
+  background: var(--ink-overlay-4);
+  opacity: 0.78;
   transition:
     opacity 140ms ease,
     color 140ms ease,
@@ -134,43 +138,41 @@
     transform 140ms ease;
 }
 
-/* Pull the visible SVG in a touch so the hit area extends past the painted
-   region — makes the grip easier to grab without enlarging the visual. */
-.composer-resize-handle::before {
+.composer-expand-button::before {
   content: "";
   position: absolute;
   inset: -3px;
 }
 
-.composer-frame:hover .composer-resize-handle,
-.composer-resize-handle:hover,
-.composer-resize-handle:focus-visible {
+.composer-frame:hover .composer-expand-button,
+.composer-expand-button:hover,
+.composer-expand-button:focus-visible {
   opacity: 1;
   color: var(--ink-muted);
 }
 
-.composer-resize-handle:hover {
-  background-color: var(--ink-overlay-6);
+.composer-expand-button:hover:not(:disabled),
+.composer-expand-button[aria-pressed="true"] {
+  background-color: var(--ink-overlay-8);
 }
 
-.composer-resize-handle.is-dragging {
+.composer-expand-button:active:not(:disabled) {
   color: var(--ink);
-  background-color: var(--ink-overlay-12);
-  transform: scale(1.08);
+  transform: scale(0.96);
 }
 
-.composer-resize-handle:focus-visible {
+.composer-expand-button:focus-visible {
   outline: 2px solid var(--ink-overlay-18);
   outline-offset: 1px;
 }
 
-.composer-resize-handle.is-readonly {
+.composer-expand-button:disabled {
   cursor: not-allowed;
   opacity: 0;
   pointer-events: none;
 }
 
-.composer-resize-handle svg {
+.composer-expand-button svg {
   display: block;
   width: 14px;
   height: 14px;
@@ -178,7 +180,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-resize-handle {
+  .composer-stack,
+  .composer,
+  .composer textarea,
+  .composer-expand-button {
     transition: none;
   }
 }
@@ -189,6 +194,11 @@
   border-radius: 0;
   background: var(--paper);
   overflow: visible;
+  transition: min-height 180ms var(--menu-enter-easing);
+}
+
+.composer-stack.is-expanded .composer {
+  min-height: clamp(240px, 44vh, 420px);
 }
 
 .hero-composer-wrap .composer {
@@ -580,15 +590,20 @@
   border: 0;
   outline: 0;
   background: transparent;
-  padding: 16px 16px 8px;
+  padding: 16px 44px 8px 16px;
   color: var(--ink);
   font-size: var(--font-body);
   line-height: 24px;
+  transition: min-height 180ms var(--menu-enter-easing);
 }
 
 .hero-composer-wrap .composer textarea {
   min-height: 88px;
-  padding: 24px 24px 8px;
+  padding: 24px 52px 8px 24px;
+}
+
+.composer-stack.is-expanded .composer textarea {
+  min-height: clamp(180px, 34vh, 320px);
 }
 
 .composer textarea::placeholder {
