@@ -243,10 +243,6 @@
   background: transparent;
 }
 
-.assistant-turn-missing-reply {
-  margin-top: var(--conversation-process-gap);
-}
-
 .message {
   max-width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
   border-radius: var(--radius-sm);

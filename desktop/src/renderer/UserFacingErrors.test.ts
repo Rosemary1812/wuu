@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { turnEventForItem, turnEventForTurn } from "./TurnEvents";
-import { userFacingErrorForMessage } from "./UserFacingErrors";
+import {
+  userFacingErrorForMessage,
+  userFacingErrorForMissingReply,
+} from "./UserFacingErrors";
 
 describe("userFacingErrorForMessage", () => {
   it("classifies wrapped context overflow as a provider error", () => {
@@ -385,5 +388,49 @@ describe("TurnEvents", () => {
 
     expect(event?.kind).toBe("context_compacting");
     expect(event?.presentation).toBe("context_compaction");
+  });
+
+  it("maps a completed turn with commentary but no final answer to a missing_final_answer event", () => {
+    // `hasMissingReply` is computed by the caller from
+    // `AssistantTurnDisplay.missingReplyMessage`. The display builder
+    // only sets that flag for a completed turn that produced
+    // `commentary` items but never a `final_answer`. When the caller
+    // forwards the flag, the event pipeline should short-circuit to a
+    // soft warning chip instead of falling through to the cancelled /
+    // failed branches.
+    const turn: Turn = {
+      id: "turn-1",
+      items: [],
+      items_view: "full",
+      status: "completed",
+    };
+
+    const event = turnEventForTurn(turn, false, true);
+
+    expect(event?.kind).toBe("missing_final_answer");
+    expect(event?.source).toBe("turn");
+    expect(event?.presentation).toBe("notice");
+    if (event?.presentation !== "notice") {
+      throw new Error("expected notice event");
+    }
+    expect(event.notice.title).toBe("无最终回答");
+    expect(event.notice.tone).toBe("warning");
+    expect(event.notice.recommendedActions).toEqual([]);
+  });
+});
+
+describe("userFacingErrorForMissingReply", () => {
+  it("returns a warning-toned display with the soft 'no final answer' copy and no actions", () => {
+    const display = userFacingErrorForMissingReply();
+    // Soft yellow warning — visually distinct from error (red) and
+    // auth (brown) chips. Signals "this turn ended without a final
+    // answer" without implying the user or the model did something
+    // wrong.
+    expect(display.tone).toBe("warning");
+    expect(display.title).toBe("无最终回答");
+    expect(display.detail).toBe("这轮只保留了过程记录，没有生成最终回答。");
+    // No action — the user cannot do anything useful here except send
+    // a follow-up message, which the composer already supports.
+    expect(display.recommendedActions).toEqual([]);
   });
 });

@@ -187,4 +187,39 @@ describe("TurnView", () => {
     // screenshot carries enough signal to triage whose problem it is.
     expect(view.textContent?.match(/previous_response_not_found/g)).toHaveLength(1);
   });
+
+  it("renders a single warning chip when a completed turn has commentary but no final answer", () => {
+    // Pin the chip-pipeline contract: a completed turn whose items
+    // carry only `commentary` (no `final_answer`) now surfaces a
+    // warning chip via the same TurnEventNotice path that
+    // cancelled / failed / context-compaction notices use. The
+    // hand-rolled `.assistant-turn-missing-reply` aside is gone.
+    vi.useFakeTimers();
+    const view = render(
+      makeTurn("completed", [makeCommentary("thinking out loud")]),
+    );
+    // The presentation buffer delays publishing the display for
+    // ASSISTANT_TURN_PRESENTATION_STABILIZE_MS so the fold body has
+    // time to settle. Advance past it so the chip mounts.
+    act(() => {
+      vi.advanceTimersByTime(ASSISTANT_TURN_PRESENTATION_STABILIZE_MS);
+    });
+
+    // The process records (commentary) are still visible in the fold.
+    expect(view.textContent).toContain("thinking out loud");
+    // One unified chip, with the warning tone class and the short
+    // "无最终回答" title. The `warning` tone drives the yellow
+    // background via `.turn-notice.warning .turn-event-content`.
+    const notices = view.querySelectorAll(
+      ".turn-notice.turn-event-notice.warning",
+    );
+    expect(notices).toHaveLength(1);
+    expect(view.querySelector(".turn-event-title")?.textContent).toBe(
+      "无最终回答",
+    );
+    // The legacy className and Info icon are gone — the missing-reply
+    // case no longer hand-rolls its own markup.
+    expect(view.querySelector(".assistant-turn-missing-reply")).toBeNull();
+    expect(view.querySelector(".turn-notice-icon")).toBeNull();
+  });
 });

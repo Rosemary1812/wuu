@@ -1,4 +1,4 @@
-import { ChevronRight, Info, Play } from "lucide-react";
+import { ChevronRight, Play } from "lucide-react";
 import {
   type SyntheticEvent,
   useCallback,
@@ -120,20 +120,17 @@ export function AssistantTurnShell({
           ))}
         </div>
       ) : null}
-      {display.missingReplyMessage ? (
-        <aside
-          className="turn-notice warning assistant-turn-missing-reply"
-          role="status"
-        >
-          <span className="turn-notice-icon" aria-hidden="true">
-            <Info className="icon-sm" />
-          </span>
-          <span className="turn-notice-copy">
-            <strong>没有生成回复</strong>
-            <span>{display.missingReplyMessage}</span>
-          </span>
-        </aside>
-      ) : null}
+      {/*
+        No inline "missing reply" notice here. The hand-rolled legacy
+        aside used to live here, but it bypassed the chip pipeline
+        (TurnEvents → TurnEventNotice) that every other turn-level
+        outcome uses, so the visual treatment diverged from the
+        cancelled / failed / context-compaction chips. The unified chip
+        is now rendered as a sibling by TurnView based on
+        `assistantDisplay.missingReplyMessage`. The shell still applies
+        the `missing-reply-turn` className above so any shell-level
+        styling (transparent background, etc.) keeps firing.
+      */}
     </div>
   );
 }

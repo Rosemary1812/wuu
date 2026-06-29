@@ -248,6 +248,28 @@ export function userFacingErrorForMessage(
   };
 }
 
+/**
+ * Display for a turn that completed normally but never produced a
+ * `final_answer` (only `commentary` items remain). Soft outcome-state
+ * signal, not a failure — the model ran, it just talked instead of
+ * answering. Routes through the same chip pipeline as cancelled /
+ * failed turns so the user sees one consistent notice shape across
+ * all "this turn ended in a non-answer state" outcomes.
+ *
+ * `category: "internal"` is a placeholder for the closed-union type;
+ * tone / title / detail / actions are all set explicitly here so the
+ * category-driven defaults never fire.
+ */
+export function userFacingErrorForMissingReply(): UserFacingErrorDisplay {
+  return {
+    category: "internal",
+    tone: "warning",
+    title: "无最终回答",
+    detail: "这轮只保留了过程记录，没有生成最终回答。",
+    recommendedActions: [],
+  };
+}
+
 function toneForCategory(category: UserFacingErrorCategory): UserFacingErrorTone {
   switch (category) {
     case "cancelled":

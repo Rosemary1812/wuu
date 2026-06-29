@@ -2,6 +2,7 @@ import type { ThreadItem, ThreadItemStatus, Turn } from "../shared/protocol";
 import {
   isCancellationMessage,
   userFacingErrorForMessage,
+  userFacingErrorForMissingReply,
   type UserFacingErrorDisplay,
 } from "./UserFacingErrors";
 
@@ -15,7 +16,8 @@ export type TurnEventKind =
   | "internal_error"
   | "context_compacting"
   | "context_compacted"
-  | "recovered_from_context_overflow";
+  | "recovered_from_context_overflow"
+  | "missing_final_answer";
 
 export type TurnEventSource = "turn" | "item";
 
@@ -37,7 +39,23 @@ export type TurnEventDisplay =
 export function turnEventForTurn(
   turn: Turn,
   hasAssistantOutput: boolean,
+  hasMissingReply: boolean = false,
 ): TurnEventDisplay | undefined {
+  // Soft outcome: turn completed but only produced commentary, no
+  // `final_answer`. Rendered as a warning chip (not an error) and
+  // checked first so a completed turn with commentary but no answer
+  // does not get re-routed to the cancelled / failed branches below.
+  // The flag is computed by the caller from `AssistantTurnDisplay`,
+  // which has the full item list and is the only place that already
+  // does this classification.
+  if (hasMissingReply) {
+    return {
+      kind: "missing_final_answer",
+      source: "turn",
+      presentation: "notice",
+      notice: userFacingErrorForMissingReply(),
+    };
+  }
   const rawMessage = turn.error?.message || latestTurnItemError(turn);
   const baseDisplay =
     turn.status === "interrupted"
