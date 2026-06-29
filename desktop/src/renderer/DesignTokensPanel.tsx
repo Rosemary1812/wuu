@@ -18,172 +18,18 @@
  */
 import { useEffect, useState } from "react";
 import { RotateCcw, Sliders, X } from "lucide-react";
+import {
+  clampConversationDesignTokenValue,
+  CONVERSATION_DESIGN_TOKENS,
+  CONVERSATION_DESIGN_TOKEN_STORAGE_KEY,
+  conversationDesignTokenByKey,
+  conversationDesignTokenStyleValue,
+  LEGACY_CONVERSATION_DESIGN_TOKEN_CSS_VARS,
+  LEGACY_CONVERSATION_DESIGN_TOKEN_STORAGE_KEYS,
+  type ConversationDesignTokenKey,
+} from "./ConversationDesignTokens";
 
-type Token = {
-  /** Stable id used as the localStorage key and the slider identity. */
-  key: string;
-  /** CSS custom property name written to .conversation-pane. */
-  cssVar: string;
-  /** Human-readable label shown in the panel. */
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  /** "" for unitless values (line-height), "px" otherwise. */
-  unit: string;
-  /** Fallback when no override is stored. Mirrors the value in
-   *  styles.css so the slider sits at the right place on first open. */
-  defaultValue: number;
-};
-
-const TOKENS: Token[] = [
-  {
-    key: "flow-width",
-    cssVar: "--session-outer-width",
-    label: "消息流宽度",
-    min: 800,
-    max: 1280,
-    step: 16,
-    unit: "px",
-    defaultValue: 928,
-  },
-  {
-    key: "message-max-width",
-    cssVar: "--conversation-message-max-width",
-    label: "消息最大宽度",
-    min: 480,
-    max: 1080,
-    step: 16,
-    unit: "px",
-    defaultValue: 720,
-  },
-  {
-    // Derived from content-width; the slider here overrides the cascade.
-    key: "composer-width",
-    cssVar: "--session-composer-width",
-    label: "输入框宽度",
-    min: 600,
-    max: 1200,
-    step: 20,
-    unit: "px",
-    defaultValue: 784,
-  },
-  {
-    key: "composer-radius",
-    cssVar: "--session-composer-radius",
-    label: "输入框圆角",
-    min: 0,
-    max: 32,
-    step: 1,
-    unit: "px",
-    defaultValue: 18,
-  },
-  {
-    key: "msg-font-size",
-    cssVar: "--conversation-message-font-size",
-    label: "正文字号",
-    min: 13,
-    max: 20,
-    step: 0.5,
-    unit: "px",
-    defaultValue: 14,
-  },
-  {
-    key: "prose-line-height",
-    cssVar: "--conversation-reading-line-height",
-    label: "正文行高",
-    min: 1.65,
-    max: 2.3,
-    step: 0.02,
-    unit: "",
-    defaultValue: 1.9,
-  },
-  {
-    key: "prose-block-gap",
-    cssVar: "--conversation-prose-block-gap",
-    label: "段落间距",
-    min: 4,
-    max: 48,
-    step: 1,
-    unit: "px",
-    defaultValue: 16,
-  },
-  {
-    key: "meta-line-height",
-    cssVar: "--conversation-meta-line-height",
-    label: "Meta 行高",
-    min: 1.2,
-    max: 1.8,
-    step: 0.05,
-    unit: "",
-    defaultValue: 1.8,
-  },
-  {
-    key: "control-line-height",
-    cssVar: "--conversation-control-line-height",
-    label: "控件行高",
-    min: 1.2,
-    max: 2.2,
-    step: 0.05,
-    unit: "",
-    defaultValue: 2,
-  },
-  {
-    key: "process-gap",
-    cssVar: "--conversation-process-gap",
-    label: "Turn 内块间距",
-    min: 2,
-    max: 24,
-    step: 1,
-    unit: "px",
-    defaultValue: 14,
-  },
-  {
-    key: "message-element-gap",
-    cssVar: "--conversation-message-element-gap",
-    label: "消息块间距",
-    min: 4,
-    max: 32,
-    step: 1,
-    unit: "px",
-    defaultValue: 14,
-  },
-  {
-    key: "turn-gap",
-    cssVar: "--conversation-turn-gap",
-    label: "Turn 间距",
-    min: 0,
-    max: 48,
-    step: 1,
-    unit: "px",
-    defaultValue: 8,
-  },
-  {
-    key: "flow-padding",
-    cssVar: "--session-outer-padding-inline",
-    label: "流两侧留白",
-    min: 24,
-    max: 96,
-    step: 4,
-    unit: "px",
-    defaultValue: 72,
-  },
-];
-
-const STORAGE_KEY = "wuu:design-tokens:v4";
-const LEGACY_STORAGE_KEYS = [
-  "wuu:design-tokens:v2",
-  "wuu:design-tokens:v3",
-];
-const LEGACY_CSS_VARS = [
-  "--conversation-readable-width",
-  "--conversation-flow-padding-inline",
-  "--conversation-dialog-width",
-  "--conversation-dialog-radius",
-  "--conversation-prose-line-height",
-];
-
-type Overrides = Record<string, number>;
+type Overrides = Partial<Record<ConversationDesignTokenKey, number>>;
 
 function normalizeOverrides(parsed: unknown): Overrides {
   if (!parsed || typeof parsed !== "object") {
@@ -191,10 +37,10 @@ function normalizeOverrides(parsed: unknown): Overrides {
   }
   const source = parsed as Record<string, unknown>;
   const normalized: Overrides = {};
-  for (const token of TOKENS) {
+  for (const token of CONVERSATION_DESIGN_TOKENS) {
     const value = source[token.key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      normalized[token.key] = Math.min(token.max, Math.max(token.min, value));
+      normalized[token.key] = clampConversationDesignTokenValue(token, value);
     }
   }
   return normalized;
@@ -205,7 +51,9 @@ function loadOverrides(): Overrides {
     return {};
   }
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(
+      CONVERSATION_DESIGN_TOKEN_STORAGE_KEY,
+    );
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     return normalizeOverrides(parsed);
@@ -217,7 +65,7 @@ function loadOverrides(): Overrides {
 
 function clearLegacyStorage(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
-  for (const key of LEGACY_STORAGE_KEYS) {
+  for (const key of LEGACY_CONVERSATION_DESIGN_TOKEN_STORAGE_KEYS) {
     window.localStorage.removeItem(key);
   }
 }
@@ -225,7 +73,10 @@ function clearLegacyStorage(): void {
 function saveOverrides(overrides: Overrides): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+    window.localStorage.setItem(
+      CONVERSATION_DESIGN_TOKEN_STORAGE_KEY,
+      JSON.stringify(overrides),
+    );
   } catch {
     /* quota or privacy mode — silently drop */
   }
@@ -235,9 +86,12 @@ function applyToDOM(overrides: Overrides): void {
   const pane = document.querySelector<HTMLElement>(".conversation-pane");
   if (!pane) return;
   for (const [key, value] of Object.entries(overrides)) {
-    const token = TOKENS.find((t) => t.key === key);
+    const token = conversationDesignTokenByKey(key);
     if (token) {
-      pane.style.setProperty(token.cssVar, `${value}${token.unit}`);
+      pane.style.setProperty(
+        token.cssVar,
+        conversationDesignTokenStyleValue(token, value),
+      );
     }
   }
 }
@@ -245,10 +99,10 @@ function applyToDOM(overrides: Overrides): void {
 function clearFromDOM(): void {
   const pane = document.querySelector<HTMLElement>(".conversation-pane");
   if (!pane) return;
-  for (const token of TOKENS) {
+  for (const token of CONVERSATION_DESIGN_TOKENS) {
     pane.style.removeProperty(token.cssVar);
   }
-  for (const cssVar of LEGACY_CSS_VARS) {
+  for (const cssVar of LEGACY_CONVERSATION_DESIGN_TOKEN_CSS_VARS) {
     pane.style.removeProperty(cssVar);
   }
 }
@@ -271,7 +125,12 @@ export function DesignTokensPanel(): JSX.Element {
   }, []);
 
   const handleChange = (key: string, value: number): void => {
-    const next: Overrides = { ...overrides, [key]: value };
+    const token = conversationDesignTokenByKey(key);
+    if (!token) return;
+    const next: Overrides = {
+      ...overrides,
+      [token.key]: clampConversationDesignTokenValue(token, value),
+    };
     setOverrides(next);
     saveOverrides(next);
     applyToDOM(next);
@@ -280,7 +139,7 @@ export function DesignTokensPanel(): JSX.Element {
   const handleReset = (): void => {
     setOverrides({});
     if (typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(CONVERSATION_DESIGN_TOKEN_STORAGE_KEY);
     }
     clearFromDOM();
   };
@@ -318,7 +177,7 @@ export function DesignTokensPanel(): JSX.Element {
             </button>
           </div>
           <div className="design-tokens-body">
-            {TOKENS.map((token) => {
+            {CONVERSATION_DESIGN_TOKENS.map((token) => {
               const value = overrides[token.key] ?? token.defaultValue;
               return (
                 <div className="design-token" key={token.key}>
