@@ -397,8 +397,11 @@ app.whenReady().then(() => {
       thread_id: threadId,
     }),
   );
-  ipcMain.handle("wuu:thread-list", () =>
-    appServerClientPool.request<{ threads: Thread[] }>("thread/list"),
+  ipcMain.handle("wuu:thread-list", (_event, cwd?: string) =>
+    appServerClientPool.request<{ threads: Thread[] }>(
+      "thread/list",
+      typeof cwd === "string" && cwd.length > 0 ? { cwd } : undefined,
+    ),
   );
   ipcMain.handle("wuu:thread-search", (_event, query: string, limit?: number) =>
     appServerClientPool.request("thread/search", {

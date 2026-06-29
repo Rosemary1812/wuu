@@ -81,7 +81,7 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-edit-message", threadId, turnId, itemId),
   getThreadContextComposition: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-context-composition", threadId),
-  listThreads: () => ipcRenderer.invoke("wuu:thread-list"),
+  listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),
   pinThread: (threadId: string, pinned: boolean) =>

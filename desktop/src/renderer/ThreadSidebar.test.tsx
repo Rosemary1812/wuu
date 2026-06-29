@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
-import { ScratchThreadSection, ThreadRowTitle } from "./ThreadSidebar";
-import type { Thread } from "../shared/protocol";
+import { ProjectList, ScratchThreadSection, ThreadRowTitle } from "./ThreadSidebar";
+import type { DesktopProject, Thread } from "../shared/protocol";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -182,6 +182,89 @@ describe("ThreadContextMenu", () => {
     });
     expect(onA).toHaveBeenCalledTimes(1);
     expect(onB).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe("ProjectList", () => {
+  function makeProject(id: string, name: string, path: string): DesktopProject {
+    return {
+      id,
+      name,
+      path,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+  }
+
+  function makeProjectThread(id: string, cwd: string, title: string): Thread {
+    return {
+      id,
+      preview: title,
+      title,
+      model_provider: "openai",
+      model: "gpt-4",
+      cwd,
+      workspace_kind: "project",
+      status: "idle",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      turns: [],
+    };
+  }
+
+  it("can show session lists for multiple expanded projects", () => {
+    const projects = [
+      makeProject("project-1", "wuu", "/repo/wuu"),
+      makeProject("project-2", "interview", "/repo/interview"),
+    ];
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectList
+          projects={projects}
+          activeID="project-1"
+          pendingProjectID={undefined}
+          collapsedProjectIDs={new Set()}
+          expandedProjectIDs={new Set(["project-2"])}
+          collapsingProjectIDs={new Set()}
+          threadsByProjectID={{
+            "project-1": [
+              makeProjectThread("thread-wuu", "/repo/wuu", "Wuu session"),
+            ],
+            "project-2": [
+              makeProjectThread(
+                "thread-wrong-project",
+                "/repo/wuu",
+                "Wrong duplicate",
+              ),
+              makeProjectThread(
+                "thread-interview",
+                "/repo/interview",
+                "Interview session",
+              ),
+            ],
+          }}
+          activeThreadID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          onToggleProjectCollapsed={() => {}}
+          onStartNewThread={() => {}}
+          onSelectThread={() => {}}
+          onSelectChildAgent={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    const projectRows = container.querySelectorAll(".project-row");
+    expect(projectRows[0]?.getAttribute("aria-expanded")).toBe("true");
+    expect(projectRows[1]?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Wuu session");
+    expect(container.textContent).toContain("Interview session");
+    expect(container.textContent).not.toContain("Wrong duplicate");
   });
 });
 

@@ -347,7 +347,12 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 }
 
 func (s *Server) handleThreadList(req Request) error {
-	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	var params ThreadListParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	targetCWD := firstNonEmpty(params.CWD, s.rt.RootDir)
+	sessions, err := session.ListForCWD(s.rt.SessionDir, targetCWD, 0)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -375,7 +380,7 @@ func (s *Server) handleThreadList(req Request) error {
 			delete(entries, thread.ID)
 			continue
 		}
-		if thread.CWD == s.rt.RootDir {
+		if sameThreadListCWD(thread.CWD, targetCWD) {
 			entries[thread.ID] = entry
 		}
 	}
@@ -395,6 +400,20 @@ func (s *Server) handleThreadList(req Request) error {
 		result = append(result, thread)
 	}
 	return s.writeResponse(req.ID, ThreadListResult{Threads: result}, nil)
+}
+
+func sameThreadListCWD(left, right string) bool {
+	return cleanThreadListCWD(left) == cleanThreadListCWD(right)
+}
+
+func cleanThreadListCWD(cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(cwd); err == nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(cwd)
 }
 
 func (s *Server) handleThreadPin(req Request) error {

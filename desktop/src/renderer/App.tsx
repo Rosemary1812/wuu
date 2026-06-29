@@ -294,6 +294,7 @@ type TurnProgressContent = {
 };
 
 const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
+const PROJECT_EXPANDED_IDS_KEY = "wuu.desktop.expandedProjectIDs";
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -330,9 +331,9 @@ type HistoryMessageEditState = {
   submitting: boolean;
 };
 
-function initialCollapsedProjectIDs(): Set<string> {
+function storedProjectIDSet(key: string): Set<string> {
   try {
-    const stored = window.localStorage.getItem(PROJECT_COLLAPSED_IDS_KEY);
+    const stored = window.localStorage.getItem(key);
     const parsed: unknown = stored ? JSON.parse(stored) : [];
     if (!Array.isArray(parsed)) {
       return new Set();
@@ -345,6 +346,71 @@ function initialCollapsedProjectIDs(): Set<string> {
   } catch {
     return new Set();
   }
+}
+
+function initialCollapsedProjectIDs(): Set<string> {
+  return storedProjectIDSet(PROJECT_COLLAPSED_IDS_KEY);
+}
+
+function initialExpandedProjectIDs(): Set<string> {
+  return storedProjectIDSet(PROJECT_EXPANDED_IDS_KEY);
+}
+
+function projectExpanded(
+  projectID: string,
+  activeProjectID: string | undefined,
+  expandedProjectIDs: ReadonlySet<string>,
+  collapsedProjectIDs: ReadonlySet<string>,
+): boolean {
+  return (
+    expandedProjectIDs.has(projectID) ||
+    (projectID === activeProjectID && !collapsedProjectIDs.has(projectID))
+  );
+}
+
+function removeMissingIDs(
+  ids: Set<string>,
+  validIDs: ReadonlySet<string>,
+): Set<string> {
+  const next = new Set<string>();
+  for (const id of ids) {
+    if (validIDs.has(id)) {
+      next.add(id);
+    }
+  }
+  return next.size === ids.size ? ids : next;
+}
+
+function threadListsEquivalent(left: Thread[] | undefined, right: Thread[]): boolean {
+  if (!left || left.length !== right.length) {
+    return false;
+  }
+  return left.every((thread, index) => {
+    const candidate = right[index];
+    return (
+      candidate?.id === thread.id &&
+      candidate.updated_at === thread.updated_at &&
+      candidate.status === thread.status &&
+      candidate.pinned === thread.pinned &&
+      candidate.archived === thread.archived
+    );
+  });
+}
+
+function threadsForDesktopProject(threads: Thread[], project: DesktopProject): Thread[] {
+  return sortThreads(
+    threads.filter((thread) => sameDesktopPath(thread.cwd, project.path)),
+  );
+}
+
+function sameDesktopPath(left: string, right: string): boolean {
+  return cleanDesktopPath(left) === cleanDesktopPath(right);
+}
+
+function cleanDesktopPath(path: string): string {
+  const trimmed = path.trim();
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  return withoutTrailingSlash || trimmed;
 }
 
 function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
@@ -407,9 +473,15 @@ export function App(): JSX.Element {
   const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
     initialCollapsedProjectIDs,
   );
+  const [expandedProjectIDs, setExpandedProjectIDs] = useState<Set<string>>(
+    initialExpandedProjectIDs,
+  );
   const [collapsingProjectIDs, setCollapsingProjectIDs] = useState<Set<string>>(
     () => new Set(),
   );
+  const [projectThreadsByProjectID, setProjectThreadsByProjectID] = useState<
+    Record<string, Thread[]>
+  >({});
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [codexRuntimeMenu, setCodexRuntimeMenu] =
@@ -506,6 +578,7 @@ export function App(): JSX.Element {
   });
   const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
   const projectCollapseTimersRef = useRef(new Map<string, number>());
+  const loadingProjectThreadIDsRef = useRef(new Set<string>());
   const [queryHistoryOpen, setQueryHistoryOpen] = useState(false);
   const queryHistoryCloseTimerRef = useRef<number | undefined>(undefined);
   const windowResizingRef = useRef(false);
@@ -1091,6 +1164,97 @@ export function App(): JSX.Element {
   }, [collapsedProjectIDs]);
 
   useEffect(() => {
+    window.localStorage.setItem(
+      PROJECT_EXPANDED_IDS_KEY,
+      JSON.stringify([...expandedProjectIDs]),
+    );
+  }, [expandedProjectIDs]);
+
+  useEffect(() => {
+    const validProjectIDs = new Set(state.projects.map((project) => project.id));
+    setCollapsedProjectIDs((current) =>
+      removeMissingIDs(current, validProjectIDs),
+    );
+    setExpandedProjectIDs((current) =>
+      removeMissingIDs(current, validProjectIDs),
+    );
+    setProjectThreadsByProjectID((current) => {
+      const next: Record<string, Thread[]> = {};
+      let changed = false;
+      for (const [projectID, threads] of Object.entries(current)) {
+        if (validProjectIDs.has(projectID)) {
+          next[projectID] = threads;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [state.projects]);
+
+  useEffect(() => {
+    if (state.activeContext?.kind !== "project" || !state.activeProjectId) {
+      return;
+    }
+    const projectID = state.activeProjectId;
+    const activeProject = state.projects.find(
+      (project) => project.id === projectID,
+    );
+    if (!activeProject) {
+      return;
+    }
+    const activeProjectThreads = threadsForDesktopProject(
+      state.threads,
+      activeProject,
+    );
+    setProjectThreadsByProjectID((current) => {
+      if (threadListsEquivalent(current[projectID], activeProjectThreads)) {
+        return current;
+      }
+      return { ...current, [projectID]: activeProjectThreads };
+    });
+    if (!collapsedProjectIDs.has(projectID)) {
+      setExpandedProjectIDs((current) =>
+        current.has(projectID) ? current : new Set(current).add(projectID),
+      );
+    }
+  }, [
+    collapsedProjectIDs,
+    state.activeContext?.kind,
+    state.activeProjectId,
+    state.projects,
+    state.threads,
+  ]);
+
+  useEffect(() => {
+    for (const project of state.projects) {
+      if (
+        !projectExpanded(
+          project.id,
+          state.activeProjectId,
+          expandedProjectIDs,
+          collapsedProjectIDs,
+        )
+      ) {
+        continue;
+      }
+      if (project.id === state.activeProjectId) {
+        continue;
+      }
+      if (Object.prototype.hasOwnProperty.call(projectThreadsByProjectID, project.id)) {
+        continue;
+      }
+      void loadProjectThreads(project);
+    }
+  }, [
+    collapsedProjectIDs,
+    expandedProjectIDs,
+    projectThreadsByProjectID,
+    state.activeProjectId,
+    state.projects,
+  ]);
+
+  useEffect(() => {
     scheduleGitStatusRefresh(0);
   }, [
     state.activeContext?.kind,
@@ -1230,7 +1394,43 @@ export function App(): JSX.Element {
       handleNoticeAction(action);
     },
   );
-  const sidebarPinnedThreads = pinnedThreads(state.threads);
+  const sidebarProjectThreadsByProjectID = useMemo(() => {
+    if (state.activeContext?.kind !== "project" || !state.activeProjectId) {
+      return projectThreadsByProjectID;
+    }
+    const activeProject = state.projects.find(
+      (project) => project.id === state.activeProjectId,
+    );
+    if (!activeProject) {
+      return projectThreadsByProjectID;
+    }
+    return {
+      ...projectThreadsByProjectID,
+      [state.activeProjectId]: threadsForDesktopProject(
+        state.threads,
+        activeProject,
+      ),
+    };
+  }, [
+    projectThreadsByProjectID,
+    state.activeContext?.kind,
+    state.activeProjectId,
+    state.projects,
+    state.threads,
+  ]);
+  const sidebarProjectThreads = useMemo(() => {
+    const byID = new Map<string, Thread>();
+    for (const threads of Object.values(sidebarProjectThreadsByProjectID)) {
+      for (const thread of threads) {
+        byID.set(thread.id, thread);
+      }
+    }
+    for (const thread of state.threads) {
+      byID.set(thread.id, thread);
+    }
+    return sortThreads([...byID.values()]);
+  }, [sidebarProjectThreadsByProjectID, state.threads]);
+  const sidebarPinnedThreads = pinnedThreads(sidebarProjectThreads);
   const sidebarScratchThreads = scratchThreads(state.threads, state.projects);
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
@@ -1364,11 +1564,55 @@ export function App(): JSX.Element {
     projectCollapseTimersRef.current.delete(projectID);
   }
 
+  async function loadProjectThreads(project: DesktopProject): Promise<void> {
+    if (loadingProjectThreadIDsRef.current.has(project.id)) {
+      return;
+    }
+    loadingProjectThreadIDsRef.current.add(project.id);
+    try {
+      const listed = await window.wuu.listThreads(project.path);
+      setProjectThreadsByProjectID((current) => ({
+        ...current,
+        [project.id]: threadsForDesktopProject(listed.threads, project),
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: desktopApiErrorMessage(error, "加载项目会话失败"),
+      }));
+    } finally {
+      loadingProjectThreadIDsRef.current.delete(project.id);
+    }
+  }
+
+  function updateCachedProjectThread(thread: Thread): void {
+    const projectID = appStateRef.current.projects.find(
+      (project) => sameDesktopPath(project.path, thread.cwd),
+    )?.id;
+    if (!projectID) {
+      return;
+    }
+    setProjectThreadsByProjectID((current) => {
+      const currentThreads = current[projectID];
+      if (!currentThreads) {
+        return current;
+      }
+      return {
+        ...current,
+        [projectID]: upsertThread(currentThreads, thread),
+      };
+    });
+  }
+
   function toggleProjectCollapsed(projectID: string): void {
-    if (
-      collapsedProjectIDs.has(projectID) ||
-      collapsingProjectIDs.has(projectID)
-    ) {
+    const expanded =
+      projectExpanded(
+        projectID,
+        appStateRef.current.activeProjectId,
+        expandedProjectIDs,
+        collapsedProjectIDs,
+      ) || collapsingProjectIDs.has(projectID);
+    if (!expanded || collapsingProjectIDs.has(projectID)) {
       clearProjectCollapseTimer(projectID);
       setCollapsedProjectIDs((current) => {
         if (!current.has(projectID)) {
@@ -1386,6 +1630,21 @@ export function App(): JSX.Element {
         next.delete(projectID);
         return next;
       });
+      setExpandedProjectIDs((current) =>
+        current.has(projectID) ? current : new Set(current).add(projectID),
+      );
+      const project = appStateRef.current.projects.find(
+        (candidate) => candidate.id === projectID,
+      );
+      if (
+        project &&
+        !Object.prototype.hasOwnProperty.call(
+          projectThreadsByProjectID,
+          projectID,
+        )
+      ) {
+        void loadProjectThreads(project);
+      }
       return;
     }
 
@@ -1398,6 +1657,14 @@ export function App(): JSX.Element {
       setCollapsedProjectIDs((current) =>
         current.has(projectID) ? current : new Set(current).add(projectID),
       );
+      setExpandedProjectIDs((current) => {
+        if (!current.has(projectID)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(projectID);
+        return next;
+      });
       setCollapsingProjectIDs((current) => {
         if (!current.has(projectID)) {
           return current;
@@ -3624,8 +3891,113 @@ export function App(): JSX.Element {
     }
   }
 
+  async function selectProjectThread(
+    projectID: string,
+    threadID: string,
+  ): Promise<void> {
+    const currentState = appStateRef.current;
+    if (
+      projectID === currentState.activeProjectId &&
+      currentState.activeContext?.kind === "project"
+    ) {
+      await selectThread(threadID);
+      return;
+    }
+    if (
+      pendingViewSwitch?.kind === "thread" &&
+      pendingViewSwitch.targetID === threadID
+    ) {
+      return;
+    }
+    const project = currentState.projects.find(
+      (candidate) => candidate.id === projectID,
+    );
+    if (!project) {
+      return;
+    }
+    const targetContext: RuntimeContext = {
+      kind: "project",
+      project_id: project.id,
+      cwd: project.path,
+    };
+    setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
+    const outgoingDraft = currentPrimaryComposerDraft();
+    const targetDraft = sessionTabDraftForThread(currentState, threadID);
+    const requestID = beginViewSwitch("thread", threadID);
+    try {
+      const projectState = await window.wuu.selectProject(projectID);
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: false,
+      });
+      const thread = requireThread(
+        await window.wuu.resumeThread(threadID),
+        "resume did not return a thread",
+      );
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      restorePrimaryComposerDraft(targetDraft);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        const next = { ...withDraft, ...loadedState };
+        return {
+          ...next,
+          thread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(
+            next.sessionTabs,
+            createThreadSessionTab(thread, targetContext, targetDraft),
+          ),
+          activeSessionTabID: threadSessionTabID(thread.id),
+          threads: upsertThread(next.threads, thread),
+          running: isThreadRunning(thread),
+          status: "ready",
+        };
+      });
+    } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "load failed",
+      }));
+    }
+  }
+
   async function activateThread(threadID: string): Promise<void> {
+    const project = appStateRef.current.projects.find((candidate) =>
+      sidebarProjectThreadsByProjectID[candidate.id]?.some(
+        (thread) => thread.id === threadID,
+      ),
+    );
+    if (
+      project &&
+      (project.id !== appStateRef.current.activeProjectId ||
+        appStateRef.current.activeContext?.kind !== "project")
+    ) {
+      await selectProjectThread(project.id, threadID);
+      return;
+    }
     await selectThread(threadID);
+  }
+
+  async function selectProjectChildAgent(
+    projectID: string,
+    agent: Agent,
+  ): Promise<void> {
+    if (
+      projectID === appStateRef.current.activeProjectId &&
+      appStateRef.current.activeContext?.kind === "project"
+    ) {
+      await selectChildAgent(agent);
+      return;
+    }
+    await selectProjectThread(projectID, agent.id);
   }
 
   async function selectChildAgent(agent: Agent): Promise<void> {
@@ -4053,6 +4425,7 @@ export function App(): JSX.Element {
     }
     try {
       const result = await window.wuu.pinThread(thread.id, !thread.pinned);
+      updateCachedProjectThread(result.thread);
       setState((current) => ({
         ...current,
         thread:
@@ -4061,7 +4434,10 @@ export function App(): JSX.Element {
           current.secondaryThread?.id === thread.id
             ? result.thread
             : current.secondaryThread,
-        threads: upsertThread(current.threads, result.thread),
+        threads:
+          current.activeContext?.cwd === result.thread.cwd
+            ? upsertThread(current.threads, result.thread)
+            : current.threads,
         status: current.status === "ready" ? "ready" : current.status,
       }));
     } catch (error) {
@@ -4141,6 +4517,7 @@ export function App(): JSX.Element {
     }
     try {
       const result = await window.wuu.archiveThread(thread.id, true);
+      updateCachedProjectThread(result.thread);
       setArchiveConfirmThreadID(undefined);
       setState((current) => {
         const nextTabs = removeSessionTab(
@@ -4167,9 +4544,12 @@ export function App(): JSX.Element {
             fallbackDraft
               ? fallbackDraft.id
               : current.activeSessionTabID,
-          threads: current.threads.filter(
-            (candidate) => candidate.id !== result.thread.id,
-          ),
+          threads:
+            current.activeContext?.cwd === result.thread.cwd
+              ? current.threads.filter(
+                  (candidate) => candidate.id !== result.thread.id,
+                )
+              : current.threads,
           running:
             activeThreadIDForState(current) === thread.id
               ? false
@@ -4870,6 +5250,59 @@ export function App(): JSX.Element {
     }
   }
 
+  async function removeProvider(
+    provider: string,
+    options?: { fallbackProvider?: string; fallbackModel?: string },
+  ): Promise<void> {
+    if (!state.initialized || viewContextSwitchPending) {
+      return;
+    }
+    const target = provider.trim();
+    if (!target) {
+      return;
+    }
+    try {
+      const updated = await window.wuu.removeProvider(target, options);
+      setState((current) => {
+        const initialized = current.initialized
+          ? {
+              ...current.initialized,
+              provider: updated.provider ?? current.initialized.provider,
+              model: updated.model ?? current.initialized.model,
+              effort: updated.effort ?? current.initialized.effort,
+              variant: updated.variant ?? current.initialized.variant,
+              tool_policy:
+                updated.tool_policy ?? current.initialized.tool_policy,
+              permissions:
+                updated.permissions ?? current.initialized.permissions,
+              extension_trust:
+                updated.extension_trust ?? current.initialized.extension_trust,
+              providers: updated.providers ?? current.initialized.providers,
+              advanced_settings:
+                updated.advanced_settings ?? current.initialized.advanced_settings,
+            }
+          : current.initialized;
+        return {
+          ...current,
+          initialized,
+          status: current.status === "ready" ? current.status : "ready",
+        };
+      });
+      if (state.initialized) {
+        void loadCodexModelsForProvider(updated.provider);
+      }
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : "remove provider failed",
+      }));
+      throw error;
+    }
+  }
+
   function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
     if (!state.initialized || viewContextSwitchPending) {
       return;
@@ -5077,6 +5510,7 @@ export function App(): JSX.Element {
         resizingSidebar={resizingSidebar}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
+        onRemoveProvider={removeProvider}
         onAdvancedSave={updateAdvancedSettings}
         onDebugControlsChange={setDebugControlsEnabled}
         onSidebarResizeStart={startSettingsSidebarResize}
@@ -5099,7 +5533,9 @@ export function App(): JSX.Element {
         pendingProjectID={visiblePendingProjectID}
         archiveConfirmThreadID={archiveConfirmThreadID}
         collapsedProjectIDs={collapsedProjectIDs}
+        expandedProjectIDs={expandedProjectIDs}
         collapsingProjectIDs={collapsingProjectIDs}
+        projectThreadsByProjectID={sidebarProjectThreadsByProjectID}
         projectMenuOpen={projectMenuOpen}
         projectMenuRef={projectMenuRef}
         searchOpen={conversationSearch.open}
@@ -5123,9 +5559,14 @@ export function App(): JSX.Element {
         onToggleProjectMenu={() => setProjectMenuOpen((open) => !open)}
         onCreateProject={() => void createBlankProject()}
         onOpenProjectFolder={() => void chooseProjectFolder()}
-        onOpenProject={(id) => void openProject(id)}
         onToggleProjectCollapsed={toggleProjectCollapsed}
         onStartNewThreadForProject={(id) => void startNewThreadForProject(id)}
+        onSelectProjectThread={(projectID, threadID) =>
+          void selectProjectThread(projectID, threadID)
+        }
+        onSelectProjectChildAgent={(projectID, agent) =>
+          void selectProjectChildAgent(projectID, agent)
+        }
         onOpenSettings={() => {
           setProjectMenuOpen(false);
           setRuntimeMenuOpen(false);

@@ -26,7 +26,9 @@ export function AppSidebar({
   pendingProjectID,
   archiveConfirmThreadID,
   collapsedProjectIDs,
+  expandedProjectIDs,
   collapsingProjectIDs,
+  projectThreadsByProjectID,
   projectMenuOpen,
   projectMenuRef,
   searchOpen,
@@ -44,9 +46,10 @@ export function AppSidebar({
   onToggleProjectMenu,
   onCreateProject,
   onOpenProjectFolder,
-  onOpenProject,
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
+  onSelectProjectThread,
+  onSelectProjectChildAgent,
   onCreateScratchThread,
   onOpenSettings,
 }: {
@@ -58,7 +61,9 @@ export function AppSidebar({
   pendingProjectID?: string;
   archiveConfirmThreadID?: string;
   collapsedProjectIDs: Set<string>;
+  expandedProjectIDs: Set<string>;
   collapsingProjectIDs: Set<string>;
+  projectThreadsByProjectID: Record<string, Thread[]>;
   projectMenuOpen: boolean;
   projectMenuRef: RefObject<HTMLDivElement | null>;
   searchOpen: boolean;
@@ -76,9 +81,10 @@ export function AppSidebar({
   onToggleProjectMenu: () => void;
   onCreateProject: () => void;
   onOpenProjectFolder: () => void;
-  onOpenProject: (id: string) => void;
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
+  onSelectProjectThread: (projectID: string, threadID: string) => void;
+  onSelectProjectChildAgent: (projectID: string, agent: Agent) => void;
   onCreateScratchThread: () => void;
   onOpenSettings: () => void;
 }): JSX.Element {
@@ -231,17 +237,17 @@ export function AppSidebar({
                 activeID={state.activeProjectId}
                 pendingProjectID={pendingProjectID}
                 collapsedProjectIDs={collapsedProjectIDs}
+                expandedProjectIDs={expandedProjectIDs}
                 collapsingProjectIDs={collapsingProjectIDs}
-                threads={state.threads}
+                threadsByProjectID={projectThreadsByProjectID}
                 activeThreadID={activeThreadID}
                 pendingThreadID={pendingThreadID}
                 archiveConfirmThreadID={archiveConfirmThreadID}
                 lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                onSelectProject={onOpenProject}
                 onToggleProjectCollapsed={onToggleProjectCollapsed}
                 onStartNewThread={onStartNewThreadForProject}
-                onSelectThread={onSelectThread}
-                onSelectChildAgent={onSelectChildAgent}
+                onSelectThread={onSelectProjectThread}
+                onSelectChildAgent={onSelectProjectChildAgent}
                 onToggleThreadPinned={onTogglePinned}
                 onArchiveThread={onArchiveThread}
                 onClearArchiveConfirm={onClearArchiveConfirm}

@@ -53,7 +53,9 @@ function renderSidebar(): void {
         pendingProjectID={undefined}
         archiveConfirmThreadID={undefined}
         collapsedProjectIDs={new Set()}
+        expandedProjectIDs={new Set()}
         collapsingProjectIDs={new Set()}
+        projectThreadsByProjectID={{}}
         projectMenuOpen={false}
         projectMenuRef={createRef<HTMLDivElement>()}
         searchOpen={false}
@@ -71,9 +73,10 @@ function renderSidebar(): void {
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
-        onOpenProject={() => {}}
         onToggleProjectCollapsed={() => {}}
         onStartNewThreadForProject={() => {}}
+        onSelectProjectThread={() => {}}
+        onSelectProjectChildAgent={() => {}}
         onCreateScratchThread={() => {}}
         onOpenSettings={() => {}}
       />,

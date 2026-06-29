@@ -17,6 +17,20 @@ function projectThreads(threads: Thread[]): Thread[] {
   return threads.filter((thread) => !thread.pinned);
 }
 
+function threadsForProjectPath(threads: Thread[], projectPath: string): Thread[] {
+  return threads.filter((thread) => sameSidebarPath(thread.cwd, projectPath));
+}
+
+function sameSidebarPath(left: string, right: string): boolean {
+  return cleanSidebarPath(left) === cleanSidebarPath(right);
+}
+
+function cleanSidebarPath(path: string): string {
+  const trimmed = path.trim();
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  return withoutTrailingSlash || trimmed;
+}
+
 const PROJECT_THREAD_INITIAL_VISIBLE_COUNT = 8;
 const PROJECT_THREAD_VISIBLE_INCREMENT = 10;
 
@@ -25,13 +39,13 @@ export function ProjectList({
   activeID,
   pendingProjectID,
   collapsedProjectIDs,
+  expandedProjectIDs,
   collapsingProjectIDs,
-  threads,
+  threadsByProjectID,
   activeThreadID,
   pendingThreadID,
   archiveConfirmThreadID,
   lastViewedTurnByThreadID,
-  onSelectProject,
   onToggleProjectCollapsed,
   onStartNewThread,
   onSelectThread,
@@ -44,17 +58,17 @@ export function ProjectList({
   activeID?: string;
   pendingProjectID?: string;
   collapsedProjectIDs: Set<string>;
+  expandedProjectIDs: Set<string>;
   collapsingProjectIDs: Set<string>;
-  threads: Thread[];
+  threadsByProjectID: Record<string, Thread[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
-  onSelectProject: (id: string) => void;
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
-  onSelectThread: (id: string) => void;
-  onSelectChildAgent: (agent: Agent) => void;
+  onSelectThread: (projectID: string, threadID: string) => void;
+  onSelectChildAgent: (projectID: string, agent: Agent) => void;
   onToggleThreadPinned: (thread: Thread) => void;
   onArchiveThread: (thread: Thread) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -88,8 +102,14 @@ export function ProjectList({
         const activeProject = project.id === activeID;
         const collapsed = collapsedProjectIDs.has(project.id);
         const collapsing = collapsingProjectIDs.has(project.id);
-        const expanded = activeProject && !collapsed && !collapsing;
-        const threadListMounted = activeProject && (!collapsed || collapsing);
+        const expanded =
+          (expandedProjectIDs.has(project.id) || (activeProject && !collapsed)) &&
+          !collapsing;
+        const threadListMounted = expanded || collapsing;
+        const projectThreads = threadsForProjectPath(
+          threadsByProjectID[project.id] ?? [],
+          project.path,
+        );
         const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
           pendingProject ? " pending-switch" : ""
         }`;
@@ -97,12 +117,12 @@ export function ProjectList({
           <div key={project.id} className="project-group">
             <button
               className={projectRowClassName}
-              aria-label={activeProject ? `${expanded ? "收起" : "展开"} ${project.name} 的会话` : `打开 ${project.name}`}
+              aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的会话`}
               aria-current={activeProject ? "page" : undefined}
-              aria-expanded={activeProject ? expanded : undefined}
+              aria-expanded={expanded}
               aria-busy={pendingProject}
-              title={activeProject ? (expanded ? "收起会话" : "展开会话") : "打开项目"}
-              onClick={() => (activeProject ? onToggleProjectCollapsed(project.id) : onSelectProject(project.id))}
+              title={expanded ? "收起会话" : "展开会话"}
+              onClick={() => onToggleProjectCollapsed(project.id)}
             >
               <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
               {expanded ? <FolderOpen className="icon-lg" /> : <Folder className="icon-lg" />}
@@ -121,14 +141,14 @@ export function ProjectList({
             {threadListMounted ? (
               <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
                 <ThreadList
-                  threads={threads}
+                  threads={projectThreads}
                   activeID={activeThreadID}
                   pendingThreadID={pendingThreadID}
                   archiveConfirmThreadID={archiveConfirmThreadID}
                   lastViewedTurnByThreadID={lastViewedTurnByThreadID}
                   visibleCount={visibleThreadCountForProject(project.id)}
-                  onSelect={onSelectThread}
-                  onSelectChildAgent={onSelectChildAgent}
+                  onSelect={(threadID) => onSelectThread(project.id, threadID)}
+                  onSelectChildAgent={(agent) => onSelectChildAgent(project.id, agent)}
                   onTogglePinned={onToggleThreadPinned}
                   onArchive={onArchiveThread}
                   onClearArchiveConfirm={onClearArchiveConfirm}
