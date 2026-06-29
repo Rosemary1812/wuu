@@ -1,11 +1,7 @@
 <h1 align="center">wuu</h1>
 
 <p align="center">
-  <strong>Desktop-first AI coding agent for real repositories.</strong>
-</p>
-
-<p align="center">
-  Work with Wuu in the desktop app, or call the same agent from scripts, CI, and other tools with <code>wuu exec</code>.
+  <strong>An AI coding workspace with a desktop app and scriptable agent runs.</strong>
 </p>
 
 <p align="center">
@@ -24,25 +20,44 @@
 
 ---
 
-## What is Wuu?
+Wuu keeps an AI coding agent close to your repository. Open the desktop app for an interactive session, or call `wuu exec` when the same work needs to run from a terminal, CI job, or another agent.
 
-Wuu is an open source AI coding agent with a desktop interface and an automation-friendly command line entrypoint. It can inspect and edit files, run checks, review changes, attach local files or screenshots, and resume project sessions later.
+It can read and edit files, run commands, attach screenshots and PDFs, review changes, and resume project sessions. It works best when you give it a real signal to close the loop around: a test, a build, a screenshot, a log, or any command whose output tells the agent whether the work is done.
 
-It is built for developers who want an agent that works inside an actual repository instead of a detached chat window.
+## A typical loop
 
-## Features
+Point Wuu at a repo, describe the change, and let it gather context before editing. As it works, Wuu can run the checks you would run yourself and use the results to keep going. When the session gets long, the thread can be resumed later from the desktop app or from `wuu exec`.
 
-- **Desktop-first workflow**: use the Electron desktop app for interactive project work.
-- **Scriptable agent runs**: use `wuu exec` from shell scripts, CI jobs, or other agents.
-- **Bring your own model**: use Anthropic or OpenAI-compatible providers such as OpenAI, OpenRouter, one-api, and local gateways.
-- **Project sessions**: list, resume, fork, search, archive, and delete saved sessions.
-- **Repo-aware tools**: read, edit, search, patch, and run commands in the current workspace.
-- **Attachments**: pass PDFs, text files, and screenshots into a task.
-- **Machine-readable output**: stream JSONL from `wuu exec --json` for automation.
+```bash
+wuu init
+wuu exec "find why the tests fail, fix the root cause, and run the tests again"
+```
 
-## Installation
+For tasks with more context, pass the artifact directly:
 
-Use one of the following methods to install the `wuu` command:
+```bash
+wuu exec --file report.pdf "summarize this and update the docs"
+wuu exec --image screenshot.png "trace the UI issue and propose a fix"
+```
+
+And for automation:
+
+```bash
+wuu exec --json "review the current diff"
+wuu exec resume --last "continue from the last failure"
+wuu session list --json
+```
+
+## Where Wuu helps
+
+- Exploring an unfamiliar codebase and explaining how the pieces fit together.
+- Making scoped code changes, then running the checks you specify.
+- Reviewing local changes, branches, or commits with repository context.
+- Carrying session history across follow-up work.
+- Passing files and images into an agent run without pasting them into the prompt.
+- Producing JSONL output for scripts and CI.
+
+## Install
 
 ```bash
 # Homebrew
@@ -58,49 +73,15 @@ curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
 
-You can also run the npm package without installing it globally:
+You can also run the npm package directly:
 
 ```bash
 npx @blueberrycongee/wuu@latest --version
 ```
 
-## Quickstart
+Release binaries are available on the [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) page.
 
-Create a project config, then ask Wuu to work in the current repository:
-
-```bash
-wuu init
-wuu exec "describe this repo"
-wuu exec "fix the failing test and verify it"
-```
-
-Attach local files or screenshots when they are part of the task:
-
-```bash
-wuu exec --file report.pdf "summarize this PDF"
-wuu exec --image screenshot.png "find the UI issue"
-```
-
-Resume or inspect previous work:
-
-```bash
-wuu exec resume --last "continue from the previous task"
-wuu session list --json
-```
-
-## Desktop App
-
-The desktop app is the main interactive experience for Wuu. To run it from this repository:
-
-```bash
-cd desktop
-npm install
-npm run dev
-```
-
-The installed `wuu` command is still useful when you want non-interactive runs, automation, or a backend process for the desktop shell.
-
-## Configuration
+## Configure a model
 
 Wuu reads project config from `.wuu.json` and global config from `~/.config/wuu/config.json`.
 
@@ -123,23 +104,35 @@ Wuu reads project config from `.wuu.json` and global config from `~/.config/wuu/
 }
 ```
 
-Then set the matching API key in your shell:
+Then set the matching API key:
 
 ```bash
 export OPENROUTER_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 ```
 
-## Documentation
+## Desktop app
 
-- [`wuu exec`](docs/exec.md): automation entrypoint, JSONL output, attachments, resume, and review commands.
-- [`app-server` protocol](docs/app-server-protocol.md): protocol used by the desktop app and external shells.
+The desktop app is the main interactive surface for Wuu. To run it from this repository:
+
+```bash
+cd desktop
+npm install
+npm run dev
+```
+
+The `wuu` binary also exposes the app-server used by the desktop shell, so future shells and local tools can drive the same runtime.
+
+## Docs
+
+- [`wuu exec`](docs/exec.md): non-interactive runs, JSONL output, attachments, resume, and review commands.
+- [`app-server` protocol](docs/app-server-protocol.md): the protocol used by the desktop app and external shells.
 - [`jsonl-events`](docs/jsonl-events.md): event stream reference for automation.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development setup and contribution guidelines.
 
-## Project Status
+## Status
 
-Wuu is pre-1.0 and moving quickly. Expect behavior and configuration to change as the desktop app, automation entrypoint, and provider support settle.
+Wuu is pre-1.0. The desktop app, automation entrypoint, provider support, and configuration format are still evolving.
 
 ## License
 
