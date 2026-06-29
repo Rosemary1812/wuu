@@ -202,8 +202,9 @@ func (s *Server) currentAdvancedSettingsSummary() AdvancedSettingsSummary {
 		}
 	}
 	budget := s.rt.ModelBudget
-	summary.ContextWindowTokens = budget.ContextWindowTokens
-	summary.ContextWindowSource = string(budget.ContextWindowSource)
+	contextWindowTokens, contextWindowSource := budget.EffectiveContextWindow()
+	summary.ContextWindowTokens = contextWindowTokens
+	summary.ContextWindowSource = string(contextWindowSource)
 	summary.InputLimitTokens = budget.InputLimitTokens
 	summary.OutputReserveTokens = budget.OutputReserveTokens
 	summary.CompactThresholdTokens = advancedCompactThresholdTokens(budget, summary.CompactThresholdPct)

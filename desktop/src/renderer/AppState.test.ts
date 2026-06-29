@@ -727,7 +727,7 @@ describe("latestContextUsageForThread", () => {
     });
   });
 
-  it("returns undefined when no thread exists and runtime window is absent", () => {
+  it("returns undefined when no thread exists and runtime ceiling is absent", () => {
     const result = latestContextUsageForThread(initialState, undefined, {
       model: "claude-sonnet-4-5",
     });
@@ -736,18 +736,18 @@ describe("latestContextUsageForThread", () => {
 
   it("returns undefined for an empty thread with an unrecognized model", () => {
     // "fake-model" has no catalog entry — the ring should hide rather
-    // than guess a window size.
+    // than guess a limit.
     const t = makeThread({ turns: [] });
     expect(latestContextUsageForThread(initialState, t)).toBeUndefined();
   });
 
-  it("hides the meter when no runtime window is available and no turn has run", () => {
+  it("hides the meter when no runtime ceiling is available and no turn has run", () => {
     const t = makeThread({ model: "claude-sonnet-4-5", turns: [] });
     const result = latestContextUsageForThread(initialState, t);
     expect(result).toBeUndefined();
   });
 
-  it("does not infer a gateway model window from the client", () => {
+  it("does not infer a gateway model ceiling from the client", () => {
     const t = makeThread({ model: "anthropic/claude-sonnet-4-5", turns: [] });
     const result = latestContextUsageForThread(initialState, t);
     expect(result).toBeUndefined();

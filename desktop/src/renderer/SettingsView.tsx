@@ -1057,7 +1057,7 @@ function SettingsAdvancedPage({
           />
         </SettingsRow>
         <SettingsRow
-          title="当前服务上下文窗口"
+          title="当前服务上下文上限"
           description="自定义模型或网关别名时使用"
           block
         >
@@ -1071,7 +1071,7 @@ function SettingsAdvancedPage({
           />
         </SettingsRow>
         <SettingsRow
-          title="未知模型窗口"
+          title="未知模型上限"
           description="Provider 未覆盖该模型时使用"
           block
         >
@@ -1085,7 +1085,7 @@ function SettingsAdvancedPage({
           />
         </SettingsRow>
         <SettingsRow
-          title="上下文窗口"
+          title="上下文上限"
           description={advancedContextSourceLabel(initialized?.advanced_settings?.context_window_source)}
         >
           <span className="settings-row-control-value">
@@ -1672,6 +1672,8 @@ function advancedContextSourceLabel(source: string | undefined): string {
       return "来自当前服务覆盖";
     case "provider_model_limit":
       return "来自模型配置";
+    case "provider_input_limit":
+      return "来自当前通道输入上限";
     case "agent_max_context_tokens":
       return "来自手动上限";
     case "unknown":

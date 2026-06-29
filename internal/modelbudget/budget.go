@@ -13,6 +13,7 @@ const (
 	SourceUnknown               Source = "unknown"
 	SourceProviderContextWindow Source = "provider_context_window"
 	SourceProviderModelLimit    Source = "provider_model_limit"
+	SourceProviderInputLimit    Source = "provider_input_limit"
 	SourceAgentOverride         Source = "agent_max_context_tokens"
 )
 
@@ -65,6 +66,21 @@ func Resolve(model string, provider config.ProviderConfig, agentOverride int) Bu
 		ContextWindowSource:    source,
 		ContextWindowKnown:     source != SourceUnknown && context > 0,
 	}
+}
+
+// EffectiveContextWindow resolves the user-visible context ceiling for the
+// current provider channel. Some channels publish a prompt/input cap that is
+// lower than, or available without, the model's full context window. The UI
+// should show the smaller effective cap because that is the limit users can
+// actually fill with retained context.
+func (b Budget) EffectiveContextWindow() (int, Source) {
+	if b.InputLimitTokens > 0 && (b.ContextWindowTokens <= 0 || b.InputLimitTokens < b.ContextWindowTokens) {
+		return b.InputLimitTokens, SourceProviderInputLimit
+	}
+	if b.ContextWindowTokens > 0 {
+		return b.ContextWindowTokens, b.ContextWindowSource
+	}
+	return 0, SourceUnknown
 }
 
 func resolveContextWindow(model, apiModel string, provider config.ProviderConfig, agentOverride int) (int, Source) {

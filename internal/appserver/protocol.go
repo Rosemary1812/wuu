@@ -955,12 +955,12 @@ type TurnUsageNotification struct {
 	ContextTokens       int    `json:"context_tokens,omitempty"`
 	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
 	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
-	// ContextWindowTokens is the resolved runtime context-window size for
-	// the active model at the time of this usage snapshot. The renderer
-	// uses it to show "已用 / 总数" usage meters next to the token-speed
-	// gauge. Zero means the model has no known window — the UI should
-	// hide the meter in that case instead of computing a misleading
-	// ratio against 0.
+	// ContextWindowTokens is the resolved runtime context ceiling for the
+	// active provider/model at the time of this usage snapshot. It may be the
+	// model window or a lower provider input cap. The renderer uses it to show
+	// "已用 / 总数" meters next to the token-speed gauge. Zero means no trusted
+	// ceiling is known — the UI should hide the meter instead of computing a
+	// misleading ratio against 0.
 	ContextWindowTokens int `json:"context_window_tokens,omitempty"`
 }
 

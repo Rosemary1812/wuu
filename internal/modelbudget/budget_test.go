@@ -115,3 +115,40 @@ func TestResolveAliasUsesAPIModelCodexCap(t *testing.T) {
 		t.Fatalf("InputLimitTokens = %d, want Codex subscription cap %d", budget.InputLimitTokens, CodexSubscriptionGPT5InputCap)
 	}
 }
+
+func TestEffectiveContextWindowUsesCodexInputCapWhenModelWindowUnknown(t *testing.T) {
+	budget := Resolve("gpt-5.5", config.ProviderConfig{
+		Type:  "openai-codex",
+		Model: "gpt-5.5",
+	}, 0)
+	if budget.ContextWindowTokens != 0 || budget.ContextWindowSource != SourceUnknown {
+		t.Fatalf("model context window should stay unknown: %+v", budget)
+	}
+	got, source := budget.EffectiveContextWindow()
+	if got != CodexSubscriptionGPT5InputCap || source != SourceProviderInputLimit {
+		t.Fatalf("EffectiveContextWindow = %d, %q; want %d, %q", got, source, CodexSubscriptionGPT5InputCap, SourceProviderInputLimit)
+	}
+}
+
+func TestEffectiveContextWindowPrefersLowerInputLimit(t *testing.T) {
+	budget := Resolve("gpt-5.5", config.ProviderConfig{
+		Type:  "openai-codex",
+		Model: "gpt-5.5",
+		Models: map[string]config.ProviderModelConfig{
+			"gpt-5.5": {
+				Limit: &config.ProviderModelLimitConfig{
+					Context: 400_000,
+					Input:   390_000,
+					Output:  128_000,
+				},
+			},
+		},
+	}, 0)
+	if budget.ContextWindowTokens != 400_000 || budget.InputLimitTokens != CodexSubscriptionGPT5InputCap {
+		t.Fatalf("unexpected raw budget: %+v", budget)
+	}
+	got, source := budget.EffectiveContextWindow()
+	if got != CodexSubscriptionGPT5InputCap || source != SourceProviderInputLimit {
+		t.Fatalf("EffectiveContextWindow = %d, %q; want %d, %q", got, source, CodexSubscriptionGPT5InputCap, SourceProviderInputLimit)
+	}
+}

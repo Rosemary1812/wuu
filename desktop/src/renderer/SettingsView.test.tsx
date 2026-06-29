@@ -226,7 +226,7 @@ describe("SettingsView advanced settings", () => {
           disable_auto_compact: false,
           compact_keep_recent_tokens: 20000,
           context_window_tokens: 400000,
-          context_window_source: "built_in_registry",
+          context_window_source: "provider_input_limit",
           output_reserve_tokens: 128000,
           compact_threshold_tokens: 272000,
         },
@@ -239,7 +239,8 @@ describe("SettingsView advanced settings", () => {
     expect(container.querySelector("[data-testid=\"settings-advanced\"]")).not.toBeNull();
     expect(rootText()).toContain("压缩触发阈值");
     expect(rootText()).toContain("保留最近上下文");
-    expect(rootText()).toContain("当前服务上下文窗口");
+    expect(rootText()).toContain("当前服务上下文上限");
+    expect(rootText()).toContain("来自当前通道输入上限");
     expect(rootText()).toContain("400,000");
 
     const inputs = Array.from(container.querySelectorAll("input"));

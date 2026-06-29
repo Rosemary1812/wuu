@@ -1723,10 +1723,10 @@ function appendTurnTokenSample(
     samples.push({ tokens: speedTokens, at });
   }
   // A real usage snapshot is the authoritative source for both the speed
-  // samples and the context-window size. If Go omitted the window (zero
+  // samples and the context ceiling. If Go omitted the ceiling (zero
   // or undefined) we still want the meter to keep showing the last known
-  // window rather than collapse to "unknown" — most providers emit usage
-  // and window together, but a transient omission should not erase state.
+  // value rather than collapse to "unknown" — most providers emit usage
+  // and ceiling together, but a transient omission should not erase state.
   const resolvedWindow =
     contextWindowTokens && contextWindowTokens > 0
       ? contextWindowTokens
@@ -1895,14 +1895,14 @@ function activeTurnContextUsage(
 
 // latestContextUsageForThread walks the thread's turns from newest to
 // oldest and returns the most recent retained-context estimate with a
-// known context window. Raw provider input/cache usage is intentionally
+// known context ceiling. Raw provider input/cache usage is intentionally
 // ignored here: it can include request-only tool context that should not
 // be shown as current conversation occupancy.
 //
 // When no real usage is available, falls back to the current runtime
-// window (even before a thread exists), then to the client-side catalog
-// lookup so the meter renders at 0% from the moment a model is picked.
-// Returns undefined only when the model has no known window — we'd
+// ceiling even before a thread exists, so the meter renders at 0% from
+// the moment a model/provider with a trusted limit is picked.
+// Returns undefined only when the model has no known ceiling — we'd
 // rather hide the meter than mislead the user with a guessed size.
 function latestContextUsageForThread(
   state: AppState,

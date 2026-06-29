@@ -1,9 +1,9 @@
-// Composer-toolbar context-window meter.
+// Composer-toolbar context-limit meter.
 //
 // Sits next to the live token-speed gauge and shows the retained conversation
-// context estimate against the active model's context window. The toolbar
+// context estimate against the active provider/model context ceiling. The toolbar
 // keeps this aligned with the token-speed gauge: the ring shows the
-// proportion, the label shows used/window, and hover reveals the concise
+// proportion, the label shows used/limit, and hover reveals the concise
 // details.
 //
 // The progress stroke reuses the token-speed gauge's color palette so the
@@ -19,9 +19,8 @@ import { FloatingMenuPortal } from "./ComposerFloatingMenu";
 
 type ComposerContextMeterProps = {
   // Pass the latest per-turn usage snapshot from AppState. The component
-  // hides entirely when no model window is known yet (e.g. before the
-  // first turn finishes, or for an unknown model that fell back to a
-  // catalog lookup with no window data).
+  // hides entirely when no context ceiling is known yet (e.g. before the
+  // first turn finishes, or for an unknown model with no limit data).
   usage: TurnContextUsage | undefined;
 };
 
@@ -80,7 +79,7 @@ export function ComposerContextMeter({
   )}`;
   const requestContext = usage.requestContext;
   const ariaLabel =
-    `上下文窗口 ${formatTokenCount(usage.window)}` +
+    `上下文上限 ${formatTokenCount(usage.window)}` +
     `，估算占用 ${formatTokenCount(used)} (${percent}%)`;
   return (
     <div

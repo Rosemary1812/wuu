@@ -813,9 +813,10 @@ export type TurnUsageNotification = {
   context_tokens?: number;
   cache_creation_tokens?: number;
   cache_read_tokens?: number;
-  // Resolved runtime context-window size for the active model at the
-  // time this snapshot was emitted. Zero / undefined means the meter
-  // should hide rather than render a divide-by-zero ratio.
+  // Resolved runtime context ceiling for the active provider/model at
+  // the time this snapshot was emitted. This may be the model window or
+  // a lower provider input cap. Zero / undefined means the meter should
+  // hide rather than render a divide-by-zero ratio.
   context_window_tokens?: number;
 };
 

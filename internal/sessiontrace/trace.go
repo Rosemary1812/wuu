@@ -95,9 +95,9 @@ func NewModelProfileRecordWithBudget(providerName, model, apiModel string, budge
 	contextSource := ""
 	contextKnown := false
 	if budget.ContextWindowSource != "" {
-		contextWindow = budget.ContextWindowTokens
-		contextSource = string(budget.ContextWindowSource)
-		contextKnown = budget.ContextWindowKnown
+		contextWindow, contextSourceValue := budget.EffectiveContextWindow()
+		contextSource = string(contextSourceValue)
+		contextKnown = contextWindow > 0 && contextSourceValue != modelbudget.SourceUnknown
 	}
 	return &ModelProfileRecord{
 		ProviderName:              providerName,

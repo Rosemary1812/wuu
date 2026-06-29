@@ -24,6 +24,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
@@ -742,6 +743,45 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("config missing %s: %s", want, data)
 		}
+	}
+}
+
+func TestCurrentAdvancedSettingsUsesEffectiveInputLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		budget modelbudget.Budget
+	}{
+		{
+			name: "lower than known context window",
+			budget: modelbudget.Budget{
+				ContextWindowTokens: 400000,
+				InputLimitTokens:    272000,
+				OutputReserveTokens: 128000,
+				ContextWindowSource: modelbudget.SourceProviderModelLimit,
+			},
+		},
+		{
+			name: "model window unknown",
+			budget: modelbudget.Budget{
+				InputLimitTokens:    272000,
+				OutputReserveTokens: 128000,
+				ContextWindowSource: modelbudget.SourceUnknown,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := newTestRuntime(t, &fakeClient{})
+			rt.ModelBudget = tc.budget
+			srv := New(rt, &lockedBuffer{})
+
+			summary := srv.currentAdvancedSettingsSummary()
+			if summary.ContextWindowTokens != 272000 {
+				t.Fatalf("ContextWindowTokens = %d, want effective input limit", summary.ContextWindowTokens)
+			}
+			if summary.ContextWindowSource != string(modelbudget.SourceProviderInputLimit) {
+				t.Fatalf("ContextWindowSource = %q, want input limit source", summary.ContextWindowSource)
+			}
+		})
 	}
 }
 
@@ -2562,6 +2602,98 @@ func TestServerTurnStartForwardsRuntimeContextWindow(t *testing.T) {
 	firstUsage := remarshal[TurnUsageNotification](t, usageNotifications[0]["params"])
 	if firstUsage.ContextWindowTokens != 512000 {
 		t.Fatalf("context window should come from runtime override: %+v", firstUsage)
+	}
+}
+
+func TestServerTurnStartUsesInputLimitAsDisplayedContextWindow(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.ContextWindowOverride = 400000
+	rt.StreamRunner.MaxInputTokens = 272000
+	rt.StreamRunner.Client = usageStreamClient{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "hello"},
+		{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 2}},
+		{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 2}},
+	}}
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "hello"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	usageNotifications := notificationsByMethod(msgs, NotificationTurnUsage)
+	if len(usageNotifications) == 0 {
+		t.Fatalf("expected streaming usage notification; messages=%+v", msgs)
+	}
+	firstUsage := remarshal[TurnUsageNotification](t, usageNotifications[0]["params"])
+	if firstUsage.ContextWindowTokens != 272000 {
+		t.Fatalf("context meter should use lower input limit: %+v", firstUsage)
+	}
+}
+
+func TestServerTurnStartUsesInputLimitWhenContextWindowUnknown(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.ContextWindowOverride = 0
+	rt.StreamRunner.MaxInputTokens = 272000
+	rt.StreamRunner.Client = usageStreamClient{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "hello"},
+		{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 2}},
+		{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 8, OutputTokens: 2}},
+	}}
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "hello"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	usageNotifications := notificationsByMethod(msgs, NotificationTurnUsage)
+	if len(usageNotifications) == 0 {
+		t.Fatalf("expected streaming usage notification; messages=%+v", msgs)
+	}
+	firstUsage := remarshal[TurnUsageNotification](t, usageNotifications[0]["params"])
+	if firstUsage.ContextWindowTokens != 272000 {
+		t.Fatalf("context meter should use input limit when model window is unknown: %+v", firstUsage)
 	}
 }
 

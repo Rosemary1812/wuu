@@ -51,12 +51,12 @@ describe("ComposerContextMeter", () => {
     expect(container.querySelector(".composer-context-meter")).toBeNull();
   });
 
-  it("hides when the model window is zero (unknown / unsupported)", () => {
+  it("hides when the context ceiling is zero (unknown / unsupported)", () => {
     renderMeter(usageWith({ window: 0 }));
     expect(container.querySelector(".composer-context-meter")).toBeNull();
   });
 
-  it("hides when the model window is negative", () => {
+  it("hides when the context ceiling is negative", () => {
     renderMeter(usageWith({ window: -1 }));
     expect(container.querySelector(".composer-context-meter")).toBeNull();
   });
@@ -71,7 +71,7 @@ describe("ComposerContextMeter", () => {
     ).not.toBeNull();
   });
 
-  it("renders the latest used / window value inline", () => {
+  it("renders the latest used / limit value inline", () => {
     renderMeter(usageWith({ used: 45_000, window: 200_000 }));
     expect(
       container.querySelector(".composer-context-meter-label")?.textContent,
@@ -87,7 +87,7 @@ describe("ComposerContextMeter", () => {
   });
 
   it("renders an empty ring (no fill) when used is zero", () => {
-    // The catalog-fallback case: model is known (window > 0) but no
+    // The fallback case: context ceiling is known (window > 0) but no
     // turn has run yet, so used is 0. The progress stroke should be
     // at its full circumference offset — nothing visible.
     renderMeter(
@@ -107,7 +107,7 @@ describe("ComposerContextMeter", () => {
     expect(offset).toBeGreaterThan(0);
   });
 
-  it("encodes used / window / percent in the aria label", () => {
+  it("encodes used / limit / percent in the aria label", () => {
     renderMeter(usageWith({ used: 45_000, window: 200_000 }));
     const aria =
       container
@@ -134,7 +134,7 @@ describe("ComposerContextMeter", () => {
     );
     expect(tooltip).not.toBeNull();
     expect(meter?.getAttribute("aria-describedby")).toBe(tooltip?.id);
-    // Headline: simple percentage, with raw used/window as the only detail.
+    // Headline: simple percentage, with raw used/limit as the only detail.
     expect(
       tooltip?.querySelector(
         ".composer-context-meter-tooltip-headline",

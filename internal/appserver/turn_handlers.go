@@ -469,6 +469,9 @@ func usageContextWindowTokens(runner *agent.StreamRunner) int {
 	if runner == nil {
 		return 0
 	}
+	if runner.MaxInputTokens > 0 && (runner.ContextWindowOverride <= 0 || runner.MaxInputTokens < runner.ContextWindowOverride) {
+		return runner.MaxInputTokens
+	}
 	if runner.ContextWindowOverride > 0 {
 		return runner.ContextWindowOverride
 	}
@@ -488,8 +491,8 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
 	}
-	// Resolve the real runtime context-window size for the active model so
-	// turn/usage notifications can drive a "已用 / 总数" meter in the UI.
+	// Resolve the real runtime context ceiling for the active provider/model
+	// so turn/usage notifications can drive a "已用 / 总数" meter in the UI.
 	// Captured once per turn: the runner is per-thread for its lifetime,
 	// so the model identity does not change between usage samples.
 	contextWindowTokens := usageContextWindowTokens(runner)
