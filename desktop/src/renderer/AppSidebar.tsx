@@ -5,6 +5,7 @@ import {
   FileText,
   FolderOpen,
   FolderPlus,
+  LayoutGrid,
   List as ListIcon,
   MessageSquarePlus,
   Search,
@@ -38,6 +39,7 @@ export function AppSidebar({
   onToggleConversationSearch,
   onSeedConversationFixture,
   onSeedAgentTreeDemo,
+  onOpenChipGallery,
   onSelectThread,
   onSelectChildAgent,
   onTogglePinned,
@@ -73,6 +75,7 @@ export function AppSidebar({
   onToggleConversationSearch: () => void;
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
   onSeedAgentTreeDemo: () => void;
+  onOpenChipGallery: () => void;
   onSelectThread: (id: string) => void;
   onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: Thread) => void;
@@ -165,6 +168,13 @@ export function AppSidebar({
               >
                 <CornerDownRight className="icon" />
                 <span>子任务</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={onOpenChipGallery}
+              >
+                <LayoutGrid className="icon" />
+                <span>Chip 图鉴</span>
               </button>
             </div>
           ) : null}

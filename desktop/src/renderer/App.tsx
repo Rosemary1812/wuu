@@ -19,7 +19,6 @@ import {
   Plus,
   Send,
   Terminal,
-  LayoutGrid,
   Trash2,
   Wrench,
   X,
@@ -313,7 +312,6 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
-const ENABLE_CHIP_GALLERY = Boolean(RENDERER_ENV?.DEV);
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
   const callbackRef = useRef(callback);
@@ -5141,6 +5139,9 @@ export function App(): JSX.Element {
             ...(connection.api_key === undefined
               ? {}
               : { api_key: connection.api_key.trim() }),
+            ...(connection.type !== undefined && connection.type !== ""
+              ? { type: connection.type }
+              : {}),
             ...(connection.create_provider ? { create_provider: true } : {}),
           };
     const currentProvider = state.initialized?.providers?.find(
@@ -5552,6 +5553,7 @@ export function App(): JSX.Element {
         onToggleConversationSearch={toggleConversationSearch}
         onSeedConversationFixture={seedConversationFixture}
         onSeedAgentTreeDemo={seedAgentTreeDemo}
+        onOpenChipGallery={() => setChipGalleryOpen(true)}
         onSelectThread={(id) => void activateThread(id)}
         onSelectChildAgent={(agent) => void selectChildAgent(agent)}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}
@@ -5736,17 +5738,6 @@ export function App(): JSX.Element {
                   />
                 ) : null}
               </div>
-            ) : null}
-            {debugControlsVisible && ENABLE_CHIP_GALLERY ? (
-              <button
-                className="launch-preview-button"
-                type="button"
-                aria-label="打开 Chip 图鉴"
-                onClick={() => setChipGalleryOpen(true)}
-              >
-                <LayoutGrid className="icon" />
-                <span>Chip 图鉴</span>
-              </button>
             ) : null}
             <ChipGalleryPanel
               open={chipGalleryOpen}

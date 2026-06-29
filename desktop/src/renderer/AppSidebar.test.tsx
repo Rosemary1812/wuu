@@ -65,6 +65,7 @@ function renderSidebar(): void {
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
+        onOpenChipGallery={() => {}}
         onSelectThread={() => {}}
         onSelectChildAgent={() => {}}
         onTogglePinned={() => {}}
