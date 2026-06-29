@@ -73,20 +73,10 @@
   color: currentColor;
 }
 
-.composer-context-meter-percent {
-  font-size: 6.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  fill: currentColor;
-  pointer-events: none;
-  user-select: none;
-}
-
 /* Hover/focus popover. Mounted in the shared floating-menu layer so the
    composer toolbar's overflow clipping cannot hide the breakdown. */
 .composer-context-meter-tooltip {
-  width: 188px;
+  width: 148px;
   padding: 8px 10px;
   background: var(--context-meter-tooltip-bg);
   border: 1px solid var(--context-meter-tooltip-border);
@@ -103,15 +93,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding-bottom: 6px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid rgba(15, 17, 21, 0.06);
-}
-
-.composer-context-meter-tooltip-headline .composer-context-meter-tooltip-percent {
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  margin-bottom: 3px;
 }
 
 .composer-context-meter-tooltip-row {

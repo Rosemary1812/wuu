@@ -71,11 +71,11 @@ describe("ComposerContextMeter", () => {
     ).not.toBeNull();
   });
 
-  it("renders the latest used / window value inline", () => {
+  it("renders the latest used percentage inline", () => {
     renderMeter(usageWith({ used: 45_000, window: 200_000 }));
     expect(
       container.querySelector(".composer-context-meter-label")?.textContent,
-    ).toBe("45k / 200k");
+    ).toBe("23%");
   });
 
   it("does not render any center text — the ring is the readout", () => {
@@ -118,7 +118,7 @@ describe("ComposerContextMeter", () => {
     expect(aria).toContain("23%");
   });
 
-  it("mounts the breakdown tooltip in a portal on focus", () => {
+  it("mounts a compact tooltip in a portal on focus", () => {
     renderMeter(usageWith());
     const meter = container.querySelector<HTMLElement>(
       ".composer-context-meter",
@@ -134,20 +134,17 @@ describe("ComposerContextMeter", () => {
     );
     expect(tooltip).not.toBeNull();
     expect(meter?.getAttribute("aria-describedby")).toBe(tooltip?.id);
-    // Headline: used/window formatted as "45k / 200k".
+    // Headline: simple percentage, with raw used/window as the only detail.
     expect(
       tooltip?.querySelector(
         ".composer-context-meter-tooltip-headline",
       )?.textContent ?? "",
-    ).toContain("45k / 200k");
-    // Breakdown rows: 输入 / 缓存读取 / 新建缓存.
+    ).toContain("23%");
     const text = tooltip?.textContent ?? "";
-    expect(text).toContain("30k");
-    expect(text).toContain("12k");
-    expect(text).toContain("3k");
-    expect(text).toContain("输入");
-    expect(text).toContain("缓存读取");
-    expect(text).toContain("新建缓存");
+    expect(text).toContain("45k / 200k");
+    expect(text).not.toContain("输入");
+    expect(text).not.toContain("缓存读取");
+    expect(text).not.toContain("新建缓存");
   });
 
   it("is focusable so keyboard users can reach the tooltip", () => {

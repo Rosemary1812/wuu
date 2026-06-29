@@ -1,9 +1,9 @@
 // Composer-toolbar context-window meter.
 //
 // Sits next to the live token-speed gauge and shows how much of the active
-// model's context window the most recent request consumed. The ring fills
-// proportionally and the inline label shows "used / window"; a hover popover
-// surfaces the breakdown (input / cache read / cache write).
+// model's context window the most recent request consumed. The toolbar keeps
+// this deliberately small: the ring and label show the percentage, and hover
+// reveals the used/window counts.
 //
 // The fill color stays a single neutral gray regardless of fill level:
 // the meter is a passive readout, not a warning. Color-coded urgency
@@ -28,8 +28,7 @@ const RING_RADIUS = 9;
 // The viewBox is intentionally 24 with stroke-width 3 leaving room for
 // the ring stroke.
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-const TOOLTIP_WIDTH = 188;
-const TOOLTIP_TOTAL_FALLBACK = 0;
+const TOOLTIP_WIDTH = 148;
 
 export function ComposerContextMeter({
   usage,
@@ -45,8 +44,8 @@ export function ComposerContextMeter({
   const ratio = Math.min(1, Math.max(0, used / usage.window));
   const percent = Math.round(ratio * 100);
   const dashOffset = RING_CIRCUMFERENCE * (1 - ratio);
-  const tooltipTotal = used > 0 ? used : TOOLTIP_TOTAL_FALLBACK;
-  const valueLabel = `${formatTokenCount(tooltipTotal)} / ${formatTokenCount(
+  const percentLabel = `${percent}%`;
+  const valueLabel = `${formatTokenCount(used)} / ${formatTokenCount(
     usage.window,
   )}`;
   const ariaLabel =
@@ -93,7 +92,7 @@ export function ComposerContextMeter({
           transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
         />
       </svg>
-      <span className="composer-context-meter-label">{valueLabel}</span>
+      <span className="composer-context-meter-label">{percentLabel}</span>
       {tooltipOpen ? (
         <FloatingMenuPortal
           anchorRef={anchorRef}
@@ -110,35 +109,16 @@ export function ComposerContextMeter({
           >
             <div className="composer-context-meter-tooltip-headline">
               <span className="composer-context-meter-tooltip-label">
-                最近占用
+                上下文已用
               </span>
+              <span className="composer-context-meter-tooltip-value">
+                {percentLabel}
+              </span>
+            </div>
+            <div className="composer-context-meter-tooltip-row">
+              <span className="composer-context-meter-tooltip-label">已用</span>
               <span className="composer-context-meter-tooltip-value">
                 {valueLabel}
-              </span>
-              <span className="composer-context-meter-tooltip-percent">
-                {percent}%
-              </span>
-            </div>
-            <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">输入</span>
-              <span className="composer-context-meter-tooltip-value">
-                {formatTokenCount(usage.inputTokens)}
-              </span>
-            </div>
-            <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">
-                缓存读取
-              </span>
-              <span className="composer-context-meter-tooltip-value">
-                {formatTokenCount(usage.cacheReadTokens)}
-              </span>
-            </div>
-            <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">
-                新建缓存
-              </span>
-              <span className="composer-context-meter-tooltip-value">
-                {formatTokenCount(usage.cacheCreationTokens)}
               </span>
             </div>
           </div>
