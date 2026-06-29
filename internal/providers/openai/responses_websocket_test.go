@@ -1014,7 +1014,20 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 
 func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *testing.T) {
 	requests := make(chan map[string]any, 2)
+	sseRequests := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") == "" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode SSE fallback request: %v", err)
+				return
+			}
+			sseRequests <- body
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"resp_sse_after_failure","status":"completed","output":[],"usage":{"input_tokens":11,"output_tokens":1}}}` + "\n\n"))
+			return
+		}
+
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			t.Errorf("accept websocket: %v", err)
@@ -1091,6 +1104,48 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 		states[0].ReplayMode != "previous_response_id" ||
 		!states[0].PreviousResponseIDUsed {
 		t.Fatalf("unexpected second provider state: %+v", states)
+	}
+
+	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{
+				Role:              "assistant",
+				Content:           "first answer",
+				Phase:             providers.MessagePhaseFinalAnswer,
+				ProviderItemID:    "msg_1",
+				ProviderItemModel: "gpt-test",
+			},
+			{Role: "user", Content: "second"},
+			{Role: "user", Content: "third"},
+		},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("third StreamChat: %v", err)
+	}
+	thirdStates, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("third stream should use SSE fallback: %v", err)
+	}
+	if len(thirdStates) != 1 ||
+		thirdStates[0].Transport != "sse" ||
+		thirdStates[0].ReplayMode != "full_request" ||
+		!thirdStates[0].FallbackActive ||
+		thirdStates[0].FallbackReason != "stream_error_after_provider_event" ||
+		thirdStates[0].PreviousResponseIDUsed ||
+		thirdStates[0].InputItems != 4 ||
+		thirdStates[0].FullInputItems != 4 {
+		t.Fatalf("unexpected third provider state: %+v", thirdStates)
+	}
+	fallback := <-sseRequests
+	if _, exists := fallback["previous_response_id"]; exists {
+		t.Fatalf("SSE fallback must not reuse websocket previous_response_id: %#v", fallback)
+	}
+	fallbackInput := fallback["input"].([]any)
+	if len(fallbackInput) != 4 {
+		t.Fatalf("SSE fallback should send full request input, got %#v", fallbackInput)
 	}
 }
 

@@ -272,7 +272,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			}
 			session.mu.Lock()
 			c.responsesWebSocketReleaseLocked(session, readCh)
-			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "stream_error_after_provider_event")
+			c.responsesWebSocketActivateFallbackLocked(session, "stream_error_after_provider_event")
 			session.mu.Unlock()
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
