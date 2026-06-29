@@ -96,6 +96,7 @@ export function RunDebugPanel({
   ]
     .filter(Boolean)
     .join("，");
+  const streamStats = streamTextStore.stats();
 
   return (
     <aside className="run-debug-panel" aria-label="调试信息">
@@ -177,6 +178,10 @@ export function RunDebugPanel({
           {queueDetail ? (
             <RunDebugRow label="待发送" value={queueDetail} />
           ) : null}
+          <RunDebugRow
+            label="Stream 缓存"
+            value={`${streamStats.valueEntryCount}/${streamStats.entryCount} entries · 订阅 ${streamStats.listenerCount} · ${streamStats.totalValueLength} chars`}
+          />
         </section>
 
         <section className="run-debug-section">
@@ -796,6 +801,7 @@ export function buildRunDebugSnapshot({
   const phase = runDebugPhaseForState(state);
   const thread = activeThreadForState(state);
   const turn = phase.turn ?? activeDebugTurn(thread);
+  const streamStats = streamTextStore.stats();
   const lines = [
     `phase: ${phase.label} (${phase.detail})`,
     `status: ${state.status}`,
@@ -813,6 +819,10 @@ export function buildRunDebugSnapshot({
     `guide_messages: ${guideMessages.length}`,
     `composer_images: ${composerImages.length}`,
     `composer_files: ${composerFiles.length}`,
+    `stream_cache_entries: ${streamStats.entryCount}`,
+    `stream_cache_value_entries: ${streamStats.valueEntryCount}`,
+    `stream_cache_listeners: ${streamStats.listenerCount}`,
+    `stream_cache_chars: ${streamStats.totalValueLength}`,
   ];
 
   lines.push("");

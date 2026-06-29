@@ -49,9 +49,23 @@ describe("streamTextStore", () => {
 describe("streamTextStore subscriptions", () => {
   it("does not mark a key as buffered just because a component subscribed", () => {
     const key = streamTextKey("turn-sub-empty", "item", "text");
+    const before = streamTextStore.stats().entryCount;
     const unsubscribe = streamTextStore.subscribe(key, () => undefined);
     expect(streamTextStore.has(key)).toBe(false);
     unsubscribe();
+    expect(streamTextStore.stats().entryCount).toBe(before);
+  });
+
+  it("keeps value entries after unsubscribe so late snapshots can still read them", () => {
+    const key = streamTextKey("turn-sub-value", "item", "text");
+    const before = streamTextStore.stats().valueEntryCount;
+    streamTextStore.set(key, "hello");
+    const unsubscribe = streamTextStore.subscribe(key, () => undefined);
+    unsubscribe();
+
+    expect(streamTextStore.has(key)).toBe(true);
+    expect(streamTextStore.stats().valueEntryCount).toBe(before + 1);
+    streamTextStore.clearItem("turn-sub-value", "item");
   });
 
   it("can seed a key after a component subscribed early", () => {

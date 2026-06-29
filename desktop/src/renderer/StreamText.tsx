@@ -9,6 +9,14 @@ export type StreamTextField = "text" | "arguments" | "result";
 
 type StreamTextListener = (value: string) => void;
 
+export type StreamTextStats = {
+  entryCount: number;
+  valueEntryCount: number;
+  listenerCount: number;
+  pendingEntryCount: number;
+  totalValueLength: number;
+};
+
 interface StreamEntry {
   /** The current accumulated text. */
   value: string;
@@ -113,15 +121,45 @@ class StreamTextStore {
 
   clearItem(turnID: string, itemID: string): void {
     for (const field of STREAM_FIELD_KEYS) {
-      const key = this.key(turnID, itemID, field);
-      const entry = this.entries.get(key);
-      if (!entry) {
-        continue;
-      }
-      this.dirtyEntries.delete(entry);
-      entry.valueListeners.clear();
-      this.entries.delete(key);
+      this.clearField(turnID, itemID, field);
     }
+  }
+
+  clearField(turnID: string, itemID: string, field: StreamTextField): void {
+    this.deleteEntry(this.key(turnID, itemID, field));
+  }
+
+  clearTurn(turnID: string): void {
+    const prefix = `${turnID}\u0000`;
+    for (const key of Array.from(this.entries.keys())) {
+      if (key.startsWith(prefix)) {
+        this.deleteEntry(key);
+      }
+    }
+  }
+
+  stats(): StreamTextStats {
+    let valueEntryCount = 0;
+    let listenerCount = 0;
+    let pendingEntryCount = 0;
+    let totalValueLength = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.hasValue) {
+        valueEntryCount += 1;
+        totalValueLength += entry.value.length;
+      }
+      listenerCount += entry.valueListeners.size;
+      if (entry.pendingValue !== undefined) {
+        pendingEntryCount += 1;
+      }
+    }
+    return {
+      entryCount: this.entries.size,
+      valueEntryCount,
+      listenerCount,
+      pendingEntryCount,
+      totalValueLength,
+    };
   }
 
   /**
@@ -138,6 +176,7 @@ class StreamTextStore {
     entry.valueListeners.add(listener);
     return () => {
       entry.valueListeners.delete(listener);
+      this.deleteEntryIfIdle(key, entry);
     };
   }
 
@@ -200,6 +239,24 @@ class StreamTextStore {
     for (const listener of entry.valueListeners) {
       listener(value);
     }
+  }
+
+  private deleteEntry(key: string): void {
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return;
+    }
+    this.dirtyEntries.delete(entry);
+    entry.valueListeners.clear();
+    this.entries.delete(key);
+  }
+
+  private deleteEntryIfIdle(key: string, entry: StreamEntry): void {
+    if (entry.hasValue || entry.valueListeners.size > 0) {
+      return;
+    }
+    this.dirtyEntries.delete(entry);
+    this.entries.delete(key);
   }
 }
 

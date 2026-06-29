@@ -222,6 +222,7 @@ type ContextUsageFallback = {
 };
 
 const TOKEN_SPEED_WINDOW_MS = 2000;
+const STREAM_TEXT_FIELDS: StreamTextField[] = ["text", "arguments", "result"];
 
 const INITIAL_DRAFT_SESSION_TAB_ID = "draft:initial";
 
@@ -620,6 +621,7 @@ function reduceNotification(
           ? { ...state, running: false }
           : state;
       }
+      releaseSettledTurnStreams(turn);
       return updateThreadByID(
         state,
         threadID,
@@ -668,6 +670,23 @@ function reduceNotification(
     }
     default:
       return state;
+  }
+}
+
+function releaseSettledTurnStreams(turn: Turn): void {
+  if (turn.status === "in_progress") {
+    return;
+  }
+  for (const item of turn.items) {
+    if (item.status === "in_progress") {
+      continue;
+    }
+    for (const field of STREAM_TEXT_FIELDS) {
+      const value = item[field];
+      if (typeof value === "string" && value.length > 0) {
+        streamTextStore.clearField(turn.id, item.id, field);
+      }
+    }
   }
 }
 

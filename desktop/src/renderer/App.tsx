@@ -279,6 +279,10 @@ const CONVERSATION_GRID_COLUMNS = 12;
 // rail is a thin at-a-glance index; if there are more queries than fit,
 // we collapse the tail into a single bar.
 const QUERY_HISTORY_RAIL_MAX_BARS = 20;
+// Keep the active conversation hot plus a small recency buffer. Hidden
+// conversation panes retain full TurnView DOM trees, so a large cache makes
+// long sessions progressively heavier even when those panes are display:none.
+const CACHED_THREAD_PANE_LIMIT = 4;
 type EnvironmentDialog = "commit" | "pull-request" | null;
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
 
@@ -621,6 +625,7 @@ export function App(): JSX.Element {
   const pendingComposerMessagesByThreadRef =
     useRef<PendingComposerMessagesByThread>({});
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
+  const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const draftSessionTabCounterRef = useRef(0);
@@ -632,12 +637,11 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
-  // Per-thread keep-alive for the main conversation pane. We render a
-  // pane per open session tab (with display:none for inactive ones) so
-  // switching tabs no longer unmounts and remounts the entire <TurnView>
-  // tree — that unmount was the visible flash, and it also reset
-  // scroll, interrupted streaming, and re-ran the ConversationScrollState
-  // useLayoutEffect on every switch.
+  // Per-thread keep-alive for the main conversation pane. We keep the active
+  // thread and a small recency buffer mounted so switching back does not
+  // unmount/remount the entire <TurnView> tree. Keeping every open tab mounted
+  // makes long sessions progressively heavier because each hidden pane still
+  // retains its full React subtree.
   //
   // Crucially we derive the cache synchronously from state.sessionTabs
   // and state.thread via useMemo, not via useState + useEffect. The
@@ -646,18 +650,28 @@ export function App(): JSX.Element {
   // time with the cache updated — the "two flickers" the user saw.
   // Computing the cache from state in the same render closes that
   // empty frame.
-  const CACHED_THREAD_PANE_LIMIT = 10;
   const cachedThreadPaneIDs = useMemo(() => {
     const activeID = state.thread?.id;
-    const sessionThreadIDs = state.sessionTabs
-      .filter(
-        (tab): tab is Extract<SessionTab, { kind: "thread" }> =>
-          tab.kind === "thread",
-      )
-      .map((tab) => tab.threadID);
-    const others = sessionThreadIDs.filter((id) => id !== activeID);
-    const ordered = activeID ? [activeID, ...others] : others;
-    return ordered.slice(0, CACHED_THREAD_PANE_LIMIT);
+    const openThreadIDs = new Set(
+      state.sessionTabs
+        .filter(
+          (tab): tab is Extract<SessionTab, { kind: "thread" }> =>
+            tab.kind === "thread",
+        )
+        .map((tab) => tab.threadID),
+    );
+    if (activeID) {
+      openThreadIDs.add(activeID);
+    }
+    const recentIDs = cachedThreadPaneHistoryRef.current.filter(
+      (id) => openThreadIDs.has(id) && id !== activeID,
+    );
+    const next = [
+      ...(activeID ? [activeID] : []),
+      ...recentIDs,
+    ].slice(0, CACHED_THREAD_PANE_LIMIT);
+    cachedThreadPaneHistoryRef.current = next;
+    return next;
   }, [state.thread?.id, state.sessionTabs]);
   const cachedConversationThreadsByID = useMemo(
     () =>

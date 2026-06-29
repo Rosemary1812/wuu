@@ -379,6 +379,49 @@ describe("AppState stream cache lifecycle", () => {
       raf.restore();
     }
   });
+
+  it("releases buffered streams when a completed turn carries final item snapshots", () => {
+    const textKey = streamTextKey("turn-1", "agent-1", "text");
+    const resultKey = streamTextKey("turn-1", "agent-1", "result");
+    streamTextStore.set(textKey, "Final answer");
+    streamTextStore.set(resultKey, "Tool result");
+
+    reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread: threadWithUserTexts(["hi"]),
+        threads: [threadWithUserTexts(["hi"])],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/completed",
+          params: {
+            thread_id: "thread-1",
+            turn: {
+              id: "turn-1",
+              items_view: "full",
+              status: "completed",
+              items: [
+                {
+                  id: "agent-1",
+                  type: "agent_message",
+                  status: "completed",
+                  text: "Final answer",
+                  result: "Tool result",
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    expect(streamTextStore.has(textKey)).toBe(false);
+    expect(streamTextStore.has(resultKey)).toBe(false);
+  });
 });
 
 describe("turn token speed", () => {
