@@ -655,6 +655,28 @@ func TestCompact_SummarizesAllWhenRecentTailWouldBeWholeHistory(t *testing.T) {
 	}
 }
 
+func TestCanCompactWithBudgetSkipsFreshPrompt(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("fresh prompt ", 1000)},
+	}
+	if CanCompactWithBudget(messages, "test", Budget{ContextTokens: 1000}) {
+		t.Fatal("fresh system+user prompt has no older history to compact")
+	}
+}
+
+func TestCanCompactWithBudgetDetectsOlderHistory(t *testing.T) {
+	messages := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "second"},
+	}
+	if !CanCompactWithBudget(messages, "test", Budget{ContextTokens: 1000}) {
+		t.Fatal("expected older conversation turns to be compactable")
+	}
+}
+
 func TestCompact_DefensiveTrimGivesUpAfterMaxRetries(t *testing.T) {
 	// Always overflows. Compact should bail after maxCompactRetries
 	// attempts and propagate the error to the caller.

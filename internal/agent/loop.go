@@ -126,7 +126,7 @@ func RunToolLoop(
 				usage.RecordPendingMessages(injected)
 			}
 		}
-		if stepIdx == 0 && cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold {
+		if stepIdx == 0 && cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold && canProactivelyCompact(messages, cfg) {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
 			compacted, cerr := cfg.Compact(ctx, messages)
@@ -227,26 +227,35 @@ func RunToolLoop(
 				before := usage.EstimateCurrent()
 				msgsBefore := len(messages)
 				if compacted, cerr := cfg.Compact(ctx, messages); cerr == nil {
-					messages = compacted
-					historyRewritten = true
-					usage.Reset()
-					usage.RecordPendingMessages(messages)
-					emitCompactAttempt(cfg, CompactAttemptInfo{
-						Reason:         CompactReasonOverflow,
-						Status:         CompactAttemptSucceeded,
-						TokensBefore:   before,
-						MessagesBefore: msgsBefore,
-						MessagesAfter:  len(messages),
-					})
-					if cfg.OnCompact != nil {
-						cfg.OnCompact(CompactInfo{
+					if compactChanged(messages, compacted) {
+						messages = compacted
+						historyRewritten = true
+						usage.Reset()
+						usage.RecordPendingMessages(messages)
+						emitCompactAttempt(cfg, CompactAttemptInfo{
 							Reason:         CompactReasonOverflow,
+							Status:         CompactAttemptSucceeded,
 							TokensBefore:   before,
 							MessagesBefore: msgsBefore,
 							MessagesAfter:  len(messages),
 						})
+						if cfg.OnCompact != nil {
+							cfg.OnCompact(CompactInfo{
+								Reason:         CompactReasonOverflow,
+								TokensBefore:   before,
+								MessagesBefore: msgsBefore,
+								MessagesAfter:  len(messages),
+							})
+						}
+						continue
 					}
-					continue
+					emitCompactAttempt(cfg, CompactAttemptInfo{
+						Reason:         CompactReasonOverflow,
+						Status:         CompactAttemptUnchanged,
+						TokensBefore:   before,
+						MessagesBefore: msgsBefore,
+						MessagesAfter:  len(compacted),
+					})
 				} else {
 					emitCompactAttempt(cfg, CompactAttemptInfo{
 						Reason:         CompactReasonOverflow,
@@ -530,6 +539,15 @@ func compactMaxOutputTokens(cfg LoopConfig) int {
 		reserve = providers.MaxOutputTokensFor(cfg.Model)
 	}
 	return reserve
+}
+
+func canProactivelyCompact(messages []providers.ChatMessage, cfg LoopConfig) bool {
+	return compact.CanCompactWithBudget(messages, cfg.Model, compact.Budget{
+		ContextTokens:       cfg.MaxContextTokens,
+		InputTokens:         cfg.MaxInputTokens,
+		OutputReserveTokens: cfg.OutputReserveTokens,
+		KeepRecentTokens:    cfg.CompactKeepRecentTokens,
+	})
 }
 
 func compactChanged(before, after []providers.ChatMessage) bool {

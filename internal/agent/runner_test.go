@@ -122,32 +122,22 @@ func TestRunner_MaxTokensStopReasonNormalizesLength(t *testing.T) {
 	}
 }
 
-func TestRunner_ContextOverflowAutoCompact(t *testing.T) {
+func TestRunner_ContextOverflowFreshPromptPropagates(t *testing.T) {
 	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
 	client := &fakeClient{
 		responses: []providers.ChatResponse{
-			// 1) initial real call: overflow
-			// 2) compact() will issue a summarization Chat call
-			{Content: "summary of older turns"},
-			// 3) re-issued real call after compaction: success
-			{Content: "ok done"},
+			{},
 		},
-		errors: []error{overflow, nil, nil},
+		errors: []error{overflow},
 	}
-	// Need enough message history for compact() to actually trim some.
 	runner := Runner{Client: client, Model: "gpt-test", SystemPrompt: "sys"}
 
-	// Inject a long history by going through Run with repeated tool
-	// calls? Simpler: just call directly. The compact package keeps
-	// the last 4 messages, so we need >4 in the conversation. The
-	// runner starts with system+user (2). To exercise the auto-compact
-	// path we craft a tool-loop scenario.
-	answer, err := runner.Run(context.Background(), "do work")
-	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+	_, err := runner.Run(context.Background(), "do work")
+	if err == nil || !providers.IsContextOverflow(err) {
+		t.Fatalf("expected context overflow for fresh prompt, got %v", err)
 	}
-	if answer != "ok done" {
-		t.Fatalf("expected 'ok done', got %q", answer)
+	if len(client.requests) != 1 {
+		t.Fatalf("fresh prompt should not retry a no-op compact, got %d requests", len(client.requests))
 	}
 }
 

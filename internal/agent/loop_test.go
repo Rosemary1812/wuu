@@ -825,7 +825,12 @@ func TestRunToolLoop_ContextOverflowAutoCompact(t *testing.T) {
 	}
 	cfg := LoopConfig{Model: "m", Compact: compactFn}
 
-	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("big")}, cfg, step)
+	history := []providers.ChatMessage{
+		userMsg("old"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("big"),
+	}
+	res, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
 		t.Fatalf("loop error: %v", err)
 	}
@@ -837,17 +842,60 @@ func TestRunToolLoop_ContextOverflowAutoCompact(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_ContextOverflowStopsWhenCompactUnchanged(t *testing.T) {
+	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
+	step := &fakeStep{results: []StepResult{{}}, errs: []error{overflow}}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "oversized fresh prompt"},
+	}
+	compactCalled := 0
+	var attempts []CompactAttemptInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactCalled++
+			return msgs, nil
+		},
+		OnCompactAttempt: func(info CompactAttemptInfo) {
+			attempts = append(attempts, info)
+		},
+	}
+
+	_, err := RunToolLoop(context.Background(), history, cfg, step)
+	if err == nil || !providers.IsContextOverflow(err) {
+		t.Fatalf("expected original context overflow, got %v", err)
+	}
+	if compactCalled != 1 {
+		t.Fatalf("expected one reactive compact attempt, got %d", compactCalled)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("unchanged compact should not retry the same overflowing request, got %d calls", len(step.calls))
+	}
+	if len(attempts) != 1 || attempts[0].Reason != CompactReasonOverflow || attempts[0].Status != CompactAttemptUnchanged {
+		t.Fatalf("expected unchanged overflow attempt, got %+v", attempts)
+	}
+}
+
 func TestRunToolLoop_ContextOverflowOnlyRetriesOnce(t *testing.T) {
 	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
 	step := &fakeStep{results: []StepResult{{}, {}}, errs: []error{overflow, overflow}}
-	cfg := LoopConfig{Model: "m", Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) { return m, nil }}
+	cfg := LoopConfig{Model: "m", Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) { return m[1:], nil }}
+	history := []providers.ChatMessage{
+		userMsg("old"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("big"),
+	}
 
-	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("big")}, cfg, step)
+	_, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err == nil {
 		t.Fatal("expected second overflow to surface")
 	}
 	if !providers.IsContextOverflow(err) {
 		t.Fatalf("expected context-overflow error, got %v", err)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected one retry after changed compact, got %d calls", len(step.calls))
 	}
 }
 
@@ -1074,6 +1122,48 @@ func TestRunToolLoop_PreRequestCompactUsesLocalEstimateWithoutGroundTruth(t *tes
 	}
 }
 
+func TestRunToolLoop_PreRequestCompactSkipsFreshPrompt(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("fresh prompt ", 1000)},
+	}
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 950})
+	compactCalled := 0
+	var attempts []CompactAttemptInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactCalled++
+			return msgs, nil
+		},
+		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
+		UsageTracker:     tracker,
+		OnCompactAttempt: func(info CompactAttemptInfo) {
+			attempts = append(attempts, info)
+		},
+	}
+
+	res, err := RunToolLoop(context.Background(), history, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if compactCalled != 0 {
+		t.Fatalf("fresh prompt should not trigger no-op compact, got %d calls", compactCalled)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("fresh prompt should not emit compact attempts, got %+v", attempts)
+	}
+	if res.HistoryRewritten {
+		t.Fatal("fresh prompt should not rewrite history")
+	}
+}
+
 func TestRunToolLoop_PreRequestCompactUsesSharedUsageTracker(t *testing.T) {
 	history := []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
@@ -1146,7 +1236,12 @@ func TestRunToolLoop_ProactiveCompactRespectsCustomThreshold(t *testing.T) {
 		compactCalled++
 		return []providers.ChatMessage{{Role: "user", Content: "sum"}}, nil
 	}, MaxContextTokens: 1000, CompactThresholdPct: 0.5, UsageTracker: tracker}
-	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	history := []providers.ChatMessage{
+		userMsg("old"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("hi"),
+	}
+	_, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1208,7 +1303,12 @@ func TestRunToolLoop_ProactiveCompactFailureEmitsAttempt(t *testing.T) {
 		UsageTracker:     tracker,
 	}
 
-	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	history := []providers.ChatMessage{
+		userMsg("old"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("hi"),
+	}
+	res, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
 		t.Fatalf("loop error: %v", err)
 	}
@@ -1235,7 +1335,12 @@ func TestRunToolLoop_ProactiveCompactDoesNotLoopOnNoOpCompact(t *testing.T) {
 		compactCalled++
 		return m, nil
 	}, MaxContextTokens: 1000, DefaultMaxTokens: 100, UsageTracker: tracker}
-	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	history := []providers.ChatMessage{
+		userMsg("old"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("hi"),
+	}
+	_, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1251,7 +1356,12 @@ func TestRunToolLoop_OverflowCompactFiresOnCompactCallback(t *testing.T) {
 	cfg := LoopConfig{Model: "m", Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		return m[len(m)-1:], nil
 	}, OnCompact: func(info CompactInfo) { infos = append(infos, info) }}
-	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("big")}, cfg, step)
+	history := []providers.ChatMessage{
+		userMsg("old"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("big"),
+	}
+	_, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
 		t.Fatal(err)
 	}

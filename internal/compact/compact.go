@@ -230,28 +230,27 @@ type Budget struct {
 	KeepRecentTokens    int
 }
 
+// CanCompactWithBudget reports whether CompactWithBudget can replace at least
+// one real conversation message with a summary. It intentionally mirrors the
+// production boundary selection so callers can skip no-op auto-compact passes
+// before emitting user-facing state or paying for a summary request.
+func CanCompactWithBudget(messages []providers.ChatMessage, model string, budget Budget) bool {
+	_, ok := planCompaction(messages, model, budget)
+	return ok
+}
+
 func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, client providers.Client, model string, budget Budget) ([]providers.ChatMessage, error) {
-	if len(messages) <= 2 {
-		return messages, nil // nothing to compact
+	plan, ok := planCompaction(messages, model, budget)
+	if !ok {
+		return messages, nil
 	}
 	ctx, cancel := withCompactTimeout(ctx)
 	defer cancel()
 
-	systemPrefix, previousSummary, previousSummaryDiscoveredTools, conversation := splitLeadingSystemMessages(messages)
-	if len(conversation) <= 2 {
-		return messages, nil
-	}
+	toSummarize := pruneOldToolResults(plan.conversation[:plan.keepStart])
+	toKeep := plan.conversation[plan.keepStart:]
 
-	conversationForCompact := stripHistoricalImages(conversation)
-	keepStart := compactKeepStart(conversationForCompact, compactTailBudgetForBudget(model, budget))
-	if keepStart < 0 || keepStart > len(conversationForCompact) {
-		return messages, nil
-	}
-
-	toSummarize := pruneOldToolResults(conversationForCompact[:keepStart])
-	toKeep := conversationForCompact[keepStart:]
-
-	summary, err := summarizeCompactHistory(ctx, client, model, budget, toSummarize, previousSummary)
+	summary, err := summarizeCompactHistory(ctx, client, model, budget, toSummarize, plan.previousSummary)
 	if err != nil {
 		return messages, err
 	}
@@ -260,10 +259,10 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 	}
 
 	summaryDiscoveredTools := providers.MergeLoadableToolDefinitions(
-		previousSummaryDiscoveredTools,
-		providers.DiscoveredToolsFromMessages(conversationForCompact[:keepStart]),
+		plan.previousSummaryDiscoveredTools,
+		providers.DiscoveredToolsFromMessages(plan.conversation[:plan.keepStart]),
 	)
-	compacted := providers.CloneChatMessages(systemPrefix)
+	compacted := providers.CloneChatMessages(plan.systemPrefix)
 	compacted = append(compacted, providers.ChatMessage{
 		Role:            "system",
 		Content:         BuildSummaryContent(summary),
@@ -271,6 +270,38 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 	})
 	compacted = append(compacted, providers.CloneChatMessages(toKeep)...)
 	return compacted, nil
+}
+
+type compactionPlan struct {
+	systemPrefix                   []providers.ChatMessage
+	previousSummary                string
+	previousSummaryDiscoveredTools []providers.LoadableToolDefinition
+	conversation                   []providers.ChatMessage
+	keepStart                      int
+}
+
+func planCompaction(messages []providers.ChatMessage, model string, budget Budget) (compactionPlan, bool) {
+	if len(messages) <= 2 {
+		return compactionPlan{}, false
+	}
+	systemPrefix, previousSummary, previousSummaryDiscoveredTools, conversation := splitLeadingSystemMessages(messages)
+	if len(conversation) <= 2 {
+		return compactionPlan{}, false
+	}
+
+	conversationForCompact := stripHistoricalImages(conversation)
+	keepStart := compactKeepStart(conversationForCompact, compactTailBudgetForBudget(model, budget))
+	if keepStart <= 0 || keepStart > len(conversationForCompact) {
+		return compactionPlan{}, false
+	}
+
+	return compactionPlan{
+		systemPrefix:                   systemPrefix,
+		previousSummary:                previousSummary,
+		previousSummaryDiscoveredTools: previousSummaryDiscoveredTools,
+		conversation:                   conversationForCompact,
+		keepStart:                      keepStart,
+	}, true
 }
 
 func summarizeCompactHistory(ctx context.Context, client providers.Client, model string, budget Budget, messages []providers.ChatMessage, previousSummary string) (string, error) {

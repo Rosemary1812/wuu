@@ -1190,6 +1190,88 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	}
 }
 
+func TestStreamRunner_ProactiveCompactFailureStaysDiagnostic(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "ok"},
+			{Type: providers.EventDone},
+		},
+		chatErrs: []error{errors.New("compact summary unavailable")},
+	}
+	var events []providers.StreamEvent
+	var attempts []CompactAttemptInfo
+	runner := StreamRunner{
+		Client:                client,
+		Model:                 "gpt-4-turbo",
+		ContextWindowOverride: 5000,
+		OnCompactAttempt: func(info CompactAttemptInfo) {
+			attempts = append(attempts, info)
+		},
+	}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("older ", 2000)},
+		{Role: "assistant", Content: strings.Repeat("older ", 2000)},
+		{Role: "user", Content: "continue"},
+	}
+
+	res, err := runner.RunWithCallback(context.Background(), history, func(event providers.StreamEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatalf("RunWithCallback: %v", err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if len(attempts) != 1 || attempts[0].Reason != CompactReasonProactive || attempts[0].Status != CompactAttemptFailed {
+		t.Fatalf("expected failed proactive compact diagnostic, got %+v", attempts)
+	}
+	for _, event := range events {
+		if event.Type == providers.EventCompact {
+			t.Fatalf("failed proactive compact should not emit a user-visible compact event: %+v", event)
+		}
+	}
+}
+
+func TestStreamRunner_StopsProactiveCompactAfterRepeatedFailures(t *testing.T) {
+	client := &mockStreamClient{
+		events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "ok"},
+			{Type: providers.EventDone},
+		},
+		chatErrs: []error{
+			errors.New("compact failure 1"),
+			errors.New("compact failure 2"),
+			errors.New("compact failure 3"),
+		},
+	}
+	runner := StreamRunner{
+		Client:                client,
+		Model:                 "gpt-4-turbo",
+		ContextWindowOverride: 5000,
+	}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("older ", 2000)},
+		{Role: "assistant", Content: strings.Repeat("older ", 2000)},
+		{Role: "user", Content: "continue"},
+	}
+
+	for i := 0; i < maxConsecutiveProactiveCompactFailures+1; i++ {
+		res, err := runner.RunWithCallback(context.Background(), history, nil)
+		if err != nil {
+			t.Fatalf("RunWithCallback %d: %v", i+1, err)
+		}
+		if res.Content != "ok" {
+			t.Fatalf("RunWithCallback %d content = %q", i+1, res.Content)
+		}
+	}
+	if client.chatCallCount != maxConsecutiveProactiveCompactFailures {
+		t.Fatalf("expected compact summary to stop after %d failures, got %d calls", maxConsecutiveProactiveCompactFailures, client.chatCallCount)
+	}
+}
+
 func TestStreamRunner_CompactedHistoryDoesNotTriggerImmediateSecondCompact(t *testing.T) {
 	client := &mockStreamClient{
 		attempts: []mockStreamAttempt{

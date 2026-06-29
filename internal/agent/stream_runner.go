@@ -21,6 +21,8 @@ import (
 // StreamCallback receives streaming events for live clients.
 type StreamCallback func(event providers.StreamEvent)
 
+const maxConsecutiveProactiveCompactFailures = 3
+
 // StreamRunner manages one multi-step coding turn with streaming.
 // It is a thin wrapper around RunToolLoop that supplies a streamStep
 // adapter (Step → providers.StreamClient.StreamChat with reconnect),
@@ -121,6 +123,9 @@ type StreamRunner struct {
 	conversationUsage *UsageTracker
 	trackedHistoryLen int
 
+	compactMu                sync.Mutex
+	proactiveCompactFailures int
+
 	sysPromptMu sync.RWMutex
 }
 
@@ -201,8 +206,9 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		enableStreamingToolExec: r.StreamingToolExecution,
 	}
 
-	maxCtx := r.ContextWindowOverride
-	if r.DisableAutoCompact {
+	compactContextTokens := r.ContextWindowOverride
+	maxCtx := compactContextTokens
+	if r.DisableAutoCompact || r.proactiveCompactCircuitOpen() {
 		maxCtx = 0 // disables the proactive trigger inside RunToolLoop
 	}
 	_, systemPromptSections := r.systemPromptSnapshot()
@@ -251,7 +257,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		},
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return compact.CompactWithBudget(ctx, messages, r.Client, requestModel, compact.Budget{
-				ContextTokens:       maxCtx,
+				ContextTokens:       compactContextTokens,
 				InputTokens:         r.MaxInputTokens,
 				OutputReserveTokens: r.OutputReserveTokens,
 				KeepRecentTokens:    r.CompactKeepRecentTokens,
@@ -299,16 +305,10 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			})
 		},
 		OnCompactAttempt: func(info CompactAttemptInfo) {
+			r.recordCompactAttempt(info)
 			if r.OnCompactAttempt != nil {
 				r.OnCompactAttempt(info)
 			}
-			if effectiveOnEvent == nil || info.Status == CompactAttemptSucceeded {
-				return
-			}
-			effectiveOnEvent(providers.StreamEvent{
-				Type:    providers.EventCompact,
-				Content: formatCompactAttemptNotice(info),
-			})
 		},
 		UsageTracker:    runUsage,
 		Effort:          r.Effort,
@@ -444,6 +444,25 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 
 func isNonDurableHistoryMessage(msg providers.ChatMessage) bool {
 	return isTransientModelContextMessage(msg)
+}
+
+func (r *StreamRunner) proactiveCompactCircuitOpen() bool {
+	r.compactMu.Lock()
+	defer r.compactMu.Unlock()
+	return r.proactiveCompactFailures >= maxConsecutiveProactiveCompactFailures
+}
+
+func (r *StreamRunner) recordCompactAttempt(info CompactAttemptInfo) {
+	r.compactMu.Lock()
+	defer r.compactMu.Unlock()
+
+	if info.Status == CompactAttemptSucceeded {
+		r.proactiveCompactFailures = 0
+		return
+	}
+	if info.Reason == CompactReasonProactive && info.Status == CompactAttemptFailed {
+		r.proactiveCompactFailures++
+	}
 }
 
 func filterDurableHistory(msgs []providers.ChatMessage) []providers.ChatMessage {
@@ -711,31 +730,6 @@ func formatCompactNotice(info CompactInfo) string {
 	}
 	return fmt.Sprintf("✦ %s history: %d → %d messages",
 		verb, info.MessagesBefore, info.MessagesAfter)
-}
-
-func formatCompactAttemptNotice(info CompactAttemptInfo) string {
-	action := "Compact"
-	switch info.Reason {
-	case CompactReasonOverflow:
-		action = "Context-overflow compact"
-	case CompactReasonProactive:
-		action = "Proactive compact"
-	}
-	switch info.Status {
-	case CompactAttemptFailed:
-		if strings.TrimSpace(info.Error) != "" {
-			return fmt.Sprintf("✦ %s failed: %s", action, stringutil.Truncate(info.Error, 240, "..."))
-		}
-		return fmt.Sprintf("✦ %s failed", action)
-	case CompactAttemptUnchanged:
-		if info.TokensBefore > 0 {
-			return fmt.Sprintf("✦ %s made no changes: %d messages (was ~%s)",
-				action, info.MessagesBefore, formatTokenCount(info.TokensBefore))
-		}
-		return fmt.Sprintf("✦ %s made no changes: %d messages", action, info.MessagesBefore)
-	default:
-		return ""
-	}
 }
 
 // formatTokenCount renders a token count in a compact form: 1234 →
