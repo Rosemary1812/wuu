@@ -78,7 +78,7 @@ describe("ConversationForkDialog", () => {
     );
   });
 
-  it("invokes onChoose(\"local\") when the local option is clicked", () => {
+  it("invokes onChoose(\"local\") when the local option is clicked", async () => {
     const onChoose = vi.fn(() => Promise.resolve());
     const onCancel = vi.fn();
 
@@ -86,8 +86,9 @@ describe("ConversationForkDialog", () => {
       createElement(ConversationForkDialog, { onCancel, onChoose }),
     );
 
-    act(() => {
+    await act(async () => {
       buttonByLabel("派生到本地").click();
+      await Promise.resolve();
     });
 
     expect(onChoose).toHaveBeenCalledTimes(1);
@@ -95,7 +96,7 @@ describe("ConversationForkDialog", () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
-  it("invokes onChoose(\"worktree\") when the worktree option is clicked", () => {
+  it("invokes onChoose(\"worktree\") when the worktree option is clicked", async () => {
     const onChoose = vi.fn(() => Promise.resolve());
     const onCancel = vi.fn();
 
@@ -103,8 +104,9 @@ describe("ConversationForkDialog", () => {
       createElement(ConversationForkDialog, { onCancel, onChoose }),
     );
 
-    act(() => {
+    await act(async () => {
       buttonByLabel("派生到新工作树").click();
+      await Promise.resolve();
     });
 
     expect(onChoose).toHaveBeenCalledWith("worktree");

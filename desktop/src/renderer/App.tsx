@@ -214,6 +214,7 @@ import {
   RuntimeLoading,
   ViewSwitchLoading,
 } from "./LoadingViews";
+import { Modal } from "./Modal";
 import {
   isCodexProvider,
   pullRequestUnavailableReason,
@@ -828,9 +829,17 @@ export function App(): JSX.Element {
       setAccessMenuOpen(false);
       setBranchMenuOpen(false);
       setCodexRuntimeMenu(null);
+      setEnvironmentDialog(null);
+      setPendingFork(undefined);
     },
     onSelectThread: (threadID) => void activateThread(threadID),
   });
+
+  function openEnvironmentDialog(dialog: EnvironmentDialog): void {
+    closeConversationSearch({ immediate: true });
+    setPendingFork(undefined);
+    setEnvironmentDialog(dialog);
+  }
   const {
     pendingBrowserURL,
     consumePendingBrowserURL,
@@ -4396,6 +4405,8 @@ export function App(): JSX.Element {
       await executeForkFromMessage(sourceThread, turnID, itemID, "local");
       return;
     }
+    closeConversationSearch({ immediate: true });
+    setEnvironmentDialog(null);
     setPendingFork({ sourceThread, turnID, itemID });
   }
 
@@ -5891,6 +5902,7 @@ export function App(): JSX.Element {
           onDeny={() =>
             void resolveToolApproval(state.pendingToolApproval!, "denied")
           }
+          hostRef={conversationPaneRef}
         />
       ) : null}
 
@@ -6089,8 +6101,8 @@ export function App(): JSX.Element {
             setRightPanelOpenWithMotion(true);
             closeEnvironmentPanel({ dismissed: true });
           }}
-          onOpenCommit={() => setEnvironmentDialog("commit")}
-          onOpenPullRequest={() => setEnvironmentDialog("pull-request")}
+          onOpenCommit={() => openEnvironmentDialog("commit")}
+          onOpenPullRequest={() => openEnvironmentDialog("pull-request")}
           onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
           onOpenBackgroundPreview={openBackgroundProcessPreview}
           rightPanelFilePath={rightPanelFilePath}
@@ -6262,6 +6274,7 @@ export function App(): JSX.Element {
           branch={state.gitStatus?.branch}
           onCancel={() => setEnvironmentDialog(null)}
           onCommit={commitEnvironmentChanges}
+          hostRef={conversationPaneRef}
         />
       ) : null}
       {environmentDialog === "pull-request" ? (
@@ -6270,12 +6283,14 @@ export function App(): JSX.Element {
           disabledReason={pullRequestDisabledReason}
           onCancel={() => setEnvironmentDialog(null)}
           onCreate={createEnvironmentPullRequest}
+          hostRef={conversationPaneRef}
         />
       ) : null}
       {pendingFork ? (
         <ConversationForkDialog
           onCancel={() => setPendingFork(undefined)}
           onChoose={choosePendingFork}
+          hostRef={conversationPaneRef}
         />
       ) : null}
       {debugControlsVisible ? <DesignTokensPanel /> : null}
@@ -6464,11 +6479,13 @@ function ToolApprovalDialog({
   onApprove,
   onApproveForSession,
   onDeny,
+  hostRef,
 }: {
   approval: PendingToolApproval;
   onApprove: () => void;
   onApproveForSession: () => void;
   onDeny: () => void;
+  hostRef?: React.RefObject<HTMLElement | null>;
 }): JSX.Element {
   const preview = approval.arguments_preview?.trim();
   const capability = approval.capability?.trim() || approval.tool_name;
@@ -6476,36 +6493,18 @@ function ToolApprovalDialog({
   const capabilityObject = approval.capability_object?.trim();
   const capabilityLine = [capability, capabilityAction].filter(Boolean).join(" · ");
   const rule = approval.capability_rule?.trim() || approval.permission_rule?.trim();
+  // Approval must be an explicit decision, so this dialog has no
+  // `onClose`: no X button, no Escape, no backdrop dismissal. The
+  // user has to pick deny / approve-for-session / approve-once.
   return (
-    <div className="modal-backdrop environment-modal-backdrop">
-      <section className="environment-dialog" role="dialog" aria-modal="true" aria-label="操作审批">
-        <div className="environment-dialog-header">
-          <span className="environment-dialog-icon">
-            <AlertCircle className="icon-lg" />
-          </span>
-          <div>
-            <h2>审批操作</h2>
-            <p>{capabilityLine || approval.tool_name}</p>
-          </div>
-        </div>
-        <div className="environment-dialog-summary">
-          <strong>{approval.risk ? `风险：${approval.risk}` : "需要确认"}</strong>
-          <span>{approval.policy_reason || approval.classification_reason || "这个操作需要人工审批后才能继续。"}</span>
-        </div>
-        {capabilityObject ? (
-          <div className="environment-dialog-summary">
-            <strong>对象</strong>
-            <span>{capabilityObject}</span>
-          </div>
-        ) : null}
-        {rule ? (
-          <div className="environment-dialog-summary">
-            <strong>规则</strong>
-            <span>{rule}</span>
-          </div>
-        ) : null}
-        {preview ? <pre className="environment-dialog-error">{preview}</pre> : null}
-        <div className="environment-dialog-footer">
+    <Modal
+      ariaLabel="操作审批"
+      icon={<AlertCircle className="icon-lg" />}
+      title="审批操作"
+      subtitle={capabilityLine || approval.tool_name}
+      hostRef={hostRef}
+      footer={
+        <>
           <button type="button" onClick={onDeny}>
             拒绝
           </button>
@@ -6515,9 +6514,27 @@ function ToolApprovalDialog({
           <button className="primary-button" type="button" onClick={onApprove}>
             批准一次
           </button>
+        </>
+      }
+    >
+      <div className="environment-dialog-summary">
+        <strong>{approval.risk ? `风险：${approval.risk}` : "需要确认"}</strong>
+        <span>{approval.policy_reason || approval.classification_reason || "这个操作需要人工审批后才能继续。"}</span>
+      </div>
+      {capabilityObject ? (
+        <div className="environment-dialog-summary">
+          <strong>对象</strong>
+          <span>{capabilityObject}</span>
         </div>
-      </section>
-    </div>
+      ) : null}
+      {rule ? (
+        <div className="environment-dialog-summary">
+          <strong>规则</strong>
+          <span>{rule}</span>
+        </div>
+      ) : null}
+      {preview ? <pre className="environment-dialog-error">{preview}</pre> : null}
+    </Modal>
   );
 }
 

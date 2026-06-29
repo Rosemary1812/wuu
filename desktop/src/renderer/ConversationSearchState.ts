@@ -17,6 +17,10 @@ import {
 const CONVERSATION_SEARCH_EXIT_MS = 180;
 const CONVERSATION_SEARCH_RESULT_LIMIT = 40;
 
+export type CloseConversationSearchOptions = {
+  immediate?: boolean;
+};
+
 export type ConversationSearchState = {
   open: boolean;
   closing: boolean;
@@ -55,7 +59,7 @@ export function useConversationSearch({
   conversationSearchRef: React.RefObject<HTMLDivElement | null>;
   conversationSearchInputRef: React.RefObject<HTMLInputElement | null>;
   toggleConversationSearch: () => void;
-  closeConversationSearch: () => void;
+  closeConversationSearch: (options?: CloseConversationSearchOptions) => void;
   refreshConversationSearchThreads: (query?: string) => Promise<void>;
   selectConversationSearchResult: (result: ThreadSearchResultItem) => void;
   handleConversationSearchKeyDown: (
@@ -129,7 +133,9 @@ export function useConversationSearch({
     );
   }
 
-  function closeConversationSearch(): void {
+  function closeConversationSearch(
+    options: CloseConversationSearchOptions = {},
+  ): void {
     if (!conversationSearch.open && !conversationSearch.closing) {
       return;
     }
@@ -138,7 +144,7 @@ export function useConversationSearch({
       window.clearTimeout(conversationSearchCloseTimerRef.current);
       conversationSearchCloseTimerRef.current = undefined;
     }
-    const closeImmediately = prefersReducedMotion();
+    const closeImmediately = options.immediate || prefersReducedMotion();
     setConversationSearch((current) => ({
       ...current,
       open: false,
