@@ -23,17 +23,11 @@ func (t *InceptionTool) IsConcurrencySafe() bool { return false }
 func (t *InceptionTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: compact.InceptionToolName,
-		Description: "Rewind the conversation context to an earlier Wuu checkpoint and replace the discarded messages with a single message you compose. Use it when recent context has too much noise and a concise summary can stand in for it. " +
-			"You will see checkpoint IDs in `user` messages with content like <system>CHECKPOINT {id}</system>. Pass the desired checkpoint id as anchor_id to rewind to that point. " +
-			"The new message you compose is appended to the end of the rewound context, so the next request sees everything before the checkpoint plus your message. " +
-			"Default to the closest checkpoint before the noisy content; rewind further only when the summary fully bridges the gap to current external state. " +
-			"Typical scenarios: You read a file, ran a command, or fetched a web page and only a small part of the result is useful; rewind to the checkpoint just before that read and give your past self only the useful part. " +
-			"You searched the web and the result is large. If you got what you need, rewind and include only the relevant findings; if not, rewind and tell your past self a better query to try. " +
-			"You wrote code that did not work, spent many steps fixing it, and the struggle is not relevant to the goal. Rewind to before you wrote the code, give your past self the fixed version, and remind them the fix is already on the filesystem so they do not redo the work. " +
-			"The message you send must give your past self everything they need to continue without repeating the work you already did: what you did and what changed, what you learned, and any concrete results worth keeping. " +
-			"This tool only rewrites conversation history. It does not roll back files, processes, browser state, remote systems, or any other external state. " +
-			"Call it only after a complete assistant/tool turn, when the working state is stable enough to continue from the summary. Do not wait until only the final answer is left — by then the intermediate noise is already mixed in. " +
-			"Do not explain this to the user. Do not present it as a final answer, a user-facing feature, or a manual rollback command.",
+		Description: "Compress the useful semantics from a noisy suffix of conversation history and replace that suffix with a concise continuation summary. Use it when recent reads, searches, command output, failed attempts, or debugging chatter have become low-value context, but the durable facts extracted from them are still useful. " +
+			"You will see checkpoint IDs in `user` messages with content like <system>CHECKPOINT {id}</system>. Pass the checkpoint just before the low-value suffix as anchor_id. The system keeps all history before that checkpoint and replaces everything after it with your summary. " +
+			"Default to the closest checkpoint before the noise. Choose an earlier checkpoint only when your summary preserves every durable fact needed to continue from the current external state. " +
+			"The summary is not a transcript and not a user-facing report. It must extract only the state worth keeping: current task state, files or external systems already changed, verification results, concrete evidence pointers, rejected paths that matter, and the next action. Omit raw logs, tool-call IDs, detours, commentary about compression, and anything that does not help future reasoning. " +
+			"This tool only rewrites conversation history. It does not roll back files, processes, browser state, remote systems, or any other external state. Use it only after a complete assistant/tool turn, when the working state is stable enough to continue from the summary. Do not explain this to the user or present it as a final answer.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -44,7 +38,7 @@ func (t *InceptionTool) Definition() providers.ToolDefinition {
 				},
 				"summary": map[string]any{
 					"type":        "string",
-					"description": "A markdown continuation summary with enough state to continue without reading the removed suffix. Include current task state, external state and side effects that remain current, verification status, evidence pointers such as files/commands/results, rejected paths worth avoiding, and concrete next steps.",
+					"description": "A markdown semantic-compression summary that replaces the removed suffix. Include only durable state needed to continue: current task state, external side effects that remain true, verification status, evidence pointers such as files/commands/results, rejected paths worth avoiding, and the next concrete action. Do not mention inception, compression, rewritten history, checkpoints, tool-call IDs, or that history was removed. Do not write a user-facing explanation or final answer.",
 				},
 			},
 			"required": []string{"anchor_id", "summary"},

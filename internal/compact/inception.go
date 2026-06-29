@@ -130,7 +130,7 @@ func BuildInceptionContinuationContent(anchorID int, summary string) string {
 	summary = strings.TrimSpace(summary)
 	var b strings.Builder
 	b.WriteString(InceptionContinuationPrefix)
-	fmt.Fprintf(&b, "\nThis message replaces all conversation history after Wuu context checkpoint %d. Files, processes, browser state, remote systems, and other external state remain current; do not treat them as rolled back.\n\n", anchorID)
+	fmt.Fprintf(&b, "\nThis summary replaces the low-value conversation suffix after Wuu context checkpoint %d. Files, processes, browser state, remote systems, and other external state remain current; do not treat them as rolled back.\n\n", anchorID)
 	b.WriteString(summary)
 	return wrapInternalContextContent(b.String())
 }

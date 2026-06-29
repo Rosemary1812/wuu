@@ -67,7 +67,7 @@ func TestRewriteHistoryWithInceptionContinuationCutsAfterAnchor(t *testing.T) {
 	if rewritten[0].Content != "base" || rewritten[1].Content != "fix it" {
 		t.Fatalf("anchor prefix history not preserved: %+v", rewritten)
 	}
-	if rewritten[2].Role != "user" || rewritten[2].Name != ContextContinuationName || !rewritten[2].Hidden || !strings.Contains(rewritten[2].Content, InceptionContinuationPrefix) || !strings.Contains(rewritten[2].Content, "external state remain current") {
+	if rewritten[2].Role != "user" || rewritten[2].Name != ContextContinuationName || !rewritten[2].Hidden || !strings.Contains(rewritten[2].Content, InceptionContinuationPrefix) || !strings.Contains(rewritten[2].Content, "replaces the low-value conversation suffix") || !strings.Contains(rewritten[2].Content, "external state remain current") {
 		t.Fatalf("missing continuation summary: %+v", rewritten[2])
 	}
 	if err := providers.ValidateToolCallHistory(rewritten); err != nil {

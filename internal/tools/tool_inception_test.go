@@ -169,12 +169,12 @@ func TestActiveProfileCanCallInceptionDirectlyAndRewrite(t *testing.T) {
 func TestInceptionToolDescriptionTeachesTriggers(t *testing.T) {
 	desc := NewInceptionTool(&Env{AgentPath: agentthread.RootPath}).Definition().Description
 	for _, want := range []string{
+		"Compress the useful semantics",
 		"<system>CHECKPOINT {id}</system>",
-		"You read a file",
-		"searched the web",
-		"if not, rewind",
-		"wrote code that did not work",
-		"Do not wait until only the final answer",
+		"low-value suffix",
+		"not a transcript",
+		"Omit raw logs",
+		"does not roll back files",
 	} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("inception description missing %q:\n%s", want, desc)
