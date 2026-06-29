@@ -645,6 +645,14 @@ export type ThreadEditMessageResult = {
   draft: ThreadEditDraft;
 };
 
+// ThreadForkResult mirrors the JSON-RPC `thread/fork` response. `mode` on
+// `forkThread` decides whether the backend creates a git worktree; the
+// resulting thread carries whatever the snapshot produced, including the
+// `worktree` block when forking into one.
+export type ThreadForkResult = {
+  thread: Thread;
+};
+
 export type ThreadContextCompositionResult = {
   thread_id: string;
   available: boolean;
@@ -1079,7 +1087,12 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
-  forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
+  forkThread: (
+    threadId: string,
+    turnId?: string,
+    itemId?: string,
+    mode?: "local" | "worktree",
+  ) => Promise<ThreadForkResult>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;

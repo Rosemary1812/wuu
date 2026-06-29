@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Thread, Turn } from "../shared/protocol";
 import {
   firstUserMessageAnchor,
+  lastUserMessageAnchor,
   scrollToUserMessage,
   threadReplySnippet,
   truncateReplyPreview,
@@ -363,6 +364,140 @@ describe("firstUserMessageAnchor", () => {
       { id: "a-1", type: "agent_message", text: "answer" },
     ]);
     expect(firstUserMessageAnchor(turn)).toBeUndefined();
+  });
+});
+
+describe("lastUserMessageAnchor", () => {
+  it("returns the last user_message across multiple turns", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [
+          { id: "u-1", type: "user_message" },
+          { id: "a-1", type: "agent_message", text: "hi" },
+        ],
+      },
+      {
+        id: "turn-2",
+        items: [
+          { id: "u-2", type: "user_message" },
+          { id: "a-2", type: "agent_message", text: "next" },
+        ],
+      },
+    ]);
+
+    expect(lastUserMessageAnchor(thread)).toEqual({
+      turnID: "turn-2",
+      itemID: "u-2",
+    });
+  });
+
+  it("returns the last user_message inside a single turn (latest in items)", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [
+          { id: "u-1", type: "user_message" },
+          { id: "a-1", type: "agent_message", text: "first reply" },
+          { id: "u-2", type: "user_message", text: "follow up" },
+          { id: "a-2", type: "agent_message", text: "second reply" },
+        ],
+      },
+    ]);
+
+    expect(lastUserMessageAnchor(thread)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-2",
+    });
+  });
+
+  it("ignores trailing non-user items in the last turn", () => {
+    // Mirrors the real renderer layout: the latest turn ends with
+    // reasoning or tool items after its last user message. The picker
+    // must still find the user_message, not bump against the trailing
+    // tool call.
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [
+          { id: "u-1", type: "user_message" },
+          { id: "a-1", type: "agent_message", text: "first reply" },
+        ],
+      },
+      {
+        id: "turn-2",
+        items: [
+          { id: "u-2", type: "user_message" },
+          { id: "a-2", type: "agent_message", text: "in progress" },
+          { id: "r-2", type: "reasoning" },
+          { id: "tc-2", type: "tool_call" },
+        ],
+      },
+    ]);
+
+    expect(lastUserMessageAnchor(thread)).toEqual({
+      turnID: "turn-2",
+      itemID: "u-2",
+    });
+  });
+
+  it("returns undefined when no user_message exists", () => {
+    const thread = buildThread([
+      {
+        id: "turn-1",
+        items: [{ id: "a-1", type: "agent_message", text: "answer" }],
+      },
+    ]);
+    expect(lastUserMessageAnchor(thread)).toBeUndefined();
+  });
+
+  it("returns undefined for undefined input", () => {
+    expect(lastUserMessageAnchor(undefined)).toBeUndefined();
+  });
+
+  it("returns the last user_message when given a single Turn", () => {
+    const turn = buildTurn([
+      { id: "u-1", type: "user_message", text: "first" },
+      { id: "a-1", type: "agent_message", text: "reply" },
+      { id: "u-2", type: "user_message", text: "follow up" },
+    ]);
+    expect(lastUserMessageAnchor(turn)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-2",
+    });
+  });
+
+  it("skips internal agent handoff anchors", () => {
+    const turn = buildTurn([
+      { id: "u-1", type: "user_message", text: "hello" },
+      { id: "a-1", type: "agent_message", text: "reply" },
+      { id: "handoff", type: "user_message", text: handoffText() },
+    ]);
+    expect(lastUserMessageAnchor(turn)).toEqual({
+      turnID: "turn-1",
+      itemID: "u-1",
+    });
+  });
+
+  it("matches the snapshot the fork picker checks against", () => {
+    // App.tsx's `isForkTargetLatest` compares the (turnID, itemID) the
+    // user clicked against the value this helper returns, so the
+    // returned shape is the load-bearing contract for the picker.
+    const thread = buildThread([
+      {
+        id: "turn-a",
+        items: [{ id: "u-old", type: "user_message", text: "earlier" }],
+      },
+      {
+        id: "turn-b",
+        items: [{ id: "u-newest", type: "user_message", text: "newest" }],
+      },
+    ]);
+
+    expect(lastUserMessageAnchor(thread)).toEqual({
+      turnID: "turn-b",
+      itemID: "u-newest",
+    });
   });
 });
 

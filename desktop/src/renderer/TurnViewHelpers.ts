@@ -61,6 +61,32 @@ export function firstUserMessageAnchor(
   return undefined;
 }
 
+// Mirrors `firstUserMessageAnchor` but walks the same turns/items in
+// reverse. Used by the fork picker to detect when the user clicked
+// the "分叉" button on the latest user message (no choice dialog
+// needed) versus any older user message (the picker asks whether to
+// fork into a new worktree or stay local).
+export function lastUserMessageAnchor(
+  source: Thread | Turn | undefined,
+): UserMessageAnchor | undefined {
+  if (!source) {
+    return undefined;
+  }
+  const turns: Turn[] =
+    "turns" in source ? source.turns ?? [] : [source as Turn];
+  for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+    const turn = turns[turnIndex];
+    const items = turn.items ?? [];
+    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+      const item = items[itemIndex];
+      if (item.type === "user_message" && !isAgentHandoffText(item.text)) {
+        return { turnID: turn.id, itemID: item.id };
+      }
+    }
+  }
+  return undefined;
+}
+
 export type ThreadReplySnippet = {
   text: string;
   totalAgentMessages: number;

@@ -34,6 +34,7 @@ import type {
   Thread,
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
+  ThreadForkResult,
   Turn,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
@@ -396,11 +397,18 @@ app.whenReady().then(() => {
   );
   ipcMain.handle(
     "wuu:thread-fork",
-    (_event, threadId: string, turnId?: string, itemId?: string) =>
-      appServerClientPool.request<{ thread: Thread }>("thread/fork", {
+    (
+      _event,
+      threadId: string,
+      turnId?: string,
+      itemId?: string,
+      mode?: "local" | "worktree",
+    ) =>
+      appServerClientPool.request<ThreadForkResult>("thread/fork", {
         thread_id: threadId,
         turn_id: turnId ?? "",
         item_id: itemId ?? "",
+        ...(mode ? { mode } : {}),
       }),
   );
   ipcMain.handle(

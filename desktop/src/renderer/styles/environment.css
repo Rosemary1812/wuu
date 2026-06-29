@@ -1064,6 +1064,115 @@
   gap: 10px;
 }
 
+/* Fork-from-earlier picker. Reuses the .environment-dialog shell so the
+   modal look-and-feel stays consistent with the GitHub and Approval
+   dialogs; only the body content swaps to a stacked list of option
+   cards plus a footnote and a wide Cancel button. */
+.fork-dialog {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.fork-dialog-options {
+  display: grid;
+  gap: 10px;
+}
+
+.fork-dialog-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color var(--menu-enter-duration) var(--menu-enter-easing),
+    background var(--menu-enter-duration) var(--menu-enter-easing);
+}
+
+.fork-dialog-option:hover:not(:disabled) {
+  border-color: var(--info);
+  background: var(--surface-1);
+}
+
+.fork-dialog-option:active:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.fork-dialog-option:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
+}
+
+.fork-dialog-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.fork-dialog-option.is-busy {
+  border-color: var(--info);
+}
+
+.fork-dialog-option-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.fork-dialog-option-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fork-dialog-option-text strong {
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.fork-dialog-option-text span {
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+}
+
+.fork-dialog-option-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--info);
+  border-right-color: transparent;
+  border-radius: 50%;
+  margin-left: auto;
+  align-self: center;
+  animation: fork-dialog-spin 720ms linear infinite;
+}
+
+@keyframes fork-dialog-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fork-dialog-note {
+  margin: 0;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+}
+
+.fork-dialog-cancel {
+  width: 100%;
+}
+
 .context-composition-header {
   display: flex;
   align-items: start;
