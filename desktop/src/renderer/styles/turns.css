@@ -1201,18 +1201,8 @@
 }
 
                                                                          
-.stream-cursor.is-fading {
+.streaming-markdown[data-cursor-state="fading"] .stream-cursor {
   transition: opacity 200ms ease-out;
-  opacity: 0;
-}
-
-/* Terminal cursor state. The span stays in the DOM so the fold body
-   height doesn't collapse when the cursor transitions out of view
-   (StreamingMarkdown renders the cursor unconditionally; the
-   .is-gone class only switches visibility, never removes the node).
-   This kills the V-shape scroll jitter: cursor removal no longer
-   shrinks scrollHeight by 1.05em and clamps scrollTop. */
-.stream-cursor.is-gone {
   opacity: 0;
 }
 
@@ -1228,7 +1218,7 @@
 
                                                         
 @media (prefers-reduced-motion: reduce) {
-  .stream-cursor.is-fading {
+  .streaming-markdown[data-cursor-state="fading"] .stream-cursor {
     transition: none;
   }
 }

@@ -2,13 +2,17 @@
  * Tests for StreamingMarkdown.
  *
  * Contract: render the markdown progressively, show a 1px cursor at
- * the end during streaming, fade the cursor out 200ms after settle,
- * then remove it from the DOM.
+ * the end during streaming, and fade the cursor out after settle
+ * without removing or remounting the Markdown tail.
  */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { StreamingMarkdown, splitIntoStableBlocks } from "./StreamingMarkdown";
+import {
+  containsMermaidFence,
+  StreamingMarkdown,
+  splitIntoStableBlocks,
+} from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
 
 // jsdom doesn't implement layout. Stub getBoundingClientRect so React
@@ -147,26 +151,22 @@ describe("StreamingMarkdown", () => {
     expect(frameCount).toBeGreaterThan(0);
   });
 
-  it("keeps the cursor span in the DOM with .is-gone after the fade-out completes", async () => {
+  it("hides the settled cursor from the parent state without changing the cursor node class", async () => {
     const key = streamTextKey("turn", "s5", "text");
     streamTextStore.seed(key, "Hello world");
     mount({ streamKey: key, initialText: "Hello world", isLive: false, phase: "final_answer" });
 
-    // Wait for the 200ms fade-out to complete.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
     const surface = document.querySelector(".streaming-markdown") as HTMLElement;
     const cursor = surface.querySelector(".stream-cursor");
-    // Cursor must stay in the DOM with .is-gone so the fold body height
-    // doesn't collapse when the cursor transitions out of view. Removing
-    // the span would shrink scrollHeight by ~1 line (1.05em), clamp
-    // scrollTop, and produce a V-shape scroll jitter when the next item
-    // arrives (FoldCollapseAutoFollow reproduction).
+    // Cursor must stay in the DOM with a stable class so hiding it does
+    // not reparse or remount the Markdown tail.
     expect(cursor).not.toBeNull();
-    expect(cursor?.classList.contains("is-gone")).toBe(true);
-    expect(cursor?.classList.contains("is-fading")).toBe(false);
+    expect(cursor?.className).toBe("stream-cursor");
+    expect(surface.dataset.cursorState).toBe("fading");
   });
 
   it("notifies once when isLive flips off and the cursor is caught up", async () => {
@@ -205,6 +205,15 @@ describe("StreamingMarkdown", () => {
     const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
     expect(surface.textContent).not.toContain("\uE000");
     expect(cursor?.closest("li")).toBeTruthy();
+  });
+});
+
+describe("containsMermaidFence", () => {
+  it("matches only Mermaid fenced code blocks", () => {
+    expect(containsMermaidFence("```mermaid\ngraph TD\n```")).toBe(true);
+    expect(containsMermaidFence("intro\n\n``` mermaid \ngraph TD\n```")).toBe(true);
+    expect(containsMermaidFence("```ts\nconst mermaid = true;\n```")).toBe(false);
+    expect(containsMermaidFence("plain text mentioning mermaid")).toBe(false);
   });
 });
 

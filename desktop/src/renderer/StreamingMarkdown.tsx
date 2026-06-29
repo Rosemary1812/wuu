@@ -12,38 +12,6 @@ import {
 } from "./StreamText";
 
 /**
- * Returns `true` when the user has asked the OS to reduce motion. The
- * value is computed once on mount and updated when the user toggles the
- * system setting, so components that consult it can do so synchronously
- * in render.
- */
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState<boolean>(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return false;
-    }
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return undefined;
-    }
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (): void => {
-      setReduced(media.matches);
-    };
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", onChange);
-      return () => media.removeEventListener("change", onChange);
-    }
-    // Legacy Safari path.
-    media.addListener(onChange);
-    return () => media.removeListener(onChange);
-  }, []);
-  return reduced;
-}
-
-/**
  * Progressive Markdown renderer used while assistant text is arriving.
  *
  * Single source of truth: the parent owns `isLive`, derived from the
@@ -138,8 +106,10 @@ export function StreamingMarkdown({
     initialVisibleLength,
   );
 
-  /* --------------------- Cursor lifecycle (shown -> fading -> gone) ------- */
-  const [cursorState, setCursorState] = useState<"shown" | "fading" | "gone">("shown");
+  /* --------------------- Cursor lifecycle (shown -> fading) -------------- */
+  const [cursorState, setCursorState] = useState<"shown" | "fading">(
+    () => (isLive ? "shown" : "fading"),
+  );
 
   /* ------------------------------- Refs ---------------------------------- */
   const renderedTextRef = useRef(renderedText);
@@ -292,7 +262,6 @@ export function StreamingMarkdown({
 
   /* --------------------- Cursor visibility & fade-out ------------------- */
   const hasMoreToReveal = visibleLength < renderedText.length;
-  const prefersReducedMotion = useReducedMotion();
   useEffect(() => {
     if (hasMoreToReveal) {
       // Still streaming: keep the cursor visible.
@@ -300,23 +269,15 @@ export function StreamingMarkdown({
       return;
     }
     if (!isLive) {
-      // Caught up and not live: fade out, then remove from DOM. When the
-      // user prefers reduced motion, skip the fade and remove the cursor
-      // immediately so the settled DOM matches the non-streaming render
-      // byte-for-byte.
-      if (prefersReducedMotion) {
-        setCursorState("gone");
-        return;
-      }
+      // Caught up and not live: fade the cursor with a parent data
+      // attribute. The cursor span stays mounted and its class stays
+      // stable, so hiding it does not force the Markdown tail to reparse.
       setCursorState("fading");
-      const t = window.setTimeout(() => {
-        setCursorState("gone");
-      }, 180);
-      return () => window.clearTimeout(t);
+      return;
     }
     // Caught up but still live: keep visible while we wait for more.
     setCursorState("shown");
-  }, [hasMoreToReveal, isLive, prefersReducedMotion]);
+  }, [hasMoreToReveal, isLive]);
 
   /* ------------------------- Derived view data -------------------------- */
   const visibleText = renderedText.slice(0, visibleLength);
@@ -324,23 +285,22 @@ export function StreamingMarkdown({
   // answers share the same visual treatment so a later phase resolution does
   // not cause a typography or affordance jump.
   // Always render the cursor span so the fold body height stays stable
-  // when the cursor transitions through fading -> gone. Removing the
+  // when the cursor fades out. Removing the
   // cursor from DOM shrinks scrollHeight by ~1 line (1.05em), which
   // clamps scrollTop in ConversationScrollState and creates a visible
   // UP shift that combines with the next item's auto-follow re-anchor
-  // into a V-shape jitter. Visibility is controlled via the .is-gone
-  // CSS class (see turns.css) instead.
+  // into a V-shape jitter. Visibility is controlled by the parent
+  // data-cursor-state attribute (see turns.css) instead.
   const showCursor = true;
-  const cursorClassName =
-    CURSOR_CLASS_NAME +
-    (cursorState === "fading" ? " is-fading" : "") +
-    (cursorState === "gone" ? " is-gone" : "");
   const cursorTextRenderer = useMemo(
-    () => createCursorTextRenderer(cursorClassName),
-    [cursorClassName]
+    () => createCursorTextRenderer(),
+    []
   );
-  // Mermaid is expensive; defer until the stream settles.
-  const renderMermaid = phase === "settled";
+  // Mermaid is expensive; do not flip the markdown renderer at settle for
+  // ordinary text. Only messages that actually contain a Mermaid fence enter
+  // the diagram renderer after streaming ends.
+  const renderMermaid =
+    phase === "settled" && containsMermaidFence(visibleText);
 
   // Split the visible text into stable blocks + an open tail. Every
   // stable block is its own memoized markdown surface, so promoting a
@@ -367,6 +327,7 @@ export function StreamingMarkdown({
     <div
       className={className}
       data-stream-state={phase}
+      data-cursor-state={cursorState}
     >
       {split.blocks.map((block, index) => (
         // Keep stable blocks keyed separately so settled text does not remount
@@ -398,7 +359,7 @@ export function StreamingMarkdown({
  */
 const MemoMarkdownContent = MarkdownContent;
 
-function createCursorTextRenderer(cursorClassName: string): RichTextRenderer {
+function createCursorTextRenderer(): RichTextRenderer {
   return (text, keyPrefix) => {
     if (!text.includes(CURSOR_SENTINEL)) {
       return [text];
@@ -413,7 +374,7 @@ function createCursorTextRenderer(cursorClassName: string): RichTextRenderer {
         output.push(
           <span
             key={`${keyPrefix}-cursor-${index}`}
-            className={cursorClassName}
+            className={CURSOR_CLASS_NAME}
             aria-hidden="true"
           />
         );
@@ -421,6 +382,10 @@ function createCursorTextRenderer(cursorClassName: string): RichTextRenderer {
     });
     return output;
   };
+}
+
+export function containsMermaidFence(text: string): boolean {
+  return /(^|\n)```[ \t]*mermaid[ \t]*\r?\n/i.test(text);
 }
 
 /**

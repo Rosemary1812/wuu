@@ -298,11 +298,11 @@ async function run() {
   const collapsedProcess = await waitFor(
     win,
     () => {
-      const group = document.querySelector(".turn-process-group");
+      const group = document.querySelector(".turn-process-fold");
       const toggle = group?.querySelector(".turn-process-toggle");
-      const details = group?.querySelector(".turn-process-details");
+      const details = group?.querySelector(".collapsible-details");
       const activity = group?.querySelector(".activity-group");
-      if (!(group instanceof HTMLElement) || !(toggle instanceof HTMLButtonElement) || !(details instanceof HTMLElement)) {
+      if (!(group instanceof HTMLElement) || !(toggle instanceof HTMLElement) || !(details instanceof HTMLElement)) {
         return null;
       }
       if (toggle.getAttribute("aria-expanded") !== "false" || details.getAttribute("aria-hidden") !== "true") {
@@ -322,15 +322,15 @@ async function run() {
     win,
     () => {
       const button = document.querySelector(".turn-process-toggle");
-      if (!(button instanceof HTMLButtonElement)) {
+      if (!(button instanceof HTMLElement)) {
         return null;
       }
       if (button.getAttribute("aria-expanded") !== "true") {
         button.click();
         return null;
       }
-      const group = document.querySelector(".turn-process-group");
-      const details = group?.querySelector(".turn-process-details");
+      const group = document.querySelector(".turn-process-fold");
+      const details = group?.querySelector(".collapsible-details");
       return {
         expanded: button.getAttribute("aria-expanded"),
         hidden: details?.getAttribute("aria-hidden"),
@@ -468,7 +468,7 @@ async function run() {
     },
     3000
   );
-  assert.match(failedNotice.noticeText, /连接暂时不可用/, "Real network failures should render an error notice.");
+  assert.match(failedNotice.noticeText, /没有完成这次请求/, "Real network failures should render an error notice.");
   assert.equal(failedNotice.conversationText.includes("chatgpt.com/backend-api"), false, "Failure UI should hide backend URLs.");
   assert.equal(failedNotice.conversationText.includes("stream request failed"), false, "Failure UI should hide wrapped internal errors.");
 
@@ -532,6 +532,11 @@ async function evaluate(win, fn, options = {}) {
             (node) => getComputedStyle(node).animationName !== "none"
           ).length
         : 0;
+      const headingText = streaming
+        ? Array.from(streaming.querySelectorAll("h1, h2, h3, .rich-paragraph"))
+            .map((node) => node.textContent?.trim() ?? "")
+            .find((value) => value === "Streaming markdown") ?? ""
+        : "";
       return {
         hasStreaming: Boolean(streaming),
         hasStaticFallback: Boolean(staticFallback),
@@ -539,7 +544,7 @@ async function evaluate(win, fn, options = {}) {
         animatedWords,
         text,
         textLength: text.length,
-        heading: streaming?.querySelector("h1")?.textContent ?? "",
+        heading: headingText,
         bold: streaming?.querySelector("strong")?.textContent ?? "",
         linkHref: streaming?.querySelector("a")?.href ?? "",
         listItems: streaming?.querySelectorAll("li").length ?? 0,
