@@ -231,4 +231,46 @@ describe("ComposerContextMeter", () => {
     });
     expect(offsetLarge).toBeLessThan(offsetSmall);
   });
+
+  it("drives the SVG data-fill and inline color from the gauge color tiers", () => {
+    // ratio = 0 → idle gray (matches the token-speed gauge when stopped).
+    renderMeter(
+      usageWith({
+        used: 0,
+        inputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    );
+    let svg = container.querySelector(
+      ".composer-context-meter-svg",
+    ) as HTMLElement | null;
+    expect(svg?.getAttribute("data-fill")).toBe("idle");
+    expect(svg?.style.color).toBe("var(--token-gauge-idle)");
+
+    // ratio = 0.5 → mid amber (matches the token-speed gauge while running).
+    act(() => {
+      root?.unmount();
+      root = null;
+    });
+    renderMeter(usageWith({ used: 100_000, window: 200_000 }));
+    svg = container.querySelector(
+      ".composer-context-meter-svg",
+    ) as HTMLElement | null;
+    expect(svg?.getAttribute("data-fill")).toBe("mid");
+    expect(svg?.style.color).toBe("var(--token-gauge-mid)");
+
+    // ratio ≥ 0.7 → high warm (matches the token-speed gauge past its 70%
+    // threshold, so both meters step into "high" at the same fraction).
+    act(() => {
+      root?.unmount();
+      root = null;
+    });
+    renderMeter(usageWith({ used: 170_000, window: 200_000 }));
+    svg = container.querySelector(
+      ".composer-context-meter-svg",
+    ) as HTMLElement | null;
+    expect(svg?.getAttribute("data-fill")).toBe("high");
+    expect(svg?.style.color).toBe("var(--token-gauge-high)");
+  });
 });

@@ -6,9 +6,12 @@
 // proportion, the label shows used/window, and hover reveals the concise
 // details.
 //
-// The fill color stays a single neutral gray regardless of fill level:
-// the meter is a passive readout, not a warning. Color-coded urgency
-// belongs in the proactive auto-compact banner where it has room to act.
+// The progress stroke reuses the token-speed gauge's color palette so the
+// two meters read as a coordinated pair: idle gray when the window is empty,
+// warm amber while context is filling, accent-warm red once usage crosses
+// the high-water mark. The 0.7 threshold mirrors the token-speed gauge's
+// 70/100 tps break, so both meters shift into "high" at the same fraction
+// of their scale.
 
 import type { TurnContextUsage } from "./AppState";
 import { useId, useRef, useState } from "react";
@@ -31,6 +34,26 @@ const RING_RADIUS = 9;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const TOOLTIP_WIDTH = 212;
 
+// Fill-level thresholds mirror the token-speed gauge's idle/mid/high
+// tiers so the two meters step into "high" at the same fraction of their
+// own scale. The progress stroke inherits currentColor from the SVG; the
+// container keeps --ink-strong so the inline label is unaffected.
+const FILL_HIGH_THRESHOLD = 0.7;
+
+type FillLevel = "idle" | "mid" | "high";
+
+function fillLevel(ratio: number): FillLevel {
+  if (ratio <= 0) return "idle";
+  if (ratio < FILL_HIGH_THRESHOLD) return "mid";
+  return "high";
+}
+
+function fillColor(level: FillLevel): string {
+  if (level === "idle") return "var(--token-gauge-idle)";
+  if (level === "mid") return "var(--token-gauge-mid)";
+  return "var(--token-gauge-high)";
+}
+
 export function ComposerContextMeter({
   usage,
 }: ComposerContextMeterProps): JSX.Element | null {
@@ -45,6 +68,12 @@ export function ComposerContextMeter({
   const ratio = Math.min(1, Math.max(0, used / usage.window));
   const percent = Math.round(ratio * 100);
   const dashOffset = RING_CIRCUMFERENCE * (1 - ratio);
+  // Color tier mirrors the token-speed gauge so the two meters read as a
+  // coordinated pair: gray when empty, amber while filling, warm red as
+  // the window approaches its limit. The 0.7 cutoff matches the gauge's
+  // 70/100 tps break so both step into "high" at the same fraction.
+  const level = fillLevel(ratio);
+  const ringColor = fillColor(level);
   const percentLabel = `${percent}%`;
   const valueLabel = `${formatTokenCount(used)} / ${formatTokenCount(
     usage.window,
@@ -71,6 +100,11 @@ export function ComposerContextMeter({
         width="20"
         height="20"
         className="composer-context-meter-svg"
+        data-fill={level}
+        // Color is set on the SVG (not the container) so the inline label
+        // keeps the parent's --ink-strong text color and the progress
+        // stroke can independently step through the gauge color tiers.
+        style={{ color: ringColor }}
         aria-hidden="true"
       >
         <circle

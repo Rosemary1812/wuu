@@ -1,9 +1,9 @@
 :root {
-  /* The context ring stays a single neutral gray. The meter is a passive
-     readout of how full the window is — proactive urgency belongs to the
-     auto-compact banner where there is room to act. */
+  /* The context ring color is driven inline by the JSX so it can step
+     between the token-speed gauge's idle / mid / high tiers as the fill
+     crosses 0 and the 0.7 high-water mark. The track stays a single
+     neutral gray so the unfilled portion reads as a quiet baseline. */
   --context-meter-track: rgba(138, 142, 145, 0.24);
-  --context-meter-progress: rgba(95, 99, 104, 0.92);
   --context-meter-text: var(--ink-strong);
   --context-meter-tooltip-bg: var(--wuu-paper, #fff);
   --context-meter-tooltip-border: rgba(15, 17, 21, 0.08);
@@ -47,7 +47,7 @@
 }
 
 .composer-context-meter-progress {
-  stroke: var(--context-meter-progress);
+  stroke: currentColor;
   fill: none;
   stroke-width: 2;
   stroke-linecap: round;
