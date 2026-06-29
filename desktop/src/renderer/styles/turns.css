@@ -6109,3 +6109,194 @@ pre {
 .project-empty-actions button:hover {
   background: #f5f5f2;
 }
+
+/*
+ * Chip 图鉴 dev panel (ChipGalleryPanel). Dev-mode only — gated by
+ * `ENABLE_CHIP_GALLERY` in App.tsx and the debug-controls switch in
+ * Settings. Never reaches production builds. See AGENTS.md "Desktop
+ * Debug Controls" for the gating rules.
+ */
+.chip-gallery-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: color-mix(in srgb, var(--ink) 40%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  overflow: auto;
+}
+
+.chip-gallery-panel {
+  width: 100%;
+  max-width: 960px;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--ink) 24%, transparent);
+  overflow: hidden;
+}
+
+.chip-gallery-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--surface-3);
+}
+
+.chip-gallery-header h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+}
+
+.chip-gallery-header p {
+  margin: 0;
+  color: var(--ink-tertiary);
+  font-size: var(--font-ui);
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.chip-gallery-header p code {
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.chip-gallery-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.chip-gallery-section > header {
+  padding: 16px 0 12px;
+}
+
+.chip-gallery-section > header h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+}
+
+.chip-gallery-section > header p {
+  margin: 0;
+  font-size: var(--font-ui);
+  color: var(--ink-tertiary);
+  line-height: 1.5;
+}
+
+.chip-gallery-section > header p code {
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* --- Gallery section: each chip in isolation --- */
+
+.chip-gallery-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.chip-gallery-entry {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.2fr);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-md);
+}
+
+.chip-gallery-entry-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.chip-gallery-entry-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chip-gallery-entry-label {
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+}
+
+.chip-gallery-entry-kind {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  align-self: flex-start;
+}
+
+.chip-gallery-entry-description {
+  font-size: var(--font-ui);
+  color: var(--ink-tertiary);
+  line-height: 1.4;
+}
+
+/* --- In-Context section: mock turns rendered through TurnView --- */
+
+.chip-gallery-context {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.chip-gallery-context-item h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--ink-tertiary);
+}
+
+.chip-gallery-context-frame {
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  padding: 16px 20px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .chip-gallery-entry {
+    grid-template-columns: 1fr;
+  }
+}

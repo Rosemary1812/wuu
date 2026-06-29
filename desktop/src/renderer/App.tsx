@@ -19,6 +19,7 @@ import {
   Plus,
   Send,
   Terminal,
+  LayoutGrid,
   Trash2,
   Wrench,
   X,
@@ -223,6 +224,7 @@ import {
   RunDebugPanel,
   runDebugPhaseForState,
 } from "./RunDebugPanel";
+import { ChipGalleryPanel } from "./ChipGalleryPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
@@ -311,6 +313,7 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
+const ENABLE_CHIP_GALLERY = Boolean(RENDERER_ENV?.DEV);
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
   const callbackRef = useRef(callback);
@@ -564,6 +567,8 @@ export function App(): JSX.Element {
     setRunDebugOpen,
     conversationGridVisible,
     setConversationGridVisible,
+    chipGalleryOpen,
+    setChipGalleryOpen,
     runDebugEvents,
     runDebugCopied,
     runDebugRef,
@@ -5732,6 +5737,21 @@ export function App(): JSX.Element {
                 ) : null}
               </div>
             ) : null}
+            {debugControlsVisible && ENABLE_CHIP_GALLERY ? (
+              <button
+                className="launch-preview-button"
+                type="button"
+                aria-label="打开 Chip 图鉴"
+                onClick={() => setChipGalleryOpen(true)}
+              >
+                <LayoutGrid className="icon" />
+                <span>Chip 图鉴</span>
+              </button>
+            ) : null}
+            <ChipGalleryPanel
+              open={chipGalleryOpen}
+              onClose={() => setChipGalleryOpen(false)}
+            />
             {backgroundProcessCapsuleVisible ? (
               <button
                 className={`background-process-capsule ${backgroundProcessCapsuleTone}${
