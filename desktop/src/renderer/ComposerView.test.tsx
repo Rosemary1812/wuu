@@ -982,6 +982,9 @@ describe("Composer expand button", () => {
     expect(composerCSS).toMatch(
       /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,
     );
+    expect(composerCSS).toMatch(
+      /\.composer\s*\{[^}]*position:\s*relative/,
+    );
     // Expanded composer is a flex column; the textarea absorbs the extra
     // height so .composer-bar stays at the original bottom edge instead
     // of floating above block-flow whitespace.
@@ -1034,18 +1037,39 @@ describe("Composer expand button", () => {
     expect(frame?.style.getPropertyValue("--composer-expanded-offset")).toBe("");
   });
 
-  it("renders the expand button as the last child of the composer frame", () => {
+  it("renders the expand button inside the composer input area", () => {
     renderComposer({});
 
     const frame = container.querySelector(".composer-frame");
+    const composer = container.querySelector(".composer");
     const button = container.querySelector<HTMLButtonElement>(".composer-expand-button");
 
     expect(button).not.toBeNull();
     expect(button?.getAttribute("aria-label")).toBe("展开输入框");
     expect(button?.getAttribute("aria-pressed")).toBe("false");
     expect(button?.getAttribute("title")).toBe("展开输入框");
-    expect(frame?.lastElementChild?.classList.contains("composer-expand-button")).toBe(true);
+    expect(button?.parentElement).toBe(composer);
+    expect(frame?.lastElementChild).toBe(composer);
     expect(button?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("keeps the expand button anchored to the input area when messages are queued", () => {
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "排队时按钮应该跟输入区对齐", images: [], files: [] },
+      ],
+    });
+
+    const queueList = container.querySelector(".composer-queue-list");
+    const composer = container.querySelector(".composer");
+    const button = container.querySelector<HTMLButtonElement>(".composer-expand-button");
+
+    expect(queueList).not.toBeNull();
+    expect(composer).not.toBeNull();
+    expect(button).not.toBeNull();
+    expect(button?.parentElement).toBe(composer);
+    expect(queueList?.contains(button ?? null)).toBe(false);
   });
 
   it("toggles the expanded composer state from one click", async () => {

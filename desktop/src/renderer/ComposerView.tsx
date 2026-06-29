@@ -628,6 +628,17 @@ export function Composer({
               }}
               onKeyDown={handleComposerKeyDown}
             />
+            <button
+              className="composer-expand-button"
+              type="button"
+              aria-label={isComposerExpanded ? "收起输入框" : "展开输入框"}
+              aria-pressed={isComposerExpanded}
+              title={readOnly ? "只读会话不可展开" : isComposerExpanded ? "收起输入框" : "展开输入框"}
+              disabled={readOnly}
+              onClick={toggleComposerExpansion}
+            >
+              {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
+            </button>
             <div className="composer-bar">
               <div className="composer-bar-left">
                 {variant === "hero" ? (
@@ -779,17 +790,6 @@ export function Composer({
               </div>
             </div>
           </div>
-          <button
-            className="composer-expand-button"
-            type="button"
-            aria-label={isComposerExpanded ? "收起输入框" : "展开输入框"}
-            aria-pressed={isComposerExpanded}
-            title={readOnly ? "只读会话不可展开" : isComposerExpanded ? "收起输入框" : "展开输入框"}
-            disabled={readOnly}
-            onClick={toggleComposerExpansion}
-          >
-            {isComposerExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
-          </button>
         </div>
       </div>
     </div>

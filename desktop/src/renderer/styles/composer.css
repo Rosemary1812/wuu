@@ -186,6 +186,7 @@
 }
 
 .composer {
+  position: relative;
   width: 100%;
   min-height: var(--composer-collapsed-min-height);
   border-radius: 0;
