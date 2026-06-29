@@ -307,8 +307,9 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				return
 			}
 			effectiveOnEvent(providers.StreamEvent{
-				Type:    providers.EventCompact,
-				Content: formatCompactNotice(info),
+				Type:          providers.EventCompact,
+				Content:       formatCompactNotice(info),
+				CompactReason: string(info.Reason),
 			})
 		},
 		OnCompactAttempt: func(info CompactAttemptInfo) {
@@ -714,6 +715,8 @@ func formatCompactNotice(info CompactInfo) string {
 		verb = "Recovered from context overflow — compacted"
 	case CompactReasonHelpMe:
 		verb = "HelpMe recovered and compacted"
+	case CompactReasonInception:
+		verb = "Inception rewrote"
 	}
 	if info.TokensBefore > 0 {
 		return fmt.Sprintf("✦ %s history: %d → %d messages (was ~%s)",

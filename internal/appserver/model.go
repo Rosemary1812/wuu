@@ -463,6 +463,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 			Type:   ThreadItemContextCompaction,
 			Status: ThreadItemStatusCompleted,
 			Text:   ev.Content,
+			Reason: ev.CompactReason,
 		}
 		th.upsertItemLocked(turnID, item, now)
 		out = append(out, itemStarted(th.ID, turnID, item, now), itemCompleted(th.ID, turnID, item, now))

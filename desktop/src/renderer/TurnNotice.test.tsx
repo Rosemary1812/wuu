@@ -123,6 +123,23 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
+  it("names inception continuation separately from routine compaction", () => {
+    const host = mount(
+      <ContextCompactionNotice
+        status="completed"
+        reason="inception"
+        text="✦ Inception rewrote history: 227 → 3 messages (was ~175k tokens)"
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "上下文已续行",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "Inception 摘要续接上下文",
+    );
+  });
+
   it("does not present failed proactive compaction as a successful compact", () => {
     const failedCompactText =
       '✦ Proactive compact failed: compact summary failed: HTTP 400: {"detail":"Unsupported parameter: max_output_tokens"}';

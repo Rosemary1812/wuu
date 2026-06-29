@@ -828,6 +828,7 @@ export type ThreadItem = {
   display?: ToolCallDisplay;
   result?: string;
   error?: string;
+  reason?: string;
 };
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";

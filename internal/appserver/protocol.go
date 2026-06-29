@@ -20,6 +20,7 @@ const (
 	MethodConfigModelUpdate    = "config/model/update"
 	MethodConfigAdvancedUpdate = "config/advanced/update"
 	MethodConfigCodexModels    = "config/codex/models"
+	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
 	MethodGoalSnapshot         = "goal/snapshot"
 	MethodGoalWorktreeReview   = "goal/worktree/review"
@@ -1106,6 +1107,7 @@ type ThreadItem struct {
 	Display      *providers.ToolCallDisplay `json:"display,omitempty"`
 	Result       string                     `json:"result,omitempty"`
 	Error        string                     `json:"error,omitempty"`
+	Reason       string                     `json:"reason,omitempty"`
 	FinishReason string                     `json:"finish_reason,omitempty"`
 	StopReason   string                     `json:"stop_reason,omitempty"`
 	Truncated    bool                       `json:"truncated,omitempty"`

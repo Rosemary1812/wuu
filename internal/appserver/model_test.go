@@ -274,6 +274,26 @@ func TestThreadStateSurfacesLiveInceptionEvents(t *testing.T) {
 	}
 }
 
+func TestThreadStateLabelsInceptionCompactEvent(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start"}, now)
+
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:          providers.EventCompact,
+		Content:       "✦ Inception rewrote history: 9 → 3 messages",
+		CompactReason: "inception",
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and compact item, got %+v", turn.Items)
+	}
+	if turn.Items[1].Type != ThreadItemContextCompaction || turn.Items[1].Reason != "inception" {
+		t.Fatalf("expected inception compact reason on item, got %+v", turn.Items[1])
+	}
+}
+
 func TestTurnsFromHistoryKeepsSteeredUserMessageInCurrentTurn(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{

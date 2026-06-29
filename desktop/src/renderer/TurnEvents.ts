@@ -33,6 +33,7 @@ export type TurnEventDisplay =
       source: "item";
       presentation: "context_compaction";
       text?: string;
+      reason?: string;
       status?: ThreadItemStatus;
     };
 
@@ -105,6 +106,7 @@ export function turnEventForItem(item: ThreadItem): TurnEventDisplay | undefined
       source: "item",
       presentation: "context_compaction",
       text: item.text,
+      reason: item.reason,
       status: item.status,
     };
   }

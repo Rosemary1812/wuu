@@ -10,7 +10,7 @@ export function TurnEventNotice({
   onAction?: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   if (event.presentation === "context_compaction") {
-    return <ContextCompactionNotice text={event.text} status={event.status} />;
+    return <ContextCompactionNotice text={event.text} reason={event.reason} status={event.status} />;
   }
   return <TurnNotice display={event.notice} onAction={onAction} />;
 }
@@ -72,9 +72,11 @@ export function TurnNotice({
 
 export function ContextCompactionNotice({
   text,
+  reason,
   status,
 }: {
   text?: string;
+  reason?: string;
   status?: ThreadItemStatus;
 }): JSX.Element {
   // in_progress reuses the shared live-gray sweep used by active
@@ -97,7 +99,7 @@ export function ContextCompactionNotice({
       </aside>
     );
   }
-  const detail = contextCompactionDetail(text);
+  const detail = contextCompactionDetail(text, reason);
   // The inline notice is a compact label. The full breakdown is moved to
   // the `title` attribute so it is available on hover without taking a
   // second visual line.
@@ -109,15 +111,18 @@ export function ContextCompactionNotice({
       title={detail}
     >
       <span className="turn-event-content">
-        <strong className="turn-event-title">{contextCompactionTitle(text)}</strong>
+        <strong className="turn-event-title">{contextCompactionTitle(text, reason)}</strong>
         <span className="turn-event-detail">{detail}</span>
       </span>
     </aside>
   );
 }
 
-function contextCompactionTitle(text?: string): string {
+function contextCompactionTitle(text?: string, reason?: string): string {
   const normalized = normalizeContextCompactionText(text);
+  if (isInceptionCompact(reason, normalized)) {
+    return "上下文已续行";
+  }
   if (isFailedCompactNotice(normalized)) {
     return "上下文压缩失败";
   }
@@ -130,8 +135,14 @@ function contextCompactionTitle(text?: string): string {
   return "上下文已压缩";
 }
 
-function contextCompactionDetail(text?: string): string {
+function contextCompactionDetail(text?: string, reason?: string): string {
   const normalized = normalizeContextCompactionText(text);
+  if (isInceptionCompact(reason, normalized)) {
+    const compactNotice = parseContextCompactionNotice(normalized);
+    return compactNotice
+      ? compactNotice.replace(/^已压缩较早上下文/, "已按 Inception 摘要续接上下文")
+      : "已按 Inception 摘要续接上下文，后续回复会沿用保留下来的关键状态。";
+  }
   if (!normalized) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
   }
@@ -156,6 +167,10 @@ function contextCompactionDetail(text?: string): string {
 
 function normalizeContextCompactionText(text?: string): string {
   return (text ?? "").trim().replace(/^[✦*•]\s*/, "");
+}
+
+function isInceptionCompact(reason: string | undefined, text: string): boolean {
+  return reason === "inception" || /^Inception rewrote history\b/i.test(text);
 }
 
 function isFailedCompactNotice(text: string): boolean {

@@ -494,6 +494,7 @@ type StreamEvent struct {
 	ReasoningBlock *ReasoningBlock
 	ToolCall       *ToolCall
 	ToolResult     string
+	CompactReason  string
 	PlanUpdate     *PlanUpdate
 	RequestContext *RequestContextSummary
 	ProviderState  *ProviderStateSummary
