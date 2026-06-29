@@ -15,6 +15,7 @@ export type ToolActivityKind =
   | "schedule"
   | "browser"
   | "skill"
+  | "context"
   | "unknown";
 
 export type ToolActivitySummary = {
@@ -307,6 +308,7 @@ function displaySectionKey(kind: string | undefined): string | undefined {
     case "schedule":
     case "browser":
     case "skill":
+    case "context":
       return normalized;
     case "edit":
     case "create":
@@ -372,6 +374,8 @@ function toolActivitySectionKey(item: ThreadItem): string {
       return "browser";
     case "load_skill":
       return "skill";
+    case "inception":
+      return "context";
     default:
       return "other";
   }
@@ -396,6 +400,9 @@ function capabilitySectionKey(capability: string | undefined): string | undefine
   }
   if (normalized.startsWith("task.")) {
     return "agent";
+  }
+  if (normalized.startsWith("context.")) {
+    return "context";
   }
   switch (normalized) {
     case "plan":
@@ -507,6 +514,16 @@ function toolActivitySectionFromItems(
         kind: "skill",
         title: "学习",
         detail: compactDetailText(compactSkillTargets(items)),
+        status: combinedToolStatus(items),
+        commands: toolCommands(items),
+        error: firstToolError(items),
+      };
+    case "context":
+      return {
+        id: key,
+        kind: "context",
+        title: "潜入上下文 · 植入续行摘要",
+        detail: compactDetailText(compactContextAnchors(items)),
         status: combinedToolStatus(items),
         commands: toolCommands(items),
         error: firstToolError(items),
@@ -664,6 +681,14 @@ function toolActivityProcessSegmentFromItems(
             text: targets[0] ? `学习 ${truncateText(targets[0], 48)}` : "学习技能",
           };
     }
+    case "context":
+      return {
+        id: key,
+        kind: "context",
+        status,
+        error,
+        text: "潜入上下文 · 植入续行摘要",
+      };
     default: {
       const names = uniqueStrings(
         items.map((item) => readableToolName(item.name)),
@@ -788,6 +813,18 @@ function compactPlanUpdates(items: ThreadItem[]): string[] {
         const args = parseJSONRecord(item.arguments);
         const explanation = stringValue(args, "explanation")?.trim();
         return explanation ? truncateText(explanation, 90) : undefined;
+      })
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function compactContextAnchors(items: ThreadItem[]): string[] {
+  return uniqueStrings(
+    items
+      .map((item) => {
+        const args = parseJSONRecord(item.arguments);
+        const id = numberValue(args, "anchor_id");
+        return id !== undefined ? `checkpoint #${id}` : undefined;
       })
       .filter((value): value is string => Boolean(value)),
   );

@@ -3,6 +3,7 @@ import type { ThreadItem } from "../shared/protocol";
 import { readableToolActivityCommand } from "./ToolActivity";
 import {
   buildToolActivityProcessSegments,
+  buildToolActivitySections,
   summarizeToolActivity,
 } from "./ToolActivityHelpers";
 
@@ -222,5 +223,36 @@ describe("buildToolActivityProcessSegments", () => {
         text: "搜索 WORKSPACE_RIGHT_PANEL_*",
       },
     ]);
+  });
+});
+
+
+describe("context (inception) tool activity", () => {
+  const inceptionItem: ThreadItem = {
+    id: "item_inception",
+    type: "tool_call",
+    status: "completed",
+    name: "inception",
+    arguments: JSON.stringify({ anchor_id: 0, summary: "## Task state\nContinue." }),
+    display: {
+      kind: "context",
+      text: "潜入上下文 · 植入续行摘要",
+      capability: "context.rewrite",
+    },
+  };
+
+  it("builds a context section with the movie-flavored title and checkpoint detail", () => {
+    const sections = buildToolActivitySections([inceptionItem]);
+    expect(sections).toHaveLength(1);
+    expect(sections[0].kind).toBe("context");
+    expect(sections[0].title).toBe("潜入上下文 · 植入续行摘要");
+    expect(sections[0].detail).toBe("checkpoint #0");
+  });
+
+  it("builds a context process segment with the movie-flavored text", () => {
+    const [segment] = buildToolActivityProcessSegments([inceptionItem]);
+    expect(segment.kind).toBe("context");
+    expect(segment.text).toBe("潜入上下文 · 植入续行摘要");
+    expect(segment.status).toBe("completed");
   });
 });
