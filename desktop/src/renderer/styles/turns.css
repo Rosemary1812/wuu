@@ -779,8 +779,12 @@
   gap: 12px;
 }
 
+.context-composition-card .context-composition-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
 .context-composition-card .context-composition-header h2 {
-  margin-top: 3px;
   font-size: 17px;
   line-height: 1.25;
 }
@@ -789,21 +793,15 @@
   margin-top: 4px;
   font-size: var(--font-xs);
   line-height: 1.5;
+  color: var(--ink-tertiary);
 }
 
-.context-composition-card .context-composition-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #5e666b;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.context-composition-card .context-composition-eyebrow svg {
-  width: 14px;
-  height: 14px;
-  color: #338f98;
+.context-composition-card .context-composition-runtime {
+  padding-top: 5px;
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .context-composition-card .context-composition-dismiss {
@@ -812,18 +810,45 @@
   color: var(--ink-muted);
 }
 
-.context-composition-card .context-composition-stats {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.context-composition-card .context-composition-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.context-composition-card .context-composition-headline {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.context-composition-card .context-composition-stat {
-  border-radius: 10px;
-  padding: 9px 10px;
+.context-composition-card .context-composition-headline strong {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
-.context-composition-card .context-composition-stat strong {
-  font-size: 17px;
+.context-composition-card .context-composition-headline-unit {
+  font-size: var(--font-sm);
+  color: var(--ink-tertiary);
+}
+
+.context-composition-card .context-composition-headline-percent {
+  margin-left: auto;
+  font-size: var(--font-sm);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-composition-card .context-composition-summary-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .context-composition-card .context-composition-bar {
@@ -835,50 +860,57 @@
 }
 
 .context-composition-card .context-category-row {
-  grid-template-columns: 10px minmax(0, 1fr) minmax(74px, auto) auto;
-  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
 }
 
 .context-composition-card .context-category-swatch {
   width: 8px;
   height: 8px;
-  margin-top: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.context-composition-card .context-composition-detail-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.context-composition-card .context-category-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.context-composition-card .context-detail-block {
-  border-radius: 10px;
-  padding: 10px;
+.context-composition-card .context-category-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(31, 35, 40, 0.06);
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  flex-shrink: 0;
+}
+
+.context-composition-card .context-category-tokens {
+  min-width: 3.5em;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.context-composition-card .context-category-percent {
+  min-width: 2.5em;
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 @media (max-width: 760px) {
   .context-composition-card {
     width: 100%;
-  }
-
-  .context-composition-card .context-composition-stats,
-  .context-composition-card .context-composition-detail-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .context-composition-card .context-category-row {
-    grid-template-columns: 10px minmax(0, 1fr) minmax(70px, auto);
-  }
-
-  .context-composition-card .context-category-badges {
-    grid-column: 2 / -1;
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 520px) {
-  .context-composition-card .context-composition-stats,
-  .context-composition-card .context-composition-detail-grid {
-    grid-template-columns: 1fr;
   }
 }
 

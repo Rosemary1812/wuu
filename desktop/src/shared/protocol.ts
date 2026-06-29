@@ -664,6 +664,8 @@ export type ThreadContextCompositionResult = {
   provider?: string;
   model?: string;
   context_window_tokens?: number;
+  usable_input_tokens?: number;
+  compact_threshold_tokens?: number;
   prompt_tokens?: number;
   total_context_tokens?: number;
   retained_tokens?: number;

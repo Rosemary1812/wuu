@@ -109,6 +109,8 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	provider := ""
 	model := ""
 	contextWindowTokens := 0
+	usableInputTokens := 0
+	compactThresholdTokens := 0
 	turnID := ""
 	if step != nil {
 		turnID = strings.TrimSpace(step.TurnID)
@@ -122,6 +124,8 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 		model = firstNonEmpty(turn.APIModel, turn.Model)
 		if turn.ModelProfile != nil {
 			contextWindowTokens = turn.ModelProfile.ContextWindowTokens
+			usableInputTokens = turn.ModelProfile.UsableInputTokens
+			compactThresholdTokens = turn.ModelProfile.CompactThresholdTokens
 		}
 	}
 
@@ -141,6 +145,8 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	result.Provider = provider
 	result.Model = model
 	result.ContextWindowTokens = contextWindowTokens
+	result.UsableInputTokens = usableInputTokens
+	result.CompactThresholdTokens = compactThresholdTokens
 	result.PromptTokens = promptTokens
 	result.TotalContextTokens = totalContextTokens
 	result.RetainedTokens = s.latestRetainedContextTokens(threadID)

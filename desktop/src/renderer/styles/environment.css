@@ -1189,20 +1189,11 @@
   line-height: 1.2;
 }
 
-.context-composition-header p,
-.context-composition-meta {
+.context-composition-header p {
   margin: 5px 0 0;
   color: var(--ink-tertiary);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-}
-
-.context-composition-eyebrow {
-  color: var(--ink-muted);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .context-composition-state {
@@ -1321,18 +1312,6 @@
     rgba(31, 35, 40, 0.02) 6px,
     rgba(31, 35, 40, 0.02) 12px
   );
-}
-
-.context-composition-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-  font-size: var(--font-xs);
-}
-
-.context-composition-meta span {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .context-composition-section {

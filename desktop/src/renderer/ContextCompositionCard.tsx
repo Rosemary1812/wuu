@@ -1,4 +1,4 @@
-import { Gauge, Info, X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import type { ContextCompositionCategory, ThreadContextCompositionResult } from "../shared/protocol";
 
 export type ContextCompositionEntry = {
@@ -23,38 +23,40 @@ export function ContextCompositionCard({
   const contributing = categories.filter((category) => category.contributes !== false);
   const promptTokens = result?.prompt_tokens ?? contributing.reduce((sum, category) => sum + (category.tokens ?? 0), 0);
   const contextWindow = result?.context_window_tokens ?? 0;
-  const dynamicCategory = categories.find((category) => category.id === "request_only");
+  const usableInputWindow = result?.usable_input_tokens ?? 0;
+  const compactThreshold = result?.compact_threshold_tokens ?? 0;
+  const effectiveWindow = firstPositive(usableInputWindow, compactThreshold, contextWindow);
   const cacheReadTokens = result?.cache_read_tokens ?? 0;
-  const freeTokens = contextWindow > 0 ? Math.max(0, contextWindow - promptTokens) : 0;
-  const barTokens = contextWindow > 0 ? contextWindow : promptTokens;
-  const subtitle = [title ?? "当前对话", "最近一次真实请求"].filter(Boolean).join(" · ");
-  const metaParts = [runtimeLabel(result)];
-  if (result.token_estimate_source === "provider_usage") {
-    metaParts.push("按 provider usage 估算");
-  } else if (result.token_estimate_source) {
-    metaParts.push("按字节估算");
-  }
-  if (result.prompt_cache_key) {
-    metaParts.push(`cache key ${result.prompt_cache_key}`);
-  }
+  const retainedTokens = result?.retained_tokens ?? 0;
+  const freeTokens = effectiveWindow > 0 ? Math.max(0, effectiveWindow - promptTokens) : 0;
+  const barTokens = effectiveWindow > 0 ? effectiveWindow : promptTokens;
+  const headlineTokens = effectiveWindow > 0
+    ? `${formatTokens(promptTokens)} / ${formatTokens(effectiveWindow)}`
+    : formatTokens(promptTokens);
+  const headlinePercent = effectiveWindow > 0 ? formatPercent(promptTokens, effectiveWindow) : null;
+  const runtime = [result?.provider, result?.model].filter(Boolean).join(" · ");
+  const summaryMeta = [
+    contextWindow > 0 && contextWindow !== effectiveWindow ? `模型窗口 ${formatTokens(contextWindow)}` : "",
+    compactThreshold > 0 && compactThreshold !== effectiveWindow ? `压缩线 ${formatTokens(compactThreshold)}` : "",
+    freeTokens > 0 ? `剩 ${formatTokens(freeTokens)}` : "",
+    cacheReadTokens > 0 ? `缓存命中 ${formatTokens(cacheReadTokens)}` : "",
+    retainedTokens > 0 ? `保留 ${formatTokens(retainedTokens)}` : "",
+  ].filter(Boolean);
 
   return (
-    <article className="context-composition-card" aria-label="上下文组成">
+    <article className="context-composition-card" aria-label="上下文">
       <div className="context-composition-card-inner">
         <div className="context-composition-header">
-          <div>
-            <span className="context-composition-eyebrow">
-              <Gauge aria-hidden="true" />
-              /context
-            </span>
-            <h2>上下文组成</h2>
-            <p>{subtitle}</p>
+          <div className="context-composition-title-block">
+            <h2>上下文</h2>
+            {title ? <p>{title}</p> : null}
           </div>
+          {runtime ? <span className="context-composition-runtime">{runtime}</span> : null}
           {onDismiss ? (
             <button
               className="icon-button context-composition-dismiss"
               type="button"
-              aria-label="移除上下文组成"
+              aria-label="移除上下文卡片"
               onClick={() => onDismiss(entry.id)}
             >
               <X className="icon" />
@@ -70,11 +72,21 @@ export function ContextCompositionCard({
 
         {!loading && !error && result?.available ? (
           <>
-            <div className="context-composition-stats">
-              <ContextStat label="请求上下文" value={formatTokenRatio(promptTokens, contextWindow)} detail={formatPercent(promptTokens, contextWindow)} />
-              <ContextStat label="保留历史" value={formatTokens(result.retained_tokens ?? 0)} detail="圆环口径" />
-              <ContextStat label="缓存读取" value={formatTokens(cacheReadTokens)} detail={formatPercent(cacheReadTokens, promptTokens)} />
-              <ContextStat label="动态上下文" value={formatTokens(dynamicCategory?.tokens ?? 0)} detail={dynamicCategory?.request_only ? "只进本次" : "无"} />
+            <div className="context-composition-summary">
+              <div className="context-composition-headline">
+                <strong>{headlineTokens}</strong>
+                <span className="context-composition-headline-unit">当前请求 / 可用预算</span>
+                {headlinePercent ? (
+                  <span className="context-composition-headline-percent">{headlinePercent}</span>
+                ) : null}
+              </div>
+              {summaryMeta.length > 0 ? (
+                <div className="context-composition-summary-meta">
+                  {summaryMeta.map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="context-composition-bar" aria-label="上下文组成条">
@@ -95,12 +107,6 @@ export function ContextCompositionCard({
               ) : null}
             </div>
 
-            <div className="context-composition-meta">
-              {metaParts.map((part) => (
-                <span key={part}>{part}</span>
-              ))}
-            </div>
-
             <div className="context-composition-section">
               <h3>组成</h3>
               <div className="context-category-list">
@@ -108,40 +114,6 @@ export function ContextCompositionCard({
                   <ContextCategoryRow category={category} promptTokens={promptTokens} key={category.id} />
                 ))}
               </div>
-            </div>
-
-            <div className="context-composition-detail-grid">
-              <ContextDetailBlock
-                title="请求形状"
-                rows={[
-                  ["消息", String(result.message_count ?? 0)],
-                  ["隐藏消息", String(result.hidden_messages ?? 0)],
-                  ["工具", String(result.tool_count ?? 0)],
-                  ["stable prefix", String(result.stable_prefix ?? 0)],
-                  ["turn prefix", String(result.turn_prefix ?? 0)],
-                ]}
-              />
-              <ContextDetailBlock
-                title="动态块"
-                rows={recordRows(result.block_kind_bytes, (value) => formatBytes(value))}
-                empty="无动态块"
-              />
-              <ContextDetailBlock
-                title="segment"
-                rows={[
-                  ...recordRows(result.segment_counts?.lifecycle),
-                  ...recordRows(result.segment_counts?.cache_policy),
-                ]}
-                empty="无 request-only segment"
-              />
-              <ContextDetailBlock
-                title="system sections"
-                rows={(result.system_sections ?? []).map((section) => [
-                  section.key,
-                  `${formatTokens(section.tokens ?? 0)} · ${formatBytes(section.bytes)}`,
-                ])}
-                empty="无分段记录"
-              />
             </div>
           </>
         ) : null}
@@ -159,74 +131,18 @@ function ContextCompositionState({ text, tone = "neutral" }: { text: string; ton
   );
 }
 
-function ContextStat({ label, value, detail }: { label: string; value: string; detail: string }): JSX.Element {
-  return (
-    <div className="context-composition-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </div>
-  );
-}
-
 function ContextCategoryRow({ category, promptTokens }: { category: ContextCompositionCategory; promptTokens: number }): JSX.Element {
-  const badges: JSX.Element[] = [];
-  if (category.request_only) {
-    badges.push(<span key="request-only">request-only</span>);
-  }
-  if (category.cache_scope) {
-    badges.push(<span key={category.cache_scope}>{cacheScopeLabel(category.cache_scope)}</span>);
-  }
-  if (category.deferred) {
-    badges.push(<span key="deferred">按需</span>);
-  }
   return (
     <div className={`context-category-row tone-${category.tone ?? "default"}`}>
       <span className="context-category-swatch" aria-hidden="true" />
-      <strong className="context-category-label">{category.label}</strong>
-      <div className="context-category-values">
-        <strong>{formatTokens(category.tokens ?? 0)}</strong>
-        <span>{category.contributes === false ? "未计入" : formatPercent(category.tokens ?? 0, promptTokens)}</span>
-      </div>
-      {badges.length > 0 ? <div className="context-category-badges">{badges}</div> : null}
+      <span className="context-category-label">{category.label}</span>
+      {category.request_only ? <span className="context-category-tag">本次</span> : null}
+      <strong className="context-category-tokens">{formatTokens(category.tokens ?? 0)}</strong>
+      <span className="context-category-percent">
+        {category.contributes === false ? "未计入" : formatPercent(category.tokens ?? 0, promptTokens)}
+      </span>
     </div>
   );
-}
-
-function ContextDetailBlock({
-  title,
-  rows,
-  empty,
-}: {
-  title: string;
-  rows: Array<[string, string]>;
-  empty?: string;
-}): JSX.Element {
-  const visibleRows = rows.filter(([key, value]) => key.trim() !== "" && value.trim() !== "" && value !== "0");
-  return (
-    <div className="context-detail-block">
-      <h3>{title}</h3>
-      {visibleRows.length > 0 ? (
-        visibleRows.map(([key, value]) => (
-          <div className="context-detail-row" key={`${title}-${key}`}>
-            <span>{key}</span>
-            <strong>{value}</strong>
-          </div>
-        ))
-      ) : (
-        <p>{empty ?? "无记录"}</p>
-      )}
-    </div>
-  );
-}
-
-function recordRows(record: Record<string, number> | undefined, formatValue: (value: number) => string = String): Array<[string, string]> {
-  if (!record) {
-    return [];
-  }
-  return Object.entries(record)
-    .sort((left, right) => right[1] - left[1])
-    .map(([key, value]) => [key, formatValue(value)]);
 }
 
 function unavailableMessage(reason?: string): string {
@@ -240,39 +156,11 @@ function unavailableMessage(reason?: string): string {
   }
 }
 
-function runtimeLabel(result: ThreadContextCompositionResult): string {
-  return [result.provider, result.model, result.turn_id ? `turn ${result.turn_id}` : ""].filter(Boolean).join(" · ") || "未知模型";
-}
-
-function cacheScopeLabel(scope: string): string {
-  switch (scope) {
-    case "stable":
-      return "稳定前缀";
-    case "turn":
-      return "本轮前缀";
-    case "volatile":
-      return "尾部";
-    case "surface":
-      return "请求面";
-    case "deferred":
-      return "不常驻";
-    default:
-      return scope;
-  }
-}
-
 function segmentWidth(tokens: number, total: number): number {
   if (tokens <= 0 || total <= 0) {
     return 0;
   }
   return Math.max(1, Math.min(100, (tokens / total) * 100));
-}
-
-function formatTokenRatio(used: number, total: number): string {
-  if (total > 0) {
-    return `${formatTokens(used)} / ${formatTokens(total)}`;
-  }
-  return formatTokens(used);
 }
 
 function formatPercent(value: number, total: number): string {
@@ -286,16 +174,6 @@ function formatTokens(value: number): string {
   return formatCompactNumber(value);
 }
 
-function formatBytes(value: number): string {
-  if (value >= 1024 * 1024) {
-    return `${(value / 1024 / 1024).toFixed(1)} MB`;
-  }
-  if (value >= 1024) {
-    return `${(value / 1024).toFixed(1)} KB`;
-  }
-  return `${Math.max(0, value)} B`;
-}
-
 function formatCompactNumber(value: number): string {
   const safe = Math.max(0, Math.round(value));
   if (safe >= 1_000_000) {
@@ -305,4 +183,8 @@ function formatCompactNumber(value: number): string {
     return `${(safe / 1_000).toFixed(safe >= 100_000 ? 0 : 1)}k`;
   }
   return safe.toLocaleString();
+}
+
+function firstPositive(...values: number[]): number {
+  return values.find((value) => value > 0) ?? 0;
 }
