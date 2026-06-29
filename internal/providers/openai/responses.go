@@ -86,7 +86,7 @@ func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRe
 
 func responsesSSEProviderState(payload responsesRequest, fallbackReason string) *providers.ProviderStateSummary {
 	fallbackReason = strings.TrimSpace(fallbackReason)
-	return &providers.ProviderStateSummary{
+	state := &providers.ProviderStateSummary{
 		Provider:         "openai",
 		Protocol:         "responses_sse",
 		Transport:        "sse",
@@ -98,6 +98,13 @@ func responsesSSEProviderState(payload responsesRequest, fallbackReason string) 
 		DeltaInputItems:  0,
 		ConnectionReused: false,
 	}
+	if fallbackReason != "" {
+		state.Diagnostic = "provider_transport_failure"
+		state.TransportFailurePhase = responsesWebSocketFallbackPhase(fallbackReason)
+		state.FallbackTransport = "sse"
+		state.EventsEmitted = state.TransportFailurePhase == "after_message_stream_start"
+	}
+	return state
 }
 
 func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (responsesRequest, error) {

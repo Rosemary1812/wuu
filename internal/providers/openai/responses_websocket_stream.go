@@ -275,6 +275,10 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			c.responsesWebSocketActivateFallbackLocked(session, "stream_error_after_provider_event")
 			session.mu.Unlock()
 			ch <- providers.StreamEvent{
+				Type:          providers.EventProviderState,
+				ProviderState: responsesWebSocketTransportFailureState(state, "stream_error_after_provider_event"),
+			}
+			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: providers.NewNonRetryableStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err)),
 			}
@@ -437,6 +441,27 @@ func responsesWebSocketProviderState(fullPayload, requestPayload responsesReques
 		FullInputItems:         len(fullPayload.Input),
 		DeltaInputItems:        deltaItems,
 	}
+}
+
+func responsesWebSocketTransportFailureState(state *providers.ProviderStateSummary, reason string) *providers.ProviderStateSummary {
+	if state == nil {
+		return nil
+	}
+	diagnostic := *state
+	diagnostic.Diagnostic = "provider_transport_failure"
+	diagnostic.TransportFailurePhase = responsesWebSocketFallbackPhase(reason)
+	diagnostic.FallbackTransport = "sse"
+	diagnostic.EventsEmitted = diagnostic.TransportFailurePhase == "after_message_stream_start"
+	diagnostic.FallbackActive = true
+	diagnostic.FallbackReason = strings.TrimSpace(reason)
+	return &diagnostic
+}
+
+func responsesWebSocketFallbackPhase(reason string) string {
+	if strings.TrimSpace(reason) == "stream_error_after_provider_event" {
+		return "after_message_stream_start"
+	}
+	return "before_message_stream_start"
 }
 
 func newResponsesWebSocketFallbackError(reason string, err error) *responsesWebSocketFallbackError {

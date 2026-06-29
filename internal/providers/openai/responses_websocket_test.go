@@ -987,6 +987,10 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 	if secondStates[1].Transport != "sse" ||
 		secondStates[1].ReplayMode != "full_request" ||
 		secondStates[1].PreviousResponseIDUsed ||
+		secondStates[1].Diagnostic != "provider_transport_failure" ||
+		secondStates[1].TransportFailurePhase != "before_message_stream_start" ||
+		secondStates[1].FallbackTransport != "sse" ||
+		secondStates[1].EventsEmitted ||
 		!secondStates[1].FallbackActive ||
 		secondStates[1].FallbackReason != "websocket_failed_before_first_event" ||
 		secondStates[1].InputItems != 3 ||
@@ -1099,11 +1103,22 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 	if providers.IsRetryable(streamErr) {
 		t.Fatalf("stream error after provider event must not be retryable: %v", streamErr)
 	}
-	if len(states) != 1 ||
+	if len(states) != 2 ||
 		states[0].Transport != "websocket" ||
 		states[0].ReplayMode != "previous_response_id" ||
 		!states[0].PreviousResponseIDUsed {
 		t.Fatalf("unexpected second provider state: %+v", states)
+	}
+	if states[1].Transport != "websocket" ||
+		states[1].ReplayMode != "previous_response_id" ||
+		!states[1].PreviousResponseIDUsed ||
+		states[1].Diagnostic != "provider_transport_failure" ||
+		states[1].TransportFailurePhase != "after_message_stream_start" ||
+		states[1].FallbackTransport != "sse" ||
+		!states[1].EventsEmitted ||
+		!states[1].FallbackActive ||
+		states[1].FallbackReason != "stream_error_after_provider_event" {
+		t.Fatalf("unexpected second diagnostic provider state: %+v", states)
 	}
 
 	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
@@ -1132,6 +1147,10 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 	if len(thirdStates) != 1 ||
 		thirdStates[0].Transport != "sse" ||
 		thirdStates[0].ReplayMode != "full_request" ||
+		thirdStates[0].Diagnostic != "provider_transport_failure" ||
+		thirdStates[0].TransportFailurePhase != "after_message_stream_start" ||
+		thirdStates[0].FallbackTransport != "sse" ||
+		!thirdStates[0].EventsEmitted ||
 		!thirdStates[0].FallbackActive ||
 		thirdStates[0].FallbackReason != "stream_error_after_provider_event" ||
 		thirdStates[0].PreviousResponseIDUsed ||

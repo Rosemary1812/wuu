@@ -352,6 +352,10 @@ type ProviderStateSummary struct {
 	ReplayMode             string `json:"replay_mode,omitempty"`
 	PreviousResponseIDUsed bool   `json:"previous_response_id_used,omitempty"`
 	ConnectionReused       bool   `json:"connection_reused,omitempty"`
+	Diagnostic             string `json:"diagnostic,omitempty"`
+	TransportFailurePhase  string `json:"transport_failure_phase,omitempty"`
+	FallbackTransport      string `json:"fallback_transport,omitempty"`
+	EventsEmitted          bool   `json:"events_emitted,omitempty"`
 	FallbackActive         bool   `json:"fallback_active,omitempty"`
 	FallbackReason         string `json:"fallback_reason,omitempty"`
 	InputItems             int    `json:"input_items,omitempty"`
