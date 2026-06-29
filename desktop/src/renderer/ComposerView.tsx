@@ -139,6 +139,7 @@ export function Composer({
   onOpenProject,
   onStartNewThread,
   onOpenWorkspaceTool,
+  onOpenContextComposition = () => {},
   onPasteAttachmentFiles,
   onRemoveFile,
   onRemoveImage,
@@ -205,6 +206,7 @@ export function Composer({
   onOpenProject: () => void;
   onStartNewThread: () => void;
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
+  onOpenContextComposition?: () => void;
   onPasteAttachmentFiles: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
@@ -363,6 +365,9 @@ export function Composer({
         break;
       case "no-project":
         onSelectNoProject();
+        break;
+      case "context":
+        onOpenContextComposition();
         break;
       case "model":
         onToggleCodexRuntimeMenu("model");

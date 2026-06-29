@@ -31,35 +31,36 @@ const (
 	// of the most-recently-updated non-terminal goal in the requested thread
 	// scope. The mutation methods are user-owned controls for the active
 	// runtime Goal; full workflow/agent detail stays on the agent tool loop.
-	MethodGoalActiveSummary     = "goal/active-summary"
-	MethodGoalPause             = "goal/pause"
-	MethodGoalResume            = "goal/resume"
-	MethodGoalClear             = "goal/clear"
-	MethodGoalCancel            = "goal/cancel"
-	MethodGoalUpdateText        = "goal/update-text"
-	MethodThreadStart           = "thread/start"
-	MethodThreadResume          = "thread/resume"
-	MethodThreadFork            = "thread/fork"
-	MethodThreadEditMessage     = "thread/edit-message"
-	MethodThreadList            = "thread/list"
-	MethodThreadSearch          = "thread/search"
-	MethodThreadPin             = "thread/pin"
-	MethodThreadArchive         = "thread/archive"
-	MethodThreadRegenerateTitle = "thread/regenerate-title"
-	MethodThreadRename          = "thread/rename"
-	MethodTurnStart             = "turn/start"
-	MethodTurnQueue             = "turn/queue"
-	MethodTurnDequeue           = "turn/dequeue"
-	MethodTurnSteer             = "turn/steer"
-	MethodTurnUnsteer           = "turn/unsteer"
-	MethodTurnInterrupt         = "turn/interrupt"
-	MethodProcessList           = "process/list"
-	MethodProcessStop           = "process/stop"
-	MethodMCPList               = "mcp/list"
-	MethodMCPConnect            = "mcp/connect"
-	MethodMCPDisconnect         = "mcp/disconnect"
-	MethodMCPRefresh            = "mcp/refresh"
-	MethodShutdown              = "shutdown"
+	MethodGoalActiveSummary        = "goal/active-summary"
+	MethodGoalPause                = "goal/pause"
+	MethodGoalResume               = "goal/resume"
+	MethodGoalClear                = "goal/clear"
+	MethodGoalCancel               = "goal/cancel"
+	MethodGoalUpdateText           = "goal/update-text"
+	MethodThreadStart              = "thread/start"
+	MethodThreadResume             = "thread/resume"
+	MethodThreadFork               = "thread/fork"
+	MethodThreadEditMessage        = "thread/edit-message"
+	MethodThreadContextComposition = "thread/context-composition"
+	MethodThreadList               = "thread/list"
+	MethodThreadSearch             = "thread/search"
+	MethodThreadPin                = "thread/pin"
+	MethodThreadArchive            = "thread/archive"
+	MethodThreadRegenerateTitle    = "thread/regenerate-title"
+	MethodThreadRename             = "thread/rename"
+	MethodTurnStart                = "turn/start"
+	MethodTurnQueue                = "turn/queue"
+	MethodTurnDequeue              = "turn/dequeue"
+	MethodTurnSteer                = "turn/steer"
+	MethodTurnUnsteer              = "turn/unsteer"
+	MethodTurnInterrupt            = "turn/interrupt"
+	MethodProcessList              = "process/list"
+	MethodProcessStop              = "process/stop"
+	MethodMCPList                  = "mcp/list"
+	MethodMCPConnect               = "mcp/connect"
+	MethodMCPDisconnect            = "mcp/disconnect"
+	MethodMCPRefresh               = "mcp/refresh"
+	MethodShutdown                 = "shutdown"
 	// MethodSettingsUsage returns the aggregated per-provider/model token
 	// usage snapshot for the desktop settings page. Range filter selects
 	// the time window ("all", "7d", "30d", "90d"); empty defaults to "all".
@@ -615,6 +616,75 @@ type ThreadEditDraft struct {
 type ThreadEditMessageResult struct {
 	Thread Thread          `json:"thread"`
 	Draft  ThreadEditDraft `json:"draft"`
+}
+
+type ThreadContextCompositionParams struct {
+	ThreadID string `json:"thread_id"`
+}
+
+type ThreadContextCompositionResult struct {
+	ThreadID            string                       `json:"thread_id"`
+	Available           bool                         `json:"available"`
+	Reason              string                       `json:"reason,omitempty"`
+	Mode                string                       `json:"mode,omitempty"`
+	TracePath           string                       `json:"trace_path,omitempty"`
+	TurnID              string                       `json:"turn_id,omitempty"`
+	StepIndex           int                          `json:"step_index,omitempty"`
+	Provider            string                       `json:"provider,omitempty"`
+	Model               string                       `json:"model,omitempty"`
+	ContextWindowTokens int                          `json:"context_window_tokens,omitempty"`
+	PromptTokens        int                          `json:"prompt_tokens,omitempty"`
+	TotalContextTokens  int                          `json:"total_context_tokens,omitempty"`
+	RetainedTokens      int                          `json:"retained_tokens,omitempty"`
+	InputTokens         int                          `json:"input_tokens,omitempty"`
+	OutputTokens        int                          `json:"output_tokens,omitempty"`
+	CacheCreationTokens int                          `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int                          `json:"cache_read_tokens,omitempty"`
+	TokenEstimateSource string                       `json:"token_estimate_source,omitempty"`
+	MessageCount        int                          `json:"message_count,omitempty"`
+	SystemMessages      int                          `json:"system_messages,omitempty"`
+	HiddenMessages      int                          `json:"hidden_messages,omitempty"`
+	ToolCount           int                          `json:"tool_count,omitempty"`
+	StablePrefix        int                          `json:"stable_prefix,omitempty"`
+	TurnPrefix          int                          `json:"turn_prefix,omitempty"`
+	DynamicBytes        int                          `json:"dynamic_context_bytes,omitempty"`
+	SystemHash          string                       `json:"system_hash,omitempty"`
+	StablePrefixHash    string                       `json:"stable_prefix_hash,omitempty"`
+	TurnPrefixHash      string                       `json:"turn_prefix_hash,omitempty"`
+	ToolSurfaceHash     string                       `json:"tool_surface_hash,omitempty"`
+	PromptCacheKey      string                       `json:"prompt_cache_key,omitempty"`
+	Categories          []ContextCompositionCategory `json:"categories,omitempty"`
+	SystemSections      []ContextCompositionSection  `json:"system_sections,omitempty"`
+	BlockKindBytes      map[string]int               `json:"block_kind_bytes,omitempty"`
+	SegmentCounts       ContextSegmentCountSummary   `json:"segment_counts,omitempty"`
+}
+
+type ContextCompositionCategory struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Tone        string `json:"tone,omitempty"`
+	Bytes       int    `json:"bytes,omitempty"`
+	Tokens      int    `json:"tokens,omitempty"`
+	Contributes bool   `json:"contributes"`
+	Durable     bool   `json:"durable,omitempty"`
+	CacheScope  string `json:"cache_scope,omitempty"`
+	RequestOnly bool   `json:"request_only,omitempty"`
+	Deferred    bool   `json:"deferred,omitempty"`
+}
+
+type ContextCompositionSection struct {
+	Key    string `json:"key"`
+	Static bool   `json:"static"`
+	Bytes  int    `json:"bytes"`
+	Tokens int    `json:"tokens,omitempty"`
+	Hash   string `json:"hash,omitempty"`
+}
+
+type ContextSegmentCountSummary struct {
+	Lifecycle   map[string]int `json:"lifecycle,omitempty"`
+	Placement   map[string]int `json:"placement,omitempty"`
+	CachePolicy map[string]int `json:"cache_policy,omitempty"`
 }
 
 type ThreadListResult struct {

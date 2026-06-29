@@ -114,6 +114,19 @@ describe("composer slash commands", () => {
     expect(filterComposerSlashCommands(commands, "internal-only")).toEqual([]);
   });
 
+  it("adds /context as a local action instead of a model prompt", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false
+    });
+
+    const context = filterComposerSlashCommands(commands, "context")[0];
+
+    expect(context?.kind).toBe("action");
+    expect(context?.action).toBe("context");
+  });
+
   it("keeps task slash commands as command text", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },

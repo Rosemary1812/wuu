@@ -53,6 +53,7 @@ import type {
   RuntimeContext,
   ServerEvent,
   Thread,
+  ThreadContextCompositionResult,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
@@ -197,6 +198,7 @@ import {
   useAppLayoutState,
 } from "./AppLayoutState";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
+import { ContextCompositionDialog } from "./ContextCompositionDialog";
 import { DesignTokensPanel } from "./DesignTokensPanel";
 import { useAppDebugState } from "./AppDebugState";
 import {
@@ -271,6 +273,13 @@ const CONVERSATION_GRID_COLUMNS = 12;
 // we collapse the tail into a single bar.
 const QUERY_HISTORY_RAIL_MAX_BARS = 20;
 type EnvironmentDialog = "commit" | "pull-request" | null;
+type ContextCompositionDialogState = {
+  threadID: string;
+  title?: string;
+  loading: boolean;
+  result?: ThreadContextCompositionResult;
+  error?: string;
+};
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
 
 type PendingViewSwitch = {
@@ -456,6 +465,8 @@ export function App(): JSX.Element {
   >(undefined);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
+  const [contextCompositionDialog, setContextCompositionDialog] =
+    useState<ContextCompositionDialogState | undefined>(undefined);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
     [],
   );
@@ -1869,6 +1880,49 @@ export function App(): JSX.Element {
     }
   }
 
+  function openContextComposition(): void {
+    if (!activeThread) {
+      setState((current) => ({
+        ...current,
+        status: "没有当前对话",
+      }));
+      return;
+    }
+    const threadID = activeThread.id;
+    const title = activeThread.preview || activeTitle;
+    setContextCompositionDialog({
+      threadID,
+      title,
+      loading: true,
+    });
+    void (async () => {
+      try {
+        const result = await window.wuu.getThreadContextComposition(threadID);
+        setContextCompositionDialog((current) =>
+          current?.threadID === threadID
+            ? {
+                threadID,
+                title,
+                loading: false,
+                result,
+              }
+            : current,
+        );
+      } catch (error) {
+        setContextCompositionDialog((current) =>
+          current?.threadID === threadID
+            ? {
+                threadID,
+                title,
+                loading: false,
+                error: desktopApiErrorMessage(error, "无法读取上下文组成"),
+              }
+            : current,
+        );
+      }
+    })();
+  }
+
   function renderComposer(variant: ComposerVariant): JSX.Element {
     const tokenSpeed = activeTurnTokenSpeedSnapshot(
       state,
@@ -1964,6 +2018,7 @@ export function App(): JSX.Element {
         onOpenProject={() => void chooseProjectFolder()}
         onStartNewThread={() => void startNewThread()}
         onOpenWorkspaceTool={openWorkspaceTool}
+        onOpenContextComposition={openContextComposition}
         onPasteAttachmentFiles={(files) => void attachComposerAttachmentFiles(files)}
         onRemoveFile={removeComposerFile}
         onRemoveImage={removeComposerImage}
@@ -5474,6 +5529,15 @@ export function App(): JSX.Element {
           disabledReason={pullRequestDisabledReason}
           onCancel={() => setEnvironmentDialog(null)}
           onCreate={createEnvironmentPullRequest}
+        />
+      ) : null}
+      {contextCompositionDialog ? (
+        <ContextCompositionDialog
+          title={contextCompositionDialog.title}
+          loading={contextCompositionDialog.loading}
+          result={contextCompositionDialog.result}
+          error={contextCompositionDialog.error}
+          onClose={() => setContextCompositionDialog(undefined)}
         />
       ) : null}
       {debugControlsVisible ? <DesignTokensPanel /> : null}

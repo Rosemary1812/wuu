@@ -9,6 +9,7 @@ export type ComposerSlashCommandAction =
   | "open-terminal"
   | "open-project"
   | "no-project"
+  | "context"
   | "model"
   | "fast"
   | "effort"
@@ -157,6 +158,18 @@ export function buildComposerSlashCommands({
       action: "open-skills",
       aliases: ["skill"],
       keywords: ["skills", "skill", "技能", "能力"],
+      disabledReason: needsRuntime
+    },
+    {
+      id: "context",
+      name: "context",
+      title: "查看上下文组成",
+      description: "打开最近一次模型请求的上下文组成视图",
+      tag: "视图",
+      kind: "action",
+      action: "context",
+      aliases: ["ctx"],
+      keywords: ["context", "tokens", "cache", "上下文", "缓存"],
       disabledReason: needsRuntime
     },
     {

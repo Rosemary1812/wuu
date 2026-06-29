@@ -32,6 +32,7 @@ import type {
   SettingsUsageResponse,
   TerminalSessionStartParams,
   Thread,
+  ThreadContextCompositionResult,
   ThreadEditMessageResult,
   Turn,
 } from "../shared/protocol";
@@ -390,6 +391,11 @@ app.whenReady().then(() => {
         turn_id: turnId,
         item_id: itemId,
       }),
+  );
+  ipcMain.handle("wuu:thread-context-composition", (_event, threadId: string) =>
+    appServerClientPool.request<ThreadContextCompositionResult>("thread/context-composition", {
+      thread_id: threadId,
+    }),
   );
   ipcMain.handle("wuu:thread-list", () =>
     appServerClientPool.request<{ threads: Thread[] }>("thread/list"),

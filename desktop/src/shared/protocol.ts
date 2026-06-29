@@ -639,6 +639,71 @@ export type ThreadEditMessageResult = {
   draft: ThreadEditDraft;
 };
 
+export type ThreadContextCompositionResult = {
+  thread_id: string;
+  available: boolean;
+  reason?: string;
+  mode?: string;
+  trace_path?: string;
+  turn_id?: string;
+  step_index?: number;
+  provider?: string;
+  model?: string;
+  context_window_tokens?: number;
+  prompt_tokens?: number;
+  total_context_tokens?: number;
+  retained_tokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
+  token_estimate_source?: string;
+  message_count?: number;
+  system_messages?: number;
+  hidden_messages?: number;
+  tool_count?: number;
+  stable_prefix?: number;
+  turn_prefix?: number;
+  dynamic_context_bytes?: number;
+  system_hash?: string;
+  stable_prefix_hash?: string;
+  turn_prefix_hash?: string;
+  tool_surface_hash?: string;
+  prompt_cache_key?: string;
+  categories?: ContextCompositionCategory[];
+  system_sections?: ContextCompositionSection[];
+  block_kind_bytes?: Record<string, number>;
+  segment_counts?: ContextSegmentCountSummary;
+};
+
+export type ContextCompositionCategory = {
+  id: string;
+  label: string;
+  description?: string;
+  tone?: string;
+  bytes?: number;
+  tokens?: number;
+  contributes: boolean;
+  durable?: boolean;
+  cache_scope?: string;
+  request_only?: boolean;
+  deferred?: boolean;
+};
+
+export type ContextCompositionSection = {
+  key: string;
+  static: boolean;
+  bytes: number;
+  tokens?: number;
+  hash?: string;
+};
+
+export type ContextSegmentCountSummary = {
+  lifecycle?: Record<string, number>;
+  placement?: Record<string, number>;
+  cache_policy?: Record<string, number>;
+};
+
 export type Turn = {
   id: string;
   items: ThreadItem[];
@@ -1004,6 +1069,7 @@ export type WuuDesktopApi = {
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   forkThread: (threadId: string, turnId?: string, itemId?: string) => Promise<{ thread: Thread }>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
+  getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
   listThreads: () => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;

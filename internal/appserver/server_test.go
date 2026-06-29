@@ -1946,6 +1946,100 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 }
 
+func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{
+		Content: "done",
+		Usage: &providers.TokenUsage{
+			InputTokens:         10,
+			OutputTokens:        3,
+			CacheCreationTokens: 6,
+			CacheReadTokens:     4,
+		},
+	}}
+	rt := newTestRuntime(t, client)
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("create toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "start",
+		"method": MethodThreadStart,
+		"params": ThreadStartParams{},
+	})
+	if err != nil {
+		t.Fatalf("marshal start request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	start := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "start")["result"])
+	threadID := start.Thread.ID
+
+	raw, err = json.Marshal(map[string]any{
+		"id":     "turn",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "hello"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	_ = waitForMethod(t, out, NotificationTurnCompleted)
+
+	raw, err = json.Marshal(map[string]any{
+		"id":     "context",
+		"method": MethodThreadContextComposition,
+		"params": ThreadContextCompositionParams{ThreadID: threadID},
+	})
+	if err != nil {
+		t.Fatalf("marshal context request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/context-composition: %v", err)
+	}
+	result := remarshal[ThreadContextCompositionResult](t, responseByID(t, parseOutput(t, out.String()), "context")["result"])
+	if !result.Available || result.Mode != contextCompositionModeLatestRequest || result.ThreadID != threadID {
+		t.Fatalf("unexpected availability: %+v", result)
+	}
+	if result.TurnID == "" || result.TracePath == "" {
+		t.Fatalf("expected latest turn and trace path: %+v", result)
+	}
+	if result.PromptTokens != 14 || result.TotalContextTokens != 17 || result.RetainedTokens != 17 {
+		t.Fatalf("unexpected token totals: %+v", result)
+	}
+	if result.InputTokens != 10 || result.OutputTokens != 3 || result.CacheCreationTokens != 6 || result.CacheReadTokens != 4 {
+		t.Fatalf("unexpected provider usage: %+v", result)
+	}
+	if result.TokenEstimateSource != "provider_usage" {
+		t.Fatalf("expected provider usage allocation, got %q", result.TokenEstimateSource)
+	}
+	if result.MessageCount == 0 || result.SystemMessages == 0 || result.ToolCount == 0 {
+		t.Fatalf("expected request shape counts: %+v", result)
+	}
+	if result.SystemHash == "" || result.StablePrefixHash == "" || result.TurnPrefixHash == "" || result.ToolSurfaceHash == "" || result.PromptCacheKey == "" {
+		t.Fatalf("expected cache shape hashes: %+v", result)
+	}
+	categories := map[string]ContextCompositionCategory{}
+	for _, category := range result.Categories {
+		categories[category.ID] = category
+	}
+	for _, id := range []string{"system", "tool_schema"} {
+		category, ok := categories[id]
+		if !ok || !category.Contributes || category.Tokens <= 0 || category.Bytes <= 0 {
+			t.Fatalf("expected contributing %s category, got %+v", id, category)
+		}
+	}
+	if len(result.SystemSections) == 0 {
+		t.Fatalf("expected system sections: %+v", result)
+	}
+}
+
 func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	requests := make(chan map[string]any, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
