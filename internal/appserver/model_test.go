@@ -209,7 +209,7 @@ func TestTurnsFromHistorySkipsHiddenMessages(t *testing.T) {
 	}
 }
 
-func TestTurnsFromHistoryHidesInceptionArtifacts(t *testing.T) {
+func TestTurnsFromHistorySurfacesInceptionArtifact(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{
 		{Role: "user", Content: "start"},
@@ -231,18 +231,21 @@ func TestTurnsFromHistoryHidesInceptionArtifacts(t *testing.T) {
 		t.Fatalf("expected one visible turn, got %+v", turns)
 	}
 	items := turns[0].Items
-	if len(items) != 2 {
-		t.Fatalf("expected only user and assistant items, got %+v", items)
+	if len(items) != 3 {
+		t.Fatalf("expected user, inception tool call, and assistant items, got %+v", items)
 	}
 	if items[0].Type != ThreadItemUserMessage || items[0].Text != "start" {
 		t.Fatalf("expected visible user item, got %+v", items[0])
 	}
-	if items[1].Type != ThreadItemAgentMessage || items[1].Text != "done" {
-		t.Fatalf("expected visible assistant item, got %+v", items[1])
+	if items[1].Name != compact.InceptionToolName {
+		t.Fatalf("expected inception tool call as second item, got %+v", items[1])
+	}
+	if items[2].Type != ThreadItemAgentMessage || items[2].Text != "done" {
+		t.Fatalf("expected visible assistant item, got %+v", items[2])
 	}
 }
 
-func TestThreadStateHidesLiveInceptionEvents(t *testing.T) {
+func TestThreadStateSurfacesLiveInceptionEvents(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
 	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "start"}, now)
@@ -252,9 +255,7 @@ func TestThreadStateHidesLiveInceptionEvents(t *testing.T) {
 		{Type: providers.EventToolUseDelta, Content: `{"anchor_id":0`},
 		{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call_inception", Name: compact.InceptionToolName}, ToolResult: `{"action":"inception"}`},
 	} {
-		if out := th.applyStreamEventLocked("turn", ev, now); len(out) != 0 {
-			t.Fatalf("internal event should not emit notifications: %#v", out)
-		}
+		th.applyStreamEventLocked("turn", ev, now)
 	}
 	th.applyStreamEventLocked("turn", providers.StreamEvent{
 		Type:     providers.EventToolUseStart,
@@ -262,11 +263,14 @@ func TestThreadStateHidesLiveInceptionEvents(t *testing.T) {
 	}, now)
 
 	turn := th.ensureTurnLocked("turn", now)
-	if len(turn.Items) != 2 {
-		t.Fatalf("expected user plus read_file only, got %+v", turn.Items)
+	if len(turn.Items) != 3 {
+		t.Fatalf("expected user, inception, and read_file, got %+v", turn.Items)
 	}
-	if turn.Items[1].Name != "read_file" || turn.Items[1].Arguments != `{"path":"README.md"}` {
-		t.Fatalf("inception delta leaked into visible tool item: %+v", turn.Items[1])
+	if turn.Items[1].Name != compact.InceptionToolName {
+		t.Fatalf("expected inception tool call as second item, got %+v", turn.Items[1])
+	}
+	if turn.Items[2].Name != "read_file" || turn.Items[2].Arguments != `{"path":"README.md"}` {
+		t.Fatalf("expected read_file as third item, got %+v", turn.Items[2])
 	}
 }
 
