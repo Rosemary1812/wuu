@@ -227,6 +227,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:
 		return s.handleTurnQueue(req)
+	case MethodTurnUpdateQueued:
+		return s.handleTurnUpdateQueued(req)
 	case MethodTurnDequeue:
 		return s.handleTurnDequeue(req)
 	case MethodTurnSteer:

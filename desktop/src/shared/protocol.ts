@@ -1110,6 +1110,13 @@ export type WuuDesktopApi = {
     clientId?: string,
     files?: InputFile[],
   ) => Promise<{ queued: QueuedTurn }>;
+  updateQueuedTurn: (
+    threadId: string,
+    queueId: string,
+    prompt: string,
+    images?: InputImage[],
+    files?: InputFile[],
+  ) => Promise<{ ok: boolean; queued: QueuedTurn }>;
   dequeueTurn: (threadId: string, queueId: string) => Promise<{ ok: boolean }>;
   steerTurn: (
     threadId: string,

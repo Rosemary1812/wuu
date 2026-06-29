@@ -156,6 +156,54 @@ func (s *Server) handleTurnQueue(req Request) error {
 	return nil
 }
 
+func (s *Server) handleTurnUpdateQueued(req Request) error {
+	var params TurnUpdateQueuedParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	params.ThreadID = strings.TrimSpace(params.ThreadID)
+	params.QueueID = strings.TrimSpace(params.QueueID)
+	params.Prompt = strings.TrimSpace(params.Prompt)
+	if params.ThreadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if params.QueueID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("queue_id is required"))
+	}
+	images, err := normalizeTurnStartImages(params.Images)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	files, err := normalizeTurnStartFiles(params.Files)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
+	}
+	th := s.thread(params.ThreadID)
+	if th == nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	}
+	th.mu.Lock()
+	readOnly := th.ReadOnly
+	th.mu.Unlock()
+	if readOnly {
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+
+	msg := userMessageFromPrompt(params.Prompt, images, files)
+	updated, ok := s.replaceQueuedUserTurn(params.ThreadID, params.QueueID, msg)
+	result := TurnUpdateQueuedResult{OK: ok}
+	if ok {
+		result.Queued = queuedTurnSummary(params.ThreadID, updated)
+	}
+	if err := s.writeResponse(req.ID, result, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Server) handleTurnDequeue(req Request) error {
 	var params TurnDequeueParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -1032,6 +1080,33 @@ func (s *Server) removeQueuedUserTurn(threadID, queueID string) bool {
 		s.pendingQueuedTurns[threadID] = next
 	}
 	return removed
+}
+
+func (s *Server) replaceQueuedUserTurn(threadID, queueID string, msg providers.ChatMessage) (queuedTurn, bool) {
+	threadID = strings.TrimSpace(threadID)
+	queueID = strings.TrimSpace(queueID)
+	if threadID == "" || queueID == "" || !chatMessageHasUserPayload(msg) {
+		return queuedTurn{}, false
+	}
+	if strings.TrimSpace(msg.Role) == "" {
+		msg.Role = "user"
+	}
+	msg.ClientID = queueID
+	msg.Steered = false
+
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	pending := s.pendingQueuedTurns[threadID]
+	for index, entry := range pending {
+		if entry.id != queueID {
+			continue
+		}
+		updated := queuedTurn{id: queueID, msg: msg}
+		pending[index] = updated
+		s.pendingQueuedTurns[threadID] = pending
+		return updated, true
+	}
+	return queuedTurn{}, false
 }
 
 func (s *Server) kickQueuedTurnDrain(threadID string) {

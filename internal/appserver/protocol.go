@@ -51,6 +51,7 @@ const (
 	MethodThreadRename             = "thread/rename"
 	MethodTurnStart                = "turn/start"
 	MethodTurnQueue                = "turn/queue"
+	MethodTurnUpdateQueued         = "turn/update-queued"
 	MethodTurnDequeue              = "turn/dequeue"
 	MethodTurnSteer                = "turn/steer"
 	MethodTurnUnsteer              = "turn/unsteer"
@@ -834,6 +835,19 @@ type QueuedTurn struct {
 
 type TurnQueueResult struct {
 	Queued QueuedTurn `json:"queued"`
+}
+
+type TurnUpdateQueuedParams struct {
+	ThreadID string           `json:"thread_id"`
+	QueueID  string           `json:"queue_id"`
+	Prompt   string           `json:"prompt"`
+	Images   []TurnStartImage `json:"images,omitempty"`
+	Files    []TurnStartFile  `json:"files,omitempty"`
+}
+
+type TurnUpdateQueuedResult struct {
+	OK     bool       `json:"ok"`
+	Queued QueuedTurn `json:"queued,omitempty"`
 }
 
 type TurnDequeueParams struct {

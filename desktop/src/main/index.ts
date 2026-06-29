@@ -496,6 +496,24 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle(
+    "wuu:turn-update-queued",
+    (
+      _event,
+      threadId: string,
+      queueId: string,
+      prompt: string,
+      images?: InputImage[],
+      files?: InputFile[],
+    ) =>
+      appServerClientPool.request("turn/update-queued", {
+        thread_id: threadId,
+        queue_id: queueId,
+        prompt,
+        images: images ?? [],
+        files: files ?? [],
+      }),
+  );
+  ipcMain.handle(
     "wuu:turn-dequeue",
     (_event, threadId: string, queueId: string) =>
       appServerClientPool.request<{ ok: boolean }>("turn/dequeue", {

@@ -342,6 +342,11 @@ type HistoryMessageEditState = {
   submitting: boolean;
 };
 
+type QueuedMessageEditTarget = {
+  threadID: string;
+  queueID: string;
+};
+
 function storedProjectIDSet(key: string): Set<string> {
   try {
     const stored = window.localStorage.getItem(key);
@@ -452,6 +457,8 @@ export function App(): JSX.Element {
   >(initialSplitComposerDrafts);
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
+  const [, setQueuedMessageEditTarget] =
+    useState<QueuedMessageEditTarget | undefined>(undefined);
   const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
     useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -625,6 +632,8 @@ export function App(): JSX.Element {
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
+  const queuedMessageEditTargetRef =
+    useRef<QueuedMessageEditTarget | undefined>(undefined);
   const pendingComposerMessagesByThreadRef =
     useRef<PendingComposerMessagesByThread>({});
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
@@ -1969,6 +1978,13 @@ export function App(): JSX.Element {
     setPendingComposerMessagesByThread(messagesByThread);
   }
 
+  function setQueuedMessageEditTargetNow(
+    target: QueuedMessageEditTarget | undefined,
+  ): void {
+    queuedMessageEditTargetRef.current = target;
+    setQueuedMessageEditTarget(target);
+  }
+
   function updateThreadPendingComposerMessages(
     threadID: string,
     update: (
@@ -2063,6 +2079,9 @@ export function App(): JSX.Element {
     );
     if (!target) {
       return false;
+    }
+    if (queuedMessageEditTargetRef.current?.queueID === id) {
+      setQueuedMessageEditTargetNow(undefined);
     }
     updateThreadPendingComposerMessages(target.threadID, (previous) => ({
       ...previous,
@@ -2179,9 +2198,15 @@ export function App(): JSX.Element {
     if (!target || !canRestorePendingComposerMessage()) {
       return;
     }
-    if (await removeQueuedMessage(id)) {
-      restorePendingComposerMessage(target.message);
-    }
+    restorePendingComposerMessage(target.message);
+    setQueuedMessageEditTargetNow({
+      threadID: target.threadID,
+      queueID: target.message.id,
+    });
+    setState((current) => ({
+      ...current,
+      status: `正在编辑第 ${target.index + 1} 条排队消息，发送后会保存到原位置`,
+    }));
   }
 
   async function editGuideMessage(id: string): Promise<void> {
@@ -2194,6 +2219,7 @@ export function App(): JSX.Element {
     if (!target || !canRestorePendingComposerMessage()) {
       return;
     }
+    setQueuedMessageEditTargetNow(undefined);
     if (await removeGuideMessage(id)) {
       restorePendingComposerMessage(target.message);
     }
@@ -4740,6 +4766,11 @@ export function App(): JSX.Element {
     if (!message || !currentState.activeContext || !currentState.initialized) {
       return;
     }
+    const queuedEditTarget = queuedMessageEditTargetRef.current;
+    if (queuedEditTarget) {
+      await updateQueuedComposerMessage(message, queuedEditTarget);
+      return;
+    }
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
@@ -4753,6 +4784,72 @@ export function App(): JSX.Element {
       return;
     }
     await sendComposerMessage(message, true);
+  }
+
+  async function updateQueuedComposerMessage(
+    message: QueuedComposerMessage,
+    target: QueuedMessageEditTarget,
+  ): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const targetThread = threadForTab(currentState, target.threadID);
+    const text = message.text.trim();
+    const imageCount = message.images.length;
+    const files = inputFilesFromComposer(message.files);
+    if (
+      (!text && imageCount === 0 && files.length === 0) ||
+      !targetThread ||
+      targetThread.read_only ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      viewSwitchPending
+    ) {
+      return false;
+    }
+    try {
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
+      const result = await window.wuu.updateQueuedTurn(
+        target.threadID,
+        target.queueID,
+        text,
+        images,
+        files,
+      );
+      if (!result.ok) {
+        setQueuedMessageEditTargetNow(undefined);
+        setState((current) => ({
+          ...current,
+          status: "排队消息已开始处理，无法保存编辑",
+        }));
+        return false;
+      }
+      const updatedMessage: QueuedComposerMessage = {
+        ...message,
+        id: result.queued.id || target.queueID,
+        images: encodedImages,
+      };
+      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+        ...previous,
+        queued: previous.queued.map((queued) =>
+          queued.id === target.queueID ? updatedMessage : queued,
+        ),
+      }));
+      setQueuedMessageEditTargetNow(undefined);
+      setPrompt("");
+      setComposerImages([]);
+      setComposerFiles([]);
+      setState((current) => ({
+        ...current,
+        status: "已更新排队消息",
+      }));
+      return true;
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "保存排队编辑失败",
+      }));
+      return false;
+    }
   }
 
   async function queueComposerMessage(
@@ -4774,6 +4871,8 @@ export function App(): JSX.Element {
       return false;
     }
     try {
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
       const result = await window.wuu.queueTurn(
         targetThread.id,
         text,
@@ -4784,6 +4883,7 @@ export function App(): JSX.Element {
       enqueueComposerMessage(targetThread.id, {
         ...message,
         id: result.queued.id || message.id,
+        images: encodedImages,
       });
       return true;
     } catch (error) {
@@ -4871,8 +4971,6 @@ export function App(): JSX.Element {
         allowThreadAutoActivation: true,
         sessionTabs:
           targetPane === "primary"
-      const encodedImages = await awaitComposerImages(message.images);
-      const images = inputImagesFromComposer(encodedImages);
             ? bindActiveSessionTabToThread(
                 current.sessionTabs,
                 current.activeSessionTabID,
@@ -4883,7 +4981,6 @@ export function App(): JSX.Element {
         activeSessionTabID:
           targetPane === "primary"
             ? threadSessionTabID(thread.id)
-        images: encodedImages,
             : current.activeSessionTabID,
         threads: upsertThread(current.threads, thread),
       }));
@@ -4907,6 +5004,8 @@ export function App(): JSX.Element {
           (currentThread) => upsertTurn(currentThread, optimisticTurn),
         ),
       );
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
       const result = await window.wuu.startTurn(thread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
@@ -5004,8 +5103,6 @@ export function App(): JSX.Element {
         }));
         setState((current) => ({
           ...current,
-      const encodedImages = await awaitComposerImages(message.images);
-      const images = inputImagesFromComposer(encodedImages);
           activePane: pane,
         }));
       }
@@ -5089,6 +5186,8 @@ export function App(): JSX.Element {
           (thread) => upsertTurn(thread, optimisticTurn),
         ),
       );
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
       const result = await window.wuu.startTurn(targetThread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
@@ -5186,8 +5285,6 @@ export function App(): JSX.Element {
       };
       setState((current) => ({
         ...current,
-      const encodedImages = await awaitComposerImages(message.images);
-      const images = inputImagesFromComposer(encodedImages);
         running: true,
         status: "正在发送请求",
       }));
@@ -5213,6 +5310,8 @@ export function App(): JSX.Element {
           (thread) => upsertTurn(thread, optimisticTurn),
         ),
       );
+      const encodedImages = await awaitComposerImages(message.images);
+      const images = inputImagesFromComposer(encodedImages);
       const result = await window.wuu.startTurn(targetThread.id, text, images, files);
       setState((current) =>
         updateThreadByID(
@@ -5310,8 +5409,6 @@ export function App(): JSX.Element {
     const currentProvider = state.initialized?.providers?.find(
       (item) => item.name === nextProvider,
     );
-      const encodedImages = await awaitComposerImages(message.images);
-      const images = inputImagesFromComposer(encodedImages);
     const connectionChanged =
       Boolean(nextConnection?.create_provider) ||
       Boolean(nextConnection?.api_key) ||

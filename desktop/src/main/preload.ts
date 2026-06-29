@@ -104,6 +104,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files),
   queueTurn: (threadId: string, prompt: string, images, clientId, files) =>
     ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId, files),
+  updateQueuedTurn: (threadId: string, queueId: string, prompt: string, images, files) =>
+    ipcRenderer.invoke("wuu:turn-update-queued", threadId, queueId, prompt, images, files),
   dequeueTurn: (threadId: string, queueId: string) =>
     ipcRenderer.invoke("wuu:turn-dequeue", threadId, queueId),
   steerTurn: (threadId: string, expectedTurnId: string, prompt: string, images, clientId, files) =>
