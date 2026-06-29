@@ -854,11 +854,13 @@
 }
 
 .context-composition-card .context-composition-bar {
-  /* Match the environment.css base height (12px) so the card bar and any
-   * non-card bar render the same. The 12px is the minimum at which the
-   * diagonal stripe pattern in the free segment is visibly striped
-   * rather than a flat tint — going thinner turns it into a wash. */
-  height: 12px;
+  /* Match the environment.css base height (14px) so the card bar and any
+   * non-card bar render the same. 14px is the sweet spot — thick enough
+   * that the free segment's solid neutral band reads as a clearly
+   * different "available" state from the colored used segments, thin
+   * enough that the bar still feels like a quiet divider rather than a
+   * chunky gauge competing with the headline above. */
+  height: 14px;
 }
 
 .context-composition-card .context-composition-section {

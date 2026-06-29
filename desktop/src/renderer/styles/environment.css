@@ -1254,16 +1254,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The bar carries a hairline border again — without one, the track (a soft
- * surface-2 on a soft surface-1 card) loses its edge and the used/free
- * boundary inside it reads as mush. A 12px height gives the diagonal
- * stripe pattern enough room to actually look striped; 10px collapsed
- * the pattern into a flat tint. The card-specific override in turns.css
- * keeps this same height for the context card. */
+/* The bar carries a hairline border and a 14px height — a thicker gauge
+ * than the original 18px but tall enough that the solid-color free
+ * segment (see below) reads as a clear "available capacity" band rather
+ * than a thin tint that disappears at arm's length. The border + radius
+ * keep the track defined against the card's surface-1 background even
+ * when the request only fills a small fraction of the window. The
+ * card-specific override in turns.css keeps this same height for the
+ * context card. */
 .context-composition-bar {
   display: flex;
   width: 100%;
-  height: 12px;
+  height: 14px;
   overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-pill);
@@ -1311,19 +1313,16 @@
 }
 
 .context-composition-segment.free {
-  /* The diagonal stripe contrast is the only thing telling the user "this
-   * part of the bar is still available, not used". 0.06 vs 0.02 (4-point
-   * delta) was too subtle to read on the surface-2 track — the pattern
-   * collapsed into a flat tint and the used/free boundary disappeared.
-   * 0.14 vs 0.04 (10-point delta) keeps the same neutral feel but the
-   * stripes are visibly diagonal at 12px bar height. */
-  background: repeating-linear-gradient(
-    135deg,
-    rgba(31, 35, 40, 0.14) 0,
-    rgba(31, 35, 40, 0.14) 6px,
-    rgba(31, 35, 40, 0.04) 6px,
-    rgba(31, 35, 40, 0.04) 12px
-  );
+  /* The free portion is a solid neutral wash on the surface-2 track, not
+   * diagonal stripes. Stripes at any contrast we tested read as a tint
+   * rather than a distinct "this is the available capacity" band — the
+   * user kept seeing the bar as a uniform light gray with a small
+   * colored sliver, which is the opposite of what we want them to see.
+   * 0.09 dark wash is a clear step darker than the surface-2 track
+   * (visibly so at 14px bar height) but lighter than any used-category
+   * color, so the bar's three states read at a glance: colored = used,
+   * neutral wash = free, surface-2 = the very edge of the track. */
+  background: rgba(31, 35, 40, 0.09);
 }
 
 .context-composition-section {
