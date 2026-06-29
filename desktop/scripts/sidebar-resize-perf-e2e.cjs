@@ -132,12 +132,15 @@ async function run() {
   const resizingSamples = probe.filter((sample) => sample.resizing);
   const minWidth = Math.min(...probe.map((sample) => sample.width));
   const maxWidth = Math.max(...probe.map((sample) => sample.width));
+  const finalSample = probe[probe.length - 1];
   const summary = {
     samples: probe.length,
     resizingSamples: resizingSamples.length,
     maxFrameMs: Math.round(maxFrameMs),
     minWidth,
     maxWidth,
+    finalWidth: finalSample?.width,
+    finalOpenWidth: finalSample?.openWidth,
     disableStorage,
     disableBackdrop,
     disableGpu,
@@ -146,6 +149,10 @@ async function run() {
   console.log(JSON.stringify(summary, null, 2));
   assert.ok(resizingSamples.length > 0, "Sidebar resize marker should be set while dragging.");
   assert.ok(maxWidth - minWidth >= 90, `Sidebar drag should change width. Summary=${JSON.stringify(summary)}`);
+  assert.ok(
+    Math.abs((finalSample?.width ?? 0) - (finalSample?.openWidth ?? 0)) <= 1,
+    `Sidebar content width should sync after drag ends. Summary=${JSON.stringify(summary)}`
+  );
 
   win.close();
   app.quit();

@@ -629,12 +629,13 @@ function AgentMessageContent({
   }, [pendingCompanionReasoning]);
 
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
+  const canReleaseBufferedStream = !isLive && typeof item.text === "string" && item.text.length > 0;
 
   return (
     <StreamingMarkdown
       streamKey={streamKeyValue}
       initialText={
-        hasBufferedStream
+        isLive && hasBufferedStream
           ? streamTextStore.seedValue(streamKeyValue)
           : item.text
       }
@@ -648,6 +649,11 @@ function AgentMessageContent({
       }
       onFrame={onStreamFrame}
       onOpenFile={onOpenFile}
+      onSettled={
+        canReleaseBufferedStream
+          ? () => streamTextStore.clearItem(turnID, item.id)
+          : undefined
+      }
     />
   );
 }
@@ -672,12 +678,13 @@ function ReasoningContent({
   const isLive = item.status === "in_progress";
 
   const hasBufferedStream = streamTextStore.has(streamKeyValue);
+  const canReleaseBufferedStream = !isLive && typeof item.text === "string" && item.text.length > 0;
 
   return (
     <StreamingMarkdown
       streamKey={streamKeyValue}
       initialText={
-        hasBufferedStream
+        isLive && hasBufferedStream
           ? streamTextStore.seedValue(streamKeyValue)
           : item.text
       }
@@ -686,6 +693,11 @@ function ReasoningContent({
       phase="commentary"
       onFrame={onStreamFrame}
       onOpenFile={onOpenFile}
+      onSettled={
+        canReleaseBufferedStream
+          ? () => streamTextStore.clearItem(turnID, item.id)
+          : undefined
+      }
     />
   );
 }

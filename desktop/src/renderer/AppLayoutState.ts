@@ -119,6 +119,8 @@ export function useAppLayoutState({
   const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
+  const sidebarLiveFrameRef = useRef<number | undefined>(undefined);
+  const pendingLiveSidebarWidthRef = useRef<number | undefined>(undefined);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
@@ -151,7 +153,7 @@ export function useAppLayoutState({
     setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
   }, []);
 
-  const applyLiveSidebarWidth = useCallback(
+  const writeLiveSidebarWidth = useCallback(
     (nextWidth: number): void => {
       const root = layoutRootRef?.current;
       if (!root) {
@@ -162,6 +164,44 @@ export function useAppLayoutState({
       root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
     },
     [layoutRootRef]
+  );
+
+  const cancelPendingLiveSidebarWidth = useCallback((): void => {
+    if (sidebarLiveFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(sidebarLiveFrameRef.current);
+      sidebarLiveFrameRef.current = undefined;
+    }
+    pendingLiveSidebarWidthRef.current = undefined;
+  }, []);
+
+  const flushPendingLiveSidebarWidth = useCallback((): void => {
+    if (sidebarLiveFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(sidebarLiveFrameRef.current);
+      sidebarLiveFrameRef.current = undefined;
+    }
+    const nextWidth = pendingLiveSidebarWidthRef.current;
+    pendingLiveSidebarWidthRef.current = undefined;
+    if (nextWidth !== undefined) {
+      writeLiveSidebarWidth(nextWidth);
+    }
+  }, [writeLiveSidebarWidth]);
+
+  const applyLiveSidebarWidth = useCallback(
+    (nextWidth: number): void => {
+      pendingLiveSidebarWidthRef.current = nextWidth;
+      if (sidebarLiveFrameRef.current !== undefined) {
+        return;
+      }
+      sidebarLiveFrameRef.current = window.requestAnimationFrame(() => {
+        sidebarLiveFrameRef.current = undefined;
+        const pendingWidth = pendingLiveSidebarWidthRef.current;
+        pendingLiveSidebarWidthRef.current = undefined;
+        if (pendingWidth !== undefined) {
+          writeLiveSidebarWidth(pendingWidth);
+        }
+      });
+    },
+    [writeLiveSidebarWidth]
   );
 
   const applySidebarWidth = useCallback(
@@ -217,8 +257,9 @@ export function useAppLayoutState({
       if (rightPanelMotionTimerRef.current !== undefined) {
         window.clearTimeout(rightPanelMotionTimerRef.current);
       }
+      cancelPendingLiveSidebarWidth();
     };
-  }, []);
+  }, [cancelPendingLiveSidebarWidth]);
 
   useEffect(() => {
     if (!resizingSidebar) {
@@ -234,6 +275,7 @@ export function useAppLayoutState({
       session.currentWidth = nextWidth;
       if (session.allowCollapse) {
         if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+          cancelPendingLiveSidebarWidth();
           applySidebarWidth(nextWidth);
           session.collapsedDuringDrag = true;
           return;
@@ -257,6 +299,11 @@ export function useAppLayoutState({
     function handlePointerUp(): void {
       const session = resizeSessionRef.current;
       if (session?.allowCollapse) {
+        if (session.currentWidth > SIDEBAR_MIN_WIDTH) {
+          flushPendingLiveSidebarWidth();
+        } else {
+          cancelPendingLiveSidebarWidth();
+        }
         applySidebarWidth(session.currentWidth);
       }
       resizeSessionRef.current = null;
@@ -271,7 +318,14 @@ export function useAppLayoutState({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [applyLiveSidebarWidth, applySettingsSidebarWidth, applySidebarWidth, resizingSidebar]);
+  }, [
+    applyLiveSidebarWidth,
+    applySettingsSidebarWidth,
+    applySidebarWidth,
+    cancelPendingLiveSidebarWidth,
+    flushPendingLiveSidebarWidth,
+    resizingSidebar,
+  ]);
 
   useEffect(() => {
     if (!resizingRightPanel) {

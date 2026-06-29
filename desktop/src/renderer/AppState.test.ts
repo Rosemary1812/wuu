@@ -6,6 +6,7 @@ import {
   appendStreamingTokenSample,
   appendTurnTokenSample,
   conversationPaneThreadsByID,
+  handleStreamingNotification,
   initialState,
   isThreadUnread,
   latestCompletedTurnID,
@@ -15,6 +16,31 @@ import {
   reduceServerEvent,
   sortThreads,
 } from "./AppState";
+import { streamTextKey, streamTextStore } from "./StreamText";
+
+function installManualRAF(): {
+  flush: () => void;
+  restore: () => void;
+} {
+  const realRAF = window.requestAnimationFrame;
+  const pending: FrameRequestCallback[] = [];
+  let nextHandle = 1;
+  window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    pending.push(cb);
+    return nextHandle++;
+  }) as typeof window.requestAnimationFrame;
+  return {
+    flush: () => {
+      const callbacks = pending.splice(0);
+      for (const cb of callbacks) {
+        cb(performance.now());
+      }
+    },
+    restore: () => {
+      window.requestAnimationFrame = realRAF;
+    },
+  };
+}
 
 function handoffText(): string {
   return JSON.stringify({
@@ -252,6 +278,87 @@ describe("AppState token usage", () => {
     expect(usage?.requestContext?.turnPrefix).toBe(6);
     expect(usage?.requestContext?.toolCount).toBe(14);
     expect(usage?.requestContext?.promptCacheKey).toBe("thread-1");
+  });
+});
+
+describe("AppState stream cache lifecycle", () => {
+  afterEach(() => {
+    streamTextStore.clearItem("turn-1", "agent-1");
+  });
+
+  it("releases completed agent text from the stream cache once a final snapshot exists", () => {
+    const raf = installManualRAF();
+    const key = streamTextKey("turn-1", "agent-1", "text");
+    streamTextStore.set(key, "Final answer");
+    try {
+      const handling = handleStreamingNotification(
+        {
+          kind: "notification",
+          workdir: "/repo",
+          message: {
+            method: "item/completed",
+            params: {
+              thread_id: "thread-1",
+              turn_id: "turn-1",
+              item: {
+                id: "agent-1",
+                type: "agent_message",
+                status: "completed",
+                text: "Final answer",
+              },
+            },
+          },
+        },
+        {
+          ...initialState,
+          thread: threadWithUserTexts(["hi"]),
+        },
+      );
+
+      expect(handling).toBe("state");
+      expect(streamTextStore.has(key)).toBe(true);
+      raf.flush();
+      expect(streamTextStore.has(key)).toBe(false);
+    } finally {
+      raf.restore();
+    }
+  });
+
+  it("keeps completed agent text cached while the completed snapshot is empty", () => {
+    const raf = installManualRAF();
+    const key = streamTextKey("turn-1", "agent-1", "text");
+    streamTextStore.set(key, "Final answer");
+    try {
+      handleStreamingNotification(
+        {
+          kind: "notification",
+          workdir: "/repo",
+          message: {
+            method: "item/completed",
+            params: {
+              thread_id: "thread-1",
+              turn_id: "turn-1",
+              item: {
+                id: "agent-1",
+                type: "agent_message",
+                status: "completed",
+                text: "",
+              },
+            },
+          },
+        },
+        {
+          ...initialState,
+          thread: threadWithUserTexts(["hi"]),
+        },
+      );
+
+      raf.flush();
+      expect(streamTextStore.has(key)).toBe(true);
+      expect(streamTextStore.get(key)).toBe("");
+    } finally {
+      raf.restore();
+    }
   });
 });
 

@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
-import { streamTextStore } from "./StreamText";
+import { streamTextKey, streamTextStore } from "./StreamText";
 import { ThreadItemView } from "./ThreadItemView";
 
 let container: HTMLDivElement | undefined;
@@ -261,5 +261,25 @@ describe("ThreadItemView", () => {
       false,
     );
     expect(visibleActions.getAttribute("aria-label")).toBe("助手消息操作");
+  });
+
+  it("releases completed stream text after the settled view keeps the final answer", async () => {
+    const key = streamTextKey("turn-1", "final-1", "text");
+    streamTextStore.set(key, "Final answer text.");
+
+    render({
+      item: makeFinalAnswer("completed"),
+      turnStatus: "completed",
+      actionableAgentMessageID: "final-1",
+      latestAgentMessageID: "final-1",
+      streaming: false,
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(container?.textContent).toContain("Final answer text.");
+    expect(streamTextStore.has(key)).toBe(false);
   });
 });

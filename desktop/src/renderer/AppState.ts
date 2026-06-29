@@ -461,8 +461,11 @@ function syncStreamItem(params: Record<string, unknown> | undefined): void {
     return;
   }
   const completed = (item.status ?? "in_progress") !== "in_progress";
+  const hasFinalText = typeof item.text === "string" && item.text.length > 0;
   const retainTextStream =
-    completed && (item.type === "agent_message" || item.type === "reasoning");
+    completed &&
+    (item.type === "agent_message" || item.type === "reasoning") &&
+    !hasFinalText;
   if (typeof item.text === "string") {
     // For in-progress items, don't clobber the accumulated stream
     // value with a snapshot that has less content than the deltas
