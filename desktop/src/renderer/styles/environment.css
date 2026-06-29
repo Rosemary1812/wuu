@@ -627,7 +627,7 @@
 .conversation-search-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 200;
   display: grid;
   align-items: start;
   justify-items: center;
