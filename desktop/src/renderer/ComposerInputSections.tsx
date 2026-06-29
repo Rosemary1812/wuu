@@ -3,6 +3,7 @@ import {
   CornerUpLeft,
   FileText,
   Paperclip,
+  PencilLine,
   Send,
   Square,
   X
@@ -340,13 +341,22 @@ function ComposerQueueItem({
       <button
         type="button"
         className="composer-queue-preview"
-        aria-label={`编辑排队消息 ${position}`}
+        aria-label={`${kind === "guide" ? "编辑引导内容" : "编辑排队消息内容"} ${position}`}
         title={message.text}
         onClick={onEdit}
       >
         {queuedMessagePreview(message)}
       </button>
       <div className="composer-queue-actions">
+        <button
+          type="button"
+          className="composer-queue-action edit"
+          aria-label={`${kind === "guide" ? "编辑引导" : "编辑排队消息"} ${position}`}
+          title="编辑"
+          onClick={onEdit}
+        >
+          <PencilLine className="icon-sm" aria-hidden="true" />
+        </button>
         {kind === "guide" ? (
           <button
             type="button"

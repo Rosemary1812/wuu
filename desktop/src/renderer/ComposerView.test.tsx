@@ -644,12 +644,34 @@ describe("Composer queue strip", () => {
     });
 
     const previewButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"编辑排队消息 1\"]"
+      "button[aria-label=\"编辑排队消息内容 1\"]"
     );
     expect(previewButton).not.toBeNull();
 
     act(() => {
       previewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onEditQueuedMessage).toHaveBeenCalledWith("queue-1");
+  });
+
+  it("edits a queued message from the explicit inline edit button", () => {
+    const onEditQueuedMessage = vi.fn();
+    renderComposer({
+      running: true,
+      queuedMessages: [
+        { id: "queue-1", text: "要求后续变更", images: [], files: [] }
+      ],
+      onEditQueuedMessage
+    });
+
+    const editButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"编辑排队消息 1\"]"
+    );
+    expect(editButton).not.toBeNull();
+
+    act(() => {
+      editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
     expect(onEditQueuedMessage).toHaveBeenCalledWith("queue-1");
