@@ -750,13 +750,13 @@
 }
 
 .context-composition-card {
-  width: min(var(--conversation-message-max-width), var(--conversation-message-max-inline));
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   margin: 2px 0 22px;
 }
 
 .conversation-split-width .context-composition-card {
-  width: min(var(--conversation-split-message-max-width), var(--conversation-split-message-max-inline));
+  width: 100%;
 }
 
 .context-composition-card-inner {
