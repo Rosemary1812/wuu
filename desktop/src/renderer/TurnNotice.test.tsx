@@ -110,7 +110,7 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
-  it("names context-overflow recovery separately from routine compaction", () => {
+  it("uses the same completed title for overflow recovery compaction", () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -119,11 +119,11 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "已从上下文超限中恢复",
+      "上下文已压缩",
     );
   });
 
-  it("names inception continuation separately from routine compaction", () => {
+  it("uses the same completed title for inception compaction", () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -133,14 +133,11 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "上下文已续行",
-    );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
-      "Inception 摘要续接上下文",
+      "上下文已压缩",
     );
   });
 
-  it("names HelpMe recovery separately from routine compaction", () => {
+  it("uses the same completed title for HelpMe compaction", () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -150,16 +147,13 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "HelpMe 已整理上下文",
-    );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
-      "HelpMe 已合并恢复结果并整理上下文",
+      "上下文已压缩",
     );
   });
 
   it("does not present failed proactive compaction as a successful compact", () => {
     const failedCompactText =
-      '✦ Proactive compact failed: compact summary failed: HTTP 400: {"detail":"Unsupported parameter: max_output_tokens"}';
+      "Context compaction failed; continuing without compacting history.";
     const host = mount(
       <ContextCompactionNotice
         status="completed"

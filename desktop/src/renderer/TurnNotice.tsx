@@ -118,51 +118,21 @@ export function ContextCompactionNotice({
   );
 }
 
-function contextCompactionTitle(text?: string, reason?: string): string {
+function contextCompactionTitle(text?: string, _reason?: string): string {
   const normalized = normalizeContextCompactionText(text);
-  if (isInceptionCompact(reason, normalized)) {
-    return "上下文已续行";
-  }
-  if (isHelpMeCompact(reason, normalized)) {
-    return "HelpMe 已整理上下文";
-  }
   if (isFailedCompactNotice(normalized)) {
     return "上下文压缩失败";
-  }
-  if (isUnchangedCompactNotice(normalized)) {
-    return "上下文未变化";
-  }
-  if (/^Recovered from context overflow/i.test(normalized)) {
-    return "已从上下文超限中恢复";
   }
   return "上下文已压缩";
 }
 
-function contextCompactionDetail(text?: string, reason?: string): string {
+function contextCompactionDetail(text?: string, _reason?: string): string {
   const normalized = normalizeContextCompactionText(text);
-  if (isInceptionCompact(reason, normalized)) {
-    const compactNotice = parseContextCompactionNotice(normalized);
-    return compactNotice
-      ? compactNotice.replace(/^已压缩较早上下文/, "已按 Inception 摘要续接上下文")
-      : "已按 Inception 摘要续接上下文，后续回复会沿用保留下来的关键状态。";
-  }
-  if (isHelpMeCompact(reason, normalized)) {
-    const compactNotice = parseContextCompactionNotice(normalized);
-    return compactNotice
-      ? compactNotice.replace(/^已压缩较早上下文/, "HelpMe 已合并恢复结果并整理上下文")
-      : "HelpMe 已把恢复结果合并成新的任务状态，后续回复会沿用这份摘要继续。";
-  }
   if (!normalized) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
   }
   if (isFailedCompactNotice(normalized)) {
-    const reason = compactFailureReason(normalized);
-    return reason
-      ? `自动压缩没有完成，当前对话仍保留原上下文。错误：${reason}`
-      : "自动压缩没有完成，当前对话仍保留原上下文。";
-  }
-  if (isUnchangedCompactNotice(normalized)) {
-    return "这次压缩没有改变上下文，后续会继续使用当前上下文。";
+    return "自动压缩没有完成，当前对话仍保留原上下文。";
   }
   if (/^Compacted history$/i.test(normalized)) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
@@ -178,24 +148,8 @@ function normalizeContextCompactionText(text?: string): string {
   return (text ?? "").trim().replace(/^[✦*•]\s*/, "");
 }
 
-function isInceptionCompact(reason: string | undefined, text: string): boolean {
-  return reason === "inception" || /^Inception rewrote history\b/i.test(text);
-}
-
-function isHelpMeCompact(reason: string | undefined, text: string): boolean {
-  return reason === "helpme" || /^HelpMe recovered and compacted history\b/i.test(text);
-}
-
 function isFailedCompactNotice(text: string): boolean {
-  return /^(?:Proactive compact|Context-overflow compact|Compact) failed\b/i.test(text);
-}
-
-function compactFailureReason(text: string): string {
-  return text.replace(/^(?:Proactive compact|Context-overflow compact|Compact) failed:?\s*/i, "").trim();
-}
-
-function isUnchangedCompactNotice(text: string): boolean {
-  return /^(?:Proactive compact|Context-overflow compact|Compact) made no changes\b/i.test(text);
+  return /^(?:Context compaction|Proactive compact|Context-overflow compact|Compact) failed\b/i.test(text);
 }
 
 function parseContextCompactionNotice(text: string): string | undefined {
@@ -205,10 +159,7 @@ function parseContextCompactionNotice(text: string): string | undefined {
   if (!match) {
     return undefined;
   }
-  const [, action, before, after, tokens] = match;
+  const [, , before, after, tokens] = match;
   const tokenDetail = tokens ? `，原约 ${tokens.trim()}` : "";
-  if (/^Recovered/i.test(action)) {
-    return `已从上下文超限中恢复：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
-  }
   return `已压缩较早上下文：${before} 条消息整理为 ${after} 条${tokenDetail}。`;
 }

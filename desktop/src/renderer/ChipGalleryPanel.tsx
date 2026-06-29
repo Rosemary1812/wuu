@@ -138,37 +138,13 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
     ),
   },
   {
-    label: "上下文未变化",
-    kind: "context_compaction_unchanged · gray",
-    description: "压缩了但上下文没变",
-    render: () => (
-      <ContextCompactionNotice
-        status="completed"
-        text="✦ Compact made no changes"
-      />
-    ),
-  },
-  {
     label: "上下文压缩失败",
     kind: "context_compaction_failed · gray",
     description: "自动压缩失败,保留原上下文",
     render: () => (
       <ContextCompactionNotice
         status="completed"
-        text={
-          '✦ Proactive compact failed: compact summary failed: HTTP 400: {"detail":"Unsupported parameter: max_output_tokens"}'
-        }
-      />
-    ),
-  },
-  {
-    label: "已从上下文超限中恢复",
-    kind: "recovered_from_context_overflow · gray",
-    description: "超限后自动压缩恢复",
-    render: () => (
-      <ContextCompactionNotice
-        status="completed"
-        text="✦ Recovered from context overflow — compacted history: 18 → 5 messages (was ~12k tokens)"
+        text="Context compaction failed; continuing without compacting history."
       />
     ),
   },

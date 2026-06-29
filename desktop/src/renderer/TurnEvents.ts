@@ -16,7 +16,6 @@ export type TurnEventKind =
   | "internal_error"
   | "context_compacting"
   | "context_compacted"
-  | "recovered_from_context_overflow"
   | "missing_final_answer";
 
 export type TurnEventSource = "turn" | "item";
@@ -29,7 +28,7 @@ export type TurnEventDisplay =
       notice: UserFacingErrorDisplay;
     }
   | {
-      kind: "context_compacting" | "context_compacted" | "recovered_from_context_overflow";
+      kind: "context_compacting" | "context_compacted";
       source: "item";
       presentation: "context_compaction";
       text?: string;
@@ -156,14 +155,11 @@ function turnEventKindForNotice(display: UserFacingErrorDisplay): TurnEventKind 
 }
 
 function contextCompactionKind(
-  text: string | undefined,
+  _text: string | undefined,
   status: ThreadItemStatus | undefined,
-): "context_compacting" | "context_compacted" | "recovered_from_context_overflow" {
+): "context_compacting" | "context_compacted" {
   if (status === "in_progress") {
     return "context_compacting";
-  }
-  if (/recovered from context overflow/i.test(text ?? "")) {
-    return "recovered_from_context_overflow";
   }
   return "context_compacted";
 }

@@ -70,9 +70,9 @@ describe("ChipGalleryPanel", () => {
     const host = mount({ open: true, onClose: () => {} });
 
     const entries = host.querySelectorAll(".chip-gallery-entry");
-    // 16 entries: 2 cancelled + missing reply + 5 context compaction
+    // 14 entries: 2 cancelled + missing reply + 3 context compaction
     // + 4 provider/network + 2 auth + 2 tool/internal.
-    expect(entries.length).toBe(16);
+    expect(entries.length).toBe(14);
 
     // The cancelled variants use the established 已停止 / 回复已中断 titles.
     expect(host.textContent).toContain("已停止");
