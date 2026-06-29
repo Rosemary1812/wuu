@@ -1,10 +1,9 @@
-// Composer-toolbar context-limit meter.
+// Composer-toolbar retained-history meter.
 //
-// Sits next to the live token-speed gauge and shows the retained conversation
-// context estimate against the active provider/model context ceiling. The toolbar
-// keeps this aligned with the token-speed gauge: the ring shows the
-// proportion, the label shows used/limit, and hover reveals the concise
-// details.
+// Sits next to the live token-speed gauge and shows retained conversation
+// history against the active provider/model input ceiling. The current
+// in-flight request can be larger than this when the user attaches large
+// files or images; /context is the surface for inspecting that full request.
 //
 // The progress stroke reuses the token-speed gauge's color palette so the
 // two meters read as a coordinated pair: idle gray when the window is empty,
@@ -79,8 +78,8 @@ export function ComposerContextMeter({
   )}`;
   const requestContext = usage.requestContext;
   const ariaLabel =
-    `上下文上限 ${formatTokenCount(usage.window)}` +
-    `，估算占用 ${formatTokenCount(used)} (${percent}%)`;
+    `保留历史上限 ${formatTokenCount(usage.window)}` +
+    `，已保留 ${formatTokenCount(used)} (${percent}%)`;
   return (
     <div
       ref={anchorRef}
@@ -144,14 +143,14 @@ export function ComposerContextMeter({
           >
             <div className="composer-context-meter-tooltip-headline">
               <span className="composer-context-meter-tooltip-label">
-                上下文估算
+                保留历史
               </span>
               <span className="composer-context-meter-tooltip-value">
                 {percentLabel}
               </span>
             </div>
             <div className="composer-context-meter-tooltip-row">
-              <span className="composer-context-meter-tooltip-label">已保留</span>
+              <span className="composer-context-meter-tooltip-label">历史</span>
               <span className="composer-context-meter-tooltip-value">
                 {valueLabel}
               </span>

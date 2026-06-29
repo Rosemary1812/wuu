@@ -113,7 +113,7 @@ describe("ComposerContextMeter", () => {
       container
         .querySelector(".composer-context-meter")
         ?.getAttribute("aria-label") ?? "";
-    expect(aria).toContain("估算占用 45k");
+    expect(aria).toContain("已保留 45k");
     expect(aria).toContain("200k");
     expect(aria).toContain("23%");
   });
@@ -141,6 +141,7 @@ describe("ComposerContextMeter", () => {
       )?.textContent ?? "",
     ).toContain("23%");
     const text = tooltip?.textContent ?? "";
+    expect(text).toContain("保留历史");
     expect(text).toContain("45k / 200k");
     expect(text).not.toContain("输入");
     expect(text).not.toContain("缓存读取");

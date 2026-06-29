@@ -109,6 +109,7 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	provider := ""
 	model := ""
 	contextWindowTokens := 0
+	inputLimitTokens := 0
 	usableInputTokens := 0
 	compactThresholdTokens := 0
 	turnID := ""
@@ -124,9 +125,13 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 		model = firstNonEmpty(turn.APIModel, turn.Model)
 		if turn.ModelProfile != nil {
 			contextWindowTokens = turn.ModelProfile.ContextWindowTokens
+			inputLimitTokens = turn.ModelProfile.InputLimitTokens
 			usableInputTokens = turn.ModelProfile.UsableInputTokens
 			compactThresholdTokens = turn.ModelProfile.CompactThresholdTokens
 		}
+	}
+	if inputLimitTokens <= 0 {
+		inputLimitTokens = s.contextCompositionRuntimeInputLimit(provider, model)
 	}
 
 	promptTokens := request.InputTokens + request.CacheReadTokens
@@ -145,6 +150,7 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	result.Provider = provider
 	result.Model = model
 	result.ContextWindowTokens = contextWindowTokens
+	result.InputLimitTokens = inputLimitTokens
 	result.UsableInputTokens = usableInputTokens
 	result.CompactThresholdTokens = compactThresholdTokens
 	result.PromptTokens = promptTokens
@@ -296,6 +302,26 @@ func contextCompositionSections(sections []sessiontrace.SystemSectionRecord, sys
 		})
 	}
 	return out
+}
+
+func (s *Server) contextCompositionRuntimeInputLimit(provider, model string) int {
+	if s == nil || s.rt == nil {
+		return 0
+	}
+	if provider = strings.TrimSpace(provider); provider != "" && !strings.EqualFold(provider, strings.TrimSpace(s.rt.ProviderName)) {
+		return 0
+	}
+	if model = strings.TrimSpace(model); model != "" && !strings.EqualFold(model, strings.TrimSpace(s.rt.Model)) {
+		return 0
+	}
+	budget := s.rt.ModelBudget
+	if budget.InputLimitTokens > 0 {
+		return budget.InputLimitTokens
+	}
+	if contextWindow, _ := budget.EffectiveContextWindow(); contextWindow > 0 {
+		return contextWindow
+	}
+	return 0
 }
 
 func categoryTokensForBytes(bytes, promptBytes, promptTokens int) int {

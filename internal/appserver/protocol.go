@@ -684,6 +684,7 @@ type ThreadContextCompositionResult struct {
 	Provider               string                       `json:"provider,omitempty"`
 	Model                  string                       `json:"model,omitempty"`
 	ContextWindowTokens    int                          `json:"context_window_tokens,omitempty"`
+	InputLimitTokens       int                          `json:"input_limit_tokens,omitempty"`
 	UsableInputTokens      int                          `json:"usable_input_tokens,omitempty"`
 	CompactThresholdTokens int                          `json:"compact_threshold_tokens,omitempty"`
 	PromptTokens           int                          `json:"prompt_tokens,omitempty"`

@@ -2174,6 +2174,7 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	rt := newTestRuntime(t, client)
 	rt.ModelBudget = modelbudget.Budget{
 		ContextWindowTokens:    1_000_000,
+		InputLimitTokens:       512_000,
 		UsableInputTokens:      384_000,
 		CompactThresholdTokens: 384_000,
 		ContextWindowSource:    modelbudget.SourceProviderModelLimit,
@@ -2238,7 +2239,7 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	if result.InputTokens != 10 || result.OutputTokens != 3 || result.CacheCreationTokens != 6 || result.CacheReadTokens != 4 {
 		t.Fatalf("unexpected provider usage: %+v", result)
 	}
-	if result.UsableInputTokens != 384_000 || result.CompactThresholdTokens != 384_000 {
+	if result.InputLimitTokens != 512_000 || result.UsableInputTokens != 384_000 || result.CompactThresholdTokens != 384_000 {
 		t.Fatalf("unexpected runtime context limits: %+v", result)
 	}
 	if result.TokenEstimateSource != "provider_usage" {
