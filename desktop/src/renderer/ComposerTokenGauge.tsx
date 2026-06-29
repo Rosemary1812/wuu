@@ -107,9 +107,9 @@ export function ComposerTokenGauge({
   const dashOffset = GAUGE_ARC_PATH_LENGTH * (1 - ratio);
   const color = speedColor(displayed);
   const needleDeg = NEEDLE_START_DEG + NEEDLE_ANGLE * ratio;
-  const rounded = Math.round(displayed * 10) / 10;
+  const rounded = Math.round(displayed);
   const isEstimated = source === "estimated";
-  const speedLabel = `${isEstimated ? "约 " : ""}${rounded.toFixed(1)} tok/s`;
+  const speedLabel = `${isEstimated ? "约 " : ""}${rounded} tok/s`;
   const ariaPrefix = isEstimated ? "估算生成速度" : "生成速度";
 
   return (
@@ -118,7 +118,7 @@ export function ComposerTokenGauge({
       data-state={running ? "running" : "idle"}
       role="status"
       aria-live="polite"
-      aria-label={`${ariaPrefix} ${rounded.toFixed(1)} token 每秒`}
+      aria-label={`${ariaPrefix} ${rounded} token 每秒`}
       style={{ color }}
     >
       <svg

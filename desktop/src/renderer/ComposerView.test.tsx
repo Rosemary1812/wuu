@@ -872,13 +872,13 @@ describe("ComposerTokenGauge", () => {
     const gauge = container.querySelector(".composer-token-gauge");
     expect(gauge).not.toBeNull();
     expect(gauge?.getAttribute("data-state")).toBe("idle");
-    expect(gauge?.getAttribute("aria-label")).toContain("0.0");
+    expect(gauge?.getAttribute("aria-label")).toContain("0 token 每秒");
 
     // The label is now inline next to the dial — no hover portal. It must
     // be in the DOM from the first render so the user always sees the rate.
     const label = container.querySelector(".composer-token-gauge-label");
     expect(label).not.toBeNull();
-    expect(label?.textContent).toContain("0.0");
+    expect(label?.textContent).toContain("0 tok/s");
     expect(label?.textContent).toContain("tok/s");
     expect(document.body.querySelector(".composer-token-gauge-tooltip")).toBeNull();
   });
@@ -904,7 +904,7 @@ describe("ComposerTokenGauge", () => {
       // resurrect a tooltip either.
       const label = container.querySelector(".composer-token-gauge-label");
       expect(label).not.toBeNull();
-      expect(label?.textContent).toContain("18.4");
+      expect(label?.textContent).toContain("18 tok/s");
       expect(label?.textContent).toContain("tok/s");
 
       act(() => {
@@ -934,7 +934,7 @@ describe("ComposerTokenGauge", () => {
     });
 
     const label = container.querySelector(".composer-token-gauge-label");
-    expect(label?.textContent).toContain("约 18.4 tok/s");
+    expect(label?.textContent).toContain("约 18 tok/s");
   });
 });
 
