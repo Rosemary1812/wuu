@@ -730,11 +730,27 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	}
 
 	running.mu.Lock()
-	if running.ModelProvider != "fake-provider" || running.Model != "fake-model" {
-		t.Fatalf("running thread model should stay put: provider=%q model=%q", running.ModelProvider, running.Model)
+	if running.ModelProvider != "fake-provider" || running.Model != "new-model" {
+		t.Fatalf("running thread next model should update: provider=%q model=%q", running.ModelProvider, running.Model)
 	}
 	if running.execRuntime.StreamRunner.Model != "fake-model" || running.execRuntime.StreamRunner.APIModel != "fake-model" {
-		t.Fatalf("running thread runtime should stay put: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
+		t.Fatalf("running turn runtime should stay put: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
+	}
+	if running.pendingRuntimeUpdate == nil {
+		t.Fatal("running thread should defer runtime refresh until the turn finishes")
+	}
+	running.mu.Unlock()
+
+	running.mu.Lock()
+	running.completeTurnLocked("running-turn", TurnStatusCompleted, nil, now.Add(time.Second), "", "", false)
+	running.mu.Unlock()
+	srv.applyPendingThreadRuntime(running)
+	running.mu.Lock()
+	if running.pendingRuntimeUpdate != nil {
+		t.Fatal("pending runtime update should be applied after the turn finishes")
+	}
+	if running.execRuntime.StreamRunner.Model != "new-model" || running.execRuntime.StreamRunner.APIModel != "new-model" {
+		t.Fatalf("running thread runtime should update for next turn: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
 	}
 	running.mu.Unlock()
 
@@ -745,6 +761,63 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	}
 	if idle.execRuntime.StreamRunner.Model != "new-model" || idle.execRuntime.StreamRunner.APIModel != "new-model" {
 		t.Fatalf("idle thread runtime should update: model=%q api=%q", idle.execRuntime.StreamRunner.Model, idle.execRuntime.StreamRunner.APIModel)
+	}
+}
+
+func TestRunningTurnUsesModelSnapshotAfterConfigUpdate(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	streamClient := usageStreamClient{events: []providers.StreamEvent{
+		{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: 7, OutputTokens: 3}},
+		{Type: providers.EventDone, Usage: &providers.TokenUsage{InputTokens: 7, OutputTokens: 3}},
+	}}
+	rt.StreamRunner.Client = streamClient
+	rt.StreamRunner.Model = "fake-model"
+	rt.StreamRunner.APIModel = "fake-model"
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if _, err := session.CreateWithMetadata(rt.SessionDir, "running-thread", rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	threadRuntime := &runtime.ThreadRuntime{
+		StreamRunner: &agent.StreamRunner{
+			Client:   streamClient,
+			Model:    "fake-model",
+			APIModel: "fake-model",
+		},
+	}
+	th := newThreadState("running-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, time.Now().UTC())
+	th.execRuntime = threadRuntime
+	userMsg := providers.ChatMessage{Role: "user", Content: "hello"}
+	turnID := "turn-snapshot"
+	now := time.Now().UTC()
+	th.mu.Lock()
+	th.History = append(th.History, userMsg)
+	th.startTurnLocked(turnID, userMsg, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
+	th.mu.Unlock()
+	srv.threads[th.ID] = th
+
+	rt.Model = "new-model"
+	rt.StreamRunner.Model = "new-model"
+	rt.StreamRunner.APIModel = "new-model"
+	srv.updateThreadRuntimeForModelUpdate(rt.ProviderName, rt.ProviderName, "new-model", "new-model", "new system prompt")
+
+	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil)
+
+	th.mu.Lock()
+	if len(th.Turns) != 1 || th.Turns[0].UsageModel != "fake-model" {
+		t.Fatalf("turn should keep original usage model: %+v", th.Turns)
+	}
+	if th.Model != "new-model" || th.execRuntime.StreamRunner.Model != "new-model" {
+		t.Fatalf("thread should be ready for next model: thread=%q runner=%q", th.Model, th.execRuntime.StreamRunner.Model)
+	}
+	th.mu.Unlock()
+	metas, err := loadMetaMessages(rt.SessionDir, th.ID)
+	if err != nil {
+		t.Fatalf("load meta messages: %v", err)
+	}
+	if len(metas) != 1 || metas[0].Provider != "fake-provider" || metas[0].Model != "fake-model" {
+		t.Fatalf("token usage should use turn snapshot, got %+v", metas)
 	}
 }
 

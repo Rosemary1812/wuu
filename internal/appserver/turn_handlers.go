@@ -37,6 +37,11 @@ type agentCompletionTurn struct {
 	msg      providers.ChatMessage
 }
 
+type turnRuntimeSnapshot struct {
+	ProviderName string
+	Model        string
+}
+
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	var params TurnStartParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -90,6 +95,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	th.History = history
 	th.cancel = cancel
 	turn := th.startTurnLocked(turnID, userMsg, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
 	th.mu.Unlock()
 
 	if err := s.writeResponse(req.ID, TurnStartResult{Turn: turn}, nil); err != nil {
@@ -104,7 +110,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return err
 	}
 
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
 	return nil
 }
 
@@ -511,8 +517,18 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	return s.writeResponse(req.ID, OKResult{OK: true}, nil)
 }
 
-func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage) {
-	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, history, nil)
+func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
+	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, nil)
+}
+
+func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
+	if th == nil {
+		return turnRuntimeSnapshot{}
+	}
+	return turnRuntimeSnapshot{
+		ProviderName: th.ModelProvider,
+		Model:        th.Model,
+	}
 }
 
 func usageContextWindowTokens(runner *agent.StreamRunner) int {
@@ -528,7 +544,7 @@ func usageContextWindowTokens(runner *agent.StreamRunner) int {
 	return 0
 }
 
-func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, history []providers.ChatMessage, requestContext []agent.ContextSegment) {
+func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, requestContext []agent.ContextSegment) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -742,7 +758,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if historyErr != nil {
 		persistErr = historyErr
 	} else {
-		persistErr = s.persistTurnResultLocked(th, res, rewriteHistory)
+		persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, turnRuntime.ProviderName, turnRuntime.Model)
 	}
 	status := TurnStatusCompleted
 	if err != nil {
@@ -789,15 +805,16 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,
 		CacheReadTokens:     res.CacheReadTokens,
-	}, res.ContextTokens, th.Model)
+	}, res.ContextTokens, turnRuntime.Model)
 	th.replaceTurnLocked(turn)
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, th.ModelProvider, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turnRuntime.ProviderName, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
 	if traceErr != nil {
 		tracePath = ""
 	}
+	s.applyPendingThreadRuntime(th)
 
 	if len(unconsumedSteers) > 0 {
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
@@ -810,7 +827,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		// (HTTPError, StreamError) and the agentcontrol classifier. The
 		// raw `Error` string is preserved for backward compatibility and
 		// for the "copy debug info" payload.
-		structured := BuildTurnError(err, th.ModelProvider)
+		structured := BuildTurnError(err, turnRuntime.ProviderName)
 		turn.Error = &structured
 		th.mu.Lock()
 		th.replaceTurnLocked(turn)
@@ -1221,6 +1238,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	th.History = history
 	th.cancel = cancel
 	turn := th.startTurnLocked(turnID, entry.msg, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
 	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
@@ -1228,7 +1246,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		Turn:     turn,
 		QueueID:  entry.id,
 	})
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
 	return true, nil
 }
 
@@ -1394,13 +1412,14 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	th.History = history
 	th.cancel = cancel
 	turn := th.startTurnLocked(turnID, userMsg, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
 	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, history)
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
 	return true, nil
 }
 
@@ -1552,13 +1571,14 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 	history := cloneHistory(th.History)
 	th.cancel = cancel
 	turn := th.startInternalTurnLocked(turnID, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
 	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, history, goalContinuationContextSegments(goal))
+	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal))
 	return true, nil
 }
 
@@ -1772,7 +1792,7 @@ func queuedTurnsFromSteers(msgs []providers.ChatMessage) []queuedTurn {
 	return out
 }
 
-func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool) error {
+func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool, providerName, model string) error {
 	if !th.PersistHistory {
 		return nil
 	}
@@ -1787,7 +1807,7 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 			}
 		}
 	}
-	if err := appendTokenUsage(s.rt.SessionDir, th.ID, th.ModelProvider, th.Model, providers.TokenUsage{
+	if err := appendTokenUsage(s.rt.SessionDir, th.ID, providerName, model, providers.TokenUsage{
 		InputTokens:         res.InputTokens,
 		OutputTokens:        res.OutputTokens,
 		CacheCreationTokens: res.CacheCreationTokens,

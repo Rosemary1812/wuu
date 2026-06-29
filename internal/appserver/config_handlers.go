@@ -616,7 +616,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
 	}
 	s.updateRootAgentControlWorkerDefaults()
-	s.updateIdleThreadRuntime(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
+	s.updateThreadRuntimeForModelUpdate(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
 
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigModelUpdateResult{
@@ -806,59 +806,92 @@ func skillSummaries(items []skills.Skill) []SkillSummary {
 	return out
 }
 
-func (s *Server) updateIdleThreadRuntime(providerName, ruleProviderName, model, apiModel, systemPrompt string) {
+func (s *Server) updateThreadRuntimeForModelUpdate(providerName, ruleProviderName, model, apiModel, systemPrompt string) {
+	update := threadRuntimeUpdate{
+		ProviderName:     providerName,
+		RuleProviderName: ruleProviderName,
+		Model:            model,
+		APIModel:         apiModel,
+		SystemPrompt:     systemPrompt,
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, th := range s.threads {
 		th.mu.Lock()
-		if !th.running {
-			th.ModelProvider = providerName
-			th.Model = model
-			if strings.TrimSpace(systemPrompt) != "" {
-				th.History = replaceBaseSystemPrompt(th.History, systemPrompt)
-				if th.PersistHistory {
-					if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
-						providers.DebugLogf("rewrite thread %q system prompt after model update: %v", th.ID, err)
-					}
-				}
-			}
-			if th.execRuntime != nil {
-				if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
-					th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
-					th.execRuntime.StreamRunner.Model = model
-					th.execRuntime.StreamRunner.APIModel = apiModel
-					th.execRuntime.StreamRunner.UpdateSystemPromptWithSections(systemPrompt, s.rt.StreamRunner.SystemPromptSections)
-					th.execRuntime.StreamRunner.Effort = s.currentEffort()
-					th.execRuntime.StreamRunner.Variant = s.currentVariant()
-					th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
-					th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
-					th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
-					th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
-					th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
-					th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
-					th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
-					th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
-					th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
-				}
-				th.execRuntime.ModelBudget = s.rt.ModelBudget
-				th.execRuntime.WorkerModelBudget = s.rt.WorkerModelBudget
-				if th.execRuntime.AgentControl != nil {
-					th.execRuntime.AgentControl.UpdateWorkerDefaults(
-						s.rt.WorkerClient,
-						s.rt.ModelRoles.Worker.APIModel,
-						s.currentWorkerManagerOptions(),
-					)
-				}
-				if th.execRuntime.Toolkit != nil {
-					th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
-					if s.rt != nil {
-						runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
-						s.installToolApprovalReviewer(th.execRuntime.Toolkit)
-					}
-				}
+		s.updateThreadRuntimeLocked(th, update)
+		th.mu.Unlock()
+	}
+}
+
+func (s *Server) updateThreadRuntimeLocked(th *threadState, update threadRuntimeUpdate) {
+	th.ModelProvider = update.ProviderName
+	th.Model = update.Model
+	if strings.TrimSpace(update.SystemPrompt) != "" {
+		th.History = replaceBaseSystemPrompt(th.History, update.SystemPrompt)
+		if th.PersistHistory {
+			if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
+				providers.DebugLogf("rewrite thread %q system prompt after model update: %v", th.ID, err)
 			}
 		}
-		th.mu.Unlock()
+	}
+	if th.running {
+		pending := update
+		th.pendingRuntimeUpdate = &pending
+		return
+	}
+	s.applyThreadRuntimeUpdateLocked(th, update)
+}
+
+func (s *Server) applyPendingThreadRuntime(th *threadState) {
+	if th == nil {
+		return
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	if th.running || th.pendingRuntimeUpdate == nil {
+		return
+	}
+	update := *th.pendingRuntimeUpdate
+	s.applyThreadRuntimeUpdateLocked(th, update)
+}
+
+func (s *Server) applyThreadRuntimeUpdateLocked(th *threadState, update threadRuntimeUpdate) {
+	th.pendingRuntimeUpdate = nil
+	if th.execRuntime == nil {
+		return
+	}
+	if th.execRuntime.StreamRunner != nil && s.rt != nil && s.rt.StreamRunner != nil {
+		th.execRuntime.StreamRunner.Client = s.rt.StreamRunner.Client
+		th.execRuntime.StreamRunner.Model = update.Model
+		th.execRuntime.StreamRunner.APIModel = update.APIModel
+		th.execRuntime.StreamRunner.UpdateSystemPromptWithSections(update.SystemPrompt, s.rt.StreamRunner.SystemPromptSections)
+		th.execRuntime.StreamRunner.Effort = s.currentEffort()
+		th.execRuntime.StreamRunner.Variant = s.currentVariant()
+		th.execRuntime.StreamRunner.ProviderOptions = s.currentProviderOptions()
+		th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
+		th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
+		th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
+		th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
+		th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
+		th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
+		th.execRuntime.StreamRunner.MaxSteps = s.rt.StreamRunner.MaxSteps
+		th.execRuntime.StreamRunner.Temperature = s.rt.StreamRunner.Temperature
+	}
+	th.execRuntime.ModelBudget = s.rt.ModelBudget
+	th.execRuntime.WorkerModelBudget = s.rt.WorkerModelBudget
+	if th.execRuntime.AgentControl != nil {
+		th.execRuntime.AgentControl.UpdateWorkerDefaults(
+			s.rt.WorkerClient,
+			s.rt.ModelRoles.Worker.APIModel,
+			s.currentWorkerManagerOptions(),
+		)
+	}
+	if th.execRuntime.Toolkit != nil {
+		th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(update.RuleProviderName, update.APIModel, true)
+		if s.rt != nil {
+			runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
+			s.installToolApprovalReviewer(th.execRuntime.Toolkit)
+		}
 	}
 }
 

@@ -52,7 +52,8 @@ type threadState struct {
 	ListeningPorts []int
 	BrowserState   ThreadBrowserState
 
-	execRuntime *runtime.ThreadRuntime
+	execRuntime          *runtime.ThreadRuntime
+	pendingRuntimeUpdate *threadRuntimeUpdate
 
 	mu            sync.Mutex
 	running       bool
@@ -65,6 +66,14 @@ type threadState struct {
 	activeReasoningItemID string
 	toolItems             map[string]string
 	hiddenToolEvent       bool
+}
+
+type threadRuntimeUpdate struct {
+	ProviderName     string
+	RuleProviderName string
+	Model            string
+	APIModel         string
+	SystemPrompt     string
 }
 
 type Server struct {

@@ -214,8 +214,9 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	_, systemPromptSections := r.systemPromptSnapshot()
 	beforeStep := r.BeforeStep
 	if beforeStep != nil {
+		capturedBeforeStep := beforeStep
 		beforeStep = func() []providers.ChatMessage {
-			return filterDurableHistory(r.BeforeStep())
+			return filterDurableHistory(capturedBeforeStep())
 		}
 	}
 	cfg := LoopConfig{
