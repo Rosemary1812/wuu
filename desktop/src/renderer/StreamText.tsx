@@ -20,6 +20,8 @@ export type StreamTextStats = {
 interface StreamEntry {
   /** The current accumulated text. */
   value: string;
+  /** Visible text retained across an empty replace until fresh text arrives. */
+  displayValue: string | undefined;
   /** The text at the time the stream was first seeded. */
   seed: string;
   /** Whether this entry has an actual stream value, not only listeners. */
@@ -53,7 +55,7 @@ class StreamTextStore {
 
   get(key: string): string {
     const entry = this.entries.get(key);
-    return entry?.hasValue ? entry.value : "";
+    return entry?.hasValue ? entry.displayValue ?? entry.value : "";
   }
 
   seedValue(key: string): string {
@@ -72,6 +74,7 @@ class StreamTextStore {
     }
     if (existing) {
       existing.value = value;
+      existing.displayValue = undefined;
       existing.seed = value;
       existing.hasValue = true;
       this.notifyValue(existing, value);
@@ -79,6 +82,7 @@ class StreamTextStore {
     }
     const entry: StreamEntry = {
       value,
+      displayValue: undefined,
       seed: value,
       hasValue: true,
       pendingValue: undefined,
@@ -95,13 +99,41 @@ class StreamTextStore {
     if (!entry) {
       return;
     }
-    const valueChanged = !entry.hasValue || entry.value !== value;
+    const valueChanged =
+      !entry.hasValue || entry.value !== value || entry.displayValue !== undefined;
     entry.hasValue = true;
+    entry.displayValue = undefined;
     if (!valueChanged) {
       return;
     }
     entry.value = value;
     this.notifyValue(entry, value);
+  }
+
+  /**
+   * Replace the accumulated stream text. An empty replace after visible text
+   * is a retry/reset marker: reset the append base, but keep the old text
+   * visible until the replacement stream produces fresh content.
+   */
+  replace(key: string, value: string): void {
+    if (value !== "") {
+      this.set(key, value);
+      return;
+    }
+    this.ensureEntry(key, { hasValue: true });
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return;
+    }
+    const currentVisible = entry.displayValue ?? entry.value;
+    entry.hasValue = true;
+    entry.value = "";
+    entry.seed = "";
+    if (currentVisible.length === 0) {
+      entry.displayValue = undefined;
+      return;
+    }
+    entry.displayValue = currentVisible;
   }
 
   /** Concatenate a delta. Used by `*\/delta` events. */
@@ -115,6 +147,7 @@ class StreamTextStore {
       return;
     }
     entry.hasValue = true;
+    entry.displayValue = undefined;
     entry.value = `${entry.value}${delta}`;
     this.notifyValue(entry, entry.value);
   }
@@ -146,7 +179,10 @@ class StreamTextStore {
     for (const entry of this.entries.values()) {
       if (entry.hasValue) {
         valueEntryCount += 1;
-        totalValueLength += entry.value.length;
+        totalValueLength += Math.max(
+          entry.value.length,
+          entry.displayValue?.length ?? 0,
+        );
       }
       listenerCount += entry.valueListeners.size;
       if (entry.pendingValue !== undefined) {
@@ -187,6 +223,7 @@ class StreamTextStore {
     }
     this.entries.set(key, {
       value: "",
+      displayValue: undefined,
       seed: "",
       hasValue,
       pendingValue: undefined,

@@ -44,6 +44,19 @@ describe("streamTextStore", () => {
 
     expect(streamTextStore.get(key)).toBe("new response");
   });
+
+  it("keeps old text visible across an empty stream replace until fresh text arrives", () => {
+    const key = streamTextKey("turn-replace-visible", "item", "text");
+    streamTextStore.set(key, "");
+    streamTextStore.append(key, "stale partial");
+    streamTextStore.replace(key, "");
+
+    expect(streamTextStore.get(key)).toBe("stale partial");
+
+    streamTextStore.append(key, "fresh answer");
+
+    expect(streamTextStore.get(key)).toBe("fresh answer");
+  });
 });
 
 describe("streamTextStore subscriptions", () => {

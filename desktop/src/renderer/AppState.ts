@@ -464,7 +464,7 @@ function replaceStreamText(
   }
   const key = streamTextKey(turnID, itemID, field);
   const wasEmpty = streamTextStore.get(key).trim().length === 0;
-  streamTextStore.set(key, text);
+  streamTextStore.replace(key, text);
   return field === "text" && wasEmpty && text.trim().length > 0;
 }
 

@@ -305,6 +305,68 @@ describe("AppState stream cache lifecycle", () => {
     streamTextStore.clearItem("turn-1", "agent-1");
   });
 
+  it("keeps visible text through an empty replace while resetting the next delta base", () => {
+    const key = streamTextKey("turn-1", "agent-1", "text");
+    const state = {
+      ...initialState,
+      thread: threadWithUserTexts(["hi"]),
+    };
+
+    handleStreamingNotification(
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "item/agentMessage/delta",
+          params: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+            item_id: "agent-1",
+            delta: "stale partial",
+          },
+        },
+      },
+      state,
+    );
+    handleStreamingNotification(
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "item/agentMessage/replace",
+          params: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+            item_id: "agent-1",
+            text: "",
+          },
+        },
+      },
+      state,
+    );
+
+    expect(streamTextStore.get(key)).toBe("stale partial");
+
+    handleStreamingNotification(
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "item/agentMessage/delta",
+          params: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+            item_id: "agent-1",
+            delta: "fresh answer",
+          },
+        },
+      },
+      state,
+    );
+
+    expect(streamTextStore.get(key)).toBe("fresh answer");
+  });
+
   it("releases completed agent text from the stream cache once a final snapshot exists", () => {
     const raf = installManualRAF();
     const key = streamTextKey("turn-1", "agent-1", "text");
