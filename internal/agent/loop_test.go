@@ -428,6 +428,8 @@ func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}},
 		{Content: "done"},
 	}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 1300})
 	cfg := LoopConfig{
 		Model: "m",
 		Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}},
@@ -439,6 +441,7 @@ func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 		},
 		MaxContextTokens: 1000,
 		DefaultMaxTokens: 100,
+		UsageTracker:     tracker,
 	}
 
 	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{
@@ -936,8 +939,15 @@ func TestRunToolLoop_OnUsageReceivesPerCall(t *testing.T) {
 }
 
 func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300, OutputTokens: 0}}, {Content: "compacted answer"}}}
-	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}
+	step := &fakeStep{results: []StepResult{{Content: "compacted answer"}}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 950, OutputTokens: 0})
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "old ask"},
+		{Role: "assistant", Content: "old answer"},
+		userMsg("hi"),
+	}
 
 	compactCalled := 0
 	compactFn := func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
@@ -945,9 +955,9 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 		return []providers.ChatMessage{{Role: "user", Content: "summary"}}, nil
 	}
 	var compactInfos []CompactInfo
-	cfg := LoopConfig{Model: "m", Tools: tools, Compact: compactFn, MaxContextTokens: 1000, DefaultMaxTokens: 100, OnCompact: func(info CompactInfo) { compactInfos = append(compactInfos, info) }}
+	cfg := LoopConfig{Model: "m", Compact: compactFn, MaxContextTokens: 1000, DefaultMaxTokens: 100, OnCompact: func(info CompactInfo) { compactInfos = append(compactInfos, info) }, UsageTracker: tracker}
 
-	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	res, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
 		t.Fatalf("loop error: %v", err)
 	}
@@ -978,6 +988,48 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 	}
 	if visible[1].Role != "assistant" || visible[1].Content != "compacted answer" {
 		t.Fatalf("expected compacted answer in snapshot, got %+v", visible[1])
+	}
+}
+
+func TestRunToolLoop_DoesNotProactivelyCompactMidTurnToolResults(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300, OutputTokens: 0}},
+		{Content: "ok"},
+	}}
+	compactCalled := 0
+	var attempts []CompactAttemptInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}},
+		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactCalled++
+			return []providers.ChatMessage{{Role: "user", Content: "summary"}}, nil
+		},
+		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
+		OnCompactAttempt: func(info CompactAttemptInfo) {
+			attempts = append(attempts, info)
+		},
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if compactCalled != 0 {
+		t.Fatalf("mid-turn tool results should not trigger proactive compact, got %d calls", compactCalled)
+	}
+	if len(attempts) != 0 {
+		t.Fatalf("expected no proactive compact attempts, got %+v", attempts)
+	}
+	if res.HistoryRewritten {
+		t.Fatal("mid-turn proactive check must not rewrite history")
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected two provider calls, got %d", len(step.calls))
 	}
 }
 
@@ -1086,12 +1138,14 @@ func TestRunToolLoop_ProactiveCompactDisabledWhenNoWindow(t *testing.T) {
 }
 
 func TestRunToolLoop_ProactiveCompactRespectsCustomThreshold(t *testing.T) {
-	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 900}}, {Content: "ok"}}}
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 600})
 	compactCalled := 0
-	cfg := LoopConfig{Model: "m", Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}, Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
+	cfg := LoopConfig{Model: "m", Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		compactCalled++
 		return []providers.ChatMessage{{Role: "user", Content: "sum"}}, nil
-	}, MaxContextTokens: 1000, CompactThresholdPct: 0.5}
+	}, MaxContextTokens: 1000, CompactThresholdPct: 0.5, UsageTracker: tracker}
 	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
 	if err != nil {
 		t.Fatal(err)
@@ -1136,17 +1190,14 @@ func TestProactiveCompactThresholdRespectsInputLimit(t *testing.T) {
 }
 
 func TestRunToolLoop_ProactiveCompactFailureEmitsAttempt(t *testing.T) {
-	step := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}},
-		{Content: "ok"},
-	}}
-	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 1300})
 	compactErr := errors.New("compact provider unavailable")
 	var attempts []CompactAttemptInfo
 	var compactInfos []CompactInfo
 	cfg := LoopConfig{
 		Model: "m",
-		Tools: tools,
 		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return nil, compactErr
 		},
@@ -1154,6 +1205,7 @@ func TestRunToolLoop_ProactiveCompactFailureEmitsAttempt(t *testing.T) {
 		DefaultMaxTokens: 100,
 		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
 		OnCompact:        func(info CompactInfo) { compactInfos = append(compactInfos, info) },
+		UsageTracker:     tracker,
 	}
 
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
@@ -1176,17 +1228,19 @@ func TestRunToolLoop_ProactiveCompactFailureEmitsAttempt(t *testing.T) {
 
 func TestRunToolLoop_ProactiveCompactDoesNotLoopOnNoOpCompact(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}}, {ToolCalls: []providers.ToolCall{{ID: "c2", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}}, {Content: "done"}}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 1300})
 	compactCalled := 0
 	cfg := LoopConfig{Model: "m", Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}}, Compact: func(_ context.Context, m []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		compactCalled++
 		return m, nil
-	}, MaxContextTokens: 1000, DefaultMaxTokens: 100}
+	}, MaxContextTokens: 1000, DefaultMaxTokens: 100, UsageTracker: tracker}
 	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, cfg, step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if compactCalled < 1 {
-		t.Fatalf("expected at least one compact attempt, got %d", compactCalled)
+	if compactCalled != 1 {
+		t.Fatalf("expected one first-step compact attempt, got %d", compactCalled)
 	}
 }
 

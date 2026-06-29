@@ -85,10 +85,10 @@ func RunToolLoop(
 		totalIn, totalOut, totalCacheCreation, totalCacheRead int
 		// Reactive auto-compact (overflow recovery) runs at most once
 		// per Run; if a single compaction isn't enough, surfacing the
-		// error is more honest than silently looping. Proactive
-		// compact is allowed to run multiple times per Run since each
-		// pass shrinks the conversation and the next API call's usage
-		// gives us a fresh ground truth.
+		// error is more honest than silently looping. Proactive compact
+		// is limited to the first model round of a Run so tool results
+		// produced mid-turn cannot rewrite the conversation out from
+		// under the current task.
 		overflowCompacted bool
 		historyRewritten  bool
 		// Tracks current context fill so we can decide whether to
@@ -126,7 +126,7 @@ func RunToolLoop(
 				usage.RecordPendingMessages(injected)
 			}
 		}
-		if cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold {
+		if stepIdx == 0 && cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold {
 			before := usage.EstimateCurrent()
 			msgsBefore := len(messages)
 			compacted, cerr := cfg.Compact(ctx, messages)
