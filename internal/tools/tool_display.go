@@ -205,7 +205,7 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 	case "helpme":
 		return toolDisplay("agent", "HelpMe 求助 "+displayTarget(displayString(args, "reason", "ask"), ""))
 	case "inception":
-		return toolDisplay("context", "压缩上下文")
+		return toolDisplay("context", "潜入上下文 · 植入续行摘要")
 	case "send_message":
 		return toolDisplay("agent", "发送给子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "followup_task":
