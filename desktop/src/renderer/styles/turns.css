@@ -5,7 +5,19 @@
   flex-direction: column;
   gap: var(--conversation-turn-gap);
   font-family: var(--conversation-message-font-family);
-  font-weight: 480;
+  /*
+   * Body weight is the regular 400 axis of the variable font. Earlier drafts
+   * used 480 to give the message stream a faintly heavier "presence", but
+   * for long-form reading 480 reads as too dense and competes with the UI
+   * chrome (chips, buttons, labels) that legitimately needs more weight to
+   * hold hierarchy. 400 keeps the message stream visually quiet so the
+   * surrounding chrome can carry the bold/semibold contrast.
+   *
+   * Companion rule in `base.css` `.rich-content strong, .rich-content b`
+   * uses `font-weight: inherit` so `<strong>`/`<b>` keep DOM semantics
+   * (selection, a11y, copy-paste) without producing a heavier visual run.
+   */
+  font-weight: 400;
   margin-bottom: 20px;
 }
 

@@ -450,12 +450,19 @@ button:disabled {
 .rich-content b {
   /*
    * Inherit the surrounding paragraph weight rather than hardcoding
-   * `normal` (400). The turn body is `font-weight: 480`, so a hardcoded
-   * `normal` made bold render LIGHTER than the surrounding text — the
-   * opposite of emphasis and visually inconsistent. `inherit` collapses
-   * bold into the surrounding weight, preserving the "no font-weight
-   * emphasis" design while keeping DOM semantics (selection, a11y,
-   * copy-paste) intact.
+   * `normal` (400). The turn body is `font-weight: 400`
+   * (see `turns.css` `.turn`), and the message-stream design intentionally
+   * does not escalate weight for emphasis — bold/italic come from DOM
+   * semantics (selection, a11y, copy-paste) only, not from a heavier
+   * visual run. `inherit` collapses `<strong>` into the body weight so
+   * a word marked bold does not punch a hole in the paragraph's rhythm.
+   *
+   * Note: an earlier draft used `font-weight: 480` on `.turn`. At 480,
+   * a hardcoded `normal` (400) inside `strong/b` actually rendered
+   * LIGHTER than the surrounding body — the opposite of emphasis — which
+   * is why this rule was switched to `inherit`. With the body now at 400
+   * the same `inherit` rule continues to be correct: bold stays equal to
+   * the body, never heavier.
    */
   font-weight: inherit;
 }
