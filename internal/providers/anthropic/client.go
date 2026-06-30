@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -39,20 +38,6 @@ const (
 	toolSearchBetaHeader1P  = "advanced-tool-use-2025-11-20"
 )
 
-type anthropicToolSearchEndpoint struct {
-	host          string
-	pathPrefix    string
-	modelContains []string
-}
-
-var officialAnthropicToolSearchEndpoints = []anthropicToolSearchEndpoint{
-	{host: "api.anthropic.com"},
-	{host: "api.minimaxi.com", pathPrefix: "/anthropic", modelContains: []string{"minimax-m3"}},
-	{host: "api.minimax.io", pathPrefix: "/anthropic", modelContains: []string{"minimax-m3"}},
-	{host: "open.bigmodel.cn", pathPrefix: "/api/anthropic", modelContains: []string{"glm-"}},
-	{host: "api.z.ai", pathPrefix: "/api/anthropic", modelContains: []string{"glm-"}},
-}
-
 // resolveMaxTokens picks the per-request override if positive,
 // then the client-level configured value, then falls back to a
 // model-aware default from the registry.
@@ -76,41 +61,9 @@ type ClientConfig struct {
 	MaxTokens    int
 	RetryConfig  *providers.RetryConfig
 	StreamConfig *providers.StreamTransportConfig
-}
-
-// cacheCreationOmittingHostSubstrings lists host fragments whose
-// anthropic-compatible response is known to omit
-// cache_creation_input_tokens. The match is a case-insensitive substring
-// against the full base URL, so prefer the unique host fragment over a
-// broad keyword. Keep this list conservative — a false positive masks a
-// genuine "0 cache created" value behind an N/A flag.
-var cacheCreationOmittingHostSubstrings = []string{
-	// minimax's anthropic-compatible endpoint never returns
-	// cache_creation_input_tokens even when it serves
-	// cache_read_input_tokens. Verified against the production endpoint
-	// 2026-06-24: 664 lines in ~/.wuu/log/debug.log mention minimax, 0
-	// mention cache_creation_input_tokens. Without this stamp the UI
-	// reads CacheCreationTokens=0 as "wuu created no cache" even
-	// though the provider is hitting 90%+ cache_read rate.
-	"api.minimaxi.com",
-}
-
-// isCacheCreationOmittingEndpoint reports whether the configured base
-// URL corresponds to an anthropic-compatible backend whose response
-// omits cache_creation_input_tokens. Callers stamp the result onto
-// providers.TokenUsage.CacheCreationUnknown so downstream UI can render
-// the value as N/A instead of a literal zero.
-func isCacheCreationOmittingEndpoint(baseURL string) bool {
-	u := strings.ToLower(strings.TrimSpace(baseURL))
-	if u == "" {
-		return false
-	}
-	for _, frag := range cacheCreationOmittingHostSubstrings {
-		if strings.Contains(u, frag) {
-			return true
-		}
-	}
-	return false
+	// CacheCreationInputTokensOmitted marks compatible endpoints that omit
+	// cache_creation_input_tokens from usage payloads.
+	CacheCreationInputTokensOmitted bool
 }
 
 // stampCacheCreationFlag sets CacheCreationUnknown on usage when the
@@ -122,21 +75,22 @@ func (c *Client) stampCacheCreationFlag(usage *providers.TokenUsage) {
 	if usage == nil {
 		return
 	}
-	if isCacheCreationOmittingEndpoint(c.baseURL) {
+	if c.cacheCreationInputTokensOmitted {
 		usage.CacheCreationUnknown = true
 	}
 }
 
 // Client sends tool-enabled chat requests to Anthropic APIs.
 type Client struct {
-	baseURL      string
-	apiKey       string
-	authToken    string
-	headers      map[string]string
-	httpClient   *http.Client
-	maxTokens    int
-	retryConfig  providers.RetryConfig
-	streamConfig providers.StreamTransportConfig
+	baseURL                         string
+	apiKey                          string
+	authToken                       string
+	headers                         map[string]string
+	httpClient                      *http.Client
+	maxTokens                       int
+	retryConfig                     providers.RetryConfig
+	streamConfig                    providers.StreamTransportConfig
+	cacheCreationInputTokensOmitted bool
 }
 
 // New creates an Anthropic client.
@@ -160,14 +114,15 @@ func New(cfg ClientConfig) (*Client, error) {
 	rc = providers.NormalizeRetryConfig(rc)
 
 	return &Client{
-		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
-		apiKey:       cfg.APIKey,
-		authToken:    cfg.AuthToken,
-		headers:      cloneHeaders(cfg.Headers),
-		httpClient:   hc,
-		maxTokens:    maxTokens,
-		retryConfig:  rc,
-		streamConfig: streamTransportConfig(cfg.StreamConfig),
+		baseURL:                         strings.TrimRight(cfg.BaseURL, "/"),
+		apiKey:                          cfg.APIKey,
+		authToken:                       cfg.AuthToken,
+		headers:                         cloneHeaders(cfg.Headers),
+		httpClient:                      hc,
+		maxTokens:                       maxTokens,
+		retryConfig:                     rc,
+		streamConfig:                    streamTransportConfig(cfg.StreamConfig),
+		cacheCreationInputTokensOmitted: cfg.CacheCreationInputTokensOmitted,
 	}, nil
 }
 
@@ -579,7 +534,7 @@ func SupportsNativeToolSearch(baseURL, model string, options map[string]any) boo
 	if enabled, ok := anthropicToolSearchOption(options); ok {
 		return enabled
 	}
-	return isOfficialAnthropicToolSearchEndpoint(baseURL, model)
+	return isFirstPartyAnthropicBaseURL(baseURL)
 }
 
 func hasToolSearchTool(defs []providers.ToolDefinition) bool {
@@ -599,31 +554,9 @@ func modelSupportsAnthropicToolReference(model string) bool {
 	return !strings.Contains(normalized, "haiku")
 }
 
-func isOfficialAnthropicToolSearchEndpoint(raw, model string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(parsed.Hostname())
-	path := strings.TrimRight(strings.ToLower(parsed.EscapedPath()), "/")
-	normalizedModel := strings.ToLower(strings.TrimSpace(model))
-	for _, endpoint := range officialAnthropicToolSearchEndpoints {
-		if host != endpoint.host {
-			continue
-		}
-		if endpoint.pathPrefix != "" && path != strings.TrimRight(endpoint.pathPrefix, "/") {
-			continue
-		}
-		if len(endpoint.modelContains) == 0 {
-			return true
-		}
-		for _, fragment := range endpoint.modelContains {
-			if strings.Contains(normalizedModel, fragment) {
-				return true
-			}
-		}
-	}
-	return false
+func isFirstPartyAnthropicBaseURL(raw string) bool {
+	u := strings.TrimRight(strings.ToLower(strings.TrimSpace(raw)), "/")
+	return u == "https://api.anthropic.com" || u == "https://api.anthropic.com/v1"
 }
 
 func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {

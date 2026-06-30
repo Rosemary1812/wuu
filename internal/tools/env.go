@@ -199,6 +199,10 @@ type Env struct {
 	GoalRuntime *goalruntime.Runtime
 	AgentID     string
 	AgentPath   string
+	// ToolSearchEnabled means deferred tools are loaded through the
+	// model-visible tool_search entrypoint. When false, the active surface is
+	// flattened and tool_search guidance must not be emitted.
+	ToolSearchEnabled bool
 	// NativeDeferredToolDiscovery means the active provider can receive
 	// schemas discovered by ordinary tool results without requiring an
 	// explicit tool_search call first.

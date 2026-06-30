@@ -223,7 +223,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 }
 
 func subagentNextStepsForDiscovery(env *Env, steps []string) []string {
-	if env == nil || env.NativeDeferredToolDiscovery || !subagentStepsMentionManagementTool(steps) {
+	if env == nil || !env.ToolSearchEnabled || env.NativeDeferredToolDiscovery || !subagentStepsMentionManagementTool(steps) {
 		return steps
 	}
 	out := append([]string(nil), steps...)

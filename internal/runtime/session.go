@@ -92,6 +92,8 @@ type Session struct {
 	Permissions                 config.ResolvedPermissions
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
+	ToolSearchEnabled           bool
+	ExperimentalDeferredBundles bool
 	CronScheduler               *cron.Scheduler
 	CronLock                    *cron.Lock
 }
@@ -181,6 +183,8 @@ func NewSession(opts Options) (*Session, error) {
 	var profileMemoryProvider memstore.Provider
 	profileMemoryCharLimit := cfg.Memory.ProfileMemoryCharLimit()
 	profileUserMemoryCharLimit := cfg.Memory.ProfileUserCharLimit()
+	toolSearchEnabled := cfg.Agent.ToolSearchEnabled()
+	experimentalDeferredBundles := cfg.Agent.ExperimentalDeferredToolBundles
 	if !opts.NoTools {
 		kit, newErr := tools.New(rootDir)
 		if newErr != nil {
@@ -193,7 +197,9 @@ func NewSession(opts Options) (*Session, error) {
 		ConfigureToolkitPermissions(kit, cfg.Agent.ToolPolicy, permissions)
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
-		kit.SetNativeDeferredToolDiscovery(providerfactory.SupportsNativeToolDiscovery(ruleProviderCfg, toolModeModel, mainRole.ProviderOptions))
+		kit.SetToolSearchEnabled(toolSearchEnabled)
+		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
+		kit.SetNativeDeferredToolDiscovery(toolSearchEnabled && experimentalDeferredBundles && providerfactory.SupportsNativeToolDiscovery(ruleProviderCfg, toolModeModel, mainRole.ProviderOptions))
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled && !cfg.Memory.Disable {
 			// Attach the global long-term memory store. With memory now a
@@ -290,7 +296,9 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
-				wkit.SetNativeDeferredToolDiscovery(providerfactory.SupportsNativeToolDiscovery(roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions))
+				wkit.SetToolSearchEnabled(toolSearchEnabled)
+				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
+				wkit.SetNativeDeferredToolDiscovery(toolSearchEnabled && experimentalDeferredBundles && providerfactory.SupportsNativeToolDiscovery(roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions))
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
 					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
@@ -394,6 +402,8 @@ func NewSession(opts Options) (*Session, error) {
 		Permissions:                 permissions,
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
+		ToolSearchEnabled:           toolSearchEnabled,
+		ExperimentalDeferredBundles: experimentalDeferredBundles,
 	}, nil
 }
 
@@ -710,7 +720,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetAgentControl(control)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
-					workerKit.SetNativeDeferredToolDiscovery(providerfactory.SupportsNativeToolDiscovery(s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions))
+					workerKit.SetToolSearchEnabled(s.ToolSearchEnabled)
+					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
+					workerKit.SetNativeDeferredToolDiscovery(s.ToolSearchEnabled && s.ExperimentalDeferredBundles && providerfactory.SupportsNativeToolDiscovery(s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions))
 					if strings.TrimSpace(meta.AgentProfile) != "" {
 						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
 						if memErr != nil {

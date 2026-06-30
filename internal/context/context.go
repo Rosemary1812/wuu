@@ -68,6 +68,7 @@ const (
 	BlockWebEvidence       BlockKind = "WEB_EVIDENCE"
 	BlockMemory            BlockKind = "MEMORY"
 	BlockToolPolicy        BlockKind = "TOOL_POLICY"
+	BlockAvailableDeferred BlockKind = "AVAILABLE_DEFERRED_TOOLS"
 	BlockToolResultSummary BlockKind = "TOOL_RESULT_SUMMARY"
 	BlockEnvironment       BlockKind = "ENVIRONMENT"
 	BlockAdditionalContext BlockKind = "ADDITIONAL_CONTEXT"

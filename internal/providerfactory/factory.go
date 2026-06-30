@@ -131,12 +131,13 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			return nil, apiKeyErr
 		}
 		client, newErr := anthropic.New(anthropic.ClientConfig{
-			BaseURL:      provider.BaseURL,
-			APIKey:       apiKey,
-			AuthToken:    authToken,
-			Headers:      provider.Headers,
-			RetryConfig:  retry,
-			StreamConfig: providerStreamTransportConfig(provider),
+			BaseURL:                         provider.BaseURL,
+			APIKey:                          apiKey,
+			AuthToken:                       authToken,
+			Headers:                         provider.Headers,
+			RetryConfig:                     retry,
+			StreamConfig:                    providerStreamTransportConfig(provider),
+			CacheCreationInputTokensOmitted: provider.CacheCreationInputTokensOmitted,
 		})
 		if newErr != nil {
 			return nil, newErr

@@ -1404,46 +1404,108 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	}
 }
 
-func TestNewSessionEnablesNativeToolDiscoveryForOfficialAnthropicCompatibleEndpoints(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		baseURL string
-		model   string
-	}{
-		{name: "minimax", baseURL: "https://api.minimaxi.com/anthropic", model: "MiniMax-M3"},
-		{name: "zai", baseURL: "https://api.z.ai/api/anthropic", model: "glm-4.7"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			home := t.TempDir()
-			t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+func TestNewSessionKeepsNativeDeferredBundlesExperimentalByDefault(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
 
-			rt, err := NewSession(Options{
-				RootDir:    root,
-				HomeDir:    home,
-				ConfigPath: filepath.Join(root, ".wuu.json"),
-				Config: config.Config{
-					DefaultProvider: tc.name,
-					Providers: map[string]config.ProviderConfig{
-						tc.name: {
-							Type:    "anthropic",
-							BaseURL: tc.baseURL,
-							APIKey:  "abc",
-							Model:   tc.model,
-						},
-					},
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "anthropic",
+			Providers: map[string]config.ProviderConfig{
+				"anthropic": {
+					Type:    "anthropic",
+					BaseURL: "https://api.anthropic.com",
+					APIKey:  "abc",
+					Model:   "claude-sonnet-4-5",
 				},
-			})
-			if err != nil {
-				t.Fatalf("NewSession: %v", err)
-			}
-			if _, ok := rt.StreamRunner.ProviderOptions["anthropicToolSearch"]; ok {
-				t.Fatalf("official endpoint should not masquerade as explicit anthropicToolSearch opt-in: %#v", rt.StreamRunner.ProviderOptions)
-			}
-			if rt.Toolkit == nil || !rt.Toolkit.NativeDeferredToolDiscovery() {
-				t.Fatalf("%s should enable native deferred tool discovery", tc.name)
-			}
-		})
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() {
+		t.Fatal("tool_search should be enabled by default")
+	}
+	if rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatal("native deferred bundle discovery should be experimental and off by default")
+	}
+}
+
+func TestNewSessionEnablesNativeDeferredBundlesOnlyWhenExperimental(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "anthropic",
+			Providers: map[string]config.ProviderConfig{
+				"anthropic": {
+					Type:    "anthropic",
+					BaseURL: "https://api.anthropic.com",
+					APIKey:  "abc",
+					Model:   "claude-sonnet-4-5",
+				},
+			},
+			Agent: config.AgentConfig{ExperimentalDeferredToolBundles: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.Toolkit == nil || !rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatal("experimental native deferred bundle discovery should be enabled")
+	}
+}
+
+func TestNewSessionFlattensToolSurfaceWhenToolSearchDisabled(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	disabled := false
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "generic",
+			Providers: map[string]config.ProviderConfig{
+				"generic": {
+					Type:    "openai-compatible",
+					BaseURL: "https://example.com/v1",
+					APIKey:  "abc",
+					Model:   "generic-coder",
+				},
+			},
+			Agent: config.AgentConfig{ToolSearch: &disabled},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defs := map[string]bool{}
+	for _, def := range rt.Toolkit.Definitions() {
+		defs[def.Name] = true
+	}
+	for _, name := range []string{"tool_search", "await_agents"} {
+		if name == "tool_search" && defs[name] {
+			t.Fatalf("flat surface should hide tool_search: %+v", defs)
+		}
+		if name == "await_agents" && !defs[name] {
+			t.Fatalf("flat surface should expose deferred tool %s: %+v", name, defs)
+		}
+	}
+	if strings.Contains(rt.BaseSystemPrompt, "# Tool Discovery") {
+		t.Fatalf("flat surface should not include tool_search guidance:\n%s", rt.BaseSystemPrompt)
 	}
 }
 
@@ -1740,6 +1802,7 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 	for _, want := range []string{
 		"# Tool Discovery",
 		"`tool_search`",
+		"<available-deferred-tools>",
 		"select:<tool_name>",
 		"Do not use `tool_search` for visible core tools",
 	} {

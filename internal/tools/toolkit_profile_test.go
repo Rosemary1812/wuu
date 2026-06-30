@@ -627,9 +627,23 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		}
 	}
 
+	deferredNames := kit.AvailableDeferredToolNames()
+	for _, name := range subagentManagementTools {
+		if !containsString(deferredNames, name) {
+			t.Fatalf("deferred name index should include %s before spawn_agent succeeds: %v", name, deferredNames)
+		}
+	}
+	block, ok := kit.AvailableDeferredToolsContextBlock()
+	if !ok {
+		t.Fatal("deferred name index should be emitted as a context block")
+	}
+	if !strings.Contains(block.Content, "<available-deferred-tools>") || !strings.Contains(block.Content, "await_agents") {
+		t.Fatalf("deferred context block missing stable names:\n%s", block.Content)
+	}
+
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "tool_search",
-		Arguments: `{"query":"select:await_agents","limit":1}`,
+		Arguments: `{"query":"select:send_message followup_task await_agents close_agent list_agents","limit":5}`,
 	})
 	if err != nil {
 		t.Fatalf("tool_search: %v", err)
@@ -640,30 +654,14 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp), &searched); err != nil {
 		t.Fatalf("parse tool_search: %v", err)
 	}
-	if containsString(searched.LoadedTools, "await_agents") || containsProfileDef(kit.Definitions(), "await_agents") {
-		t.Fatalf("tool_search should not activate subagent management tools before spawn_agent succeeds: %s", resp)
+	for _, name := range subagentManagementTools {
+		if !containsString(searched.LoadedTools, name) {
+			t.Fatalf("tool_search should load stable deferred management tool %s before spawn_agent succeeds: %s", name, resp)
+		}
 	}
 
 	if discovered := kit.activateToolBundlesAfterSuccess("helpme"); len(discovered) != 0 {
 		t.Fatalf("fallback activation should not attach native discovered tools: %+v", discovered)
-	}
-	if containsProfileDef(kit.Definitions(), "await_agents") {
-		t.Fatalf("fallback activation should keep management tools hidden until tool_search loads them")
-	}
-	resp, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "tool_search",
-		Arguments: `{"query":"select:send_message followup_task await_agents close_agent list_agents","limit":5}`,
-	})
-	if err != nil {
-		t.Fatalf("tool_search after spawn: %v", err)
-	}
-	if err := json.Unmarshal([]byte(resp), &searched); err != nil {
-		t.Fatalf("parse post-spawn tool_search: %v", err)
-	}
-	for _, name := range subagentManagementTools {
-		if !containsString(searched.LoadedTools, name) {
-			t.Fatalf("tool_search should load management tool %s after spawn activates the bundle: %s", name, resp)
-		}
 	}
 	defs = kit.Definitions()
 	tailStart := len(defs) - len(subagentManagementTools)
@@ -705,6 +703,7 @@ func TestNativeSubagentBundleActivationDiscoversManagementTools(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	kit.SetExperimentalDeferredToolBundles(true)
 	kit.SetNativeDeferredToolDiscovery(true)
 
 	discovered := kit.activateToolBundlesAfterSuccess("spawn_agent")
@@ -738,23 +737,28 @@ func TestNativeSubagentBundleActivationDiscoversManagementTools(t *testing.T) {
 
 func TestFallbackSubagentNextStepsTellModelToUseToolSearch(t *testing.T) {
 	steps := []string{"Use await_agents with root/worker only when the next step depends on this worker's output."}
-	got := subagentNextStepsForDiscovery(&Env{}, steps)
+	got := subagentNextStepsForDiscovery(&Env{ToolSearchEnabled: true}, steps)
 	if len(got) != 2 || !strings.Contains(got[1], "tool_search") || !strings.Contains(got[1], "select:await_agents") {
 		t.Fatalf("fallback next steps should mention tool_search loading, got %+v", got)
 	}
 
-	native := subagentNextStepsForDiscovery(&Env{NativeDeferredToolDiscovery: true}, steps)
+	flat := subagentNextStepsForDiscovery(&Env{ToolSearchEnabled: false}, steps)
+	if len(flat) != 1 {
+		t.Fatalf("flat tool surface should not mention tool_search loading, got %+v", flat)
+	}
+
+	native := subagentNextStepsForDiscovery(&Env{ToolSearchEnabled: true, NativeDeferredToolDiscovery: true}, steps)
 	if len(native) != 1 {
 		t.Fatalf("native next steps should remain unchanged, got %+v", native)
 	}
 }
 
-func TestMiniMaxM3ProfileExposesSpawnAgentDirectly(t *testing.T) {
+func TestActiveProfileExposesTaskEntrypointsDirectly(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetActiveProfile(modelprofile.Resolve("minimax-cn", "MiniMax-M3"), true)
+	kit.SetActiveProfile(modelprofile.Resolve("compatible", "generic-coder"), true)
 
 	var found *providers.ToolDefinition
 	defs := kit.Definitions()
@@ -765,7 +769,7 @@ func TestMiniMaxM3ProfileExposesSpawnAgentDirectly(t *testing.T) {
 		}
 	}
 	if found == nil {
-		t.Fatalf("MiniMax M3 should receive spawn_agent in the default tool list: %v", sortedProfileDefNames(defs))
+		t.Fatalf("main agent surface should receive spawn_agent in the default tool list: %v", sortedProfileDefNames(defs))
 	}
 	if !found.CacheStable {
 		t.Fatalf("direct spawn_agent should stay inside the cache-stable prefix: %+v", *found)
@@ -778,21 +782,54 @@ func TestMiniMaxM3ProfileExposesSpawnAgentDirectly(t *testing.T) {
 		}
 	}
 	if helpmeFound == nil {
-		t.Fatalf("MiniMax M3 should receive helpme in the default tool list: %v", sortedProfileDefNames(defs))
+		t.Fatalf("main agent surface should receive helpme in the default tool list: %v", sortedProfileDefNames(defs))
 	}
 	if !helpmeFound.CacheStable {
 		t.Fatalf("direct helpme should stay inside the cache-stable prefix: %+v", *helpmeFound)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
-		t.Fatalf("MiniMax M3 should call spawn_agent directly, got %v", err)
+		t.Fatalf("main agent surface should call spawn_agent directly, got %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "helpme", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
-		t.Fatalf("MiniMax M3 should call helpme directly, got %v", err)
+		t.Fatalf("main agent surface should call helpme directly, got %v", err)
 	}
 	for _, name := range subagentManagementTools {
 		if containsProfileDef(defs, name) {
-			t.Fatalf("MiniMax M3 should keep management tool %s deferred before spawn, got %v", name, sortedProfileDefNames(defs))
+			t.Fatalf("main agent surface should keep management tool %s deferred until tool_search loads it, got %v", name, sortedProfileDefNames(defs))
 		}
+	}
+}
+
+func TestActiveProfileFlatToolSurfaceHidesToolSearchAndExposesDeferredTools(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("compatible", "generic-coder"), true)
+	kit.SetToolSearchEnabled(false)
+
+	defs := kit.Definitions()
+	if containsProfileDef(defs, "tool_search") {
+		t.Fatalf("flat surface should hide tool_search: %v", sortedProfileDefNames(defs))
+	}
+	for _, name := range subagentManagementTools {
+		if !containsProfileDef(defs, name) {
+			t.Fatalf("flat surface should expose deferred tool %s directly: %v", name, sortedProfileDefNames(defs))
+		}
+		if info, ok := kit.ToolInfo(name); !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		} else if info.Exposure != ToolExposureDirect {
+			t.Fatalf("flat surface exposure for %s = %s, want %s", name, info.Exposure, ToolExposureDirect)
+		}
+	}
+	if _, ok := kit.AvailableDeferredToolsContextBlock(); ok {
+		t.Fatal("flat surface should not emit deferred tool name context")
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "await_agents", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("flat surface should call await_agents directly and reach runtime validation, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "tool_search", Arguments: `{"query":"select:await_agents"}`}); err == nil || !strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("flat surface should block tool_search execution, got %v", err)
 	}
 }
 

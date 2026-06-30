@@ -106,11 +106,84 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	if cfg.Agent.SystemPrompt != "" {
 		t.Fatalf("expected config system_prompt to remain user-owned, got %q", cfg.Agent.SystemPrompt)
 	}
+	if !cfg.Agent.ToolSearchEnabled() {
+		t.Fatal("expected tool_search to be enabled by default")
+	}
+	if cfg.Agent.ExperimentalDeferredToolBundles {
+		t.Fatal("expected native deferred bundle activation to be experimental and off by default")
+	}
 	if cfg.Agent.ProfileName() != DefaultAgentName {
 		t.Fatalf("expected default agent name %q, got %q", DefaultAgentName, cfg.Agent.ProfileName())
 	}
 	if DefaultSystemPrompt() == "" {
 		t.Fatal("expected built-in default system prompt")
+	}
+}
+
+func TestLoadFrom_ToolSearchConfig(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "model": "gpt-5-codex"
+    }
+  },
+  "agent": {
+    "tool_search": false,
+    "experimental_deferred_tool_bundles": true
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Agent.ToolSearch == nil {
+		t.Fatal("expected explicit tool_search value to be preserved")
+	}
+	if cfg.Agent.ToolSearchEnabled() {
+		t.Fatal("expected explicit tool_search=false to disable progressive loading")
+	}
+	if !cfg.Agent.ExperimentalDeferredToolBundles {
+		t.Fatal("expected experimental deferred bundle flag to parse")
+	}
+}
+
+func TestLoadFrom_ProviderCacheCreationOmittedConfig(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "anthropic",
+      "base_url": "https://compatible.example.com/anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "model": "generic-coder",
+      "cache_creation_input_tokens_omitted": true
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if !cfg.Providers["main"].CacheCreationInputTokensOmitted {
+		t.Fatal("expected cache creation omission flag to parse")
 	}
 }
 

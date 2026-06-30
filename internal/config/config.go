@@ -169,6 +169,11 @@ type ProviderConfig struct {
 	// about yet, custom finetunes, private deployments, or proxies
 	// that rename the upstream model. Zero means "use the registry".
 	ContextWindow int `json:"context_window,omitempty"`
+	// CacheCreationInputTokensOmitted marks Anthropic-compatible endpoints
+	// that omit cache_creation_input_tokens from usage payloads. When set,
+	// Wuu reports cache creation as unknown instead of showing a misleading
+	// literal zero.
+	CacheCreationInputTokensOmitted bool `json:"cache_creation_input_tokens_omitted,omitempty"`
 }
 
 // ProviderModelProviderConfig mirrors OpenCode's per-model provider override
@@ -286,6 +291,14 @@ type AgentConfig struct {
 	// disabled, only the embedded data ships with each wuu binary
 	// is used.
 	CatwalkAutoupdate bool `json:"catwalk_autoupdate,omitempty"`
+	// ToolSearch controls progressive loading of deferred tool schemas.
+	// nil means enabled. Set false to expose the active profile's tool
+	// surface in one flat tool list and hide tool_search.
+	ToolSearch *bool `json:"tool_search,omitempty"`
+	// ExperimentalDeferredToolBundles enables the provider-native bundle
+	// activation path where successful tools can attach follow-on schemas.
+	// It is off by default; the main path is tool_search or flat tools.
+	ExperimentalDeferredToolBundles bool `json:"experimental_deferred_tool_bundles,omitempty"`
 	// ExperimentalCoordinatorMode exposes the old coordinator slash mode
 	// for local experimentation. Disabled by default because the mode's
 	// user-facing contract is still unclear: the main agent loses some
@@ -747,6 +760,10 @@ func (a AgentConfig) UserSystemPrompt() string {
 		parts = append(parts, s)
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func (a AgentConfig) ToolSearchEnabled() bool {
+	return a.ToolSearch == nil || *a.ToolSearch
 }
 
 func (a AgentConfig) ProfileName() string {

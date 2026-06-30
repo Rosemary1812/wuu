@@ -26,7 +26,8 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
 		Description: "Search deferred tools and load matching tool schemas.\n\n" +
-			"Use this when you need a tool that is not currently visible, especially MCP tools, workflows, scheduling, memory, context rewrite/continuation, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
+			"Deferred tool names are listed in <available-deferred-tools> system reminders, but those tools are not callable until their schemas are loaded. " +
+			"Use this when you need a listed deferred tool or a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, context rewrite/continuation, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -189,7 +190,7 @@ func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMat
 }
 
 func (t *Toolkit) toolSearchCanLoadDeferredTool(name string) bool {
-	if isSubagentManagementTool(name) {
+	if isSubagentManagementTool(name) && t.experimentalDeferredToolBundlesEnabled() {
 		return t.isToolBundleAvailable(subagentManagementBundle) || t.isDeferredToolLoaded(name)
 	}
 	return true

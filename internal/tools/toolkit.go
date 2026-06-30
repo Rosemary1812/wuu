@@ -53,6 +53,8 @@ type Toolkit struct {
 	exposureMu              sync.RWMutex
 	loadedDeferredTools     map[string]struct{}
 	availableToolBundles    map[string]struct{}
+	toolSearchEnabled       bool
+	experimentalToolBundles bool
 	nativeDeferredDiscovery bool
 	discoveryMu             sync.Mutex
 	discoveredToolsByCall   map[string][]providers.LoadableToolDefinition
@@ -106,10 +108,11 @@ func New(rootDir string) (*Toolkit, error) {
 	}
 
 	env := &Env{
-		RootDir:  abs,
-		StateDir: stateDir,
+		RootDir:           abs,
+		StateDir:          stateDir,
+		ToolSearchEnabled: true,
 	}
-	t := &Toolkit{env: env, autoModeClassifier: DefaultAutoModeClassifier{}, approvalStore: NewToolApprovalStore()}
+	t := &Toolkit{env: env, toolSearchEnabled: true, autoModeClassifier: DefaultAutoModeClassifier{}, approvalStore: NewToolApprovalStore()}
 	t.rebuildRegistry()
 	t.SetEditToolMode(EditToolModeText)
 	return t, nil
@@ -150,6 +153,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		GoalRuntime:                 t.env.GoalRuntime,
 		AgentID:                     t.env.AgentID,
 		AgentPath:                   t.env.AgentPath,
+		ToolSearchEnabled:           t.env.ToolSearchEnabled,
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
 		ProcessMgr:                  t.env.ProcessMgr,
 		AgentControl:                t.env.AgentControl,
@@ -175,6 +179,8 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		mcpManager:             t.mcpManager,
 	}
 	t.exposureMu.RLock()
+	clone.toolSearchEnabled = t.toolSearchEnabled
+	clone.experimentalToolBundles = t.experimentalToolBundles
 	clone.nativeDeferredDiscovery = t.nativeDeferredDiscovery
 	t.exposureMu.RUnlock()
 	t.activeProfileMu.RLock()
@@ -304,6 +310,37 @@ func (t *Toolkit) SetNativeDeferredToolDiscovery(enabled bool) {
 
 func (t *Toolkit) NativeDeferredToolDiscovery() bool {
 	return t.nativeDeferredToolDiscoveryEnabled()
+}
+
+func (t *Toolkit) SetToolSearchEnabled(enabled bool) {
+	if t == nil {
+		return
+	}
+	t.exposureMu.Lock()
+	t.toolSearchEnabled = enabled
+	t.exposureMu.Unlock()
+	if t.env != nil {
+		t.env.ToolSearchEnabled = enabled
+		t.env.ActiveSurface = t.ActiveSurface()
+	}
+}
+
+func (t *Toolkit) ToolSearchEnabled() bool {
+	if t == nil {
+		return false
+	}
+	t.exposureMu.RLock()
+	defer t.exposureMu.RUnlock()
+	return t.toolSearchEnabled
+}
+
+func (t *Toolkit) SetExperimentalDeferredToolBundles(enabled bool) {
+	if t == nil {
+		return
+	}
+	t.exposureMu.Lock()
+	t.experimentalToolBundles = enabled
+	t.exposureMu.Unlock()
 }
 
 // SetProcessManager attaches the process manager.
@@ -669,7 +706,7 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 		return
 	}
 	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, forMainAgent)
-	t.env.ActiveSurface = cloneSurface(t.activeSurface)
+	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
 
 // ActiveProfile returns the currently installed model profile, or the
@@ -691,7 +728,7 @@ func (t *Toolkit) ActiveSurface() capability.Surface {
 	}
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
-	return cloneSurface(t.activeSurface)
+	return cloneSurface(t.surfaceForToolLoadingMode(t.activeSurface))
 }
 
 // activeCompiledSurface is the internal helper Definitions() uses
@@ -704,7 +741,44 @@ func (t *Toolkit) activeCompiledSurface() capability.Surface {
 	}
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
-	return t.activeSurface
+	return t.surfaceForToolLoadingMode(t.activeSurface)
+}
+
+func (t *Toolkit) surfaceForToolLoadingMode(surface capability.Surface) capability.Surface {
+	if surface.ProfileName == "" || t.toolSearchEnabledForSurface() {
+		return surface
+	}
+	out := cloneSurface(surface)
+	delete(out.Tools, "tool_search")
+	for name, capName := range out.DeferredTools {
+		out.Tools[name] = capName
+	}
+	out.DeferredTools = map[string]capability.Capability{}
+	for _, capName := range out.DeferredCapabilities {
+		if !surfaceHasCapability(out.Capabilities, capName) {
+			out.Capabilities = append(out.Capabilities, capName)
+		}
+	}
+	out.DeferredCapabilities = nil
+	return out
+}
+
+func (t *Toolkit) toolSearchEnabledForSurface() bool {
+	if t == nil {
+		return false
+	}
+	t.exposureMu.RLock()
+	defer t.exposureMu.RUnlock()
+	return t.toolSearchEnabled
+}
+
+func surfaceHasCapability(caps []capability.Capability, capName capability.Capability) bool {
+	for _, existing := range caps {
+		if existing == capName {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneSurface(surface capability.Surface) capability.Surface {
@@ -879,8 +953,13 @@ func activeSurfaceToolExposure(surface capability.Surface, name string) ToolExpo
 	if _, ok := surface.DeferredTools[name]; ok {
 		return ToolExposureDeferred
 	}
-	if classifyToolKind(name) == ToolKindMCP && surfaceHasAvailableCapability(surface, capability.CapabilityMCP) {
-		return ToolExposureDeferred
+	if classifyToolKind(name) == ToolKindMCP {
+		if surfaceHasVisibleCapability(surface, capability.CapabilityMCP) {
+			return ToolExposureDirect
+		}
+		if surfaceHasAvailableCapability(surface, capability.CapabilityMCP) {
+			return ToolExposureDeferred
+		}
 	}
 	return ToolExposureHidden
 }

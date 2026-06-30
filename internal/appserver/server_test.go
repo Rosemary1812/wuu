@@ -2219,8 +2219,8 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if params.InputTokens != 10 || params.OutputTokens != 3 || params.CacheCreationTokens != 6 || params.CacheReadTokens != 4 {
 		t.Fatalf("unexpected usage: %+v", params)
 	}
-	if params.ContextTokens != 17 || params.Turn.ContextTokens != 17 {
-		t.Fatalf("completed turn should carry retained context estimate: %+v", params)
+	if params.ContextTokens != 0 || params.Turn.ContextTokens != 0 {
+		t.Fatalf("completed turn should carry retained durable context estimate: %+v", params)
 	}
 	if params.TracePath == "" {
 		t.Fatalf("completed turn should include trace path: %+v", params)
@@ -2242,6 +2242,9 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		requestRecord.CacheReadTokens != 4 {
 		t.Fatalf("turn trace context request missing per-call usage: %+v", requestRecord)
 	}
+	if requestRecord.DynamicBytes == 0 || requestRecord.BlockKindBytes[string(wuucontext.BlockAvailableDeferred)] == 0 {
+		t.Fatalf("turn trace should include deferred tool index as request-only context: %+v", requestRecord)
+	}
 
 	event := turnEventByType(t, msgs, providers.EventContentDelta)
 	eventParams := remarshal[TurnEventNotification](t, event["params"])
@@ -2253,12 +2256,12 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	if contextParams.Event.RequestContext == nil {
 		t.Fatalf("request context missing from turn event: %+v", contextParams.Event)
 	}
-	if contextParams.Event.RequestContext.TransientMessages != 0 || contextParams.Event.RequestContext.ContentBytes != 0 {
+	if contextParams.Event.RequestContext.TransientMessages == 0 || contextParams.Event.RequestContext.ContentBytes == 0 {
 		t.Fatalf("unexpected request context metadata: %+v", contextParams.Event.RequestContext)
 	}
 	if contextParams.Event.RequestContext.MessageCount == 0 ||
-		contextParams.Event.RequestContext.HiddenMessages != 1 ||
-		contextParams.Event.RequestContext.DynamicBytes != 0 ||
+		contextParams.Event.RequestContext.HiddenMessages != 2 ||
+		contextParams.Event.RequestContext.DynamicBytes == 0 ||
 		contextParams.Event.RequestContext.SystemBytes == 0 ||
 		contextParams.Event.RequestContext.StablePrefixBytes == 0 ||
 		contextParams.Event.RequestContext.TurnPrefixBytes == 0 ||
@@ -2269,6 +2272,9 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 		contextParams.Event.RequestContext.TurnPrefixHash == "" ||
 		contextParams.Event.RequestContext.ToolSurfaceHash == "" {
 		t.Fatalf("request context missing request shape metadata: %+v", contextParams.Event.RequestContext)
+	}
+	if contextParams.Event.RequestContext.BlockKindBytes[string(wuucontext.BlockAvailableDeferred)] == 0 {
+		t.Fatalf("request context should include deferred tool index metadata: %+v", contextParams.Event.RequestContext)
 	}
 	hasEnvironmentSection := false
 	for _, section := range contextParams.Event.RequestContext.SystemSections {
@@ -2405,7 +2411,7 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	if result.TurnID == "" || result.TracePath == "" {
 		t.Fatalf("expected latest turn and trace path: %+v", result)
 	}
-	if result.PromptTokens != 14 || result.TotalContextTokens != 17 || result.RetainedTokens != 17 {
+	if result.PromptTokens != 14 || result.TotalContextTokens != 17 || result.RetainedTokens != 0 {
 		t.Fatalf("unexpected token totals: %+v", result)
 	}
 	if result.InputTokens != 10 || result.OutputTokens != 3 || result.CacheCreationTokens != 6 || result.CacheReadTokens != 4 {
@@ -2430,11 +2436,14 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	for _, category := range result.Categories {
 		categories[category.ID] = category
 	}
-	for _, id := range []string{"system", "tool_schema"} {
+	for _, id := range []string{"system", "request_only", "tool_schema"} {
 		category, ok := categories[id]
 		if !ok || !category.Contributes || category.Tokens <= 0 || category.Bytes <= 0 {
 			t.Fatalf("expected contributing %s category, got %+v", id, category)
 		}
+	}
+	if result.BlockKindBytes[string(wuucontext.BlockAvailableDeferred)] == 0 {
+		t.Fatalf("context composition should include deferred tool index bytes: %+v", result.BlockKindBytes)
 	}
 	if len(result.SystemSections) == 0 {
 		t.Fatalf("expected system sections: %+v", result)

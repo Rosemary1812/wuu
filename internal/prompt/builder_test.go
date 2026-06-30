@@ -157,11 +157,12 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 	for _, want := range []string{
 		"# Tool Discovery",
 		"deferred",
+		"<available-deferred-tools>",
 		"`tool_search`",
 		"select:<tool_name>",
 		"desktop port reporting",
 		"context rewrite/continuation",
-		"already loaded or activated a deferred schema",
+		"already loaded a deferred schema",
 		"Do not use `tool_search` for visible core tools",
 	} {
 		if !strings.Contains(result, want) {

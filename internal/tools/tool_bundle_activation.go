@@ -25,7 +25,7 @@ func (t *Toolkit) activateToolBundlesAfterSuccess(toolName string) []providers.L
 }
 
 func (t *Toolkit) refreshStateActivatedToolBundles() {
-	if t == nil || t.env == nil || t.env.AgentControl == nil {
+	if t == nil || !t.experimentalDeferredToolBundlesEnabled() || t.env == nil || t.env.AgentControl == nil {
 		return
 	}
 	if len(t.env.AgentControl.ListFrom(currentAgentPath(t.env), "")) == 0 {
@@ -38,7 +38,7 @@ func (t *Toolkit) refreshStateActivatedToolBundles() {
 }
 
 func (t *Toolkit) activateSubagentManagementBundle() []providers.LoadableToolDefinition {
-	if t == nil {
+	if t == nil || !t.experimentalDeferredToolBundlesEnabled() {
 		return nil
 	}
 	t.markToolBundleAvailable(subagentManagementBundle)
@@ -79,6 +79,15 @@ func (t *Toolkit) nativeDeferredToolDiscoveryEnabled() bool {
 	t.exposureMu.RLock()
 	defer t.exposureMu.RUnlock()
 	return t.nativeDeferredDiscovery
+}
+
+func (t *Toolkit) experimentalDeferredToolBundlesEnabled() bool {
+	if t == nil {
+		return false
+	}
+	t.exposureMu.RLock()
+	defer t.exposureMu.RUnlock()
+	return t.experimentalToolBundles
 }
 
 func isSubagentManagementTool(name string) bool {

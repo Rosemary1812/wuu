@@ -1962,6 +1962,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	kit.SetAgentControl(control)
 	kit.SetAgentIdentity("root", agentthread.RootPath)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	kit.SetExperimentalDeferredToolBundles(true)
 	kit.SetNativeDeferredToolDiscovery(true)
 	if containsProfileDef(kit.Definitions(), "await_agents") {
 		t.Fatalf("await_agents should be deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
@@ -2093,6 +2094,7 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	kit.SetAgentIdentity("root", agentthread.RootPath)
 	kit.SetSessionDir(sessionDir)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	kit.SetExperimentalDeferredToolBundles(true)
 	kit.SetNativeDeferredToolDiscovery(true)
 	if !containsProfileDef(kit.Definitions(), "helpme") {
 		t.Fatalf("helpme should be directly visible before recovery, got %v", sortedProfileDefNames(kit.Definitions()))

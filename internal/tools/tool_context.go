@@ -17,6 +17,9 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		return nil
 	}
 	var blocks []wuucontext.Block
+	if block, ok := t.AvailableDeferredToolsContextBlock(); ok {
+		blocks = append(blocks, block)
+	}
 	blocks = append(blocks, t.SessionMemoryContextBlocks()...)
 	blocks = append(blocks, t.PlanContextBlocks()...)
 	if block, ok := t.ActiveFilesContextBlock(); ok {
@@ -32,6 +35,51 @@ func (t *Toolkit) ContextBlocks() []wuucontext.Block {
 		blocks = append(blocks, block)
 	}
 	return blocks
+}
+
+func (t *Toolkit) AvailableDeferredToolsContextBlock() (wuucontext.Block, bool) {
+	if t == nil || !t.ToolSearchEnabled() {
+		return wuucontext.Block{}, false
+	}
+	names := t.AvailableDeferredToolNames()
+	if len(names) == 0 {
+		return wuucontext.Block{}, false
+	}
+	return wuucontext.Block{
+		Kind:        wuucontext.BlockAvailableDeferred,
+		Title:       "Deferred tool names",
+		Source:      "runtime.tool_surface",
+		TokenBudget: 600,
+		Content:     "<available-deferred-tools>\n" + strings.Join(names, "\n") + "\n</available-deferred-tools>",
+	}, true
+}
+
+func (t *Toolkit) AvailableDeferredToolNames() []string {
+	if t == nil || !t.ToolSearchEnabled() {
+		return nil
+	}
+	surface := t.activeCompiledSurface()
+	names := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, tool := range t.allKnownTools() {
+		if !activeSurfaceAllowsKnownTool(surface, tool) {
+			continue
+		}
+		name := tool.Name()
+		if t.toolExposure(name) != ToolExposureDeferred {
+			continue
+		}
+		if !t.toolSearchCanLoadDeferredTool(name) {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (t *Toolkit) SessionMemoryContextBlocks() []wuucontext.Block {

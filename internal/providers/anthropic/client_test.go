@@ -834,50 +834,14 @@ func TestBuildAnthropicRequest_ToolSearchDisabledForProxyByDefault(t *testing.T)
 	}
 }
 
-func TestBuildAnthropicRequest_ToolSearchEnabledForOfficialCompatibleEndpointsByDefault(t *testing.T) {
+func TestBuildAnthropicRequest_ToolSearchDisabledForCompatibleEndpointsByDefault(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		baseURL string
 		model   string
 	}{
-		{name: "minimax cn", baseURL: "https://api.minimaxi.com/anthropic", model: "MiniMax-M3"},
-		{name: "minimax global", baseURL: "https://api.minimax.io/anthropic", model: "MiniMax-M3"},
-		{name: "zai", baseURL: "https://api.z.ai/api/anthropic", model: "glm-4.7"},
-		{name: "bigmodel", baseURL: "https://open.bigmodel.cn/api/anthropic", model: "glm-4.7"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-				Model: tc.model,
-				Messages: []providers.ChatMessage{
-					{Role: "user", Content: "run a worker"},
-				},
-				Tools: []providers.ToolDefinition{
-					{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
-					{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
-				},
-			}, 1024, false, anthropicToolSearchSupport{BaseURL: tc.baseURL})
-			if err != nil {
-				t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
-			}
-			if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
-				t.Fatalf("expected tool search beta, got %+v", payload.Betas)
-			}
-			if len(payload.Tools) != 2 || !payload.Tools[1].DeferLoading {
-				t.Fatalf("expected endpoint to defer load management tool, got %+v", payload.Tools)
-			}
-		})
-	}
-}
-
-func TestBuildAnthropicRequest_ToolSearchDisabledForCompatibleEndpointsWithoutEvidence(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		baseURL string
-		model   string
-	}{
-		{name: "minimax m3 proxy", baseURL: "https://anthropic-proxy.example.com/minimax", model: "MiniMax-M3"},
-		{name: "kimi official keeps fallback", baseURL: "https://api.moonshot.cn/anthropic", model: "kimi-k2"},
-		{name: "official host with wrong path", baseURL: "https://api.z.ai/anthropic", model: "glm-4.7"},
+		{name: "compatible proxy", baseURL: "https://anthropic-proxy.example.com", model: "claude-sonnet-4-5"},
+		{name: "compatible model endpoint", baseURL: "https://compatible.example.com/anthropic", model: "generic-coder"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
@@ -900,6 +864,29 @@ func TestBuildAnthropicRequest_ToolSearchDisabledForCompatibleEndpointsWithoutEv
 				t.Fatalf("endpoint default should not send defer_loading: %+v", payload.Tools[1])
 			}
 		})
+	}
+}
+
+func TestBuildAnthropicRequest_ToolSearchEnabledForCompatibleEndpointWithExplicitOptIn(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "generic-coder",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "run a worker"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+		ProviderOptions: map[string]any{"anthropicToolSearch": true},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://compatible.example.com/anthropic"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
+		t.Fatalf("expected explicit opt-in tool search beta, got %+v", payload.Betas)
+	}
+	if len(payload.Tools) != 2 || !payload.Tools[1].DeferLoading {
+		t.Fatalf("expected explicit opt-in to defer load management tool, got %+v", payload.Tools)
 	}
 }
 
@@ -2065,45 +2052,22 @@ func TestStreamChat_RejectsInvalidMessageSequenceBeforeRequest(t *testing.T) {
 	}
 }
 
-func TestIsCacheCreationOmittingEndpoint(t *testing.T) {
-	cases := []struct {
-		name    string
-		baseURL string
-		want    bool
-	}{
-		{"minimax production endpoint", "https://api.minimaxi.com/anthropic", true},
-		{"minimax with trailing slash", "https://api.minimaxi.com/anthropic/", true},
-		{"minimax case insensitive", "https://API.MINIMAXI.COM/anthropic", true},
-		{"anthropic native", "https://api.anthropic.com", false},
-		{"anthropic staging", "https://api-staging.anthropic.com", false},
-		{"empty", "", false},
-		{"localhost", "http://localhost:8080", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isCacheCreationOmittingEndpoint(tc.baseURL); got != tc.want {
-				t.Errorf("isCacheCreationOmittingEndpoint(%q) = %v, want %v", tc.baseURL, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestStampCacheCreationFlag(t *testing.T) {
-	t.Run("minimax endpoint forces unknown", func(t *testing.T) {
-		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+	t.Run("explicit compatible endpoint flag forces unknown", func(t *testing.T) {
+		client := &Client{baseURL: "https://compatible.example.com/anthropic", cacheCreationInputTokensOmitted: true}
 		usage := &providers.TokenUsage{CacheCreationTokens: 12345}
 		client.stampCacheCreationFlag(usage)
 		if !usage.CacheCreationUnknown {
-			t.Errorf("expected CacheCreationUnknown=true for minimax endpoint, got false (CacheCreationTokens=%d)", usage.CacheCreationTokens)
+			t.Errorf("expected CacheCreationUnknown=true for explicitly flagged endpoint, got false (CacheCreationTokens=%d)", usage.CacheCreationTokens)
 		}
 	})
-	t.Run("minimax forces unknown even when field present in payload", func(t *testing.T) {
-		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+	t.Run("explicit flag forces unknown even when field present in payload", func(t *testing.T) {
+		client := &Client{baseURL: "https://compatible.example.com/anthropic", cacheCreationInputTokensOmitted: true}
 		usage := &providers.TokenUsage{CacheCreationTokens: 0}
 		usage.CacheCreationUnknown = false
 		client.stampCacheCreationFlag(usage)
 		if !usage.CacheCreationUnknown {
-			t.Error("expected stamp to override false to true for minimax endpoint")
+			t.Error("expected stamp to override false to true for explicitly flagged endpoint")
 		}
 	})
 	t.Run("anthropic native leaves flag at default", func(t *testing.T) {
@@ -2115,11 +2079,11 @@ func TestStampCacheCreationFlag(t *testing.T) {
 		}
 	})
 	t.Run("nil usage does not panic", func(t *testing.T) {
-		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+		client := &Client{baseURL: "https://compatible.example.com/anthropic", cacheCreationInputTokensOmitted: true}
 		client.stampCacheCreationFlag(nil)
 	})
 	t.Run("repeated stamps are idempotent", func(t *testing.T) {
-		client := &Client{baseURL: "https://api.minimaxi.com/anthropic"}
+		client := &Client{baseURL: "https://compatible.example.com/anthropic", cacheCreationInputTokensOmitted: true}
 		usage := &providers.TokenUsage{}
 		client.stampCacheCreationFlag(usage)
 		client.stampCacheCreationFlag(usage)
