@@ -6307,7 +6307,6 @@ pre {
   .view-switch-loading,
   .project-row .project-row-loading,
   .project-row.pending-switch::before,
-  .thread-row-loading,
   .thread-row.pending-switch::before,
   .thread-row.running::before,
   .thread-row-spinner,
