@@ -79,6 +79,7 @@
   --sidebar-tree-icon-col: 18px;
   --sidebar-tree-column-gap: 6px;
   --sidebar-row-action-size: 24px;
+  --sidebar-row-control-pad-x: 8px;
   --sidebar-project-unread-size: 8px;
   display: flex;
   width: var(--sidebar-open-width, 326px);
@@ -642,7 +643,7 @@
   padding-left: calc(
     var(--sidebar-row-pad-x) + var(--sidebar-tree-toggle-col) +
       var(--sidebar-tree-column-gap) + var(--sidebar-tree-icon-col) +
-      var(--sidebar-tree-column-gap)
+      var(--sidebar-tree-column-gap) - var(--sidebar-row-control-pad-x)
   );
   padding-right: var(--sidebar-row-pad-x);
 }
@@ -659,7 +660,7 @@
   font: inherit;
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-  padding: 0 8px;
+  padding: 0 var(--sidebar-row-control-pad-x);
   text-align: left;
   white-space: nowrap;
   transition:
@@ -688,7 +689,7 @@
   font: inherit;
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-  padding: 0 8px;
+  padding: 0 var(--sidebar-row-control-pad-x);
   white-space: nowrap;
   transition:
     background-color 140ms ease,
