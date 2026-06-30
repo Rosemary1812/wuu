@@ -180,6 +180,7 @@ import {
   setThreadForPane,
   sortThreads,
   summarizeThreadsForSidebar,
+  threadBelongsToProject,
   threadForTab,
   threadForPane,
   threadItemFromRecord,
@@ -468,18 +469,8 @@ function threadListsEquivalent(left: Thread[] | undefined, right: Thread[]): boo
 
 function threadsForDesktopProject(threads: Thread[], project: DesktopProject): Thread[] {
   return sortThreads(
-    threads.filter((thread) => sameDesktopPath(thread.cwd, project.path)),
+    threads.filter((thread) => threadBelongsToProject(thread, project)),
   );
-}
-
-function sameDesktopPath(left: string, right: string): boolean {
-  return cleanDesktopPath(left) === cleanDesktopPath(right);
-}
-
-function cleanDesktopPath(path: string): string {
-  const trimmed = path.trim();
-  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
-  return withoutTrailingSlash || trimmed;
 }
 
 function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
@@ -1778,7 +1769,7 @@ export function App(): JSX.Element {
 
   function updateCachedProjectThread(thread: Thread): void {
     const projectID = appStateRef.current.projects.find(
-      (project) => sameDesktopPath(project.path, thread.cwd),
+      (project) => threadBelongsToProject(thread, project),
     )?.id;
     if (!projectID) {
       return;

@@ -19,6 +19,7 @@ import {
   reduceServerEvent,
   sortThreads,
   summarizeThreadsForSidebar,
+  threadBelongsToProject,
   threadProjectPath,
   threadSessionTabID,
   turnStreamStatusForThread,
@@ -173,10 +174,18 @@ describe("summarizeThreadsForSidebar", () => {
   });
 
   it("groups worktree fork sessions by their base repo", () => {
+    const project = {
+      id: "project-1",
+      name: "project",
+      path: "/repo/project",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
     const [summary] = summarizeThreadsForSidebar([
       {
         ...threadWithUserTexts(["continue in a worktree"]),
         cwd: "/Users/me/.wuu/worktrees/fork-1/project",
+        workspace_kind: "scratch",
         worktree: {
           path: "/Users/me/.wuu/worktrees/fork-1/project",
           base_repo: "/repo/project",
@@ -187,17 +196,8 @@ describe("summarizeThreadsForSidebar", () => {
 
     expect(summary.worktree?.base_repo).toBe("/repo/project");
     expect(threadProjectPath(summary)).toBe("/repo/project");
-    expect(
-      isScratchThread(summary, [
-        {
-          id: "project-1",
-          name: "project",
-          path: "/repo/project",
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-        },
-      ]),
-    ).toBe(false);
+    expect(threadBelongsToProject(summary, project)).toBe(true);
+    expect(isScratchThread(summary, [project])).toBe(false);
   });
 });
 

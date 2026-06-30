@@ -1412,6 +1412,30 @@ export function threadProjectPath(
   return thread.worktree?.base_repo?.trim() || thread.cwd;
 }
 
+export function threadBelongsToProject(
+  thread: Pick<Thread, "cwd" | "worktree">,
+  project: Pick<DesktopProject, "path">,
+): boolean {
+  return sameDesktopPath(threadProjectPath(thread), project.path);
+}
+
+function threadBelongsToAnyProject(
+  thread: Pick<Thread, "cwd" | "worktree">,
+  projects: Pick<DesktopProject, "path">[],
+): boolean {
+  return projects.some((project) => threadBelongsToProject(thread, project));
+}
+
+function sameDesktopPath(left: string, right: string): boolean {
+  return cleanDesktopPath(left) === cleanDesktopPath(right);
+}
+
+function cleanDesktopPath(path: string): string {
+  const trimmed = path.trim();
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  return withoutTrailingSlash || trimmed;
+}
+
 // SCRATCH_PSEUDO_PROJECT_ID is the synthetic project id used to render the
 // scratch (no-project) conversation group inside the unified sidebar tree.
 // Threads whose cwd does not belong to a registered DesktopProject (i.e.
@@ -1425,6 +1449,9 @@ export function isScratchThread(
   thread: Pick<Thread, "workspace_kind" | "cwd" | "worktree">,
   projects: DesktopProject[],
 ): boolean {
+  if (threadBelongsToAnyProject(thread, projects)) {
+    return false;
+  }
   if (thread.workspace_kind === "scratch") {
     return true;
   }
