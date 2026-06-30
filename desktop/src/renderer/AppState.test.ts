@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Thread } from "../shared/protocol";
+import type { RuntimeContext, Thread } from "../shared/protocol";
 import {
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
   conversationPaneThreadsByID,
+  createThreadSessionTab,
   handleStreamingNotification,
   initialState,
   isScratchThread,
@@ -13,11 +14,14 @@ import {
   latestCompletedTurnID,
   latestContextUsageForThread,
   markThreadTurnsViewed,
+  openForkThreadAsPrimary,
   queryTextsForThread,
   reduceServerEvent,
   sortThreads,
   summarizeThreadsForSidebar,
   threadProjectPath,
+  threadSessionTabID,
+  type SessionTab,
 } from "./AppState";
 import { streamTextKey, streamTextStore } from "./StreamText";
 
@@ -87,6 +91,17 @@ function threadWithUserTexts(texts: string[]): Thread {
       }
     ]
   };
+}
+
+function sessionTabPrompt(
+  tabs: SessionTab[],
+  tabID: string,
+): string | undefined {
+  const tab = tabs.find((candidate) => candidate.id === tabID);
+  if (!tab || tab.kind === "file" || tab.kind === "skills") {
+    return undefined;
+  }
+  return tab.prompt;
 }
 
 describe("AppState server requests", () => {
@@ -182,6 +197,171 @@ describe("summarizeThreadsForSidebar", () => {
         },
       ]),
     ).toBe(false);
+  });
+});
+
+describe("openForkThreadAsPrimary", () => {
+  const context: RuntimeContext = {
+    kind: "project",
+    project_id: "project-1",
+    cwd: "/repo",
+  };
+
+  it("opens a fork as the primary conversation instead of creating a split", () => {
+    const source: Thread = {
+      ...threadWithUserTexts(["source prompt"]),
+      id: "source-thread",
+      preview: "source",
+    };
+    const fork: Thread = {
+      ...threadWithUserTexts(["source prompt"]),
+      id: "fork-thread",
+      preview: "fork",
+      forked_from_id: source.id,
+    };
+
+    const next = openForkThreadAsPrimary(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: source,
+        activePane: "primary",
+        activeSessionTabID: threadSessionTabID(source.id),
+        sessionTabs: [createThreadSessionTab(source, context)],
+        threads: [source],
+        status: "ready",
+      },
+      {
+        sourceThread: source,
+        forkThread: fork,
+        context,
+        sourceDraft: {
+          prompt: "keep the source draft",
+          images: [],
+          files: [],
+        },
+      },
+    );
+
+    expect(next.thread?.id).toBe(fork.id);
+    expect(next.secondaryThread).toBeUndefined();
+    expect(next.activePane).toBe("primary");
+    expect(next.activeSessionTabID).toBe(threadSessionTabID(fork.id));
+    expect(sessionTabPrompt(next.sessionTabs, threadSessionTabID(source.id))).toBe(
+      "keep the source draft",
+    );
+  });
+
+  it("collapses an existing split and keeps both original pane drafts in tabs", () => {
+    const source: Thread = {
+      ...threadWithUserTexts(["source prompt"]),
+      id: "source-thread",
+      preview: "source",
+    };
+    const secondary: Thread = {
+      ...threadWithUserTexts(["secondary prompt"]),
+      id: "secondary-thread",
+      preview: "secondary",
+    };
+    const fork: Thread = {
+      ...threadWithUserTexts(["source prompt"]),
+      id: "fork-thread",
+      preview: "fork",
+      forked_from_id: source.id,
+    };
+
+    const next = openForkThreadAsPrimary(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: source,
+        secondaryThread: secondary,
+        activePane: "secondary",
+        activeSessionTabID: threadSessionTabID(secondary.id),
+        sessionTabs: [
+          createThreadSessionTab(source, context),
+          createThreadSessionTab(secondary, context),
+        ],
+        threads: [source, secondary],
+        status: "ready",
+      },
+      {
+        sourceThread: source,
+        forkThread: fork,
+        context,
+        sourceDraft: {
+          prompt: "left draft",
+          images: [],
+          files: [],
+        },
+        splitDrafts: {
+          primary: {
+            prompt: "left draft",
+            images: [],
+            files: [],
+          },
+          secondary: {
+            prompt: "right draft",
+            images: [],
+            files: [],
+          },
+        },
+      },
+    );
+
+    expect(next.thread?.id).toBe(fork.id);
+    expect(next.secondaryThread).toBeUndefined();
+    expect(next.activePane).toBe("primary");
+    expect(
+      sessionTabPrompt(next.sessionTabs, threadSessionTabID(source.id)),
+    ).toBe("left draft");
+    expect(
+      sessionTabPrompt(next.sessionTabs, threadSessionTabID(secondary.id)),
+    ).toBe("right draft");
+  });
+});
+
+describe("worktree thread context matching", () => {
+  it("applies worktree fork updates while the base repo project is active", () => {
+    const worktreeThread: Thread = {
+      ...threadWithUserTexts(["continue in worktree"]),
+      id: "worktree-thread",
+      cwd: "/Users/me/.wuu/worktrees/fork-1/project",
+      preview: "before",
+      worktree: {
+        path: "/Users/me/.wuu/worktrees/fork-1/project",
+        base_repo: "/repo",
+        base_head: "d955824f",
+      },
+    };
+    const updatedThread: Thread = {
+      ...worktreeThread,
+      preview: "after",
+    };
+
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: {
+          kind: "project",
+          project_id: "project-1",
+          cwd: "/repo",
+        },
+        thread: worktreeThread,
+        threads: [worktreeThread],
+        status: "ready",
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "thread/updated",
+          params: { thread: updatedThread },
+        },
+      },
+    );
+
+    expect(next.thread?.preview).toBe("after");
   });
 });
 

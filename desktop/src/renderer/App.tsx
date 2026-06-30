@@ -159,6 +159,7 @@ import {
   mergeListedThreads,
   markThreadTurnsViewed,
   notificationTargetsActiveThread,
+  openForkThreadAsPrimary,
   persistActiveSessionTabDraft,
   pinnedThreadSummaries,
   queryTextForUserItem,
@@ -4382,10 +4383,18 @@ export function App(): JSX.Element {
       const currentSplitConversation = Boolean(
         currentState.thread && currentState.secondaryThread && !workspaceMode,
       );
+      const splitDrafts = currentSplitConversation
+        ? {
+            primary: cloneComposerDraft(
+              splitComposerDrafts.primary ?? emptyComposerDraft(),
+            ),
+            secondary: cloneComposerDraft(
+              splitComposerDrafts.secondary ?? emptyComposerDraft(),
+            ),
+          }
+        : undefined;
       const sourceDraft = currentSplitConversation
-        ? cloneComposerDraft(
-            splitComposerDrafts[sourcePane] ?? emptyComposerDraft(),
-          )
+        ? cloneComposerDraft(splitDrafts?.[sourcePane] ?? emptyComposerDraft())
         : {
             prompt,
             images: composerImages.map((image) => ({ ...image })),
@@ -4394,36 +4403,15 @@ export function App(): JSX.Element {
       setPrompt("");
       setComposerImages([]);
       setComposerFiles([]);
-      setSplitComposerDrafts({
-        primary: sourceDraft,
-        secondary: emptyComposerDraft(),
-      });
+      setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
-        const source =
-          current.secondaryThread?.id === sourceThread.id
-            ? current.secondaryThread
-            : current.thread?.id === sourceThread.id
-              ? current.thread
-              : sourceThread;
-        const forkTab = createThreadSessionTab(fork, activeContext);
-        return {
-          ...current,
-          thread: source,
-          secondaryThread: fork,
-          activePane: "secondary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            ensureSessionTab(
-              current.sessionTabs,
-              createThreadSessionTab(source, activeContext, sourceDraft),
-            ),
-            forkTab,
-          ),
-          activeSessionTabID: forkTab.id,
-          threads: upsertThread(upsertThread(current.threads, source), fork),
-          running: isThreadRunning(fork),
-          status: "ready",
-        };
+        return openForkThreadAsPrimary(current, {
+          sourceThread,
+          forkThread: fork,
+          context: activeContext,
+          sourceDraft,
+          splitDrafts,
+        });
       });
     } catch (error) {
       setState((current) => ({

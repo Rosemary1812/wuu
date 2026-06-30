@@ -1326,6 +1326,68 @@ function ensureSessionTab(tabs: SessionTab[], tab: SessionTab): SessionTab[] {
   return next;
 }
 
+function openForkThreadAsPrimary(
+  state: AppState,
+  {
+    sourceThread,
+    forkThread,
+    context,
+    sourceDraft,
+    splitDrafts,
+  }: {
+    sourceThread: Thread;
+    forkThread: Thread;
+    context: RuntimeContext;
+    sourceDraft: ComposerDraftState;
+    splitDrafts?: Partial<Record<ConversationPaneID, ComposerDraftState>>;
+  },
+): AppState {
+  const source =
+    state.secondaryThread?.id === sourceThread.id
+      ? state.secondaryThread
+      : state.thread?.id === sourceThread.id
+        ? state.thread
+        : sourceThread;
+  let tabs = state.sessionTabs;
+  if (state.thread && state.thread.id !== source.id && splitDrafts?.primary) {
+    tabs = ensureSessionTab(
+      tabs,
+      createThreadSessionTab(state.thread, context, splitDrafts.primary),
+    );
+  }
+  if (
+    state.secondaryThread &&
+    state.secondaryThread.id !== source.id &&
+    splitDrafts?.secondary
+  ) {
+    tabs = ensureSessionTab(
+      tabs,
+      createThreadSessionTab(
+        state.secondaryThread,
+        context,
+        splitDrafts.secondary,
+      ),
+    );
+  }
+  tabs = ensureSessionTab(
+    tabs,
+    createThreadSessionTab(source, context, sourceDraft),
+  );
+  const forkTab = createThreadSessionTab(forkThread, context);
+  return {
+    ...state,
+    thread: forkThread,
+    secondaryThread: undefined,
+    activePane: "primary",
+    allowThreadAutoActivation: true,
+    sessionTabs: ensureSessionTab(tabs, forkTab),
+    activeSessionTabID: forkTab.id,
+    threads: upsertThread(upsertThread(state.threads, source), forkThread),
+    running: isThreadRunning(forkThread),
+    status: "ready",
+  };
+}
+
 function removeSessionTab(tabs: SessionTab[], tabID: string): SessionTab[] {
   return tabs.filter((tab) => tab.id !== tabID);
 }
@@ -1584,7 +1646,7 @@ function threadMatchesActiveContext(
   thread: Thread,
   context: RuntimeContext | undefined,
 ): boolean {
-  return Boolean(context && thread.cwd === context.cwd);
+  return Boolean(context && threadProjectPath(thread) === context.cwd);
 }
 
 function isThread(value: unknown): value is Thread {
@@ -2262,6 +2324,7 @@ export {
   mergeAgentSummary,
   mergeListedThreads,
   notificationTargetsActiveThread,
+  openForkThreadAsPrimary,
   parsePlanUpdateArguments,
   persistActiveSessionTabDraft,
   pinnedThreads,
