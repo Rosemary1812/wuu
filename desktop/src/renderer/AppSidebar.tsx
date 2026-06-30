@@ -129,6 +129,31 @@ export function AppSidebar({
             <Search className="icon-lg" />
             <span>搜索会话</span>
           </button>
+          <div className="sidebar-add-workspace" ref={projectMenuRef}>
+            <button
+              className="nav-item"
+              type="button"
+              aria-label="添加工作区"
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              onClick={onToggleProjectMenu}
+            >
+              <FolderPlus className="icon-lg" />
+              <span>添加工作区</span>
+            </button>
+            {projectMenuOpen ? (
+              <div className="project-add-menu" role="menu">
+                <button role="menuitem" onClick={onCreateProject}>
+                  <FolderPlus className="icon-xl" />
+                  <span>新建空白项目</span>
+                </button>
+                <button role="menuitem" onClick={onOpenProjectFolder}>
+                  <FolderOpen className="icon-xl" />
+                  <span>使用现有文件夹</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
           {debugFixturesVisible ? (
             <div className="dev-fixture-nav" aria-label="开发调试会话">
               <div className="dev-fixture-label">开发样例</div>
@@ -214,31 +239,6 @@ export function AppSidebar({
           </section>
         </div>
         <div className="sidebar-settings">
-          <div className="sidebar-add-workspace" ref={projectMenuRef}>
-            <button
-              className="settings-button"
-              type="button"
-              aria-label="添加工作区"
-              aria-haspopup="menu"
-              aria-expanded={projectMenuOpen}
-              onClick={onToggleProjectMenu}
-            >
-              <FolderPlus className="icon-lg" />
-              <span>添加工作区</span>
-            </button>
-            {projectMenuOpen ? (
-              <div className="project-add-menu" role="menu">
-                <button role="menuitem" onClick={onCreateProject}>
-                  <FolderPlus className="icon-xl" />
-                  <span>新建空白项目</span>
-                </button>
-                <button role="menuitem" onClick={onOpenProjectFolder}>
-                  <FolderOpen className="icon-xl" />
-                  <span>使用现有文件夹</span>
-                </button>
-              </div>
-            ) : null}
-          </div>
           <button
             className="settings-button"
             type="button"

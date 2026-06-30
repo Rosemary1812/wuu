@@ -72,6 +72,10 @@
 }
 
 .sidebar-content {
+  --sidebar-row-pad-x: 8px;
+  --sidebar-tree-toggle-col: 16px;
+  --sidebar-tree-icon-col: 18px;
+  --sidebar-tree-column-gap: 6px;
   display: flex;
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
@@ -267,12 +271,17 @@
 .nav-item,
 .project-row,
 .thread-row {
-  display: flex;
+  display: grid;
   position: relative;
   width: 100%;
   height: 32px;
   align-items: center;
-  gap: 9px;
+  column-gap: var(--sidebar-tree-column-gap);
+  grid-template-columns:
+    var(--sidebar-tree-toggle-col)
+    var(--sidebar-tree-icon-col)
+    minmax(0, 1fr)
+    auto;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-tertiary);
@@ -280,13 +289,26 @@
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1;
-  padding: 0 10px;
+  padding: 0 var(--sidebar-row-pad-x);
   text-align: left;
   transition:
     background-color 140ms ease,
     box-shadow 140ms ease,
     color 140ms ease,
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-item > svg {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.nav-item > span {
+  grid-column: 3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-item:hover,
@@ -318,7 +340,7 @@
   flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
-  margin-top: 22px;
+  margin-top: 14px;
 }
 
 .project-list {
@@ -326,20 +348,13 @@
 }
 
 .project-add-menu {
-  /* Anchored to .sidebar-add-workspace, which sits near the sidebar
-   * bottom. Opening downward (top: 100%) would push the menu off-screen
-   * past the sidebar edge; opening upward keeps both menu items inside
-   * the sidebar even on short windows. transform-origin mirrors the
-   * flip so the enter animation still feels like the menu drops out of
-   * the trigger button. */
   position: absolute;
-  bottom: calc(100% + 2px);
-  top: auto;
-  right: 6px;
-  left: auto;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
   z-index: 30;
   display: grid;
-  width: min(244px, calc(100% - 18px));
+  width: auto;
   gap: 1px;
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);
@@ -347,7 +362,7 @@
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
-  transform-origin: bottom right;
+  transform-origin: top left;
   --menu-enter-x: 0;
   --menu-enter-y: 0;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
@@ -414,22 +429,16 @@
 }
 
 .project-row {
-  /* Sidebar rhythm: labels now start at ~4 + 16 (chevron) + 9 (gap) +
-   * 16 (icon) + 9 (gap) ≈ 54px instead of the previous ~62px. The
-   * reduced right padding (24px instead of 40px) gives the label
-   * ~16px more horizontal room — important because project paths
-   * like "~/code/some-fork" routinely truncate otherwise. The 24px
-   * on the right still leaves room for the inline + thread button. */
   color: var(--ink-tertiary);
-  padding-left: 4px;
-  padding-right: 24px;
+  padding-right: 28px;
   font-weight: var(--weight-medium);
 }
 
 .project-row-chevron {
+  grid-column: 1;
+  justify-self: center;
   flex: 0 0 auto;
   color: var(--ink-muted);
-  margin-right: -2px;
   /* Must match the .thread-list-collapse timing (190ms, linear-ish ease)
    * so the chevron and the content settle as one continuous motion. The
    * previous 160ms cubic-bezier(0.16, 1, 0.3, 1) was an aggressive ease-out
@@ -447,6 +456,8 @@
 }
 
 .project-row svg:not(.project-row-chevron) {
+  grid-column: 2;
+  justify-self: center;
   flex: 0 0 auto;
   color: var(--ink-tertiary);
   transition:
@@ -459,15 +470,17 @@
   color: var(--ink);
 }
 
-.project-row span {
+.project-row > span:not(.project-row-loading) {
+  grid-column: 3;
   min-width: 0;
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .project-row .project-row-loading {
+  grid-column: 4;
+  justify-self: end;
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
@@ -539,27 +552,19 @@
 }
 
 .project-thread-empty-note {
-  /* Indent is provided by the parent .thread-list-collapse so the empty
-   * note lines up with populated thread rows. Earlier this had its own
-   * 25px margin-left, which doubled up once the wrapper gained its
-   * indent and pushed the empty hint noticeably further right than
-   * sibling threads. */
   color: var(--ink-muted);
-  padding: 4px 12px 4px 0;
+  padding: 4px var(--sidebar-row-pad-x) 4px
+    calc(
+      var(--sidebar-row-pad-x) + var(--sidebar-tree-toggle-col) +
+        var(--sidebar-tree-column-gap) + var(--sidebar-tree-icon-col) +
+        var(--sidebar-tree-column-gap)
+    );
   font-size: var(--font-sm);
   line-height: 1.4;
 }
 
 .thread-list-collapse {
   display: grid;
-  /* The thread list nests under the project row's icon, not under the
-   * project label, so sessions read as "this folder's children" rather
-   * than a parallel list. 16px ≈ icon width + small gap, which keeps
-   * session labels clearly inside the project's visual umbrella while
-   * leaving enough room for thread-row action icons on hover. Without
-   * this margin, the thread label (at ~21px) starts to the left of the
-   * project label (at ~56px) and the tree rhythm breaks. */
-  margin-left: 16px;
   grid-template-rows: 1fr;
   margin-top: 5px;
   min-height: 0;
@@ -598,6 +603,12 @@
   align-items: center;
   gap: 6px;
   margin-top: 2px;
+  padding-left: calc(
+    var(--sidebar-row-pad-x) + var(--sidebar-tree-toggle-col) +
+      var(--sidebar-tree-column-gap) + var(--sidebar-tree-icon-col) +
+      var(--sidebar-tree-column-gap)
+  );
+  padding-right: var(--sidebar-row-pad-x);
 }
 
 .thread-list-more {
@@ -616,7 +627,7 @@
   font: inherit;
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-  padding: 0 9px 0 8px;
+  padding: 0;
   text-align: left;
   transition:
     background-color 140ms ease,
@@ -651,7 +662,7 @@
   font: inherit;
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-  padding: 0 9px 0 8px;
+  padding: 0;
   transition:
     background-color 140ms ease,
     color 140ms ease;
@@ -667,15 +678,14 @@
 .thread-row {
   height: 32px;
   min-width: 0;
-  justify-content: flex-start;
-  gap: 8px;
   border-radius: var(--radius-sm);
   color: var(--ink-tertiary);
   font-size: var(--font-body);
-  padding: 0 9px 0 8px;
 }
 
 .thread-row::before {
+  grid-column: 2;
+  justify-self: center;
   width: 5px;
   height: 5px;
   flex: 0 0 auto;
@@ -722,6 +732,8 @@
 }
 
 .thread-row-spinner {
+  grid-column: 2;
+  justify-self: center;
   width: 9px;
   height: 9px;
   flex: 0 0 auto;
@@ -855,6 +867,7 @@
 
 .thread-row-main {
   display: flex;
+  grid-column: 3;
   min-width: 0;
   height: 100%;
   flex: 1;
@@ -989,10 +1002,6 @@
 }
 
 .sidebar-settings {
-  /* Two rare-action buttons stacked: "添加工作区" on top, "设置" below.
-   * The column layout reads as a single terminal zone — terminal
-   * relative to the scrollable tree above — and visually anchors the
-   * sidebar bottom. */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1001,32 +1010,45 @@
   flex-shrink: 0;
 }
 
-/* Wraps the "添加工作区" button + its dropdown menu so the menu's
- * position: absolute anchors to this wrapper rather than escaping the
- * sidebar. The ref that detects clicks-outside-to-close is also on
- * this wrapper, so a click on the Settings button below counts as
- * "outside" and dismisses the menu. */
 .sidebar-add-workspace {
   position: relative;
+  width: 100%;
 }
 
 .settings-button {
-  display: flex;
+  display: grid;
   width: 100%;
   height: 36px;
   align-items: center;
-  gap: 10px;
+  column-gap: var(--sidebar-tree-column-gap);
+  grid-template-columns:
+    var(--sidebar-tree-toggle-col)
+    var(--sidebar-tree-icon-col)
+    minmax(0, 1fr);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-tertiary);
   font-weight: var(--weight-medium);
-  padding: 0 12px;
+  padding: 0 var(--sidebar-row-pad-x);
   text-align: left;
   transition:
     background-color 140ms ease,
     box-shadow 140ms ease,
     color 140ms ease,
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-button > svg {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.settings-button > span {
+  grid-column: 3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-button:hover,

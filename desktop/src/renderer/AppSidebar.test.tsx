@@ -30,7 +30,9 @@ function initialized(): InitializeResult {
   };
 }
 
-function renderSidebar(): void {
+function renderSidebar({
+  projectMenuOpen = false,
+}: { projectMenuOpen?: boolean } = {}): void {
   const state: AppState = {
     ...initialState,
     initialized: initialized(),
@@ -55,7 +57,7 @@ function renderSidebar(): void {
         expandedProjectIDs={new Set()}
         collapsingProjectIDs={new Set()}
         projectThreadsByProjectID={{}}
-        projectMenuOpen={false}
+        projectMenuOpen={projectMenuOpen}
         projectMenuRef={createRef<HTMLDivElement>()}
         searchOpen={false}
         debugFixturesVisible={false}
@@ -93,5 +95,20 @@ describe("AppSidebar layout", () => {
     expect(scrollRegion?.classList.contains("scrollbar-hidden")).toBe(true);
     expect(scrollRegion?.contains(primaryNav)).toBe(false);
     expect(scrollRegion?.querySelector(".project-section")).not.toBeNull();
+  });
+
+  it("keeps the workspace add action with the primary nav", () => {
+    renderSidebar({ projectMenuOpen: true });
+
+    const primaryNav = container.querySelector(".primary-nav");
+    const addWorkspaceButton = primaryNav?.querySelector(
+      'button[aria-label="添加工作区"]',
+    );
+    const settings = container.querySelector(".sidebar-settings");
+
+    expect(addWorkspaceButton?.classList.contains("nav-item")).toBe(true);
+    expect(primaryNav?.querySelector(".project-add-menu")).not.toBeNull();
+    expect(settings?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
+    expect(settings?.textContent).toBe("设置");
   });
 });
