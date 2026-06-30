@@ -245,8 +245,22 @@
   width: 10px;
   height: 10px;
   background: transparent;
-  border: 2px solid rgba(17, 19, 21, 0.18);
-  border-top-color: var(--sidebar-accent);
+  /*
+   * Inverted from the classic "1 dark wedge on a light track" spinner to
+   * "1 light notch on a dark ring" — the heavier dark mass anchors the
+   * rotation visually so the eye can track the spin more smoothly than
+   * the lighter wedge form, which feels insubstantial at this small
+   * (10px) size. The notch stays on the top side so the rotation reads
+   * the same direction as before.
+   *
+   * Dark ring uses 65% of `--sidebar-accent` (which resolves to
+   * `--ink-strong` ≈ #111315). Full accent is too heavy at this size and
+   * against the tab strip surface; 65% reads as "dark but not inky" and
+   * keeps enough contrast against the 18% light notch to still feel
+   * like a spinner rather than a solid dot.
+   */
+  border: 2px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
+  border-top-color: rgba(17, 19, 21, 0.18);
   box-sizing: border-box;
   animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }

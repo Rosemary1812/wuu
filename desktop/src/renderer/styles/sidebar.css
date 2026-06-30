@@ -511,8 +511,16 @@
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
-  border: 2px solid rgba(95, 126, 104, 0.22);
-  border-top-color: var(--sidebar-accent);
+  /*
+   * Sidebar running-state spinner. Inverted to a "light notch on a dark
+   * ring" so the heavier mass anchors the rotation more clearly than the
+   * classic "dark wedge" form at small sidebar sizes. Dark uses 65% of
+   * `--sidebar-accent` — full accent is too heavy against the sidebar
+   * surface; 65% keeps the contrast against the 22% green-gray notch
+   * without going inky. Matches `.session-tab.running .session-tab-status`.
+   */
+  border: 2px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
+  border-top-color: rgba(95, 126, 104, 0.22);
   border-radius: var(--radius-pill);
   animation: session-loading-spin 1400ms linear infinite;
 }
@@ -777,8 +785,15 @@
   width: 9px;
   height: 9px;
   flex: 0 0 auto;
-  border: 1.5px solid rgba(95, 126, 104, 0.22);
-  border-top-color: var(--sidebar-accent);
+  /*
+   * Thread-row running-state spinner. Same inverted "light notch on a
+   * dark ring" treatment as `.session-tab.running .session-tab-status`
+   * and `.project-row .project-row-loading` — heavy dark mass anchors
+   * the rotation at this 9px size. 65% of `--sidebar-accent` for the
+   * ring keeps it from going inky against the sidebar surface.
+   */
+  border: 1.5px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
+  border-top-color: rgba(95, 126, 104, 0.22);
   border-radius: var(--radius-pill);
   animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
@@ -960,6 +975,29 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/*
+ * Forked-thread status icon. Sits next to the title inside the row's main
+ * button so it reads as a label, not an action — the row's hover-only
+ * pin/archive affordances remain the only interactive controls. The
+ * `position: relative; z-index: 2` lifts it above the absolutely-positioned
+ * action overlay that fades in on hover.
+ */
+.thread-row-fork-icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-left: 6px;
+  color: var(--ink-tertiary);
+  opacity: 0.75;
+  position: relative;
+  z-index: 2;
+  transition: opacity 120ms ease;
+}
+
+.thread-row:hover .thread-row-fork-icon {
+  opacity: 0.95;
 }
 
 @media (prefers-reduced-motion: reduce) {
