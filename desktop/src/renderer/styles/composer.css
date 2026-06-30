@@ -213,7 +213,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px 14px 0;
+  padding: 12px 16px 0;
+}
+
+/* Match .composer textarea padding-left so the attachment thumbnail's left
+   edge sits flush with the placeholder/text x-origin (16px dock, 24px hero). */
+.hero-composer-wrap .composer-attachments {
+  padding-left: 24px;
 }
 
 .composer-file-input {
