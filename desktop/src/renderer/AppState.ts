@@ -1147,9 +1147,6 @@ export function threadProjectPath(
   return thread.worktree?.base_repo?.trim() || thread.cwd;
 }
 
-// isScratchThread classifies a thread as belonging to the scratch (no-project)
-// workspace. Worktree forks run from their worktree cwd, but belong to the
-// base repo for sidebar grouping.
 export function isScratchThread(
   thread: Pick<Thread, "workspace_kind" | "cwd" | "worktree">,
   projects: DesktopProject[],
@@ -1164,8 +1161,6 @@ export function isScratchThread(
   return !projects.some((project) => project.path === projectPath);
 }
 
-// scratchThreads returns the non-pinned threads that belong to the scratch
-// workspace, sorted newest-first to match the project list ordering.
 export function scratchThreads(
   threads: Thread[],
   projects: DesktopProject[],
