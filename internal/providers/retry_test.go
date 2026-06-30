@@ -9,6 +9,26 @@ import (
 	"time"
 )
 
+func TestDefaultRetryConfigUsesSingleAttempt(t *testing.T) {
+	cfg := DefaultRetryConfig()
+	if cfg.MaxRetries != 0 {
+		t.Fatalf("MaxRetries = %d, want 0", cfg.MaxRetries)
+	}
+	if cfg.InitialDelay != time.Second {
+		t.Fatalf("InitialDelay = %s, want 1s", cfg.InitialDelay)
+	}
+	if cfg.MaxDelay != 60*time.Second {
+		t.Fatalf("MaxDelay = %s, want 60s", cfg.MaxDelay)
+	}
+}
+
+func TestNormalizeRetryConfigDefaultsMaxDelayToOneMinute(t *testing.T) {
+	cfg := NormalizeRetryConfig(RetryConfig{MaxRetries: 1})
+	if cfg.MaxDelay != 60*time.Second {
+		t.Fatalf("MaxDelay = %s, want 60s", cfg.MaxDelay)
+	}
+}
+
 func TestIsRetryable_ContextDeadlineExceeded(t *testing.T) {
 	if !IsRetryable(context.DeadlineExceeded) {
 		t.Fatal("expected context.DeadlineExceeded to be retryable")

@@ -115,9 +115,9 @@ type StreamRunner struct {
 	PromptCacheKey string
 
 	// Stream reconnect policy. Zero values use Wuu defaults.
-	StreamReconnectBudget   time.Duration // total time for reconnection (default: 2m)
+	StreamReconnectBudget   time.Duration // total time for reconnection (default: 0)
 	StreamRetryInitialDelay time.Duration // backoff start (default: 1s)
-	StreamRetryMaxDelay     time.Duration // backoff cap (default: 30s)
+	StreamRetryMaxDelay     time.Duration // backoff cap (default: 60s)
 
 	usageMu           sync.Mutex
 	conversationUsage *UsageTracker
@@ -1115,9 +1115,9 @@ type streamReconnectConfig struct {
 }
 
 const (
-	defaultReconnectBudget = 10 * time.Minute
+	defaultReconnectBudget = 0
 	defaultReconnectDelay  = 1 * time.Second
-	defaultReconnectMax    = 30 * time.Second
+	defaultReconnectMax    = 60 * time.Second
 )
 
 func (r *StreamRunner) streamReconnectCfg() streamReconnectConfig {

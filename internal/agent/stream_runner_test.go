@@ -91,16 +91,16 @@ func isCompactSummaryRequest(req providers.ChatRequest) bool {
 	return false
 }
 
-func TestStreamRunner_DefaultReconnectConfigUsesWuuDefaults(t *testing.T) {
+func TestStreamRunner_DefaultReconnectConfigUsesProviderDefaults(t *testing.T) {
 	cfg := (&StreamRunner{}).streamReconnectCfg()
-	if cfg.Budget != 10*time.Minute {
-		t.Fatalf("expected 10m budget, got %s", cfg.Budget)
+	if cfg.Budget != 0 {
+		t.Fatalf("expected no reconnect budget by default, got %s", cfg.Budget)
 	}
 	if cfg.InitialDelay != 1*time.Second {
 		t.Fatalf("expected 1s initial delay, got %s", cfg.InitialDelay)
 	}
-	if cfg.MaxDelay != 30*time.Second {
-		t.Fatalf("expected 30s max delay, got %s", cfg.MaxDelay)
+	if cfg.MaxDelay != 60*time.Second {
+		t.Fatalf("expected 60s max delay, got %s", cfg.MaxDelay)
 	}
 }
 

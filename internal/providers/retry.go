@@ -30,7 +30,7 @@ func NormalizeRetryConfig(cfg RetryConfig) RetryConfig {
 		cfg.InitialDelay = time.Second
 	}
 	if cfg.MaxDelay <= 0 {
-		cfg.MaxDelay = 30 * time.Second
+		cfg.MaxDelay = 60 * time.Second
 	}
 	if cfg.InitialDelay > cfg.MaxDelay {
 		cfg.InitialDelay = cfg.MaxDelay
@@ -38,12 +38,13 @@ func NormalizeRetryConfig(cfg RetryConfig) RetryConfig {
 	return cfg
 }
 
-// DefaultRetryConfig returns sensible defaults.
+// DefaultRetryConfig returns the provider default: one attempt unless a caller
+// explicitly opts into retries.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxRetries:   10,
+		MaxRetries:   0,
 		InitialDelay: time.Second,
-		MaxDelay:     30 * time.Second,
+		MaxDelay:     60 * time.Second,
 	}
 }
 

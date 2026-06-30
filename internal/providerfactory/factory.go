@@ -13,10 +13,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/openai"
 )
 
-// BuildClient constructs a provider client from config using the
-// default HTTP retry policy (3 attempts). providerName is the key
-// under which this provider lives in the config map; it's needed so
-// resolveAPIKey can fall back to the global auth store.
+// BuildClient constructs a provider client from config using the provider
+// default retry policy. providerName is the key under which this provider lives
+// in the config map; it's needed so resolveAPIKey can fall back to the global
+// auth store.
 func BuildClient(provider config.ProviderConfig, providerName string) (providers.Client, error) {
 	return BuildClientWithRetry(provider, providerName, nil)
 }
@@ -31,11 +31,9 @@ func BuildClientWithRetry(provider config.ProviderConfig, providerName string, r
 }
 
 // SubAgentRetryConfig returns the more aggressive HTTP retry policy
-// recommended for long-running sub-agent runs. Compared to the
-// default (3 attempts, 1s→30s backoff) this gives the worker
-// substantially more headroom to ride out transient rate limits and
-// upstream blips: 6 attempts, 2s→60s backoff. Total worst-case wait
-// before giving up is ~2 minutes instead of ~7 seconds.
+// recommended for long-running sub-agent runs. Compared to the default single
+// attempt, this gives the worker substantially more headroom to ride out
+// transient rate limits and upstream blips: 6 retries, 2s to 60s backoff.
 func SubAgentRetryConfig() providers.RetryConfig {
 	return providers.RetryConfig{
 		MaxRetries:   6,
@@ -44,10 +42,9 @@ func SubAgentRetryConfig() providers.RetryConfig {
 	}
 }
 
-// BuildStreamClient constructs a streaming-capable provider client
-// using the default HTTP retry policy (3 attempts). providerName is
-// the config map key — see BuildClient for why this matters for the
-// global auth-store fallback.
+// BuildStreamClient constructs a streaming-capable provider client using the
+// provider default retry policy. providerName is the config map key; see
+// BuildClient for why this matters for the global auth-store fallback.
 func BuildStreamClient(provider config.ProviderConfig, providerName string) (providers.StreamClient, error) {
 	return BuildStreamClientWithRetry(provider, providerName, nil)
 }
