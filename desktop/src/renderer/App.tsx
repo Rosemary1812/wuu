@@ -333,6 +333,8 @@ const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
 const CONVERSATION_GRID_COLUMNS = 12;
+const WORKTREE_FORK_NON_GIT_REASON =
+  "当前工作目录不是 git 仓库，不能创建 git worktree";
 // Cap on the number of bars rendered in the always-visible rail. The
 // rail is a thin at-a-glance index; if there are more queries than fit,
 // we collapse the tail into a single bar.
@@ -939,6 +941,10 @@ export function App(): JSX.Element {
       : liveBackgroundProcesses.some((process) => process.lifecycle === "managed")
         ? "后台任务运行中，包含需手动清理任务"
         : "后台任务运行中";
+  const forkWorktreeDisabledReason =
+    state.gitStatus?.is_repo === false
+      ? WORKTREE_FORK_NON_GIT_REASON
+      : undefined;
   const splitConversation = Boolean(
     state.thread && state.secondaryThread && !workspaceMode,
   );
@@ -4449,6 +4455,26 @@ export function App(): JSX.Element {
       setState((current) => ({ ...current, status: "示例会话不能分叉" }));
       return;
     }
+    if (mode === "worktree") {
+      let gitStatus = appStateRef.current.gitStatus;
+      if (!gitStatus) {
+        gitStatus = await window.wuu.gitStatus();
+        if (
+          !sameRuntimeContext(appStateRef.current.activeContext, activeContext)
+        ) {
+          return;
+        }
+        const refreshedStatus = gitStatus;
+        setState((current) => ({ ...current, gitStatus: refreshedStatus }));
+      }
+      if (gitStatus.is_repo === false) {
+        setState((current) => ({
+          ...current,
+          status: WORKTREE_FORK_NON_GIT_REASON,
+        }));
+        throw new Error(WORKTREE_FORK_NON_GIT_REASON);
+      }
+    }
     setArchiveConfirmThreadID(undefined);
     setState((current) => ({ ...current, status: "正在分叉会话" }));
     try {
@@ -4540,6 +4566,7 @@ export function App(): JSX.Element {
     }
     closeConversationSearch({ immediate: true });
     setEnvironmentDialog(null);
+    scheduleGitStatusRefresh(0);
     setPendingFork({ sourceThread, turnID, itemID });
   }
 
@@ -6537,6 +6564,7 @@ export function App(): JSX.Element {
       ) : null}
       {pendingFork ? (
         <ConversationForkDialog
+          worktreeDisabledReason={forkWorktreeDisabledReason}
           onCancel={() => setPendingFork(undefined)}
           onChoose={choosePendingFork}
         />

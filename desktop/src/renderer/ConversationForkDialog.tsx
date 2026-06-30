@@ -41,9 +41,11 @@ const FORK_OPTIONS: ForkOption[] = [
 export function ConversationForkDialog({
   onCancel,
   onChoose,
+  worktreeDisabledReason,
 }: {
   onCancel: () => void;
   onChoose: (mode: ForkMode) => void | Promise<void>;
+  worktreeDisabledReason?: string;
 }): JSX.Element {
   // Tracks which option is mid-flight so only that button shows a spinner
   // and becomes non-interactive. We keep both options clickable even
@@ -91,12 +93,15 @@ export function ConversationForkDialog({
       <div className="fork-dialog-options">
         {FORK_OPTIONS.map(({ mode, icon: Icon, title, description }) => {
           const isBusy = busyMode === mode;
+          const disabledReason =
+            mode === "worktree" ? worktreeDisabledReason : undefined;
+          const optionDisabled = disabled || Boolean(disabledReason);
           return (
             <button
               key={mode}
               className={`fork-dialog-option${isBusy ? " is-busy" : ""}`}
               type="button"
-              disabled={disabled}
+              disabled={optionDisabled}
               aria-label={title}
               onClick={() => void handleChoose(mode)}
             >
@@ -105,7 +110,7 @@ export function ConversationForkDialog({
               </span>
               <span className="fork-dialog-option-text">
                 <strong>{title}</strong>
-                <span>{description}</span>
+                <span>{disabledReason ?? description}</span>
               </span>
               {isBusy ? (
                 <span className="fork-dialog-option-spinner" aria-hidden="true" />

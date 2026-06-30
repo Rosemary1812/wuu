@@ -113,6 +113,54 @@ describe("ConversationForkDialog", () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
+  it("disables only the worktree option when the current workspace is not a git repo", async () => {
+    const onChoose = vi.fn(() => Promise.resolve());
+    const onCancel = vi.fn();
+
+    mount(
+      createElement(ConversationForkDialog, {
+        onCancel,
+        onChoose,
+        worktreeDisabledReason: "当前工作目录不是 git 仓库，不能创建 git worktree",
+      }),
+    );
+
+    expect(buttonByLabel("派生到本地").disabled).toBe(false);
+    expect(buttonByLabel("派生到 git worktree").disabled).toBe(true);
+    expect(document.body.textContent ?? "").toContain(
+      "当前工作目录不是 git 仓库",
+    );
+
+    await act(async () => {
+      buttonByLabel("派生到 git worktree").click();
+      await Promise.resolve();
+    });
+
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("still allows a local fork when the worktree option is disabled", async () => {
+    const onChoose = vi.fn(() => Promise.resolve());
+    const onCancel = vi.fn();
+
+    mount(
+      createElement(ConversationForkDialog, {
+        onCancel,
+        onChoose,
+        worktreeDisabledReason: "当前工作目录不是 git 仓库，不能创建 git worktree",
+      }),
+    );
+
+    await act(async () => {
+      buttonByLabel("派生到本地").click();
+      await Promise.resolve();
+    });
+
+    expect(onChoose).toHaveBeenCalledWith("local");
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it("invokes onCancel when the 取消 button is clicked", () => {
     const onChoose = vi.fn(() => Promise.resolve());
     const onCancel = vi.fn();
