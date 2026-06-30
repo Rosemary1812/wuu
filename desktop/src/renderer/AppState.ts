@@ -1147,6 +1147,15 @@ export function threadProjectPath(
   return thread.worktree?.base_repo?.trim() || thread.cwd;
 }
 
+// SCRATCH_PSEUDO_PROJECT_ID is the synthetic project id used to render the
+// scratch (no-project) conversation group inside the unified sidebar tree.
+// Threads whose cwd does not belong to a registered DesktopProject (i.e.
+// isScratchThread returns true) are bucketed under this id so the sidebar
+// can render them through the same ProjectList code path as real projects.
+// The DesktopProject entry carrying this id is built in App.tsx and never
+// sent from the app-server — it lives only on the renderer side.
+export const SCRATCH_PSEUDO_PROJECT_ID = "__wuu_scratch__";
+
 export function isScratchThread(
   thread: Pick<Thread, "workspace_kind" | "cwd" | "worktree">,
   projects: DesktopProject[],

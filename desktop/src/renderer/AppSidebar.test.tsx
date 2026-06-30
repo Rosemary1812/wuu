@@ -46,8 +46,7 @@ function renderSidebar(): void {
     root.render(
       <AppSidebar
         state={state}
-        pinnedThreads={[]}
-        scratchThreads={[]}
+        sidebarProjects={[]}
         activeThreadID={undefined}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
@@ -76,7 +75,6 @@ function renderSidebar(): void {
         onToggleProjectCollapsed={() => {}}
         onStartNewThreadForProject={() => {}}
         onSelectProjectThread={() => {}}
-        onCreateScratchThread={() => {}}
         onOpenSettings={() => {}}
       />,
     );
@@ -94,7 +92,6 @@ describe("AppSidebar layout", () => {
     expect(primaryNav?.parentElement).toBe(content);
     expect(scrollRegion?.classList.contains("scrollbar-hidden")).toBe(true);
     expect(scrollRegion?.contains(primaryNav)).toBe(false);
-    expect(scrollRegion?.querySelector(".scratch-thread-section")).not.toBeNull();
     expect(scrollRegion?.querySelector(".project-section")).not.toBeNull();
   });
 });

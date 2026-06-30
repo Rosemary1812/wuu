@@ -1,13 +1,9 @@
-import { Archive, ChevronRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
+import { Archive, ChevronRight, Folder, FolderOpen, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
-
-function projectThreads(threads: ThreadSummary[]): ThreadSummary[] {
-  return threads.filter((thread) => !thread.pinned);
-}
 
 function threadsForProjectPath(
   threads: ThreadSummary[],
@@ -43,6 +39,8 @@ export function ProjectList({
   pendingThreadID,
   archiveConfirmThreadID,
   lastViewedTurnByThreadID,
+  scratchPseudoProjectID,
+  scratchPseudoActive,
   onToggleProjectCollapsed,
   onStartNewThread,
   onSelectThread,
@@ -61,6 +59,15 @@ export function ProjectList({
   pendingThreadID?: string;
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
+  // The scratch pseudo project lives at the top of the sidebar tree and
+  // groups all no-project (scratch) conversations under one collapsible
+  // header, just like a real project. App.tsx injects a synthetic
+  // DesktopProject with this id; AppSidebar passes it down so the row can
+  // render a chat-bubble icon instead of a folder and so the row's
+  // "active" highlight can be driven by the runtime context kind
+  // (no_project), which is not represented in DesktopProject itself.
+  scratchPseudoProjectID: string;
+  scratchPseudoActive: boolean;
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
   onSelectThread: (projectID: string, threadID: string) => void;
@@ -94,20 +101,29 @@ export function ProjectList({
     <div className="projects">
       {projects.map((project) => {
         const pendingProject = pendingProjectID === project.id;
-        const activeProject = project.id === activeID;
+        const isScratchPseudo = project.id === scratchPseudoProjectID;
+        const activeProject = isScratchPseudo
+          ? scratchPseudoActive
+          : project.id === activeID;
         const collapsed = collapsedProjectIDs.has(project.id);
         const collapsing = collapsingProjectIDs.has(project.id);
         const expanded =
           (expandedProjectIDs.has(project.id) || (activeProject && !collapsed)) &&
           !collapsing;
         const threadListMounted = expanded || collapsing;
-        const projectThreads = threadsForProjectPath(
-          threadsByProjectID[project.id] ?? [],
-          project.path,
-        );
+        // The scratch pseudo project trusts the threadsByProjectID entry
+        // directly: App.tsx already filtered scratch threads. Real
+        // projects still go through the cwd-path filter so stale entries
+        // can't leak into the wrong group.
+        const projectThreads = isScratchPseudo
+          ? threadsByProjectID[project.id] ?? []
+          : threadsForProjectPath(
+              threadsByProjectID[project.id] ?? [],
+              project.path,
+            );
         const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
           pendingProject ? " pending-switch" : ""
-        }`;
+        }${isScratchPseudo ? " scratch-pseudo" : ""}`;
         return (
           <div key={project.id} className="project-group">
             <button
@@ -120,7 +136,13 @@ export function ProjectList({
               onClick={() => onToggleProjectCollapsed(project.id)}
             >
               <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
-              {expanded ? <FolderOpen className="icon-lg" /> : <Folder className="icon-lg" />}
+              {isScratchPseudo ? (
+                <MessagesSquare className="icon-lg" aria-hidden="true" />
+              ) : expanded ? (
+                <FolderOpen className="icon-lg" />
+              ) : (
+                <Folder className="icon-lg" />
+              )}
               <span>{project.name}</span>
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
             </button>
@@ -202,7 +224,7 @@ function ThreadList({
   const [stickyVisibleThreadIDs, setStickyVisibleThreadIDs] = useState<
     Set<string>
   >(() => new Set());
-  const visibleThreads = projectThreads(threads);
+  const visibleThreads = threads;
   useEffect(() => {
     const validIDs = new Set(visibleThreads.map((thread) => thread.id));
     setStickyVisibleThreadIDs((current) => {
@@ -321,115 +343,6 @@ function importantThreadVisible(
 
 function threadRunning(thread: ThreadSummary): boolean {
   return thread.status === "in_progress" || thread.turns.some((turn) => turn.status === "in_progress");
-}
-
-export function PinnedThreadList({
-  threads,
-  activeID,
-  pendingThreadID,
-  archiveConfirmThreadID,
-  lastViewedTurnByThreadID,
-  onSelect,
-  onTogglePinned,
-  onArchive,
-  onClearArchiveConfirm
-}: {
-  threads: ThreadSummary[];
-  activeID?: string;
-  pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
-  lastViewedTurnByThreadID: Record<string, string>;
-  onSelect: (id: string) => void;
-  onTogglePinned: (thread: ThreadSummary) => void;
-  onArchive: (thread: ThreadSummary) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
-}): JSX.Element {
-  return (
-    <div className="pinned-thread-list">
-      <ThreadRows
-        threads={threads}
-        activeID={activeID}
-        pendingThreadID={pendingThreadID}
-        archiveConfirmThreadID={archiveConfirmThreadID}
-        lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-        onSelect={onSelect}
-        onTogglePinned={onTogglePinned}
-        onArchive={onArchive}
-        onClearArchiveConfirm={onClearArchiveConfirm}
-      />
-    </div>
-  );
-}
-
-export function ScratchThreadSection({
-  threads,
-  activeID,
-  pendingThreadID,
-  archiveConfirmThreadID,
-  lastViewedTurnByThreadID,
-  onSelect,
-  onToggleThreadPinned,
-  onArchiveThread,
-  onClearArchiveConfirm,
-  onCreateScratchThread
-}: {
-  threads: ThreadSummary[];
-  activeID?: string;
-  pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
-  lastViewedTurnByThreadID: Record<string, string>;
-  onSelect: (id: string) => void;
-  onToggleThreadPinned: (thread: ThreadSummary) => void;
-  onArchiveThread: (thread: ThreadSummary) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
-  onCreateScratchThread: () => void;
-}): JSX.Element {
-  const [visibleCount, setVisibleCount] = useState(PROJECT_THREAD_INITIAL_VISIBLE_COUNT);
-
-  function showMoreScratchThreads(): void {
-    setVisibleCount((current) => current + PROJECT_THREAD_VISIBLE_INCREMENT);
-  }
-
-  function collapseScratchThreads(): void {
-    setVisibleCount(PROJECT_THREAD_INITIAL_VISIBLE_COUNT);
-  }
-
-  return (
-    <section className="scratch-thread-section" aria-label="对话">
-      <div className="sidebar-section-header scratch-thread-header">
-        <span className="section-label scratch-thread-label">对话</span>
-        <button
-          className="project-add-button"
-          type="button"
-          aria-label="新建对话"
-          title="新建对话"
-          onClick={onCreateScratchThread}
-        >
-          <MessageSquarePlus className="icon-xl" />
-        </button>
-      </div>
-      {threads.length === 0 ? (
-        <div className="scratch-thread-empty-note">还没有对话</div>
-      ) : (
-        <div className="scratch-thread-list">
-          <ThreadList
-            threads={threads}
-            activeID={activeID}
-            pendingThreadID={pendingThreadID}
-            archiveConfirmThreadID={archiveConfirmThreadID}
-            lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-            visibleCount={visibleCount}
-            onSelect={onSelect}
-            onTogglePinned={onToggleThreadPinned}
-            onArchive={onArchiveThread}
-            onClearArchiveConfirm={onClearArchiveConfirm}
-            onShowMore={showMoreScratchThreads}
-            onCollapse={collapseScratchThreads}
-          />
-        </div>
-      )}
-    </section>
-  );
 }
 
 function ThreadRows({

@@ -163,6 +163,7 @@ import {
   persistActiveSessionTabDraft,
   pinnedThreadSummaries,
   queryTextForUserItem,
+  SCRATCH_PSEUDO_PROJECT_ID,
   scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
@@ -217,7 +218,6 @@ import {
   RuntimeLoading,
   ViewSwitchLoading,
 } from "./LoadingViews";
-import { Modal } from "./Modal";
 import {
   isCodexProvider,
   pullRequestUnavailableReason,
@@ -1536,6 +1536,32 @@ export function App(): JSX.Element {
   const sidebarScratchThreads = useMemo(
     () => scratchThreadSummaries(sidebarThreadSummaries, state.projects),
     [sidebarThreadSummaries, state.projects],
+  );
+  // The scratch pseudo project lives at the top of the sidebar tree. It is
+  // a synthetic DesktopProject (id = SCRATCH_PSEUDO_PROJECT_ID) whose
+  // threads are the scratch conversations pulled out of
+  // sidebarThreadSummaries above. path is intentionally "" — ThreadSidebar
+  // special-cases the scratch pseudo id and skips its cwd-path filter.
+  const scratchPseudoProject = useMemo<DesktopProject>(
+    () => ({
+      id: SCRATCH_PSEUDO_PROJECT_ID,
+      name: "对话",
+      path: "",
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString(),
+    }),
+    [],
+  );
+  const sidebarProjects = useMemo<DesktopProject[]>(
+    () => [scratchPseudoProject, ...state.projects],
+    [scratchPseudoProject, state.projects],
+  );
+  const sidebarThreadsByProjectID = useMemo(
+    () => ({
+      [SCRATCH_PSEUDO_PROJECT_ID]: sidebarScratchThreads,
+      ...sidebarProjectThreadSummariesByProjectID,
+    }),
+    [sidebarScratchThreads, sidebarProjectThreadSummariesByProjectID],
   );
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
@@ -5903,6 +5929,29 @@ export function App(): JSX.Element {
     );
   }
 
+  /**
+   * Find the pending approval (if any) whose tool call landed in this
+   * turn. The AppState holds a single pending slot, but the card should
+   * render inside the assistant turn where the model actually asked the
+   * question — not floating above the entire conversation.
+   *
+   * Matching is by `call_id` against turn items. The server emits the
+   * approval request right after pushing the tool_call item, so the
+   * call_id is reliably present on the turn before the user can switch
+   * away. If no item in this turn matches, the card skips this turn.
+   */
+  function pendingApprovalForTurn(
+    approval: PendingToolApproval | undefined,
+    turn: Turn,
+  ): PendingToolApproval | undefined {
+    if (!approval) return undefined;
+    const callID = approval.call_id;
+    if (!callID) return undefined;
+    return turn.items.some((item) => item.id === callID)
+      ? approval
+      : undefined;
+  }
+
   if (settingsOpen) {
     return (
       <SettingsView
@@ -5935,9 +5984,7 @@ export function App(): JSX.Element {
       <div ref={appShellRef} className={shellClassName} style={shellStyle}>
       <AppSidebar
         state={state}
-        pinnedThreads={sidebarPinnedThreads}
-        scratchThreads={sidebarScratchThreads}
-        onCreateScratchThread={() => void useNoProject(true)}
+        sidebarProjects={sidebarProjects}
         activeThreadID={activeThreadID}
         pendingThreadID={visiblePendingThreadID}
         pendingProjectID={visiblePendingProjectID}
@@ -5945,7 +5992,7 @@ export function App(): JSX.Element {
         collapsedProjectIDs={collapsedProjectIDs}
         expandedProjectIDs={expandedProjectIDs}
         collapsingProjectIDs={collapsingProjectIDs}
-        projectThreadsByProjectID={sidebarProjectThreadSummariesByProjectID}
+        projectThreadsByProjectID={sidebarThreadsByProjectID}
         projectMenuOpen={projectMenuOpen}
         projectMenuRef={projectMenuRef}
         searchOpen={conversationSearch.open}
@@ -5970,7 +6017,13 @@ export function App(): JSX.Element {
         onCreateProject={() => void createBlankProject()}
         onOpenProjectFolder={() => void chooseProjectFolder()}
         onToggleProjectCollapsed={toggleProjectCollapsed}
-        onStartNewThreadForProject={(id) => void startNewThreadForProject(id)}
+        onStartNewThreadForProject={(id) => {
+          if (id === SCRATCH_PSEUDO_PROJECT_ID) {
+            void useNoProject(true);
+          } else {
+            void startNewThreadForProject(id);
+          }
+        }}
         onSelectProjectThread={(projectID, threadID) =>
           void selectProjectThread(projectID, threadID)
         }
@@ -6017,20 +6070,12 @@ export function App(): JSX.Element {
         onSelectResult={selectConversationSearchResult}
       />
 
-      {state.pendingToolApproval ? (
-        <ToolApprovalDialog
-          approval={state.pendingToolApproval}
-          onApprove={() =>
-            void resolveToolApproval(state.pendingToolApproval!, "approved")
-          }
-          onApproveForSession={() =>
-            void resolveToolApproval(state.pendingToolApproval!, "approved_for_session")
-          }
-          onDeny={() =>
-            void resolveToolApproval(state.pendingToolApproval!, "denied")
-          }
-        />
-      ) : null}
+      {/*
+        Pending tool approvals render inline inside the matching turn
+        (see AssistantTurnShell), not as a global modal. The AppState
+        still holds the single pending slot — renderTurn maps it to the
+        right turn via pendingApprovalForTurn().
+      */}
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
@@ -6576,7 +6621,12 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     ? [historyMessageEdit.turnID]
                     : undefined
                 }
-                renderTurn={(turn) => (
+                renderTurn={(turn) => {
+                  const approval = pendingApprovalForTurn(
+                    state.pendingToolApproval,
+                    turn,
+                  );
+                  return (
                   <TurnView
                     turn={turn}
                     cwd={thread.cwd ?? activeContextCwd}
@@ -6609,8 +6659,29 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     }
                     onNoticeAction={onNoticeAction}
                     onOpenFile={onOpenFile}
+                    pendingApproval={approval}
+                    onApproveTool={
+                      approval
+                        ? () => void resolveToolApproval(approval, "approved")
+                        : undefined
+                    }
+                    onApproveToolForSession={
+                      approval
+                        ? () =>
+                            void resolveToolApproval(
+                              approval,
+                              "approved_for_session",
+                            )
+                        : undefined
+                    }
+                    onDenyTool={
+                      approval
+                        ? () => void resolveToolApproval(approval, "denied")
+                        : undefined
+                    }
                   />
-                )}
+                  );
+                }}
               />
             </div>
           </div>
@@ -6625,67 +6696,6 @@ function settingsPageFromNoticeFocus(focus: unknown): SettingsPage {
     return "providers";
   }
   return "general";
-}
-
-function ToolApprovalDialog({
-  approval,
-  onApprove,
-  onApproveForSession,
-  onDeny,
-}: {
-  approval: PendingToolApproval;
-  onApprove: () => void;
-  onApproveForSession: () => void;
-  onDeny: () => void;
-}): JSX.Element {
-  const preview = approval.arguments_preview?.trim();
-  const capability = approval.capability?.trim() || approval.tool_name;
-  const capabilityAction = approval.capability_action?.trim();
-  const capabilityObject = approval.capability_object?.trim();
-  const capabilityLine = [capability, capabilityAction].filter(Boolean).join(" · ");
-  const rule = approval.capability_rule?.trim() || approval.permission_rule?.trim();
-  // Approval must be an explicit decision, so this dialog has no
-  // `onClose`: no X button, no Escape, no backdrop dismissal. The
-  // user has to pick deny / approve-for-session / approve-once.
-  return (
-    <Modal
-      ariaLabel="操作审批"
-      icon={<AlertCircle className="icon-lg" />}
-      title="审批操作"
-      subtitle={capabilityLine || approval.tool_name}
-      footer={
-        <>
-          <button type="button" onClick={onDeny}>
-            拒绝
-          </button>
-          <button type="button" onClick={onApproveForSession}>
-            本会话批准
-          </button>
-          <button className="primary-button" type="button" onClick={onApprove}>
-            批准一次
-          </button>
-        </>
-      }
-    >
-      <div className="environment-dialog-summary">
-        <strong>{approval.risk ? `风险：${approval.risk}` : "需要确认"}</strong>
-        <span>{approval.policy_reason || approval.classification_reason || "这个操作需要人工审批后才能继续。"}</span>
-      </div>
-      {capabilityObject ? (
-        <div className="environment-dialog-summary">
-          <strong>对象</strong>
-          <span>{capabilityObject}</span>
-        </div>
-      ) : null}
-      {rule ? (
-        <div className="environment-dialog-summary">
-          <strong>规则</strong>
-          <span>{rule}</span>
-        </div>
-      ) : null}
-      {preview ? <pre className="environment-dialog-error">{preview}</pre> : null}
-    </Modal>
-  );
 }
 
 function ConversationGridGuides(): JSX.Element {

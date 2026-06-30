@@ -15,12 +15,12 @@ import {
 import type { RefObject } from "react";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
-import { PinnedThreadList, ProjectList, ScratchThreadSection } from "./ThreadSidebar";
+import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
+import { ProjectList } from "./ThreadSidebar";
 
 export function AppSidebar({
   state,
-  pinnedThreads,
-  scratchThreads,
+  sidebarProjects,
   activeThreadID,
   pendingThreadID,
   pendingProjectID,
@@ -49,12 +49,15 @@ export function AppSidebar({
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
   onSelectProjectThread,
-  onCreateScratchThread,
   onOpenSettings,
 }: {
   state: AppState;
-  pinnedThreads: ThreadSummary[];
-  scratchThreads: ThreadSummary[];
+  // The sidebar renders scratch conversations through the same ProjectList
+  // path as real projects, so App.tsx prepends a synthetic DesktopProject
+  // (id = SCRATCH_PSEUDO_PROJECT_ID) into this array. The original
+  // state.projects list is unchanged; sidebarProjects is what the sidebar
+  // actually shows.
+  sidebarProjects: DesktopProject[];
   activeThreadID?: string;
   pendingThreadID?: string;
   pendingProjectID?: string;
@@ -83,11 +86,15 @@ export function AppSidebar({
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
-  onCreateScratchThread: () => void;
   onOpenSettings: () => void;
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
+  // The scratch pseudo project is "active" when the runtime context is in
+  // no-project mode (i.e. the user is viewing a scratch conversation).
+  // Active state is passed into ProjectList so the row highlights even though
+  // it has no DesktopProject entry in state.projects.
+  const sidebarScratchPseudoActive = state.activeContext?.kind === "no_project";
 
   return (
     <aside className="sidebar">
@@ -176,36 +183,6 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-main scrollbar-hidden">
-          {pinnedThreads.length > 0 ? (
-            <section className="pinned-thread-section" aria-label="置顶">
-              <div className="section-label pinned-thread-label">置顶</div>
-              <PinnedThreadList
-                threads={pinnedThreads}
-                activeID={activeThreadID}
-                pendingThreadID={pendingThreadID}
-                archiveConfirmThreadID={archiveConfirmThreadID}
-                lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                onSelect={onSelectThread}
-                onTogglePinned={onTogglePinned}
-                onArchive={onArchiveThread}
-                onClearArchiveConfirm={onClearArchiveConfirm}
-              />
-            </section>
-          ) : null}
-
-          <ScratchThreadSection
-            threads={scratchThreads}
-            activeID={activeThreadID}
-            pendingThreadID={pendingThreadID}
-            archiveConfirmThreadID={archiveConfirmThreadID}
-            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-            onSelect={onSelectThread}
-            onToggleThreadPinned={onTogglePinned}
-            onArchiveThread={onArchiveThread}
-            onClearArchiveConfirm={onClearArchiveConfirm}
-            onCreateScratchThread={onCreateScratchThread}
-          />
-
           <section className="project-section" aria-label="项目">
             <div className="sidebar-section-header project-section-header" ref={projectMenuRef}>
               <div className="section-label">项目</div>
@@ -232,11 +209,11 @@ export function AppSidebar({
               ) : null}
             </div>
             <div className="project-list">
-              {state.projects.length === 0 ? (
+              {sidebarProjects.length === 0 ? (
                 <div className="project-empty-note">还没有项目</div>
               ) : null}
               <ProjectList
-                projects={state.projects}
+                projects={sidebarProjects}
                 activeID={state.activeProjectId}
                 pendingProjectID={pendingProjectID}
                 collapsedProjectIDs={collapsedProjectIDs}
@@ -247,6 +224,8 @@ export function AppSidebar({
                 pendingThreadID={pendingThreadID}
                 archiveConfirmThreadID={archiveConfirmThreadID}
                 lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
+                scratchPseudoActive={sidebarScratchPseudoActive}
                 onToggleProjectCollapsed={onToggleProjectCollapsed}
                 onStartNewThread={onStartNewThreadForProject}
                 onSelectThread={onSelectProjectThread}
