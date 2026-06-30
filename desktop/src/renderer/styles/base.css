@@ -299,6 +299,46 @@ body {
   overflow: hidden;
 }
 
+/* Mature desktop apps don't let users drag-select chrome (titles, labels,
+ * buttons, badges, status pills). The default is "no selection"; specific
+ * content surfaces explicitly opt back in below. This is the inverse of
+ * the browser default and replaces the per-component `user-select: none`
+ * scatter with a single source of truth. */
+html,
+body,
+#root {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Opt-in list: surfaces whose text the user legitimately needs to copy.
+ * Keep this list narrow and intentional — anything not here is read-only
+ * chrome by design. */
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable=""],
+pre,
+code,
+.rich-content,
+.rich-content *,
+.user-message,
+.user-message *,
+.user-message-edit-input,
+.user-message-raw-query,
+.reasoning-block,
+.reasoning-block *,
+.turn-error,
+.turn-notice,
+.tool-result,
+.composer-edit-input,
+.composer-textarea,
+[data-selectable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* During window resize we pause transitions and animations on layout
    containers only. The previous `.window-resizing *` rule forced Chromium
    to walk the entire DOM on every resize event and re-disable
