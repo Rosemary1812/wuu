@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { act, createRef } from "react";
+import { act, createRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -211,8 +211,121 @@ function renderSplitPaneComposer(props: {
   });
 }
 
+function renderStatefulComposer(props: {
+  initialPrompt?: string;
+  onSend?: (prompt: string) => void;
+}): void {
+  const codexModels: CodexModelLoadState = {
+    loading: false,
+    error: "",
+    models: [],
+  };
+
+  function Harness(): JSX.Element {
+    const [prompt, setPrompt] = useState(props.initialPrompt ?? "");
+    return (
+      <ImagePreviewProvider>
+        <Composer
+          prompt={prompt}
+          setPrompt={setPrompt}
+          files={[]}
+          images={[]}
+          queuedMessages={[]}
+          guideMessages={[]}
+          running={false}
+          status="ready"
+          readOnly={false}
+          initialized={initialized()}
+          projects={[]}
+          codexModels={codexModels}
+          codexRuntimeMenu={null}
+          codexRuntimeRef={createRef<HTMLDivElement>()}
+          menuOpen={false}
+          accessMenuOpen={false}
+          branchMenuOpen={false}
+          menuRef={createRef<HTMLDivElement>()}
+          accessMenuRef={createRef<HTMLDivElement>()}
+          projectFilter=""
+          setProjectFilter={() => {}}
+          onToggleMenu={() => {}}
+          onToggleAccessMenu={() => {}}
+          onToggleCodexRuntimeMenu={() => {}}
+          onSelectRuntimeModel={() => {}}
+          onSelectRuntimeEffort={() => {}}
+          onSelectPermissionMode={() => {}}
+          onToggleBranchMenu={() => {}}
+          onOpenSettings={() => {}}
+          onOpenSkillsCatalog={() => {}}
+          onSelectProject={() => {}}
+          onSelectNoProject={() => {}}
+          onSelectGitBranch={() => {}}
+          onCreateProject={() => {}}
+          onOpenProject={() => {}}
+          onStartNewThread={() => {}}
+          onOpenWorkspaceTool={() => {}}
+          onPasteAttachmentFiles={() => {}}
+          onRemoveFile={() => {}}
+          onRemoveImage={() => {}}
+          onRemoveQueuedMessage={() => {}}
+          onRemoveGuideMessage={() => {}}
+          onGuideQueuedMessage={() => {}}
+          onEditQueuedMessage={() => {}}
+          onEditGuideMessage={() => {}}
+          onSend={() => props.onSend?.(prompt)}
+          onInterrupt={() => {}}
+          tokensPerSecond={0}
+        />
+      </ImagePreviewProvider>
+    );
+  }
+
+  act(() => {
+    root = createRoot(container);
+    root.render(<Harness />);
+  });
+}
+
 async function nextAnimationFrame(): Promise<void> {
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function longPastedPrompt(): string {
+  return [
+    "# 交接提示词(直接粘贴)",
+    "",
+    "这是第一段交接内容。",
+    "这是第二段交接内容。",
+    "这是第三段交接内容。",
+    "这是第四段交接内容。",
+    "这是第五段交接内容。",
+    "这是第六段交接内容。",
+    "这是第七段交接内容。",
+    "这是第八段交接内容。",
+    "这是第九段交接内容。",
+    "这是第十段交接内容。",
+    "这是第十一段交接内容。",
+    "这是第十二段交接内容。",
+    "这是第十三段交接内容。",
+    "这是第十四段交接内容。",
+    "这是第十五段交接内容。",
+  ].join("\n");
+}
+
+function pastePlainText(textarea: HTMLTextAreaElement, text: string): void {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      items: [],
+      getData: (type: string) => (type === "text/plain" ? text : ""),
+    },
+  });
+  textarea.dispatchEvent(event);
+}
+
+function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  setter?.call(textarea, value);
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 describe("Composer send control", () => {
@@ -542,6 +655,92 @@ describe("Composer send control", () => {
     expect(onOpenContextComposition).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
     expect(setPrompt).toHaveBeenCalledWith("");
+  });
+});
+
+describe("Composer long text folding", () => {
+  it("folds a long paste while sending the original text plus follow-up", () => {
+    const longText = longPastedPrompt();
+    const onSend = vi.fn();
+    renderStatefulComposer({ onSend });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, longText);
+    });
+
+    expect(container.querySelector(".composer-collapsed-prompt-card")).not.toBeNull();
+    expect(container.querySelector(".composer-collapsed-prompt-title")?.textContent).toBe("# 交接提示词(直接粘贴)");
+    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    expect((textarea as HTMLTextAreaElement).placeholder).toBe("要求后续变更");
+
+    act(() => {
+      setTextareaValue(textarea as HTMLTextAreaElement, "\n要求后续变更");
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+    act(() => {
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(`${longText}\n要求后续变更`);
+  });
+
+  it("reveals a folded long paste back into the textarea", () => {
+    const longText = longPastedPrompt();
+    renderStatefulComposer({});
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, longText);
+    });
+
+    const revealButton = container.querySelector<HTMLButtonElement>(".composer-collapsed-prompt-main");
+    expect(revealButton).not.toBeNull();
+
+    act(() => {
+      revealButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(container.querySelector(".composer-collapsed-prompt-card")).toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(longText);
+  });
+
+  it("removes only the folded prefix and keeps the follow-up draft", () => {
+    const longText = longPastedPrompt();
+    const onSend = vi.fn();
+    renderStatefulComposer({ onSend });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, longText);
+    });
+    act(() => {
+      setTextareaValue(textarea as HTMLTextAreaElement, "要求后续变更");
+    });
+
+    const removeButton = container.querySelector<HTMLButtonElement>(".composer-collapsed-prompt-remove");
+    expect(removeButton).not.toBeNull();
+
+    act(() => {
+      removeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(container.querySelector(".composer-collapsed-prompt-card")).toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("要求后续变更");
+
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+    act(() => {
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSend).toHaveBeenCalledWith("要求后续变更");
   });
 });
 

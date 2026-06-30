@@ -1,6 +1,7 @@
 import {
   Bug,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   CircleHelp,
   FileText,
@@ -23,9 +24,11 @@ import {
   Square,
   Terminal,
   Wrench,
+  X,
   Zap
 } from "lucide-react";
 import {
+  type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type Ref,
   type RefObject,
@@ -84,6 +87,14 @@ import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
+
+type CollapsedComposerPromptBlock = {
+  text: string;
+};
+
+const COLLAPSIBLE_COMPOSER_PROMPT_LINE_THRESHOLD = 14;
+const COLLAPSIBLE_COMPOSER_PROMPT_CHAR_THRESHOLD = 1200;
+const COLLAPSIBLE_COMPOSER_PROMPT_SOFT_LINE_CHARS = 84;
 
 export type {
   CodexModelLoadState,
@@ -245,9 +256,21 @@ export function Composer({
   const collapsedComposerFrameHeightRef = useRef<number | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const [collapsedPromptBlock, setCollapsedPromptBlock] = useState<CollapsedComposerPromptBlock | null>(null);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
   const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
+  const hasCollapsedPromptBlock = Boolean(collapsedPromptBlock && prompt.startsWith(collapsedPromptBlock.text));
+  const visiblePromptValue = hasCollapsedPromptBlock && collapsedPromptBlock
+    ? prompt.slice(collapsedPromptBlock.text.length)
+    : prompt;
+  const composerPlaceholder = readOnly
+    ? "子任务会话只读"
+    : hasCollapsedPromptBlock
+      ? "要求后续变更"
+      : hasAttachments
+        ? "添加描述"
+        : "向 wuu 提问，或输入 / 选择命令";
   const slashDraft = parseComposerSlashDraft(prompt);
   const slashQuery = slashDraft?.query ?? "";
   const slashSkillContextKey = activeContext ? composerRuntimeContextKey(activeContext) : "";
@@ -281,7 +304,7 @@ export function Composer({
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
-    disabled: readOnly || hasAttachments,
+    disabled: readOnly || hasAttachments || hasCollapsedPromptBlock,
     prompt,
     queryHistory,
     queryHistorySessionID,
@@ -323,6 +346,12 @@ export function Composer({
       setIsComposerExpanded(false);
     }
   }, [readOnly]);
+
+  useEffect(() => {
+    if (collapsedPromptBlock && !prompt.startsWith(collapsedPromptBlock.text)) {
+      setCollapsedPromptBlock(null);
+    }
+  }, [collapsedPromptBlock, prompt]);
 
   useLayoutEffect(() => {
     const frame = composerFrameRef.current;
@@ -379,6 +408,64 @@ export function Composer({
       return;
     }
     onSend();
+    focusComposerSoon();
+  }
+
+  function updateVisiblePrompt(value: string): void {
+    resetQueryHistoryNavigation();
+    setSlashDismissedValue("");
+    setPrompt(hasCollapsedPromptBlock && collapsedPromptBlock ? `${collapsedPromptBlock.text}${value}` : value);
+  }
+
+  function handleComposerPaste(event: ReactClipboardEvent<HTMLTextAreaElement>): void {
+    if (readOnly) {
+      return;
+    }
+    const pasted = clipboardAttachmentFiles(event);
+    if (pasted.length > 0) {
+      event.preventDefault();
+      onPasteAttachmentFiles(pasted);
+      return;
+    }
+
+    if (hasCollapsedPromptBlock) {
+      return;
+    }
+
+    const pastedText = event.clipboardData?.getData("text/plain") ?? "";
+    if (!isCollapsibleComposerPrompt(pastedText)) {
+      return;
+    }
+
+    const selectionStart = event.currentTarget.selectionStart ?? 0;
+    const selectionEnd = event.currentTarget.selectionEnd ?? 0;
+    const replacingWholePrompt = selectionStart === 0 && selectionEnd === prompt.length;
+    if (prompt.length > 0 && !replacingWholePrompt) {
+      return;
+    }
+
+    event.preventDefault();
+    resetQueryHistoryNavigation();
+    setSlashDismissedValue("");
+    setCollapsedPromptBlock({ text: pastedText });
+    setPrompt(pastedText);
+    focusComposerSoon();
+  }
+
+  function revealCollapsedPromptBlock(): void {
+    setCollapsedPromptBlock(null);
+    focusComposerSoon();
+  }
+
+  function removeCollapsedPromptBlock(): void {
+    if (!collapsedPromptBlock) {
+      return;
+    }
+    const remainingPrompt = prompt.startsWith(collapsedPromptBlock.text)
+      ? prompt.slice(collapsedPromptBlock.text.length)
+      : prompt;
+    setCollapsedPromptBlock(null);
+    setPrompt(remainingPrompt);
     focusComposerSoon();
   }
 
@@ -579,7 +666,7 @@ export function Composer({
             onEditGuideMessage={onEditGuideMessage}
             onEditQueuedMessage={onEditQueuedMessage}
           />
-          <div className="composer">
+          <div className={`composer${hasCollapsedPromptBlock ? " has-collapsed-prompt" : ""}`}>
             <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
             <input
               ref={attachmentInputRef}
@@ -596,31 +683,26 @@ export function Composer({
                 }
               }}
             />
+            {hasCollapsedPromptBlock && collapsedPromptBlock ? (
+              <CollapsedComposerPromptCard
+                text={collapsedPromptBlock.text}
+                onReveal={revealCollapsedPromptBlock}
+                onRemove={removeCollapsedPromptBlock}
+              />
+            ) : null}
             <textarea
               ref={textareaRef}
-              value={prompt}
-              placeholder={readOnly ? "子任务会话只读" : hasAttachments ? "添加描述" : "向 wuu 提问，或输入 / 选择命令"}
+              value={visiblePromptValue}
+              placeholder={composerPlaceholder}
               disabled={readOnly}
               aria-readonly={readOnly}
               aria-controls={slashMenuOpen ? slashMenuID : undefined}
               aria-activedescendant={selectedSlashCommand ? `${slashMenuID}-${selectedSlashCommand.id}` : undefined}
               aria-expanded={slashMenuOpen || undefined}
               onChange={(event) => {
-                resetQueryHistoryNavigation();
-                setSlashDismissedValue("");
-                setPrompt(event.target.value);
+                updateVisiblePrompt(event.target.value);
               }}
-              onPaste={(event) => {
-                if (readOnly) {
-                  return;
-                }
-                const pasted = clipboardAttachmentFiles(event);
-                if (pasted.length === 0) {
-                  return;
-                }
-                event.preventDefault();
-                onPasteAttachmentFiles(pasted);
-              }}
+              onPaste={handleComposerPaste}
               onBlur={() => {
                 if (slashMenuOpen) {
                   setSlashDismissedValue(prompt);
@@ -803,6 +885,48 @@ export function Composer({
   );
 }
 
+function CollapsedComposerPromptCard({
+  text,
+  onReveal,
+  onRemove
+}: {
+  text: string;
+  onReveal: () => void;
+  onRemove: () => void;
+}): JSX.Element {
+  const title = collapsedComposerPromptTitle(text);
+  return (
+    <div className="composer-collapsed-prompt-card">
+      <button
+        className="composer-collapsed-prompt-main"
+        type="button"
+        title={title}
+        aria-label={`在文本框中显示折叠长文本：${title}`}
+        onClick={onReveal}
+      >
+        <span className="composer-collapsed-prompt-icon" aria-hidden="true">
+          <FileText className="icon" />
+        </span>
+        <span className="composer-collapsed-prompt-copy">
+          <strong className="composer-collapsed-prompt-title">{title}</strong>
+          <span className="composer-collapsed-prompt-action">
+            在文本框中显示
+            <ChevronRight aria-hidden="true" />
+          </span>
+        </span>
+      </button>
+      <button
+        className="composer-collapsed-prompt-remove"
+        type="button"
+        aria-label="移除折叠长文本"
+        onClick={onRemove}
+      >
+        <X aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.Element {
   switch (command.action ?? command.id) {
     case "open-review":
@@ -867,6 +991,34 @@ function exactRunnableSlashCommand(commands: ComposerSlashCommand[], draft: Comp
       (command.kind === "prompt" || command.kind === "skill") &&
       command.name.toLowerCase() === draft.query
   );
+}
+
+function isCollapsibleComposerPrompt(text: string): boolean {
+  if (text.trim().length === 0) {
+    return false;
+  }
+  if (text.length > COLLAPSIBLE_COMPOSER_PROMPT_CHAR_THRESHOLD) {
+    return true;
+  }
+  let estimatedLines = 0;
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    estimatedLines += Math.max(
+      1,
+      Math.ceil(line.length / COLLAPSIBLE_COMPOSER_PROMPT_SOFT_LINE_CHARS)
+    );
+    if (estimatedLines > COLLAPSIBLE_COMPOSER_PROMPT_LINE_THRESHOLD) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collapsedComposerPromptTitle(text: string): string {
+  const firstLine = text
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return firstLine || "长文本";
 }
 
 function exactActionSlashCommand(commands: ComposerSlashCommand[], draft: ComposerSlashDraft): ComposerSlashCommand | undefined {
