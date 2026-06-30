@@ -325,46 +325,16 @@
   min-height: 0;
 }
 
-.sidebar-section-header {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
-  height: 38px;
-  align-items: center;
-  padding: 0 6px 8px 12px;
-}
-
-.section-label {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-add-button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink-tertiary);
-  -webkit-app-region: no-drag;
-}
-
-.project-add-button:hover,
-.project-add-button[aria-expanded="true"] {
-  background: var(--sidebar-glass-hover);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
-}
-
 .project-add-menu {
+  /* Anchored to .sidebar-add-workspace, which sits near the sidebar
+   * bottom. Opening downward (top: 100%) would push the menu off-screen
+   * past the sidebar edge; opening upward keeps both menu items inside
+   * the sidebar even on short windows. transform-origin mirrors the
+   * flip so the enter animation still feels like the menu drops out of
+   * the trigger button. */
   position: absolute;
-  top: calc(100% + 2px);
+  bottom: calc(100% + 2px);
+  top: auto;
   right: 6px;
   left: auto;
   z-index: 30;
@@ -377,7 +347,7 @@
   box-shadow: var(--menu-shadow);
   padding: 6px;
   backdrop-filter: blur(16px);
-  transform-origin: top right;
+  transform-origin: bottom right;
   --menu-enter-x: 0;
   --menu-enter-y: 0;
   animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
@@ -444,9 +414,15 @@
 }
 
 .project-row {
+  /* Sidebar rhythm: labels now start at ~4 + 16 (chevron) + 9 (gap) +
+   * 16 (icon) + 9 (gap) ≈ 54px instead of the previous ~62px. The
+   * reduced right padding (24px instead of 40px) gives the label
+   * ~16px more horizontal room — important because project paths
+   * like "~/code/some-fork" routinely truncate otherwise. The 24px
+   * on the right still leaves room for the inline + thread button. */
   color: var(--ink-tertiary);
-  padding-left: 8px;
-  padding-right: 40px;
+  padding-left: 4px;
+  padding-right: 24px;
   font-weight: var(--weight-medium);
 }
 
@@ -537,7 +513,7 @@
 .project-row-new-thread {
   position: absolute;
   top: 4px;
-  right: 4px;
+  right: 8px;
   opacity: 0;
   pointer-events: none;
   transform: translate3d(4px, 0, 0);
@@ -961,9 +937,14 @@
 }
 
 .thread-row-actions {
+  /* 12px from the right edge instead of 5px. The previous offset put
+   * the pin / archive icons flush against the sidebar's right
+   * padding, which read as "trapped in the corner". 12px gives a
+   * visible gap that matches the inline + button offset on project
+   * rows so the two action surfaces share one breathing rhythm. */
   position: absolute;
   top: 50%;
-  right: 5px;
+  right: 12px;
   z-index: 1;
   display: flex;
   gap: 3px;
@@ -1008,9 +989,25 @@
 }
 
 .sidebar-settings {
+  /* Two rare-action buttons stacked: "添加工作区" on top, "设置" below.
+   * The column layout reads as a single terminal zone — terminal
+   * relative to the scrollable tree above — and visually anchors the
+   * sidebar bottom. */
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin-top: 14px;
   flex-shrink: 0;
+}
+
+/* Wraps the "添加工作区" button + its dropdown menu so the menu's
+ * position: absolute anchors to this wrapper rather than escaping the
+ * sidebar. The ref that detects clicks-outside-to-close is also on
+ * this wrapper, so a click on the Settings button below counts as
+ * "outside" and dismisses the menu. */
+.sidebar-add-workspace {
+  position: relative;
 }
 
 .settings-button {
