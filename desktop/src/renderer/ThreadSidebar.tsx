@@ -145,7 +145,6 @@ export function ProjectList({
               title={expanded ? "收起会话" : "展开会话"}
               onClick={() => onToggleProjectCollapsed(project.id)}
             >
-              <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
               {isScratchPseudo ? (
                 <MessagesSquare className="icon-lg" aria-hidden="true" />
               ) : expanded ? (
@@ -153,7 +152,10 @@ export function ProjectList({
               ) : (
                 <Folder className="icon-lg" />
               )}
-              <span className="project-row-name">{project.name}</span>
+              <span className="project-row-label">
+                <span className="project-row-name">{project.name}</span>
+                <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
+              </span>
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
               {projectHasUnread && !pendingProject ? (
                 <span className="project-row-unread" aria-hidden="true" />

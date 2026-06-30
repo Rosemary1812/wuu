@@ -440,19 +440,18 @@
 
 .project-row {
   grid-template-columns:
-    var(--sidebar-tree-toggle-col)
-    var(--sidebar-tree-icon-col)
+    var(--sidebar-nav-icon-col)
     minmax(0, 1fr)
     var(--sidebar-row-action-size);
+  column-gap: var(--sidebar-nav-column-gap);
   color: var(--ink-tertiary);
   padding-right: var(--sidebar-row-pad-x);
   font-weight: var(--weight-medium);
 }
 
 .project-row-chevron {
-  grid-column: 1;
-  justify-self: center;
   flex: 0 0 auto;
+  opacity: 0;
   color: var(--ink-muted);
   /* Must match the .thread-list-collapse timing (190ms, linear-ish ease)
    * so the chevron and the content settle as one continuous motion. The
@@ -462,7 +461,13 @@
    * the only motion the user can see against the margin/opacity tail. */
   transition:
     color 190ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 190ms cubic-bezier(0.4, 0, 0.2, 1);
+    transform 190ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 120ms ease;
+}
+
+.project-group:hover > .project-row .project-row-chevron,
+.project-group:focus-within > .project-row .project-row-chevron {
+  opacity: 1;
 }
 
 .project-row.expanded .project-row-chevron {
@@ -471,7 +476,7 @@
 }
 
 .project-row svg:not(.project-row-chevron) {
-  grid-column: 2;
+  grid-column: 1;
   justify-self: center;
   flex: 0 0 auto;
   color: var(--ink-tertiary);
@@ -485,8 +490,15 @@
   color: var(--ink);
 }
 
+.project-row-label {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--sidebar-tree-column-gap);
+}
+
 .project-row-name {
-  grid-column: 3;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -494,7 +506,7 @@
 }
 
 .project-row .project-row-loading {
-  grid-column: 4;
+  grid-column: 3;
   justify-self: center;
   width: 12px;
   height: 12px;
@@ -506,7 +518,7 @@
 }
 
 .project-row-unread {
-  grid-column: 4;
+  grid-column: 3;
   width: var(--sidebar-project-unread-size);
   height: var(--sidebar-project-unread-size);
   justify-self: center;
