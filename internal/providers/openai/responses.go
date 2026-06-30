@@ -55,16 +55,16 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 		return nil, err
 	}
 
-	if c.responsesWebSocket {
-		ch, err := c.responsesStreamChatWebSocket(ctx, payload)
+	if responsesTransportUsesWebSocket(c.responsesTransport) {
+		ch, err := c.responsesStreamChatWebSocket(ctx, payload, c.responsesTransport)
 		if err == nil {
 			return ch, nil
 		}
 		providers.DebugLogf("Responses websocket unavailable before stream start, falling back to SSE: %v", err)
-		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, responsesWebSocketFallbackReason(err)))
+		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, responsesWebSocketFallbackReason(err)))
 	}
 
-	return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, ""))
+	return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, ""))
 }
 
 func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRequest, state *providers.ProviderStateSummary) (<-chan providers.StreamEvent, error) {
@@ -84,19 +84,20 @@ func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRe
 	return ch, nil
 }
 
-func responsesSSEProviderState(payload responsesRequest, fallbackReason string) *providers.ProviderStateSummary {
+func responsesSSEProviderState(payload responsesRequest, configuredTransport providers.StreamTransportMode, fallbackReason string) *providers.ProviderStateSummary {
 	fallbackReason = strings.TrimSpace(fallbackReason)
 	state := &providers.ProviderStateSummary{
-		Provider:         "openai",
-		Protocol:         "responses_sse",
-		Transport:        "http",
-		ReplayMode:       "full_request",
-		FallbackActive:   fallbackReason != "",
-		FallbackReason:   fallbackReason,
-		InputItems:       len(payload.Input),
-		FullInputItems:   len(payload.Input),
-		DeltaInputItems:  0,
-		ConnectionReused: false,
+		Provider:            "openai",
+		Protocol:            "responses_sse",
+		Transport:           "http",
+		ConfiguredTransport: string(configuredTransport),
+		ReplayMode:          "full_request",
+		FallbackActive:      fallbackReason != "",
+		FallbackReason:      fallbackReason,
+		InputItems:          len(payload.Input),
+		FullInputItems:      len(payload.Input),
+		DeltaInputItems:     0,
+		ConnectionReused:    false,
 	}
 	if fallbackReason != "" {
 		state.Diagnostic = "provider_transport_failure"
@@ -163,11 +164,10 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		}
 	}
 
-	// Sticky-routing headers for Codex-style backends. The ChatGPT backend
-	// keys turn-local state off session-id / x-client-request-id; the Codex
-	// CLI / pi set both to the prompt_cache_key value. OpenAI ignores the
-	// fields on the public Responses path, so it is safe to attach them
-	// unconditionally whenever a cache hint exists.
+	// Sticky-routing headers for Responses-compatible backends. Some backends
+	// key turn-local state off session-id / x-client-request-id. Public OpenAI
+	// ignores these fields, so it is safe to attach them whenever a cache hint
+	// exists.
 	if req.CacheHint != nil {
 		if key := strings.TrimSpace(req.CacheHint.PromptCacheKey); key != "" {
 			payload.ExtraHeaders = map[string]string{
@@ -426,8 +426,7 @@ func responsesMessageContent(msg providers.ChatMessage) any {
 // Truncating client-side avoids the backend's 400 for over-long keys.
 const openAIPromptCacheKeyMaxLength = 64
 
-// clampPromptCacheKey enforces the 64-char Responses spec limit. Mirrors
-// what the Codex CLI / pi do on the client side. Returns "" for empty or
+// clampPromptCacheKey enforces the 64-char Responses spec limit. Returns "" for empty or
 // whitespace-only input so callers can treat the result as a presence check.
 // Truncation is done on Unicode code points so we never split a multi-byte
 // character mid-sequence.
@@ -1075,10 +1074,10 @@ type responsesRequest struct {
 	PreviousResponseID string                    `json:"previous_response_id,omitempty"`
 	// Include asks the backend to surface specific output items (e.g.
 	// "reasoning.encrypted_content") alongside the assistant message.
-	// Codex / pi require this for reasoning replay.
+	// Some Responses backends require this for reasoning replay.
 	Include []string `json:"include,omitempty"`
 	// ParallelToolCalls lets the backend issue concurrent tool calls when
-	// the model emits multiple in one turn. Codex / pi default this to true.
+	// the model emits multiple in one turn.
 	ParallelToolCalls *bool          `json:"parallel_tool_calls,omitempty"`
 	Options           map[string]any `json:"-"`
 	// ExtraHeaders carries per-request HTTP headers derived from runtime state

@@ -351,6 +351,7 @@ type ProviderStateSummary struct {
 	Provider               string `json:"provider,omitempty"`
 	Protocol               string `json:"protocol,omitempty"`
 	Transport              string `json:"transport,omitempty"`
+	ConfiguredTransport    string `json:"configured_transport,omitempty"`
 	ReplayMode             string `json:"replay_mode,omitempty"`
 	PreviousResponseIDUsed bool   `json:"previous_response_id_used,omitempty"`
 	ConnectionReused       bool   `json:"connection_reused,omitempty"`

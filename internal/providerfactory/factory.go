@@ -97,11 +97,12 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 	case wireOpenAIChat, wireOpenAIResponses:
 		if profile.Auth == authCodexOAuth {
 			client, newErr := codex.New(codex.ClientConfig{
-				BaseURL:      provider.BaseURL,
-				APIKey:       resolveExplicitAPIKey(provider),
-				Headers:      provider.Headers,
-				RetryConfig:  retry,
-				StreamConfig: providerStreamTransportConfig(provider),
+				BaseURL:         provider.BaseURL,
+				APIKey:          resolveExplicitAPIKey(provider),
+				Headers:         provider.Headers,
+				RetryConfig:     retry,
+				StreamConfig:    providerStreamTransportConfig(provider),
+				StreamTransport: providerStreamTransportMode(provider),
 			})
 			if newErr != nil {
 				return nil, newErr
@@ -113,12 +114,13 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			return nil, apiKeyErr
 		}
 		client, newErr := openai.New(openai.ClientConfig{
-			BaseURL:      provider.BaseURL,
-			WireAPI:      openAIWireConfig(profile.Wire),
-			APIKey:       apiKey,
-			Headers:      provider.Headers,
-			RetryConfig:  retry,
-			StreamConfig: providerStreamTransportConfig(provider),
+			BaseURL:            provider.BaseURL,
+			WireAPI:            openAIWireConfig(profile.Wire),
+			APIKey:             apiKey,
+			Headers:            provider.Headers,
+			RetryConfig:        retry,
+			StreamConfig:       providerStreamTransportConfig(provider),
+			ResponsesTransport: providerStreamTransportMode(provider),
 		})
 		if newErr != nil {
 			return nil, newErr
@@ -160,6 +162,11 @@ func providerStreamTransportConfig(provider config.ProviderConfig) *providers.St
 		return nil
 	}
 	return &cfg
+}
+
+func providerStreamTransportMode(provider config.ProviderConfig) providers.StreamTransportMode {
+	mode, _ := providers.NormalizeStreamTransportMode(provider.StreamTransport)
+	return mode
 }
 
 func normalizeType(value string) string {

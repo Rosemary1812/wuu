@@ -164,6 +164,9 @@ type ProviderConfig struct {
 	// StreamIdleTimeoutMS bounds silence after the streaming response has
 	// started. It does not affect the initial connect stage.
 	StreamIdleTimeoutMS int `json:"stream_idle_timeout_ms,omitempty"`
+	// StreamTransport selects the preferred streaming transport for providers
+	// that support more than one path: auto, sse, websocket, or websocket-cached.
+	StreamTransport string `json:"stream_transport,omitempty"`
 	// ContextWindow optionally overrides wuu's built-in registry for
 	// this provider's model. Use it for new models wuu doesn't know
 	// about yet, custom finetunes, private deployments, or proxies
@@ -514,6 +517,11 @@ func (c Config) Validate() error {
 		}
 		if provider.StreamIdleTimeoutMS < 0 {
 			return fmt.Errorf("providers.%s.stream_idle_timeout_ms cannot be negative", name)
+		}
+		switch strings.ToLower(strings.TrimSpace(provider.StreamTransport)) {
+		case "", "auto", "sse", "websocket", "websocket-cached", "websocket_cached":
+		default:
+			return fmt.Errorf("providers.%s.stream_transport must be \"auto\", \"sse\", \"websocket\", or \"websocket-cached\"", name)
 		}
 	}
 

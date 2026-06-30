@@ -542,6 +542,69 @@ func TestConfig_ProviderWireAPI(t *testing.T) {
 	}
 }
 
+func TestConfig_ProviderStreamTransport(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "wire_api": "responses",
+      "stream_transport": "websocket-cached",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Providers["main"].StreamTransport != "websocket-cached" {
+		t.Fatalf("expected stream_transport websocket-cached, got %q", cfg.Providers["main"].StreamTransport)
+	}
+}
+
+func TestConfig_RejectsUnknownStreamTransport(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com",
+      "wire_api": "responses",
+      "stream_transport": "socket-party",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, _, err := LoadFrom(workdir, "")
+	if err == nil || !strings.Contains(err.Error(), "stream_transport") {
+		t.Fatalf("expected stream_transport validation error, got %v", err)
+	}
+}
+
 func TestConfig_MCPToolOverrides(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

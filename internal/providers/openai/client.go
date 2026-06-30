@@ -51,6 +51,28 @@ func normalizeWireAPI(value string) (string, error) {
 	}
 }
 
+func normalizeResponsesTransport(mode providers.StreamTransportMode) (providers.StreamTransportMode, error) {
+	if mode == "" {
+		return providers.StreamTransportSSE, nil
+	}
+	normalized, ok := providers.NormalizeStreamTransportMode(string(mode))
+	if !ok || normalized == "" {
+		return "", fmt.Errorf("unsupported responses stream transport %q", mode)
+	}
+	return normalized, nil
+}
+
+func responsesTransportUsesWebSocket(mode providers.StreamTransportMode) bool {
+	return mode == providers.StreamTransportAuto ||
+		mode == providers.StreamTransportWebSocket ||
+		mode == providers.StreamTransportWebSocketCached
+}
+
+func responsesTransportUsesCachedContext(mode providers.StreamTransportMode) bool {
+	return mode == providers.StreamTransportAuto ||
+		mode == providers.StreamTransportWebSocketCached
+}
+
 // ClientConfig configures an OpenAI-compatible endpoint.
 type ClientConfig struct {
 	BaseURL                 string
@@ -61,7 +83,7 @@ type ClientConfig struct {
 	RetryConfig             *providers.RetryConfig
 	StreamConfig            *providers.StreamTransportConfig
 	ResponsesStore          *bool
-	ResponsesWebSocket      bool
+	ResponsesTransport      providers.StreamTransportMode
 	ResponsesWebSocketCache *ResponsesWebSocketCache
 }
 
@@ -77,7 +99,7 @@ type Client struct {
 	reasoningFormat      reasoningEffortFormat
 	streamConfig         providers.StreamTransportConfig
 	responsesStore       *bool
-	responsesWebSocket   bool
+	responsesTransport   providers.StreamTransportMode
 	responsesWSCache     *ResponsesWebSocketCache
 }
 
@@ -104,7 +126,11 @@ func New(cfg ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	if cfg.ResponsesWebSocketCache == nil && cfg.ResponsesWebSocket {
+	responsesTransport, err := normalizeResponsesTransport(cfg.ResponsesTransport)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.ResponsesWebSocketCache == nil && responsesTransportUsesWebSocket(responsesTransport) {
 		cfg.ResponsesWebSocketCache = NewResponsesWebSocketCache()
 	}
 
@@ -119,7 +145,7 @@ func New(cfg ClientConfig) (*Client, error) {
 		reasoningFormat:      detectReasoningEffortFormat(cfg.BaseURL),
 		streamConfig:         streamTransportConfig(cfg.StreamConfig),
 		responsesStore:       cfg.ResponsesStore,
-		responsesWebSocket:   cfg.ResponsesWebSocket,
+		responsesTransport:   responsesTransport,
 		responsesWSCache:     cfg.ResponsesWebSocketCache,
 	}, nil
 }

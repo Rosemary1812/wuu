@@ -22,25 +22,27 @@ const (
 
 // ClientConfig configures the ChatGPT-backed Codex provider.
 type ClientConfig struct {
-	BaseURL      string
-	APIKey       string
-	Headers      map[string]string
-	Home         string
-	HTTPClient   *http.Client
-	RetryConfig  *providers.RetryConfig
-	StreamConfig *providers.StreamTransportConfig
+	BaseURL         string
+	APIKey          string
+	Headers         map[string]string
+	Home            string
+	HTTPClient      *http.Client
+	RetryConfig     *providers.RetryConfig
+	StreamConfig    *providers.StreamTransportConfig
+	StreamTransport providers.StreamTransportMode
 }
 
 // Client uses a local Codex OAuth session as an OpenAI Responses-compatible
 // provider while leaving the agent loop in wuu.
 type Client struct {
-	baseURL      string
-	auth         *OAuthSource
-	headers      map[string]string
-	httpClient   *http.Client
-	retryConfig  *providers.RetryConfig
-	streamConfig *providers.StreamTransportConfig
-	wsCache      *openai.ResponsesWebSocketCache
+	baseURL         string
+	auth            *OAuthSource
+	headers         map[string]string
+	httpClient      *http.Client
+	retryConfig     *providers.RetryConfig
+	streamConfig    *providers.StreamTransportConfig
+	streamTransport providers.StreamTransportMode
+	wsCache         *openai.ResponsesWebSocketCache
 }
 
 // ModelInfo describes one model advertised by the OAuth-backed Codex backend.
@@ -65,14 +67,19 @@ func New(cfg ClientConfig) (*Client, error) {
 	if home == "" {
 		home = os.Getenv("HOME")
 	}
+	streamTransport := cfg.StreamTransport
+	if streamTransport == "" {
+		streamTransport = providers.StreamTransportAuto
+	}
 	return &Client{
-		baseURL:      baseURL,
-		auth:         NewOAuthSource(OAuthConfig{BaseURL: baseURL, APIKey: cfg.APIKey, Home: home, HTTPClient: cfg.HTTPClient}),
-		headers:      cloneHeaders(cfg.Headers),
-		httpClient:   cfg.HTTPClient,
-		retryConfig:  cfg.RetryConfig,
-		streamConfig: cfg.StreamConfig,
-		wsCache:      openai.NewResponsesWebSocketCache(),
+		baseURL:         baseURL,
+		auth:            NewOAuthSource(OAuthConfig{BaseURL: baseURL, APIKey: cfg.APIKey, Home: home, HTTPClient: cfg.HTTPClient}),
+		headers:         cloneHeaders(cfg.Headers),
+		httpClient:      cfg.HTTPClient,
+		retryConfig:     cfg.RetryConfig,
+		streamConfig:    cfg.StreamConfig,
+		streamTransport: streamTransport,
+		wsCache:         openai.NewResponsesWebSocketCache(),
 	}, nil
 }
 
@@ -156,8 +163,8 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 }
 
 // codexRequest applies ChatGPT-Codex specific request shaping. The defaults
-// here mirror the Codex CLI / pi: ask the backend to surface reasoning
-// encrypted content, allow parallel tool calls, and request concise text.
+// ask the backend to surface reasoning encrypted content, allow parallel tool
+// calls, and request concise text.
 // It also removes request fields that the Codex subscription backend rejects.
 // Callers can override supported provider options before sending.
 func codexRequest(req providers.ChatRequest) providers.ChatRequest {
@@ -205,7 +212,7 @@ func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.C
 		RetryConfig:             c.retryConfig,
 		StreamConfig:            c.streamConfig,
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      c.streamTransport,
 		ResponsesWebSocketCache: c.wsCache,
 	})
 	if err != nil {

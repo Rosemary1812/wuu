@@ -14,10 +14,6 @@ import (
 // CodexWebSocketBetaTag is the OpenAI-Beta header value the ChatGPT backend
 // expects for the Responses-over-WebSocket surface. Without it the upgrade
 // request is rejected as a non-Responses endpoint.
-//
-// Mirrors pi's OPENAI_BETA_RESPONSES_WEBSOCKETS in
-// thirdparty/pi/packages/ai/src/api/openai-codex-responses.ts and the
-// corresponding beta tag in codex-rs responses_websocket.rs.
 const CodexWebSocketBetaTag = "responses_websockets=2026-02-06"
 
 const codexWebSocketReadLimitBytes = 16 << 20

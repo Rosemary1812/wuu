@@ -9,25 +9,38 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/coder/websocket"
 )
 
+const defaultResponsesWebSocketCacheTTL = 5 * time.Minute
+
 // ResponsesWebSocketCache stores per-session Codex Responses WebSocket state.
-// It mirrors pi's session cache: a reusable connection plus the last full
-// request/response pair needed to build previous_response_id deltas.
+// Each session keeps a reusable connection plus the last full request/response
+// pair needed to build previous_response_id deltas.
 type ResponsesWebSocketCache struct {
 	mu       sync.Mutex
 	sessions map[string]*responsesWebSocketSession
+	idleTTL  time.Duration
 }
 
 func NewResponsesWebSocketCache() *ResponsesWebSocketCache {
-	return &ResponsesWebSocketCache{sessions: make(map[string]*responsesWebSocketSession)}
+	return NewResponsesWebSocketCacheWithTTL(defaultResponsesWebSocketCacheTTL)
+}
+
+func NewResponsesWebSocketCacheWithTTL(ttl time.Duration) *ResponsesWebSocketCache {
+	return &ResponsesWebSocketCache{
+		sessions: make(map[string]*responsesWebSocketSession),
+		idleTTL:  ttl,
+	}
 }
 
 type responsesWebSocketSession struct {
+	id           string
+	cache        *ResponsesWebSocketCache
 	mu           sync.Mutex
 	conn         *websocket.Conn
 	wsURL        string
@@ -36,6 +49,7 @@ type responsesWebSocketSession struct {
 	active       chan responsesWebSocketReadEvent
 	continuation *responsesWebSocketContinuation
 	fallback     responsesWebSocketFallbackState
+	idleTimer    *time.Timer
 }
 
 type responsesWebSocketContinuation struct {
@@ -83,7 +97,7 @@ func (e *responsesWebSocketFallbackError) Unwrap() error {
 	return e.err
 }
 
-func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload responsesRequest) (<-chan providers.StreamEvent, error) {
+func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload responsesRequest, transport providers.StreamTransportMode) (<-chan providers.StreamEvent, error) {
 	if c.responsesWSCache == nil {
 		return nil, errors.New("responses websocket cache is nil")
 	}
@@ -97,6 +111,7 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 	}
 	session := c.responsesWSCache.session(sessionID)
 	session.mu.Lock()
+	c.responsesWebSocketCancelIdleTimerLocked(session)
 	if session.fallback.active {
 		reason := session.fallback.reason
 		session.mu.Unlock()
@@ -115,7 +130,11 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 	}
 
 	fullPayload := payload
-	requestPayload := responsesCachedWebSocketRequest(session, generation, fullPayload)
+	useCachedContext := responsesTransportUsesCachedContext(transport)
+	requestPayload := fullPayload
+	if useCachedContext {
+		requestPayload = responsesCachedWebSocketRequest(session, generation, fullPayload)
+	}
 	providers.DebugLogf("Responses websocket request: session=%q previous_response_id=%v input_items=%d full_input_items=%d",
 		sessionID, strings.TrimSpace(requestPayload.PreviousResponseID) != "", len(requestPayload.Input), len(fullPayload.Input))
 	body, err := marshalResponsesWebSocketCreate(requestPayload)
@@ -132,13 +151,13 @@ func (c *Client) responsesStreamChatWebSocket(ctx context.Context, payload respo
 		session.mu.Unlock()
 		return nil, newResponsesWebSocketFallbackError("websocket_write_failed", err)
 	}
-	state := responsesWebSocketProviderState(fullPayload, requestPayload, responsesWebSocketRequestMeta{
+	state := responsesWebSocketProviderState(fullPayload, requestPayload, transport, responsesWebSocketRequestMeta{
 		connectionReused: reused,
 	})
 	session.mu.Unlock()
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesWebSocket(ctx, session, generation, readCh, fullPayload, requestPayload, state, ch)
+	go c.readResponsesWebSocket(ctx, session, generation, readCh, fullPayload, requestPayload, transport, useCachedContext, state, ch)
 	return ch, nil
 }
 
@@ -218,7 +237,7 @@ func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, 
 	}
 }
 
-func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesWebSocketSession, generation uint64, readCh chan responsesWebSocketReadEvent, fullPayload, requestPayload responsesRequest, state *providers.ProviderStateSummary, ch chan<- providers.StreamEvent) {
+func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesWebSocketSession, generation uint64, readCh chan responsesWebSocketReadEvent, fullPayload, requestPayload responsesRequest, transport providers.StreamTransportMode, useCachedContext bool, state *providers.ProviderStateSummary, ch chan<- providers.StreamEvent) {
 	defer close(ch)
 
 	ch <- providers.StreamEvent{
@@ -267,7 +286,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 				c.responsesWebSocketReleaseLocked(session, readCh)
 				c.responsesWebSocketActivateFallbackLocked(session, reason)
 				session.mu.Unlock()
-				c.forwardResponsesSSEFallback(ctx, fullPayload, reason, ch)
+				c.forwardResponsesSSEFallback(ctx, fullPayload, transport, reason, ch)
 				return
 			}
 			session.mu.Lock()
@@ -372,8 +391,13 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 			pending.emitEnds(ch)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
 			session.mu.Lock()
-			responsesWebSocketStoreContinuation(session, generation, fullPayload, responseID, responseItems)
+			if useCachedContext {
+				responsesWebSocketStoreContinuation(session, generation, fullPayload, responseID, responseItems)
+			} else {
+				session.continuation = nil
+			}
 			c.responsesWebSocketReleaseLocked(session, readCh)
+			c.responsesWebSocketScheduleIdleExpiryLocked(session)
 			session.mu.Unlock()
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
@@ -411,8 +435,8 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session *responsesW
 	}
 }
 
-func (c *Client) forwardResponsesSSEFallback(ctx context.Context, payload responsesRequest, reason string, ch chan<- providers.StreamEvent) {
-	sseCh, err := c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, reason))
+func (c *Client) forwardResponsesSSEFallback(ctx context.Context, payload responsesRequest, transport providers.StreamTransportMode, reason string, ch chan<- providers.StreamEvent) {
+	sseCh, err := c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, transport, reason))
 	if err != nil {
 		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 		return
@@ -422,7 +446,7 @@ func (c *Client) forwardResponsesSSEFallback(ctx context.Context, payload respon
 	}
 }
 
-func responsesWebSocketProviderState(fullPayload, requestPayload responsesRequest, meta responsesWebSocketRequestMeta) *providers.ProviderStateSummary {
+func responsesWebSocketProviderState(fullPayload, requestPayload responsesRequest, configuredTransport providers.StreamTransportMode, meta responsesWebSocketRequestMeta) *providers.ProviderStateSummary {
 	previous := strings.TrimSpace(requestPayload.PreviousResponseID) != ""
 	replayMode := "full_request"
 	deltaItems := 0
@@ -434,6 +458,7 @@ func responsesWebSocketProviderState(fullPayload, requestPayload responsesReques
 		Provider:               "openai",
 		Protocol:               "responses_websocket",
 		Transport:              "websocket",
+		ConfiguredTransport:    string(configuredTransport),
 		ReplayMode:             replayMode,
 		PreviousResponseIDUsed: previous,
 		ConnectionReused:       meta.connectionReused,
@@ -492,6 +517,26 @@ func (c *Client) responsesWebSocketReleaseLocked(session *responsesWebSocketSess
 	session.busy = false
 }
 
+func (c *Client) responsesWebSocketCancelIdleTimerLocked(session *responsesWebSocketSession) {
+	if session.idleTimer == nil {
+		return
+	}
+	session.idleTimer.Stop()
+	session.idleTimer = nil
+}
+
+func (c *Client) responsesWebSocketScheduleIdleExpiryLocked(session *responsesWebSocketSession) {
+	if session == nil || session.cache == nil || session.cache.idleTTL <= 0 || session.conn == nil || session.busy || session.active != nil {
+		return
+	}
+	c.responsesWebSocketCancelIdleTimerLocked(session)
+	cache := session.cache
+	sessionID := session.id
+	session.idleTimer = time.AfterFunc(cache.idleTTL, func() {
+		cache.expireIdleSession(sessionID, session)
+	})
+}
+
 func (c *Client) responsesWebSocketActivateFallbackLocked(session *responsesWebSocketSession, reason string) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
@@ -502,6 +547,7 @@ func (c *Client) responsesWebSocketActivateFallbackLocked(session *responsesWebS
 }
 
 func (c *Client) responsesWebSocketInvalidateConnectionLocked(session *responsesWebSocketSession, status websocket.StatusCode, reason string) {
+	c.responsesWebSocketCancelIdleTimerLocked(session)
 	if session.conn != nil {
 		_ = session.conn.Close(status, reason)
 	}
@@ -512,6 +558,35 @@ func (c *Client) responsesWebSocketInvalidateConnectionLocked(session *responses
 	session.generation++
 }
 
+func (c *ResponsesWebSocketCache) expireIdleSession(sessionID string, session *responsesWebSocketSession) {
+	session.mu.Lock()
+	if session.busy || session.active != nil {
+		session.idleTimer = nil
+		session.mu.Unlock()
+		return
+	}
+	if session.conn != nil {
+		_ = session.conn.Close(websocket.StatusNormalClosure, "idle_timeout")
+	}
+	session.conn = nil
+	session.wsURL = ""
+	session.active = nil
+	session.continuation = nil
+	session.generation++
+	keepSession := session.fallback.active
+	session.idleTimer = nil
+	session.mu.Unlock()
+
+	if keepSession {
+		return
+	}
+	c.mu.Lock()
+	if c.sessions[sessionID] == session {
+		delete(c.sessions, sessionID)
+	}
+	c.mu.Unlock()
+}
+
 func (c *ResponsesWebSocketCache) session(sessionID string) *responsesWebSocketSession {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -520,7 +595,7 @@ func (c *ResponsesWebSocketCache) session(sessionID string) *responsesWebSocketS
 	}
 	session := c.sessions[sessionID]
 	if session == nil {
-		session = &responsesWebSocketSession{}
+		session = &responsesWebSocketSession{id: sessionID, cache: c}
 		c.sessions[sessionID] = session
 	}
 	return session

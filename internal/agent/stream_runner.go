@@ -1062,8 +1062,8 @@ func (s *streamStep) runStreamWithReconnect(
 		}
 
 		// Retry on any retryable error while the parent context is still alive.
-		// Aligned with Codex: retries the entire turn (new HTTP request) up to
-		// the configured budget, regardless of whether output was already seen.
+		// The retry replays the whole turn with a new provider request, regardless
+		// of whether output was already seen.
 		if ctx.Err() == nil {
 			if delay, ok := reconnect(streamErr); ok {
 				if waitErr := waitWithContext(ctx, delay); waitErr != nil {

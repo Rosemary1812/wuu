@@ -6,15 +6,43 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const (
-	// Covers relay overhead, large context, and extended thinking warm-up.
-	defaultStreamConnectTimeout = 600 * time.Second
+	defaultStreamConnectTimeout = 15 * time.Second
 	// Longer timeout is needed for models with extended thinking phases.
 	defaultStreamIdleTimeout = 300 * time.Second
 )
+
+// StreamTransportMode is the caller's preferred transport for providers that
+// expose more than one streaming path.
+type StreamTransportMode string
+
+const (
+	StreamTransportAuto            StreamTransportMode = "auto"
+	StreamTransportSSE             StreamTransportMode = "sse"
+	StreamTransportWebSocket       StreamTransportMode = "websocket"
+	StreamTransportWebSocketCached StreamTransportMode = "websocket-cached"
+)
+
+func NormalizeStreamTransportMode(value string) (StreamTransportMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return "", true
+	case string(StreamTransportAuto):
+		return StreamTransportAuto, true
+	case string(StreamTransportSSE):
+		return StreamTransportSSE, true
+	case string(StreamTransportWebSocket):
+		return StreamTransportWebSocket, true
+	case string(StreamTransportWebSocketCached), "websocket_cached":
+		return StreamTransportWebSocketCached, true
+	default:
+		return "", false
+	}
+}
 
 // StreamTransportConfig splits the transport deadlines that govern one live
 // streaming response. ConnectTimeout bounds dial/TLS/response-header wait.

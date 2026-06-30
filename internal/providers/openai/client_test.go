@@ -483,10 +483,10 @@ func TestStreamIdleTimeout_DefaultMatchesCodex(t *testing.T) {
 	}
 }
 
-func TestStreamConnectTimeout_DefaultAccommodatesRelay(t *testing.T) {
+func TestStreamConnectTimeout_Default(t *testing.T) {
 	t.Setenv("WUU_STREAM_CONNECT_TIMEOUT_MS", "")
-	if got := streamConnectTimeout(); got != 600*time.Second {
-		t.Fatalf("expected 600s default stream connect timeout, got %s", got)
+	if got := streamConnectTimeout(); got != 15*time.Second {
+		t.Fatalf("expected 15s default stream connect timeout, got %s", got)
 	}
 }
 

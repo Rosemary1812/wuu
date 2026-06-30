@@ -288,7 +288,7 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 		APIKey:                  "test-key",
 		Headers:                 map[string]string{"OpenAI-Beta": "responses=experimental"},
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      providers.StreamTransportAuto,
 		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
 	})
 	if err != nil {
@@ -383,6 +383,186 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 	}
 }
 
+func TestResponsesStreamChatWebSocket_WebSocketModeDoesNotUseCachedContext(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 2; i++ {
+			readWSRequest(t, ctx, conn, requests)
+			if i == 0 {
+				writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"first answer"}]},"output_index":0}`)
+				writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2}}}`)
+				continue
+			}
+			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"second answer"}]},"output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":2}}}`)
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:            server.URL,
+		WireAPI:            "responses",
+		APIKey:             "test-key",
+		ResponsesStore:     &store,
+		ResponsesTransport: providers.StreamTransportWebSocket,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cache := &providers.CacheHint{PromptCacheKey: "thread-websocket-full"}
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "first"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("first StreamChat: %v", err)
+	}
+	firstStates, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("first stream: %v", err)
+	}
+	if len(firstStates) != 1 || firstStates[0].ConfiguredTransport != string(providers.StreamTransportWebSocket) {
+		t.Fatalf("unexpected first provider state: %+v", firstStates)
+	}
+
+	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "first answer", Phase: providers.MessagePhaseFinalAnswer, ProviderItemID: "msg_1", ProviderItemModel: "gpt-test"},
+			{Role: "user", Content: "second"},
+		},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("second StreamChat: %v", err)
+	}
+	secondStates, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("second stream: %v", err)
+	}
+	if len(secondStates) != 1 ||
+		secondStates[0].ReplayMode != "full_request" ||
+		secondStates[0].PreviousResponseIDUsed ||
+		secondStates[0].InputItems != 3 ||
+		secondStates[0].FullInputItems != 3 {
+		t.Fatalf("unexpected second provider state: %+v", secondStates)
+	}
+
+	<-requests
+	second := <-requests
+	if _, exists := second["previous_response_id"]; exists {
+		t.Fatalf("websocket transport must not use cached context: %#v", second)
+	}
+	if input := second["input"].([]any); len(input) != 3 {
+		t.Fatalf("websocket transport should send full request input, got %#v", input)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_IdleTTLExpiresCachedConnection(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	var connections atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		connection := connections.Add(1)
+		readWSRequest(t, ctx, conn, requests)
+		responseID := "resp_1"
+		messageID := "msg_1"
+		answer := "first answer"
+		if connection == 2 {
+			responseID = "resp_2"
+			messageID = "msg_2"
+			answer = "second answer"
+		}
+		writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"`+responseID+`","status":"in_progress"}}`)
+		writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"`+messageID+`","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"`+answer+`"}]},"output_index":0}`)
+		writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"`+responseID+`","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2}}}`)
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesTransport:      providers.StreamTransportAuto,
+		ResponsesWebSocketCache: NewResponsesWebSocketCacheWithTTL(5 * time.Millisecond),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cache := &providers.CacheHint{PromptCacheKey: "thread-idle-ttl"}
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "first"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("first StreamChat: %v", err)
+	}
+	if err := drainStream(ch); err != nil {
+		t.Fatalf("first stream: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "first answer", Phase: providers.MessagePhaseFinalAnswer, ProviderItemID: "msg_1", ProviderItemModel: "gpt-test"},
+			{Role: "user", Content: "second"},
+		},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("second StreamChat: %v", err)
+	}
+	states, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("second stream: %v", err)
+	}
+	if len(states) != 1 ||
+		states[0].ConnectionReused ||
+		states[0].ReplayMode != "full_request" ||
+		states[0].PreviousResponseIDUsed ||
+		states[0].InputItems != 3 {
+		t.Fatalf("unexpected provider state after idle expiry: %+v", states)
+	}
+
+	<-requests
+	second := <-requests
+	if _, exists := second["previous_response_id"]; exists {
+		t.Fatalf("expired websocket cache must not reuse previous_response_id: %#v", second)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("expected a fresh websocket connection after idle expiry, got %d", got)
+	}
+}
+
 func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDeltaAfterFinalAnswer(t *testing.T) {
 	requests := make(chan map[string]any, 2)
 	const reasoningItem = `{"id":"rs_1","type":"reasoning","content":[],"encrypted_content":"abc","summary":[]}`
@@ -437,7 +617,7 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDeltaAfterFinalAnswe
 		WireAPI:            "responses",
 		APIKey:             "test-key",
 		ResponsesStore:     &store,
-		ResponsesWebSocket: true,
+		ResponsesTransport: providers.StreamTransportAuto,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -554,7 +734,7 @@ func TestResponsesStreamChatWebSocket_PreservesDeltaWithHiddenModelContext(t *te
 		WireAPI:                 "responses",
 		APIKey:                  "test-key",
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      providers.StreamTransportAuto,
 		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
 	})
 	if err != nil {
@@ -682,7 +862,7 @@ func TestResponsesStreamChatWebSocket_DeltaWithRefreshedHiddenContextAcrossTurns
 		WireAPI:                 "responses",
 		APIKey:                  "test-key",
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      providers.StreamTransportAuto,
 		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
 	})
 	if err != nil {
@@ -815,7 +995,7 @@ func TestResponsesStreamChatWebSocket_AgentLoopPreservesDeltaWithChangingHiddenC
 		APIKey:                  "test-key",
 		Headers:                 map[string]string{"OpenAI-Beta": "responses=experimental"},
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      providers.StreamTransportAuto,
 		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
 	})
 	if err != nil {
@@ -930,7 +1110,7 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 		WireAPI:                 "responses",
 		APIKey:                  "test-key",
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      providers.StreamTransportAuto,
 		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
 	})
 	if err != nil {
@@ -1058,7 +1238,7 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 		WireAPI:                 "responses",
 		APIKey:                  "test-key",
 		ResponsesStore:          &store,
-		ResponsesWebSocket:      true,
+		ResponsesTransport:      providers.StreamTransportAuto,
 		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
 	})
 	if err != nil {

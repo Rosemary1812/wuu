@@ -869,6 +869,7 @@ export type ProviderStatePayload = {
   provider?: string;
   protocol?: string;
   transport?: string;
+  configured_transport?: string;
   replay_mode?: string;
   previous_response_id_used?: boolean;
   connection_reused?: boolean;
