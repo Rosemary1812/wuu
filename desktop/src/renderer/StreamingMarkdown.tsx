@@ -40,11 +40,6 @@ type StreamingMarkdownProps = {
    * this renderer keeps commentary and final-answer text visually identical.
    */
   phase: "commentary" | "final_answer";
-  /**
-   * Callback fired when a file-path chip rendered inside the assistant
-   * reply is activated. When omitted, file paths render as plain text.
-   */
-  onOpenFile?: (path: string) => void;
   onFrame?: () => void;
   onSettled?: () => void;
 };
@@ -53,7 +48,7 @@ type StreamPhase = "streaming" | "settled";
 
 const DEFAULT_CLASS_NAME = "streaming-markdown rich-content";
 const CURSOR_CLASS_NAME = "stream-cursor";
-const CURSOR_SENTINEL = "\uE000";
+const CURSOR_SENTINEL = "";
 
 const STREAM_CONFIG = {
   /** Calm default rate used while the reader is keeping up. */
@@ -76,7 +71,6 @@ export function StreamingMarkdown({
   cwd,
   className = DEFAULT_CLASS_NAME,
   isLive,
-  onOpenFile,
   onFrame,
   onSettled
 }: StreamingMarkdownProps): JSX.Element {
@@ -350,7 +344,6 @@ export function StreamingMarkdown({
             text={block}
             cwd={cwd}
             renderMermaid={renderMermaid}
-            onOpenFile={onOpenFile}
           />
         </div>
       ))}
@@ -359,7 +352,6 @@ export function StreamingMarkdown({
         cwd={cwd}
         renderText={cursorTextRenderer}
         renderMermaid={renderMermaid}
-        onOpenFile={onOpenFile}
       />
     </div>
   );

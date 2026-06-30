@@ -696,9 +696,12 @@
   color: var(--ink);
 }
 
+/* Copied state keeps the rest palette: the Check icon swap is the only
+ * visual change after clicking. Earlier this used --success-soft/--success
+ * for a celebratory tint, but it read as cheap next to the gray rest. */
 .message-copy-button.copied {
-  background: var(--success-soft);
-  color: var(--success);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink-tertiary);
 }
 
 .message-copy-button.failed {
@@ -1213,9 +1216,12 @@
   }
 }
 
+/* Copied state in the agent action row keeps the row's rest palette.
+ * Same rationale as .message-copy-button.copied: the icon swap is the
+ * signal; the color shouldn't shout. */
 .message-actions .message-action-button.copied {
-  background: var(--success-soft);
-  color: var(--success);
+  background: transparent;
+  color: var(--ink-muted);
 }
 
 .message-actions .message-action-button.failed {
@@ -4033,61 +4039,6 @@
   text-decoration-color: currentColor;
 }
 
-.rich-file-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 8px 1px 6px;
-  margin: 0 1px;
-  font-family: inherit;
-  font-size: 0.86em;
-  font-weight: 500;
-  line-height: 1.6;
-  color: #176dc2;
-  background: rgba(23, 109, 194, 0.10);
-  border: 1px solid rgba(23, 109, 194, 0.22);
-  border-radius: 999px;
-  cursor: pointer;
-  vertical-align: baseline;
-  text-decoration: none;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-
-.rich-file-chip:hover {
-  color: #0f5da8;
-  background: rgba(23, 109, 194, 0.18);
-  border-color: rgba(23, 109, 194, 0.40);
-}
-
-.rich-file-chip:active {
-  background: rgba(23, 109, 194, 0.26);
-}
-
-.rich-file-chip:focus-visible {
-  outline: 2px solid #176dc2;
-  outline-offset: 2px;
-}
-
-.rich-file-chip-icon {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  opacity: 0.78;
-}
-
-.rich-file-chip-text {
-  word-break: break-all;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rich-file-chip {
-    transition: none;
-  }
-}
-
 .rich-content :not(pre) > code {
                                                               
                                                               
@@ -4201,8 +4152,11 @@
   opacity: 1;
 }
 
+/* Code block copy keeps the inherited icon color in the copied state.
+ * The Check icon swap is the only signal; celebratory green text reads
+ * as cheap against the neutral code chrome. */
 .rich-code-copy.copied {
-  color: var(--success);
+  color: inherit;
 }
 
 .rich-code-copy.failed {

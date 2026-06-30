@@ -1,18 +1,12 @@
 import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { splitTextByFilePaths } from "./InlineFilePathDetection";
 import { useImagePreview } from "./ImagePreview";
 import { MessageCopyButton } from "./MessageActions";
 
 type RichContentProps = {
   text?: string;
   cwd?: string;
-  /**
-   * Callback fired when a file-path chip rendered inside the assistant
-   * reply is activated. When omitted, file paths render as plain text.
-   */
-  onOpenFile?: (path: string) => void;
 };
 
 export type RichBlock =
@@ -35,45 +29,28 @@ type MermaidState =
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 
-export const RichContent = memo(function RichContent({ text = "", cwd, onOpenFile }: RichContentProps): JSX.Element {
+export const RichContent = memo(function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
   return (
     <div className="rich-content">
-      <MarkdownContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
+      <MarkdownContent text={text} cwd={cwd} />
     </div>
   );
 });
-
-/**
- * Enhancer threaded through the markdown tree so inline text can be
- * scanned for file paths and rendered as `<RichFileChip>` elements.
- * `cwd` is forwarded from the surrounding message context so the chip
- * callback receives an absolute path the file viewer can open.
- */
-type FileChipEnhancer = {
-  cwd?: string;
-  onOpenFile: (path: string) => void;
-};
 
 function MarkdownContentView({
   text,
   cwd,
   renderText,
-  renderMermaid = true,
-  onOpenFile
+  renderMermaid = true
 }: {
   text: string;
   cwd?: string;
   renderText?: RichTextRenderer;
   renderMermaid?: boolean;
-  onOpenFile?: (path: string) => void;
 }): JSX.Element {
-  const fileChipEnhancer = useMemo(
-    () => (onOpenFile ? { cwd, onOpenFile } : undefined),
-    [cwd, onOpenFile]
-  );
   const components = useMemo(
-    () => markdownComponents(cwd, renderText, renderMermaid, fileChipEnhancer),
-    [cwd, renderText, renderMermaid, fileChipEnhancer]
+    () => markdownComponents(cwd, renderText, renderMermaid),
+    [cwd, renderText, renderMermaid]
   );
   return (
     <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
@@ -88,14 +65,12 @@ export function RichContentBlock({
   block,
   blockKey,
   cwd,
-  renderText,
-  onOpenFile
+  renderText
 }: {
   block: RichBlock;
   blockKey: string;
   cwd?: string;
   renderText?: RichTextRenderer;
-  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   if (block.kind === "image") {
     return <RichImage source={block.source} alt={block.alt ?? ""} cwd={cwd} />;
@@ -112,7 +87,7 @@ export function RichContentBlock({
   }
   return (
     <p className="rich-paragraph">
-      {renderInlineContent(block.text, cwd, blockKey, renderText, onOpenFile)}
+      {renderInlineContent(block.text, cwd, blockKey, renderText)}
     </p>
   );
 }
@@ -202,24 +177,14 @@ function renderInlineContent(
   text: string,
   cwd: string | undefined,
   keyPrefix: string,
-  renderText: RichTextRenderer | undefined,
-  onOpenFile: ((path: string) => void) | undefined
+  renderText: RichTextRenderer | undefined
 ): Array<JSX.Element | string> {
   const output: Array<JSX.Element | string> = [];
   const pushText = (value: string, key: string): void => {
     if (!value) {
       return;
     }
-    const segments = onOpenFile
-      ? splitTextByFilePaths(value, cwd, onOpenFile, key)
-      : [value];
-    for (const segment of segments) {
-      if (typeof segment === "string") {
-        output.push(...(renderText ? renderText(segment, key) : [segment]));
-      } else {
-        output.push(segment);
-      }
-    }
+    output.push(...(renderText ? renderText(value, key) : [value]));
   };
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -248,35 +213,32 @@ type CodeElementProps = {
 function markdownComponents(
   cwd: string | undefined,
   renderText: RichTextRenderer | undefined,
-  renderMermaid: boolean,
-  fileChipEnhancer: FileChipEnhancer | undefined
+  renderMermaid: boolean
 ): Components {
   return {
     p({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p")}</p>;
     },
     h1({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h1", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h1")}</p>;
     },
     h2({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h2", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h2")}</p>;
     },
     h3({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h3", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h3")}</p>;
     },
     h4({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h4", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h4")}</p>;
     },
     h5({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h5", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h5")}</p>;
     },
     h6({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h6", fileChipEnhancer)}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h6")}</p>;
     },
     a({ href, title, children }) {
-      // Skip chipification inside <a>: the link itself is already clickable
-      // and nesting a chip pill inside an anchor produces malformed markup.
-      const inner = renderMarkdownText(children, renderText, "a", undefined);
+      const inner = renderMarkdownText(children, renderText, "a");
       const safeHref = safeMarkdownHref(href);
       if (!safeHref) {
         return <span>{inner}</span>;
@@ -310,13 +272,10 @@ function markdownComponents(
       return <pre className="rich-code">{children}</pre>;
     },
     code({ className, children }) {
-      // Inline code spans already have monospace + background styling, so
-      // skip chipification here too — see renderMarkdownText's <code>/<pre>
-      // guard for the same rationale.
-      return <code className={className}>{renderMarkdownText(children, renderText, "code", undefined)}</code>;
+      return <code className={className}>{renderMarkdownText(children, renderText, "code")}</code>;
     },
     li({ children }) {
-      return <li>{renderMarkdownText(children, renderText, "li", fileChipEnhancer)}</li>;
+      return <li>{renderMarkdownText(children, renderText, "li")}</li>;
     },
     table({ children }) {
       return (
@@ -326,13 +285,13 @@ function markdownComponents(
       );
     },
     th({ children }) {
-      return <th>{renderMarkdownText(children, renderText, "th", fileChipEnhancer)}</th>;
+      return <th>{renderMarkdownText(children, renderText, "th")}</th>;
     },
     td({ children }) {
-      return <td>{renderMarkdownText(children, renderText, "td", fileChipEnhancer)}</td>;
+      return <td>{renderMarkdownText(children, renderText, "td")}</td>;
     },
     blockquote({ children }) {
-      return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote", fileChipEnhancer)}</blockquote>;
+      return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote")}</blockquote>;
     },
     hr() {
       return <hr className="rich-rule" />;
@@ -378,61 +337,26 @@ function RichCodeBlock({
 function renderMarkdownText(
   children: ReactNode,
   renderText: RichTextRenderer | undefined,
-  keyPrefix: string,
-  fileChipEnhancer: FileChipEnhancer | undefined
+  keyPrefix: string
 ): ReactNode {
-  // Skip the whole walk when neither enhancement is configured — react-markdown's
-  // default rendering already handles the children tree correctly in that case.
-  if (!renderText && !fileChipEnhancer) {
+  if (!renderText) {
     return children;
   }
   return Children.toArray(children).flatMap((child, index): ReactNode[] => {
     const childKey = `${keyPrefix}-${index}`;
     if (typeof child === "string" || typeof child === "number") {
       const text = String(child);
-      // Apply file-chip detection FIRST so the remaining text segments get
-      // fed to renderText (the streaming cursor renderer) untouched.
-      const segments = fileChipEnhancer
-        ? splitTextByFilePaths(text, fileChipEnhancer.cwd, fileChipEnhancer.onOpenFile, childKey)
-        : [text];
-      return segments.flatMap((segment): ReactNode[] => {
-        if (typeof segment === "string") {
-          return renderText ? renderText(segment, childKey) : [segment];
-        }
-        return [segment];
-      });
+      return renderText(text, childKey);
     }
     if (!isValidElement<{ children?: ReactNode }>(child) || child.props.children === undefined) {
       return [child];
     }
-    // Recurse: disable chipification inside <code>/<pre> so the monospace code
-    // surface stays uninterrupted by chip pills.
-    const nextEnhancer = isCodeLikeElement(child) ? undefined : fileChipEnhancer;
     return [
       cloneElement(child, {
-        children: renderMarkdownText(child.props.children, renderText, childKey, nextEnhancer)
+        children: renderMarkdownText(child.props.children, renderText, childKey)
       })
     ];
   });
-}
-
-/**
- * Returns true when `child` should suppress file-chip detection in its
- * subtree. We treat `<code>` and `<pre>` (and any custom component with the
- * matching displayName) as code surfaces where a chip pill would visually
- * clash with the monospace background.
- */
-function isCodeLikeElement(child: ReactElement): boolean {
-  const type = child.type;
-  if (typeof type === "string") {
-    return type === "code" || type === "pre";
-  }
-  if (typeof type === "function") {
-    const displayName = (type as { displayName?: string; name?: string }).displayName
-      ?? (type as { name?: string }).name;
-    return displayName === "code" || displayName === "pre";
-  }
-  return false;
 }
 
 function languageFromClassName(className: string | undefined): string {

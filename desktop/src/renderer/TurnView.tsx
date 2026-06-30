@@ -36,7 +36,6 @@ export function TurnView({
   onSubmitEditMessage,
   onCollapseComplete,
   onNoticeAction,
-  onOpenFile,
   pendingApproval,
   onApproveTool,
   onApproveToolForSession,
@@ -59,12 +58,6 @@ export function TurnView({
   ) => void;
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
-  /**
-   * Forwarded to `<ThreadItemView>` so file-path chips inside any message
-   * in this turn can request the right-side panel to open the referenced
-   * file. The host (typically App.tsx) wires this to the environment panel.
-   */
-  onOpenFile?: (path: string) => void;
   pendingApproval?: PendingToolApproval;
   onApproveTool?: () => void;
   onApproveToolForSession?: () => void;
@@ -105,7 +98,6 @@ export function TurnView({
         onCancelEditMessage={onCancelEditMessage}
         onSubmitEditMessage={onSubmitEditMessage}
         onNoticeAction={onNoticeAction}
-        onOpenFile={onOpenFile}
       />
     );
   }

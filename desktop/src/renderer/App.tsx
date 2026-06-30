@@ -1709,15 +1709,6 @@ export function App(): JSX.Element {
     }
   }, [environmentPanelMenu, environmentPanelVisible]);
 
-  const handleOpenFileInRightPanel = useCallback(
-    (path: string): void => {
-      setRightPanelFilePath(path);
-      setEnvironmentPanelMenu("file");
-      setRightPanelOpenWithMotion(true);
-    },
-    [setRightPanelOpenWithMotion],
-  );
-
   const handleCloseFilePreview = useCallback((): void => {
     setRightPanelFilePath(undefined);
     setEnvironmentPanelMenu(null);
@@ -6455,7 +6446,6 @@ export function App(): JSX.Element {
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
-                onOpenFile={handleOpenFileInRightPanel}
               />
             )}
               </>
@@ -6625,11 +6615,6 @@ type CachedConversationPanesProps = {
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   /**
-   * Forwarded to `<TurnView>` so file-path chips inside any message
-   * can request the right-side panel to open the referenced file.
-   */
-  onOpenFile?: (path: string) => void;
-  /**
    * Tool approval waiting for a decision. The matching turn is found
    * inside this component by `call_id` lookup, so the card only renders
    * next to the tool call it actually gates.
@@ -6663,7 +6648,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onCancelEditMessage,
   onSubmitEditMessage,
   onNoticeAction,
-  onOpenFile,
   pendingToolApproval,
   onResolveToolApproval,
 }: CachedConversationPanesProps): JSX.Element {
@@ -6779,7 +6763,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                       )
                     }
                     onNoticeAction={onNoticeAction}
-                    onOpenFile={onOpenFile}
                     pendingApproval={approval}
                     onApproveTool={
                       approval && onResolveToolApproval
