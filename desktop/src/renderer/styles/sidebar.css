@@ -915,19 +915,15 @@
 .thread-row-main > .thread-row-title {
   min-width: 0;
   flex: 1;
-  clip-path: inset(0 0 0 0 round 0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition:
-    clip-path 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 120ms ease;
+  transition: padding-right 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .thread-row:hover .thread-row-main > .thread-row-title,
 .thread-row:has(.thread-row-action:focus-visible) .thread-row-main > .thread-row-title {
-  clip-path: inset(0 58px 0 0 round 0);
-  opacity: 0.78;
+  padding-right: 58px;
 }
 
   
