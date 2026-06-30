@@ -199,16 +199,16 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 	if err := AppendTurn(path,
 		TurnRecord{ThreadID: "thread-1", TurnID: "turn-1", Status: "completed", ProviderName: "openai", Model: "gpt-test", APIModel: "gpt-5-codex", ModelProfile: NewModelProfileRecord("openai", "gpt-test", "gpt-5-codex")},
 		FinalRecord{Status: "completed", FinalAnswerPreview: "done"},
-		[]tools.ToolInfo{{Name: "semantic_search", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
+		[]tools.ToolInfo{{Name: "grep", Kind: tools.ToolKindSearch, Risk: tools.ToolRiskLow, ReadOnly: true}},
 		[]tools.ToolExecutionRecord{{
-			Name:            "semantic_search",
+			Name:            "grep",
 			ArgumentsSHA256: strings.Repeat("b", 64),
 			Kind:            tools.ToolKindSearch,
 			Risk:            tools.ToolRiskLow,
 			PolicyAction:    tools.ToolPolicyAllow,
 			Success:         true,
 		}, {
-			Name:            "semantic_search",
+			Name:            "grep",
 			ArgumentsSHA256: strings.Repeat("b", 64),
 			Kind:            tools.ToolKindSearch,
 			Risk:            tools.ToolRiskLow,
@@ -304,7 +304,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		summary.LatestTurn.ModelProfile.DefaultWriteMode != "patch" {
 		t.Fatalf("model profile missing from replay: %+v", summary.LatestTurn.ModelProfile)
 	}
-	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "semantic_search" {
+	if len(summary.ToolInventory) != 1 || summary.ToolInventory[0].Name != "grep" {
 		t.Fatalf("tool inventory missing: %+v", summary.ToolInventory)
 	}
 	if len(summary.ContextRequests) != 1 ||
@@ -345,7 +345,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		step.FullInputItems != 4 {
 		t.Fatalf("request step summary missing joined detail: %+v", step)
 	}
-	if len(summary.ToolNames) != 4 || summary.ToolNames[0] != "semantic_search" || summary.ToolNames[1] != "semantic_search" || summary.ToolNames[2] != "run_shell" || summary.ToolNames[3] != "start_process" {
+	if len(summary.ToolNames) != 4 || summary.ToolNames[0] != "grep" || summary.ToolNames[1] != "grep" || summary.ToolNames[2] != "run_shell" || summary.ToolNames[3] != "start_process" {
 		t.Fatalf("tool records missing: %+v", summary.ToolNames)
 	}
 	if summary.ToolSummary == nil || summary.ToolSummary.Total != 4 || summary.ToolSummary.Succeeded != 2 || summary.ToolSummary.Failed != 2 {
@@ -381,7 +381,7 @@ func TestReplayTraceSummarizesSessionEvents(t *testing.T) {
 		t.Fatalf("approval policy block missing replay detail: %+v", block)
 	}
 	if len(summary.ToolSummary.RepeatedArguments) != 1 ||
-		summary.ToolSummary.RepeatedArguments[0].ToolName != "semantic_search" ||
+		summary.ToolSummary.RepeatedArguments[0].ToolName != "grep" ||
 		summary.ToolSummary.RepeatedArguments[0].ArgumentsSHA256 != strings.Repeat("b", 64) ||
 		summary.ToolSummary.RepeatedArguments[0].Count != 2 {
 		t.Fatalf("tool summary missing repeated arguments: %+v", summary.ToolSummary.RepeatedArguments)

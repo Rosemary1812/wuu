@@ -73,10 +73,6 @@ func displayCapabilityForKnownToolName(name string) string {
 		return "search.grep"
 	case "glob":
 		return "search.glob"
-	case "ast_search":
-		return "search.ast"
-	case "semantic_search":
-		return "search.semantic"
 	case "web_fetch":
 		return "web.fetch"
 	case "web_search":

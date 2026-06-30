@@ -56,7 +56,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "researcher",
 			Role:         "Researcher",
 			ContextScope: ContextScopeRelevant,
-			AllowedTools: []string{"read_file", "grep", "glob", "ast_search", "semantic_search", "bash", "load_skill", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "bash", "load_skill", "agent_report"},
 			SystemPrompt: "Read the code and summarize constraints, ownership boundaries, relevant files, and unknowns. Do not edit files.",
 			OutputSchema: "research: relevant files, findings, constraints, risks, suggested next reads",
 			SuccessCriteria: []string{

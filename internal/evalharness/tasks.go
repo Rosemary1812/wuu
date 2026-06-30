@@ -403,32 +403,6 @@ func Catalog() []Task {
 			Verify: verifyPatchReviewRisk,
 		},
 		{
-			ID:          "ast_search_navigation",
-			Name:        "Navigate to a symbol with AST search",
-			Description: "Go package where the agent must use ast_search to locate a failing symbol before editing.",
-			Prompt: "Use ast_search first with query='NormalizeSKU' and kind='function' to locate the failing function before reading any source file. " +
-				"Then read the matched source, fix the implementation bug without changing tests, and use bash to verify go test ./... passes.",
-			RequiredTools: []string{"ast_search", "read_file", "bash"},
-			RequiredToolCalls: []ToolCallRequirement{
-				{ToolName: "ast_search", ArgumentEquals: map[string]string{"query": "NormalizeSKU", "kind": "function"}},
-			},
-			Setup:  setupASTSearchNavigation,
-			Verify: verifyGoTests,
-		},
-		{
-			ID:          "semantic_search_navigation",
-			Name:        "Navigate to behavior with semantic search",
-			Description: "Go package where the agent must use semantic_search to find the behavior area before editing.",
-			Prompt: "Use semantic_search first with query='checkout discount total' to find the candidate file before reading any source file. " +
-				"Then read the matched source, fix the implementation bug without changing tests, and use bash to verify go test ./... passes.",
-			RequiredTools: []string{"semantic_search", "read_file", "bash"},
-			RequiredToolCalls: []ToolCallRequirement{
-				{ToolName: "semantic_search", ArgumentEquals: map[string]string{"query": "checkout discount total"}},
-			},
-			Setup:  setupSemanticSearchNavigation,
-			Verify: verifyGoTests,
-		},
-		{
 			ID:            "long_process_output",
 			Name:          "Read a long-running process log",
 			Description:   "Script prints a readiness marker after a delay and keeps running.",
@@ -684,75 +658,6 @@ func setupPatchReviewRisk(root string) error {
 		}
 	}
 	return nil
-}
-
-func setupASTSearchNavigation(root string) error {
-	files := map[string]string{
-		"go.mod": `module inventoryeval
-
-go 1.22
-`,
-		"inventory/normalize.go": `package inventory
-
-import "strings"
-
-func NormalizeSKU(input string) string {
-	return strings.TrimSpace(input)
-}
-
-func IsValidSKU(input string) bool {
-	return NormalizeSKU(input) != ""
-}
-`,
-		"inventory/normalize_test.go": `package inventory
-
-import "testing"
-
-func TestNormalizeSKU(t *testing.T) {
-	if got := NormalizeSKU(" ab-12 "); got != "AB-12" {
-		t.Fatalf("NormalizeSKU() = %q, want %q", got, "AB-12")
-	}
-}
-
-func TestIsValidSKU(t *testing.T) {
-	if !IsValidSKU(" ab-12 ") {
-		t.Fatal("IsValidSKU() should accept a non-empty normalized SKU")
-	}
-}
-`,
-	}
-	return writeFiles(root, files)
-}
-
-func setupSemanticSearchNavigation(root string) error {
-	files := map[string]string{
-		"go.mod": `module checkouteval
-
-go 1.22
-`,
-		"checkout/discount.go": `package checkout
-
-// CartDiscountTotal computes the final checkout total after promo discounts.
-func CartDiscountTotal(subtotalCents int, discountCents int) int {
-	return subtotalCents
-}
-`,
-		"checkout/discount_test.go": `package checkout
-
-import "testing"
-
-func TestCartDiscountTotalAppliesDiscount(t *testing.T) {
-	if got := CartDiscountTotal(1000, 250); got != 750 {
-		t.Fatalf("CartDiscountTotal() = %d, want 750", got)
-	}
-}
-`,
-		"auth/session.go": `package auth
-
-func ExpireSession() {}
-`,
-	}
-	return writeFiles(root, files)
 }
 
 func setupLongProcessOutput(root string) error {

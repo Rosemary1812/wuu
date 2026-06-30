@@ -202,8 +202,6 @@ func (t *Toolkit) rebuildRegistry() {
 		// Search
 		NewGrepTool(e),
 		NewGlobTool(e),
-		NewASTSearchTool(e),
-		NewSemanticSearchTool(e),
 		// Shell
 		NewShellTool(e),
 		// Bash is the new unified command entry point emitted by the

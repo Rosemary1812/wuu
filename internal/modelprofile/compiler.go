@@ -287,8 +287,10 @@ func addFileReadTools(b *surfaceBuilder) {
 func addSearchTools(b *surfaceBuilder) {
 	b.addVisible("grep", capability.CapabilitySearchGrep)
 	b.addVisible("glob", capability.CapabilitySearchGlob)
-	b.addDeferred("ast_search", capability.CapabilitySearchAST)
-	b.addDeferred("semantic_search", capability.CapabilitySearchSemantic)
+	// Keep legacy search capabilities available for MCP tools without
+	// registering low-use built-in AST or semantic search tools.
+	b.addDeferredCapability(capability.CapabilitySearchAST)
+	b.addDeferredCapability(capability.CapabilitySearchSemantic)
 }
 
 func addBashFirstTools(b *surfaceBuilder, p Profile) {
@@ -299,8 +301,8 @@ func addBashFirstTools(b *surfaceBuilder, p Profile) {
 }
 
 func addWebTools(b *surfaceBuilder) {
-	b.addDeferred("web_search", capability.CapabilityWebSearch)
-	b.addDeferred("web_fetch", capability.CapabilityWebFetch)
+	b.addVisible("web_search", capability.CapabilityWebSearch)
+	b.addVisible("web_fetch", capability.CapabilityWebFetch)
 }
 
 func addTaskTools(b *surfaceBuilder) {
@@ -431,7 +433,7 @@ You are running under the OpenAI / Codex harness. Your editing primitive is appl
 
 All terminal work is unified under the bash tool. The internal capability is command.bash, and the runtime routes permission checks against it.
 
-Use read_file before editing a file so the patch's context anchors match the on-disk content. Use visible search tools such as grep and glob to find the code you need to change. If you need specialized AST or semantic search and the tool is not visible, load it with tool_search first.
+Use read_file before editing a file so the patch's context anchors match the on-disk content. Use visible search tools such as grep and glob to find the code you need to change.
 ` + bashTerminalGuidance + sharedTail)
 }
 

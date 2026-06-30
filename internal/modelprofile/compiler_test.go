@@ -109,6 +109,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 	mustVisible := []string{
 		"read_file", "list_files",
 		"grep", "glob",
+		"web_search", "web_fetch",
 		"bash", "apply_patch",
 		"update_plan", "load_skill", "tool_search",
 	}
@@ -118,8 +119,6 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 	mustDeferred := []string{
-		"ast_search", "semantic_search",
-		"web_search", "web_fetch",
 		"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "helpme",
 		"session_memory", "read_memory", "write_memory",
 		"create_goal", "get_goal", "update_goal",
@@ -213,13 +212,14 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	// The same direct core capabilities as Codex, minus apply_patch.
 	for _, name := range []string{
 		"read_file", "list_files", "grep", "glob",
+		"web_search", "web_fetch",
 		"update_plan", "load_skill", "tool_search",
 	} {
 		if _, ok := s.Tools[name]; !ok {
 			t.Fatalf("Claude surface must include %s, got tools=%v", name, sortedKeys(s.Tools))
 		}
 	}
-	for _, name := range []string{"web_search", "web_fetch", "session_memory", "read_memory", "write_memory", "spawn_agent", "report_listening_ports"} {
+	for _, name := range []string{"session_memory", "read_memory", "write_memory", "spawn_agent", "report_listening_ports"} {
 		if _, ok := s.DeferredTools[name]; !ok {
 			t.Fatalf("Claude surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}
@@ -341,8 +341,8 @@ func TestSummarizeIsJSONFriendlyAndOmitsRawFragmentsInTests(t *testing.T) {
 	if summary.ToolCapabilityMap["bash"] != string(capability.CapabilityCommandBash) {
 		t.Fatalf("summary must map bash → command.bash, got %q", summary.ToolCapabilityMap["bash"])
 	}
-	if summary.DeferredCapabilityMap["web_search"] != string(capability.CapabilityWebSearch) {
-		t.Fatalf("summary must map deferred web_search → web.search, got %q", summary.DeferredCapabilityMap["web_search"])
+	if summary.ToolCapabilityMap["web_search"] != string(capability.CapabilityWebSearch) {
+		t.Fatalf("summary must map web_search → web.search, got %q", summary.ToolCapabilityMap["web_search"])
 	}
 }
 

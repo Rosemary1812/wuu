@@ -79,6 +79,8 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"read_file",
 		"grep",
 		"glob",
+		"web_search",
+		"web_fetch",
 		"bash",
 		"apply_patch",
 		"tool_search",
@@ -112,8 +114,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	}
 
 	for _, name := range []string{
-		"ast_search",
-		"semantic_search",
 		"session_memory",
 		"read_memory",
 		"write_memory",
@@ -126,8 +126,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"create_goal",
 		"get_goal",
 		"update_goal",
-		"web_search",
-		"web_fetch",
 		"report_listening_ports",
 		"spawn_agent",
 	} {

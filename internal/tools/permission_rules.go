@@ -399,10 +399,6 @@ func defaultPermissionName(toolName string, info ToolInfo) string {
 			return string(capability.CapabilitySearchGrep)
 		case "glob":
 			return string(capability.CapabilitySearchGlob)
-		case "ast_search":
-			return string(capability.CapabilitySearchAST)
-		case "semantic_search":
-			return string(capability.CapabilitySearchSemantic)
 		default:
 			return string(capability.CapabilitySearchGrep)
 		}
