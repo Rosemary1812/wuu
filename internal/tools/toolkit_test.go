@@ -3515,7 +3515,7 @@ func TestToolkit_DefersOversizedMCPToolEvenInSmallSet(t *testing.T) {
 	}
 }
 
-func TestToolkit_LoadedDeferredToolsStayOutOfDefinitions(t *testing.T) {
+func TestToolkit_AppendsLoadedDeferredToolsAfterStableDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -3529,10 +3529,10 @@ func TestToolkit_LoadedDeferredToolsStayOutOfDefinitions(t *testing.T) {
 	kit.markDeferredToolsLoaded("schedule_cron")
 
 	defs := kit.Definitions()
-	if len(defs) != 2 {
-		t.Fatalf("expected loaded deferred tool to stay out of definitions, got %+v", defs)
+	if len(defs) != 3 {
+		t.Fatalf("expected loaded deferred tool to be appended to definitions, got %+v", defs)
 	}
-	wantNames := []string{"read_file", "tool_search"}
+	wantNames := []string{"read_file", "tool_search", "schedule_cron"}
 	for i, want := range wantNames {
 		if defs[i].Name != want {
 			t.Fatalf("definition %d = %q, want %q; all=%+v", i, defs[i].Name, want, defs)
@@ -3540,6 +3540,9 @@ func TestToolkit_LoadedDeferredToolsStayOutOfDefinitions(t *testing.T) {
 	}
 	if !defs[0].CacheStable || !defs[1].CacheStable {
 		t.Fatalf("stable built-in tools should be cache-stable: %+v", defs)
+	}
+	if defs[2].CacheStable {
+		t.Fatalf("loaded deferred tool should not join cache-stable prefix: %+v", defs)
 	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`})
 	if err == nil || strings.Contains(err.Error(), "deferred") {
@@ -3659,8 +3662,8 @@ func TestToolkit_ToolSearchLoadsDeferredTool(t *testing.T) {
 	if len(records) == 0 || records[len(records)-1].ResultAction != "tool_search" {
 		t.Fatalf("tool_search telemetry missing result action: %+v", records)
 	}
-	if definitionNames(kit.Definitions())["mcp_docs_search"] {
-		t.Fatal("loaded deferred tool should not be appended to top-level definitions")
+	if !definitionNames(kit.Definitions())["mcp_docs_search"] {
+		t.Fatal("loaded deferred tool should be appended to top-level definitions")
 	}
 	info, ok := kit.ToolInfo("mcp_docs_search")
 	if !ok {
@@ -3708,8 +3711,8 @@ func TestToolkit_ToolSearchLoadsWorkflowDriverOverride(t *testing.T) {
 	if !containsString(parsed.LoadedTools, "run_workflow") {
 		t.Fatalf("tool_search did not load run_workflow: %s", resp)
 	}
-	if definitionNames(kit.Definitions())["run_workflow"] {
-		t.Fatal("run_workflow should stay out of definitions after tool_search")
+	if !definitionNames(kit.Definitions())["run_workflow"] {
+		t.Fatal("run_workflow should be visible in definitions after tool_search")
 	}
 	info, ok := kit.ToolInfo("run_workflow")
 	if !ok {

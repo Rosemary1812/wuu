@@ -520,10 +520,10 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 // ── ToolExecutor interface ─────────────────────────────────────────
 
 // Definitions returns JSON-schema tool definitions for tools that are
-// directly visible in the current request. Deferred tools can become
-// executable after tool_search loads their schemas, but they stay out
-// of this top-level list so the provider prompt-cache prefix remains
-// stable.
+// visible in the current request. Deferred tools stay hidden until
+// tool_search loads their schemas; once loaded, they are appended after
+// the stable direct-tool prefix so OpenAI-compatible and other non-native
+// tool-search providers can actually call them on the next turn.
 //
 // When an active profile has been installed via SetActiveProfile,
 // the visible set is the per-profile compiled surface. Without an
@@ -542,32 +542,23 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
 			continue
 		}
-		if hasSurface && t.isToolDisabled(d.Name) {
+		if t.isToolDisabled(d.Name) {
 			continue
 		}
-		if hasSurface {
-			// Surface.Tools is the authoritative direct-tool set.
-			// DeferredTools stay executable only after tool_search
-			// loads their schemas, and HiddenTools never enter the
-			// top-level request definitions.
-			if _, ok := surface.Tools[d.Name]; !ok {
-				continue
-			}
-			if !activeSurfaceAllowsKnownTool(surface, t.registry.Lookup(d.Name)) {
-				continue
-			}
-			d.CacheStable = true
-			stable = append(stable, d)
-			continue
-		}
-		if t.toolExposure(d.Name) == ToolExposureDirect {
-			if t.shouldDeferByDefault(d.Name) {
+		exposure := t.toolExposure(d.Name)
+		if exposure == ToolExposureDirect {
+			if classifyToolKind(d.Name) == ToolKindMCP {
 				d.CacheStable = false
 				dynamic = append(dynamic, d)
 				continue
 			}
 			d.CacheStable = true
 			stable = append(stable, d)
+			continue
+		}
+		if exposure == ToolExposureDeferred && t.isDeferredToolLoaded(d.Name) {
+			d.CacheStable = false
+			dynamic = append(dynamic, d)
 		}
 	}
 	out := make([]providers.ToolDefinition, 0, len(stable)+len(dynamic))
@@ -576,22 +567,12 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	// Append direct MCP tools after built-ins to preserve prompt cache stability.
 	if t.mcpManager != nil {
 		for _, tool := range t.mcpManager.AllTools() {
-			if hasSurface {
-				if t.isToolDisabled(tool.Name()) {
-					continue
-				}
-				if _, ok := surface.Tools[tool.Name()]; !ok {
-					continue
-				}
-				if !activeSurfaceAllowsKnownTool(surface, tool) {
-					continue
-				}
-				d := tool.Definition()
-				d.CacheStable = false
-				out = append(out, d)
+			name := tool.Name()
+			if hasSurface && !activeSurfaceAllowsKnownTool(surface, tool) {
 				continue
 			}
-			if t.toolExposure(tool.Name()) == ToolExposureDirect {
+			exposure := t.toolExposure(name)
+			if exposure == ToolExposureDirect || (exposure == ToolExposureDeferred && t.isDeferredToolLoaded(name)) {
 				d := tool.Definition()
 				d.CacheStable = false
 				out = append(out, d)

@@ -185,8 +185,9 @@ func TestActiveProfileLoadsDeferredPortReporting(t *testing.T) {
 	if !containsString(loaded.LoadedTools, "report_listening_ports") {
 		t.Fatalf("tool_search should load report_listening_ports: %s", resp)
 	}
-	if containsProfileDef(kit.Definitions(), "report_listening_ports") {
-		t.Fatalf("loaded report_listening_ports should stay out of definitions: %v", sortedProfileDefNames(kit.Definitions()))
+	defs := kit.Definitions()
+	if !containsProfileDef(defs, "report_listening_ports") {
+		t.Fatalf("loaded report_listening_ports should be visible in definitions: %v", sortedProfileDefNames(defs))
 	}
 
 	resp, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -284,8 +285,9 @@ func TestActiveProfileAllowsDeferredMCPThroughToolSearch(t *testing.T) {
 	if !containsString(parsed.LoadedTools, "mcp_docs_search") {
 		t.Fatalf("tool_search did not load MCP tool: %s", resp)
 	}
-	if containsProfileDef(kit.Definitions(), "mcp_docs_search") {
-		t.Fatal("loaded MCP tool should not be appended to active profile definitions")
+	defs := kit.Definitions()
+	if !containsProfileDef(defs, "mcp_docs_search") {
+		t.Fatalf("loaded MCP tool should be appended to active profile definitions: %v", sortedProfileDefNames(defs))
 	}
 	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "mcp_docs_search", Arguments: `{}`})
 	if err != nil {
@@ -581,12 +583,54 @@ func TestActiveProfileDefersAdvancedToolsUntilToolSearch(t *testing.T) {
 	if !strings.Contains(resp, "spawn_agent") {
 		t.Fatalf("tool_search should load spawn_agent, response=%s", resp)
 	}
-	if containsProfileDef(kit.Definitions(), "spawn_agent") {
-		t.Fatalf("loaded spawn_agent should stay out of definitions: %v", sortedProfileDefNames(kit.Definitions()))
+	defs := kit.Definitions()
+	if !containsProfileDef(defs, "spawn_agent") {
+		t.Fatalf("loaded spawn_agent should be visible in definitions: %v", sortedProfileDefNames(defs))
 	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`})
 	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("loaded spawn_agent should reach tool validation, got %v", err)
+	}
+}
+
+func TestMiniMaxM3ProfileLoadsSpawnAgentIntoDefinitions(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("minimax-cn", "MiniMax-M3"), true)
+
+	if containsProfileDef(kit.Definitions(), "spawn_agent") {
+		t.Fatalf("MiniMax M3 should keep spawn_agent deferred before tool_search, got %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`}); err == nil || !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("MiniMax M3 should require tool_search before spawn_agent, got %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"select:spawn_agent","limit":1}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	if !strings.Contains(resp, "spawn_agent") {
+		t.Fatalf("tool_search should load spawn_agent, response=%s", resp)
+	}
+
+	var found *providers.ToolDefinition
+	defs := kit.Definitions()
+	for i := range defs {
+		if defs[i].Name == "spawn_agent" {
+			found = &defs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("MiniMax M3 should receive loaded spawn_agent schema in the next tool list: %v", sortedProfileDefNames(defs))
+	}
+	if found.CacheStable {
+		t.Fatalf("loaded spawn_agent should stay outside the cache-stable prefix: %+v", *found)
 	}
 }
 
@@ -773,6 +817,13 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 	}
 	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
+	loadedDeferred := map[string]struct{}{
+		"schedule_cron":   {},
+		"cancel_cron":     {},
+		"list_cron":       {},
+		"run_workflow":    {},
+		"create_workflow": {},
+	}
 	kit.markDeferredToolsLoaded("schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow")
 	surface := kit.ActiveSurface()
 	defs := kit.Definitions()
@@ -782,7 +833,12 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 	}
 	for name := range visible {
 		if _, ok := surface.Tools[name]; !ok {
-			t.Fatalf("Definitions returned %q but surface.Tools does not list it", name)
+			if _, deferred := surface.DeferredTools[name]; !deferred {
+				t.Fatalf("Definitions returned %q but the active surface does not allow it", name)
+			}
+			if _, loaded := loadedDeferred[name]; !loaded {
+				t.Fatalf("Definitions returned unloaded deferred tool %q", name)
+			}
 		}
 	}
 	for name := range surface.Tools {
@@ -791,8 +847,13 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 		}
 	}
 	for name := range surface.DeferredTools {
-		if _, ok := visible[name]; ok {
-			t.Fatalf("deferred tool %q leaked into Definitions", name)
+		_, isVisible := visible[name]
+		_, loaded := loadedDeferred[name]
+		if loaded && !isVisible {
+			t.Fatalf("loaded deferred tool %q did not appear in Definitions", name)
+		}
+		if !loaded && isVisible {
+			t.Fatalf("unloaded deferred tool %q leaked into Definitions", name)
 		}
 	}
 }
