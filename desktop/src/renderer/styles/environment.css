@@ -1077,9 +1077,10 @@
    dialogs; only the body content swaps to a stacked list of option
    cards plus a footnote and a wide Cancel button. */
 .fork-dialog {
-  --environment-dialog-max-width: 760px;
-  gap: 18px;
-  padding: 32px;
+  width: min(100%, clamp(420px, 42vw, 580px));
+  max-height: min(560px, calc(100dvh - 48px));
+  gap: 12px;
+  padding: clamp(18px, 2.2vw, 24px);
 }
 
 .fork-dialog .environment-dialog-header {
@@ -1087,31 +1088,31 @@
 }
 
 .fork-dialog .environment-dialog-icon {
-  width: 52px;
-  height: 52px;
+  width: 42px;
+  height: 42px;
 }
 
 .fork-dialog h2 {
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1.2;
 }
 
 .fork-dialog-options {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .fork-dialog-option {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-md);
   background: var(--paper);
   color: var(--ink);
   text-align: left;
-  padding: 16px 18px;
+  padding: 12px 14px;
   cursor: pointer;
   transition: border-color var(--menu-enter-duration) var(--menu-enter-easing),
     background var(--menu-enter-duration) var(--menu-enter-easing);
@@ -1143,8 +1144,8 @@
 .fork-dialog-option-icon {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink);
@@ -1195,7 +1196,7 @@
 
 .fork-dialog-cancel {
   width: 100%;
-  min-height: 54px;
+  min-height: 46px;
   justify-content: center;
   border: 0;
   background: var(--surface-2);
@@ -1207,16 +1208,23 @@
   }
 
   .fork-dialog {
-    gap: 16px;
-    padding: 24px;
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    gap: 12px;
+    padding: 18px;
   }
 
   .fork-dialog h2 {
-    font-size: 22px;
+    font-size: 20px;
   }
 
   .fork-dialog-option {
-    padding: 14px;
+    padding: 12px;
+  }
+
+  .fork-dialog-option-icon {
+    width: 36px;
+    height: 36px;
   }
 }
 
