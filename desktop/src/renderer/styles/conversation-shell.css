@@ -28,7 +28,12 @@
   --conversation-message-element-gap: 14px;
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 2;
-  --conversation-process-control-color: #A4A4A5;
+  --conversation-process-control-color: #BCBCBD;
+  /* Lighten the message-flow process text one tier (was var(--ink-soft)
+     = #5b6066). Pulls the body narration, process title, toggle, and
+     glyph toward the --ink-tertiary band so the live thinking feed
+     recedes relative to the final answer without losing readability. */
+  --wuu-ink-soft: #6f7478;
   --conversation-process-gap: 12px;
   --conversation-process-answer-gap: 12px;
   --conversation-answer-action-gap: 8px;
