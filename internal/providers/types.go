@@ -279,6 +279,10 @@ type ChatRequest struct {
 	// model variants. Keys follow OpenCode's AI SDK option names where
 	// possible; provider clients translate them to wire-format fields.
 	ProviderOptions map[string]any
+	// NativeDeferredToolDiscovery allows provider adapters to use their native
+	// deferred-tool protocol for tools marked DeferLoading. Compatible
+	// endpoints leave this false unless the session explicitly opts in.
+	NativeDeferredToolDiscovery bool
 }
 
 // ChatResponse is the normalized response from providers.

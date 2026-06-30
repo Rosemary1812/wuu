@@ -199,14 +199,15 @@ func RunToolLoop(
 		cacheHint := buildCacheHint(requestMessages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req := providers.ChatRequest{
-			Model:           cfg.Model,
-			Messages:        requestMessages,
-			Temperature:     cfg.Temperature,
-			MaxTokens:       currentMaxTokens,
-			CacheHint:       cacheHint,
-			StepIndex:       stepIdx,
-			Effort:          cfg.Effort,
-			ProviderOptions: provideroptions.Clone(cfg.ProviderOptions),
+			Model:                       cfg.Model,
+			Messages:                    requestMessages,
+			Temperature:                 cfg.Temperature,
+			MaxTokens:                   currentMaxTokens,
+			CacheHint:                   cacheHint,
+			StepIndex:                   stepIdx,
+			Effort:                      cfg.Effort,
+			ProviderOptions:             provideroptions.Clone(cfg.ProviderOptions),
+			NativeDeferredToolDiscovery: cfg.NativeDeferredToolDiscovery,
 		}
 		if cfg.Tools != nil {
 			req.Tools = cfg.Tools.Definitions()

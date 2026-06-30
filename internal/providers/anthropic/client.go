@@ -502,6 +502,9 @@ func shouldEnableAnthropicToolSearch(req providers.ChatRequest, support anthropi
 	if !hasToolSearchTool(req.Tools) {
 		return false
 	}
+	if req.NativeDeferredToolDiscovery {
+		return SupportsNativeToolSearchWhenExplicitlyEnabled(req.Model, req.ProviderOptions)
+	}
 	return SupportsNativeToolSearch(support.BaseURL, req.Model, req.ProviderOptions)
 }
 
@@ -528,6 +531,29 @@ func anthropicToolSearchOption(options map[string]any) (bool, bool) {
 // tool_search is present in the request. Unknown compatible endpoints stay
 // disabled unless provider options explicitly opt in.
 func SupportsNativeToolSearch(baseURL, model string, options map[string]any) bool {
+	if !modelSupportsAnthropicToolReference(model) {
+		return false
+	}
+	if enabled, ok := anthropicToolSearchOption(options); ok {
+		return enabled
+	}
+	return isFirstPartyAnthropicBaseURL(baseURL)
+}
+
+func SupportsNativeToolSearchWhenExplicitlyEnabled(model string, options map[string]any) bool {
+	if !modelSupportsAnthropicToolReference(model) {
+		return false
+	}
+	if enabled, ok := anthropicToolSearchOption(options); ok && !enabled {
+		return false
+	}
+	return true
+}
+
+// SupportsNativeToolSearchByDefault is the auto-mode gate. It keeps unknown
+// compatible endpoints on ordinary flattened tools unless the provider options
+// explicitly opt in.
+func SupportsNativeToolSearchByDefault(baseURL, model string, options map[string]any) bool {
 	if !modelSupportsAnthropicToolReference(model) {
 		return false
 	}

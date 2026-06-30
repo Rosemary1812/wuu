@@ -890,6 +890,29 @@ func TestBuildAnthropicRequest_ToolSearchEnabledForCompatibleEndpointWithExplici
 	}
 }
 
+func TestBuildAnthropicRequest_ToolSearchEnabledForCompatibleEndpointWithNativeDeferredRequest(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "generic-coder",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "run a worker"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+		NativeDeferredToolDiscovery: true,
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://compatible.example.com/anthropic"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
+		t.Fatalf("expected native-deferred request to enable tool search beta, got %+v", payload.Betas)
+	}
+	if len(payload.Tools) != 2 || !payload.Tools[1].DeferLoading {
+		t.Fatalf("expected native-deferred request to defer load management tool, got %+v", payload.Tools)
+	}
+}
+
 func TestBuildAnthropicRequest_ToolSearchDisabledForHaiku(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
 		Model: "claude-3-5-haiku-latest",

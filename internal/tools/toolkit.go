@@ -581,11 +581,13 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 
 // ── ToolExecutor interface ─────────────────────────────────────────
 
-// Definitions returns JSON-schema tool definitions for tools that are
-// visible in the current request. Deferred tools stay hidden until
-// tool_search loads their schemas; once loaded, they are appended after
-// the stable direct-tool prefix so OpenAI-compatible and other non-native
-// tool-search providers can actually call them on the next turn.
+// Definitions returns JSON-schema tool definitions for the current request.
+// In native deferred-loading mode, deferred tool declarations are sent with
+// DeferLoading=true so the provider can keep them out of the initial prompt
+// prefix. In Wuu tool_search mode, deferred tools stay hidden until
+// tool_search loads their schemas; once loaded, they are appended after the
+// stable direct-tool prefix so generic tool-calling providers can call them on
+// the next turn.
 //
 // When an active profile has been installed via SetActiveProfile,
 // the visible set is the per-profile compiled surface. Without an
@@ -602,6 +604,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	stable := make([]providers.ToolDefinition, 0, len(all))
 	dynamic := make([]providers.ToolDefinition, 0)
 	tail := make([]providers.ToolDefinition, 0, len(subagentManagementTools))
+	nativeDeferred := t.nativeDeferredToolDiscoveryEnabled()
 	for _, d := range all {
 		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
 			continue
@@ -620,10 +623,12 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			stable = append(stable, d)
 			continue
 		}
-		if exposure == ToolExposureDeferred && t.isDeferredToolLoaded(d.Name) {
+		if exposure == ToolExposureDeferred && (nativeDeferred || t.isDeferredToolLoaded(d.Name)) {
 			d.CacheStable = false
-			if isSubagentManagementTool(d.Name) {
+			if nativeDeferred {
 				d.DeferLoading = true
+			}
+			if isSubagentManagementTool(d.Name) {
 				tail = append(tail, d)
 				continue
 			}
@@ -641,9 +646,12 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 				continue
 			}
 			exposure := t.toolExposure(name)
-			if exposure == ToolExposureDirect || (exposure == ToolExposureDeferred && t.isDeferredToolLoaded(name)) {
+			if exposure == ToolExposureDirect || (exposure == ToolExposureDeferred && (nativeDeferred || t.isDeferredToolLoaded(name))) {
 				d := tool.Definition()
 				d.CacheStable = false
+				if nativeDeferred && exposure == ToolExposureDeferred {
+					d.DeferLoading = true
+				}
 				out = append(out, d)
 			}
 		}

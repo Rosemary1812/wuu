@@ -62,9 +62,26 @@ func BuildStreamClientWithRetry(provider config.ProviderConfig, providerName str
 	return providers.AdaptStreamClient(client), nil
 }
 
+// SupportsNativeToolDiscoveryByDefault reports whether auto mode should use
+// provider-native deferred tool loading. Only first-party provider paths are
+// enabled by default; compatible endpoints must opt in explicitly.
+func SupportsNativeToolDiscoveryByDefault(provider config.ProviderConfig, model string, providerOptions map[string]any) bool {
+	profile, err := resolveProviderProfile(provider)
+	if err != nil {
+		return false
+	}
+	switch profile.Wire {
+	case wireOpenAIResponses:
+		return isFirstPartyOpenAIResponsesBaseURL(provider.BaseURL) || profile.Auth == authCodexOAuth
+	case wireAnthropicMessages:
+		return anthropic.SupportsNativeToolSearchByDefault(provider.BaseURL, model, providerOptions)
+	default:
+		return false
+	}
+}
+
 // SupportsNativeToolDiscovery reports whether this provider path can receive
-// deferred tool schemas through provider-native request structure instead of
-// requiring an explicit tool_search call to mutate the tool surface.
+// provider-native deferred tool declarations when the user explicitly opts in.
 func SupportsNativeToolDiscovery(provider config.ProviderConfig, model string, providerOptions map[string]any) bool {
 	profile, err := resolveProviderProfile(provider)
 	if err != nil {
@@ -74,10 +91,17 @@ func SupportsNativeToolDiscovery(provider config.ProviderConfig, model string, p
 	case wireOpenAIResponses:
 		return true
 	case wireAnthropicMessages:
-		return anthropic.SupportsNativeToolSearch(provider.BaseURL, model, providerOptions)
+		return anthropic.SupportsNativeToolSearchWhenExplicitlyEnabled(model, providerOptions)
 	default:
 		return false
 	}
+}
+
+func isFirstPartyOpenAIResponsesBaseURL(raw string) bool {
+	u := strings.TrimRight(strings.ToLower(strings.TrimSpace(raw)), "/")
+	return u == "https://api.openai.com" ||
+		u == "https://api.openai.com/v1" ||
+		u == "https://chatgpt.com/backend-api/codex"
 }
 
 func buildClientWithRetry(provider config.ProviderConfig, providerName string, retry *providers.RetryConfig) (providers.Client, error) {

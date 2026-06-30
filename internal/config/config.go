@@ -25,6 +25,15 @@ const (
 	DefaultDreamIntervalDays   = 7
 )
 
+type ToolLoadingMode string
+
+const (
+	ToolLoadingAuto          ToolLoadingMode = "auto"
+	ToolLoadingFlat          ToolLoadingMode = "flat"
+	ToolLoadingNative        ToolLoadingMode = "native"
+	ToolLoadingWuuToolSearch ToolLoadingMode = "wuu_tool_search"
+)
+
 // ErrConfigNotFound is returned by LoadFrom when none of the candidate
 // config files exist on disk. Callers should use errors.Is to
 // distinguish a missing config (where initializing defaults is the right
@@ -294,9 +303,13 @@ type AgentConfig struct {
 	// disabled, only the embedded data ships with each wuu binary
 	// is used.
 	CatwalkAutoupdate bool `json:"catwalk_autoupdate,omitempty"`
-	// ToolSearch controls progressive loading of deferred tool schemas.
-	// nil means enabled. Set false to expose the active profile's tool
-	// surface in one flat tool list and hide tool_search.
+	// ToolLoading controls how Wuu exposes large/deferred tool surfaces.
+	// Empty means "auto": first-party native provider paths use provider
+	// deferred-loading protocol; compatible endpoints use a flat tool list.
+	// Valid: auto, flat, native, wuu_tool_search.
+	ToolLoading ToolLoadingMode `json:"tool_loading,omitempty"`
+	// ToolSearch is a legacy alias kept for older config files. New configs
+	// should use tool_loading.
 	ToolSearch *bool `json:"tool_search,omitempty"`
 	// ExperimentalDeferredToolBundles enables the provider-native bundle
 	// activation path where successful tools can attach follow-on schemas.
@@ -540,6 +553,9 @@ func (c Config) Validate() error {
 	if c.Agent.CompactKeepRecentTokens < 0 {
 		return errors.New("agent.compact_keep_recent_tokens cannot be negative (use 0 for default)")
 	}
+	if strings.TrimSpace(string(c.Agent.ToolLoading)) != "" && NormalizeToolLoadingMode(c.Agent.ToolLoading) == "" {
+		return errors.New("agent.tool_loading must be one of auto, flat, native, or wuu_tool_search")
+	}
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
 	}
@@ -771,7 +787,37 @@ func (a AgentConfig) UserSystemPrompt() string {
 }
 
 func (a AgentConfig) ToolSearchEnabled() bool {
-	return a.ToolSearch == nil || *a.ToolSearch
+	return a.ToolLoadingPreference() != ToolLoadingFlat
+}
+
+func (a AgentConfig) ToolLoadingPreference() ToolLoadingMode {
+	if strings.TrimSpace(string(a.ToolLoading)) != "" {
+		if mode := NormalizeToolLoadingMode(a.ToolLoading); mode != "" {
+			return mode
+		}
+	}
+	if a.ToolSearch != nil {
+		if *a.ToolSearch {
+			return ToolLoadingWuuToolSearch
+		}
+		return ToolLoadingFlat
+	}
+	return ToolLoadingAuto
+}
+
+func NormalizeToolLoadingMode(mode ToolLoadingMode) ToolLoadingMode {
+	switch strings.ToLower(strings.TrimSpace(string(mode))) {
+	case "", string(ToolLoadingAuto):
+		return ToolLoadingAuto
+	case string(ToolLoadingFlat):
+		return ToolLoadingFlat
+	case string(ToolLoadingNative):
+		return ToolLoadingNative
+	case string(ToolLoadingWuuToolSearch), "tool_search":
+		return ToolLoadingWuuToolSearch
+	default:
+		return ""
+	}
 }
 
 func (a AgentConfig) ProfileName() string {

@@ -110,6 +110,9 @@ type StreamRunner struct {
 	// ProviderOptions carries provider-specific model options selected by the
 	// active model variant.
 	ProviderOptions map[string]any
+	// NativeDeferredToolDiscovery lets provider adapters use native
+	// deferred-tool declarations for tools marked DeferLoading.
+	NativeDeferredToolDiscovery bool
 	// PromptCacheKey is a stable conversation-scoped cache key forwarded
 	// to providers that support explicit prompt-cache routing.
 	PromptCacheKey string
@@ -323,10 +326,11 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				CompactReason: string(info.Reason),
 			})
 		},
-		UsageTracker:    runUsage,
-		Effort:          r.Effort,
-		ProviderOptions: provideroptions.Clone(r.ProviderOptions),
-		PromptCacheKey:  r.PromptCacheKey,
+		UsageTracker:                runUsage,
+		Effort:                      r.Effort,
+		ProviderOptions:             provideroptions.Clone(r.ProviderOptions),
+		NativeDeferredToolDiscovery: r.NativeDeferredToolDiscovery,
+		PromptCacheKey:              r.PromptCacheKey,
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)

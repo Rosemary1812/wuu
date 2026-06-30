@@ -123,16 +123,16 @@ func TestSupportsNativeToolDiscovery(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "anthropic compatible fallback",
+			name:     "anthropic compatible explicit native",
 			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
 			model:    "claude-sonnet-4-5",
-			want:     false,
+			want:     true,
 		},
 		{
-			name:     "anthropic compatible model fallback",
+			name:     "anthropic compatible generic model explicit native",
 			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
 			model:    "generic-coder",
-			want:     false,
+			want:     true,
 		},
 		{
 			name:     "anthropic compatible opt in",
@@ -152,6 +152,54 @@ func TestSupportsNativeToolDiscovery(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := SupportsNativeToolDiscovery(tc.provider, tc.model, tc.options); got != tc.want {
 				t.Fatalf("SupportsNativeToolDiscovery = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSupportsNativeToolDiscoveryByDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider config.ProviderConfig
+		model    string
+		options  map[string]any
+		want     bool
+	}{
+		{
+			name:     "first party openai responses",
+			provider: config.ProviderConfig{Type: "openai-compatible", BaseURL: "https://api.openai.com/v1", WireAPI: "responses"},
+			model:    "gpt-test",
+			want:     true,
+		},
+		{
+			name:     "compatible openai responses",
+			provider: config.ProviderConfig{Type: "openai-compatible", BaseURL: "https://compatible.example.com/v1", WireAPI: "responses"},
+			model:    "gpt-test",
+			want:     false,
+		},
+		{
+			name:     "first party anthropic",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.anthropic.com"},
+			model:    "claude-sonnet-4-5",
+			want:     true,
+		},
+		{
+			name:     "compatible anthropic",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://compatible.example.com/anthropic"},
+			model:    "claude-sonnet-4-5",
+			want:     false,
+		},
+		{
+			name:     "compatible anthropic explicit option",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://compatible.example.com/anthropic"},
+			model:    "claude-sonnet-4-5",
+			options:  map[string]any{"anthropicToolSearch": true},
+			want:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SupportsNativeToolDiscoveryByDefault(tc.provider, tc.model, tc.options); got != tc.want {
+				t.Fatalf("SupportsNativeToolDiscoveryByDefault = %v, want %v", got, tc.want)
 			}
 		})
 	}

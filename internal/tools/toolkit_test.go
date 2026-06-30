@@ -1964,8 +1964,8 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	kit.SetExperimentalDeferredToolBundles(true)
 	kit.SetNativeDeferredToolDiscovery(true)
-	if containsProfileDef(kit.Definitions(), "await_agents") {
-		t.Fatalf("await_agents should be deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
+	if def, ok := profileDefByName(kit.Definitions(), "await_agents"); !ok || !def.DeferLoading {
+		t.Fatalf("await_agents should be declared as native-deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
 
 	spawnCall := providers.ToolCall{
@@ -2099,8 +2099,8 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	if !containsProfileDef(kit.Definitions(), "helpme") {
 		t.Fatalf("helpme should be directly visible before recovery, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
-	if containsProfileDef(kit.Definitions(), "await_agents") {
-		t.Fatalf("await_agents should be deferred before helpme succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
+	if def, ok := profileDefByName(kit.Definitions(), "await_agents"); !ok || !def.DeferLoading {
+		t.Fatalf("await_agents should be declared as native-deferred before helpme succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
 
 	helpMeCall := providers.ToolCall{

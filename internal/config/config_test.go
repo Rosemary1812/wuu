@@ -106,8 +106,8 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	if cfg.Agent.SystemPrompt != "" {
 		t.Fatalf("expected config system_prompt to remain user-owned, got %q", cfg.Agent.SystemPrompt)
 	}
-	if !cfg.Agent.ToolSearchEnabled() {
-		t.Fatal("expected tool_search to be enabled by default")
+	if cfg.Agent.ToolLoadingPreference() != ToolLoadingAuto {
+		t.Fatalf("expected default tool_loading auto, got %q", cfg.Agent.ToolLoadingPreference())
 	}
 	if cfg.Agent.ExperimentalDeferredToolBundles {
 		t.Fatal("expected native deferred bundle activation to be experimental and off by default")
@@ -120,7 +120,7 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	}
 }
 
-func TestLoadFrom_ToolSearchConfig(t *testing.T) {
+func TestLoadFrom_ToolLoadingConfig(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
@@ -134,7 +134,7 @@ func TestLoadFrom_ToolSearchConfig(t *testing.T) {
     }
   },
   "agent": {
-    "tool_search": false,
+    "tool_loading": "flat",
     "experimental_deferred_tool_bundles": true
   }
 }`
@@ -147,11 +147,8 @@ func TestLoadFrom_ToolSearchConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
-	if cfg.Agent.ToolSearch == nil {
-		t.Fatal("expected explicit tool_search value to be preserved")
-	}
-	if cfg.Agent.ToolSearchEnabled() {
-		t.Fatal("expected explicit tool_search=false to disable progressive loading")
+	if cfg.Agent.ToolLoadingPreference() != ToolLoadingFlat {
+		t.Fatalf("expected explicit flat tool loading, got %q", cfg.Agent.ToolLoadingPreference())
 	}
 	if !cfg.Agent.ExperimentalDeferredToolBundles {
 		t.Fatal("expected experimental deferred bundle flag to parse")

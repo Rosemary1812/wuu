@@ -116,6 +116,15 @@ func flattenContextSegmentsForTest(segments []agent.ContextSegment) []providers.
 	return out
 }
 
+func sessionToolDefByName(defs []providers.ToolDefinition, name string) (providers.ToolDefinition, bool) {
+	for _, def := range defs {
+		if def.Name == name {
+			return def, true
+		}
+	}
+	return providers.ToolDefinition{}, false
+}
+
 func writeSessionTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -327,15 +336,15 @@ func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 		defs[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if defs[name] {
-			t.Fatalf("default profile should keep %s deferred", name)
+		if !defs[name] {
+			t.Fatalf("compatible provider auto mode should expose %s in the flat tool surface", name)
 		}
 		info, ok := rt.Toolkit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", name)
 		}
-		if info.Exposure != tools.ToolExposureDeferred {
-			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
+		if info.Exposure != tools.ToolExposureDirect {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDirect)
 		}
 	}
 }
@@ -537,12 +546,12 @@ description: Legacy user audit workflow.
 	if !ok || compose.Source != "bundled" || !strings.Contains(compose.Content, "session_memory") {
 		t.Fatalf("bundled compose workflow not discovered: %+v", compose)
 	}
-	if strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") ||
-		strings.Contains(rt.BaseSystemPrompt, "Workflow guidance") {
-		t.Fatalf("workflow catalog should stay behind tool_search:\n%s", rt.BaseSystemPrompt)
+	if !strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") ||
+		!strings.Contains(rt.BaseSystemPrompt, "Workflow guidance") {
+		t.Fatalf("flat tool surface should include workflow guidance:\n%s", rt.BaseSystemPrompt)
 	}
-	if !strings.Contains(rt.BaseSystemPrompt, "start_workflow") || !strings.Contains(rt.BaseSystemPrompt, "# Tool Discovery") {
-		t.Fatalf("workflow prompt should keep lightweight orchestration and discovery guidance:\n%s", rt.BaseSystemPrompt)
+	if strings.Contains(rt.BaseSystemPrompt, "# Tool Discovery") {
+		t.Fatalf("flat tool surface should not include tool discovery guidance:\n%s", rt.BaseSystemPrompt)
 	}
 	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 4 {
 		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
@@ -552,15 +561,15 @@ description: Legacy user audit workflow.
 		defs[def.Name] = true
 	}
 	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status", "create_workflow", "run_workflow", "workflow_control"} {
-		if defs[name] {
-			t.Fatalf("workflow tool %q should be deferred from Definitions()", name)
+		if !defs[name] {
+			t.Fatalf("workflow tool %q should be visible in flat Definitions()", name)
 		}
 		info, ok := rt.Toolkit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("workflow tool %q missing from ToolInfo()", name)
 		}
-		if info.Exposure != tools.ToolExposureDeferred {
-			t.Fatalf("workflow tool %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
+		if info.Exposure != tools.ToolExposureDirect {
+			t.Fatalf("workflow tool %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDirect)
 		}
 	}
 }
@@ -1033,12 +1042,12 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		toolNames[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if toolNames[name] {
-			t.Fatalf("profile worker should keep %s deferred from top-level tools: %+v", name, req.Tools)
+		if !toolNames[name] {
+			t.Fatalf("compatible profile worker should expose %s in the flat tool surface: %+v", name, req.Tools)
 		}
 	}
-	if !toolNames["tool_search"] {
-		t.Fatalf("profile worker should expose tool_search for deferred memory tools: %+v", req.Tools)
+	if toolNames["tool_search"] {
+		t.Fatalf("compatible profile worker should not expose tool_search in flat mode: %+v", req.Tools)
 	}
 	if len(req.Messages) == 0 {
 		t.Fatal("profile worker sent no messages")
@@ -1107,15 +1116,15 @@ func TestNewSessionUsesGlobalMemoryStore(t *testing.T) {
 		defs[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if defs[name] {
-			t.Fatalf("default session should keep %s deferred", name)
+		if !defs[name] {
+			t.Fatalf("compatible provider auto mode should expose %s in the flat tool surface", name)
 		}
 		info, ok := rt.Toolkit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", name)
 		}
-		if info.Exposure != tools.ToolExposureDeferred {
-			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDeferred)
+		if info.Exposure != tools.ToolExposureDirect {
+			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDirect)
 		}
 	}
 }
@@ -1404,7 +1413,7 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	}
 }
 
-func TestNewSessionKeepsNativeDeferredBundlesExperimentalByDefault(t *testing.T) {
+func TestNewSessionAutoUsesNativeDeferredForFirstPartyAnthropic(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -1429,14 +1438,105 @@ func TestNewSessionKeepsNativeDeferredBundlesExperimentalByDefault(t *testing.T)
 		t.Fatalf("NewSession: %v", err)
 	}
 	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() {
-		t.Fatal("tool_search should be enabled by default")
+		t.Fatal("first-party Anthropic auto mode should expose tool_search")
 	}
-	if rt.Toolkit.NativeDeferredToolDiscovery() {
-		t.Fatal("native deferred bundle discovery should be experimental and off by default")
+	if !rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatal("first-party Anthropic auto mode should use native deferred loading")
+	}
+	if rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("first-party Anthropic runner should forward native deferred loading to provider requests")
 	}
 }
 
-func TestNewSessionEnablesNativeDeferredBundlesOnlyWhenExperimental(t *testing.T) {
+func TestNewSessionAutoUsesNativeDeferredForFirstPartyOpenAIResponses(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "openai",
+			Providers: map[string]config.ProviderConfig{
+				"openai": {
+					Type:    "openai-compatible",
+					BaseURL: "https://api.openai.com/v1",
+					APIKey:  "abc",
+					Model:   "gpt-test",
+					WireAPI: "responses",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingNative {
+		t.Fatalf("ToolLoadingMode = %q, want native", rt.ToolLoadingMode)
+	}
+	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() {
+		t.Fatal("first-party OpenAI Responses auto mode should expose tool_search")
+	}
+	if !rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatal("first-party OpenAI Responses auto mode should use native deferred loading")
+	}
+	if rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("first-party OpenAI Responses runner should forward native deferred loading to provider requests")
+	}
+	if def, ok := sessionToolDefByName(rt.Toolkit.Definitions(), "await_agents"); !ok || !def.DeferLoading {
+		t.Fatalf("first-party OpenAI Responses should declare deferred tools as native-deferred, got %+v", rt.Toolkit.Definitions())
+	}
+}
+
+func TestNewSessionAutoFlattensCompatibleOpenAIResponses(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "compatible",
+			Providers: map[string]config.ProviderConfig{
+				"compatible": {
+					Type:    "openai-compatible",
+					BaseURL: "https://compatible.example.com/v1",
+					APIKey:  "abc",
+					Model:   "gpt-test",
+					WireAPI: "responses",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingFlat {
+		t.Fatalf("ToolLoadingMode = %q, want flat", rt.ToolLoadingMode)
+	}
+	if rt.Toolkit == nil {
+		t.Fatal("expected toolkit")
+	}
+	if rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("compatible OpenAI Responses auto mode should use flat tools, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	}
+	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("compatible OpenAI Responses auto mode should not mark provider requests as native deferred")
+	}
+	defs := rt.Toolkit.Definitions()
+	if _, ok := sessionToolDefByName(defs, "tool_search"); ok {
+		t.Fatalf("compatible OpenAI Responses flat mode should hide tool_search, got %+v", defs)
+	}
+	if def, ok := sessionToolDefByName(defs, "await_agents"); !ok || def.DeferLoading {
+		t.Fatalf("compatible OpenAI Responses flat mode should expose await_agents directly, got %+v", defs)
+	}
+}
+
+func TestNewSessionAllowsCompatibleEndpointToOptIntoNativeDeferred(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -1450,27 +1550,69 @@ func TestNewSessionEnablesNativeDeferredBundlesOnlyWhenExperimental(t *testing.T
 			Providers: map[string]config.ProviderConfig{
 				"anthropic": {
 					Type:    "anthropic",
-					BaseURL: "https://api.anthropic.com",
+					BaseURL: "https://compatible.example.com/anthropic",
 					APIKey:  "abc",
 					Model:   "claude-sonnet-4-5",
 				},
 			},
-			Agent: config.AgentConfig{ExperimentalDeferredToolBundles: true},
+			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingNative},
 		},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
 	if rt.Toolkit == nil || !rt.Toolkit.NativeDeferredToolDiscovery() {
-		t.Fatal("experimental native deferred bundle discovery should be enabled")
+		t.Fatal("explicit native tool_loading should enable native deferred loading on compatible Anthropic endpoints")
+	}
+	if rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("explicit native tool_loading should mark compatible Anthropic provider requests as native deferred")
 	}
 }
 
-func TestNewSessionFlattensToolSurfaceWhenToolSearchDisabled(t *testing.T) {
+func TestNewSessionAllowsCompatibleOpenAIResponsesToOptIntoNativeDeferred(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
-	disabled := false
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "compatible",
+			Providers: map[string]config.ProviderConfig{
+				"compatible": {
+					Type:    "openai-compatible",
+					BaseURL: "https://compatible.example.com/v1",
+					APIKey:  "abc",
+					Model:   "gpt-test",
+					WireAPI: "responses",
+				},
+			},
+			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingNative},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingNative {
+		t.Fatalf("ToolLoadingMode = %q, want native", rt.ToolLoadingMode)
+	}
+	if rt.Toolkit == nil {
+		t.Fatal("expected toolkit")
+	}
+	if !rt.Toolkit.ToolSearchEnabled() || !rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("explicit native should enable native tool loading, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	}
+	if rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("explicit native should mark compatible OpenAI provider requests as native deferred")
+	}
+}
+
+func TestNewSessionAllowsExplicitWuuToolSearchFallback(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
 
 	rt, err := NewSession(Options{
 		RootDir:    root,
@@ -1486,7 +1628,53 @@ func TestNewSessionFlattensToolSurfaceWhenToolSearchDisabled(t *testing.T) {
 					Model:   "generic-coder",
 				},
 			},
-			Agent: config.AgentConfig{ToolSearch: &disabled},
+			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingWuuToolSearch},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingWuuToolSearch {
+		t.Fatalf("ToolLoadingMode = %q, want wuu_tool_search", rt.ToolLoadingMode)
+	}
+	if rt.Toolkit == nil {
+		t.Fatal("expected toolkit")
+	}
+	if !rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("wuu_tool_search should expose Wuu tool_search without native provider defer, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	}
+	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("wuu_tool_search should not mark provider requests as native deferred")
+	}
+	defs := rt.Toolkit.Definitions()
+	if _, ok := sessionToolDefByName(defs, "tool_search"); !ok {
+		t.Fatalf("wuu_tool_search should expose tool_search, got %+v", defs)
+	}
+	if _, ok := sessionToolDefByName(defs, "await_agents"); ok {
+		t.Fatalf("wuu_tool_search should keep deferred tools behind tool_search until loaded, got %+v", defs)
+	}
+}
+
+func TestNewSessionFlattensToolSurfaceWhenToolLoadingFlat(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "generic",
+			Providers: map[string]config.ProviderConfig{
+				"generic": {
+					Type:    "openai-compatible",
+					BaseURL: "https://example.com/v1",
+					APIKey:  "abc",
+					Model:   "generic-coder",
+				},
+			},
+			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingFlat},
 		},
 	})
 	if err != nil {

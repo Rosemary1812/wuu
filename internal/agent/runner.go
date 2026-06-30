@@ -91,6 +91,9 @@ type Runner struct {
 	// CompactKeepRecentTokens overrides the default recent raw-history budget
 	// kept after compaction. Zero means use the default.
 	CompactKeepRecentTokens int
+	// NativeDeferredToolDiscovery lets provider adapters use native
+	// deferred-tool declarations for tools marked DeferLoading.
+	NativeDeferredToolDiscovery bool
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -138,18 +141,19 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 
 	maxCtx := r.ContextWindowOverride
 	cfg := LoopConfig{
-		Tools:                   r.Tools,
-		Model:                   r.Model,
-		Temperature:             r.Temperature,
-		MaxSteps:                r.MaxSteps,
-		MaxContextTokens:        maxCtx,
-		MaxInputTokens:          r.MaxInputTokens,
-		OutputReserveTokens:     r.OutputReserveTokens,
-		CompactThresholdPct:     r.CompactThresholdPct,
-		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
-		SystemPromptSections:    cloneSystemPromptSections(r.SystemPromptSections),
-		OnUsage:                 onUsage,
-		PostToolRewrite:         compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		Tools:                       r.Tools,
+		Model:                       r.Model,
+		Temperature:                 r.Temperature,
+		MaxSteps:                    r.MaxSteps,
+		MaxContextTokens:            maxCtx,
+		MaxInputTokens:              r.MaxInputTokens,
+		OutputReserveTokens:         r.OutputReserveTokens,
+		CompactThresholdPct:         r.CompactThresholdPct,
+		CompactKeepRecentTokens:     r.CompactKeepRecentTokens,
+		NativeDeferredToolDiscovery: r.NativeDeferredToolDiscovery,
+		SystemPromptSections:        cloneSystemPromptSections(r.SystemPromptSections),
+		OnUsage:                     onUsage,
+		PostToolRewrite:             compact.RewriteHistoryFromInternalToolMessagesWithContext,
 		Compact: func(ctx context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return compact.CompactWithBudget(ctx, messages, r.Client, r.Model, compact.Budget{
 				ContextTokens:       maxCtx,

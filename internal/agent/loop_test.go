@@ -234,6 +234,23 @@ func TestRunToolLoop_SimpleAnswer(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_ForwardsNativeDeferredToolDiscovery(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("hi")}, LoopConfig{
+		Model:                       "m",
+		NativeDeferredToolDiscovery: true,
+	}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("expected one call, got %d", len(step.calls))
+	}
+	if !step.calls[0].NativeDeferredToolDiscovery {
+		t.Fatal("expected ChatRequest to carry NativeDeferredToolDiscovery")
+	}
+}
+
 func TestRunToolLoop_BuildsCacheHintFromHistory(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
 	history := []providers.ChatMessage{

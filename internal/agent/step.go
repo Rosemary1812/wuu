@@ -277,6 +277,9 @@ type LoopConfig struct {
 	// ProviderOptions are provider-specific model options selected by the
 	// active model variant. They are forwarded to ChatRequest.
 	ProviderOptions map[string]any
+	// NativeDeferredToolDiscovery lets provider adapters use native
+	// deferred-tool declarations for tools marked DeferLoading.
+	NativeDeferredToolDiscovery bool
 	// PromptCacheKey, when set, overrides the content-derived fallback
 	// key in CacheHint for providers with explicit prompt-cache routing.
 	PromptCacheKey string

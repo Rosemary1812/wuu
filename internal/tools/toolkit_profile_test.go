@@ -24,6 +24,15 @@ func containsProfileDef(defs []providers.ToolDefinition, name string) bool {
 	return false
 }
 
+func profileDefByName(defs []providers.ToolDefinition, name string) (providers.ToolDefinition, bool) {
+	for _, d := range defs {
+		if d.Name == name {
+			return d, true
+		}
+	}
+	return providers.ToolDefinition{}, false
+}
+
 // sortedProfileDefNames returns a stable, sorted slice of the
 // visible tool names so failure messages are deterministic.
 func sortedProfileDefNames(defs []providers.ToolDefinition) []string {
@@ -682,8 +691,8 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		if found.CacheStable {
 			t.Fatalf("management tool %s should be appended outside the cache-stable prefix: %+v", name, *found)
 		}
-		if !found.DeferLoading {
-			t.Fatalf("management tool %s should stay provider-deferred after activation: %+v", name, *found)
+		if found.DeferLoading {
+			t.Fatalf("fallback-loaded management tool %s should be a normal callable schema: %+v", name, *found)
 		}
 	}
 	for i, want := range subagentManagementTools {

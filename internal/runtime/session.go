@@ -92,7 +92,10 @@ type Session struct {
 	Permissions                 config.ResolvedPermissions
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
+	ToolLoadingPreference       config.ToolLoadingMode
+	ToolLoadingMode             config.ToolLoadingMode
 	ToolSearchEnabled           bool
+	NativeDeferredToolDiscovery bool
 	ExperimentalDeferredBundles bool
 	CronScheduler               *cron.Scheduler
 	CronLock                    *cron.Lock
@@ -183,7 +186,8 @@ func NewSession(opts Options) (*Session, error) {
 	var profileMemoryProvider memstore.Provider
 	profileMemoryCharLimit := cfg.Memory.ProfileMemoryCharLimit()
 	profileUserMemoryCharLimit := cfg.Memory.ProfileUserCharLimit()
-	toolSearchEnabled := cfg.Agent.ToolSearchEnabled()
+	toolLoadingPreference := cfg.Agent.ToolLoadingPreference()
+	toolLoadingMode, toolSearchEnabled, nativeDeferredDiscovery := resolveToolLoadingModeForProvider(toolLoadingPreference, ruleProviderCfg, toolModeModel, mainRole.ProviderOptions)
 	experimentalDeferredBundles := cfg.Agent.ExperimentalDeferredToolBundles
 	if !opts.NoTools {
 		kit, newErr := tools.New(rootDir)
@@ -199,7 +203,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
-		kit.SetNativeDeferredToolDiscovery(toolSearchEnabled && experimentalDeferredBundles && providerfactory.SupportsNativeToolDiscovery(ruleProviderCfg, toolModeModel, mainRole.ProviderOptions))
+		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled && !cfg.Memory.Disable {
 			// Attach the global long-term memory store. With memory now a
@@ -296,9 +300,10 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
-				wkit.SetToolSearchEnabled(toolSearchEnabled)
+				_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingForProvider(cfg.Agent, roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions)
+				wkit.SetToolSearchEnabled(workerToolSearchEnabled)
 				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
-				wkit.SetNativeDeferredToolDiscovery(toolSearchEnabled && experimentalDeferredBundles && providerfactory.SupportsNativeToolDiscovery(roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions))
+				wkit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
 					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
@@ -348,25 +353,26 @@ func NewSession(opts Options) (*Session, error) {
 	afterTurn := chainAfterTurn(afterTurnHooks...)
 
 	streamRunner := &agent.StreamRunner{
-		Client:                  client,
-		Tools:                   toolExecutor,
-		Model:                   providerCfg.Model,
-		APIModel:                modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
-		SystemPrompt:            baseSystemPrompt,
-		SystemPromptSections:    baseSystemPromptSections,
-		MaxSteps:                cfg.Agent.MaxSteps,
-		Temperature:             cfg.Agent.Temperature,
-		Effort:                  mainRole.LegacyEffort,
-		Variant:                 mainRole.Variant,
-		ProviderOptions:         modelvariant.CloneOptions(mainRole.ProviderOptions),
-		ContextWindowOverride:   modelBudget.ContextWindowTokens,
-		MaxInputTokens:          modelBudget.InputLimitTokens,
-		OutputReserveTokens:     modelBudget.OutputReserveTokens,
-		CompactThresholdPct:     cfg.Agent.CompactThresholdPct,
-		CompactKeepRecentTokens: cfg.Agent.CompactKeepRecentTokens,
-		DisableAutoCompact:      cfg.Agent.DisableAutoCompact,
-		BeforeRequestContext:    RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
-		AfterTurn:               afterTurn,
+		Client:                      client,
+		Tools:                       toolExecutor,
+		Model:                       providerCfg.Model,
+		APIModel:                    modelcatalog.APIModel(ruleProviderCfg, providerCfg.Model),
+		SystemPrompt:                baseSystemPrompt,
+		SystemPromptSections:        baseSystemPromptSections,
+		MaxSteps:                    cfg.Agent.MaxSteps,
+		Temperature:                 cfg.Agent.Temperature,
+		Effort:                      mainRole.LegacyEffort,
+		Variant:                     mainRole.Variant,
+		ProviderOptions:             modelvariant.CloneOptions(mainRole.ProviderOptions),
+		NativeDeferredToolDiscovery: nativeDeferredDiscovery,
+		ContextWindowOverride:       modelBudget.ContextWindowTokens,
+		MaxInputTokens:              modelBudget.InputLimitTokens,
+		OutputReserveTokens:         modelBudget.OutputReserveTokens,
+		CompactThresholdPct:         cfg.Agent.CompactThresholdPct,
+		CompactKeepRecentTokens:     cfg.Agent.CompactKeepRecentTokens,
+		DisableAutoCompact:          cfg.Agent.DisableAutoCompact,
+		BeforeRequestContext:        RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
+		AfterTurn:                   afterTurn,
 	}
 
 	return &Session{
@@ -402,9 +408,35 @@ func NewSession(opts Options) (*Session, error) {
 		Permissions:                 permissions,
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
+		ToolLoadingPreference:       toolLoadingPreference,
+		ToolLoadingMode:             toolLoadingMode,
 		ToolSearchEnabled:           toolSearchEnabled,
+		NativeDeferredToolDiscovery: nativeDeferredDiscovery,
 		ExperimentalDeferredBundles: experimentalDeferredBundles,
 	}, nil
+}
+
+func resolveToolLoadingForProvider(agentCfg config.AgentConfig, providerCfg config.ProviderConfig, model string, providerOptions map[string]any) (config.ToolLoadingMode, bool, bool) {
+	return resolveToolLoadingModeForProvider(agentCfg.ToolLoadingPreference(), providerCfg, model, providerOptions)
+}
+
+func resolveToolLoadingModeForProvider(mode config.ToolLoadingMode, providerCfg config.ProviderConfig, model string, providerOptions map[string]any) (config.ToolLoadingMode, bool, bool) {
+	switch mode {
+	case config.ToolLoadingFlat:
+		return mode, false, false
+	case config.ToolLoadingNative:
+		if providerfactory.SupportsNativeToolDiscovery(providerCfg, model, providerOptions) {
+			return mode, true, true
+		}
+		return config.ToolLoadingFlat, false, false
+	case config.ToolLoadingWuuToolSearch:
+		return mode, true, false
+	default:
+		if providerfactory.SupportsNativeToolDiscoveryByDefault(providerCfg, model, providerOptions) {
+			return config.ToolLoadingNative, true, true
+		}
+		return config.ToolLoadingFlat, false, false
+	}
 }
 
 func (s *Session) StartCronScheduler() error {
@@ -720,9 +752,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetAgentControl(control)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
-					workerKit.SetToolSearchEnabled(s.ToolSearchEnabled)
+					_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingModeForProvider(s.ToolLoadingPreference, s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions)
+					workerKit.SetToolSearchEnabled(workerToolSearchEnabled)
 					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
-					workerKit.SetNativeDeferredToolDiscovery(s.ToolSearchEnabled && s.ExperimentalDeferredBundles && providerfactory.SupportsNativeToolDiscovery(s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions))
+					workerKit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 					if strings.TrimSpace(meta.AgentProfile) != "" {
 						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
 						if memErr != nil {
@@ -793,35 +826,36 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		return nil
 	}
 	return &agent.StreamRunner{
-		Client:                  base.Client,
-		Tools:                   toolExecutor,
-		Model:                   base.Model,
-		APIModel:                base.APIModel,
-		SystemPrompt:            base.SystemPrompt,
-		SystemPromptSections:    append([]agent.SystemPromptSectionInfo(nil), base.SystemPromptSections...),
-		MaxSteps:                base.MaxSteps,
-		Temperature:             base.Temperature,
-		OnEvent:                 base.OnEvent,
-		Bus:                     base.Bus,
-		OnUsage:                 base.OnUsage,
-		OnTokenUsage:            base.OnTokenUsage,
-		ContextWindowOverride:   base.ContextWindowOverride,
-		MaxInputTokens:          base.MaxInputTokens,
-		OutputReserveTokens:     base.OutputReserveTokens,
-		CompactThresholdPct:     base.CompactThresholdPct,
-		CompactKeepRecentTokens: base.CompactKeepRecentTokens,
-		DisableAutoCompact:      base.DisableAutoCompact,
-		StreamingToolExecution:  base.StreamingToolExecution,
-		BeforeStep:              base.BeforeStep,
-		BeforeRequestContext:    base.BeforeRequestContext,
-		AfterTurn:               base.AfterTurn,
-		Effort:                  base.Effort,
-		Variant:                 base.Variant,
-		ProviderOptions:         provideroptions.Clone(base.ProviderOptions),
-		PromptCacheKey:          base.PromptCacheKey,
-		StreamReconnectBudget:   base.StreamReconnectBudget,
-		StreamRetryInitialDelay: base.StreamRetryInitialDelay,
-		StreamRetryMaxDelay:     base.StreamRetryMaxDelay,
+		Client:                      base.Client,
+		Tools:                       toolExecutor,
+		Model:                       base.Model,
+		APIModel:                    base.APIModel,
+		SystemPrompt:                base.SystemPrompt,
+		SystemPromptSections:        append([]agent.SystemPromptSectionInfo(nil), base.SystemPromptSections...),
+		MaxSteps:                    base.MaxSteps,
+		Temperature:                 base.Temperature,
+		OnEvent:                     base.OnEvent,
+		Bus:                         base.Bus,
+		OnUsage:                     base.OnUsage,
+		OnTokenUsage:                base.OnTokenUsage,
+		ContextWindowOverride:       base.ContextWindowOverride,
+		MaxInputTokens:              base.MaxInputTokens,
+		OutputReserveTokens:         base.OutputReserveTokens,
+		CompactThresholdPct:         base.CompactThresholdPct,
+		CompactKeepRecentTokens:     base.CompactKeepRecentTokens,
+		DisableAutoCompact:          base.DisableAutoCompact,
+		StreamingToolExecution:      base.StreamingToolExecution,
+		BeforeStep:                  base.BeforeStep,
+		BeforeRequestContext:        base.BeforeRequestContext,
+		AfterTurn:                   base.AfterTurn,
+		Effort:                      base.Effort,
+		Variant:                     base.Variant,
+		ProviderOptions:             provideroptions.Clone(base.ProviderOptions),
+		NativeDeferredToolDiscovery: base.NativeDeferredToolDiscovery,
+		PromptCacheKey:              base.PromptCacheKey,
+		StreamReconnectBudget:       base.StreamReconnectBudget,
+		StreamRetryInitialDelay:     base.StreamRetryInitialDelay,
+		StreamRetryMaxDelay:         base.StreamRetryMaxDelay,
 	}
 }
 
