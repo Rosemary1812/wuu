@@ -6536,6 +6536,21 @@ type CachedConversationPanesProps = {
    * can request the right-side panel to open the referenced file.
    */
   onOpenFile?: (path: string) => void;
+  /**
+   * Tool approval waiting for a decision. The matching turn is found
+   * inside this component by `call_id` lookup, so the card only renders
+   * next to the tool call it actually gates.
+   */
+  pendingToolApproval?: PendingToolApproval;
+  /**
+   * Resolver forwarded to the inline approval card. Receives the
+   * matched `pendingToolApproval` plus the decision string the user
+   * picked (approved / approved_for_session / denied).
+   */
+  onResolveToolApproval?: (
+    approval: PendingToolApproval,
+    decision: "approved" | "approved_for_session" | "denied",
+  ) => void;
 };
 
 const CachedConversationPanes = memo(function CachedConversationPanes({
@@ -6556,6 +6571,8 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onSubmitEditMessage,
   onNoticeAction,
   onOpenFile,
+  pendingToolApproval,
+  onResolveToolApproval,
 }: CachedConversationPanesProps): JSX.Element {
   return (
     <div className="cached-conversation-panes">
@@ -6625,10 +6642,18 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     : undefined
                 }
                 renderTurn={(turn) => {
-                  const approval = pendingApprovalForTurn(
-                    state.pendingToolApproval,
-                    turn,
-                  );
+                  // Inline the matching that AppState's pendingToolApproval
+                  // belongs to this turn: a turn "owns" the approval when
+                  // any of its items has the matching call_id. Render the
+                  // card only for that turn so the decision surface sits
+                  // next to the tool call it actually gates.
+                  const callID = pendingToolApproval?.call_id;
+                  const approval =
+                    pendingToolApproval && callID
+                      ? turn.items.some((item) => item.id === callID)
+                        ? pendingToolApproval
+                        : undefined
+                      : undefined;
                   return (
                   <TurnView
                     turn={turn}
@@ -6664,22 +6689,22 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     onOpenFile={onOpenFile}
                     pendingApproval={approval}
                     onApproveTool={
-                      approval
-                        ? () => void resolveToolApproval(approval, "approved")
+                      approval && onResolveToolApproval
+                        ? () => onResolveToolApproval(approval, "approved")
                         : undefined
                     }
                     onApproveToolForSession={
-                      approval
+                      approval && onResolveToolApproval
                         ? () =>
-                            void resolveToolApproval(
+                            onResolveToolApproval(
                               approval,
                               "approved_for_session",
                             )
                         : undefined
                     }
                     onDenyTool={
-                      approval
-                        ? () => void resolveToolApproval(approval, "denied")
+                      approval && onResolveToolApproval
+                        ? () => onResolveToolApproval(approval, "denied")
                         : undefined
                     }
                   />

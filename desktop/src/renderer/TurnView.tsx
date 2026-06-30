@@ -1,6 +1,12 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
-import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
+import type {
+  InputFile,
+  InputImage,
+  PendingToolApproval,
+  ThreadItem,
+  Turn,
+} from "../shared/protocol";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
@@ -31,6 +37,10 @@ export function TurnView({
   onCollapseComplete,
   onNoticeAction,
   onOpenFile,
+  pendingApproval,
+  onApproveTool,
+  onApproveToolForSession,
+  onDenyTool,
 }: {
   turn: Turn;
   cwd?: string;
@@ -55,6 +65,10 @@ export function TurnView({
    * file. The host (typically App.tsx) wires this to the environment panel.
    */
   onOpenFile?: (path: string) => void;
+  pendingApproval?: PendingToolApproval;
+  onApproveTool?: () => void;
+  onApproveToolForSession?: () => void;
+  onDenyTool?: () => void;
 }): JSX.Element {
   const actionableAgentMessageID =
     turn.status === "completed"
@@ -137,6 +151,10 @@ export function TurnView({
           onForkMessage={onForkMessage}
           onCollapseComplete={onCollapseComplete}
           onNoticeAction={onNoticeAction}
+          pendingApproval={pendingApproval}
+          onApproveTool={onApproveTool}
+          onApproveToolForSession={onApproveToolForSession}
+          onDenyTool={onDenyTool}
         />
       ) : null}
       {event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null}

@@ -16,9 +16,9 @@
 
 ---
 
-Wuu helps with software development tasks inside your local repository. It can read and edit files, run commands, review changes, attach files or screenshots, and resume previous sessions.
+**wuu** is an open-source AI coding agent for your local repository. It reads and edits files, runs commands, reviews changes, attaches local files or screenshots, and resumes previous sessions — all from either a desktop UI or a scriptable CLI.
 
-The desktop app currently runs from a source checkout. Use `wuu exec` when you want the same agent from scripts, CI, or another tool.
+Use the desktop app for interactive work, and reach for `wuu exec` when you want the same agent from scripts, CI pipelines, or another agent.
 
 ## Installation
 
@@ -57,6 +57,16 @@ Resume or inspect sessions:
 wuu exec resume --last "continue"
 wuu session list --json
 ```
+
+## Features
+
+- **File operations** — read, edit, and inspect files inside the working repository
+- **Shell execution** — run commands, capture output, and iterate on failures
+- **Attachments** — pass local files (`--file`) and screenshots (`--image`) directly to a turn
+- **Sessions** — resume previous turns, list history, and fork from a checkpoint
+- **JSONL output** — scriptable, streamable output for CI and other agents
+- **Multi-provider** — Anthropic plus OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
+- **Desktop app** — source-built UI for interactive use alongside the CLI
 
 ## Desktop App
 
