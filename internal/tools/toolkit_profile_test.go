@@ -567,8 +567,24 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	registered := kit.registry.All()
+	registered = append(registered, &stubTool{
+		name: "mcp_docs_search",
+		def: providers.ToolDefinition{
+			Name:        "mcp_docs_search",
+			Description: "Search docs through MCP",
+			InputSchema: map[string]any{
+				"type": "object",
+			},
+		},
+	})
+	kit.registry = NewRegistry(registered...)
+	kit.markDeferredToolsLoaded("mcp_docs_search")
 
 	defs := kit.Definitions()
+	if !containsProfileDef(defs, "mcp_docs_search") {
+		t.Fatalf("loaded MCP tool should be visible before subagent management activates, got %v", sortedProfileDefNames(defs))
+	}
 	if !containsProfileDef(defs, "spawn_agent") {
 		t.Fatalf("spawn_agent should be visible by default, got %v", sortedProfileDefNames(defs))
 	}
@@ -612,6 +628,10 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 
 	kit.activateToolBundlesAfterSuccess("spawn_agent")
 	defs = kit.Definitions()
+	tailStart := len(defs) - len(subagentManagementTools)
+	if tailStart < 0 {
+		t.Fatalf("definitions shorter than subagent management tail: %+v", defs)
+	}
 	for _, name := range subagentManagementTools {
 		var found *providers.ToolDefinition
 		for i := range defs {
@@ -625,6 +645,15 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		}
 		if found.CacheStable {
 			t.Fatalf("management tool %s should be appended outside the cache-stable prefix: %+v", name, *found)
+		}
+	}
+	for i, want := range subagentManagementTools {
+		if got := defs[tailStart+i].Name; got != want {
+			names := make([]string, 0, len(defs))
+			for _, def := range defs {
+				names = append(names, def.Name)
+			}
+			t.Fatalf("subagent management tool %d should be in the strict tail: got %q want %q; all=%v", i, got, want, names)
 		}
 	}
 }

@@ -537,6 +537,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	hasSurface := surface.ProfileName != ""
 	stable := make([]providers.ToolDefinition, 0, len(all))
 	dynamic := make([]providers.ToolDefinition, 0)
+	tail := make([]providers.ToolDefinition, 0, len(subagentManagementTools))
 	for _, d := range all {
 		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
 			continue
@@ -557,10 +558,14 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 		}
 		if exposure == ToolExposureDeferred && t.isDeferredToolLoaded(d.Name) {
 			d.CacheStable = false
+			if isSubagentManagementTool(d.Name) {
+				tail = append(tail, d)
+				continue
+			}
 			dynamic = append(dynamic, d)
 		}
 	}
-	out := make([]providers.ToolDefinition, 0, len(stable)+len(dynamic))
+	out := make([]providers.ToolDefinition, 0, len(stable)+len(dynamic)+len(tail))
 	out = append(out, stable...)
 	out = append(out, dynamic...)
 	// Append direct MCP tools after built-ins to preserve prompt cache stability.
@@ -578,6 +583,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 			}
 		}
 	}
+	out = append(out, tail...)
 	return out
 }
 
