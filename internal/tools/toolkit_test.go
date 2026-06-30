@@ -16,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
@@ -1960,6 +1961,10 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	defer stopWorkflowAgentControl(control)
 	kit.SetAgentControl(control)
 	kit.SetAgentIdentity("root", agentthread.RootPath)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	if containsProfileDef(kit.Definitions(), "await_agents") {
+		t.Fatalf("await_agents should be deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
+	}
 
 	spawnedJSON, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "spawn_agent",
@@ -1985,6 +1990,11 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	}
 	if len(tasks) != 1 || tasks[0].GoalID != "workflow-run-1" || tasks[0].GoalDir != "/tmp/workflow-run-1-goal" {
 		t.Fatalf("spawn_agent did not pass goal binding to harness task: %+v", tasks)
+	}
+	for _, name := range []string{"await_agents", "list_agents"} {
+		if !containsProfileDef(kit.Definitions(), name) {
+			t.Fatalf("%s should be available after spawn_agent succeeds, got %v", name, sortedProfileDefNames(kit.Definitions()))
+		}
 	}
 
 	childKit, err := New(root)

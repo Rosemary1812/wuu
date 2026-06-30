@@ -532,6 +532,7 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 // admin tools) keep working.
 func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	all := t.registry.Definitions()
+	t.refreshStateActivatedToolBundles()
 	surface := t.activeCompiledSurface()
 	hasSurface := surface.ProfileName != ""
 	stable := make([]providers.ToolDefinition, 0, len(all))

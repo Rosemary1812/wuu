@@ -111,6 +111,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 		"grep", "glob",
 		"web_search", "web_fetch",
 		"bash", "apply_patch",
+		"spawn_agent",
 		"update_plan", "load_skill", "tool_search",
 	}
 	for _, name := range mustVisible {
@@ -119,7 +120,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 	mustDeferred := []string{
-		"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "helpme",
+		"send_message", "followup_task", "await_agents", "close_agent", "list_agents", "helpme",
 		"session_memory", "read_memory", "write_memory",
 		"create_goal", "get_goal", "update_goal",
 		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
@@ -213,13 +214,14 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 	for _, name := range []string{
 		"read_file", "list_files", "grep", "glob",
 		"web_search", "web_fetch",
+		"spawn_agent",
 		"update_plan", "load_skill", "tool_search",
 	} {
 		if _, ok := s.Tools[name]; !ok {
 			t.Fatalf("Claude surface must include %s, got tools=%v", name, sortedKeys(s.Tools))
 		}
 	}
-	for _, name := range []string{"session_memory", "read_memory", "write_memory", "spawn_agent", "report_listening_ports"} {
+	for _, name := range []string{"session_memory", "read_memory", "write_memory", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "report_listening_ports"} {
 		if _, ok := s.DeferredTools[name]; !ok {
 			t.Fatalf("Claude surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}
@@ -355,7 +357,7 @@ func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
 		t.Fatal("Codex surface must have command.bash")
 	}
 	if !s.HasCapability(capability.CapabilityWebSearch) {
-		t.Fatal("Codex surface must have deferred web.search")
+		t.Fatal("Codex surface must have web.search")
 	}
 	if !hasCapability(s.Capabilities, capability.CapabilityCommandBackground) {
 		t.Fatal("Codex surface must expose command.background through bash")

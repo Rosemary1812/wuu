@@ -214,6 +214,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	resultRef := ""
 	resultBudgeted := false
 	if err == nil {
+		t.activateToolBundlesAfterSuccess(call.Name)
 		returned, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, result, defaultResultBudget)
 	}
 

@@ -306,7 +306,7 @@ func addWebTools(b *surfaceBuilder) {
 }
 
 func addTaskTools(b *surfaceBuilder) {
-	b.addDeferred("spawn_agent", capability.CapabilityTaskSpawn)
+	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
 	b.addDeferred("send_message", capability.CapabilityTaskCommunicate)
 	b.addDeferred("followup_task", capability.CapabilityTaskCommunicate)
 	b.addDeferred("await_agents", capability.CapabilityTaskManage)

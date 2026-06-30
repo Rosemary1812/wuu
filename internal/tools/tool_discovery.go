@@ -26,7 +26,7 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
 		Description: "Search deferred tools and load matching tool schemas.\n\n" +
-			"Use this when you need a tool that is not currently visible, especially MCP tools, workflows, scheduling, subagents, memory, web access, context rewrite/continuation, or specialized search helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
+			"Use this when you need a tool that is not currently visible, especially MCP tools, workflows, scheduling, memory, context rewrite/continuation, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -98,6 +98,7 @@ type toolSearchMatch struct {
 }
 
 func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch {
+	t.refreshStateActivatedToolBundles()
 	if names, ok := toolSearchSelectNames(query); ok {
 		return t.selectDeferredTools(names, limit)
 	}
@@ -112,6 +113,9 @@ func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch
 			continue
 		}
 		if t.toolExposure(tool.Name()) != ToolExposureDeferred {
+			continue
+		}
+		if !t.toolSearchCanLoadDeferredTool(tool.Name()) {
 			continue
 		}
 		def := tool.Definition()
@@ -143,6 +147,7 @@ func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch
 }
 
 func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMatch {
+	t.refreshStateActivatedToolBundles()
 	if len(names) == 0 || limit <= 0 {
 		return nil
 	}
@@ -153,6 +158,9 @@ func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMat
 			continue
 		}
 		if t.toolExposure(tool.Name()) != ToolExposureDeferred {
+			continue
+		}
+		if !t.toolSearchCanLoadDeferredTool(tool.Name()) {
 			continue
 		}
 		toolsByName[tool.Name()] = tool
@@ -178,6 +186,13 @@ func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMat
 		}
 	}
 	return matches
+}
+
+func (t *Toolkit) toolSearchCanLoadDeferredTool(name string) bool {
+	if isSubagentManagementTool(name) {
+		return t.isDeferredToolLoaded(name)
+	}
+	return true
 }
 
 func toolSearchSelectNames(query string) ([]string, bool) {
