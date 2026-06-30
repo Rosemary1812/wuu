@@ -123,12 +123,15 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 	}
 
 	instructions, messages := splitResponsesInstructions(prepared)
+	nativeDeferred := req.NativeDeferredToolDiscovery
 	input := make([]responsesInputItem, 0, len(messages))
-	if tools := responsesCompactedDiscoveredTools(req.Model, prepared); len(tools) > 0 {
-		input = append(input, responsesAdditionalToolsInputItem(tools))
+	if nativeDeferred {
+		if tools := responsesCompactedDiscoveredTools(req.Model, prepared); len(tools) > 0 {
+			input = append(input, responsesAdditionalToolsInputItem(tools))
+		}
 	}
 	for _, msg := range messages {
-		input = appendResponsesInputItem(input, msg, req.Model)
+		input = appendResponsesInputItem(input, msg, req.Model, nativeDeferred)
 	}
 
 	payload := responsesRequest{
@@ -150,13 +153,16 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		payload.Reasoning = &responsesReasoning{Effort: req.Effort}
 	}
 	if len(req.Tools) > 0 {
-		discoveredToolNames := providers.DiscoveredToolNamesFromMessages(prepared)
+		discoveredToolNames := map[string]struct{}{}
+		if nativeDeferred {
+			discoveredToolNames = providers.DiscoveredToolNamesFromMessages(prepared)
+		}
 		tools := make([]responsesToolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			if shouldOmitResponsesTopLevelTool(tool, discoveredToolNames) {
 				continue
 			}
-			tools = append(tools, responsesToolDefinitionFromProvider(req.Model, tool))
+			tools = append(tools, responsesToolDefinitionFromProvider(req.Model, tool, nativeDeferred))
 		}
 		if len(tools) > 0 {
 			payload.ToolChoice = "auto"
@@ -277,9 +283,9 @@ func splitResponsesInstructions(messages []providers.ChatMessage) (string, []pro
 	return strings.Join(instructions, "\n\n"), input
 }
 
-func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMessage, model string) []responsesInputItem {
+func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMessage, model string, nativeDeferred bool) []responsesInputItem {
 	if msg.Role == "tool" {
-		if isResponsesToolSearchResult(msg) {
+		if nativeDeferred && isResponsesToolSearchResult(msg) {
 			return append(input, responsesInputItem{
 				Type:      "tool_search_output",
 				CallID:    msg.ToolCallID,
@@ -293,8 +299,10 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 			CallID: msg.ToolCallID,
 			Output: msg.Content,
 		})
-		if tools := responsesToolDefinitionsFromLoadable(model, msg.DiscoveredTools); len(tools) > 0 {
-			input = append(input, responsesAdditionalToolsInputItem(tools))
+		if nativeDeferred {
+			if tools := responsesToolDefinitionsFromLoadable(model, msg.DiscoveredTools); len(tools) > 0 {
+				input = append(input, responsesAdditionalToolsInputItem(tools))
+			}
 		}
 		return input
 	}
@@ -316,7 +324,7 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 			})
 		}
 		for _, call := range msg.ToolCalls {
-			if isResponsesToolSearchCall(call) {
+			if nativeDeferred && isResponsesToolSearchCall(call) {
 				input = append(input, responsesInputItem{
 					Type:      "tool_search_call",
 					ID:        responsesProviderItemIDForModel(call.ProviderItemID, call.ProviderItemModel, model),
@@ -465,8 +473,8 @@ func responsesToolParameters(schema map[string]any) map[string]any {
 	return out
 }
 
-func responsesToolDefinitionFromProvider(model string, tool providers.ToolDefinition) responsesToolDefinition {
-	if strings.EqualFold(tool.Name, "tool_search") {
+func responsesToolDefinitionFromProvider(model string, tool providers.ToolDefinition, nativeDeferred bool) responsesToolDefinition {
+	if nativeDeferred && strings.EqualFold(tool.Name, "tool_search") {
 		return responsesToolDefinition{
 			Type:        "tool_search",
 			Description: tool.Description,
@@ -480,7 +488,7 @@ func responsesToolDefinitionFromProvider(model string, tool providers.ToolDefini
 		Name:         tool.Name,
 		Description:  tool.Description,
 		Strict:       &strict,
-		DeferLoading: tool.DeferLoading,
+		DeferLoading: nativeDeferred && tool.DeferLoading,
 		Parameters:   responsesToolParameters(providers.ToolInputSchemaForModel(model, tool.InputSchema)),
 	}
 }

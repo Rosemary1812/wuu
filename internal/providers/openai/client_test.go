@@ -1481,8 +1481,9 @@ func TestResponsesChat_SerializesDeferredToolDefinition(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model:    "gpt-test",
-		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Model:                       "gpt-test",
+		Messages:                    []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		NativeDeferredToolDiscovery: true,
 		Tools: []providers.ToolDefinition{
 			{
 				Name:         "calendar_create",
@@ -1546,8 +1547,9 @@ func TestResponsesChat_SerializesToolSearchAsNativeToolAndParsesCall(t *testing.
 	}
 
 	resp, err := client.Chat(context.Background(), providers.ChatRequest{
-		Model:    "gpt-test",
-		Messages: []providers.ChatMessage{{Role: "user", Content: "find a tool"}},
+		Model:                       "gpt-test",
+		Messages:                    []providers.ChatMessage{{Role: "user", Content: "find a tool"}},
+		NativeDeferredToolDiscovery: true,
 		Tools: []providers.ToolDefinition{
 			{Name: "tool_search", Description: "Search deferred tools", InputSchema: map[string]any{"type": "object"}},
 		},
@@ -1622,7 +1624,8 @@ func TestResponsesChat_RendersToolSearchHistoryAsNativeOutputAndOmitsDiscoveredT
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "gpt-test",
+		Model:                       "gpt-test",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "find a docs tool"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{
@@ -1674,17 +1677,19 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	cacheHint := &providers.CacheHint{PromptCacheKey: "thread-cache-key"}
 
 	base, err := client.buildResponsesRequest(providers.ChatRequest{
-		Model:     "gpt-test",
-		Messages:  []providers.ChatMessage{{Role: "user", Content: "find a docs tool"}},
-		Tools:     []providers.ToolDefinition{toolSearch},
-		CacheHint: cacheHint,
+		Model:                       "gpt-test",
+		Messages:                    []providers.ChatMessage{{Role: "user", Content: "find a docs tool"}},
+		Tools:                       []providers.ToolDefinition{toolSearch},
+		CacheHint:                   cacheHint,
+		NativeDeferredToolDiscovery: true,
 	}, false)
 	if err != nil {
 		t.Fatalf("build base request: %v", err)
 	}
 
 	followup, err := client.buildResponsesRequest(providers.ChatRequest{
-		Model: "gpt-test",
+		Model:                       "gpt-test",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "find a docs tool"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{
@@ -1739,7 +1744,8 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	}
 
 	compacted, err := client.buildResponsesRequest(providers.ChatRequest{
-		Model: "gpt-test",
+		Model:                       "gpt-test",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "system",
@@ -1770,6 +1776,73 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	}
 }
 
+func TestResponsesRequest_UsesFunctionShapesWhenNativeDeferredDisabled(t *testing.T) {
+	client := &Client{}
+	toolSearch := providers.ToolDefinition{
+		Name:        "tool_search",
+		Description: "Search deferred tools",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	discovered := providers.ToolDefinition{
+		Name:        "mcp_docs_search",
+		Description: "Search docs through MCP",
+		InputSchema: map[string]any{"type": "object"},
+	}
+
+	payload, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "find a docs tool"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "search_1",
+				Name:      "tool_search",
+				Kind:      providers.ToolCallKindToolSearch,
+				Arguments: `{"query":"docs search"}`,
+			}}},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolCallID:     "search_1",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content: `{
+  "loadable_tools": [
+    {
+      "type": "function",
+      "name": "mcp_docs_search",
+      "description": "Search docs through MCP",
+      "input_schema": {"type":"object","properties":{"query":{"type":"string"}}}
+    }
+  ]
+}`,
+			},
+		},
+		Tools: []providers.ToolDefinition{toolSearch, discovered},
+	}, false)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if len(payload.Tools) != 2 {
+		t.Fatalf("expected loaded tool to remain in top-level tools, got %+v", payload.Tools)
+	}
+	if payload.Tools[0].Type != "function" || payload.Tools[0].Name != "tool_search" {
+		t.Fatalf("tool_search should serialize as ordinary function when native deferred is disabled: %+v", payload.Tools[0])
+	}
+	if payload.Tools[1].Type != "function" || payload.Tools[1].Name != "mcp_docs_search" || payload.Tools[1].DeferLoading {
+		t.Fatalf("loaded tool should serialize as ordinary top-level function, got %+v", payload.Tools[1])
+	}
+	if len(payload.Input) != 3 {
+		t.Fatalf("unexpected input items: %+v", payload.Input)
+	}
+	callItem := payload.Input[1]
+	if callItem.Type != "function_call" || callItem.Name != "tool_search" || callItem.Arguments != `{"query":"docs search"}` {
+		t.Fatalf("tool_search call should replay as ordinary function_call, got %+v", callItem)
+	}
+	outputItem := payload.Input[2]
+	if outputItem.Type != "function_call_output" || outputItem.CallID != "search_1" || outputItem.Tools != nil {
+		t.Fatalf("tool_search result should replay as ordinary function_call_output, got %+v", outputItem)
+	}
+}
+
 func TestResponsesRequest_KeepsTopLevelToolsStableAcrossSpawnDiscovery(t *testing.T) {
 	client := &Client{}
 	toolSearch := providers.ToolDefinition{
@@ -1791,17 +1864,19 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossSpawnDiscovery(t *testin
 	cacheHint := &providers.CacheHint{PromptCacheKey: "thread-cache-key"}
 
 	base, err := client.buildResponsesRequest(providers.ChatRequest{
-		Model:     "gpt-test",
-		Messages:  []providers.ChatMessage{{Role: "user", Content: "start a reviewer"}},
-		Tools:     []providers.ToolDefinition{toolSearch, spawnAgent},
-		CacheHint: cacheHint,
+		Model:                       "gpt-test",
+		Messages:                    []providers.ChatMessage{{Role: "user", Content: "start a reviewer"}},
+		Tools:                       []providers.ToolDefinition{toolSearch, spawnAgent},
+		CacheHint:                   cacheHint,
+		NativeDeferredToolDiscovery: true,
 	}, false)
 	if err != nil {
 		t.Fatalf("build base request: %v", err)
 	}
 
 	followup, err := client.buildResponsesRequest(providers.ChatRequest{
-		Model: "gpt-test",
+		Model:                       "gpt-test",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "start a reviewer"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{
@@ -2058,7 +2133,8 @@ func TestResponsesChat_RestoresCompactedDiscoveredToolsAsAdditionalTools(t *test
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "gpt-test",
+		Model:                       "gpt-test",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "system",
@@ -2119,7 +2195,8 @@ func TestResponsesChat_RendersFailedToolSearchAsEmptyNativeOutput(t *testing.T) 
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model: "gpt-test",
+		Model:                       "gpt-test",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "find a docs tool"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{

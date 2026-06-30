@@ -74,8 +74,9 @@ func TestChat_ToolSearchNativeAddsBetaHeaderWhenExplicitlyEnabled(t *testing.T) 
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model:    "claude-sonnet-4-5",
-		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Model:                       "claude-sonnet-4-5",
+		Messages:                    []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		NativeDeferredToolDiscovery: true,
 		Tools: []providers.ToolDefinition{
 			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
 		},
@@ -110,8 +111,9 @@ func TestChat_ToolSearchNativeMergesConfiguredBetaHeader(t *testing.T) {
 	}
 
 	_, err = client.Chat(context.Background(), providers.ChatRequest{
-		Model:    "claude-sonnet-4-5",
-		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		Model:                       "claude-sonnet-4-5",
+		Messages:                    []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		NativeDeferredToolDiscovery: true,
 		Tools: []providers.ToolDefinition{
 			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
 		},
@@ -642,7 +644,8 @@ func TestBuildAnthropicRequest_CachesStableToolPrefix(t *testing.T) {
 
 func TestBuildAnthropicRequest_ToolSearchNativeEnabledUsesToolReferences(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-		Model: "claude-sonnet-4-5",
+		Model:                       "claude-sonnet-4-5",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "find docs"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{
@@ -704,7 +707,8 @@ func TestBuildAnthropicRequest_ToolSearchNativeEnabledUsesToolReferences(t *test
 
 func TestBuildAnthropicRequest_RegularToolResultCanDiscoverDeferredTools(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-		Model: "claude-sonnet-4-5",
+		Model:                       "claude-sonnet-4-5",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "start a reviewer"},
 			{Role: "assistant", ToolCalls: []providers.ToolCall{{
@@ -762,7 +766,8 @@ func TestBuildAnthropicRequest_RegularToolResultCanDiscoverDeferredTools(t *test
 
 func TestBuildAnthropicRequest_CompactedDiscoveredToolsRestoreAsVisibleTools(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-		Model: "claude-sonnet-4-5",
+		Model:                       "claude-sonnet-4-5",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{
 				Role:    "system",
@@ -834,12 +839,13 @@ func TestBuildAnthropicRequest_ToolSearchDisabledForProxyByDefault(t *testing.T)
 	}
 }
 
-func TestBuildAnthropicRequest_ToolSearchDisabledForCompatibleEndpointsByDefault(t *testing.T) {
+func TestBuildAnthropicRequest_ToolSearchDisabledWithoutNativeDeferredRequest(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		baseURL string
 		model   string
 	}{
+		{name: "first party endpoint", baseURL: "https://api.anthropic.com", model: "claude-sonnet-4-5"},
 		{name: "compatible proxy", baseURL: "https://anthropic-proxy.example.com", model: "claude-sonnet-4-5"},
 		{name: "compatible model endpoint", baseURL: "https://compatible.example.com/anthropic", model: "generic-coder"},
 	} {
@@ -869,7 +875,8 @@ func TestBuildAnthropicRequest_ToolSearchDisabledForCompatibleEndpointsByDefault
 
 func TestBuildAnthropicRequest_ToolSearchEnabledForCompatibleEndpointWithExplicitOptIn(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-		Model: "generic-coder",
+		Model:                       "generic-coder",
+		NativeDeferredToolDiscovery: true,
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "run a worker"},
 		},

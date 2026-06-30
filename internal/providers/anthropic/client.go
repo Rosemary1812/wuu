@@ -502,10 +502,10 @@ func shouldEnableAnthropicToolSearch(req providers.ChatRequest, support anthropi
 	if !hasToolSearchTool(req.Tools) {
 		return false
 	}
-	if req.NativeDeferredToolDiscovery {
-		return SupportsNativeToolSearchWhenExplicitlyEnabled(req.Model, req.ProviderOptions)
+	if !req.NativeDeferredToolDiscovery {
+		return false
 	}
-	return SupportsNativeToolSearch(support.BaseURL, req.Model, req.ProviderOptions)
+	return SupportsNativeToolSearchWhenExplicitlyEnabled(req.Model, req.ProviderOptions)
 }
 
 func anthropicToolSearchOption(options map[string]any) (bool, bool) {
