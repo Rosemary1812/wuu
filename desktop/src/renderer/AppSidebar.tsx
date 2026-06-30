@@ -13,6 +13,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { RefObject } from "react";
+import type { DesktopProject } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";

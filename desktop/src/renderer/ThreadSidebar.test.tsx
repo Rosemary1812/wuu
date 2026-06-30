@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 import { ProjectList, ThreadRowTitle } from "./ThreadSidebar";
 import type { DesktopProject, Thread } from "../shared/protocol";
-import { summarizeThreadsForSidebar } from "./AppState";
+import { SCRATCH_PSEUDO_PROJECT_ID, summarizeThreadsForSidebar } from "./AppState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -249,6 +249,8 @@ describe("ProjectList", () => {
           pendingThreadID={undefined}
           archiveConfirmThreadID={undefined}
           lastViewedTurnByThreadID={{}}
+          scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
+          scratchPseudoActive={false}
           onToggleProjectCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}

@@ -325,45 +325,6 @@
   min-height: 0;
 }
 
-.pinned-thread-section {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 24px;
-}
-
-.pinned-thread-label {
-  display: flex;
-  min-height: 24px;
-  align-items: center;
-  padding: 0 12px;
-}
-
-.pinned-thread-list {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pinned-thread-list .thread-row {
-  height: 32px;
-  padding-left: 10px;
-}
-
-.pinned-thread-list .thread-row::before {
-  display: none;
-}
-
-.scratch-thread-section {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 22px;
-}
-
 .sidebar-section-header {
   position: relative;
   display: grid;
@@ -371,27 +332,6 @@
   height: 38px;
   align-items: center;
   padding: 0 6px 8px 12px;
-}
-
-.scratch-thread-list {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.scratch-thread-list .thread-row {
-  height: 32px;
-  padding-left: 10px;
-}
-
-.scratch-thread-list .thread-row::before {
-  display: none;
-}
-
-.scratch-thread-empty-note {
-  color: var(--ink-muted);
-  padding: 2px 12px;
 }
 
 .section-label {
@@ -498,36 +438,9 @@
   font-weight: var(--weight-semibold);
 }
 
-.project-row.active::before {
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 3px;
-  height: 16px;
-  border-radius: var(--radius-pill);
-  background: var(--sidebar-accent);
-  content: "";
-  transform: translateY(-50%);
-  transform-origin: center;
-  animation: session-active-mark-in 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
 .project-row.pending-switch {
   background: rgba(255, 255, 255, 0.24);
   color: var(--ink);
-}
-
-.project-row.pending-switch::before {
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 3px;
-  height: 16px;
-  border-radius: var(--radius-pill);
-  background: var(--sidebar-accent);
-  content: "";
-  transform: translateY(-50%);
-  animation: session-loading-pulse 900ms ease-in-out infinite;
 }
 
 .project-row {
@@ -650,15 +563,27 @@
 }
 
 .project-thread-empty-note {
+  /* Indent is provided by the parent .thread-list-collapse so the empty
+   * note lines up with populated thread rows. Earlier this had its own
+   * 25px margin-left, which doubled up once the wrapper gained its
+   * indent and pushed the empty hint noticeably further right than
+   * sibling threads. */
   color: var(--ink-muted);
   padding: 4px 12px 4px 0;
-  margin-left: 25px;
   font-size: var(--font-sm);
   line-height: 1.4;
 }
 
 .thread-list-collapse {
   display: grid;
+  /* The thread list nests under the project row's icon, not under the
+   * project label, so sessions read as "this folder's children" rather
+   * than a parallel list. 16px ≈ icon width + small gap, which keeps
+   * session labels clearly inside the project's visual umbrella while
+   * leaving enough room for thread-row action icons on hover. Without
+   * this margin, the thread label (at ~21px) starts to the left of the
+   * project label (at ~56px) and the tree rhythm breaks. */
+  margin-left: 16px;
   grid-template-rows: 1fr;
   margin-top: 5px;
   min-height: 0;
@@ -686,25 +611,10 @@
 
 .thread-list {
   display: flex;
-  position: relative;
   min-height: 0;
   flex-direction: column;
-  gap: 5px;
-  margin-left: 25px;
-  overflow: hidden;
-  padding: 3px 0 2px 14px;
-}
-
-.thread-list::before {
-  position: absolute;
-  top: 2px;
-  bottom: 8px;
-  left: 6px;
-  width: 1px;
-  border-radius: var(--radius-pill);
-  background: rgba(17, 19, 21, 0.12);
-  content: "";
-  transform-origin: top;
+  gap: 3px;
+  padding: 2px 0;
 }
 
 .thread-list-footer {
@@ -1054,6 +964,7 @@
   position: absolute;
   top: 50%;
   right: 5px;
+  z-index: 1;
   display: flex;
   gap: 3px;
   opacity: 0;
@@ -1062,6 +973,15 @@
   transition:
     opacity 120ms ease,
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* When the row is hovered the action icons must read as clearly
+ * clickable, not as faint decoration. They default to --ink-tertiary
+ * which on the hover background reads as nearly invisible; bumping to
+ * --ink makes pin / archive immediately discoverable the moment the
+ * user parks the cursor on the row. */
+.thread-row:hover .thread-row-action {
+  color: var(--ink);
 }
 
 .thread-row:hover .thread-row-actions,
