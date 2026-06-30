@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
+  conversationTurnRailCapacityForHeight,
   conversationTurnRailWindow,
   ConversationTurnRail,
 } from "./ConversationTurnRail";
@@ -152,7 +153,7 @@ describe("ConversationTurnRail", () => {
 
   it("caps many turns to the latest visible window by default", () => {
     renderRail({
-      turns: Array.from({ length: 40 }, (_, index) =>
+      turns: Array.from({ length: 60 }, (_, index) =>
         turn(`turn-${index + 1}`, `query ${index + 1}`),
       ),
       onSelectQueryHistory: () => {},
@@ -161,13 +162,19 @@ describe("ConversationTurnRail", () => {
     const bars = container?.querySelectorAll<HTMLElement>(
       ".conversation-turn-rail-bar[role='button']",
     );
-    expect(bars).toHaveLength(36);
+    expect(bars).toHaveLength(48);
     expect(bars?.[0]?.getAttribute("aria-label")).toBe(
-      "跳转到第 5 轮对话",
+      "跳转到第 13 轮对话",
     );
-    expect(bars?.[35]?.getAttribute("aria-label")).toBe(
-      "跳转到第 40 轮对话",
+    expect(bars?.[47]?.getAttribute("aria-label")).toBe(
+      "跳转到第 60 轮对话",
     );
+  });
+
+  it("derives a smaller visible window when the rail container is short", () => {
+    expect(conversationTurnRailCapacityForHeight(474)).toBe(48);
+    expect(conversationTurnRailCapacityForHeight(320)).toBe(30);
+    expect(conversationTurnRailCapacityForHeight(0)).toBeUndefined();
   });
 
   it("scrolls the conversation when the user wheels over the rail", () => {

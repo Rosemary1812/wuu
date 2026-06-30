@@ -26,8 +26,33 @@ import {
 const RAIL_BAR_DEFAULT_WIDTH = 18;
 const RAIL_BAR_ADJACENT_WIDTH = 22;
 const RAIL_BAR_HOVERED_WIDTH = 40;
+const RAIL_BAR_HEIGHT_PX = 3;
+const RAIL_BAR_GAP_PX = 6;
+const RAIL_VERTICAL_SAFE_MARGIN_PX = 24;
 const WHEEL_LINE_DELTA_PX = 16;
-export const CONVERSATION_TURN_RAIL_VISIBLE_LIMIT = 36;
+export const CONVERSATION_TURN_RAIL_VISIBLE_LIMIT = 48;
+
+export function conversationTurnRailCapacityForHeight(
+  containerHeight: number,
+): number | undefined {
+  if (!Number.isFinite(containerHeight) || containerHeight <= 0) {
+    return undefined;
+  }
+  const available = Math.max(
+    0,
+    Math.floor(containerHeight) - RAIL_VERTICAL_SAFE_MARGIN_PX * 2,
+  );
+  if (available <= RAIL_BAR_HEIGHT_PX) {
+    return 1;
+  }
+  return Math.max(
+    1,
+    Math.floor(
+      (available + RAIL_BAR_GAP_PX) /
+        (RAIL_BAR_HEIGHT_PX + RAIL_BAR_GAP_PX),
+    ),
+  );
+}
 
 export function conversationTurnRailWindow(
   turns: readonly Turn[],
@@ -112,6 +137,9 @@ export function ConversationTurnRail({
     moved: boolean;
   } | null>(null);
   const suppressNextClickRef = useRef(false);
+  const [measuredVisibleLimit, setMeasuredVisibleLimit] = useState<
+    number | undefined
+  >();
   // Mirror of dragStateRef so the mousemove magnet handler can see whether
   // a drag is in progress and stop fighting the pointer-drag-driven
   // highlight. Without this, mousemove keeps setting `hoveredTurnID` to
@@ -125,9 +153,18 @@ export function ConversationTurnRail({
 
   const isEmpty = turns.length === 0;
   const windowFocusTurnID = viewportTurnID ?? activeTurnID;
+  const effectiveMaxVisibleTurns = Math.min(
+    maxVisibleTurns,
+    measuredVisibleLimit ?? maxVisibleTurns,
+  );
   const { turns: visibleTurns, startIndex } = useMemo(
-    () => conversationTurnRailWindow(turns, windowFocusTurnID, maxVisibleTurns),
-    [maxVisibleTurns, turns, windowFocusTurnID],
+    () =>
+      conversationTurnRailWindow(
+        turns,
+        windowFocusTurnID,
+        effectiveMaxVisibleTurns,
+      ),
+    [effectiveMaxVisibleTurns, turns, windowFocusTurnID],
   );
   // A pointer drag reuses the same hover/adjacent visual treatment. Dragging
   // wins over hover so a stale hover state cannot pin the highlight to the bar
@@ -161,6 +198,62 @@ export function ConversationTurnRail({
       setDraggingTurnID(undefined);
     }
   }, [draggingTurnID, visibleTurns]);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container || turns.length === 0) {
+      setMeasuredVisibleLimit(undefined);
+      return;
+    }
+
+    let frameID: number | undefined;
+    const updateLimit = () => {
+      frameID = undefined;
+      const parentHeight =
+        container.parentElement?.getBoundingClientRect().height ?? 0;
+      const scrollHeight =
+        resolveScrollContainer()?.getBoundingClientRect().height ?? 0;
+      const nextLimit = conversationTurnRailCapacityForHeight(
+        Math.max(parentHeight, scrollHeight),
+      );
+      setMeasuredVisibleLimit((current) =>
+        current === nextLimit ? current : nextLimit,
+      );
+    };
+    const scheduleUpdate = () => {
+      if (frameID !== undefined) {
+        return;
+      }
+      frameID = window.requestAnimationFrame(updateLimit);
+    };
+
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    const observed = new Set<Element>();
+    let resizeObserver: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(scheduleUpdate);
+      const parent = container.parentElement;
+      const scrollNode = resolveScrollContainer();
+      if (parent) {
+        observed.add(parent);
+      }
+      if (scrollNode) {
+        observed.add(scrollNode);
+      }
+      for (const node of observed) {
+        resizeObserver.observe(node);
+      }
+    }
+
+    return () => {
+      if (frameID !== undefined) {
+        window.cancelAnimationFrame(frameID);
+      }
+      window.removeEventListener("resize", scheduleUpdate);
+      resizeObserver?.disconnect();
+    };
+  }, [resolveScrollContainer, turns.length]);
 
   useEffect(() => {
     const scrollNode = resolveScrollContainer();
