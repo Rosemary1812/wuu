@@ -63,9 +63,9 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th := s.thread(params.ThreadID)
-	if th == nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	th, err := s.ensureResidentThread(params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	threadRuntime, err := s.ensureThreadRuntime(th)
 	if err != nil {
@@ -135,9 +135,9 @@ func (s *Server) handleTurnQueue(req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th := s.thread(params.ThreadID)
-	if th == nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	th, err := s.ensureResidentThread(params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	th.mu.Lock()
 	readOnly := th.ReadOnly
@@ -187,9 +187,9 @@ func (s *Server) handleTurnUpdateQueued(req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th := s.thread(params.ThreadID)
-	if th == nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	th, err := s.ensureResidentThread(params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	th.mu.Lock()
 	readOnly := th.ReadOnly
@@ -261,9 +261,9 @@ func (s *Server) handleTurnSteer(req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
-	th := s.thread(params.ThreadID)
-	if th == nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
+	th, err := s.ensureResidentThread(params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	clientID := strings.TrimSpace(params.ClientID)
 	if clientID == "" {
@@ -343,29 +343,62 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
 		}
 	}
+	sub := s.subscribeThreadRuntime(th.ID, threadRuntime)
 	th.mu.Lock()
 	if th.execRuntime == nil {
 		th.execRuntime = threadRuntime
+		th.runtimeSubscription = sub
 		th.mu.Unlock()
-		s.subscribeThreadRuntime(th.ID, threadRuntime)
 		return threadRuntime, nil
 	}
 	existing = th.execRuntime
 	th.mu.Unlock()
+	releaseThreadRuntimeSubscription(threadRuntime, sub)
 	return existing, nil
 }
 
-func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) {
+func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) *threadRuntimeSubscription {
 	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return nil
+	}
+	sub := &threadRuntimeSubscription{
+		statusCh: make(chan subagent.Notification, 64),
+		streamCh: make(chan subagent.StreamNotification, 256),
+		done:     make(chan struct{}),
+	}
+	threadRuntime.AgentControl.Subscribe(sub.statusCh)
+	go s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, sub.statusCh, sub.done)
+
+	threadRuntime.AgentControl.SubscribeStream(sub.streamCh)
+	go s.forwardAgentStreamNotifications(threadID, threadRuntime.AgentControl, sub.streamCh, sub.done)
+	return sub
+}
+
+func releaseThreadRuntime(th *threadState) {
+	if th == nil {
 		return
 	}
-	ch := make(chan subagent.Notification, 64)
-	threadRuntime.AgentControl.Subscribe(ch)
-	go s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, ch)
+	th.mu.Lock()
+	threadRuntime := th.execRuntime
+	sub := th.runtimeSubscription
+	th.execRuntime = nil
+	th.runtimeSubscription = nil
+	th.pendingRuntimeUpdate = nil
+	th.mu.Unlock()
+	releaseThreadRuntimeSubscription(threadRuntime, sub)
+}
 
-	streamCh := make(chan subagent.StreamNotification, 256)
-	threadRuntime.AgentControl.SubscribeStream(streamCh)
-	go s.forwardAgentStreamNotifications(threadID, threadRuntime.AgentControl, streamCh)
+func releaseThreadRuntimeSubscription(threadRuntime *runtime.ThreadRuntime, sub *threadRuntimeSubscription) {
+	if threadRuntime != nil && threadRuntime.AgentControl != nil && sub != nil {
+		threadRuntime.AgentControl.Unsubscribe(sub.statusCh)
+		threadRuntime.AgentControl.UnsubscribeStream(sub.streamCh)
+	}
+	if sub != nil {
+		sub.stop()
+	}
+	if threadRuntime != nil && threadRuntime.AgentControl != nil {
+		threadRuntime.AgentControl.Close()
+	}
 }
 
 func normalizeTurnStartImages(images []TurnStartImage) ([]providers.InputImage, error) {

@@ -3,9 +3,11 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  session as electronSession,
   type OpenDialogOptions,
   shell,
 } from "electron";
+import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -50,6 +52,8 @@ import { WorkspaceFileService } from "./workspaceFiles";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
+const DEV_CACHE_CLEANUP_THRESHOLD_BYTES = 512 * 1024 * 1024;
+const DEV_CACHE_DIRECTORIES = ["Cache", "Code Cache", "GPUCache", "DawnCache"];
 registerRenderableFileScheme();
 
 let mainWindow: BrowserWindow | null = null;
@@ -207,7 +211,68 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+async function clearOversizedDevCaches(): Promise<void> {
+  if (app.isPackaged || process.env.WUU_DESKTOP_DISABLE_DEV_CACHE_CLEANUP === "1") {
+    return;
+  }
+  const userData = app.getPath("userData");
+  const totalBytes = await cacheDirectoriesSize(userData, DEV_CACHE_DIRECTORIES);
+  if (totalBytes < DEV_CACHE_CLEANUP_THRESHOLD_BYTES) {
+    return;
+  }
+  try {
+    await Promise.all([
+      electronSession.defaultSession.clearCache(),
+      electronSession.fromPartition("persist:wuu-browser").clearCache(),
+    ]);
+    await Promise.all(
+      DEV_CACHE_DIRECTORIES.map((dir) =>
+        rm(join(userData, dir), { recursive: true, force: true }),
+      ),
+    );
+    console.info(
+      `[desktop] cleared oversized dev cache (${Math.round(totalBytes / 1024 / 1024)} MB)`,
+    );
+  } catch (error) {
+    console.warn(
+      `[desktop] failed to clear oversized dev cache: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function cacheDirectoriesSize(root: string, names: string[]): Promise<number> {
+  let total = 0;
+  for (const name of names) {
+    total += await directorySize(join(root, name));
+  }
+  return total;
+}
+
+async function directorySize(path: string): Promise<number> {
+  let info;
+  try {
+    info = await stat(path);
+  } catch {
+    return 0;
+  }
+  if (!info.isDirectory()) {
+    return info.size;
+  }
+  let total = 0;
+  let entries;
+  try {
+    entries = await readdir(path, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries) {
+    total += await directorySize(join(path, entry.name));
+  }
+  return total;
+}
+
+app.whenReady().then(async () => {
+  await clearOversizedDevCaches();
   projectManager.load();
   registerRenderableFileProtocol();
 

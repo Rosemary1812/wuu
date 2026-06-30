@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { PlanUpdate } from "../shared/protocol";
+import type { Agent, PlanUpdate } from "../shared/protocol";
 import type { AppState } from "./AppState";
 import {
   EnvironmentPanel,
@@ -7,6 +7,22 @@ import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
+
+export type SubagentRowSummary = Pick<
+  Agent,
+  | "id"
+  | "type"
+  | "task_name"
+  | "agent_path"
+  | "description"
+  | "status"
+  | "pinned"
+  | "archived"
+  | "started_at"
+  | "completed_at"
+  | "nested_count"
+  | "nested_running_count"
+>;
 
 export function EnvironmentSideStack({
   visible,
@@ -32,6 +48,12 @@ export function EnvironmentSideStack({
   onOpenPullRequest,
   onStopBackgroundProcess,
   onOpenBackgroundPreview,
+  subagentSessions,
+  archiveConfirmSubagentID,
+  onSelectSubagent,
+  onToggleSubagentPinned,
+  onArchiveSubagent,
+  onClearSubagentArchiveConfirm,
 }: {
   visible: boolean;
   mounted: boolean;
@@ -61,6 +83,24 @@ export function EnvironmentSideStack({
   onOpenPullRequest: () => void;
   onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
   onOpenBackgroundPreview: (process: BackgroundProcessItem) => void;
+  /**
+   * Subagent sessions owned by the active thread. Rendered in the
+   * environment panel as a "子任务" section above the background-process
+   * list. When undefined/empty the section is hidden, matching the user
+   * intent that no row appears unless the main session actually has
+   * subagents.
+   */
+  subagentSessions?: SubagentRowSummary[];
+  /**
+   * ID of the subagent currently in "press again to confirm" archive
+   * state. Mirrors `archiveConfirmThreadID` for the sidebar's session
+   * rows so the UX stays consistent between the two surfaces.
+   */
+  archiveConfirmSubagentID?: string;
+  onSelectSubagent?: (agent: SubagentRowSummary) => void;
+  onToggleSubagentPinned?: (agent: SubagentRowSummary) => void;
+  onArchiveSubagent?: (agent: SubagentRowSummary) => void;
+  onClearSubagentArchiveConfirm?: (agentID: string) => void;
 }): JSX.Element | null {
   if ((!visible && !mounted) || !state.initialized) {
     return null;
@@ -90,6 +130,12 @@ export function EnvironmentSideStack({
         onOpenPullRequest={onOpenPullRequest}
         onStopBackgroundProcess={onStopBackgroundProcess}
         onOpenBackgroundPreview={onOpenBackgroundPreview}
+        subagentSessions={subagentSessions}
+        archiveConfirmSubagentID={archiveConfirmSubagentID}
+        onSelectSubagent={onSelectSubagent}
+        onToggleSubagentPinned={onToggleSubagentPinned}
+        onArchiveSubagent={onArchiveSubagent}
+        onClearSubagentArchiveConfirm={onClearSubagentArchiveConfirm}
       />
     </div>
   );

@@ -252,7 +252,6 @@ describe("ProjectList", () => {
           onToggleProjectCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}
-          onSelectChildAgent={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onClearArchiveConfirm={() => {}}
@@ -300,7 +299,6 @@ describe("ScratchThreadSection", () => {
           archiveConfirmThreadID={undefined}
           lastViewedTurnByThreadID={{}}
           onSelect={() => {}}
-          onSelectChildAgent={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onClearArchiveConfirm={() => {}}
@@ -389,7 +387,6 @@ describe("ScratchThreadSection", () => {
           archiveConfirmThreadID={undefined}
           lastViewedTurnByThreadID={{}}
           onSelect={() => {}}
-          onSelectChildAgent={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onClearArchiveConfirm={() => {}}

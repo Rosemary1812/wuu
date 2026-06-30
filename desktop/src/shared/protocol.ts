@@ -582,6 +582,19 @@ export type Agent = {
   nested_running_count?: number;
   started_at?: string;
   completed_at?: string | null;
+  // Pinned and Archived mirror the underlying session metadata for the
+  // sub-agent's own session so the info panel can offer pin/archive
+  // actions without an extra round-trip.
+  pinned?: boolean;
+  archived?: boolean;
+};
+
+export type WorktreeInfo = {
+  path: string;
+  base_head?: string;
+  base_repo?: string;
+  dirty?: boolean;
+  changed_files?: string[];
 };
 
 export type Thread = {
@@ -607,6 +620,7 @@ export type Thread = {
   forked_from_id?: string;
   forked_from_turn_id?: string;
   forked_from_item_id?: string;
+  worktree?: WorktreeInfo;
   created_at: string;
   updated_at: string;
   turns: Turn[];
@@ -651,6 +665,7 @@ export type ThreadEditMessageResult = {
 // `worktree` block when forking into one.
 export type ThreadForkResult = {
   thread: Thread;
+  worktree?: WorktreeInfo;
 };
 
 export type ThreadContextCompositionResult = {

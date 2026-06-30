@@ -67,7 +67,6 @@ function renderSidebar(): void {
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
         onSelectThread={() => {}}
-        onSelectChildAgent={() => {}}
         onTogglePinned={() => {}}
         onArchiveThread={() => {}}
         onClearArchiveConfirm={() => {}}
@@ -77,7 +76,6 @@ function renderSidebar(): void {
         onToggleProjectCollapsed={() => {}}
         onStartNewThreadForProject={() => {}}
         onSelectProjectThread={() => {}}
-        onSelectProjectChildAgent={() => {}}
         onCreateScratchThread={() => {}}
         onOpenSettings={() => {}}
       />,

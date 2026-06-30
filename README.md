@@ -16,7 +16,7 @@
 
 ---
 
-Wuu helps with software development tasks inside a local repository. It can read and edit files, run commands, review changes, attach files or screenshots, and resume previous sessions.
+Wuu helps with software development tasks inside your local repository. It can read and edit files, run commands, review changes, attach files or screenshots, and resume previous sessions.
 
 The desktop app currently runs from a source checkout. Use `wuu exec` when you want the same agent from scripts, CI, or another tool.
 

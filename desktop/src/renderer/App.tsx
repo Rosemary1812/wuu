@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
-  Fragment,
   type RefObject,
   memo,
   useCallback,
@@ -112,7 +111,9 @@ import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
+import { ConversationTurnList } from "./ConversationTurnList";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
+import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import { lastUserMessageAnchor } from "./TurnViewHelpers";
 import { AppSidebar } from "./AppSidebar";
 import {
@@ -284,10 +285,9 @@ const CONVERSATION_GRID_COLUMNS = 12;
 // rail is a thin at-a-glance index; if there are more queries than fit,
 // we collapse the tail into a single bar.
 const QUERY_HISTORY_RAIL_MAX_BARS = 20;
-// Keep the active conversation hot plus a small recency buffer. Hidden
-// conversation panes retain full TurnView DOM trees, so a large cache makes
-// long sessions progressively heavier even when those panes are display:none.
-const CACHED_THREAD_PANE_LIMIT = 4;
+// Keep only the active conversation pane mounted. Hidden panes used to retain
+// full TurnView DOM trees, making long sessions heavier after each tab switch.
+const CACHED_THREAD_PANE_LIMIT = 1;
 type EnvironmentDialog = "commit" | "pull-request" | null;
 type PendingViewSwitchKind = "thread" | "project" | "runtime";
 
@@ -570,6 +570,13 @@ export function App(): JSX.Element {
     () => new Set(),
   );
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
+    string | undefined
+  >(undefined);
+  // Mirrors `archiveConfirmThreadID` for the info-panel subagent rows.
+  // The state lives in App rather than the panel so the "press again to
+  // confirm" survives the panel being toggled off and on, and so a
+  // single archive button click in either surface is consistent.
+  const [archiveConfirmSubagentID, setArchiveConfirmSubagentID] = useState<
     string | undefined
   >(undefined);
   // When the user clicks "分叉" on a non-latest user message, the fork
@@ -1707,6 +1714,34 @@ export function App(): JSX.Element {
       return;
     }
     updateCachedProjectThread(thread);
+  }
+
+  /**
+   * Returns a new thread with the matching child agent patched, or the
+   * original reference when no match exists. Used by the subagent
+   * pin/archive handlers so they can update `child_agents` in state
+   * without a full thread list round-trip; the spread identity in
+   * `setState` calls is intentional — `undefined` here would erase
+   * existing thread data.
+   */
+  function patchChildAgentInThread(
+    thread: Thread | undefined,
+    agentID: string,
+    patch: Partial<Agent>,
+  ): Thread | undefined {
+    if (!thread || !thread.child_agents) {
+      return thread;
+    }
+    const index = thread.child_agents.findIndex((a) => a.id === agentID);
+    if (index === -1) {
+      return thread;
+    }
+    return {
+      ...thread,
+      child_agents: thread.child_agents.map((agent, i) =>
+        i === index ? { ...agent, ...patch } : agent,
+      ),
+    };
   }
 
   function toggleProjectCollapsed(projectID: string): void {
@@ -4791,6 +4826,86 @@ export function App(): JSX.Element {
     }
   }
 
+  /**
+   * Pin a subagent's own session. Mirrors `toggleThreadPinned` but the
+   * API call goes to the underlying session id (the agent id) and the
+   * result is patched back into the active thread's `child_agents` list
+   * so the info panel row reflects the new state without an extra
+   * thread list round-trip.
+   */
+  async function toggleSubagentPinned(agent: Agent): Promise<void> {
+    if (!state.activeContext) {
+      return;
+    }
+    setArchiveConfirmSubagentID(undefined);
+    try {
+      const result = await window.wuu.pinThread(agent.id, !agent.pinned);
+      setState((current) => ({
+        ...current,
+        thread: patchChildAgentInThread(current.thread, agent.id, {
+          pinned: result.thread.pinned,
+        }),
+        secondaryThread: patchChildAgentInThread(
+          current.secondaryThread,
+          agent.id,
+          { pinned: result.thread.pinned },
+        ),
+        threads: current.threads.map((thread) =>
+          patchChildAgentInThread(thread, agent.id, {
+            pinned: result.thread.pinned,
+          }) ?? thread,
+        ),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "pin subagent failed",
+      }));
+    }
+  }
+
+  /**
+   * Archive a subagent's own session. Re-uses the press-again-to-confirm
+   * pattern that the sidebar uses for top-level threads, but never
+   * touches the active thread's tab because the subagent is not the
+   * primary session. The archived subagent remains visible in the info
+   * panel so the user can see the action was applied.
+   */
+  async function archiveSubagent(agent: Agent): Promise<void> {
+    if (archiveConfirmSubagentID !== agent.id) {
+      setArchiveConfirmSubagentID(agent.id);
+      return;
+    }
+    setArchiveConfirmSubagentID(undefined);
+    try {
+      await window.wuu.archiveThread(agent.id, true);
+      setState((current) => ({
+        ...current,
+        thread: patchChildAgentInThread(current.thread, agent.id, {
+          archived: true,
+        }),
+        secondaryThread: patchChildAgentInThread(
+          current.secondaryThread,
+          agent.id,
+          { archived: true },
+        ),
+        threads: current.threads.map((thread) =>
+          patchChildAgentInThread(thread, agent.id, { archived: true }) ??
+            thread,
+        ),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "archive subagent failed",
+      }));
+    }
+  }
+
   async function sendPrompt(): Promise<void> {
     if (viewSwitchPending) {
       return;
@@ -5856,7 +5971,6 @@ export function App(): JSX.Element {
         onSeedAgentTreeDemo={seedAgentTreeDemo}
         onOpenChipGallery={() => setChipGalleryOpen(true)}
         onSelectThread={(id) => void activateThread(id)}
-        onSelectChildAgent={(agent) => void selectChildAgent(agent)}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}
         onArchiveThread={(thread) => void archiveThread(thread)}
         onClearArchiveConfirm={(id) =>
@@ -5871,9 +5985,6 @@ export function App(): JSX.Element {
         onStartNewThreadForProject={(id) => void startNewThreadForProject(id)}
         onSelectProjectThread={(projectID, threadID) =>
           void selectProjectThread(projectID, threadID)
-        }
-        onSelectProjectChildAgent={(projectID, agent) =>
-          void selectProjectChildAgent(projectID, agent)
         }
         onOpenSettings={() => {
           setProjectMenuOpen(false);
@@ -6134,6 +6245,18 @@ export function App(): JSX.Element {
           onOpenBackgroundPreview={openBackgroundProcessPreview}
           rightPanelFilePath={rightPanelFilePath}
           onCloseFilePreview={handleCloseFilePreview}
+          subagentSessions={activeThread?.child_agents}
+          archiveConfirmSubagentID={archiveConfirmSubagentID}
+          onSelectSubagent={(agent) => void selectChildAgent(agent as Agent)}
+          onToggleSubagentPinned={(agent) =>
+            void toggleSubagentPinned(agent as Agent)
+          }
+          onArchiveSubagent={(agent) => void archiveSubagent(agent as Agent)}
+          onClearSubagentArchiveConfirm={(id) =>
+            setArchiveConfirmSubagentID((current) =>
+              current === id ? undefined : current,
+            )
+          }
         />
 
         {viewContextSwitchPending ? <ViewSwitchLoading /> : null}
@@ -6432,6 +6555,10 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
             onDismiss={onDismissContextComposition}
           />
         );
+        const forkWorktreeNotice =
+          thread.worktree && thread.forked_from_id ? (
+            <ForkWorktreeNotice thread={thread} />
+          ) : null;
         return (
           <div
             key={threadID}
@@ -6443,9 +6570,25 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
               {isActive && conversationGridVisible ? (
                 <ConversationGridGuides />
               ) : null}
-              {entriesBeforeTurns.map(renderContextEntry)}
-              {threadTurns.map((turn) => (
-                <Fragment key={turn.id}>
+              <ConversationTurnList
+                threadID={thread.id}
+                turns={threadTurns}
+                renderBeforeTurns={entriesBeforeTurns.map(renderContextEntry)}
+                renderAfterMissingTurn={
+                  <>
+                    {entriesAfterMissingTurn.map(renderContextEntry)}
+                    {forkWorktreeNotice}
+                  </>
+                }
+                renderAfterTurn={(turn) =>
+                  (entriesByAfterTurnID.get(turn.id) ?? []).map(renderContextEntry)
+                }
+                forcedFullTurnIDs={
+                  historyMessageEdit?.threadID === thread.id
+                    ? [historyMessageEdit.turnID]
+                    : undefined
+                }
+                renderTurn={(turn) => (
                   <TurnView
                     turn={turn}
                     cwd={thread.cwd ?? activeContextCwd}
@@ -6479,10 +6622,8 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     onNoticeAction={onNoticeAction}
                     onOpenFile={onOpenFile}
                   />
-                  {(entriesByAfterTurnID.get(turn.id) ?? []).map(renderContextEntry)}
-                </Fragment>
-              ))}
-              {entriesAfterMissingTurn.map(renderContextEntry)}
+                )}
+              />
             </div>
           </div>
         );

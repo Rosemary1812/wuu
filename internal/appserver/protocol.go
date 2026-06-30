@@ -1016,6 +1016,13 @@ type Agent struct {
 	CacheReadTokens     int       `json:"cache_read_tokens,omitempty"`
 	NestedCount         int       `json:"nested_count,omitempty"`
 	NestedRunningCount  int       `json:"nested_running_count,omitempty"`
+	// Pinned and Archived mirror the underlying session metadata for the
+	// sub-agent's own session so the renderer can offer pin/archive actions
+	// in the session info panel without an extra round-trip. The child
+	// session lives in the same store keyed by the agent ID, so this is
+	// sourced from session.Find at list time.
+	Pinned              bool      `json:"pinned,omitempty"`
+	Archived            bool      `json:"archived,omitempty"`
 	StartedAt           time.Time `json:"started_at"`
 	CompletedAt         time.Time `json:"completed_at,omitempty"`
 }

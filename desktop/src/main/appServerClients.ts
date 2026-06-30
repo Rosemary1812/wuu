@@ -433,7 +433,7 @@ function resolveWuuCommand(workdir: string): WuuCommand {
     return { command: process.env.WUU_BIN, args: [], cwd: workdir };
   }
   const sourceRoot = wuuSourceRoot();
-  if (sourceRoot && process.env.WUU_DESKTOP_USE_GO_RUN !== "0") {
+  if (sourceRoot && process.env.WUU_DESKTOP_USE_GO_RUN === "1") {
     return { command: "go", args: ["run", "./cmd/wuu"], cwd: sourceRoot };
   }
   for (const candidate of [join(workdir, "bin", "wuu"), join(workdir, "wuu")]) {

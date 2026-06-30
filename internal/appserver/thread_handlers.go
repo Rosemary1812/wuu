@@ -71,9 +71,13 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
 		return err
 	}
-	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+	if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
 		Thread: thread,
-	})
+	}); err != nil {
+		return err
+	}
+	s.pruneResidentThreads(thread.ID)
+	return nil
 }
 
 func (s *Server) handleThreadResume(req Request) error {
@@ -102,9 +106,11 @@ func (s *Server) handleThreadResume(req Request) error {
 		}
 		return s.writeThreadResumeResult(req, thread)
 	}
-	if _, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	} else if !ok {
+	th, err := s.loadPersistedThreadState(id, time.Now().UTC())
+	if err != nil {
+		if !errors.Is(err, session.ErrSessionNotFound) {
+			return s.writeResponse(req.ID, nil, err)
+		}
 		thread, ok, agentErr := s.agentSessionThread(id)
 		if agentErr != nil {
 			return s.writeResponse(req.ID, nil, agentErr)
@@ -114,36 +120,7 @@ func (s *Server) handleThreadResume(req Request) error {
 		}
 		return s.writeThreadResumeResult(req, thread)
 	}
-	history, err := loadChatMessages(s.rt.SessionDir, id)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	repaired, err := providers.RepairAndValidateToolCallHistory(history)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	if !reflect.DeepEqual(repaired, history) {
-		if err := rewriteChatHistory(s.rt.SessionDir, id, repaired); err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
-	}
-	history = repaired
-	history = ensureBaseSystemPrompt(history, s.rt.StreamRunner.SystemPrompt)
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, time.Now().UTC())
-	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	} else {
-		th.Turns = applyTokenUsageMetasToTurns(th.Turns, metas)
-	}
-	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
-	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	} else if ok {
-		applySessionMetadata(th, metadata)
-	}
-	s.mu.Lock()
-	s.threads[id] = th
-	s.mu.Unlock()
+	th = s.addResidentThread(th)
 
 	th.mu.Lock()
 	thread := th.snapshotLocked()
@@ -168,7 +145,77 @@ func (s *Server) writeThreadResumeResult(req Request, thread Thread) error {
 	if s.thread(thread.ID) != nil {
 		s.kickGoalContinuation(thread.ID)
 	}
+	s.pruneResidentThreads(thread.ID)
 	return nil
+}
+
+func (s *Server) ensureResidentThread(id string) (*threadState, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errors.New("thread_id is required")
+	}
+	if th := s.thread(id); th != nil {
+		return th, nil
+	}
+	th, err := s.loadPersistedThreadState(id, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	th = s.addResidentThread(th)
+	s.pruneResidentThreads(id)
+	return th, nil
+}
+
+func (s *Server) addResidentThread(th *threadState) *threadState {
+	if th == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing := s.threads[th.ID]; existing != nil {
+		return existing
+	}
+	s.threads[th.ID] = th
+	return th
+}
+
+func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadState, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errors.New("thread_id is required")
+	}
+	if _, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, session.ErrSessionNotFound
+	}
+	history, err := loadChatMessages(s.rt.SessionDir, id)
+	if err != nil {
+		return nil, err
+	}
+	repaired, err := providers.RepairAndValidateToolCallHistory(history)
+	if err != nil {
+		return nil, err
+	}
+	if !reflect.DeepEqual(repaired, history) {
+		if err := rewriteChatHistory(s.rt.SessionDir, id, repaired); err != nil {
+			return nil, err
+		}
+	}
+	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
+	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
+		return nil, err
+	} else {
+		th.Turns = applyTokenUsageMetasToTurns(th.Turns, metas)
+	}
+	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
+	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
+		return nil, err
+	} else if ok {
+		applySessionMetadata(th, metadata)
+	}
+	return th, nil
 }
 
 type forkSourceThread struct {
@@ -274,9 +321,13 @@ func (s *Server) handleThreadFork(req Request) error {
 	if err := s.writeResponse(req.ID, ThreadForkResult{Thread: thread, Worktree: thread.Worktree}, nil); err != nil {
 		return err
 	}
-	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+	if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
 		Thread: thread,
-	})
+	}); err != nil {
+		return err
+	}
+	s.pruneResidentThreads(thread.ID, source.thread.ID)
+	return nil
 }
 
 func (s *Server) handleThreadEditMessage(req Request) error {
@@ -288,9 +339,9 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 	if threadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
-	th := s.thread(threadID)
-	if th == nil {
-		return s.writeResponse(req.ID, nil, errors.New("thread not found"))
+	th, err := s.ensureResidentThread(threadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	if s.hasQueuedUserTurns(threadID) {
 		return s.writeResponse(req.ID, nil, errors.New("queued messages must be sent or removed before editing history"))
@@ -650,8 +701,9 @@ func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {
 		if !isDirectChildAgentThread(threadID, meta) {
 			continue
 		}
+		pinned, archived := s.childAgentPinArchive(meta.ID)
 		childIndexByPath[meta.Path] = len(children)
-		children = append(children, agentFromThreadMetadata(meta))
+		children = append(children, agentFromThreadMetadata(meta, pinned, archived))
 	}
 	if len(children) == 0 {
 		return nil, nil
@@ -682,6 +734,23 @@ func (s *Server) childAgentsForThread(threadID string) ([]Agent, error) {
 		return children[i].AgentPath < children[j].AgentPath
 	})
 	return children, nil
+}
+
+// childAgentPinArchive fetches the pinned/archived flags for a child agent's
+// own session from the same session store keyed by the agent ID. A missing
+// session or lookup error collapses to (false, false) so the renderer still
+// gets a usable Agent record; the per-agent row is only meaningful for
+// completed sessions that have been written to disk, so silent fallback here
+// is safe.
+func (s *Server) childAgentPinArchive(agentID string) (pinned, archived bool) {
+	if s == nil || s.rt == nil || strings.TrimSpace(agentID) == "" {
+		return false, false
+	}
+	sess, ok, err := session.Find(s.rt.SessionDir, agentID)
+	if err != nil || !ok {
+		return false, false
+	}
+	return sess.PinnedAt != nil, sess.ArchivedAt != nil
 }
 
 func (s *Server) agentSessionThread(agentID string) (Thread, bool, error) {
@@ -933,10 +1002,17 @@ func isDirectChildAgentThread(threadID string, meta agentthread.Metadata) bool {
 	return strings.TrimSpace(meta.ParentID) == strings.TrimSpace(threadID) && agentPathDepth(meta.Path) == 2
 }
 
-func agentFromThreadMetadata(meta agentthread.Metadata) Agent {
+func agentFromThreadMetadata(meta agentthread.Metadata, pinArchive ...bool) Agent {
 	startedAt := meta.CreatedAt
 	if startedAt.IsZero() {
 		startedAt = meta.UpdatedAt
+	}
+	var pinned, archived bool
+	if len(pinArchive) > 0 {
+		pinned = pinArchive[0]
+	}
+	if len(pinArchive) > 1 {
+		archived = pinArchive[1]
 	}
 	return Agent{
 		ID:           meta.ID,
@@ -947,6 +1023,8 @@ func agentFromThreadMetadata(meta agentthread.Metadata) Agent {
 		ParentID:     meta.ParentID,
 		Description:  meta.TaskName,
 		Status:       string(meta.Status),
+		Pinned:       pinned,
+		Archived:     archived,
 		StartedAt:    startedAt,
 	}
 }

@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertCircle,
+  Archive,
   Check,
   ChevronRight,
   CornerDownRight,
@@ -10,6 +11,7 @@ import {
   Github,
   GitBranch,
   Globe,
+  Pin,
   Plus,
   Search,
   Square,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useEffect, useState } from "react";
 import type {
+  Agent,
   GitStatusResult,
   InitializeResult,
   ManagedProcess,
@@ -26,6 +29,8 @@ import type {
   WorkspaceFileReadResult
 } from "../shared/protocol";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
+import { sortChildAgents } from "./ThreadAgents";
+import { type SubagentRowSummary } from "./EnvironmentSideStack";
 
 export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
@@ -116,7 +121,13 @@ export function EnvironmentPanel({
   onStopBackgroundProcess,
   onOpenBackgroundPreview,
   rightPanelFilePath,
-  onCloseFilePreview
+  onCloseFilePreview,
+  subagentSessions,
+  archiveConfirmSubagentID,
+  onSelectSubagent,
+  onToggleSubagentPinned,
+  onArchiveSubagent,
+  onClearSubagentArchiveConfirm
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   motionState: EnvironmentPanelMotionState;
@@ -150,6 +161,22 @@ export function EnvironmentPanel({
    * caller does not provide a file-specific closer.
    */
   onCloseFilePreview?: () => void;
+  /**
+   * Subagent sessions owned by the active main session. When the array is
+   * undefined or empty the "子任务" section is hidden entirely so the panel
+   * stays quiet for sessions that never spawned one.
+   */
+  subagentSessions?: SubagentRowSummary[];
+  /**
+   * ID of the subagent currently sitting in the "press again to confirm"
+   * archive state. Mirrors `archiveConfirmThreadID` in the sidebar so the
+   * UX stays consistent between the two surfaces.
+   */
+  archiveConfirmSubagentID?: string;
+  onSelectSubagent?: (agent: SubagentRowSummary) => void;
+  onToggleSubagentPinned?: (agent: SubagentRowSummary) => void;
+  onArchiveSubagent?: (agent: SubagentRowSummary) => void;
+  onClearSubagentArchiveConfirm?: (agentID: string) => void;
 }): JSX.Element {
   if (activeMenu === "file" && rightPanelFilePath) {
     return (
@@ -263,6 +290,17 @@ export function EnvironmentPanel({
           <span>{gitStatus?.pr_url ? "已有 PR" : prDisabled ? pullRequestDisabledReason : "推送并创建 PR"}</span>
         </button>
 
+        {subagentSessions && subagentSessions.length > 0 ? (
+          <EnvironmentSubagents
+            agents={subagentSessions}
+            archiveConfirmID={archiveConfirmSubagentID}
+            onSelect={onSelectSubagent}
+            onTogglePinned={onToggleSubagentPinned}
+            onArchive={onArchiveSubagent}
+            onClearArchiveConfirm={onClearSubagentArchiveConfirm}
+          />
+        ) : null}
+
         {backgroundProcesses.length > 0 ? (
           <EnvironmentBackgroundProcesses
             processes={backgroundProcesses.slice(0, 5)}
@@ -351,6 +389,168 @@ function EnvironmentBackgroundProcesses({
       </div>
     </section>
   );
+}
+
+/**
+ * EnvironmentSubagents renders the active session's subagent sessions as
+ * horizontal rows in the info panel. The section is only shown when at
+ * least one subagent exists; otherwise the entire block disappears so
+ * the panel stays uncluttered for plain sessions.
+ *
+ * The visual is deliberately a near-clone of the sidebar's `thread-row`
+ * pattern: a single-row card with a status indicator, a title, and
+ * hover-revealed Pin / Archive actions. The right column is also where
+ * the nested-children counter appears for agents that have spawned their
+ * own subagents.
+ */
+function EnvironmentSubagents({
+  agents,
+  archiveConfirmID,
+  onSelect,
+  onTogglePinned,
+  onArchive,
+  onClearArchiveConfirm,
+}: {
+  agents: SubagentRowSummary[];
+  archiveConfirmID?: string;
+  onSelect?: (agent: SubagentRowSummary) => void;
+  onTogglePinned?: (agent: SubagentRowSummary) => void;
+  onArchive?: (agent: SubagentRowSummary) => void;
+  onClearArchiveConfirm?: (agentID: string) => void;
+}): JSX.Element {
+  // We treat the summary as a quasi-`Agent` for the existing sort helper
+  // — it sorts by started_at then by agent_path which keeps the visible
+  // order deterministic and matches the sidebar's historical behaviour.
+  // The double cast is necessary because `SubagentRowSummary` is a strict
+  // subset of `Agent` and `sortChildAgents` is generic over the full type.
+  const ordered: SubagentRowSummary[] = sortChildAgents(
+    agents as unknown as Agent[],
+  );
+  return (
+    <section className="environment-subagent-section" aria-label="子任务">
+      <div className="environment-process-heading">
+        <span>
+          <CornerDownRight className="icon" />
+          子任务
+        </span>
+        <span>{ordered.length} 个任务</span>
+      </div>
+      <div className="environment-subagent-list">
+        {ordered.map((agent) => {
+          const archiveConfirming = archiveConfirmID === agent.id;
+          const nestedTotal = agent.nested_count ?? 0;
+          const nestedRunning = agent.nested_running_count ?? 0;
+          const nestedLabel =
+            nestedTotal <= 0
+              ? null
+              : nestedRunning > 0
+                ? `${nestedRunning}/${nestedTotal}`
+                : `+${nestedTotal}`;
+          return (
+            <div
+              key={agent.id}
+              className={`subagent-row ${agentStatusToneToClass(agent.status)}${
+                agent.archived ? " archived" : ""
+              }${archiveConfirming ? " archive-confirm" : ""}`}
+              onMouseLeave={() => onClearArchiveConfirm?.(agent.id)}
+            >
+              <button
+                type="button"
+                className="subagent-row-main"
+                onClick={() => onSelect?.(agent)}
+                aria-label={`打开子任务 ${agentLabelFromSummary(agent)}`}
+                title={agentTooltipFromSummary(agent)}
+              >
+                <span className="subagent-row-title">
+                  {agentLabelFromSummary(agent)}
+                </span>
+                <span className="subagent-row-status">
+                  {agentStatusLabel(agent.status)}
+                </span>
+                {nestedLabel ? (
+                  <span className="subagent-row-nested">{nestedLabel}</span>
+                ) : null}
+              </button>
+              <div className="subagent-row-actions" aria-label="子任务操作">
+                <button
+                  className={`sidebar-row-icon-button subagent-row-action ${agent.pinned ? "active" : ""}`}
+                  type="button"
+                  aria-label={agent.pinned ? "取消置顶" : "置顶"}
+                  title={agent.pinned ? "取消置顶" : "置顶"}
+                  onClick={() => onTogglePinned?.(agent)}
+                >
+                  <Pin className="icon-sm" />
+                </button>
+                <button
+                  className={`sidebar-row-icon-button subagent-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                  type="button"
+                  aria-label={archiveConfirming ? "确认归档" : "归档"}
+                  title={archiveConfirming ? "再次点击归档" : "归档"}
+                  onClick={() => onArchive?.(agent)}
+                >
+                  <Archive className="icon-sm" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Local helpers. The full versions live in `ThreadAgents`, but importing
+ * them would pull in extra surface area (and a transitive dependency on
+ * `agentStatusTone`'s string union). The info panel only needs a stable
+ * visual class and a label, so we adapt the agent summary inline.
+ */
+function agentStatusToneToClass(status: string | undefined): string {
+  switch (status) {
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "pending";
+  }
+}
+
+function agentStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "pending":
+      return "等待";
+    case "running":
+      return "运行中";
+    case "completed":
+      return "完成";
+    case "failed":
+      return "失败";
+    case "cancelled":
+      return "已停止";
+    default:
+      return status?.trim() || "未知";
+  }
+}
+
+function agentLabelFromSummary(agent: SubagentRowSummary): string {
+  if (agent.task_name?.trim()) return agent.task_name.trim();
+  if (agent.description?.trim()) return agent.description.trim();
+  if (agent.agent_path) {
+    const pathParts = agent.agent_path.split("/").filter(Boolean);
+    const last = pathParts[pathParts.length - 1];
+    if (last) return last;
+  }
+  return agent.id;
+}
+
+function agentTooltipFromSummary(agent: SubagentRowSummary): string {
+  const path = agent.agent_path ? ` · ${agent.agent_path}` : "";
+  return `${agentLabelFromSummary(agent)} · ${agentStatusLabel(agent.status)}${path}`;
 }
 
 function processItemsFromToolResult(result: string | undefined): BackgroundProcessItem[] {

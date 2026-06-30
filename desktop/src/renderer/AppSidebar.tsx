@@ -13,7 +13,6 @@ import {
   Wrench,
 } from "lucide-react";
 import type { RefObject } from "react";
-import type { Agent } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { PinnedThreadList, ProjectList, ScratchThreadSection } from "./ThreadSidebar";
@@ -41,7 +40,6 @@ export function AppSidebar({
   onSeedAgentTreeDemo,
   onOpenChipGallery,
   onSelectThread,
-  onSelectChildAgent,
   onTogglePinned,
   onArchiveThread,
   onClearArchiveConfirm,
@@ -51,7 +49,6 @@ export function AppSidebar({
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
   onSelectProjectThread,
-  onSelectProjectChildAgent,
   onCreateScratchThread,
   onOpenSettings,
 }: {
@@ -77,7 +74,6 @@ export function AppSidebar({
   onSeedAgentTreeDemo: () => void;
   onOpenChipGallery: () => void;
   onSelectThread: (id: string) => void;
-  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -87,7 +83,6 @@ export function AppSidebar({
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
-  onSelectProjectChildAgent: (projectID: string, agent: Agent) => void;
   onCreateScratchThread: () => void;
   onOpenSettings: () => void;
 }): JSX.Element {
@@ -191,7 +186,6 @@ export function AppSidebar({
                 archiveConfirmThreadID={archiveConfirmThreadID}
                 lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
                 onSelect={onSelectThread}
-                onSelectChildAgent={onSelectChildAgent}
                 onTogglePinned={onTogglePinned}
                 onArchive={onArchiveThread}
                 onClearArchiveConfirm={onClearArchiveConfirm}
@@ -206,7 +200,6 @@ export function AppSidebar({
             archiveConfirmThreadID={archiveConfirmThreadID}
             lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
             onSelect={onSelectThread}
-            onSelectChildAgent={onSelectChildAgent}
             onToggleThreadPinned={onTogglePinned}
             onArchiveThread={onArchiveThread}
             onClearArchiveConfirm={onClearArchiveConfirm}
@@ -257,7 +250,6 @@ export function AppSidebar({
                 onToggleProjectCollapsed={onToggleProjectCollapsed}
                 onStartNewThread={onStartNewThreadForProject}
                 onSelectThread={onSelectProjectThread}
-                onSelectChildAgent={onSelectProjectChildAgent}
                 onToggleThreadPinned={onTogglePinned}
                 onArchiveThread={onArchiveThread}
                 onClearArchiveConfirm={onClearArchiveConfirm}

@@ -470,6 +470,169 @@
   opacity: 0.45;
 }
 
+/**
+ * Subagent section in the info panel. Each row is a horizontal bar
+ * visually similar to the sidebar's `thread-row` pattern: the body
+ * (title + status + nested counter) is the click target, and the
+ * Pin / Archive actions slide in on hover so the row stays quiet
+ * when not focused.
+ */
+.environment-subagent-section {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--surface-3);
+  margin-top: 6px;
+  padding: 9px 8px 0;
+}
+
+.environment-subagent-list {
+  display: grid;
+  gap: 4px;
+}
+
+.subagent-row {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 5px 8px;
+  transition: background 120ms ease;
+}
+
+.subagent-row.running {
+  box-shadow: inset 2px 0 0 0 var(--sidebar-accent);
+}
+
+.subagent-row.completed {
+  opacity: 0.85;
+}
+
+.subagent-row.failed {
+  box-shadow: inset 2px 0 0 0 var(--danger);
+}
+
+.subagent-row.cancelled {
+  opacity: 0.6;
+}
+
+.subagent-row.pending {
+  box-shadow: inset 2px 0 0 0 var(--ink-overlay-12);
+}
+
+.subagent-row.archived {
+  opacity: 0.5;
+}
+
+.subagent-row:hover,
+.subagent-row:has(.subagent-row-action:focus-visible) {
+  background: var(--surface-3);
+}
+
+.subagent-row-main {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.subagent-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+}
+
+.subagent-row-status {
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  padding: 1px 6px;
+  background: var(--surface-3);
+}
+
+.subagent-row.running .subagent-row-status {
+  background: #e8f4ec;
+  color: #1f7a42;
+}
+
+.subagent-row.failed .subagent-row-status {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.subagent-row.completed .subagent-row-status {
+  background: var(--surface-3);
+  color: var(--ink-muted);
+}
+
+.subagent-row-nested {
+  flex: 0 0 auto;
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-8);
+}
+
+.subagent-row-actions {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(4px, -50%, 0);
+  transition:
+    opacity 120ms ease,
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.subagent-row:hover .subagent-row-actions,
+.subagent-row:has(.subagent-row-action:focus-visible) .subagent-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, -50%, 0);
+}
+
+.subagent-row:has(.subagent-row-actions) .subagent-row-main {
+  padding-right: 56px;
+}
+
+.subagent-row-action.active {
+  color: var(--sidebar-accent);
+}
+
+.subagent-row-action.archive.confirm {
+  background: rgba(184, 79, 53, 0.1);
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-row,
+  .subagent-row-actions {
+    transition: none;
+  }
+}
+
 .environment-footer-row {
   grid-template-columns: minmax(0, 1fr) 18px;
   height: 30px;

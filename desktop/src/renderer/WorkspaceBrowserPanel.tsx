@@ -94,11 +94,13 @@ function safeWebview<T>(fn: () => T): T | undefined {
 }
 
 export function WorkspaceBrowserPanel({
+  open = true,
   activeContext,
   pendingBrowserURL,
   onBrowserURLConsumed,
   onCurrentURLChange
 }: {
+  open?: boolean;
   activeContext?: RuntimeContext;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
@@ -308,6 +310,28 @@ export function WorkspaceBrowserPanel({
       safeWebview(() => webview.reload());
     }
   }, [status]);
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    const webview = webviewRef.current;
+    if (webview) {
+      safeWebview(() => webview.stop());
+      safeWebview(() => webview.loadURL("about:blank"));
+    }
+    isWebviewReadyRef.current = false;
+    setIsWebviewReady(false);
+    setCurrentURL(HOME_PAGE_URL);
+    setDraftURL("");
+    setPageTitle(HOME_PAGE_TITLE);
+    setHostHint(undefined);
+    setStatus("idle");
+    setErrorMessage(undefined);
+    setCanGoBack(false);
+    setCanGoForward(false);
+    onCurrentURLChangeRef.current?.(HOME_PAGE_URL);
+  }, [open]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();

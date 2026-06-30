@@ -21,8 +21,8 @@ const FORK_OPTIONS: ForkOption[] = [
   {
     mode: "worktree",
     icon: GitBranch,
-    title: "派生到新工作树",
-    description: "在新工作树中从此消息继续",
+    title: "派生到 git worktree",
+    description: "在独立的 git worktree 中从此消息继续",
   },
 ];
 

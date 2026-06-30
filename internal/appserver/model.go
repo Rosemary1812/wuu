@@ -22,6 +22,7 @@ func newThreadState(id string, history []providers.ChatMessage, rtProvider, mode
 		History:        cloneHistory(history),
 		CreatedAt:      now,
 		UpdatedAt:      now,
+		LastAccessedAt: now,
 		ModelProvider:  rtProvider,
 		Model:          model,
 		CWD:            cwd,

@@ -1153,11 +1153,31 @@ func waitAgentSignalFromSnapshot(signalType string, snap subagent.SubAgentSnapsh
 // Subscribe forwards to the underlying manager so the UI can receive
 // status notifications and publish mailbox messages.
 func (c *AgentControl) Subscribe(ch chan<- subagent.Notification) {
+	if c == nil || c.manager == nil {
+		return
+	}
 	c.manager.Subscribe(ch)
 }
 
+func (c *AgentControl) Unsubscribe(ch chan<- subagent.Notification) {
+	if c == nil || c.manager == nil {
+		return
+	}
+	c.manager.Unsubscribe(ch)
+}
+
 func (c *AgentControl) SubscribeStream(ch chan<- subagent.StreamNotification) {
+	if c == nil || c.manager == nil {
+		return
+	}
 	c.manager.SubscribeStream(ch)
+}
+
+func (c *AgentControl) UnsubscribeStream(ch chan<- subagent.StreamNotification) {
+	if c == nil || c.manager == nil {
+		return
+	}
+	c.manager.UnsubscribeStream(ch)
 }
 
 func (c *AgentControl) registerRootThread() {

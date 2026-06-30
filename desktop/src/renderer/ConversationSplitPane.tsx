@@ -6,6 +6,7 @@ import {
   type ComposerDraftState,
   type ConversationPaneID,
 } from "./AppState";
+import { ConversationTurnList } from "./ConversationTurnList";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { TurnView, latestAgentMessageItemID } from "./TurnView";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
@@ -113,30 +114,36 @@ export function ConversationSplitPane({
         onScroll={(event) => onScroll(event.currentTarget)}
       >
         <div className="conversation-width conversation-split-width session-flow">
-          {paneTurns.map((turn) => (
-            <TurnView
-              key={turn.id}
-              turn={turn}
-              cwd={thread.cwd ?? activeContextCwd}
-              latestAgentMessageID={paneLatestAgentMessageID}
-              onStreamFrame={onStreamFrame}
-              onForkMessage={onForkMessage}
-              onEditMessage={
-                onEditMessage
-                  ? (turnID, item) => onEditMessage(turnID, item)
-                  : undefined
-              }
-              editingMessage={editingMessage}
-              onCancelEditMessage={onCancelEditMessage}
-              onSubmitEditMessage={
-                onSubmitEditMessage
-                  ? (turnID, item, text, images, files) =>
-                      onSubmitEditMessage(turnID, item, text, images, files)
-                  : undefined
-              }
-              onNoticeAction={onNoticeAction}
-            />
-          ))}
+          <ConversationTurnList
+            threadID={thread.id}
+            turns={paneTurns}
+            forcedFullTurnIDs={
+              editingMessage ? [editingMessage.turnID] : undefined
+            }
+            renderTurn={(turn) => (
+              <TurnView
+                turn={turn}
+                cwd={thread.cwd ?? activeContextCwd}
+                latestAgentMessageID={paneLatestAgentMessageID}
+                onStreamFrame={onStreamFrame}
+                onForkMessage={onForkMessage}
+                onEditMessage={
+                  onEditMessage
+                    ? (turnID, item) => onEditMessage(turnID, item)
+                    : undefined
+                }
+                editingMessage={editingMessage}
+                onCancelEditMessage={onCancelEditMessage}
+                onSubmitEditMessage={
+                  onSubmitEditMessage
+                    ? (turnID, item, text, images, files) =>
+                        onSubmitEditMessage(turnID, item, text, images, files)
+                    : undefined
+                }
+                onNoticeAction={onNoticeAction}
+              />
+            )}
+          />
         </div>
       </div>
       <SplitPaneComposer

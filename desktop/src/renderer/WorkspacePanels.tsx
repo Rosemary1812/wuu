@@ -216,6 +216,7 @@ export function WorkspaceRightPanel({
               <WorkspaceTerminalPanel activeContext={activeContext} />
             ) : view === "browser" ? (
               <WorkspaceBrowserPanel
+                open={open}
                 activeContext={activeContext}
                 pendingBrowserURL={pendingBrowserURL}
                 onBrowserURLConsumed={onBrowserURLConsumed}

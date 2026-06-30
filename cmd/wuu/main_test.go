@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -27,6 +30,20 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
+
+func writeTestPNG(t *testing.T, path string) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create image: %v", err)
+	}
+	defer file.Close()
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+	if err := png.Encode(file, img); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+}
 
 func TestRunVersionAliasForwardsJSONFlag(t *testing.T) {
 	output := captureStdout(t, func() {
@@ -198,9 +215,7 @@ func TestRunExecEphemeralUsesEphemeralStart(t *testing.T) {
 
 func TestRunExecPassesFileAndImageAttachments(t *testing.T) {
 	workdir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workdir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
-		t.Fatalf("write image: %v", err)
-	}
+	writeTestPNG(t, filepath.Join(workdir, "shot.png"))
 	if err := os.WriteFile(filepath.Join(workdir, "report.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
@@ -232,9 +247,7 @@ func TestRunExecPassesFileAndImageAttachments(t *testing.T) {
 
 func TestRunExecInputJSONUsesMachineInput(t *testing.T) {
 	workdir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workdir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
-		t.Fatalf("write image: %v", err)
-	}
+	writeTestPNG(t, filepath.Join(workdir, "shot.png"))
 	if err := os.WriteFile(filepath.Join(workdir, "report.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}

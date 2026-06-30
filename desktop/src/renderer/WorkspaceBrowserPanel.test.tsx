@@ -73,6 +73,7 @@ afterEach(() => {
 });
 
 function render(props: {
+  open?: boolean;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onCurrentURLChange?: (url: string) => void;
@@ -81,6 +82,7 @@ function render(props: {
     root = createRoot(container);
     root!.render(
       <WorkspaceBrowserPanel
+        open={props.open}
         activeContext={{ kind: "no_project", cwd: "/repo" }}
         pendingBrowserURL={props.pendingBrowserURL}
         onBrowserURLConsumed={props.onBrowserURLConsumed}
@@ -94,6 +96,7 @@ function render(props: {
 }
 
 function rerender(props: {
+  open?: boolean;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onCurrentURLChange?: (url: string) => void;
@@ -101,6 +104,7 @@ function rerender(props: {
   act(() => {
     root!.render(
       <WorkspaceBrowserPanel
+        open={props.open}
         activeContext={{ kind: "no_project", cwd: "/repo" }}
         pendingBrowserURL={props.pendingBrowserURL}
         onBrowserURLConsumed={props.onBrowserURLConsumed}
@@ -151,5 +155,19 @@ describe("WorkspaceBrowserPanel pendingBrowserURL", () => {
     });
     expect(fakeWebview.loadURL).not.toHaveBeenCalled();
     void input;
+  });
+
+  it("clears the webview when the browser panel closes", () => {
+    const changed = vi.fn();
+    render({
+      open: true,
+      pendingBrowserURL: "http://localhost:3000",
+      onCurrentURLChange: changed
+    });
+    fakeWebview.loadURL.mockClear();
+    rerender({ open: false, onCurrentURLChange: changed });
+    expect(fakeWebview.stop).toHaveBeenCalledTimes(1);
+    expect(fakeWebview.loadURL).toHaveBeenCalledWith("about:blank");
+    expect(changed).toHaveBeenLastCalledWith("wuu://new-tab");
   });
 });

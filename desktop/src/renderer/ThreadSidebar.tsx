@@ -1,17 +1,9 @@
-import { Archive, ChevronRight, CornerDownRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
-import type { Agent, DesktopProject } from "../shared/protocol";
+import { Archive, ChevronRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
-import {
-  agentLabel,
-  agentNestedLabel,
-  agentStatusLabel,
-  agentStatusTone,
-  agentTooltip,
-  sortChildAgents
-} from "./ThreadAgents";
 import { threadDisplayTitle } from "./ThreadTitles";
-import { isThreadUnread, type ThreadSummary } from "./AppState";
+import { isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
 
 function projectThreads(threads: ThreadSummary[]): ThreadSummary[] {
   return threads.filter((thread) => !thread.pinned);
@@ -21,7 +13,9 @@ function threadsForProjectPath(
   threads: ThreadSummary[],
   projectPath: string,
 ): ThreadSummary[] {
-  return threads.filter((thread) => sameSidebarPath(thread.cwd, projectPath));
+  return threads.filter((thread) =>
+    sameSidebarPath(threadProjectPath(thread), projectPath),
+  );
 }
 
 function sameSidebarPath(left: string, right: string): boolean {
@@ -52,7 +46,6 @@ export function ProjectList({
   onToggleProjectCollapsed,
   onStartNewThread,
   onSelectThread,
-  onSelectChildAgent,
   onToggleThreadPinned,
   onArchiveThread,
   onClearArchiveConfirm
@@ -71,7 +64,6 @@ export function ProjectList({
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
   onSelectThread: (projectID: string, threadID: string) => void;
-  onSelectChildAgent: (projectID: string, agent: Agent) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -159,7 +151,6 @@ export function ProjectList({
                     lastViewedTurnByThreadID={lastViewedTurnByThreadID}
                     visibleCount={visibleThreadCountForProject(project.id)}
                     onSelect={(threadID) => onSelectThread(project.id, threadID)}
-                    onSelectChildAgent={(agent) => onSelectChildAgent(project.id, agent)}
                     onTogglePinned={onToggleThreadPinned}
                     onArchive={onArchiveThread}
                     onClearArchiveConfirm={onClearArchiveConfirm}
@@ -184,7 +175,6 @@ function ThreadList({
   lastViewedTurnByThreadID,
   visibleCount,
   onSelect,
-  onSelectChildAgent,
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm,
@@ -199,7 +189,6 @@ function ThreadList({
   lastViewedTurnByThreadID: Record<string, string>;
   visibleCount: number;
   onSelect: (id: string) => void;
-  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -257,7 +246,6 @@ function ThreadList({
         archiveConfirmThreadID={archiveConfirmThreadID}
         lastViewedTurnByThreadID={lastViewedTurnByThreadID}
         onSelect={onSelect}
-        onSelectChildAgent={onSelectChildAgent}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
         onClearArchiveConfirm={onClearArchiveConfirm}
@@ -324,11 +312,10 @@ function importantThreadVisible(
   activeID: string | undefined,
   pendingThreadID: string | undefined
 ): boolean {
-  if (thread.id === activeID || thread.id === pendingThreadID || threadRunning(thread)) {
-    return true;
-  }
-  return (thread.child_agents ?? []).some(
-    (agent) => agent.id === activeID || agent.id === pendingThreadID
+  return (
+    thread.id === activeID ||
+    thread.id === pendingThreadID ||
+    threadRunning(thread)
   );
 }
 
@@ -343,7 +330,6 @@ export function PinnedThreadList({
   archiveConfirmThreadID,
   lastViewedTurnByThreadID,
   onSelect,
-  onSelectChildAgent,
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm
@@ -354,7 +340,6 @@ export function PinnedThreadList({
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
-  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -368,7 +353,6 @@ export function PinnedThreadList({
         archiveConfirmThreadID={archiveConfirmThreadID}
         lastViewedTurnByThreadID={lastViewedTurnByThreadID}
         onSelect={onSelect}
-        onSelectChildAgent={onSelectChildAgent}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
         onClearArchiveConfirm={onClearArchiveConfirm}
@@ -384,7 +368,6 @@ export function ScratchThreadSection({
   archiveConfirmThreadID,
   lastViewedTurnByThreadID,
   onSelect,
-  onSelectChildAgent,
   onToggleThreadPinned,
   onArchiveThread,
   onClearArchiveConfirm,
@@ -396,7 +379,6 @@ export function ScratchThreadSection({
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
-  onSelectChildAgent: (agent: Agent) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -438,7 +420,6 @@ export function ScratchThreadSection({
             lastViewedTurnByThreadID={lastViewedTurnByThreadID}
             visibleCount={visibleCount}
             onSelect={onSelect}
-            onSelectChildAgent={onSelectChildAgent}
             onTogglePinned={onToggleThreadPinned}
             onArchive={onArchiveThread}
             onClearArchiveConfirm={onClearArchiveConfirm}
@@ -458,7 +439,6 @@ function ThreadRows({
   archiveConfirmThreadID,
   lastViewedTurnByThreadID,
   onSelect,
-  onSelectChildAgent,
   onTogglePinned,
   onArchive,
   onClearArchiveConfirm,
@@ -470,7 +450,6 @@ function ThreadRows({
   archiveConfirmThreadID?: string;
   lastViewedTurnByThreadID: Record<string, string>;
   onSelect: (id: string) => void;
-  onSelectChildAgent: (agent: Agent) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -503,15 +482,15 @@ function ThreadRows({
           thread.id !== activeID &&
           isThreadUnread(thread, lastViewedTurnByThreadID[thread.id]);
         return (
-          <Fragment key={thread.id}>
-            <div
-              className={`thread-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
-                pendingSwitch ? " pending-switch" : ""
-              }${unread ? " has-unread" : ""}`}
-              aria-current={thread.id === activeID ? "page" : undefined}
-              onMouseLeave={() => onClearArchiveConfirm(thread.id)}
-              onContextMenu={(e) => handleContextMenu(thread, e)}
-            >
+          <div
+            key={thread.id}
+            className={`thread-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
+              pendingSwitch ? " pending-switch" : ""
+            }${unread ? " has-unread" : ""}`}
+            aria-current={thread.id === activeID ? "page" : undefined}
+            onMouseLeave={() => onClearArchiveConfirm(thread.id)}
+            onContextMenu={(e) => handleContextMenu(thread, e)}
+          >
               {running ? (
                 <span className="thread-row-spinner" aria-hidden="true" />
               ) : null}
@@ -545,17 +524,7 @@ function ThreadRows({
                   <Archive className="icon-sm" />
                 </button>
               </div>
-            </div>
-            {thread.child_agents?.length ? (
-              <ThreadChildAgentRows
-                agents={thread.child_agents}
-                activeID={activeID}
-                pendingThreadID={pendingThreadID}
-                onSelect={onSelectChildAgent}
-                onContextMenu={(e) => handleContextMenu(thread, e)}
-              />
-            ) : null}
-          </Fragment>
+          </div>
         );
       })}
       {contextMenu ? (
@@ -607,56 +576,6 @@ function ThreadRows({
         />
       ) : null}
     </>
-  );
-}
-
-function ThreadChildAgentRows({
-  agents,
-  activeID,
-  pendingThreadID,
-  onSelect,
-  onContextMenu
-}: {
-  agents: Agent[];
-  activeID?: string;
-  pendingThreadID?: string;
-  onSelect: (agent: Agent) => void;
-  onContextMenu: (e: { clientX: number; clientY: number; preventDefault: () => void }) => void;
-}): JSX.Element {
-  return (
-    <div className="thread-child-agent-list" aria-label="子任务">
-      {sortChildAgents(agents).map((agent) => {
-        const status = agentStatusTone(agent.status);
-        const label = agentLabel(agent);
-        const nestedLabel = agentNestedLabel(agent);
-        const active = activeID === agent.id;
-        const pendingSwitch = pendingThreadID === agent.id;
-        return (
-          <button
-            key={agent.id}
-            className={`thread-child-agent-row ${status}${active ? " active" : ""}${
-              pendingSwitch ? " pending-switch" : ""
-            }`}
-            type="button"
-            aria-current={active ? "page" : undefined}
-            aria-busy={pendingSwitch}
-            aria-label={`${label}，${agentStatusLabel(agent.status)}`}
-            title={agentTooltip(agent)}
-            onClick={() => onSelect(agent)}
-            onContextMenu={onContextMenu}
-          >
-            <CornerDownRight className="thread-child-agent-branch icon-xs" />
-            <span className="thread-child-agent-name">{label}</span>
-            {nestedLabel ? <span className="thread-child-agent-nested">{nestedLabel}</span> : null}
-            {pendingSwitch ? (
-              <span className="thread-row-loading thread-child-agent-loading" aria-hidden="true" />
-            ) : (
-              <span className="thread-child-agent-status">{agentStatusLabel(agent.status)}</span>
-            )}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

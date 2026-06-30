@@ -16,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
 var errShutdown = errors.New("app-server shutdown requested")
@@ -27,6 +28,7 @@ type threadState struct {
 	History          []providers.ChatMessage
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	LastAccessedAt   time.Time
 	Title            string
 	ModelProvider    string
 	Model            string
@@ -54,6 +56,7 @@ type threadState struct {
 
 	execRuntime          *runtime.ThreadRuntime
 	pendingRuntimeUpdate *threadRuntimeUpdate
+	runtimeSubscription  *threadRuntimeSubscription
 
 	mu            sync.Mutex
 	running       bool
@@ -66,6 +69,22 @@ type threadState struct {
 	activeReasoningItemID string
 	toolItems             map[string]string
 	hiddenToolEvent       bool
+}
+
+type threadRuntimeSubscription struct {
+	statusCh chan subagent.Notification
+	streamCh chan subagent.StreamNotification
+	done     chan struct{}
+	once     sync.Once
+}
+
+func (sub *threadRuntimeSubscription) stop() {
+	if sub == nil {
+		return
+	}
+	sub.once.Do(func() {
+		close(sub.done)
+	})
 }
 
 type threadRuntimeUpdate struct {
@@ -294,8 +313,15 @@ func (s *Server) handleClientResponse(raw []byte) error {
 
 func (s *Server) thread(id string) *threadState {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.threads[id]
+	th := s.threads[id]
+	s.mu.Unlock()
+	if th == nil {
+		return nil
+	}
+	th.mu.Lock()
+	th.LastAccessedAt = time.Now().UTC()
+	th.mu.Unlock()
+	return th
 }
 
 type clientResponse struct {

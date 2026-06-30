@@ -105,17 +105,24 @@
   background: var(--surface-1);
 }
 
-/* Content column. Uses the project grid so the page width matches the rest
- * of the app instead of being pinned to a magic 960px. */
+/* Content column. Settings is a focused single-column form, not a 12-col
+ * surface — a narrower column keeps label/control pairs visually anchored
+ * and leaves real breathing room on the right edge of wide windows. The
+ * local --settings-page-max-width overrides the global grid max-width so
+ * the rest of the app (workspace, session) keeps its 1088px surface. */
 .settings-page {
   display: flex;
   min-height: 100%;
-  width: min(var(--wuu-grid-max-width), calc(100% - var(--wuu-grid-margin) * 2));
+  --settings-page-max-width: 880px;
+  width: min(var(--settings-page-max-width), calc(100% - var(--wuu-grid-margin) * 2));
   flex: 1;
   flex-direction: column;
-  gap: 32px;
+  gap: 36px;
   margin: 0 auto;
-  padding: 40px 0 72px;
+  /* 8px horizontal padding is a defensive gutter: on very narrow viewports
+   * where the page fills the scroll area, the content still keeps a small
+   * margin from the card edge. */
+  padding: 40px 8px 72px;
 }
 
 /* --- Page header --------------------------------------------------------- */
@@ -150,7 +157,7 @@
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .settings-section-header {
@@ -181,8 +188,12 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--paper);
+  /* Subtle elevation so the card reads as a floating surface rather than a
+   * flat slab pressed against the window edge. The hairline border stays
+   * for definition on light backgrounds. */
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
@@ -202,7 +213,7 @@
   align-items: center;
   gap: 28px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 14px 20px;
+  padding: 16px 24px;
   min-height: 64px;
 }
 
@@ -455,7 +466,7 @@
   gap: 12px;
   border-top: 1px solid var(--hairline-soft);
   background: var(--surface-1);
-  padding: 12px 20px;
+  padding: 14px 24px;
   min-height: 56px;
 }
 
@@ -710,7 +721,7 @@
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
-  padding: 16px 20px;
+  padding: 20px 24px;
 }
 
 /* --- Usage metrics grid -------------------------------------------------- */
@@ -802,7 +813,7 @@
 .settings-usage-table th,
 .settings-usage-table td {
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 12px 20px;
+  padding: 14px 24px;
   text-align: right;
   vertical-align: middle;
   font-size: var(--font-ui);
@@ -874,7 +885,7 @@
   align-items: center;
   gap: 18px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 14px 20px;
+  padding: 16px 24px;
   min-height: 68px;
 }
 
@@ -918,7 +929,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 18px 20px;
+  padding: 20px 24px;
 }
 
 .settings-cache-heatmap-summary {
@@ -1030,7 +1041,7 @@
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
-  padding: 16px 20px;
+  padding: 20px 24px;
 }
 
 @media (max-width: 900px) {
@@ -1045,7 +1056,7 @@
   }
 
   .settings-page {
-    padding: 24px 0 48px;
+    padding: 24px 8px 48px;
   }
 }
 

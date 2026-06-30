@@ -12,67 +12,83 @@ import (
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
-func (s *Server) forwardAgentNotifications(threadID string, control *agentcontrol.AgentControl, ch <-chan subagent.Notification) {
-	for n := range ch {
-		now := time.Now().UTC()
-		if n.Status == subagent.StatusRunning {
-			_, turn, started := s.ensureLiveAgentThread(threadID, control, n.Snapshot, now)
-			if started {
-				_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
-					ThreadID: n.Snapshot.ID,
-					Turn:     turn,
-				})
+func (s *Server) forwardAgentNotifications(threadID string, control *agentcontrol.AgentControl, ch <-chan subagent.Notification, done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case n, ok := <-ch:
+			if !ok {
+				return
 			}
-		}
-		_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
-			ThreadID: threadID,
-			Agent:    agentFromSnapshot(control, n.Snapshot),
-		})
-		switch n.Status {
-		case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
-			s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
-			if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
-				mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
-				if control != nil {
-					mailboxMessage = control.AgentMailboxMessage(n.Snapshot)
+			now := time.Now().UTC()
+			if n.Status == subagent.StatusRunning {
+				_, turn, started := s.ensureLiveAgentThread(threadID, control, n.Snapshot, now)
+				if started {
+					_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+						ThreadID: n.Snapshot.ID,
+						Turn:     turn,
+					})
 				}
-				_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
-					ThreadID: threadID,
-					Message:  mailboxMessage,
-				})
-				if control != nil {
-					resultID := control.AgentResultDeliveryID(n.Snapshot)
-					s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
+			}
+			_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
+				ThreadID: threadID,
+				Agent:    agentFromSnapshot(control, n.Snapshot),
+			})
+			switch n.Status {
+			case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
+				s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
+				if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
+					mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
+					if control != nil {
+						mailboxMessage = control.AgentMailboxMessage(n.Snapshot)
+					}
+					_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
+						ThreadID: threadID,
+						Message:  mailboxMessage,
+					})
+					if control != nil {
+						resultID := control.AgentResultDeliveryID(n.Snapshot)
+						s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
+					}
 				}
 			}
 		}
 	}
 }
 
-func (s *Server) forwardAgentStreamNotifications(threadID string, control *agentcontrol.AgentControl, ch <-chan subagent.StreamNotification) {
-	for n := range ch {
-		now := time.Now().UTC()
-		th, turn, started := s.ensureLiveAgentThread(threadID, control, n.Snapshot, now)
-		if th == nil {
-			continue
-		}
-		if started {
-			_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+func (s *Server) forwardAgentStreamNotifications(threadID string, control *agentcontrol.AgentControl, ch <-chan subagent.StreamNotification, done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case n, ok := <-ch:
+			if !ok {
+				return
+			}
+			now := time.Now().UTC()
+			th, turn, started := s.ensureLiveAgentThread(threadID, control, n.Snapshot, now)
+			if th == nil {
+				continue
+			}
+			if started {
+				_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+					ThreadID: th.ID,
+					Turn:     turn,
+				})
+			}
+			th.mu.Lock()
+			batch := th.applyStreamEventLocked(turn.ID, n.Event, now)
+			th.mu.Unlock()
+			for _, item := range batch {
+				_ = s.writeNotification(item.method, item.params)
+			}
+			_ = s.writeNotification(NotificationTurnEvent, TurnEventNotification{
 				ThreadID: th.ID,
-				Turn:     turn,
+				TurnID:   turn.ID,
+				Event:    sanitizeStreamEvent(n.Event),
 			})
 		}
-		th.mu.Lock()
-		batch := th.applyStreamEventLocked(turn.ID, n.Event, now)
-		th.mu.Unlock()
-		for _, item := range batch {
-			_ = s.writeNotification(item.method, item.params)
-		}
-		_ = s.writeNotification(NotificationTurnEvent, TurnEventNotification{
-			ThreadID: th.ID,
-			TurnID:   turn.ID,
-			Event:    sanitizeStreamEvent(n.Event),
-		})
 	}
 }
 

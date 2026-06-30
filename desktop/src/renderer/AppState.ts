@@ -986,6 +986,8 @@ function summarizeAgentForSidebar(agent: Agent): Agent {
     nested_running_count: agent.nested_running_count,
     started_at: agent.started_at,
     completed_at: agent.completed_at,
+    pinned: agent.pinned,
+    archived: agent.archived,
   };
 }
 
@@ -1017,6 +1019,7 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
     forked_from_id: thread.forked_from_id,
     forked_from_turn_id: thread.forked_from_turn_id,
     forked_from_item_id: thread.forked_from_item_id,
+    worktree: thread.worktree,
     created_at: thread.created_at,
     updated_at: thread.updated_at,
     turns: thread.turns.map(summarizeTurnForSidebar),
@@ -1117,8 +1120,9 @@ function conversationSearchContextLabel(
   thread: Thread,
   projects: DesktopProject[],
 ): string {
-  const project = projects.find((candidate) => candidate.path === thread.cwd);
-  return project?.name ?? fileNameFromPath(thread.cwd) ?? "wuu";
+  const projectPath = threadProjectPath(thread);
+  const project = projects.find((candidate) => candidate.path === projectPath);
+  return project?.name ?? fileNameFromPath(projectPath) ?? "wuu";
 }
 
 function pinnedThreads(threads: Thread[]): Thread[] {
@@ -1137,13 +1141,17 @@ function projectThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
   return sortThreadSummaries(threads).filter((thread) => !thread.pinned);
 }
 
+export function threadProjectPath(
+  thread: Pick<Thread, "cwd" | "worktree">,
+): string {
+  return thread.worktree?.base_repo?.trim() || thread.cwd;
+}
+
 // isScratchThread classifies a thread as belonging to the scratch (no-project)
-// workspace. Newer builds set Thread.workspace_kind at creation; older threads
-// loaded from disk omit the field, so fall back to comparing cwd against the
-// registered project list. Anything whose cwd is not a known project path
-// must have come from the desktop-managed scratch root.
+// workspace. Worktree forks run from their worktree cwd, but belong to the
+// base repo for sidebar grouping.
 export function isScratchThread(
-  thread: Pick<Thread, "workspace_kind" | "cwd">,
+  thread: Pick<Thread, "workspace_kind" | "cwd" | "worktree">,
   projects: DesktopProject[],
 ): boolean {
   if (thread.workspace_kind === "scratch") {
@@ -1152,7 +1160,8 @@ export function isScratchThread(
   if (thread.workspace_kind === "project") {
     return false;
   }
-  return !projects.some((project) => project.path === thread.cwd);
+  const projectPath = threadProjectPath(thread);
+  return !projects.some((project) => project.path === projectPath);
 }
 
 // scratchThreads returns the non-pinned threads that belong to the scratch

@@ -59,7 +59,7 @@ describe("ConversationForkDialog", () => {
     );
 
     expect(buttonByLabel("派生到本地")).toBeTruthy();
-    expect(buttonByLabel("派生到新工作树")).toBeTruthy();
+    expect(buttonByLabel("派生到 git worktree")).toBeTruthy();
     expect(buttonByLabel("取消")).toBeTruthy();
     expect(buttonByLabel("关闭")).toBeTruthy();
   });
@@ -105,7 +105,7 @@ describe("ConversationForkDialog", () => {
     );
 
     await act(async () => {
-      buttonByLabel("派生到新工作树").click();
+      buttonByLabel("派生到 git worktree").click();
       await Promise.resolve();
     });
 
@@ -223,7 +223,7 @@ describe("ConversationForkDialog", () => {
 
     expect(onChoose).toHaveBeenCalledWith("local");
     expect(buttonByLabel("派生到本地").disabled).toBe(true);
-    expect(buttonByLabel("派生到新工作树").disabled).toBe(true);
+    expect(buttonByLabel("派生到 git worktree").disabled).toBe(true);
     expect(buttonByLabel("取消").disabled).toBe(true);
     expect(buttonByLabel("关闭").disabled).toBe(true);
 

@@ -5508,6 +5508,80 @@ func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 	}
 }
 
+func TestServerPrunesIdleResidentThreads(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	srv := New(rt, &lockedBuffer{})
+	now := time.Now().UTC()
+
+	keep := newThreadState("thread-keep", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now.Add(-24*time.Hour))
+	keep.LastAccessedAt = now.Add(-24 * time.Hour)
+	running := newThreadState("thread-running", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now.Add(-23*time.Hour))
+	running.LastAccessedAt = now.Add(-23 * time.Hour)
+	running.startTurnLocked("running-turn", providers.ChatMessage{Role: "user", Content: "running"}, now)
+	queued := newThreadState("thread-queued", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now.Add(-22*time.Hour))
+	queued.LastAccessedAt = now.Add(-22 * time.Hour)
+
+	srv.threads[keep.ID] = keep
+	srv.threads[running.ID] = running
+	srv.threads[queued.ID] = queued
+	srv.enqueueQueuedUserTurn(queued.ID, queuedTurn{id: "queued-1", msg: providers.ChatMessage{Role: "user", Content: "later"}})
+
+	for i := 0; i < residentThreadLimit+4; i++ {
+		id := fmt.Sprintf("idle-%02d", i)
+		th := newThreadState(id, nil, rt.ProviderName, rt.Model, rt.RootDir, true, now.Add(time.Duration(i)*time.Minute))
+		th.LastAccessedAt = now.Add(time.Duration(i) * time.Minute)
+		srv.threads[id] = th
+	}
+
+	srv.pruneResidentThreads(keep.ID)
+
+	if srv.thread(keep.ID) == nil {
+		t.Fatal("kept thread was pruned")
+	}
+	if srv.thread(running.ID) == nil {
+		t.Fatal("running thread was pruned")
+	}
+	if srv.thread(queued.ID) == nil {
+		t.Fatal("queued thread was pruned")
+	}
+	srv.mu.Lock()
+	count := len(srv.threads)
+	srv.mu.Unlock()
+	if count > residentThreadLimit {
+		t.Fatalf("resident thread count should be bounded, got %d", count)
+	}
+}
+
+func TestServerTurnStartReloadsPrunedPersistentThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providers.ChatResponse{Content: "done"}})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	threadID := "thread-pruned"
+	if _, err := session.CreateWithMetadata(rt.SessionDir, threadID, rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := rewriteChatHistory(rt.SessionDir, threadID, []providers.ChatMessage{{Role: "user", Content: "hello"}}); err != nil {
+		t.Fatalf("write history: %v", err)
+	}
+
+	req := fmt.Sprintf(`{"id":"1","method":"turn/start","params":{"thread_id":%q,"prompt":"continue"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	_ = waitForMethod(t, out, NotificationTurnCompleted)
+
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatal("thread should be reloaded into the resident set")
+	}
+	th.mu.Lock()
+	visible := visibleMessagesForTest(th.History)
+	th.mu.Unlock()
+	if len(visible) != 4 || visible[1].Content != "hello" || visible[2].Content != "continue" || visible[3].Content != "done" {
+		t.Fatalf("unexpected reloaded history: %+v", visible)
+	}
+}
+
 func TestServerThreadResumeRepairsToolResultOrder(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	sessionID := "20260523-000001-tools"
