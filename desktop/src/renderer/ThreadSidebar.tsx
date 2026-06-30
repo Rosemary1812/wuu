@@ -289,21 +289,25 @@ function ThreadList({
         <div className="thread-list-footer">
           {hiddenCount > 0 ? (
             <button className="thread-list-more" type="button" onClick={onShowMore}>
-              <span>{hiddenCount > PROJECT_THREAD_VISIBLE_INCREMENT ? `再显示 ${showMoreCount} 条` : `显示剩余 ${hiddenCount} 条`}</span>
+              {hiddenCount > PROJECT_THREAD_VISIBLE_INCREMENT ? `再显示 ${showMoreCount} 条` : `显示剩余 ${hiddenCount} 条`}
+            </button>
+          ) : null}
+          <div className="thread-list-footer-aside">
+            {hiddenCount > 0 ? (
               <span className="thread-list-more-count">剩余 {hiddenCount} 条</span>
-            </button>
-          ) : null}
-          {expanded ? (
-            <button
-              className="thread-list-collapse-btn"
-              type="button"
-              onClick={collapseVisibleThreads}
-              aria-label="收起已展开的会话"
-              title="收起"
-            >
-              收起
-            </button>
-          ) : null}
+            ) : null}
+            {expanded ? (
+              <button
+                className="thread-list-collapse-btn"
+                type="button"
+                onClick={collapseVisibleThreads}
+                aria-label="收起已展开的会话"
+                title="收起"
+              >
+                收起
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>
@@ -442,7 +446,6 @@ function ThreadRows({
                 onClick={() => onSelect(thread.id)}
               >
                 <ThreadRowTitle title={title} />
-                {pendingSwitch ? <span className="thread-row-loading" aria-hidden="true" /> : null}
               </button>
               <div className="thread-row-actions" aria-label="对话操作">
                 <button
