@@ -289,25 +289,25 @@ async function nextAnimationFrame(): Promise<void> {
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 }
 
-function longPastedPrompt(): string {
+function longPastedPrompt(title = "# 交接提示词(直接粘贴)", label = "交接"): string {
   return [
-    "# 交接提示词(直接粘贴)",
+    title,
     "",
-    "这是第一段交接内容。",
-    "这是第二段交接内容。",
-    "这是第三段交接内容。",
-    "这是第四段交接内容。",
-    "这是第五段交接内容。",
-    "这是第六段交接内容。",
-    "这是第七段交接内容。",
-    "这是第八段交接内容。",
-    "这是第九段交接内容。",
-    "这是第十段交接内容。",
-    "这是第十一段交接内容。",
-    "这是第十二段交接内容。",
-    "这是第十三段交接内容。",
-    "这是第十四段交接内容。",
-    "这是第十五段交接内容。",
+    `这是第一段${label}内容。`,
+    `这是第二段${label}内容。`,
+    `这是第三段${label}内容。`,
+    `这是第四段${label}内容。`,
+    `这是第五段${label}内容。`,
+    `这是第六段${label}内容。`,
+    `这是第七段${label}内容。`,
+    `这是第八段${label}内容。`,
+    `这是第九段${label}内容。`,
+    `这是第十段${label}内容。`,
+    `这是第十一段${label}内容。`,
+    `这是第十二段${label}内容。`,
+    `这是第十三段${label}内容。`,
+    `这是第十四段${label}内容。`,
+    `这是第十五段${label}内容。`,
   ].join("\n");
 }
 
@@ -708,6 +708,40 @@ describe("Composer long text folding", () => {
 
     expect(container.querySelector(".composer-collapsed-prompt-card")).toBeNull();
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(longText);
+  });
+
+  it("folds repeated long pastes into sequential rows", () => {
+    const firstLongText = longPastedPrompt("# A 交接提示词", "A");
+    const secondLongText = longPastedPrompt("# B 交接提示词", "B");
+    const onSend = vi.fn();
+    renderStatefulComposer({ onSend });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, firstLongText);
+    });
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, secondLongText);
+    });
+
+    const cards = Array.from(container.querySelectorAll(".composer-collapsed-prompt-card"));
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.textContent).toContain("# A 交接提示词");
+    expect(cards[1]?.textContent).toContain("# B 交接提示词");
+    expect((textarea as HTMLTextAreaElement).value).toBe("");
+
+    act(() => {
+      setTextareaValue(textarea as HTMLTextAreaElement, "\n要求后续变更");
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+    act(() => {
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(`${firstLongText}${secondLongText}\n要求后续变更`);
   });
 
   it("removes only the folded prefix and keeps the follow-up draft", () => {

@@ -616,33 +616,42 @@
 }
 
 .composer.has-collapsed-prompt textarea {
-  min-height: 42px;
-  padding-top: 10px;
+  min-height: 40px;
+  padding-top: 8px;
 }
 
 .hero-composer-wrap .composer.has-collapsed-prompt textarea {
-  min-height: 48px;
-  padding-top: 10px;
+  min-height: 44px;
+  padding-top: 8px;
 }
 
 .composer-stack.is-expanded .composer.has-collapsed-prompt textarea {
   min-height: clamp(120px, 24vh, 240px);
 }
 
-.composer-collapsed-prompt-card {
-  position: relative;
-  display: inline-flex;
-  max-width: min(460px, calc(100% - 62px));
+.composer-collapsed-prompt-list {
+  display: flex;
+  width: min(360px, calc(100% - 62px));
   min-width: 0;
-  margin: 14px 44px 0 14px;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 44px 0 14px;
+}
+
+.composer-collapsed-prompt-card {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: stretch;
   border: 1px solid var(--surface-4);
   border-radius: var(--radius-sm);
   background: var(--paper);
   box-shadow: 0 1px 2px rgba(20, 24, 28, 0.05);
 }
 
-.hero-composer-wrap .composer-collapsed-prompt-card {
-  margin: 18px 52px 0 22px;
+.hero-composer-wrap .composer-collapsed-prompt-list {
+  margin: 14px 52px 0 22px;
 }
 
 .composer-collapsed-prompt-main {
@@ -650,8 +659,8 @@
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 12px;
-  padding: 10px 38px 10px 12px;
+  gap: 8px;
+  padding: 7px 8px;
   border: 0;
   border-radius: inherit;
   background: transparent;
@@ -671,9 +680,9 @@
 
 .composer-collapsed-prompt-icon {
   display: grid;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   place-items: center;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -681,23 +690,23 @@
 }
 
 .composer-collapsed-prompt-icon svg {
-  width: var(--icon-size);
-  height: var(--icon-size);
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .composer-collapsed-prompt-copy {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 2px;
 }
 
 .composer-collapsed-prompt-title {
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
-  line-height: 1.25;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -708,7 +717,7 @@
   align-items: center;
   gap: 3px;
   color: var(--ink-muted);
-  font-size: var(--font-ui);
+  font-size: var(--font-xs);
   font-weight: var(--weight-medium);
   line-height: 1;
   text-decoration: underline;
@@ -722,26 +731,24 @@
 }
 
 .composer-collapsed-prompt-remove {
-  position: absolute;
-  top: 7px;
-  right: 7px;
   display: grid;
   width: 24px;
-  height: 24px;
+  height: 100%;
   place-items: center;
   border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--ink);
-  color: var(--paper);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: transparent;
+  color: var(--ink-muted);
 }
 
 .composer-collapsed-prompt-remove:hover {
-  background: #2f3438;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .composer-collapsed-prompt-remove svg {
-  width: 15px;
-  height: 15px;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .composer textarea::placeholder {

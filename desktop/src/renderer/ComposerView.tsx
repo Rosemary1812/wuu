@@ -89,6 +89,7 @@ import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
 
 type CollapsedComposerPromptBlock = {
+  id: string;
   text: string;
 };
 
@@ -255,18 +256,24 @@ export function Composer({
   const composerFrameRef = useRef<HTMLDivElement>(null);
   const collapsedComposerFrameHeightRef = useRef<number | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const collapsedPromptBlockIDRef = useRef(0);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
-  const [collapsedPromptBlock, setCollapsedPromptBlock] = useState<CollapsedComposerPromptBlock | null>(null);
+  const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
   const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
-  const hasCollapsedPromptBlock = Boolean(collapsedPromptBlock && prompt.startsWith(collapsedPromptBlock.text));
-  const visiblePromptValue = hasCollapsedPromptBlock && collapsedPromptBlock
-    ? prompt.slice(collapsedPromptBlock.text.length)
+  const collapsedPromptPrefix = useMemo(
+    () => collapsedPromptBlocks.map((block) => block.text).join(""),
+    [collapsedPromptBlocks]
+  );
+  const hasCollapsedPromptBlocks = collapsedPromptBlocks.length > 0 && prompt.startsWith(collapsedPromptPrefix);
+  const activeCollapsedPromptBlocks = hasCollapsedPromptBlocks ? collapsedPromptBlocks : [];
+  const visiblePromptValue = hasCollapsedPromptBlocks
+    ? prompt.slice(collapsedPromptPrefix.length)
     : prompt;
   const composerPlaceholder = readOnly
     ? "子任务会话只读"
-    : hasCollapsedPromptBlock
+    : hasCollapsedPromptBlocks
       ? "要求后续变更"
       : hasAttachments
         ? "添加描述"
@@ -304,7 +311,7 @@ export function Composer({
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
-    disabled: readOnly || hasAttachments || hasCollapsedPromptBlock,
+    disabled: readOnly || hasAttachments || hasCollapsedPromptBlocks,
     prompt,
     queryHistory,
     queryHistorySessionID,
@@ -348,10 +355,10 @@ export function Composer({
   }, [readOnly]);
 
   useEffect(() => {
-    if (collapsedPromptBlock && !prompt.startsWith(collapsedPromptBlock.text)) {
-      setCollapsedPromptBlock(null);
+    if (collapsedPromptBlocks.length > 0 && !prompt.startsWith(collapsedPromptPrefix)) {
+      setCollapsedPromptBlocks([]);
     }
-  }, [collapsedPromptBlock, prompt]);
+  }, [collapsedPromptBlocks.length, collapsedPromptPrefix, prompt]);
 
   useLayoutEffect(() => {
     const frame = composerFrameRef.current;
@@ -376,7 +383,8 @@ export function Composer({
     guideMessages.length,
     images.length,
     isComposerExpanded,
-    queuedMessages.length
+    queuedMessages.length,
+    activeCollapsedPromptBlocks.length
   ]);
 
   function focusComposerSoon(): void {
@@ -414,7 +422,7 @@ export function Composer({
   function updateVisiblePrompt(value: string): void {
     resetQueryHistoryNavigation();
     setSlashDismissedValue("");
-    setPrompt(hasCollapsedPromptBlock && collapsedPromptBlock ? `${collapsedPromptBlock.text}${value}` : value);
+    setPrompt(hasCollapsedPromptBlocks ? `${collapsedPromptPrefix}${value}` : value);
   }
 
   function handleComposerPaste(event: ReactClipboardEvent<HTMLTextAreaElement>): void {
@@ -428,10 +436,6 @@ export function Composer({
       return;
     }
 
-    if (hasCollapsedPromptBlock) {
-      return;
-    }
-
     const pastedText = event.clipboardData?.getData("text/plain") ?? "";
     if (!isCollapsibleComposerPrompt(pastedText)) {
       return;
@@ -439,33 +443,37 @@ export function Composer({
 
     const selectionStart = event.currentTarget.selectionStart ?? 0;
     const selectionEnd = event.currentTarget.selectionEnd ?? 0;
-    const replacingWholePrompt = selectionStart === 0 && selectionEnd === prompt.length;
-    if (prompt.length > 0 && !replacingWholePrompt) {
+    const visibleValue = event.currentTarget.value;
+    const replacingVisiblePrompt = selectionStart === 0 && selectionEnd === visibleValue.length;
+    if (visibleValue.length > 0 && !replacingVisiblePrompt) {
       return;
     }
 
     event.preventDefault();
     resetQueryHistoryNavigation();
     setSlashDismissedValue("");
-    setCollapsedPromptBlock({ text: pastedText });
-    setPrompt(pastedText);
+    const nextBlock = {
+      id: `composer-prompt-block-${collapsedPromptBlockIDRef.current++}`,
+      text: pastedText
+    };
+    setCollapsedPromptBlocks(hasCollapsedPromptBlocks ? [...collapsedPromptBlocks, nextBlock] : [nextBlock]);
+    setPrompt(`${hasCollapsedPromptBlocks ? collapsedPromptPrefix : ""}${pastedText}`);
     focusComposerSoon();
   }
 
-  function revealCollapsedPromptBlock(): void {
-    setCollapsedPromptBlock(null);
+  function revealCollapsedPromptBlocks(): void {
+    setCollapsedPromptBlocks([]);
     focusComposerSoon();
   }
 
-  function removeCollapsedPromptBlock(): void {
-    if (!collapsedPromptBlock) {
+  function removeCollapsedPromptBlock(index: number): void {
+    if (!hasCollapsedPromptBlocks) {
       return;
     }
-    const remainingPrompt = prompt.startsWith(collapsedPromptBlock.text)
-      ? prompt.slice(collapsedPromptBlock.text.length)
-      : prompt;
-    setCollapsedPromptBlock(null);
-    setPrompt(remainingPrompt);
+    const nextBlocks = activeCollapsedPromptBlocks.filter((_, blockIndex) => blockIndex !== index);
+    const nextPrefix = nextBlocks.map((block) => block.text).join("");
+    setCollapsedPromptBlocks(nextBlocks);
+    setPrompt(`${nextPrefix}${visiblePromptValue}`);
     focusComposerSoon();
   }
 
@@ -666,7 +674,7 @@ export function Composer({
             onEditGuideMessage={onEditGuideMessage}
             onEditQueuedMessage={onEditQueuedMessage}
           />
-          <div className={`composer${hasCollapsedPromptBlock ? " has-collapsed-prompt" : ""}`}>
+          <div className={`composer${hasCollapsedPromptBlocks ? " has-collapsed-prompt" : ""}`}>
             <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
             <input
               ref={attachmentInputRef}
@@ -683,12 +691,17 @@ export function Composer({
                 }
               }}
             />
-            {hasCollapsedPromptBlock && collapsedPromptBlock ? (
-              <CollapsedComposerPromptCard
-                text={collapsedPromptBlock.text}
-                onReveal={revealCollapsedPromptBlock}
-                onRemove={removeCollapsedPromptBlock}
-              />
+            {hasCollapsedPromptBlocks ? (
+              <div className="composer-collapsed-prompt-list" aria-label="折叠长文本">
+                {activeCollapsedPromptBlocks.map((block, index) => (
+                  <CollapsedComposerPromptCard
+                    text={block.text}
+                    key={block.id}
+                    onReveal={revealCollapsedPromptBlocks}
+                    onRemove={() => removeCollapsedPromptBlock(index)}
+                  />
+                ))}
+              </div>
             ) : null}
             <textarea
               ref={textareaRef}
