@@ -834,6 +834,50 @@ func TestBuildAnthropicRequest_ToolSearchDisabledForProxyByDefault(t *testing.T)
 	}
 }
 
+func TestBuildAnthropicRequest_ToolSearchEnabledForMiniMaxM3EndpointByDefault(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "MiniMax-M3",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "run a worker"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://api.minimaxi.com/anthropic"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
+		t.Fatalf("expected MiniMax M3 tool search beta, got %+v", payload.Betas)
+	}
+	if len(payload.Tools) != 2 || !payload.Tools[1].DeferLoading {
+		t.Fatalf("expected MiniMax M3 endpoint to defer load management tool, got %+v", payload.Tools)
+	}
+}
+
+func TestBuildAnthropicRequest_ToolSearchDisabledForMiniMaxM3ProxyByDefault(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "MiniMax-M3",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "run a worker"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://anthropic-proxy.example.com/minimax"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Betas) != 0 {
+		t.Fatalf("MiniMax M3 proxy default should not enable tool search beta, got %+v", payload.Betas)
+	}
+	if payload.Tools[1].DeferLoading {
+		t.Fatalf("MiniMax M3 proxy default should not send defer_loading: %+v", payload.Tools[1])
+	}
+}
+
 func TestBuildAnthropicRequest_ToolSearchDisabledForHaiku(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
 		Model: "claude-3-5-haiku-latest",

@@ -129,6 +129,18 @@ func TestSupportsNativeToolDiscovery(t *testing.T) {
 			want:     false,
 		},
 		{
+			name:     "minimax official anthropic endpoint",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.minimaxi.com/anthropic"},
+			model:    "MiniMax-M3",
+			want:     true,
+		},
+		{
+			name:     "minimax m3 proxy fallback",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
+			model:    "MiniMax-M3",
+			want:     false,
+		},
+		{
 			name:     "anthropic compatible opt in",
 			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
 			model:    "MiniMax-M3",

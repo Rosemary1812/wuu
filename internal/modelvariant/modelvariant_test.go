@@ -218,8 +218,8 @@ func TestSummariesMatchProviderCompatForMiniMaxM3(t *testing.T) {
 				if !ok || thinking["type"] != "adaptive" {
 					t.Fatalf("base thinking options = %#v", selection.ProviderOptions)
 				}
-				if got := selection.ProviderOptions["anthropicToolSearch"]; got != true {
-					t.Fatalf("anthropicToolSearch = %#v, want true; options=%#v", got, selection.ProviderOptions)
+				if _, ok := selection.ProviderOptions["anthropicToolSearch"]; ok {
+					t.Fatalf("base thinking should not inject anthropic tool_search opt-in: %#v", selection.ProviderOptions)
 				}
 			} else if ok {
 				t.Fatalf("openai-compatible should use native default thinking: %#v", selection.ProviderOptions)

@@ -565,7 +565,8 @@ func SupportsNativeToolSearch(baseURL, model string, options map[string]any) boo
 	if enabled, ok := anthropicToolSearchOption(options); ok {
 		return enabled
 	}
-	return isFirstPartyAnthropicBaseURL(baseURL)
+	return isFirstPartyAnthropicBaseURL(baseURL) ||
+		(isMiniMaxAnthropicBaseURL(baseURL) && isMiniMaxM3Model(model))
 }
 
 func hasToolSearchTool(defs []providers.ToolDefinition) bool {
@@ -592,6 +593,19 @@ func isFirstPartyAnthropicBaseURL(raw string) bool {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	return host == "api.anthropic.com"
+}
+
+func isMiniMaxAnthropicBaseURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "api.minimaxi.com"
+}
+
+func isMiniMaxM3Model(model string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(model)), "minimax-m3")
 }
 
 func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {

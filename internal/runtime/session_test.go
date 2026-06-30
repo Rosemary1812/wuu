@@ -1428,8 +1428,8 @@ func TestNewSessionEnablesNativeToolDiscoveryForMiniMaxM3(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if got := rt.StreamRunner.ProviderOptions["anthropicToolSearch"]; got != true {
-		t.Fatalf("anthropicToolSearch = %#v, want true; options=%#v", got, rt.StreamRunner.ProviderOptions)
+	if _, ok := rt.StreamRunner.ProviderOptions["anthropicToolSearch"]; ok {
+		t.Fatalf("MiniMax official endpoint should not masquerade as explicit anthropicToolSearch opt-in: %#v", rt.StreamRunner.ProviderOptions)
 	}
 	if rt.Toolkit == nil || !rt.Toolkit.NativeDeferredToolDiscovery() {
 		t.Fatalf("MiniMax M3 should enable native deferred tool discovery")
