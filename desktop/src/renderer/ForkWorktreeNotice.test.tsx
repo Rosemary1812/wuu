@@ -35,7 +35,11 @@ describe("ForkWorktreeNotice", () => {
 
     expect(notice?.textContent).toContain("从对话中派生");
     expect(notice?.textContent).toContain("已创建工作树");
-    expect(details).toHaveProperty("open", true);
+    expect(document.querySelector(".fork-worktree-divider")).toBeNull();
+    expect(details).toHaveProperty("open", false);
+    expect(notice?.textContent).toContain("基础仓库");
+    expect(notice?.textContent).toContain("基准提交");
+    expect(notice?.textContent).toContain("工作树");
     expect(code?.textContent).toContain("detached HEAD d955824f");
     expect(code?.textContent).toContain("Base repository /repo/project");
     expect(code?.textContent).toContain(

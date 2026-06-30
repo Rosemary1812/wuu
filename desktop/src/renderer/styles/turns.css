@@ -4210,44 +4210,27 @@
 }
 
 .fork-worktree-notice {
-  display: grid;
-  gap: 18px;
-  width: 100%;
-  margin: 20px 0 8px;
-}
-
-.fork-worktree-divider {
-  display: grid;
-  grid-template-columns: minmax(24px, 1fr) auto minmax(24px, 1fr);
-  align-items: center;
-  gap: 16px;
-  color: var(--info);
-}
-
-.fork-worktree-divider > span {
-  height: 1px;
-  background: var(--surface-4);
-}
-
-.fork-worktree-divider strong {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--font-heading);
-  font-weight: var(--weight-semibold);
+  width: min(100%, var(--conversation-message-max-width));
+  margin: 6px 0 22px;
 }
 
 .fork-worktree-card {
-  display: grid;
-  gap: 12px;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
 }
 
 .fork-worktree-summary {
-  display: inline-flex;
-  width: max-content;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 18px;
+  width: 100%;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
-  color: var(--ink-tertiary);
+  gap: 10px;
+  padding: 12px 14px;
+  color: var(--ink);
   cursor: pointer;
   list-style: none;
 }
@@ -4256,15 +4239,54 @@
   display: none;
 }
 
-.fork-worktree-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--font-heading);
+.fork-worktree-summary:hover,
+.fork-worktree-summary:focus-visible {
+  background: var(--ink-overlay-4);
+}
+
+.fork-worktree-summary:focus-visible {
+  outline: 2px solid rgba(9, 105, 218, 0.22);
+  outline-offset: -2px;
+}
+
+.fork-worktree-glyph {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink-tertiary);
+}
+
+.fork-worktree-summary-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fork-worktree-summary-text strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
 }
 
+.fork-worktree-summary-text span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
 .fork-worktree-chevron {
+  color: var(--ink-muted);
   transition: transform 160ms ease;
 }
 
@@ -4272,12 +4294,47 @@
   transform: rotate(180deg);
 }
 
+.fork-worktree-details {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.fork-worktree-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.fork-worktree-meta div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.fork-worktree-meta dt {
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.fork-worktree-meta dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .fork-worktree-code-block {
   position: relative;
   border: 1px solid var(--ink-overlay-8);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--paper);
-  box-shadow: 0 1px 2px var(--ink-overlay-4);
   overflow: hidden;
 }
 
@@ -4286,12 +4343,13 @@
   margin: 0;
   overflow: auto;
   background: transparent;
-  color: var(--ink);
+  color: var(--ink-tertiary);
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 15px;
+  font-size: var(--font-sm);
   line-height: 1.5;
-  padding: 18px 42px 18px 18px;
-  white-space: pre;
+  padding: 12px 42px 12px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .fork-worktree-code code {
