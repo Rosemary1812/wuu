@@ -1,5 +1,5 @@
 import { Archive, ChevronRight, CornerDownRight, Folder, FolderOpen, MessageSquarePlus, Pin } from "lucide-react";
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { Agent, DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import {
@@ -210,12 +210,44 @@ function ThreadList({
   onShowMore: () => void;
   onCollapse: () => void;
 }): JSX.Element {
+  const [stickyVisibleThreadIDs, setStickyVisibleThreadIDs] = useState<
+    Set<string>
+  >(() => new Set());
   const visibleThreads = projectThreads(threads);
-  const limitedThreads = limitedProjectThreads(visibleThreads, visibleCount, activeID, pendingThreadID);
+  useEffect(() => {
+    const validIDs = new Set(visibleThreads.map((thread) => thread.id));
+    setStickyVisibleThreadIDs((current) => {
+      const next = new Set<string>();
+      for (const id of current) {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      }
+      for (const thread of visibleThreads) {
+        if (importantThreadVisible(thread, activeID, pendingThreadID)) {
+          next.add(thread.id);
+        }
+      }
+      return sameStringSet(current, next) ? current : next;
+    });
+  }, [activeID, pendingThreadID, visibleThreads]);
+  const limitedThreads = limitedProjectThreads(
+    visibleThreads,
+    visibleCount,
+    activeID,
+    pendingThreadID,
+    stickyVisibleThreadIDs,
+  );
   const hiddenCount = visibleThreads.length - limitedThreads.length;
   const showMoreCount = Math.min(PROJECT_THREAD_VISIBLE_INCREMENT, hiddenCount);
   const expanded = visibleCount > PROJECT_THREAD_INITIAL_VISIBLE_COUNT;
   const showFooter = hiddenCount > 0 || expanded;
+
+  function collapseVisibleThreads(): void {
+    setStickyVisibleThreadIDs(new Set());
+    onCollapse();
+  }
+
   return (
     <div className="thread-list">
       <ThreadRows
@@ -242,7 +274,7 @@ function ThreadList({
             <button
               className="thread-list-collapse-btn"
               type="button"
-              onClick={onCollapse}
+              onClick={collapseVisibleThreads}
               aria-label="收起已展开的会话"
               title="收起"
             >
@@ -259,15 +291,32 @@ function limitedProjectThreads(
   threads: ThreadSummary[],
   visibleCount: number,
   activeID: string | undefined,
-  pendingThreadID: string | undefined
+  pendingThreadID: string | undefined,
+  stickyVisibleThreadIDs: ReadonlySet<string> = new Set(),
 ): ThreadSummary[] {
   const visibleIDs = new Set(threads.slice(0, Math.max(0, visibleCount)).map((thread) => thread.id));
   return threads.filter((thread) => {
-    if (visibleIDs.has(thread.id) || importantThreadVisible(thread, activeID, pendingThreadID)) {
+    if (
+      visibleIDs.has(thread.id) ||
+      stickyVisibleThreadIDs.has(thread.id) ||
+      importantThreadVisible(thread, activeID, pendingThreadID)
+    ) {
       return true;
     }
     return false;
   });
+}
+
+function sameStringSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function importantThreadVisible(

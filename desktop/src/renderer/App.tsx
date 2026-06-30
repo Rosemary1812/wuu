@@ -150,6 +150,7 @@ import {
   initialState,
   isAnyThreadRunning,
   isDirectChildAgent,
+  isScratchThread,
   isStateActiveThreadRunning,
   isThread,
   isThreadRunning,
@@ -501,6 +502,9 @@ export function App(): JSX.Element {
   const [projectThreadsByProjectID, setProjectThreadsByProjectID] = useState<
     Record<string, Thread[]>
   >({});
+  const [cachedScratchThreads, setCachedScratchThreads] = useState<Thread[]>(
+    [],
+  );
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [codexRuntimeMenu, setCodexRuntimeMenu] =
@@ -1284,6 +1288,20 @@ export function App(): JSX.Element {
   ]);
 
   useEffect(() => {
+    if (state.activeContext?.kind !== "no_project") {
+      return;
+    }
+    const activeScratchThreads = sortThreads(
+      state.threads.filter((thread) => isScratchThread(thread, state.projects)),
+    );
+    setCachedScratchThreads((current) =>
+      threadListsEquivalent(current, activeScratchThreads)
+        ? current
+        : activeScratchThreads,
+    );
+  }, [state.activeContext?.kind, state.projects, state.threads]);
+
+  useEffect(() => {
     for (const project of state.projects) {
       if (
         !projectExpanded(
@@ -1475,8 +1493,11 @@ export function App(): JSX.Element {
     state.projects,
     state.threads,
   ]);
-  const sidebarProjectThreads = useMemo(() => {
+  const sidebarThreads = useMemo(() => {
     const byID = new Map<string, Thread>();
+    for (const thread of cachedScratchThreads) {
+      byID.set(thread.id, thread);
+    }
     for (const threads of Object.values(sidebarProjectThreadsByProjectID)) {
       for (const thread of threads) {
         byID.set(thread.id, thread);
@@ -1486,7 +1507,7 @@ export function App(): JSX.Element {
       byID.set(thread.id, thread);
     }
     return sortThreads([...byID.values()]);
-  }, [sidebarProjectThreadsByProjectID, state.threads]);
+  }, [cachedScratchThreads, sidebarProjectThreadsByProjectID, state.threads]);
   const sidebarProjectThreadSummariesByProjectID = useMemo(() => {
     const next: Record<string, ThreadSummary[]> = {};
     for (const [projectID, threads] of Object.entries(
@@ -1497,20 +1518,16 @@ export function App(): JSX.Element {
     return next;
   }, [sidebarProjectThreadsByProjectID]);
   const sidebarThreadSummaries = useMemo(
-    () => summarizeThreadsForSidebar(sidebarProjectThreads),
-    [sidebarProjectThreads],
-  );
-  const stateThreadSummaries = useMemo(
-    () => summarizeThreadsForSidebar(state.threads),
-    [state.threads],
+    () => summarizeThreadsForSidebar(sidebarThreads),
+    [sidebarThreads],
   );
   const sidebarPinnedThreads = useMemo(
     () => pinnedThreadSummaries(sidebarThreadSummaries),
     [sidebarThreadSummaries],
   );
   const sidebarScratchThreads = useMemo(
-    () => scratchThreadSummaries(stateThreadSummaries, state.projects),
-    [stateThreadSummaries, state.projects],
+    () => scratchThreadSummaries(sidebarThreadSummaries, state.projects),
+    [sidebarThreadSummaries, state.projects],
   );
   const visiblePendingThreadID =
     pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
@@ -1682,6 +1699,14 @@ export function App(): JSX.Element {
         [projectID]: upsertThread(currentThreads, thread),
       };
     });
+  }
+
+  function updateCachedSidebarThread(thread: Thread): void {
+    if (isScratchThread(thread, appStateRef.current.projects)) {
+      setCachedScratchThreads((current) => upsertThread(current, thread));
+      return;
+    }
+    updateCachedProjectThread(thread);
   }
 
   function toggleProjectCollapsed(projectID: string): void {
@@ -4624,7 +4649,7 @@ export function App(): JSX.Element {
     }
     try {
       const result = await window.wuu.pinThread(thread.id, !thread.pinned);
-      updateCachedProjectThread(result.thread);
+      updateCachedSidebarThread(result.thread);
       setState((current) => ({
         ...current,
         thread:
@@ -4716,7 +4741,7 @@ export function App(): JSX.Element {
     }
     try {
       const result = await window.wuu.archiveThread(thread.id, true);
-      updateCachedProjectThread(result.thread);
+      updateCachedSidebarThread(result.thread);
       setArchiveConfirmThreadID(undefined);
       setState((current) => {
         const nextTabs = removeSessionTab(

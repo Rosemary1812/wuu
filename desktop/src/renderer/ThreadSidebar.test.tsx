@@ -288,13 +288,14 @@ describe("ScratchThreadSection", () => {
   function renderSection(props: {
     onCreateScratchThread: () => void;
     threads?: Thread[];
+    activeID?: string;
   }): { button: HTMLButtonElement | null } {
     act(() => {
       root = createRoot(container);
       root.render(
         <ScratchThreadSection
           threads={summarizeThreadsForSidebar(props.threads ?? [])}
-          activeID={undefined}
+          activeID={props.activeID}
           pendingThreadID={undefined}
           archiveConfirmThreadID={undefined}
           lastViewedTurnByThreadID={{}}
@@ -364,6 +365,40 @@ describe("ScratchThreadSection", () => {
       showMore!.click();
     });
     expect(container.querySelectorAll(".thread-row").length).toBe(12);
+  });
+
+  it("keeps a previously active overflow thread visible after the tab closes", () => {
+    const threads: Thread[] = Array.from({ length: 12 }, (_, i) => ({
+      ...makeScratchThread(`scratch-${i}`),
+      updated_at: `2026-01-${String(28 - i).padStart(2, "0")}T00:00:00Z`,
+    }));
+    const targetID = "scratch-10";
+    renderSection({
+      onCreateScratchThread: vi.fn(),
+      threads,
+      activeID: targetID,
+    });
+    expect(container.textContent).toContain("Preview scratch-10");
+
+    act(() => {
+      root!.render(
+        <ScratchThreadSection
+          threads={summarizeThreadsForSidebar(threads)}
+          activeID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          onSelect={() => {}}
+          onSelectChildAgent={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+          onCreateScratchThread={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Preview scratch-10");
   });
 
   it("does not render a collapse button while still at the initial visible count", () => {
