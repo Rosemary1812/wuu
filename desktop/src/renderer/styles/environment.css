@@ -471,11 +471,10 @@
 }
 
 /**
- * Subagent section in the info panel. Each row is a horizontal bar
- * visually similar to the sidebar's `thread-row` pattern: the body
- * (title + status + nested counter) is the click target, and the
- * Pin / Archive actions slide in on hover so the row stays quiet
- * when not focused.
+ * Subagent section in the info panel. Rows stay lighter than the
+ * main sidebar thread rows because this panel is a status glance:
+ * title, state, and optional nested count should keep stable scan axes
+ * without turning each state into a separate badge.
  */
 .environment-subagent-section {
   display: grid;
@@ -493,18 +492,17 @@
 .subagent-row {
   position: relative;
   display: grid;
+  height: 32px;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  column-gap: 8px;
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  padding: 5px 8px;
-  transition: background 120ms ease;
-}
-
-.subagent-row.running {
-  box-shadow: inset 2px 0 0 0 var(--sidebar-accent);
+  background: var(--ink-overlay-4);
+  box-shadow: inset 0 0 0 1px transparent;
+  padding: 0;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .subagent-row.completed {
@@ -512,15 +510,11 @@
 }
 
 .subagent-row.failed {
-  box-shadow: inset 2px 0 0 0 var(--danger);
+  background: var(--danger-soft);
 }
 
 .subagent-row.cancelled {
   opacity: 0.6;
-}
-
-.subagent-row.pending {
-  box-shadow: inset 2px 0 0 0 var(--ink-overlay-12);
 }
 
 .subagent-row.archived {
@@ -528,23 +522,33 @@
 }
 
 .subagent-row:hover,
-.subagent-row:has(.subagent-row-action:focus-visible) {
+.subagent-row:has(.subagent-row-action:focus-visible),
+.subagent-row:has(.subagent-row-main:focus-visible) {
   background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--ink-overlay-8);
 }
 
 .subagent-row-main {
   display: grid;
+  grid-column: 1;
+  height: 100%;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(42px, auto);
   align-items: center;
-  column-gap: 6px;
+  column-gap: 8px;
   background: transparent;
   border: 0;
-  padding: 0;
+  border-radius: inherit;
+  padding: 0 8px 0 12px;
   text-align: left;
   cursor: pointer;
   color: inherit;
   font: inherit;
+  transition: padding-right 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.subagent-row-main:focus-visible {
+  outline: 0;
 }
 
 .subagent-row-title {
@@ -558,42 +562,61 @@
 }
 
 .subagent-row-status {
-  flex: 0 0 auto;
-  border-radius: var(--radius-pill);
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: end;
+  gap: 5px;
+  min-width: 42px;
+  overflow: hidden;
   color: var(--ink-tertiary);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
-  padding: 1px 6px;
-  background: var(--surface-3);
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+  background: transparent;
+}
+
+.subagent-row-status::before {
+  display: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  content: "";
+  opacity: 0.7;
 }
 
 .subagent-row.running .subagent-row-status {
-  background: #e8f4ec;
-  color: #1f7a42;
+  color: var(--success);
+}
+
+.subagent-row.running .subagent-row-status::before {
+  display: block;
+  animation: subagent-status-pulse 1600ms ease-in-out infinite;
 }
 
 .subagent-row.failed .subagent-row-status {
-  background: var(--danger-soft);
   color: var(--danger);
 }
 
 .subagent-row.completed .subagent-row-status {
-  background: var(--surface-3);
   color: var(--ink-muted);
 }
 
 .subagent-row-nested {
-  flex: 0 0 auto;
   color: var(--ink-tertiary);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
-  padding: 1px 5px;
-  border-radius: var(--radius-pill);
-  background: var(--ink-overlay-8);
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .subagent-row-actions {
   position: absolute;
+  grid-area: 1 / 1;
   top: 50%;
   right: 5px;
   display: flex;
@@ -613,7 +636,8 @@
   transform: translate3d(0, -50%, 0);
 }
 
-.subagent-row:has(.subagent-row-actions) .subagent-row-main {
+.subagent-row:hover .subagent-row-main,
+.subagent-row:has(.subagent-row-action:focus-visible) .subagent-row-main {
   padding-right: 56px;
 }
 
@@ -628,8 +652,26 @@
 
 @media (prefers-reduced-motion: reduce) {
   .subagent-row,
+  .subagent-row-main,
   .subagent-row-actions {
     transition: none;
+  }
+
+  .subagent-row.running .subagent-row-status::before {
+    animation: none;
+  }
+}
+
+@keyframes subagent-status-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
   }
 }
 
