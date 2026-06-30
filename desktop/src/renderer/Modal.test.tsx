@@ -12,7 +12,7 @@
  * - default focus moves into the panel body, skipping the X button
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, createElement, useRef, type ReactElement } from "react";
+import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Modal } from "./Modal";
 
@@ -109,30 +109,6 @@ describe("Modal", () => {
 
     const dialog = document.querySelector(".environment-dialog");
     expect(dialog?.classList.contains("fork-dialog")).toBe(true);
-  });
-
-  it("renders a scoped backdrop into the provided host", () => {
-    function ScopedModal(): ReactElement {
-      const hostRef = useRef<HTMLDivElement | null>(null);
-      return createElement(
-        "div",
-        { ref: hostRef, "data-testid": "host" },
-        createElement(Modal, {
-          ariaLabel: "scoped",
-          icon: createElement("span", null, "i"),
-          title: "t",
-          onClose: () => undefined,
-          hostRef,
-        }),
-      );
-    }
-
-    mount(createElement(ScopedModal));
-
-    const host = document.querySelector('[data-testid="host"]');
-    const backdrop = document.querySelector(".modal-backdrop.scoped");
-    expect(backdrop).toBeTruthy();
-    expect(backdrop?.parentElement).toBe(host);
   });
 
   it("invokes onClose when the X button is clicked", () => {

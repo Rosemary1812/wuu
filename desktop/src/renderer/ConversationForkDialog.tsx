@@ -1,5 +1,5 @@
 import { GitBranch, GitFork, Laptop } from "lucide-react";
-import { type RefObject, useState } from "react";
+import { useState } from "react";
 import { Modal } from "./Modal";
 
 export type ForkMode = "local" | "worktree";
@@ -41,11 +41,9 @@ const FORK_OPTIONS: ForkOption[] = [
 export function ConversationForkDialog({
   onCancel,
   onChoose,
-  hostRef,
 }: {
   onCancel: () => void;
   onChoose: (mode: ForkMode) => void | Promise<void>;
-  hostRef?: RefObject<HTMLElement | null>;
 }): JSX.Element {
   // Tracks which option is mid-flight so only that button shows a spinner
   // and becomes non-interactive. We keep both options clickable even
@@ -78,7 +76,6 @@ export function ConversationForkDialog({
       onClose={onCancel}
       closeDisabled={disabled}
       panelClassName="fork-dialog"
-      hostRef={hostRef}
       footer={
         <button
           className="secondary-button fork-dialog-cancel"

@@ -4,13 +4,10 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
-  type RefObject,
   useCallback,
   useEffect,
   useRef,
-  useState,
 } from "react";
-import { createPortal } from "react-dom";
 
 /**
  * Shared chrome for the application's environment-style dialogs
@@ -31,14 +28,6 @@ import { createPortal } from "react-dom";
  *   inside `children`) participate in form submission. Modal calls
  *   `event.preventDefault()` before forwarding submit, mirroring the
  *   previous hand-rolled forms.
- *
- * Scoping model:
- * - Pass `hostRef` to render the backdrop into a specific DOM node
- *   (typically the conversation pane) and switch the backdrop to
- *   `position: absolute`. The dim layer then only covers the host
- *   element, leaving the sidebar and any other root-level chrome
- *   completely untouched. Omit `hostRef` to fall back to a global
- *   `position: fixed; inset: 0` backdrop that covers the viewport.
  */
 export type ModalProps = {
   ariaLabel: string;
@@ -53,15 +42,6 @@ export type ModalProps = {
   onSubmit?: (event: ReactFormEvent<HTMLFormElement>) => void;
   footer?: ReactNode;
   children?: ReactNode;
-  /**
-   * When provided, render the backdrop into `hostRef.current` and use
-   * `position: absolute` so the dim layer only covers the host box.
-   * The host element must be a positioned ancestor — the conversation
-   * pane already is. If the ref is not yet attached at render time
-   * (e.g. when the dialog first appears before the host has finished
-   * mounting), the dialog waits a tick before mounting via a portal.
-   */
-  hostRef?: RefObject<HTMLElement | null>;
 };
 
 export function Modal({
@@ -77,36 +57,9 @@ export function Modal({
   onSubmit,
   footer,
   children,
-  hostRef,
 }: ModalProps): JSX.Element | null {
   const panelRef = useRef<HTMLElement | null>(null);
-  const [host, setHost] = useState<HTMLElement | null>(null);
   const dismissible = typeof onClose === "function" && !closeDisabled;
-
-  // Resolve `hostRef.current` once it has been attached. React's
-  // commit phase attaches refs before useEffect, so by the time this
-  // effect runs `hostRef.current` is normally the live DOM node. The
-  // setTimeout fallback covers the unusual case where a dialog
-  // appears before its host (e.g. conditional render that opens
-  // before the host has fully committed).
-  useEffect(() => {
-    if (!hostRef) {
-      setHost(null);
-      return;
-    }
-    if (hostRef.current) {
-      setHost(hostRef.current);
-      return;
-    }
-    const id = window.setTimeout(() => {
-      if (hostRef.current) {
-        setHost(hostRef.current);
-      }
-    }, 0);
-    return () => {
-      window.clearTimeout(id);
-    };
-  }, [hostRef]);
 
   const setPanelRef = useCallback((node: HTMLElement | null) => {
     panelRef.current = node;
@@ -130,7 +83,7 @@ export function Modal({
         "button:not(.icon-button):not(:disabled)",
     );
     target?.focus();
-  }, [initialFocus, host]);
+  }, [initialFocus]);
 
   useEffect(() => {
     if (!onClose) {
@@ -173,13 +126,7 @@ export function Modal({
     .filter(Boolean)
     .join(" ");
 
-  const backdropClass = [
-    "modal-backdrop",
-    "environment-modal-backdrop",
-    hostRef ? "scoped" : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const backdropClass = "modal-backdrop environment-modal-backdrop";
 
   const panelBody = (
     <>
@@ -248,11 +195,5 @@ export function Modal({
     </div>
   );
 
-  if (hostRef) {
-    if (!host) {
-      return null;
-    }
-    return createPortal(content, host);
-  }
   return content;
 }

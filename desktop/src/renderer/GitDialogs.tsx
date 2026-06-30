@@ -1,7 +1,6 @@
 import { CornerDownRight, Github } from "lucide-react";
 import {
   type FormEvent as ReactFormEvent,
-  type RefObject,
   useState,
 } from "react";
 import type { GitCommitResult, GitPullRequestResult, GitStatusResult } from "../shared/protocol";
@@ -13,13 +12,11 @@ export function CommitChangesDialog({
   branch,
   onCancel,
   onCommit,
-  hostRef,
 }: {
   gitStatus?: GitStatusResult;
   branch?: string;
   onCancel: () => void;
   onCommit: (params: { message: string; includeUnstaged: boolean }) => Promise<GitCommitResult>;
-  hostRef?: RefObject<HTMLElement | null>;
 }): JSX.Element {
   const [message, setMessage] = useState("");
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
@@ -54,7 +51,6 @@ export function CommitChangesDialog({
       onClose={onCancel}
       asForm
       onSubmit={(event) => void submit(event)}
-      hostRef={hostRef}
       footer={
         <>
           <button className="secondary-button" type="button" onClick={onCancel}>
@@ -105,13 +101,11 @@ export function PullRequestDialog({
   disabledReason,
   onCancel,
   onCreate,
-  hostRef,
 }: {
   gitStatus?: GitStatusResult;
   disabledReason: string;
   onCancel: () => void;
   onCreate: (params: { title: string; body: string; draft: boolean }) => Promise<GitPullRequestResult>;
-  hostRef?: RefObject<HTMLElement | null>;
 }): JSX.Element {
   const [title, setTitle] = useState(() => humanizeBranchTitle(gitStatus?.branch ?? ""));
   const [body, setBody] = useState("");
@@ -151,7 +145,6 @@ export function PullRequestDialog({
       onClose={onCancel}
       asForm
       onSubmit={(event) => void submit(event)}
-      hostRef={hostRef}
       footer={
         <>
           <button className="secondary-button" type="button" onClick={onCancel}>

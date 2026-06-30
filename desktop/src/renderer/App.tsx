@@ -5905,7 +5905,6 @@ export function App(): JSX.Element {
           onDeny={() =>
             void resolveToolApproval(state.pendingToolApproval!, "denied")
           }
-          hostRef={conversationPaneRef}
         />
       ) : null}
 
@@ -6277,7 +6276,6 @@ export function App(): JSX.Element {
           branch={state.gitStatus?.branch}
           onCancel={() => setEnvironmentDialog(null)}
           onCommit={commitEnvironmentChanges}
-          hostRef={conversationPaneRef}
         />
       ) : null}
       {environmentDialog === "pull-request" ? (
@@ -6286,14 +6284,12 @@ export function App(): JSX.Element {
           disabledReason={pullRequestDisabledReason}
           onCancel={() => setEnvironmentDialog(null)}
           onCreate={createEnvironmentPullRequest}
-          hostRef={conversationPaneRef}
         />
       ) : null}
       {pendingFork ? (
         <ConversationForkDialog
           onCancel={() => setPendingFork(undefined)}
           onChoose={choosePendingFork}
-          hostRef={conversationPaneRef}
         />
       ) : null}
       {debugControlsVisible ? <DesignTokensPanel /> : null}
@@ -6482,13 +6478,11 @@ function ToolApprovalDialog({
   onApprove,
   onApproveForSession,
   onDeny,
-  hostRef,
 }: {
   approval: PendingToolApproval;
   onApprove: () => void;
   onApproveForSession: () => void;
   onDeny: () => void;
-  hostRef?: React.RefObject<HTMLElement | null>;
 }): JSX.Element {
   const preview = approval.arguments_preview?.trim();
   const capability = approval.capability?.trim() || approval.tool_name;
@@ -6505,7 +6499,6 @@ function ToolApprovalDialog({
       icon={<AlertCircle className="icon-lg" />}
       title="审批操作"
       subtitle={capabilityLine || approval.tool_name}
-      hostRef={hostRef}
       footer={
         <>
           <button type="button" onClick={onDeny}>

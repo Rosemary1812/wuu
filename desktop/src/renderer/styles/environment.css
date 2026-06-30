@@ -619,22 +619,14 @@
   min-width: 0;
   min-height: 0;
   background: rgba(38, 42, 46, 0.24);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   padding: 24px;
   z-index: 20;
 }
 
 .environment-modal-backdrop {
-  z-index: 60;
-}
-
-/* When a Modal is mounted into a specific host via createPortal
- * (typically the conversation pane), constrain the backdrop to the
- * host's box so the dim layer only covers the host region and
- * leaves the sidebar and any other root-level chrome completely
- * untouched. The host must be a positioned ancestor — the
- * conversation pane already is. */
-.modal-backdrop.scoped {
-  position: absolute;
+  z-index: 210;
 }
 
 .conversation-search-overlay {
