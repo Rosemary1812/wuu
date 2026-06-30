@@ -2245,13 +2245,13 @@ func TestServerTurnStartRunsAgentLoop(t *testing.T) {
 	}
 	hasToolPolicySection := false
 	for _, section := range contextParams.Event.RequestContext.SystemSections {
-		if section.Key == "tool_policy" && section.Static && section.Bytes > 0 && section.Hash != "" {
+		if section.Key == "tool_policy" {
 			hasToolPolicySection = true
 			break
 		}
 	}
-	if !hasToolPolicySection {
-		t.Fatalf("request context should report stable tool policy system section: %+v", contextParams.Event.RequestContext.SystemSections)
+	if hasToolPolicySection {
+		t.Fatalf("request context should keep runtime tool policy out of stable system sections: %+v", contextParams.Event.RequestContext.SystemSections)
 	}
 	for _, unwanted := range []string{"ENVIRONMENT", "TOOL_POLICY", "TASK", "CONSTRAINT_LEDGER"} {
 		if testStringSliceContains(contextParams.Event.RequestContext.BlockKinds, unwanted) {
@@ -6053,8 +6053,7 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	root := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	environmentSection := "# Environment\n\n- Current working directory: " + root + "\n- Current date: 2026-01-01"
-	toolPolicySection := "# Runtime Tool Policy\n\nprofile: agent\napproval_policy: on_request\ndefault_action: allow\nnote: permission_boundary is enforced before policy and approval. Boundary denials require changing profile; approval flags cannot bypass them. require_approval means ask the user; auto_classify means let auto mode decide."
-	systemPrompt := "system prompt\n\n" + environmentSection + "\n\n" + toolPolicySection
+	systemPrompt := "system prompt\n\n" + environmentSection
 	return &runtime.Session{
 		ProviderName: "fake-provider",
 		Model:        "fake-model",
@@ -6068,7 +6067,6 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 			SystemPromptSections: []agent.SystemPromptSectionInfo{
 				{Key: "base", Static: true, Bytes: len("system prompt"), Hash: "base-hash"},
 				{Key: "environment", Static: true, Bytes: len(environmentSection), Hash: "environment-hash"},
-				{Key: "tool_policy", Static: true, Bytes: len(toolPolicySection), Hash: "tool-policy-hash"},
 			},
 		},
 	}

@@ -1584,7 +1584,6 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 		pb.AddToolDiscovery()
 	}
 	pb.AddSection("environment", environmentSystemPromptSection(rootDir), true)
-	pb.AddSection("tool_policy", toolPolicySystemPromptSection(toolPolicyBlock), true)
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}
