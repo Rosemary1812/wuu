@@ -14,10 +14,12 @@ var subagentManagementTools = []string{
 	"list_agents",
 }
 
+const subagentManagementBundle = "subagent_management"
+
 func (t *Toolkit) activateToolBundlesAfterSuccess(toolName string) []providers.LoadableToolDefinition {
 	switch strings.TrimSpace(toolName) {
 	case "spawn_agent", "helpme":
-		return t.activateSubagentManagementTools()
+		return t.activateSubagentManagementBundle()
 	}
 	return nil
 }
@@ -29,15 +31,54 @@ func (t *Toolkit) refreshStateActivatedToolBundles() {
 	if len(t.env.AgentControl.ListFrom(currentAgentPath(t.env), "")) == 0 {
 		return
 	}
-	t.activateSubagentManagementTools()
+	t.markToolBundleAvailable(subagentManagementBundle)
+	if t.nativeDeferredToolDiscoveryEnabled() {
+		t.markDeferredToolsLoaded(subagentManagementTools...)
+	}
 }
 
-func (t *Toolkit) activateSubagentManagementTools() []providers.LoadableToolDefinition {
+func (t *Toolkit) activateSubagentManagementBundle() []providers.LoadableToolDefinition {
 	if t == nil {
+		return nil
+	}
+	t.markToolBundleAvailable(subagentManagementBundle)
+	if !t.nativeDeferredToolDiscoveryEnabled() {
 		return nil
 	}
 	t.markDeferredToolsLoaded(subagentManagementTools...)
 	return t.loadableToolDefinitions(subagentManagementTools...)
+}
+
+func (t *Toolkit) markToolBundleAvailable(name string) {
+	name = strings.TrimSpace(name)
+	if t == nil || name == "" {
+		return
+	}
+	t.exposureMu.Lock()
+	defer t.exposureMu.Unlock()
+	if t.availableToolBundles == nil {
+		t.availableToolBundles = make(map[string]struct{}, 1)
+	}
+	t.availableToolBundles[name] = struct{}{}
+}
+
+func (t *Toolkit) isToolBundleAvailable(name string) bool {
+	if t == nil {
+		return false
+	}
+	t.exposureMu.RLock()
+	defer t.exposureMu.RUnlock()
+	_, ok := t.availableToolBundles[strings.TrimSpace(name)]
+	return ok
+}
+
+func (t *Toolkit) nativeDeferredToolDiscoveryEnabled() bool {
+	if t == nil {
+		return false
+	}
+	t.exposureMu.RLock()
+	defer t.exposureMu.RUnlock()
+	return t.nativeDeferredDiscovery
 }
 
 func isSubagentManagementTool(name string) bool {

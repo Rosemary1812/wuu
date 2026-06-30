@@ -218,10 +218,35 @@ func TestSummariesMatchProviderCompatForMiniMaxM3(t *testing.T) {
 				if !ok || thinking["type"] != "adaptive" {
 					t.Fatalf("base thinking options = %#v", selection.ProviderOptions)
 				}
+				if got := selection.ProviderOptions["anthropicToolSearch"]; got != true {
+					t.Fatalf("anthropicToolSearch = %#v, want true; options=%#v", got, selection.ProviderOptions)
+				}
 			} else if ok {
 				t.Fatalf("openai-compatible should use native default thinking: %#v", selection.ProviderOptions)
+			} else if _, ok := selection.ProviderOptions["anthropicToolSearch"]; ok {
+				t.Fatalf("openai-compatible should not enable anthropic tool_search: %#v", selection.ProviderOptions)
 			}
 		})
+	}
+}
+
+func TestResolveKeepsExplicitMiniMaxToolSearchOption(t *testing.T) {
+	reasoning := true
+	provider := config.ProviderConfig{
+		Type:  "anthropic",
+		NPM:   "@ai-sdk/anthropic",
+		Model: "minimax-m3",
+		Models: map[string]config.ProviderModelConfig{
+			"minimax-m3": {
+				Reasoning: &reasoning,
+				Options:   map[string]any{"anthropicToolSearch": false},
+			},
+		},
+	}
+
+	selection := Resolve(provider, provider.Model, "", "")
+	if got := selection.ProviderOptions["anthropicToolSearch"]; got != false {
+		t.Fatalf("anthropicToolSearch = %#v, want false; options=%#v", got, selection.ProviderOptions)
 	}
 }
 

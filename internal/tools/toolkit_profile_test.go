@@ -644,7 +644,27 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		t.Fatalf("tool_search should not activate subagent management tools before spawn_agent succeeds: %s", resp)
 	}
 
-	kit.activateToolBundlesAfterSuccess("helpme")
+	if discovered := kit.activateToolBundlesAfterSuccess("helpme"); len(discovered) != 0 {
+		t.Fatalf("fallback activation should not attach native discovered tools: %+v", discovered)
+	}
+	if containsProfileDef(kit.Definitions(), "await_agents") {
+		t.Fatalf("fallback activation should keep management tools hidden until tool_search loads them")
+	}
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"select:send_message followup_task await_agents close_agent list_agents","limit":5}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search after spawn: %v", err)
+	}
+	if err := json.Unmarshal([]byte(resp), &searched); err != nil {
+		t.Fatalf("parse post-spawn tool_search: %v", err)
+	}
+	for _, name := range subagentManagementTools {
+		if !containsString(searched.LoadedTools, name) {
+			t.Fatalf("tool_search should load management tool %s after spawn activates the bundle: %s", name, resp)
+		}
+	}
 	defs = kit.Definitions()
 	tailStart := len(defs) - len(subagentManagementTools)
 	if tailStart < 0 {
@@ -676,6 +696,56 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 			}
 			t.Fatalf("subagent management tool %d should be in the strict tail: got %q want %q; all=%v", i, got, want, names)
 		}
+	}
+}
+
+func TestNativeSubagentBundleActivationDiscoversManagementTools(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	kit.SetNativeDeferredToolDiscovery(true)
+
+	discovered := kit.activateToolBundlesAfterSuccess("spawn_agent")
+	if len(discovered) != len(subagentManagementTools) {
+		t.Fatalf("native activation discovered %d tools, want %d: %+v", len(discovered), len(subagentManagementTools), discovered)
+	}
+	for i, want := range subagentManagementTools {
+		if discovered[i].Name != want {
+			t.Fatalf("discovered tool %d = %q, want %q", i, discovered[i].Name, want)
+		}
+	}
+
+	defs := kit.Definitions()
+	tailStart := len(defs) - len(subagentManagementTools)
+	if tailStart < 0 {
+		t.Fatalf("definitions shorter than subagent management tail: %+v", defs)
+	}
+	for i, want := range subagentManagementTools {
+		got := defs[tailStart+i]
+		if got.Name != want {
+			t.Fatalf("subagent management tool %d should be in the strict tail: got %q want %q", i, got.Name, want)
+		}
+		if got.CacheStable {
+			t.Fatalf("native management tool %s should be outside the cache-stable prefix: %+v", want, got)
+		}
+		if !got.DeferLoading {
+			t.Fatalf("native management tool %s should stay provider-deferred: %+v", want, got)
+		}
+	}
+}
+
+func TestFallbackSubagentNextStepsTellModelToUseToolSearch(t *testing.T) {
+	steps := []string{"Use await_agents with root/worker only when the next step depends on this worker's output."}
+	got := subagentNextStepsForDiscovery(&Env{}, steps)
+	if len(got) != 2 || !strings.Contains(got[1], "tool_search") || !strings.Contains(got[1], "select:await_agents") {
+		t.Fatalf("fallback next steps should mention tool_search loading, got %+v", got)
+	}
+
+	native := subagentNextStepsForDiscovery(&Env{NativeDeferredToolDiscovery: true}, steps)
+	if len(native) != 1 {
+		t.Fatalf("native next steps should remain unchanged, got %+v", native)
 	}
 }
 

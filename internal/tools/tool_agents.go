@@ -187,6 +187,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		if err != nil {
 			return "", err
 		}
+		result.NextSteps = subagentNextStepsForDiscovery(t.env, result.NextSteps)
 		out, err := json.Marshal(result)
 		if err != nil {
 			return "", err
@@ -213,11 +214,32 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 	if err != nil {
 		return "", err
 	}
+	result.NextSteps = subagentNextStepsForDiscovery(t.env, result.NextSteps)
 	out, err := json.Marshal(result)
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
+}
+
+func subagentNextStepsForDiscovery(env *Env, steps []string) []string {
+	if env == nil || env.NativeDeferredToolDiscovery || !subagentStepsMentionManagementTool(steps) {
+		return steps
+	}
+	out := append([]string(nil), steps...)
+	out = append(out, "If a subagent management tool is not visible yet, load it first with tool_search using select:await_agents, select:send_message, select:followup_task, select:close_agent, or select:list_agents.")
+	return out
+}
+
+func subagentStepsMentionManagementTool(steps []string) bool {
+	for _, step := range steps {
+		for _, name := range subagentManagementTools {
+			if strings.Contains(step, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -327,7 +349,7 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 		Status:    result.Status,
 		AgentID:   result.AgentID,
 		AgentPath: result.AgentPath,
-		NextSteps: result.NextSteps,
+		NextSteps: subagentNextStepsForDiscovery(t.env, result.NextSteps),
 	}
 	report, reportOK := t.env.AgentControl.AgentReportDetailsForTask(response.AgentID)
 	if reportOK {

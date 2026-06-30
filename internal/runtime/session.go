@@ -193,6 +193,7 @@ func NewSession(opts Options) (*Session, error) {
 		ConfigureToolkitPermissions(kit, cfg.Agent.ToolPolicy, permissions)
 		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
+		kit.SetNativeDeferredToolDiscovery(providerfactory.SupportsNativeToolDiscovery(ruleProviderCfg, toolModeModel, mainRole.ProviderOptions))
 		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 		if profileMemoryEnabled && !cfg.Memory.Disable {
 			// Attach the global long-term memory store. With memory now a
@@ -289,6 +290,7 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
+				wkit.SetNativeDeferredToolDiscovery(providerfactory.SupportsNativeToolDiscovery(roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions))
 				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
 				if strings.TrimSpace(meta.AgentProfile) != "" {
 					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
@@ -708,6 +710,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetAgentControl(control)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
+					workerKit.SetNativeDeferredToolDiscovery(providerfactory.SupportsNativeToolDiscovery(s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions))
 					if strings.TrimSpace(meta.AgentProfile) != "" {
 						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
 						if memErr != nil {

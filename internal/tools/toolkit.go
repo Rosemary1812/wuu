@@ -47,22 +47,24 @@ const (
 // (all registered tools). The old switch-case dispatch is replaced by
 // registry lookup.
 type Toolkit struct {
-	env                    *Env
-	registry               *Registry
-	disabledTools          map[string]struct{}
-	exposureMu             sync.RWMutex
-	loadedDeferredTools    map[string]struct{}
-	discoveryMu            sync.Mutex
-	discoveredToolsByCall  map[string][]providers.LoadableToolDefinition
-	toolPolicy             ToolPolicy
-	permissionBoundary     PermissionBoundary
-	extensionSurfacePolicy ExtensionSurfacePolicy
-	autoModeClassifier     AutoModeClassifier
-	approvalReviewer       ToolApprovalReviewer
-	approvalStore          *ToolApprovalStore
-	permissionRulesMu      sync.RWMutex
-	permissionRules        ToolPermissionRuleSet
-	permissionSessionRules ToolPermissionRuleSet
+	env                     *Env
+	registry                *Registry
+	disabledTools           map[string]struct{}
+	exposureMu              sync.RWMutex
+	loadedDeferredTools     map[string]struct{}
+	availableToolBundles    map[string]struct{}
+	nativeDeferredDiscovery bool
+	discoveryMu             sync.Mutex
+	discoveredToolsByCall   map[string][]providers.LoadableToolDefinition
+	toolPolicy              ToolPolicy
+	permissionBoundary      PermissionBoundary
+	extensionSurfacePolicy  ExtensionSurfacePolicy
+	autoModeClassifier      AutoModeClassifier
+	approvalReviewer        ToolApprovalReviewer
+	approvalStore           *ToolApprovalStore
+	permissionRulesMu       sync.RWMutex
+	permissionRules         ToolPermissionRuleSet
+	permissionSessionRules  ToolPermissionRuleSet
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -140,24 +142,25 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	// planState, webState, toolTelemetry) stay zero so each cloned session
 	// owns independent mutable state, matching the original intent.
 	env := Env{
-		RootDir:             abs,
-		StateDir:            t.env.StateDir,
-		PermissionProfile:   t.env.PermissionProfile,
-		SessionID:           t.env.SessionID,
-		SessionDir:          t.env.SessionDir,
-		GoalRuntime:         t.env.GoalRuntime,
-		AgentID:             t.env.AgentID,
-		AgentPath:           t.env.AgentPath,
-		ProcessMgr:          t.env.ProcessMgr,
-		AgentControl:        t.env.AgentControl,
-		Skills:              t.env.Skills,
-		Workflows:           t.env.Workflows,
-		OnFileChanged:       t.env.OnFileChanged,
-		OnPlanUpdated:       t.env.OnPlanUpdated,
-		OnPortsReported:     t.env.OnPortsReported,
-		Memory:              t.env.Memory,
-		MemoryCharLimit:     t.env.MemoryCharLimit,
-		UserMemoryCharLimit: t.env.UserMemoryCharLimit,
+		RootDir:                     abs,
+		StateDir:                    t.env.StateDir,
+		PermissionProfile:           t.env.PermissionProfile,
+		SessionID:                   t.env.SessionID,
+		SessionDir:                  t.env.SessionDir,
+		GoalRuntime:                 t.env.GoalRuntime,
+		AgentID:                     t.env.AgentID,
+		AgentPath:                   t.env.AgentPath,
+		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
+		ProcessMgr:                  t.env.ProcessMgr,
+		AgentControl:                t.env.AgentControl,
+		Skills:                      t.env.Skills,
+		Workflows:                   t.env.Workflows,
+		OnFileChanged:               t.env.OnFileChanged,
+		OnPlanUpdated:               t.env.OnPlanUpdated,
+		OnPortsReported:             t.env.OnPortsReported,
+		Memory:                      t.env.Memory,
+		MemoryCharLimit:             t.env.MemoryCharLimit,
+		UserMemoryCharLimit:         t.env.UserMemoryCharLimit,
 	}
 
 	clone := &Toolkit{
@@ -171,6 +174,9 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		permissionRules:        t.PermissionRules(),
 		mcpManager:             t.mcpManager,
 	}
+	t.exposureMu.RLock()
+	clone.nativeDeferredDiscovery = t.nativeDeferredDiscovery
+	t.exposureMu.RUnlock()
 	t.activeProfileMu.RLock()
 	clone.activeProfile = t.activeProfile
 	clone.activeSurface = cloneSurface(t.activeSurface)
@@ -279,6 +285,25 @@ func (t *Toolkit) rebuildRegistry() {
 // SetAgentControl attaches the shared agent control runtime.
 func (t *Toolkit) SetAgentControl(c *agentcontrol.AgentControl) {
 	t.env.AgentControl = c
+}
+
+// SetNativeDeferredToolDiscovery configures whether ordinary tool results may
+// attach provider-native discovered schemas. When false, tool_search remains
+// the only path that loads deferred schemas into the current tool surface.
+func (t *Toolkit) SetNativeDeferredToolDiscovery(enabled bool) {
+	if t == nil {
+		return
+	}
+	t.exposureMu.Lock()
+	t.nativeDeferredDiscovery = enabled
+	t.exposureMu.Unlock()
+	if t.env != nil {
+		t.env.NativeDeferredToolDiscovery = enabled
+	}
+}
+
+func (t *Toolkit) NativeDeferredToolDiscovery() bool {
+	return t.nativeDeferredToolDiscoveryEnabled()
 }
 
 // SetProcessManager attaches the process manager.

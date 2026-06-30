@@ -86,6 +86,7 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 	}
 	if strings.Contains(desc.APIID, "minimax-m3") && desc.APINPM == compatNPMAnthropic {
 		result["thinking"] = map[string]any{"type": "adaptive"}
+		setOptionDefault(result, "anthropicToolSearch", true)
 	}
 	if (desc.APINPM == compatNPMAnthropic || desc.APINPM == compatNPMVertexAnthropic) &&
 		(strings.Contains(desc.APIID, "k2p") || strings.Contains(desc.APIID, "kimi-k2.") || strings.Contains(desc.APIID, "kimi-k2p")) {

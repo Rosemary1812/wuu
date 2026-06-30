@@ -190,7 +190,7 @@ func (t *Toolkit) selectDeferredTools(names []string, limit int) []toolSearchMat
 
 func (t *Toolkit) toolSearchCanLoadDeferredTool(name string) bool {
 	if isSubagentManagementTool(name) {
-		return t.isDeferredToolLoaded(name)
+		return t.isToolBundleAvailable(subagentManagementBundle) || t.isDeferredToolLoaded(name)
 	}
 	return true
 }

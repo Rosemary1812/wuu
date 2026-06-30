@@ -65,6 +65,24 @@ func BuildStreamClientWithRetry(provider config.ProviderConfig, providerName str
 	return providers.AdaptStreamClient(client), nil
 }
 
+// SupportsNativeToolDiscovery reports whether this provider path can receive
+// deferred tool schemas through provider-native request structure instead of
+// requiring an explicit tool_search call to mutate the tool surface.
+func SupportsNativeToolDiscovery(provider config.ProviderConfig, model string, providerOptions map[string]any) bool {
+	profile, err := resolveProviderProfile(provider)
+	if err != nil {
+		return false
+	}
+	switch profile.Wire {
+	case wireOpenAIResponses:
+		return true
+	case wireAnthropicMessages:
+		return anthropic.SupportsNativeToolSearch(provider.BaseURL, model, providerOptions)
+	default:
+		return false
+	}
+}
+
 func buildClientWithRetry(provider config.ProviderConfig, providerName string, retry *providers.RetryConfig) (providers.Client, error) {
 	profile, err := resolveProviderProfile(provider)
 	if err != nil {

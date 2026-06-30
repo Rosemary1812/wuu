@@ -1404,6 +1404,38 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 	}
 }
 
+func TestNewSessionEnablesNativeToolDiscoveryForMiniMaxM3(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "minimax",
+			Providers: map[string]config.ProviderConfig{
+				"minimax": {
+					Type:    "anthropic",
+					BaseURL: "https://api.minimaxi.com/anthropic",
+					APIKey:  "abc",
+					Model:   "MiniMax-M3",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if got := rt.StreamRunner.ProviderOptions["anthropicToolSearch"]; got != true {
+		t.Fatalf("anthropicToolSearch = %#v, want true; options=%#v", got, rt.StreamRunner.ProviderOptions)
+	}
+	if rt.Toolkit == nil || !rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("MiniMax M3 should enable native deferred tool discovery")
+	}
+}
+
 func TestNewSessionResolvesRoleModelSelections(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

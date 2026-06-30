@@ -533,13 +533,7 @@ func shouldEnableAnthropicToolSearch(req providers.ChatRequest, support anthropi
 	if !hasToolSearchTool(req.Tools) {
 		return false
 	}
-	if !modelSupportsAnthropicToolReference(req.Model) {
-		return false
-	}
-	if enabled, ok := anthropicToolSearchOption(req.ProviderOptions); ok {
-		return enabled
-	}
-	return isFirstPartyAnthropicBaseURL(support.BaseURL)
+	return SupportsNativeToolSearch(support.BaseURL, req.Model, req.ProviderOptions)
 }
 
 func anthropicToolSearchOption(options map[string]any) (bool, bool) {
@@ -558,6 +552,20 @@ func anthropicToolSearchOption(options map[string]any) (bool, bool) {
 		return enabled, true
 	}
 	return false, false
+}
+
+// SupportsNativeToolSearch reports whether this Anthropic-compatible endpoint
+// should receive Anthropic's native defer_loading/tool_reference flow when
+// tool_search is present in the request. Unknown compatible endpoints stay
+// disabled unless provider options explicitly opt in.
+func SupportsNativeToolSearch(baseURL, model string, options map[string]any) bool {
+	if !modelSupportsAnthropicToolReference(model) {
+		return false
+	}
+	if enabled, ok := anthropicToolSearchOption(options); ok {
+		return enabled
+	}
+	return isFirstPartyAnthropicBaseURL(baseURL)
 }
 
 func hasToolSearchTool(defs []providers.ToolDefinition) bool {

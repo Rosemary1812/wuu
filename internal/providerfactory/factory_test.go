@@ -96,6 +96,61 @@ func TestResolveProviderProfile_Anthropic(t *testing.T) {
 	}
 }
 
+func TestSupportsNativeToolDiscovery(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider config.ProviderConfig
+		model    string
+		options  map[string]any
+		want     bool
+	}{
+		{
+			name:     "openai responses",
+			provider: config.ProviderConfig{Type: "openai-compatible", WireAPI: "responses"},
+			model:    "gpt-test",
+			want:     true,
+		},
+		{
+			name:     "openai chat fallback",
+			provider: config.ProviderConfig{Type: "openai-compatible"},
+			model:    "gpt-test",
+			want:     false,
+		},
+		{
+			name:     "first party anthropic",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.anthropic.com"},
+			model:    "claude-sonnet-4-5",
+			want:     true,
+		},
+		{
+			name:     "anthropic compatible fallback",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
+			model:    "claude-sonnet-4-5",
+			want:     false,
+		},
+		{
+			name:     "anthropic compatible opt in",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
+			model:    "MiniMax-M3",
+			options:  map[string]any{"anthropicToolSearch": true},
+			want:     true,
+		},
+		{
+			name:     "explicitly disabled",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.anthropic.com"},
+			model:    "claude-sonnet-4-5",
+			options:  map[string]any{"anthropicToolSearch": false},
+			want:     false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SupportsNativeToolDiscovery(tc.provider, tc.model, tc.options); got != tc.want {
+				t.Fatalf("SupportsNativeToolDiscovery = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveProviderProfile_InfersKnownOpenCodeNPMProviders(t *testing.T) {
 	for _, tc := range []struct {
 		name string

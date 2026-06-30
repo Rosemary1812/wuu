@@ -194,15 +194,19 @@ type Env struct {
 
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
-	SessionID    string
-	SessionDir   string // absolute session artifact path for result budgeting
-	GoalRuntime  *goalruntime.Runtime
-	AgentID      string
-	AgentPath    string
-	ProcessMgr   *proc.Manager
-	AgentControl *agentcontrol.AgentControl
-	Skills       []skills.Skill
-	Workflows    []workflow.Definition
+	SessionID   string
+	SessionDir  string // absolute session artifact path for result budgeting
+	GoalRuntime *goalruntime.Runtime
+	AgentID     string
+	AgentPath   string
+	// NativeDeferredToolDiscovery means the active provider can receive
+	// schemas discovered by ordinary tool results without requiring an
+	// explicit tool_search call first.
+	NativeDeferredToolDiscovery bool
+	ProcessMgr                  *proc.Manager
+	AgentControl                *agentcontrol.AgentControl
+	Skills                      []skills.Skill
+	Workflows                   []workflow.Definition
 	// ActiveSurface is the compiled model profile surface currently
 	// governing this tool environment. Tools with secondary catalogs
 	// such as load_skill use it to avoid exposing instructions that
