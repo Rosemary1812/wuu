@@ -633,9 +633,16 @@
   display: flex;
   width: min(360px, calc(100% - 62px));
   min-width: 0;
+  max-height: min(168px, 26vh);
+  box-sizing: border-box;
   flex-direction: column;
   gap: 6px;
   margin: 10px 44px 0 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .composer-collapsed-prompt-card {

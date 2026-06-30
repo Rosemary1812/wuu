@@ -256,6 +256,7 @@ export function Composer({
   const composerFrameRef = useRef<HTMLDivElement>(null);
   const collapsedComposerFrameHeightRef = useRef<number | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
@@ -386,6 +387,14 @@ export function Composer({
     queuedMessages.length,
     activeCollapsedPromptBlocks.length
   ]);
+
+  useLayoutEffect(() => {
+    const list = collapsedPromptListRef.current;
+    if (!list || activeCollapsedPromptBlocks.length === 0) {
+      return;
+    }
+    list.scrollTop = list.scrollHeight;
+  }, [activeCollapsedPromptBlocks.length]);
 
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
@@ -692,7 +701,7 @@ export function Composer({
               }}
             />
             {hasCollapsedPromptBlocks ? (
-              <div className="composer-collapsed-prompt-list" aria-label="折叠长文本">
+              <div className="composer-collapsed-prompt-list" ref={collapsedPromptListRef} aria-label="折叠长文本">
                 {activeCollapsedPromptBlocks.map((block, index) => (
                   <CollapsedComposerPromptCard
                     text={block.text}

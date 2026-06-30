@@ -659,6 +659,13 @@ describe("Composer send control", () => {
 });
 
 describe("Composer long text folding", () => {
+  it("bounds folded paste rows inside a scrollable list", () => {
+    expect(composerCSS).toContain(".composer-collapsed-prompt-list");
+    expect(composerCSS).toContain("max-height: min(168px, 26vh)");
+    expect(composerCSS).toContain("overflow-y: auto");
+    expect(composerCSS).toContain("overscroll-behavior: contain");
+  });
+
   it("folds a long paste while sending the original text plus follow-up", () => {
     const longText = longPastedPrompt();
     const onSend = vi.fn();
