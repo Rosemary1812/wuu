@@ -17,7 +17,8 @@ const (
 )
 
 // StreamTransportMode is the caller's preferred transport for providers that
-// expose more than one streaming path.
+// expose more than one streaming path. Providers without a matching transport
+// ignore unsupported modes or reject them at construction time.
 type StreamTransportMode string
 
 const (

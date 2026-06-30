@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1193,6 +1194,328 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 	}
 	if got := connections.Load(); got != 1 {
 		t.Fatalf("unexpected websocket connection count %d", got)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_BusySessionUsesTransientWebSocket(t *testing.T) {
+	requests := make(chan map[string]any, 3)
+	sseRequests := make(chan map[string]any, 1)
+	firstReady := make(chan struct{})
+	firstRelease := make(chan struct{})
+	var connections atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") == "" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode SSE request: %v", err)
+				return
+			}
+			sseRequests <- body
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"resp_sse","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n"))
+			return
+		}
+
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		switch connections.Add(1) {
+		case 1:
+			readWSRequest(t, ctx, conn, requests)
+			close(firstReady)
+			select {
+			case <-firstRelease:
+			case <-ctx.Done():
+				t.Errorf("waiting to release first websocket: %v", ctx.Err())
+				return
+			}
+			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_1","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"first answer"}]},"output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2}}}`)
+		case 2:
+			readWSRequest(t, ctx, conn, requests)
+			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"second answer"}]},"output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":6,"output_tokens":2}}}`)
+		default:
+			t.Errorf("unexpected extra websocket connection")
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesTransport:      providers.StreamTransportAuto,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cache := &providers.CacheHint{PromptCacheKey: "thread-busy-transient"}
+	firstCh, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "first"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("first StreamChat: %v", err)
+	}
+	select {
+	case <-firstReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first websocket request did not start")
+	}
+
+	secondCh, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "second"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("second StreamChat: %v", err)
+	}
+	secondStates, err := drainStreamProviderStates(secondCh)
+	if err != nil {
+		t.Fatalf("second stream should use transient websocket: %v", err)
+	}
+	if len(secondStates) != 1 ||
+		secondStates[0].Transport != "websocket" ||
+		secondStates[0].ReplayMode != "full_request" ||
+		secondStates[0].PreviousResponseIDUsed ||
+		secondStates[0].ConnectionReused {
+		t.Fatalf("unexpected transient websocket provider state: %+v", secondStates)
+	}
+	select {
+	case body := <-sseRequests:
+		t.Fatalf("busy websocket should not fall back to SSE, got request %#v", body)
+	default:
+	}
+	close(firstRelease)
+	if err := drainStream(firstCh); err != nil {
+		t.Fatalf("first stream: %v", err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("websocket connections = %d, want 2", got)
+	}
+	<-requests
+	secondReq := <-requests
+	if _, exists := secondReq["previous_response_id"]; exists {
+		t.Fatalf("transient websocket request must not use cached previous_response_id: %#v", secondReq)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_RetriesConnectionLimitBeforeFallback(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	sseRequests := make(chan map[string]any, 1)
+	var connections atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") == "" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode SSE request: %v", err)
+				return
+			}
+			sseRequests <- body
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"resp_sse","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n"))
+			return
+		}
+
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		readWSRequest(t, ctx, conn, requests)
+		switch connections.Add(1) {
+		case 1:
+			writeWSEvent(t, ctx, conn, `{"type":"error","error":{"code":"websocket_connection_limit_reached","message":"try again"}}`)
+		case 2:
+			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"ok"}]},"output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":1}}}`)
+		default:
+			t.Errorf("unexpected extra websocket connection")
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesTransport:      providers.StreamTransportAuto,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-connection-limit"},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	states, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("stream should retry websocket connection limit: %v", err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("websocket connections = %d, want 2", got)
+	}
+	if len(states) != 2 ||
+		states[0].Transport != "websocket" ||
+		states[1].Transport != "websocket" ||
+		states[1].ReplayMode != "full_request" ||
+		states[1].FallbackActive {
+		t.Fatalf("unexpected provider states after retry: %+v", states)
+	}
+	select {
+	case body := <-sseRequests:
+		t.Fatalf("connection limit should retry websocket before SSE fallback, got request %#v", body)
+	default:
+	}
+	firstReq := <-requests
+	secondReq := <-requests
+	if _, exists := firstReq["previous_response_id"]; exists {
+		t.Fatalf("first request must be full payload: %#v", firstReq)
+	}
+	if _, exists := secondReq["previous_response_id"]; exists {
+		t.Fatalf("retry request must be full payload: %#v", secondReq)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t *testing.T) {
+	requests := make(chan map[string]any, 3)
+	sseRequests := make(chan map[string]any, 2)
+	var connections atomic.Int32
+	var sseResponses atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Upgrade") == "" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode SSE request: %v", err)
+				return
+			}
+			sseRequests <- body
+			responseID := fmt.Sprintf("resp_sse_%d", sseResponses.Add(1))
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"` + responseID + `","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n"))
+			return
+		}
+
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		readWSRequest(t, ctx, conn, requests)
+		switch connections.Add(1) {
+		case 1, 2:
+			writeWSEvent(t, ctx, conn, `{"type":"error","error":{"code":"websocket_connection_limit_reached","message":"try again"}}`)
+		default:
+			t.Errorf("unexpected extra websocket connection")
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesTransport:      providers.StreamTransportAuto,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cache := &providers.CacheHint{PromptCacheKey: "thread-connection-limit-fallback"}
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	states, err := drainStreamProviderStates(ch)
+	if err != nil {
+		t.Fatalf("stream should fall back to SSE after websocket retry: %v", err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("websocket connections = %d, want 2", got)
+	}
+	if len(states) != 3 ||
+		states[0].Transport != "websocket" ||
+		states[1].Transport != "websocket" ||
+		states[2].Transport != "http" ||
+		states[2].Diagnostic != "provider_transport_failure" ||
+		states[2].TransportFailurePhase != "before_message_stream_start" ||
+		states[2].FallbackTransport != "http" ||
+		states[2].EventsEmitted ||
+		!states[2].FallbackActive ||
+		states[2].FallbackReason != "websocket_connection_limit_reached" {
+		t.Fatalf("unexpected provider states after SSE fallback: %+v", states)
+	}
+	firstFallbackReq := <-sseRequests
+	if _, exists := firstFallbackReq["previous_response_id"]; exists {
+		t.Fatalf("SSE fallback must send full payload: %#v", firstFallbackReq)
+	}
+
+	laterCh, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "later"}},
+		CacheHint: cache,
+	})
+	if err != nil {
+		t.Fatalf("later StreamChat: %v", err)
+	}
+	laterStates, err := drainStreamProviderStates(laterCh)
+	if err != nil {
+		t.Fatalf("later stream should stay on SSE: %v", err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("later stream should not open websocket, got %d connections", got)
+	}
+	if len(laterStates) != 1 ||
+		laterStates[0].Transport != "http" ||
+		!laterStates[0].FallbackActive ||
+		laterStates[0].FallbackReason != "websocket_connection_limit_reached" {
+		t.Fatalf("unexpected later provider states: %+v", laterStates)
+	}
+	laterFallbackReq := <-sseRequests
+	if _, exists := laterFallbackReq["previous_response_id"]; exists {
+		t.Fatalf("later SSE request must send full payload: %#v", laterFallbackReq)
 	}
 }
 
