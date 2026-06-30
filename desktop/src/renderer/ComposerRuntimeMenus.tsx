@@ -1,17 +1,17 @@
 import {
-  BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
+  Eye,
   Folder,
   FolderOpen,
   FolderPlus,
   FolderX,
   GitBranch,
   Search,
-  ShieldAlert,
-  ShieldCheck,
-  ShieldQuestion,
+  Shield,
+  TriangleAlert,
   type LucideIcon
 } from "lucide-react";
 import type { RefObject } from "react";
@@ -45,7 +45,7 @@ import {
   variantLabel
 } from "./RuntimeHelpers";
 
-type ChipTone = "safe" | "accent" | "review" | "danger";
+type ChipTone = "neutral" | "danger";
 
 type PermissionModeState = PermissionMode | "custom";
 
@@ -63,28 +63,28 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     mode: "read_only",
     label: "只读",
     chipLabel: "只读",
-    icon: BookOpen,
-    chipTone: "safe"
+    icon: Eye,
+    chipTone: "neutral"
   },
   {
     mode: "agent",
     label: "默认",
     chipLabel: "默认",
-    icon: ShieldCheck,
-    chipTone: "accent"
+    icon: Shield,
+    chipTone: "neutral"
   },
   {
     mode: "auto_review",
     label: "替我审批",
     chipLabel: "替我审批",
-    icon: ShieldQuestion,
-    chipTone: "review"
+    icon: ClipboardCheck,
+    chipTone: "neutral"
   },
   {
     mode: "full_access",
     label: "完全访问",
     chipLabel: "完全访问",
-    icon: ShieldAlert,
+    icon: TriangleAlert,
     chipTone: "danger",
     tone: "danger"
   }
@@ -94,8 +94,8 @@ const CUSTOM_PERMISSION_MODE_OPTION: Omit<PermissionModeOption, "mode"> & { mode
   mode: "custom",
   label: "自定义权限",
   chipLabel: "自定义权限",
-  icon: ShieldQuestion,
-  chipTone: "review"
+  icon: Shield,
+  chipTone: "neutral"
 };
 
 function permissionPresetAxes(mode: PermissionMode): { profile: string; approval: string; reviewer: string } {

@@ -873,7 +873,7 @@
   gap: 7px;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--accent-warm);
+  color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   padding: 0 8px;
@@ -887,38 +887,14 @@
   white-space: nowrap;
 }
 
-                                                                        
-                                                                           
-                                                           
-.permission-chip.tone-safe {
-  color: var(--success);
-}
-
-.permission-chip.tone-accent {
-  color: var(--accent-warm);
-}
-
-.permission-chip.tone-review {
-  color: var(--info);
-}
-
 .permission-chip.tone-danger {
   color: var(--danger);
 }
 
-.permission-chip.tone-safe:hover,
-.permission-chip.tone-safe[aria-expanded="true"] {
-  background: var(--success-soft);
-}
-
-.permission-chip.tone-accent:hover,
-.permission-chip.tone-accent[aria-expanded="true"] {
-  background: var(--warning-soft);
-}
-
-.permission-chip.tone-review:hover,
-.permission-chip.tone-review[aria-expanded="true"] {
-  background: #ddf4ff;
+.permission-chip.tone-neutral:hover,
+.permission-chip.tone-neutral[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .permission-chip.tone-danger:hover,
@@ -1376,13 +1352,13 @@
 }
 
 .composer-context-menu .permission-mode-option[aria-checked="true"] {
-  border-color: rgba(78, 110, 84, 0.18);
-  background: #edf4ef;
-  color: #213c28;
+  border-color: var(--surface-4);
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .composer-context-menu .permission-mode-option.danger:hover:not(:disabled) {
-  background: var(--warning-soft);
+  background: var(--danger-soft);
 }
 
 .composer-context-menu .permission-mode-option.danger[aria-checked="true"] {
