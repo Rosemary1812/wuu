@@ -669,7 +669,6 @@
 }
 
 .thread-list-collapse-btn {
-  margin-left: auto;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
