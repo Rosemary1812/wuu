@@ -121,14 +121,24 @@ export function ProjectList({
               threadsByProjectID[project.id] ?? [],
               project.path,
             );
+        const projectHasUnread = projectThreads.some((thread) =>
+          projectThreadUnread(
+            thread,
+            activeThreadID,
+            pendingThreadID,
+            lastViewedTurnByThreadID,
+          ),
+        );
         const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
           pendingProject ? " pending-switch" : ""
-        }${isScratchPseudo ? " scratch-pseudo" : ""}`;
+        }${projectHasUnread ? " has-unread" : ""}${isScratchPseudo ? " scratch-pseudo" : ""}`;
         return (
           <div key={project.id} className="project-group">
             <button
               className={projectRowClassName}
-              aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的会话`}
+              aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的会话${
+                projectHasUnread ? "，有未读会话" : ""
+              }`}
               aria-current={activeProject ? "page" : undefined}
               aria-expanded={expanded}
               aria-busy={pendingProject}
@@ -143,8 +153,11 @@ export function ProjectList({
               ) : (
                 <Folder className="icon-lg" />
               )}
-              <span>{project.name}</span>
+              <span className="project-row-name">{project.name}</span>
               {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
+              {projectHasUnread && !pendingProject ? (
+                <span className="project-row-unread" aria-hidden="true" />
+              ) : null}
             </button>
             <button
               className="sidebar-row-icon-button project-row-new-thread"
@@ -343,6 +356,20 @@ function importantThreadVisible(
 
 function threadRunning(thread: ThreadSummary): boolean {
   return thread.status === "in_progress" || thread.turns.some((turn) => turn.status === "in_progress");
+}
+
+function projectThreadUnread(
+  thread: ThreadSummary,
+  activeID: string | undefined,
+  pendingThreadID: string | undefined,
+  lastViewedTurnByThreadID: Record<string, string>,
+): boolean {
+  return (
+    !threadRunning(thread) &&
+    thread.id !== activeID &&
+    thread.id !== pendingThreadID &&
+    isThreadUnread(thread, lastViewedTurnByThreadID[thread.id])
+  );
 }
 
 function ThreadRows({

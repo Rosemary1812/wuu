@@ -197,7 +197,15 @@ describe("ProjectList", () => {
     };
   }
 
-  function makeProjectThread(id: string, cwd: string, title: string): Thread {
+  function makeProjectThread(
+    id: string,
+    cwd: string,
+    title: string,
+    turns: Array<{
+      id: string;
+      status: "completed" | "in_progress" | "failed" | "interrupted";
+    }> = [],
+  ): Thread {
     return {
       id,
       preview: title,
@@ -209,7 +217,12 @@ describe("ProjectList", () => {
       status: "idle",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
-      turns: [],
+      turns: turns.map((turn) => ({
+        id: turn.id,
+        items: [],
+        items_view: "full" as const,
+        status: turn.status,
+      })),
     };
   }
 
@@ -267,5 +280,47 @@ describe("ProjectList", () => {
     expect(container.textContent).toContain("Wuu session");
     expect(container.textContent).toContain("Interview session");
     expect(container.textContent).not.toContain("Wrong duplicate");
+  });
+
+  it("shows project-level unread state for collapsed unread threads", () => {
+    const projects = [makeProject("project-1", "wuu", "/repo/wuu")];
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectList
+          projects={projects}
+          activeID={undefined}
+          pendingProjectID={undefined}
+          collapsedProjectIDs={new Set()}
+          expandedProjectIDs={new Set()}
+          collapsingProjectIDs={new Set()}
+          threadsByProjectID={{
+            "project-1": summarizeThreadsForSidebar([
+              makeProjectThread("thread-unread", "/repo/wuu", "Unread session", [
+                { id: "turn-unread", status: "completed" },
+              ]),
+            ]),
+          }}
+          activeThreadID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
+          scratchPseudoActive={false}
+          onToggleProjectCollapsed={() => {}}
+          onStartNewThread={() => {}}
+          onSelectThread={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    const projectRow = container.querySelector(".project-row");
+    expect(projectRow?.classList.contains("has-unread")).toBe(true);
+    expect(projectRow?.getAttribute("aria-label")).toContain("有未读会话");
+    expect(projectRow?.querySelector(".project-row-unread")).not.toBeNull();
   });
 });
