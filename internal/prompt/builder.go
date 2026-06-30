@@ -188,6 +188,7 @@ func (b *Builder) AddToolDiscovery() {
 		"- Use `tool_search` when you need a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, desktop port reporting, context rewrite/continuation, or specialized helpers.",
 		"- Search by capability words, or use `select:<tool_name>` when you already know the exact tool name.",
 		"- After `tool_search` returns matching schemas, use the loaded tool normally in the next tool step if it fits the task.",
+		"- If a previous tool result has already loaded or activated a deferred schema, use that loaded tool directly; do not call `tool_search` again for the same tool.",
 		"- Do not use `tool_search` for visible core tools already listed in this session, such as file reading, file editing, grep/glob search, patching, planning, or skill loading.",
 		"- Do not call MCP list/resource tools only to discover available tools; use `tool_search` for tool discovery.",
 	}, "\n"), true)

@@ -124,13 +124,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 	instructions, messages := splitResponsesInstructions(prepared)
 	input := make([]responsesInputItem, 0, len(messages))
 	if tools := responsesCompactedDiscoveredTools(req.Model, prepared); len(tools) > 0 {
-		input = append(input, responsesInputItem{
-			Type:      "tool_search_output",
-			CallID:    "wuu-compact-discovered-tools",
-			Status:    "completed",
-			Execution: "server",
-			Tools:     tools,
-		})
+		input = append(input, responsesAdditionalToolsInputItem(tools))
 	}
 	for _, msg := range messages {
 		input = appendResponsesInputItem(input, msg, req.Model)
@@ -300,13 +294,7 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 			Output: msg.Content,
 		})
 		if tools := responsesToolDefinitionsFromLoadable(model, msg.DiscoveredTools); len(tools) > 0 {
-			input = append(input, responsesInputItem{
-				Type:      "tool_search_output",
-				CallID:    responsesDiscoveredToolsOutputCallID(msg),
-				Status:    "completed",
-				Execution: "server",
-				Tools:     tools,
-			})
+			input = append(input, responsesAdditionalToolsInputItem(tools))
 		}
 		return input
 	}
@@ -498,7 +486,7 @@ func responsesToolDefinitionFromProvider(model string, tool providers.ToolDefini
 	}
 }
 
-func responsesToolDefinitionFromLoadable(model string, tool providers.LoadableToolDefinition) responsesToolDefinition {
+func responsesToolDefinitionFromLoadable(model string, tool providers.LoadableToolDefinition, deferLoading bool) responsesToolDefinition {
 	strict := false
 	typ := strings.TrimSpace(tool.Type)
 	if typ == "" {
@@ -509,23 +497,13 @@ func responsesToolDefinitionFromLoadable(model string, tool providers.LoadableTo
 		Name:         tool.Name,
 		Description:  tool.Description,
 		Strict:       &strict,
-		DeferLoading: true,
+		DeferLoading: deferLoading,
 		Parameters:   responsesToolParameters(providers.ToolInputSchemaForModel(model, tool.InputSchema)),
 	}
 }
 
 func responsesToolSearchOutputTools(model string, content string) []responsesToolDefinition {
-	return responsesToolDefinitionsFromLoadable(model, providers.LoadableToolsFromToolSearchResult(content))
-}
-
-func responsesDiscoveredToolsOutputCallID(msg providers.ChatMessage) string {
-	if id := strings.TrimSpace(msg.ToolCallID); id != "" {
-		return id + "_discovered_tools"
-	}
-	if name := strings.TrimSpace(msg.Name); name != "" {
-		return "wuu_discovered_tools_" + name
-	}
-	return "wuu_discovered_tools"
+	return responsesToolDefinitionsFromLoadableForToolSearch(model, providers.LoadableToolsFromToolSearchResult(content))
 }
 
 func responsesCompactedDiscoveredTools(model string, messages []providers.ChatMessage) []responsesToolDefinition {
@@ -549,14 +527,30 @@ func responsesCompactedDiscoveredTools(model string, messages []providers.ChatMe
 }
 
 func responsesToolDefinitionsFromLoadable(model string, loadable []providers.LoadableToolDefinition) []responsesToolDefinition {
+	return responsesToolDefinitionsFromLoadableWithDefer(model, loadable, false)
+}
+
+func responsesToolDefinitionsFromLoadableForToolSearch(model string, loadable []providers.LoadableToolDefinition) []responsesToolDefinition {
+	return responsesToolDefinitionsFromLoadableWithDefer(model, loadable, true)
+}
+
+func responsesToolDefinitionsFromLoadableWithDefer(model string, loadable []providers.LoadableToolDefinition, deferLoading bool) []responsesToolDefinition {
 	tools := make([]responsesToolDefinition, 0, len(loadable))
 	for _, tool := range loadable {
 		if strings.TrimSpace(tool.Name) == "" {
 			continue
 		}
-		tools = append(tools, responsesToolDefinitionFromLoadable(model, tool))
+		tools = append(tools, responsesToolDefinitionFromLoadable(model, tool, deferLoading))
 	}
 	return tools
+}
+
+func responsesAdditionalToolsInputItem(tools []responsesToolDefinition) responsesInputItem {
+	return responsesInputItem{
+		Type:  "additional_tools",
+		Role:  "developer",
+		Tools: tools,
+	}
 }
 
 func shouldOmitResponsesTopLevelTool(tool providers.ToolDefinition, discovered map[string]struct{}) bool {

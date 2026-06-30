@@ -161,6 +161,7 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 		"select:<tool_name>",
 		"desktop port reporting",
 		"context rewrite/continuation",
+		"already loaded or activated a deferred schema",
 		"Do not use `tool_search` for visible core tools",
 	} {
 		if !strings.Contains(result, want) {

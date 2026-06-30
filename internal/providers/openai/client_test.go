@@ -1765,7 +1765,7 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	if compacted.PromptCacheKey != base.PromptCacheKey {
 		t.Fatalf("compacted prompt cache key drifted: base=%q compacted=%q", base.PromptCacheKey, compacted.PromptCacheKey)
 	}
-	if len(compacted.Input) != 2 || compacted.Input[0].Type != "tool_search_output" || compacted.Input[0].Execution != "server" {
+	if len(compacted.Input) != 2 || compacted.Input[0].Type != "additional_tools" || compacted.Input[0].Role != "developer" {
 		t.Fatalf("unexpected compact restore input: %+v", compacted.Input)
 	}
 }
@@ -1840,18 +1840,18 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossSpawnDiscovery(t *testin
 	if len(followup.Input) != 4 {
 		t.Fatalf("unexpected followup input: %+v", followup.Input)
 	}
-	if followup.Input[0].Type == "tool_search_output" {
+	if followup.Input[0].Type == "additional_tools" {
 		t.Fatalf("ordinary spawn discovery should not be compacted to the request front: %+v", followup.Input)
 	}
 	if followup.Input[2].Type != "function_call_output" || followup.Input[2].CallID != "spawn_1" {
 		t.Fatalf("expected spawn function output before discovery output, got %+v", followup.Input[2])
 	}
 	outputItem := followup.Input[3]
-	if outputItem.Type != "tool_search_output" || outputItem.Execution != "server" || outputItem.CallID != "spawn_1_discovered_tools" {
+	if outputItem.Type != "additional_tools" || outputItem.Role != "developer" || outputItem.CallID != "" {
 		t.Fatalf("unexpected discovered-tools output item: %+v", outputItem)
 	}
 	outputTools, ok := outputItem.Tools.([]responsesToolDefinition)
-	if !ok || len(outputTools) != 1 || outputTools[0].Name != "await_agents" || !outputTools[0].DeferLoading {
+	if !ok || len(outputTools) != 1 || outputTools[0].Name != "await_agents" || outputTools[0].DeferLoading {
 		t.Fatalf("unexpected discovered output tools: %#v", outputItem.Tools)
 	}
 }
@@ -2009,7 +2009,7 @@ func TestResponsesRequest_OmitsProviderItemIDsForDifferentModel(t *testing.T) {
 	}
 }
 
-func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing.T) {
+func TestResponsesChat_RestoresCompactedDiscoveredToolsAsAdditionalTools(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -2032,7 +2032,7 @@ func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing
 			t.Fatalf("unexpected input payload: %#v", body["input"])
 		}
 		outputItem := input[0].(map[string]any)
-		if outputItem["type"] != "tool_search_output" || outputItem["status"] != "completed" || outputItem["execution"] != "server" {
+		if outputItem["type"] != "additional_tools" || outputItem["role"] != "developer" {
 			t.Fatalf("unexpected compact restore item: %#v", outputItem)
 		}
 		outputTools, ok := outputItem["tools"].([]any)
@@ -2040,8 +2040,11 @@ func TestResponsesChat_RestoresCompactedDiscoveredToolsAsServerOutput(t *testing
 			t.Fatalf("unexpected compact restored tools: %#v", outputItem["tools"])
 		}
 		discovered := outputTools[0].(map[string]any)
-		if discovered["name"] != "mcp_docs_search" || discovered["defer_loading"] != true {
+		if discovered["name"] != "mcp_docs_search" {
 			t.Fatalf("unexpected compact restored tool shape: %#v", discovered)
+		}
+		if _, exists := discovered["defer_loading"]; exists {
+			t.Fatalf("additional_tools should expose callable tools directly: %#v", discovered)
 		}
 
 		w.Header().Set("Content-Type", "application/json")

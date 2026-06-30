@@ -32,6 +32,17 @@ func (s *supportStubExecutor) SupportsTool(name string) bool {
 	return s.supported[name]
 }
 
+type discoveryStubExecutor struct {
+	stubExecutor
+	discovered     []providers.LoadableToolDefinition
+	discoveryCalls []providers.ToolCall
+}
+
+func (s *discoveryStubExecutor) DiscoveredTools(call providers.ToolCall) []providers.LoadableToolDefinition {
+	s.discoveryCalls = append(s.discoveryCalls, call)
+	return s.discovered
+}
+
 func TestHookedExecutor_PassThrough(t *testing.T) {
 	inner := &stubExecutor{result: `{"ok":true}`}
 	d := NewDispatcher(NewRegistry(nil))
@@ -180,5 +191,30 @@ func TestHookedExecutor_SupportsToolFallsBackToDefinitions(t *testing.T) {
 	}
 	if exec.SupportsTool("inception") {
 		t.Fatal("unlisted tool should not be supported without inner support provider")
+	}
+}
+
+func TestHookedExecutor_DiscoveredToolsDelegates(t *testing.T) {
+	inner := &discoveryStubExecutor{
+		discovered: []providers.LoadableToolDefinition{{
+			Name:        "await_agents",
+			Description: "Wait for running agents.",
+			InputSchema: map[string]any{"type": "object"},
+		}},
+	}
+	exec := NewHookedExecutor(inner, NewDispatcher(nil), "", "")
+
+	call := providers.ToolCall{ID: "call-1", Name: "spawn_agent"}
+	discovered := exec.DiscoveredTools(call)
+	if len(discovered) != 1 || discovered[0].Name != "await_agents" {
+		t.Fatalf("expected discovered await_agents to be forwarded, got %#v", discovered)
+	}
+	if len(inner.discoveryCalls) != 1 || inner.discoveryCalls[0].ID != "call-1" {
+		t.Fatalf("expected discovery call to be forwarded, got %#v", inner.discoveryCalls)
+	}
+
+	discovered[0].Name = "mutated"
+	if inner.discovered[0].Name != "await_agents" {
+		t.Fatal("expected forwarded discovered tools to be cloned")
 	}
 }

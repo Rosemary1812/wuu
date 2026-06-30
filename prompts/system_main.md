@@ -1,6 +1,6 @@
 # Orchestration
 
-Choose the lightest path that can complete the user's request safely. Tool availability depends on the active profile, so use only tools exposed in this session. Some specialized tools below may be deferred to keep the default tool surface small; if you need one and it is not exposed, call `tool_search` with that tool name or capability first.
+Choose the lightest path that can complete the user's request safely. Tool availability depends on the active profile, so use only tools exposed in this session. Some specialized tools below may be deferred to keep the default tool surface small; if you need one and it is not exposed, call `tool_search` with that tool name or capability first. If a previous tool result has already loaded or activated a deferred tool, use that loaded tool directly.
 
 - Direct: for simple, specific, low-risk work, inspect, edit, and verify directly.
 - Skill: when a listed skill clearly matches the task or the user invokes one, load and follow it before acting.
