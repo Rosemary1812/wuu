@@ -22,7 +22,7 @@ const (
 	responsesWebSocketConnectionLimitRetryTag = "websocket_connection_limit_retry"
 )
 
-// ResponsesWebSocketCache stores per-session Codex Responses WebSocket state.
+// ResponsesWebSocketCache stores per-session Responses WebSocket state.
 // Each session keeps a reusable connection plus the last full request/response
 // pair needed to build previous_response_id deltas.
 type ResponsesWebSocketCache struct {

@@ -11,17 +11,16 @@ import (
 	"github.com/coder/websocket"
 )
 
-// CodexWebSocketBetaTag is the OpenAI-Beta header value the ChatGPT backend
-// expects for the Responses-over-WebSocket surface. Without it the upgrade
-// request is rejected as a non-Responses endpoint.
+// Beta header value required for the Responses-over-WebSocket surface.
+// Without it the upgrade request is rejected as a non-Responses endpoint.
 const CodexWebSocketBetaTag = "responses_websockets=2026-02-06"
 
 const codexWebSocketReadLimitBytes = 16 << 20
 
-// resolveCodexWebSocketURL converts an HTTP Responses base URL into its
-// WebSocket-equivalent endpoint. The regular Responses client stores a base
-// URL and appends /responses at dispatch time; the WebSocket path sends the
-// upgrade directly, so it must resolve to the concrete /responses endpoint.
+// Converts an HTTP Responses base URL into its WebSocket-equivalent endpoint.
+// The regular Responses client stores a base URL and appends /responses at
+// dispatch time; the WebSocket path sends the upgrade directly, so it must
+// resolve to the concrete /responses endpoint.
 func resolveCodexWebSocketURL(baseURL string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if trimmed == "" {
@@ -42,10 +41,8 @@ func resolveCodexWebSocketURL(baseURL string) (string, error) {
 	}
 }
 
-// CodexWebSocketDialer bundles the connect-time options that are
-// independent of any single request. Request-specific headers
-// (Authorization, chatgpt-account-id, session-id, x-client-request-id)
-// are passed per-call to dialCodexWebSocket so callers can keep them
+// Bundles the connect-time options that are independent of any single request.
+// Request-specific headers are passed per-call so callers can keep them
 // consistent with the existing static client.headers path.
 type CodexWebSocketDialer struct {
 	// ConnectTimeout bounds dial + TLS + upgrade handshake. Zero defers
@@ -53,19 +50,12 @@ type CodexWebSocketDialer struct {
 	ConnectTimeout time.Duration
 }
 
-// dialCodexWebSocket opens a Responses-over-WebSocket connection to the
-// ChatGPT Codex backend. It performs the standard WebSocket upgrade with
-// the Codex-specific headers:
-//
-//   - Authorization: Bearer <token>
-//   - chatgpt-account-id: <accountId>
-//   - OpenAI-Beta: responses_websockets=2026-02-06 (auto-injected when absent)
-//   - session-id, x-client-request-id: forwarded from the call site
-//
-// The returned connection must be closed by the caller; this function does
-// not retain ownership. On upgrade failure the underlying http.Response
-// status is included in the wrapped error so callers can distinguish 401 /
-// 403 / 404 / 4xx from network-level failures.
+// Opens a Responses-over-WebSocket connection using the standard upgrade
+// flow, forwarding request-specific headers and adding the required beta tag
+// when absent. The returned connection must be closed by the caller; this
+// function does not retain ownership. On upgrade failure the underlying
+// http.Response status is included in the wrapped error so callers can
+// distinguish 401 / 403 / 404 / 4xx from network-level failures.
 func (d CodexWebSocketDialer) dialCodexWebSocket(
 	ctx context.Context,
 	wsURL string,
@@ -80,10 +70,9 @@ func (d CodexWebSocketDialer) dialCodexWebSocket(
 	if headers == nil {
 		headers = http.Header{}
 	}
-	// The ChatGPT backend rejects upgrades without this beta tag. The SSE
-	// Responses path uses a different tag; only the WS Responses path
-	// requires this one. Callers can still override by setting the header
-	// before passing it in.
+	// The endpoint rejects upgrades without this beta tag. The SSE Responses
+	// path uses a different tag; only the WS Responses path requires this one.
+	// Callers can still override by setting the header before passing it in.
 	if headers.Get("OpenAI-Beta") == "" {
 		headers.Set("OpenAI-Beta", CodexWebSocketBetaTag)
 	}
