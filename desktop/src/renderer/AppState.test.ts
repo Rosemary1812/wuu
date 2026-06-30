@@ -549,9 +549,10 @@ describe("AppState token usage", () => {
       },
     });
 
-    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toBe(
-      "正在重连 1/3",
-    );
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "消息流重连中 1/3",
+      liveProgress: true,
+    });
 
     const connected = reduceServerEvent(reconnecting, {
       kind: "notification",
@@ -572,6 +573,159 @@ describe("AppState token usage", () => {
     });
 
     expect(turnStreamStatusForThread(connected, connected.thread)).toBeUndefined();
+  });
+
+  it("uses provider transport in stream reconnect status when available", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const withTransport = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            provider_state: {
+              transport: "sse",
+            },
+          },
+        },
+      },
+    });
+    const reconnecting = reduceServerEvent(withTransport, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              retry_count: 2,
+              max_retries: 3,
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
+      text: "SSE 消息流重连中 2/3",
+      liveProgress: true,
+    });
+  });
+
+  it("surfaces websocket to sse fallback as a static stream status", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const fallback = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            provider_state: {
+              diagnostic: "provider_transport_failure",
+              transport: "sse",
+              failed_transport: "websocket",
+              fallback_transport: "sse",
+              fallback_active: true,
+              transport_failure_phase: "before_message_stream_start",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(fallback, fallback.thread)).toEqual({
+      text: "WebSocket 不可用，已切到 SSE",
+      liveProgress: false,
+    });
+  });
+
+  it("surfaces transport interruption after message stream start", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const interrupted = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            provider_state: {
+              diagnostic: "provider_transport_failure",
+              transport: "websocket",
+              failed_transport: "websocket",
+              events_emitted: true,
+              transport_failure_phase: "after_message_stream_start",
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(interrupted, interrupted.thread)).toEqual({
+      text: "WebSocket 消息流中断",
+      liveProgress: false,
+    });
   });
 
   it("clears stream reconnect status when the turn settles", () => {

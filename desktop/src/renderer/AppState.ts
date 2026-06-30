@@ -45,6 +45,11 @@ type ComposerDraftState = {
   files: ComposerFile[];
 };
 
+export type TurnStreamStatus = {
+  text: string;
+  liveProgress: boolean;
+};
+
 function emptyComposerDraft(): ComposerDraftState {
   return { prompt: "", images: [], files: [] };
 }
@@ -127,10 +132,15 @@ type AppState = {
   // during a turn. It explains cache-sensitive context structure without
   // treating provider cache counters as retained conversation size.
   turnRequestContext: Record<string, TurnRequestContextDigest>;
-  // turnStreamStatus tracks transient transport lifecycle text for live
-  // turns. It is UI-only state, cleared as soon as the stream reconnects or
-  // the turn settles.
-  turnStreamStatus: Record<string, string>;
+  // turnStreamStatus tracks transient transport lifecycle chips for live turns.
+  // It is UI-only state, cleared as soon as the stream reconnects or the turn
+  // settles. liveProgress is structural, so chips do not infer animation from
+  // Chinese display text.
+  turnStreamStatus: Record<string, TurnStreamStatus>;
+  // turnStreamTransport remembers the last provider-reported transport for a
+  // turn so later reconnect lifecycle events can say "WebSocket" or "SSE"
+  // without coupling UI text to provider names.
+  turnStreamTransport: Record<string, string>;
   // lastViewedTurnByThreadID remembers the most recent turn that the user
   // has actually been on the thread for. It is the source of truth for the
   // sidebar / session-tab "has-unread" indicator — a thread is unread when
@@ -242,6 +252,7 @@ const initialState: AppState = {
   turnTokenUsage: {},
   turnRequestContext: {},
   turnStreamStatus: {},
+  turnStreamTransport: {},
   lastViewedTurnByThreadID: {},
 };
 
@@ -717,6 +728,7 @@ function reduceNotification(
           },
         ),
         turn.id,
+        { clearTransport: true },
       );
     }
     case "turn/usage": {
@@ -747,13 +759,25 @@ function reduceNotification(
       if (!turnID) {
         return state;
       }
-      const streamStatus = streamStatusFromLifecycle(
+      const providerState = recordValue(event, "provider_state");
+      const stateWithTransport = updateTurnStreamTransport(
+        state,
+        turnID,
+        providerState,
+      );
+      const providerStatus = streamStatusFromProviderState(providerState);
+      const stateWithProviderStatus =
+        providerStatus === undefined
+          ? stateWithTransport
+          : setTurnStreamStatus(stateWithTransport, turnID, providerStatus);
+      const lifecycleStatus = streamStatusFromLifecycle(
         recordValue(event, "lifecycle"),
+        stateWithProviderStatus.turnStreamTransport[turnID],
       );
       const stateWithLifecycle =
-        streamStatus === undefined
-          ? state
-          : setTurnStreamStatus(state, turnID, streamStatus);
+        lifecycleStatus === undefined
+          ? stateWithProviderStatus
+          : setTurnStreamStatus(stateWithProviderStatus, turnID, lifecycleStatus);
       if (!digest) {
         return stateWithLifecycle;
       }
@@ -773,12 +797,16 @@ function reduceNotification(
 function setTurnStreamStatus(
   state: AppState,
   turnID: string,
-  status: string,
+  status: TurnStreamStatus | null,
 ): AppState {
-  if (!status) {
+  if (!status || status.text.trim() === "") {
     return clearTurnStreamStatus(state, turnID);
   }
-  if (state.turnStreamStatus[turnID] === status) {
+  const existing = state.turnStreamStatus[turnID];
+  if (
+    existing?.text === status.text &&
+    existing.liveProgress === status.liveProgress
+  ) {
     return state;
   }
   return {
@@ -790,35 +818,191 @@ function setTurnStreamStatus(
   };
 }
 
-function clearTurnStreamStatus(state: AppState, turnID: string): AppState {
-  if (!state.turnStreamStatus[turnID]) {
+function clearTurnStreamStatus(
+  state: AppState,
+  turnID: string,
+  options: { clearTransport?: boolean } = {},
+): AppState {
+  const hasStatus = state.turnStreamStatus[turnID] !== undefined;
+  const hasTransport = state.turnStreamTransport[turnID] !== undefined;
+  if (!hasStatus && !(options.clearTransport && hasTransport)) {
     return state;
   }
-  const next = { ...state.turnStreamStatus };
-  delete next[turnID];
+  const nextStatus = hasStatus
+    ? { ...state.turnStreamStatus }
+    : state.turnStreamStatus;
+  if (hasStatus) {
+    delete nextStatus[turnID];
+  }
+  const nextTransport =
+    options.clearTransport && hasTransport
+      ? { ...state.turnStreamTransport }
+      : state.turnStreamTransport;
+  if (options.clearTransport && hasTransport) {
+    delete nextTransport[turnID];
+  }
   return {
     ...state,
-    turnStreamStatus: next,
+    turnStreamStatus: nextStatus,
+    turnStreamTransport: nextTransport,
+  };
+}
+
+function updateTurnStreamTransport(
+  state: AppState,
+  turnID: string,
+  providerState: JsonRecord | undefined,
+): AppState {
+  const transport = transportFromProviderState(providerState);
+  if (!transport || state.turnStreamTransport[turnID] === transport) {
+    return state;
+  }
+  return {
+    ...state,
+    turnStreamTransport: {
+      ...state.turnStreamTransport,
+      [turnID]: transport,
+    },
+  };
+}
+
+function transportFromProviderState(
+  providerState: JsonRecord | undefined,
+): string | undefined {
+  if (!providerState) {
+    return undefined;
+  }
+  const fallbackTransport = normalizedTransport(
+    stringValue(providerState, "fallback_transport"),
+  );
+  if (booleanValue(providerState, "fallback_active") === true && fallbackTransport) {
+    return fallbackTransport;
+  }
+  return normalizedTransport(stringValue(providerState, "transport"));
+}
+
+function streamStatusFromProviderState(
+  providerState: JsonRecord | undefined,
+): TurnStreamStatus | undefined {
+  if (!providerState) {
+    return undefined;
+  }
+  const diagnostic = stringValue(providerState, "diagnostic");
+  const fallbackActive = booleanValue(providerState, "fallback_active") === true;
+  if (diagnostic !== "provider_transport_failure" && !fallbackActive) {
+    return undefined;
+  }
+  const failedTransport = failedTransportLabelFromProviderState(providerState);
+  const fallbackTransport = transportLabel(
+    stringValue(providerState, "fallback_transport"),
+  );
+  const failurePhase = stringValue(providerState, "transport_failure_phase");
+  const eventsEmitted =
+    booleanValue(providerState, "events_emitted") === true ||
+    failurePhase === "after_message_stream_start";
+  if (eventsEmitted) {
+    return {
+      text: `${transportSubject(failedTransport)}中断`,
+      liveProgress: false,
+    };
+  }
+  if (fallbackTransport) {
+    return {
+      text: failedTransport
+        ? `${failedTransport} 不可用，已切到 ${fallbackTransport}`
+        : `消息流已切到 ${fallbackTransport}`,
+      liveProgress: false,
+    };
+  }
+  return {
+    text: `${transportSubject(failedTransport)}中断`,
+    liveProgress: false,
   };
 }
 
 function streamStatusFromLifecycle(
   lifecycle: JsonRecord | undefined,
-): string | undefined {
+  transport: string | undefined,
+): TurnStreamStatus | null | undefined {
   if (!lifecycle) {
     return undefined;
   }
-  if (stringValue(lifecycle, "phase") !== "reconnecting") {
-    return "";
+  const phase = stringValue(lifecycle, "phase");
+  if (phase !== "reconnecting" && phase !== "failed") {
+    return null;
+  }
+  const subject = transportSubject(transportLabel(transport));
+  if (phase === "failed") {
+    return {
+      text: `${subject}恢复失败`,
+      liveProgress: false,
+    };
   }
   const retryCount =
     positiveInteger(numberValue(lifecycle, "retry_count")) ??
     retryCountFromAttempt(numberValue(lifecycle, "attempt"));
   const maxRetries = positiveInteger(numberValue(lifecycle, "max_retries"));
   if (maxRetries) {
-    return `正在重连 ${retryCount}/${maxRetries}`;
+    return {
+      text: `${subject}重连中 ${retryCount}/${maxRetries}`,
+      liveProgress: true,
+    };
   }
-  return `正在重连第 ${retryCount} 次`;
+  return {
+    text: `${subject}重连中，第 ${retryCount} 次`,
+    liveProgress: true,
+  };
+}
+
+function failedTransportLabelFromProviderState(
+  providerState: JsonRecord,
+): string | undefined {
+  const failedTransport = transportLabel(
+    stringValue(providerState, "failed_transport"),
+  );
+  if (failedTransport) {
+    return failedTransport;
+  }
+  const fallbackReason = stringValue(providerState, "fallback_reason")
+    ?.trim()
+    .toLowerCase();
+  if (
+    fallbackReason?.includes("websocket") ||
+    fallbackReason?.includes("web socket")
+  ) {
+    return "WebSocket";
+  }
+  return transportLabel(stringValue(providerState, "transport"));
+}
+
+function transportSubject(transport: string | undefined): string {
+  return transport ? `${transport} 消息流` : "消息流";
+}
+
+function transportLabel(transport: string | undefined): string | undefined {
+  switch (normalizedTransport(transport)) {
+    case "websocket":
+    case "websocket-cached":
+    case "ws":
+      return "WebSocket";
+    case "sse":
+      return "SSE";
+    case "http":
+    case "https":
+      return "HTTP";
+    default:
+      return undefined;
+  }
+}
+
+function normalizedTransport(transport: string | undefined): string | undefined {
+  const normalized = transport?.trim().toLowerCase();
+  return normalized ? normalized : undefined;
+}
+
+function booleanValue(record: JsonRecord, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function retryCountFromAttempt(attempt: number | undefined): number {
@@ -1829,7 +2013,7 @@ function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
 function turnStreamStatusForThread(
   state: AppState,
   thread: Thread | undefined,
-): string | undefined {
+): TurnStreamStatus | undefined {
   const turnID = activeTurnIDForThread(thread);
   return turnID ? state.turnStreamStatus[turnID] : undefined;
 }

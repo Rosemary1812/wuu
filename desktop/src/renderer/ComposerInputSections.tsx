@@ -96,6 +96,7 @@ export function SplitPaneComposer({
   running,
   readOnly,
   status,
+  statusLiveProgress,
   queryHistorySessionID,
   queryHistory = [],
   onPasteAttachmentFiles,
@@ -111,6 +112,7 @@ export function SplitPaneComposer({
   running: boolean;
   readOnly: boolean;
   status: string;
+  statusLiveProgress?: boolean;
   queryHistorySessionID?: string;
   queryHistory?: string[];
   onPasteAttachmentFiles: (files: File[]) => void;
@@ -124,7 +126,7 @@ export function SplitPaneComposer({
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const statusText = composerStatusText(status);
-  const statusIsLiveProgress = composerStatusIsLiveProgress(status);
+  const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
     disabled: readOnly || hasAttachments,
     prompt,

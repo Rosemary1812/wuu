@@ -122,6 +122,7 @@ export function Composer({
   running,
   runtimeControlsDisabled = running,
   status,
+  statusLiveProgress,
   readOnly,
   initialized,
   gitStatus,
@@ -189,6 +190,7 @@ export function Composer({
   running: boolean;
   runtimeControlsDisabled?: boolean;
   status: string;
+  statusLiveProgress?: boolean;
   readOnly: boolean;
   initialized?: InitializeResult;
   gitStatus?: GitStatusResult;
@@ -249,7 +251,7 @@ export function Composer({
   queryHistory?: string[];
 }): JSX.Element {
   const statusText = composerStatusText(status);
-  const statusIsLiveProgress = composerStatusIsLiveProgress(status);
+  const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;

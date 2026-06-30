@@ -356,6 +356,7 @@ type ProviderStateSummary struct {
 	ConnectionReused       bool   `json:"connection_reused,omitempty"`
 	Diagnostic             string `json:"diagnostic,omitempty"`
 	TransportFailurePhase  string `json:"transport_failure_phase,omitempty"`
+	FailedTransport        string `json:"failed_transport,omitempty"`
 	FallbackTransport      string `json:"fallback_transport,omitempty"`
 	EventsEmitted          bool   `json:"events_emitted,omitempty"`
 	FallbackActive         bool   `json:"fallback_active,omitempty"`

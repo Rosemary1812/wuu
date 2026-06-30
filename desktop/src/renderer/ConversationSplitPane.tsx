@@ -5,6 +5,7 @@ import {
   isThreadRunning,
   type ComposerDraftState,
   type ConversationPaneID,
+  type TurnStreamStatus,
 } from "./AppState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { threadDisplayTitle } from "./ThreadTitles";
@@ -46,7 +47,7 @@ export function ConversationSplitPane({
   active: boolean;
   activeContextCwd?: string;
   appStatus: string;
-  streamStatus?: string;
+  streamStatus?: TurnStreamStatus;
   draft: ComposerDraftState;
   viewSwitchPending: boolean;
   queryHistory: string[];
@@ -84,7 +85,7 @@ export function ConversationSplitPane({
       ? "子任务运行中"
       : "子任务会话只读"
     : paneRunning
-      ? streamStatus ?? "运行中"
+      ? streamStatus?.text ?? "运行中"
       : active && appStatus !== "ready"
         ? appStatus
         : "";
@@ -156,6 +157,9 @@ export function ConversationSplitPane({
         running={(!paneReadOnly && paneRunning) || viewSwitchPending}
         readOnly={paneReadOnly}
         status={paneStatus}
+        statusLiveProgress={
+          !paneReadOnly && paneRunning ? streamStatus?.liveProgress : false
+        }
         onPasteAttachmentFiles={onPasteAttachmentFiles}
         onRemoveFile={onRemoveFile}
         onRemoveImage={onRemoveImage}

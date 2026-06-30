@@ -83,6 +83,7 @@ function renderComposer(props: {
   guideMessages?: QueuedComposerMessage[];
   toolPolicy?: ToolPolicySummary;
   status?: string;
+  statusLiveProgress?: boolean;
   runtimeControlsDisabled?: boolean;
   readOnly?: boolean;
   onInterrupt?: () => void;
@@ -124,6 +125,7 @@ function renderComposer(props: {
           running={props.running ?? false}
           runtimeControlsDisabled={props.runtimeControlsDisabled}
           status={props.status ?? "ready"}
+          statusLiveProgress={props.statusLiveProgress}
           readOnly={props.readOnly ?? false}
           initialized={initialized(props.toolPolicy, props.permissions)}
           projects={props.projects ?? []}
@@ -186,6 +188,7 @@ function renderSplitPaneComposer(props: {
   prompt?: string;
   running?: boolean;
   status?: string;
+  statusLiveProgress?: boolean;
   onSend?: () => void;
 }): void {
   act(() => {
@@ -200,6 +203,7 @@ function renderSplitPaneComposer(props: {
           running={props.running ?? false}
           readOnly={false}
           status={props.status ?? "ready"}
+          statusLiveProgress={props.statusLiveProgress}
           onPasteAttachmentFiles={() => {}}
           onRemoveFile={() => {}}
           onRemoveImage={() => {}}
@@ -430,11 +434,24 @@ describe("Composer send control", () => {
     renderComposer({
       prompt: "retry later",
       running: true,
-      status: "正在重连 1/3",
+      status: "消息流重连中 1/3",
+      statusLiveProgress: true,
     });
 
-    expect(container.querySelector(".status-label")?.textContent).toBe("正在重连 1/3");
+    expect(container.querySelector(".status-label")?.textContent).toBe("消息流重连中 1/3");
     expect(container.querySelector(".status-label-text")?.classList.contains("live-progress-chip")).toBe(true);
+  });
+
+  it("renders static fallback status without the live progress chip", () => {
+    renderComposer({
+      prompt: "retry later",
+      running: true,
+      status: "WebSocket 不可用，已切到 SSE",
+      statusLiveProgress: false,
+    });
+
+    expect(container.querySelector(".status-label")?.textContent).toBe("WebSocket 不可用，已切到 SSE");
+    expect(container.querySelector(".status-label-text")?.classList.contains("live-progress-chip")).toBe(false);
   });
 
   it("hides the transient sending status from the split-pane composer bar", () => {
@@ -452,10 +469,11 @@ describe("Composer send control", () => {
     renderSplitPaneComposer({
       prompt: "continue this branch",
       running: true,
-      status: "正在重连 2/3",
+      status: "SSE 消息流重连中 2/3",
+      statusLiveProgress: true,
     });
 
-    expect(container.querySelector(".split-composer-status")?.textContent).toBe("正在重连 2/3");
+    expect(container.querySelector(".split-composer-status")?.textContent).toBe("SSE 消息流重连中 2/3");
     expect(container.querySelector(".split-composer-status-text")?.classList.contains("live-progress-chip")).toBe(true);
   });
 

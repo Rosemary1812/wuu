@@ -29,6 +29,6 @@ export function composerStatusText(status: string): string {
   return HIDDEN_COMPOSER_STATUSES.has(status) ? "" : status;
 }
 
-export function composerStatusIsLiveProgress(status: string): boolean {
-  return composerStatusText(status).startsWith("正在重连");
+export function composerStatusIsLiveProgress(liveProgress?: boolean): boolean {
+  return liveProgress === true;
 }

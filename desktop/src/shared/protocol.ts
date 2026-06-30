@@ -864,9 +864,30 @@ export type StreamLifecyclePayload = {
   reason?: string;
 };
 
+export type ProviderStatePayload = {
+  step_index?: number;
+  provider?: string;
+  protocol?: string;
+  transport?: string;
+  replay_mode?: string;
+  previous_response_id_used?: boolean;
+  connection_reused?: boolean;
+  diagnostic?: string;
+  transport_failure_phase?: string;
+  failed_transport?: string;
+  fallback_transport?: string;
+  events_emitted?: boolean;
+  fallback_active?: boolean;
+  fallback_reason?: string;
+  input_items?: number;
+  full_input_items?: number;
+  delta_input_items?: number;
+};
+
 export type StreamEventPayload = {
   type: string;
   lifecycle?: StreamLifecyclePayload;
+  provider_state?: ProviderStatePayload;
 };
 
 export type TurnEventNotification = {

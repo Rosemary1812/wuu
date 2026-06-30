@@ -101,6 +101,7 @@ func responsesSSEProviderState(payload responsesRequest, fallbackReason string) 
 	if fallbackReason != "" {
 		state.Diagnostic = "provider_transport_failure"
 		state.TransportFailurePhase = responsesWebSocketFallbackPhase(fallbackReason)
+		state.FailedTransport = "websocket"
 		state.FallbackTransport = "sse"
 		state.EventsEmitted = state.TransportFailurePhase == "after_message_stream_start"
 	}

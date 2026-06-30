@@ -2476,7 +2476,10 @@ export function App(): JSX.Element {
             ? activeThreadIsRunning
               ? "子任务运行中"
               : "子任务会话只读"
-            : streamStatus ?? state.status
+            : streamStatus?.text ?? state.status
+        }
+        statusLiveProgress={
+          activeThreadReadOnly ? false : streamStatus?.liveProgress
         }
         readOnly={activeThreadReadOnly}
         initialized={state.initialized}
