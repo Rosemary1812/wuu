@@ -52,6 +52,8 @@ type Toolkit struct {
 	disabledTools          map[string]struct{}
 	exposureMu             sync.RWMutex
 	loadedDeferredTools    map[string]struct{}
+	discoveryMu            sync.Mutex
+	discoveredToolsByCall  map[string][]providers.LoadableToolDefinition
 	toolPolicy             ToolPolicy
 	permissionBoundary     PermissionBoundary
 	extensionSurfacePolicy ExtensionSurfacePolicy
@@ -559,6 +561,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 		if exposure == ToolExposureDeferred && t.isDeferredToolLoaded(d.Name) {
 			d.CacheStable = false
 			if isSubagentManagementTool(d.Name) {
+				d.DeferLoading = true
 				tail = append(tail, d)
 				continue
 			}

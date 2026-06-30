@@ -294,11 +294,21 @@ func appendResponsesInputItem(input []responsesInputItem, msg providers.ChatMess
 				Tools:     responsesToolSearchOutputTools(model, msg.Content),
 			})
 		}
-		return append(input, responsesInputItem{
+		input = append(input, responsesInputItem{
 			Type:   "function_call_output",
 			CallID: msg.ToolCallID,
 			Output: msg.Content,
 		})
+		if tools := responsesToolDefinitionsFromLoadable(model, msg.DiscoveredTools); len(tools) > 0 {
+			input = append(input, responsesInputItem{
+				Type:      "tool_search_output",
+				CallID:    responsesDiscoveredToolsOutputCallID(msg),
+				Status:    "completed",
+				Execution: "server",
+				Tools:     tools,
+			})
+		}
+		return input
 	}
 
 	if msg.Role == "assistant" {
@@ -508,8 +518,18 @@ func responsesToolSearchOutputTools(model string, content string) []responsesToo
 	return responsesToolDefinitionsFromLoadable(model, providers.LoadableToolsFromToolSearchResult(content))
 }
 
+func responsesDiscoveredToolsOutputCallID(msg providers.ChatMessage) string {
+	if id := strings.TrimSpace(msg.ToolCallID); id != "" {
+		return id + "_discovered_tools"
+	}
+	if name := strings.TrimSpace(msg.Name); name != "" {
+		return "wuu_discovered_tools_" + name
+	}
+	return "wuu_discovered_tools"
+}
+
 func responsesCompactedDiscoveredTools(model string, messages []providers.ChatMessage) []responsesToolDefinition {
-	attached := providers.AttachedDiscoveredToolsFromMessages(messages)
+	attached := providers.CompactedDiscoveredToolsFromMessages(messages)
 	if len(attached) == 0 {
 		return nil
 	}

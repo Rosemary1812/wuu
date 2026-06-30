@@ -357,6 +357,7 @@ func (r *TurnToolRuntime) executeBatch(
 	onResult func(providers.ToolCall, string),
 ) toolBatchResult {
 	ctxProvider, hasCtxProvider := r.executor.(ToolContextProvider)
+	discoveryProvider, hasDiscoveryProvider := r.executor.(ToolDiscoveryProvider)
 
 	if !batch.concurrent || len(batch.calls) == 1 {
 		msgs := make([]providers.ChatMessage, 0, len(batch.calls))
@@ -366,13 +367,7 @@ func (r *TurnToolRuntime) executeBatch(
 			if onResult != nil {
 				onResult(call, result)
 			}
-			msgs = append(msgs, providers.ChatMessage{
-				Role:           "tool",
-				Name:           call.Name,
-				ToolCallID:     call.ID,
-				ToolResultKind: call.Kind,
-				Content:        result,
-			})
+			msgs = append(msgs, toolResultMessage(call, result, discoveryProvider, hasDiscoveryProvider))
 			if hasCtxProvider {
 				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
 					segment := postToolAdditionalContextSegment(call.Name, extra)
@@ -400,13 +395,7 @@ func (r *TurnToolRuntime) executeBatch(
 		if onResult != nil {
 			onResult(call, result)
 		}
-		msgs[i] = providers.ChatMessage{
-			Role:           "tool",
-			Name:           call.Name,
-			ToolCallID:     call.ID,
-			ToolResultKind: call.Kind,
-			Content:        result,
-		}
+		msgs[i] = toolResultMessage(call, result, discoveryProvider, hasDiscoveryProvider)
 	}
 	return toolBatchResult{messages: msgs}
 }
@@ -414,6 +403,29 @@ func (r *TurnToolRuntime) executeBatch(
 type toolBatchResult struct {
 	messages       []providers.ChatMessage
 	requestContext []ContextSegment
+}
+
+func toolResultMessage(
+	call providers.ToolCall,
+	result string,
+	provider ToolDiscoveryProvider,
+	ok bool,
+) providers.ChatMessage {
+	return providers.ChatMessage{
+		Role:            "tool",
+		Name:            call.Name,
+		ToolCallID:      call.ID,
+		ToolResultKind:  call.Kind,
+		Content:         result,
+		DiscoveredTools: discoveredToolsForCall(provider, ok, call),
+	}
+}
+
+func discoveredToolsForCall(provider ToolDiscoveryProvider, ok bool, call providers.ToolCall) []providers.LoadableToolDefinition {
+	if !ok || provider == nil {
+		return nil
+	}
+	return providers.CloneLoadableToolDefinitions(provider.DiscoveredTools(call))
 }
 
 func postToolAdditionalContextSegment(toolName, content string) ContextSegment {

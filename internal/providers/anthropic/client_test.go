@@ -702,6 +702,64 @@ func TestBuildAnthropicRequest_ToolSearchNativeEnabledUsesToolReferences(t *test
 	}
 }
 
+func TestBuildAnthropicRequest_RegularToolResultCanDiscoverDeferredTools(t *testing.T) {
+	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "start a reviewer"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "spawn_1",
+				Name:      "spawn_agent",
+				Arguments: `{"description":"Review","prompt":"Review."}`,
+			}}},
+			{
+				Role:       "tool",
+				Name:       "spawn_agent",
+				ToolCallID: "spawn_1",
+				Content:    `{"action":"spawn_agent","agent_id":"agent_1"}`,
+				DiscoveredTools: []providers.LoadableToolDefinition{{
+					Type:        "function",
+					Name:        "await_agents",
+					Description: "Wait for subagents",
+					InputSchema: map[string]any{"type": "object"},
+				}},
+			},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}, CacheStable: true},
+			{Name: "spawn_agent", InputSchema: map[string]any{"type": "object"}, CacheStable: true},
+			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+		},
+	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://api.anthropic.com"})
+	if err != nil {
+		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+	}
+	if len(payload.Tools) != 3 {
+		t.Fatalf("expected 3 tools, got %+v", payload.Tools)
+	}
+	if payload.Tools[1].Name != "spawn_agent" || payload.Tools[1].DeferLoading {
+		t.Fatalf("spawn_agent should remain directly visible: %+v", payload.Tools[1])
+	}
+	if payload.Tools[2].Name != "await_agents" || !payload.Tools[2].DeferLoading {
+		t.Fatalf("discovered management tool should stay defer_loading: %+v", payload.Tools[2])
+	}
+
+	last := payload.Messages[len(payload.Messages)-1]
+	if len(last.Content) != 1 || last.Content[0].Type != "tool_result" {
+		t.Fatalf("unexpected final message: %+v", last)
+	}
+	blocks, ok := last.Content[0].Content.([]anthropicBlock)
+	if !ok || len(blocks) != 2 {
+		t.Fatalf("expected text plus tool_reference content, got %#v", last.Content[0].Content)
+	}
+	if blocks[0].Type != "text" || blocks[0].Text == "" {
+		t.Fatalf("expected original tool result text first, got %+v", blocks[0])
+	}
+	if blocks[1].Type != "tool_reference" || blocks[1].ToolName != "await_agents" {
+		t.Fatalf("unexpected discovered tool_reference: %+v", blocks[1])
+	}
+}
+
 func TestBuildAnthropicRequest_CompactedDiscoveredToolsRestoreAsVisibleTools(t *testing.T) {
 	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
 		Model: "claude-sonnet-4-5",

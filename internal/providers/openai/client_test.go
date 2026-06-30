@@ -1770,6 +1770,92 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	}
 }
 
+func TestResponsesRequest_KeepsTopLevelToolsStableAcrossSpawnDiscovery(t *testing.T) {
+	client := &Client{}
+	toolSearch := providers.ToolDefinition{
+		Name:        "tool_search",
+		Description: "Search deferred tools",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	spawnAgent := providers.ToolDefinition{
+		Name:        "spawn_agent",
+		Description: "Start a subagent",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	awaitAgents := providers.ToolDefinition{
+		Name:         "await_agents",
+		Description:  "Wait for subagents",
+		InputSchema:  map[string]any{"type": "object"},
+		DeferLoading: true,
+	}
+	cacheHint := &providers.CacheHint{PromptCacheKey: "thread-cache-key"}
+
+	base, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "start a reviewer"}},
+		Tools:     []providers.ToolDefinition{toolSearch, spawnAgent},
+		CacheHint: cacheHint,
+	}, false)
+	if err != nil {
+		t.Fatalf("build base request: %v", err)
+	}
+
+	followup, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "start a reviewer"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID:        "spawn_1",
+				Name:      "spawn_agent",
+				Arguments: `{"description":"Review","prompt":"Review."}`,
+			}}},
+			{
+				Role:       "tool",
+				Name:       "spawn_agent",
+				ToolCallID: "spawn_1",
+				Content:    `{"action":"spawn_agent","agent_id":"agent_1"}`,
+				DiscoveredTools: []providers.LoadableToolDefinition{{
+					Type:        "function",
+					Name:        "await_agents",
+					Description: "Wait for subagents",
+					InputSchema: map[string]any{"type": "object"},
+				}},
+			},
+		},
+		Tools:     []providers.ToolDefinition{toolSearch, spawnAgent, awaitAgents},
+		CacheHint: cacheHint,
+	}, false)
+	if err != nil {
+		t.Fatalf("build followup request: %v", err)
+	}
+	if !reflect.DeepEqual(base.Tools, followup.Tools) {
+		t.Fatalf("top-level tools changed after spawn discovery:\nbase=%+v\nfollowup=%+v", base.Tools, followup.Tools)
+	}
+	if len(followup.Tools) != 2 || followup.Tools[0].Type != "tool_search" || followup.Tools[1].Name != "spawn_agent" {
+		t.Fatalf("expected only initial tool_search and spawn_agent top-level tools, got %+v", followup.Tools)
+	}
+	if followup.PromptCacheKey != base.PromptCacheKey {
+		t.Fatalf("prompt cache key drifted: base=%q followup=%q", base.PromptCacheKey, followup.PromptCacheKey)
+	}
+	if len(followup.Input) != 4 {
+		t.Fatalf("unexpected followup input: %+v", followup.Input)
+	}
+	if followup.Input[0].Type == "tool_search_output" {
+		t.Fatalf("ordinary spawn discovery should not be compacted to the request front: %+v", followup.Input)
+	}
+	if followup.Input[2].Type != "function_call_output" || followup.Input[2].CallID != "spawn_1" {
+		t.Fatalf("expected spawn function output before discovery output, got %+v", followup.Input[2])
+	}
+	outputItem := followup.Input[3]
+	if outputItem.Type != "tool_search_output" || outputItem.Execution != "server" || outputItem.CallID != "spawn_1_discovered_tools" {
+		t.Fatalf("unexpected discovered-tools output item: %+v", outputItem)
+	}
+	outputTools, ok := outputItem.Tools.([]responsesToolDefinition)
+	if !ok || len(outputTools) != 1 || outputTools[0].Name != "await_agents" || !outputTools[0].DeferLoading {
+		t.Fatalf("unexpected discovered output tools: %#v", outputItem.Tools)
+	}
+}
+
 func TestResponsesRequest_ReplaysReasoningBlocks(t *testing.T) {
 	client := &Client{}
 	reasoningRaw := `{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"inspect first"}],"encrypted_content":"enc_123"}`

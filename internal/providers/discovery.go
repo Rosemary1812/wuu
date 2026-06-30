@@ -26,6 +26,19 @@ func AttachedDiscoveredToolsFromMessages(messages []ChatMessage) []LoadableToolD
 	return out
 }
 
+// CompactedDiscoveredToolsFromMessages returns discovered tools carried by
+// summary/system messages after the original tool result position is gone.
+func CompactedDiscoveredToolsFromMessages(messages []ChatMessage) []LoadableToolDefinition {
+	var out []LoadableToolDefinition
+	for _, msg := range messages {
+		if !strings.EqualFold(msg.Role, "system") {
+			continue
+		}
+		out = MergeLoadableToolDefinitions(out, msg.DiscoveredTools)
+	}
+	return out
+}
+
 // ToolSearchResultToolsFromMessages returns tools still represented by raw
 // tool_search result messages in provider history.
 func ToolSearchResultToolsFromMessages(messages []ChatMessage) []LoadableToolDefinition {
@@ -55,6 +68,10 @@ func DiscoveredToolNamesFromMessages(messages []ChatMessage) map[string]struct{}
 
 func AttachedDiscoveredToolNamesFromMessages(messages []ChatMessage) map[string]struct{} {
 	return LoadableToolNames(AttachedDiscoveredToolsFromMessages(messages))
+}
+
+func CompactedDiscoveredToolNamesFromMessages(messages []ChatMessage) map[string]struct{} {
+	return LoadableToolNames(CompactedDiscoveredToolsFromMessages(messages))
 }
 
 func ToolSearchResultToolNamesFromMessages(messages []ChatMessage) map[string]struct{} {

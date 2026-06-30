@@ -1966,10 +1966,12 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 		t.Fatalf("await_agents should be deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
 
-	spawnedJSON, err := kit.Execute(context.Background(), providers.ToolCall{
+	spawnCall := providers.ToolCall{
+		ID:        "spawn_1",
 		Name:      "spawn_agent",
 		Arguments: `{"name":"inspect_team","description":"Inspect team","prompt":"Finish the agent task.","subagent_type":"general-purpose","goal_id":"workflow-run-1","goal_dir":"/tmp/workflow-run-1-goal"}`,
-	})
+	}
+	spawnedJSON, err := kit.Execute(context.Background(), spawnCall)
 	if err != nil {
 		t.Fatalf("spawn_agent: %v", err)
 	}
@@ -1983,6 +1985,18 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	}
 	if spawned.Action != "spawn_agent" || spawned.AgentID == "" || spawned.AgentPath == "" {
 		t.Fatalf("unexpected spawn_agent result: %s", spawnedJSON)
+	}
+	discovered := kit.DiscoveredTools(spawnCall)
+	if len(discovered) != len(subagentManagementTools) {
+		t.Fatalf("spawn_agent should discover subagent management tools, got %+v", discovered)
+	}
+	for i, want := range subagentManagementTools {
+		if discovered[i].Name != want {
+			t.Fatalf("discovered tool %d = %q, want %q; all=%+v", i, discovered[i].Name, want, discovered)
+		}
+	}
+	if again := kit.DiscoveredTools(spawnCall); len(again) != 0 {
+		t.Fatalf("discovered tools should be consumed once, got %+v", again)
 	}
 	tasks, err := control.HarnessStore().ListTasks()
 	if err != nil {

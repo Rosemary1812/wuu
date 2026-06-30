@@ -646,6 +646,9 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		if found.CacheStable {
 			t.Fatalf("management tool %s should be appended outside the cache-stable prefix: %+v", name, *found)
 		}
+		if !found.DeferLoading {
+			t.Fatalf("management tool %s should stay provider-deferred after activation: %+v", name, *found)
+		}
 	}
 	for i, want := range subagentManagementTools {
 		if got := defs[tailStart+i].Name; got != want {

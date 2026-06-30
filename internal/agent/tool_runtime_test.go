@@ -11,12 +11,13 @@ import (
 )
 
 type runtimeTestTools struct {
-	mu       sync.Mutex
-	metadata map[string]ToolMetadata
-	results  map[string]string
-	delays   map[string]time.Duration
-	calls    []providers.ToolCall
-	steps    []int
+	mu         sync.Mutex
+	metadata   map[string]ToolMetadata
+	results    map[string]string
+	delays     map[string]time.Duration
+	discovered map[string][]providers.LoadableToolDefinition
+	calls      []providers.ToolCall
+	steps      []int
 }
 
 type cancelAwareRuntimeTools struct {
@@ -65,6 +66,12 @@ func (f *runtimeTestTools) Execute(ctx context.Context, call providers.ToolCall)
 		}
 	}
 	return `{"ok":"` + call.ID + `"}`, nil
+}
+
+func (f *runtimeTestTools) DiscoveredTools(call providers.ToolCall) []providers.LoadableToolDefinition {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.discovered[call.ID]
 }
 
 func (f *runtimeTestTools) recordedCalls() []providers.ToolCall {
@@ -158,6 +165,39 @@ func TestTurnToolRuntimeAnnotatesToolExecutionStep(t *testing.T) {
 	}
 	if steps := tools.recordedSteps(); len(steps) != 1 || steps[0] != 3 {
 		t.Fatalf("tool execution steps = %+v, want [3]", steps)
+	}
+}
+
+func TestTurnToolRuntimeAttachesDiscoveredToolsToToolResult(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{
+		discovered: map[string][]providers.LoadableToolDefinition{
+			"spawn_1": {{
+				Type:        "function",
+				Name:        "await_agents",
+				Description: "Wait for subagents",
+				InputSchema: map[string]any{"type": "object"},
+			}},
+		},
+	}
+	runtime := NewTurnToolRuntime(tools)
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+		ID:   "spawn_1",
+		Name: "spawn_agent",
+	}}, nil)
+
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 tool message, got %+v", msgs)
+	}
+	if got := msgs[0].DiscoveredTools; len(got) != 1 || got[0].Name != "await_agents" {
+		t.Fatalf("unexpected discovered tools on tool result: %+v", got)
+	}
+	msgs[0].DiscoveredTools[0].Name = "mutated"
+	if tools.discovered["spawn_1"][0].Name != "await_agents" {
+		t.Fatalf("tool result discovered tools should be cloned before attaching")
 	}
 }
 

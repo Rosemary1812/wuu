@@ -643,7 +643,7 @@ func shouldDeferAnthropicTool(tool providers.ToolDefinition, discovered, compact
 }
 
 func anthropicCompactedDiscoveredToolNames(messages []providers.ChatMessage) map[string]struct{} {
-	compacted := providers.AttachedDiscoveredToolNamesFromMessages(messages)
+	compacted := providers.CompactedDiscoveredToolNamesFromMessages(messages)
 	if len(compacted) == 0 {
 		return compacted
 	}
@@ -1229,6 +1229,17 @@ func anthropicToolResultBlock(msg providers.ChatMessage, toolSearchEnabled bool)
 		}
 		return anthropicBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: "No matching deferred tools found"}
 	}
+	if toolSearchEnabled && len(msg.DiscoveredTools) > 0 {
+		refs := anthropicToolReferencesFromLoadable(msg.DiscoveredTools)
+		if len(refs) > 0 {
+			content := make([]anthropicBlock, 0, len(refs)+1)
+			if strings.TrimSpace(msg.Content) != "" {
+				content = append(content, anthropicBlock{Type: "text", Text: msg.Content})
+			}
+			content = append(content, refs...)
+			return anthropicBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: content}
+		}
+	}
 	return anthropicBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: msg.Content}
 }
 
@@ -1238,6 +1249,10 @@ func isAnthropicToolSearchResult(msg providers.ChatMessage) bool {
 
 func anthropicToolReferencesFromResult(content string) []anthropicBlock {
 	tools := anthropicLoadableToolsFromResult(content)
+	return anthropicToolReferencesFromLoadable(tools)
+}
+
+func anthropicToolReferencesFromLoadable(tools []providers.LoadableToolDefinition) []anthropicBlock {
 	if len(tools) == 0 {
 		return nil
 	}

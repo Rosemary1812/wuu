@@ -58,6 +58,13 @@ type ToolContextProvider interface {
 	LastAdditionalContext() string
 }
 
+// ToolDiscoveryProvider is an optional interface a ToolExecutor can implement
+// to attach provider-native deferred tool schemas to the tool result message
+// that made those tools available.
+type ToolDiscoveryProvider interface {
+	DiscoveredTools(call providers.ToolCall) []providers.LoadableToolDefinition
+}
+
 // Runner manages one multi-step coding turn. It is a thin wrapper
 // around RunToolLoop that always executes through the streaming Step
 // path; unary clients are adapted underneath via AdaptStreamClient.
