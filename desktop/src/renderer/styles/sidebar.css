@@ -78,6 +78,7 @@
   --sidebar-tree-toggle-col: 16px;
   --sidebar-tree-icon-col: 18px;
   --sidebar-tree-column-gap: 6px;
+  --sidebar-row-action-size: 24px;
   --sidebar-project-unread-size: 8px;
   display: flex;
   width: var(--sidebar-open-width, 326px);
@@ -437,8 +438,13 @@
 }
 
 .project-row {
+  grid-template-columns:
+    var(--sidebar-tree-toggle-col)
+    var(--sidebar-tree-icon-col)
+    minmax(0, 1fr)
+    var(--sidebar-row-action-size);
   color: var(--ink-tertiary);
-  padding-right: 28px;
+  padding-right: var(--sidebar-row-pad-x);
   font-weight: var(--weight-medium);
 }
 
@@ -488,7 +494,7 @@
 
 .project-row .project-row-loading {
   grid-column: 4;
-  justify-self: end;
+  justify-self: center;
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
@@ -502,7 +508,7 @@
   grid-column: 4;
   width: var(--sidebar-project-unread-size);
   height: var(--sidebar-project-unread-size);
-  justify-self: end;
+  justify-self: center;
   border-radius: var(--radius-pill);
   background: var(--info);
   box-shadow:
@@ -516,8 +522,8 @@
 
 .sidebar-row-icon-button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: var(--sidebar-row-action-size, 24px);
+  height: var(--sidebar-row-action-size, 24px);
   place-items: center;
   border: 0;
   border-radius: var(--radius-sm);
@@ -550,7 +556,7 @@
 .project-row-new-thread {
   position: absolute;
   top: 4px;
-  right: 8px;
+  right: var(--sidebar-row-pad-x, 8px);
   opacity: 0;
   pointer-events: none;
   transform: translate3d(4px, 0, 0);
