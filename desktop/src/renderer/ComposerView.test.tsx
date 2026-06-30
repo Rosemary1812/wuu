@@ -661,6 +661,9 @@ describe("Composer send control", () => {
 describe("Composer long text folding", () => {
   it("bounds folded paste rows inside a scrollable list", () => {
     expect(composerCSS).toContain(".composer-collapsed-prompt-list");
+    expect(composerCSS).toContain("display: grid");
+    expect(composerCSS).toContain("width: auto");
+    expect(composerCSS).toContain("grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr))");
     expect(composerCSS).toContain("max-height: min(168px, 26vh)");
     expect(composerCSS).toContain("overflow-y: auto");
     expect(composerCSS).toContain("overscroll-behavior: contain");
