@@ -684,7 +684,11 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions), s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
-					workerKit, err := s.Toolkit.CloneForRoot(workerRoot)
+					parentKit := kit
+					if parentKit == nil {
+						parentKit = s.Toolkit
+					}
+					workerKit, err := parentKit.CloneForRoot(workerRoot)
 					if err != nil {
 						return nil, err
 					}
@@ -702,7 +706,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetSkills(s.Skills)
 					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
-					ConfigureToolkitPermissions(workerKit, s.ToolPolicy, s.Permissions)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
 					if strings.TrimSpace(meta.AgentProfile) != "" {

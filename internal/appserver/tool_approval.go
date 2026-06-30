@@ -57,10 +57,18 @@ type ToolApprovalResponse struct {
 //   - everything else: keep the legacy IPC path that asks the user via
 //     the desktop app-server.
 func (s *Server) installToolApprovalReviewer(kit *tools.Toolkit) {
+	permissions := config.ResolvedPermissions{}
+	if s != nil && s.rt != nil {
+		permissions = s.rt.Permissions
+	}
+	s.installToolApprovalReviewerForPermissions(kit, permissions)
+}
+
+func (s *Server) installToolApprovalReviewerForPermissions(kit *tools.Toolkit, permissions config.ResolvedPermissions) {
 	if s == nil || kit == nil {
 		return
 	}
-	if s.rt != nil && s.rt.Permissions.ApprovalsReviewer == config.ApprovalsReviewerAutoReview {
+	if strings.TrimSpace(permissions.ApprovalsReviewer) == config.ApprovalsReviewerAutoReview {
 		if reviewer, ok := s.buildGuardianReviewer(kit); ok {
 			kit.SetToolApprovalReviewer(reviewer)
 			return

@@ -29,8 +29,9 @@ import (
 )
 
 type sessionRecordingClient struct {
-	mu   sync.Mutex
-	last providers.ChatRequest
+	mu            sync.Mutex
+	last          providers.ChatRequest
+	streamBatches [][]providers.StreamEvent
 }
 
 func (c *sessionRecordingClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
@@ -43,6 +44,17 @@ func (c *sessionRecordingClient) Chat(_ context.Context, req providers.ChatReque
 func (c *sessionRecordingClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
 	c.mu.Lock()
 	c.last = req
+	if len(c.streamBatches) > 0 {
+		events := append([]providers.StreamEvent(nil), c.streamBatches[0]...)
+		c.streamBatches = c.streamBatches[1:]
+		c.mu.Unlock()
+		ch := make(chan providers.StreamEvent, len(events))
+		for _, event := range events {
+			ch <- event
+		}
+		close(ch)
+		return ch, nil
+	}
 	c.mu.Unlock()
 	ch := make(chan providers.StreamEvent, 2)
 	ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "done"}
@@ -1490,7 +1502,7 @@ func TestNewSessionAppliesPermissionBoundary(t *testing.T) {
 	}
 }
 
-func TestNewThreadRuntimeWorkerReceivesCurrentPermissionContext(t *testing.T) {
+func TestNewThreadRuntimeWorkerInheritsCurrentPermissionBoundary(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -1524,7 +1536,20 @@ func TestNewThreadRuntimeWorkerReceivesCurrentPermissionContext(t *testing.T) {
 	rt.ToolPolicy = config.ToolPolicyConfig{}
 	ConfigureToolkitPermissions(rt.Toolkit, rt.ToolPolicy, rt.Permissions)
 
-	client := &sessionRecordingClient{}
+	client := &sessionRecordingClient{
+		streamBatches: [][]providers.StreamEvent{
+			{
+				{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: "call-patch", Name: "apply_patch"}},
+				{Type: providers.EventToolUseDelta, Content: `{"patchText":"*** Begin Patch\n*** Add File: blocked.txt\n+nope\n*** End Patch\n"}`},
+				{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call-patch", Name: "apply_patch"}},
+				{Type: providers.EventDone},
+			},
+			{
+				{Type: providers.EventContentDelta, Content: "done"},
+				{Type: providers.EventDone},
+			},
+		},
+	}
 	rt.WorkerClient = client
 	threadRT, err := rt.NewThreadRuntime("thread-read-only-worker")
 	if err != nil {
@@ -1550,9 +1575,12 @@ func TestNewThreadRuntimeWorkerReceivesCurrentPermissionContext(t *testing.T) {
 		joined.WriteByte('\n')
 	}
 	content := joined.String()
-	if !strings.Contains(content, "permission_profile: read_only") ||
-		!strings.Contains(content, "boundary: read_only") {
-		t.Fatalf("worker request missing current permission context:\n%s", content)
+	if !strings.Contains(content, "permission_boundary_denied") ||
+		!strings.Contains(content, "read_only profile blocks") {
+		t.Fatalf("worker did not inherit read-only permission boundary:\n%s", content)
+	}
+	if _, err := os.Stat(filepath.Join(root, "blocked.txt")); !os.IsNotExist(err) {
+		t.Fatalf("read-only worker should not create blocked file, stat err=%v", err)
 	}
 }
 

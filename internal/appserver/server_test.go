@@ -706,18 +706,34 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	now := time.Now().UTC()
 
 	running := newThreadState("running-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	runningKit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New running: %v", err)
+	}
+	readOnlyPermissions, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
+	if err != nil {
+		t.Fatalf("ResolvePermissionModePreset read_only: %v", err)
+	}
+	runtime.ConfigureToolkitPermissions(runningKit, config.ToolPolicyConfig{}, readOnlyPermissions)
 	running.execRuntime = &runtime.ThreadRuntime{
 		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
+		Toolkit:      runningKit,
 	}
 	running.startTurnLocked("running-turn", providers.ChatMessage{Role: "user", Content: "keep running"}, now)
 	idle := newThreadState("idle-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	idleKit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New idle: %v", err)
+	}
+	runtime.ConfigureToolkitPermissions(idleKit, config.ToolPolicyConfig{}, readOnlyPermissions)
 	idle.execRuntime = &runtime.ThreadRuntime{
 		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
+		Toolkit:      idleKit,
 	}
 	srv.threads[running.ID] = running
 	srv.threads[idle.ID] = idle
 
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model"}}`)); err != nil {
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model","permission_mode":"full_access"}}`)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
 
@@ -739,6 +755,13 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	if running.pendingRuntimeUpdate == nil {
 		t.Fatal("running thread should defer runtime refresh until the turn finishes")
 	}
+	if _, err := running.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
+		ID:        "running-still-read-only",
+		Name:      "write_file",
+		Arguments: `{"path":"running-still-read-only.txt","content":"nope\n","create_only":true}`,
+	}); err == nil || !strings.Contains(err.Error(), "permission_boundary_denied") {
+		t.Fatalf("running turn should keep read-only boundary before pending update applies, err=%v", err)
+	}
 	running.mu.Unlock()
 
 	running.mu.Lock()
@@ -752,6 +775,13 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	if running.execRuntime.StreamRunner.Model != "new-model" || running.execRuntime.StreamRunner.APIModel != "new-model" {
 		t.Fatalf("running thread runtime should update for next turn: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
 	}
+	if _, err := running.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
+		ID:        "running-next-full-access",
+		Name:      "write_file",
+		Arguments: `{"path":"running-next-full-access.txt","content":"ok\n","create_only":true}`,
+	}); err != nil {
+		t.Fatalf("running thread should use full-access boundary after pending update applies: %v", err)
+	}
 	running.mu.Unlock()
 
 	idle.mu.Lock()
@@ -761,6 +791,13 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	}
 	if idle.execRuntime.StreamRunner.Model != "new-model" || idle.execRuntime.StreamRunner.APIModel != "new-model" {
 		t.Fatalf("idle thread runtime should update: model=%q api=%q", idle.execRuntime.StreamRunner.Model, idle.execRuntime.StreamRunner.APIModel)
+	}
+	if _, err := idle.execRuntime.Toolkit.Execute(context.Background(), providers.ToolCall{
+		ID:        "idle-full-access",
+		Name:      "write_file",
+		Arguments: `{"path":"idle-full-access.txt","content":"ok\n","create_only":true}`,
+	}); err != nil {
+		t.Fatalf("idle thread should use full-access boundary immediately: %v", err)
 	}
 }
 
@@ -2631,6 +2668,200 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	}
 	if strings.Contains(secondInputText, "[ENVIRONMENT]") {
 		t.Fatalf("second request should not repeat stable environment as request-only context: %#v", secondInput)
+	}
+}
+
+func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{ToolCalls: []providers.ToolCall{{
+				ID:        "call-read-only-write",
+				Name:      "write_file",
+				Arguments: `{"path":"blocked.txt","content":"nope\n","create_only":true}`,
+			}}},
+			{Content: "read only done"},
+			{ToolCalls: []providers.ToolCall{{
+				ID:        "call-full-write",
+				Name:      "write_file",
+				Arguments: `{"path":"allowed.txt","content":"ok\n","create_only":true}`,
+			}}},
+			{Content: "full access done"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	permissions, err := config.ResolvePermissionModePreset(config.PermissionModeAgent)
+	if err != nil {
+		t.Fatalf("ResolvePermissionModePreset: %v", err)
+	}
+	rt.Permissions = permissions
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	startTurn := func(id, prompt, mode string) {
+		t.Helper()
+		permissionMode := mode
+		raw, err := json.Marshal(map[string]any{
+			"id":     id,
+			"method": MethodTurnStart,
+			"params": TurnStartParams{ThreadID: threadID, Prompt: prompt, PermissionMode: &permissionMode},
+		})
+		if err != nil {
+			t.Fatalf("marshal turn/start: %v", err)
+		}
+		if err := srv.handleLine(context.Background(), raw); err != nil {
+			t.Fatalf("turn/start %s: %v", id, err)
+		}
+	}
+
+	startTurn("2", "try a read-only write", config.PermissionModeReadOnly)
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	startTurn("3", "try a full-access write", config.PermissionModeFullAccess)
+	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
+
+	completed := make([]TurnCompletedNotification, 0, 2)
+	for _, msg := range msgs {
+		if msg["id"] != nil || msg["method"] != NotificationTurnCompleted {
+			continue
+		}
+		params := remarshal[TurnCompletedNotification](t, msg["params"])
+		if params.ThreadID == threadID {
+			completed = append(completed, params)
+		}
+	}
+	if len(completed) != 2 {
+		t.Fatalf("completed turns = %d, want 2", len(completed))
+	}
+
+	contexts := turnEventsByTypeForThread(t, msgs, threadID, providers.EventRequestContext)
+	firstContextByTurn := map[string]*providers.RequestContextSummary{}
+	for _, event := range contexts {
+		if event.Event.RequestContext != nil && firstContextByTurn[event.TurnID] == nil {
+			firstContextByTurn[event.TurnID] = event.Event.RequestContext
+		}
+	}
+	firstContext := firstContextByTurn[completed[0].Turn.ID]
+	secondContext := firstContextByTurn[completed[1].Turn.ID]
+	if firstContext == nil || secondContext == nil {
+		t.Fatalf("missing request context: first=%+v second=%+v all=%+v", firstContext, secondContext, contexts)
+	}
+	if firstContext.PromptCacheKey != threadID || secondContext.PromptCacheKey != threadID {
+		t.Fatalf("prompt cache key drifted: first=%q second=%q thread=%q", firstContext.PromptCacheKey, secondContext.PromptCacheKey, threadID)
+	}
+	if firstContext.SystemHash == "" || secondContext.SystemHash != firstContext.SystemHash {
+		t.Fatalf("system hash drifted after permission switch: first=%q second=%q", firstContext.SystemHash, secondContext.SystemHash)
+	}
+	if firstContext.ToolSurfaceHash == "" || secondContext.ToolSurfaceHash != firstContext.ToolSurfaceHash {
+		t.Fatalf("tool surface hash drifted after permission switch: first=%q second=%q", firstContext.ToolSurfaceHash, secondContext.ToolSurfaceHash)
+	}
+
+	th := srv.thread(threadID)
+	if th == nil || th.execRuntime == nil || th.execRuntime.Toolkit == nil {
+		t.Fatalf("missing thread runtime")
+	}
+	records := th.execRuntime.Toolkit.ToolTelemetry()
+	var readOnlyRecord, fullRecord *tools.ToolExecutionRecord
+	for i := range records {
+		switch records[i].CallID {
+		case "call-read-only-write":
+			readOnlyRecord = &records[i]
+		case "call-full-write":
+			fullRecord = &records[i]
+		}
+	}
+	if readOnlyRecord == nil || readOnlyRecord.Success || readOnlyRecord.ErrorKind != "permission_boundary_denied" {
+		t.Fatalf("read-only turn should deny write by permission boundary: %+v records=%+v", readOnlyRecord, records)
+	}
+	if fullRecord == nil || !fullRecord.Success {
+		t.Fatalf("full-access turn should execute write: %+v records=%+v", fullRecord, records)
+	}
+	if _, err := os.Stat(filepath.Join(rt.RootDir, "blocked.txt")); !os.IsNotExist(err) {
+		t.Fatalf("read-only turn should not create blocked file, stat err=%v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(rt.RootDir, "allowed.txt")); err != nil || string(data) != "ok\n" {
+		t.Fatalf("full-access turn should create allowed file, data=%q err=%v", data, err)
+	}
+
+	traceSummary, err := sessiontrace.ReplayTrace(completed[1].TracePath)
+	if err != nil {
+		t.Fatalf("replay trace: %v", err)
+	}
+	if len(traceSummary.Turns) < 2 {
+		t.Fatalf("trace should record both turns: %+v", traceSummary.Turns)
+	}
+	if traceSummary.Turns[len(traceSummary.Turns)-2].PermissionMode != config.PermissionModeReadOnly ||
+		traceSummary.Turns[len(traceSummary.Turns)-1].PermissionMode != config.PermissionModeFullAccess {
+		t.Fatalf("trace permission modes = %+v", traceSummary.Turns)
+	}
+}
+
+func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{ToolCalls: []providers.ToolCall{{
+				ID:        "call-queued-write",
+				Name:      "write_file",
+				Arguments: `{"path":"queued-blocked.txt","content":"nope\n","create_only":true}`,
+			}}},
+			{Content: "queued done"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	fullAccess, err := config.ResolvePermissionModePreset(config.PermissionModeFullAccess)
+	if err != nil {
+		t.Fatalf("ResolvePermissionModePreset full_access: %v", err)
+	}
+	rt.Permissions = fullAccess
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	readOnly, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
+	if err != nil {
+		t.Fatalf("ResolvePermissionModePreset read_only: %v", err)
+	}
+	started, err := srv.startQueuedTurn(context.Background(), threadID, queuedTurn{
+		id:       "queued-read-only",
+		msg:      providers.ChatMessage{Role: "user", Content: "queued write"},
+		snapshot: turnRuntimeSnapshot{}.withPermissions(readOnly),
+	})
+	if err != nil {
+		t.Fatalf("startQueuedTurn: %v", err)
+	}
+	if !started {
+		t.Fatal("queued turn did not start")
+	}
+	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	traceSummary, err := sessiontrace.ReplayTrace(completed.TracePath)
+	if err != nil {
+		t.Fatalf("replay trace: %v", err)
+	}
+	if len(traceSummary.Turns) == 0 || traceSummary.Turns[len(traceSummary.Turns)-1].PermissionMode != config.PermissionModeReadOnly {
+		t.Fatalf("queued turn should record read-only snapshot: %+v", traceSummary.Turns)
+	}
+	if _, err := os.Stat(filepath.Join(rt.RootDir, "queued-blocked.txt")); !os.IsNotExist(err) {
+		t.Fatalf("queued read-only turn should not create file, stat err=%v", err)
+	}
+	records := srv.thread(threadID).execRuntime.Toolkit.ToolTelemetry()
+	if len(records) != 1 || records[0].CallID != "call-queued-write" || records[0].ErrorKind != "permission_boundary_denied" {
+		t.Fatalf("queued read-only turn should deny write by boundary: %+v", records)
 	}
 }
 
@@ -6055,11 +6286,12 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	environmentSection := "# Environment\n\n- Current working directory: " + root + "\n- Current date: 2026-01-01"
 	systemPrompt := "system prompt\n\n" + environmentSection
 	return &runtime.Session{
-		ProviderName: "fake-provider",
-		Model:        "fake-model",
-		RootDir:      root,
-		ConfigPath:   root + "/.wuu.json",
-		SessionDir:   root + "/.wuu/sessions",
+		ProviderName:   "fake-provider",
+		Model:          "fake-model",
+		RootDir:        root,
+		ConfigPath:     root + "/.wuu.json",
+		SessionDir:     root + "/.wuu/sessions",
+		HookDispatcher: hooks.NewDispatcher(nil),
 		StreamRunner: &agent.StreamRunner{
 			Client:       providers.AdaptStreamClient(client),
 			Model:        "fake-model",

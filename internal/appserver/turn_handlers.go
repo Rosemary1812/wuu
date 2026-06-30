@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/guardian"
@@ -27,8 +28,9 @@ import (
 )
 
 type queuedTurn struct {
-	id  string
-	msg providers.ChatMessage
+	id       string
+	msg      providers.ChatMessage
+	snapshot turnRuntimeSnapshot
 }
 
 type agentCompletionTurn struct {
@@ -38,8 +40,13 @@ type agentCompletionTurn struct {
 }
 
 type turnRuntimeSnapshot struct {
-	ProviderName string
-	Model        string
+	ProviderName       string
+	Model              string
+	PermissionMode     string
+	PermissionProfile  string
+	ApprovalPolicy     string
+	ApprovalsReviewer  string
+	PermissionExplicit bool
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
@@ -62,6 +69,10 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	}
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
+	}
+	permissions, err := s.resolveTurnPermissions(params.PermissionMode)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	th, err := s.ensureResidentThread(params.ThreadID)
 	if err != nil {
@@ -95,7 +106,8 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	th.History = history
 	th.cancel = cancel
 	turn := th.startTurnLocked(turnID, userMsg, now)
-	turnRuntime := turnRuntimeSnapshotLocked(th)
+	turnRuntime := turnRuntimeSnapshotLocked(th).withPermissions(permissions)
+	turnRuntime.PermissionExplicit = params.PermissionMode != nil
 	th.mu.Unlock()
 
 	if err := s.writeResponse(req.ID, TurnStartResult{Turn: turn}, nil); err != nil {
@@ -135,6 +147,10 @@ func (s *Server) handleTurnQueue(req Request) error {
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
 	}
+	permissions, err := s.resolveTurnPermissions(params.PermissionMode)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	th, err := s.ensureResidentThread(params.ThreadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -152,8 +168,10 @@ func (s *Server) handleTurnQueue(req Request) error {
 	}
 	msg := userMessageFromPrompt(params.Prompt, images, files)
 	msg.ClientID = queueID
-	queued := queuedTurnSummary(params.ThreadID, queuedTurn{id: queueID, msg: msg})
-	s.enqueueQueuedUserTurn(params.ThreadID, queuedTurn{id: queueID, msg: msg})
+	entry := queuedTurn{id: queueID, msg: msg, snapshot: turnRuntimeSnapshot{}.withPermissions(permissions)}
+	entry.snapshot.PermissionExplicit = params.PermissionMode != nil
+	queued := queuedTurnSummary(params.ThreadID, entry)
+	s.enqueueQueuedUserTurn(params.ThreadID, entry)
 	if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
 		return err
 	}
@@ -564,6 +582,65 @@ func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
 	}
 }
 
+func (snapshot turnRuntimeSnapshot) permissions() config.ResolvedPermissions {
+	return normalizeTurnPermissions(config.ResolvedPermissions{
+		Mode:              snapshot.PermissionMode,
+		PermissionProfile: snapshot.PermissionProfile,
+		ApprovalPolicy:    snapshot.ApprovalPolicy,
+		ApprovalsReviewer: snapshot.ApprovalsReviewer,
+	})
+}
+
+func (snapshot turnRuntimeSnapshot) withPermissions(permissions config.ResolvedPermissions) turnRuntimeSnapshot {
+	permissions = normalizeTurnPermissions(permissions)
+	snapshot.PermissionMode = permissions.Mode
+	snapshot.PermissionProfile = permissions.PermissionProfile
+	snapshot.ApprovalPolicy = permissions.ApprovalPolicy
+	snapshot.ApprovalsReviewer = permissions.ApprovalsReviewer
+	return snapshot
+}
+
+func (snapshot turnRuntimeSnapshot) hasPermissions() bool {
+	return strings.TrimSpace(snapshot.PermissionMode) != "" ||
+		strings.TrimSpace(snapshot.PermissionProfile) != "" ||
+		strings.TrimSpace(snapshot.ApprovalPolicy) != "" ||
+		strings.TrimSpace(snapshot.ApprovalsReviewer) != ""
+}
+
+func normalizeTurnPermissions(permissions config.ResolvedPermissions) config.ResolvedPermissions {
+	mode := strings.TrimSpace(permissions.Mode)
+	if mode == "" {
+		mode = config.PermissionModeAgent
+	}
+	resolved, err := config.ResolvePermissionModePreset(mode)
+	if err != nil {
+		resolved, _ = config.ResolvePermissionModePreset(config.PermissionModeAgent)
+	}
+	if profile := strings.TrimSpace(permissions.PermissionProfile); profile != "" {
+		resolved.PermissionProfile = profile
+	}
+	if policy := strings.TrimSpace(permissions.ApprovalPolicy); policy != "" {
+		resolved.ApprovalPolicy = policy
+	}
+	if reviewer := strings.TrimSpace(permissions.ApprovalsReviewer); reviewer != "" {
+		resolved.ApprovalsReviewer = reviewer
+	}
+	if strings.TrimSpace(resolved.Mode) == "" {
+		resolved.Mode = mode
+	}
+	return resolved
+}
+
+func (s *Server) resolveTurnPermissions(permissionMode *string) (config.ResolvedPermissions, error) {
+	if permissionMode != nil {
+		return config.ResolvePermissionModePreset(*permissionMode)
+	}
+	if s != nil && s.rt != nil {
+		return normalizeTurnPermissions(s.rt.Permissions), nil
+	}
+	return normalizeTurnPermissions(config.ResolvedPermissions{}), nil
+}
+
 func usageContextWindowTokens(runner *agent.StreamRunner) int {
 	if runner == nil {
 		return 0
@@ -589,6 +666,16 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	runner := s.rt.StreamRunner
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
+	}
+	turnPermissions := turnRuntime.permissions()
+	turnRuntime = turnRuntime.withPermissions(turnPermissions)
+	if threadRuntime != nil && threadRuntime.Toolkit != nil {
+		toolPolicy := config.ToolPolicyConfig{}
+		if !turnRuntime.PermissionExplicit && s != nil && s.rt != nil {
+			toolPolicy = s.rt.ToolPolicy
+		}
+		runtime.ConfigureToolkitPermissions(threadRuntime.Toolkit, toolPolicy, turnPermissions)
+		s.installToolApprovalReviewerForPermissions(threadRuntime.Toolkit, turnPermissions)
 	}
 	// Resolve the real runtime context ceiling for the active provider/model
 	// so turn/usage notifications can drive a "已用 / 总数" meter in the UI.
@@ -843,7 +930,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turnRuntime.ProviderName, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turnRuntime, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
 	if traceErr != nil {
 		tracePath = ""
 	}
@@ -951,7 +1038,7 @@ func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr 
 	return nil
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID, providerName string, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord) (string, error) {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turnRuntime turnRuntimeSnapshot, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
 		return "", nil
 	}
@@ -959,10 +1046,11 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	if strings.TrimSpace(tracePath) == "" {
 		return "", nil
 	}
-	providerName = strings.TrimSpace(providerName)
+	providerName := strings.TrimSpace(turnRuntime.ProviderName)
 	if s != nil && s.rt != nil {
 		providerName = firstNonEmpty(providerName, s.rt.ProviderName)
 	}
+	permissions := turnRuntime.permissions()
 	model := ""
 	apiModel := ""
 	if runner != nil {
@@ -982,6 +1070,10 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		Model:               model,
 		APIModel:            apiModel,
 		ModelProfile:        sessiontrace.NewModelProfileRecordWithBudget(providerName, model, apiModel, modelBudget),
+		PermissionMode:      permissions.Mode,
+		PermissionProfile:   permissions.PermissionProfile,
+		ApprovalPolicy:      permissions.ApprovalPolicy,
+		ApprovalsReviewer:   permissions.ApprovalsReviewer,
 		StartedAt:           turn.StartedAt,
 		CompletedAt:         turn.CompletedAt,
 		DurationMS:          turn.DurationMS,
@@ -1157,7 +1249,7 @@ func (s *Server) replaceQueuedUserTurn(threadID, queueID string, msg providers.C
 		if entry.id != queueID {
 			continue
 		}
-		updated := queuedTurn{id: queueID, msg: msg}
+		updated := queuedTurn{id: queueID, msg: msg, snapshot: entry.snapshot}
 		pending[index] = updated
 		s.pendingQueuedTurns[threadID] = pending
 		return updated, true
@@ -1243,6 +1335,13 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	if err != nil {
 		return false, err
 	}
+	permissions := entry.snapshot.permissions()
+	if !entry.snapshot.hasPermissions() {
+		permissions, err = s.resolveTurnPermissions(nil)
+		if err != nil {
+			return false, err
+		}
+	}
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -1271,7 +1370,8 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	th.History = history
 	th.cancel = cancel
 	turn := th.startTurnLocked(turnID, entry.msg, now)
-	turnRuntime := turnRuntimeSnapshotLocked(th)
+	turnRuntime := turnRuntimeSnapshotLocked(th).withPermissions(permissions)
+	turnRuntime.PermissionExplicit = entry.snapshot.PermissionExplicit
 	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{

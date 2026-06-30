@@ -534,12 +534,20 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(
     "wuu:turn-start",
-    (_event, threadId: string, prompt: string, images?: InputImage[], files?: InputFile[]) =>
+    (
+      _event,
+      threadId: string,
+      prompt: string,
+      images?: InputImage[],
+      files?: InputFile[],
+      permissionMode?: string,
+    ) =>
       appServerClientPool.request<{ turn: Turn }>("turn/start", {
         thread_id: threadId,
         prompt,
         images: images ?? [],
         files: files ?? [],
+        ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
       }),
   );
   ipcMain.handle(
@@ -551,6 +559,7 @@ app.whenReady().then(async () => {
       images?: InputImage[],
       clientId?: string,
       files?: InputFile[],
+      permissionMode?: string,
     ) =>
       appServerClientPool.request("turn/queue", {
         thread_id: threadId,
@@ -558,6 +567,7 @@ app.whenReady().then(async () => {
         images: images ?? [],
         files: files ?? [],
         client_id: clientId,
+        ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
       }),
   );
   ipcMain.handle(

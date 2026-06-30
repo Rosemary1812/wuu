@@ -1167,13 +1167,20 @@ export type WuuDesktopApi = {
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
-  startTurn: (threadId: string, prompt: string, images?: InputImage[], files?: InputFile[]) => Promise<{ turn: Turn }>;
+  startTurn: (
+    threadId: string,
+    prompt: string,
+    images?: InputImage[],
+    files?: InputFile[],
+    permissionMode?: string,
+  ) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,
     prompt: string,
     images?: InputImage[],
     clientId?: string,
     files?: InputFile[],
+    permissionMode?: string,
   ) => Promise<{ queued: QueuedTurn }>;
   updateQueuedTurn: (
     threadId: string,

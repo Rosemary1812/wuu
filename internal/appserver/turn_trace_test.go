@@ -47,7 +47,13 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 	duration := int64(1000)
 	srv := &Server{rt: &runtime.Session{ProviderName: "global-provider"}}
 	runner := &agent.StreamRunner{Model: "gpt-test", APIModel: "gpt-test-api"}
-	tracePath, err := srv.persistTurnTrace(&runtime.ThreadRuntime{Toolkit: kit}, runner, "thread-1", "openai", Turn{
+	tracePath, err := srv.persistTurnTrace(&runtime.ThreadRuntime{Toolkit: kit}, runner, "thread-1", turnRuntimeSnapshot{
+		ProviderName:      "openai",
+		PermissionMode:    "full_access",
+		PermissionProfile: "danger_full_access",
+		ApprovalPolicy:    "never",
+		ApprovalsReviewer: "user",
+	}, Turn{
 		ID:          "turn-1",
 		Status:      TurnStatusCompleted,
 		StartedAt:   &startedAt,
@@ -93,7 +99,7 @@ func TestPersistTurnTraceWritesSessionArtifact(t *testing.T) {
 		t.Fatalf("read session trace: %v", err)
 	}
 	trace := string(data)
-	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"transport":"websocket"`, `"connection_reused":true`, `"fallback_reason":"websocket_failed_before_first_event"`, `"previous_response_id_used":true`, `"tokens_before":252001`} {
+	for _, want := range []string{`"type":"turn"`, `"type":"context_requests"`, `"type":"provider_states"`, `"type":"compact_attempts"`, `"type":"tool_inventory"`, `"type":"tool_records"`, `"type":"final"`, `"provider_name":"openai"`, `"model":"gpt-test"`, `"permission_mode":"full_access"`, `"permission_profile":"danger_full_access"`, `"approval_policy":"never"`, `"approvals_reviewer":"user"`, `"model_profile"`, `"family":"gpt"`, `"default_write_mode":"patch"`, `"name":"read_file"`, `"ENVIRONMENT"`, `"step_index":1`, `"transport":"websocket"`, `"connection_reused":true`, `"fallback_reason":"websocket_failed_before_first_event"`, `"previous_response_id_used":true`, `"tokens_before":252001`} {
 		if !strings.Contains(trace, want) {
 			t.Fatalf("session trace missing %s:\n%s", want, trace)
 		}

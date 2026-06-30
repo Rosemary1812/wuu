@@ -792,10 +792,11 @@ type ThreadRenameResult struct {
 }
 
 type TurnStartParams struct {
-	ThreadID string           `json:"thread_id"`
-	Prompt   string           `json:"prompt"`
-	Images   []TurnStartImage `json:"images,omitempty"`
-	Files    []TurnStartFile  `json:"files,omitempty"`
+	ThreadID       string           `json:"thread_id"`
+	Prompt         string           `json:"prompt"`
+	Images         []TurnStartImage `json:"images,omitempty"`
+	Files          []TurnStartFile  `json:"files,omitempty"`
+	PermissionMode *string          `json:"permission_mode,omitempty"`
 }
 
 type TurnStartImage struct {
@@ -818,11 +819,12 @@ type TurnStartResult struct {
 }
 
 type TurnQueueParams struct {
-	ThreadID string           `json:"thread_id"`
-	Prompt   string           `json:"prompt"`
-	Images   []TurnStartImage `json:"images,omitempty"`
-	Files    []TurnStartFile  `json:"files,omitempty"`
-	ClientID string           `json:"client_id,omitempty"`
+	ThreadID       string           `json:"thread_id"`
+	Prompt         string           `json:"prompt"`
+	Images         []TurnStartImage `json:"images,omitempty"`
+	Files          []TurnStartFile  `json:"files,omitempty"`
+	ClientID       string           `json:"client_id,omitempty"`
+	PermissionMode *string          `json:"permission_mode,omitempty"`
 }
 
 type QueuedTurn struct {
@@ -997,34 +999,34 @@ type TurnCompletedNotification struct {
 }
 
 type Agent struct {
-	ID                  string    `json:"id"`
-	Type                string    `json:"type"`
-	TaskName            string    `json:"task_name,omitempty"`
-	AgentProfile        string    `json:"agent_profile,omitempty"`
-	AgentPath           string    `json:"agent_path,omitempty"`
-	ParentID            string    `json:"parent_id,omitempty"`
-	Description         string    `json:"description,omitempty"`
-	Status              string    `json:"status"`
-	Result              string    `json:"result,omitempty"`
-	ResultPath          string    `json:"result_path,omitempty"`
-	ResultBytes         int       `json:"result_bytes,omitempty"`
-	ResultTruncated     bool      `json:"result_truncated,omitempty"`
-	Error               string    `json:"error,omitempty"`
-	InputTokens         int       `json:"input_tokens,omitempty"`
-	OutputTokens        int       `json:"output_tokens,omitempty"`
-	CacheCreationTokens int       `json:"cache_creation_tokens,omitempty"`
-	CacheReadTokens     int       `json:"cache_read_tokens,omitempty"`
-	NestedCount         int       `json:"nested_count,omitempty"`
-	NestedRunningCount  int       `json:"nested_running_count,omitempty"`
+	ID                  string `json:"id"`
+	Type                string `json:"type"`
+	TaskName            string `json:"task_name,omitempty"`
+	AgentProfile        string `json:"agent_profile,omitempty"`
+	AgentPath           string `json:"agent_path,omitempty"`
+	ParentID            string `json:"parent_id,omitempty"`
+	Description         string `json:"description,omitempty"`
+	Status              string `json:"status"`
+	Result              string `json:"result,omitempty"`
+	ResultPath          string `json:"result_path,omitempty"`
+	ResultBytes         int    `json:"result_bytes,omitempty"`
+	ResultTruncated     bool   `json:"result_truncated,omitempty"`
+	Error               string `json:"error,omitempty"`
+	InputTokens         int    `json:"input_tokens,omitempty"`
+	OutputTokens        int    `json:"output_tokens,omitempty"`
+	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
+	NestedCount         int    `json:"nested_count,omitempty"`
+	NestedRunningCount  int    `json:"nested_running_count,omitempty"`
 	// Pinned and Archived mirror the underlying session metadata for the
 	// sub-agent's own session so the renderer can offer pin/archive actions
 	// in the session info panel without an extra round-trip. The child
 	// session lives in the same store keyed by the agent ID, so this is
 	// sourced from session.Find at list time.
-	Pinned              bool      `json:"pinned,omitempty"`
-	Archived            bool      `json:"archived,omitempty"`
-	StartedAt           time.Time `json:"started_at"`
-	CompletedAt         time.Time `json:"completed_at,omitempty"`
+	Pinned      bool      `json:"pinned,omitempty"`
+	Archived    bool      `json:"archived,omitempty"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at,omitempty"`
 }
 
 type AgentUpdatedNotification struct {

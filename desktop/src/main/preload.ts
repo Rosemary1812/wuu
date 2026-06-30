@@ -100,10 +100,10 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-rename", threadId, title),
   revealSession: (threadId: string) =>
     ipcRenderer.invoke("wuu:reveal-session", threadId),
-  startTurn: (threadId: string, prompt: string, images, files) =>
-    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files),
-  queueTurn: (threadId: string, prompt: string, images, clientId, files) =>
-    ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId, files),
+  startTurn: (threadId: string, prompt: string, images, files, permissionMode) =>
+    ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files, permissionMode),
+  queueTurn: (threadId: string, prompt: string, images, clientId, files, permissionMode) =>
+    ipcRenderer.invoke("wuu:turn-queue", threadId, prompt, images, clientId, files, permissionMode),
   updateQueuedTurn: (threadId: string, queueId: string, prompt: string, images, files) =>
     ipcRenderer.invoke("wuu:turn-update-queued", threadId, queueId, prompt, images, files),
   dequeueTurn: (threadId: string, queueId: string) =>

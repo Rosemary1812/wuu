@@ -37,6 +37,10 @@ type TurnRecord struct {
 	Model               string              `json:"model,omitempty"`
 	APIModel            string              `json:"api_model,omitempty"`
 	ModelProfile        *ModelProfileRecord `json:"model_profile,omitempty"`
+	PermissionMode      string              `json:"permission_mode,omitempty"`
+	PermissionProfile   string              `json:"permission_profile,omitempty"`
+	ApprovalPolicy      string              `json:"approval_policy,omitempty"`
+	ApprovalsReviewer   string              `json:"approvals_reviewer,omitempty"`
 	StartedAt           *time.Time          `json:"started_at,omitempty"`
 	CompletedAt         *time.Time          `json:"completed_at,omitempty"`
 	DurationMS          *int64              `json:"duration_ms,omitempty"`

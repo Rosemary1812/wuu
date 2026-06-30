@@ -48,6 +48,7 @@ import type {
   PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
+  PermissionSummary,
   RuntimeAdvancedSettingsUpdate,
   RuntimeConnectionUpdate,
   RuntimeContext,
@@ -276,6 +277,54 @@ import { useWorkspaceToolState } from "./WorkspaceToolState";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
+
+function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
+  switch (mode) {
+    case "read_only":
+      return {
+        mode,
+        permission_profile: "read_only",
+        approval_policy: "on_request",
+        approvals_reviewer: "user",
+      };
+    case "auto_review":
+      return {
+        mode,
+        permission_profile: "workspace_write",
+        approval_policy: "on_request",
+        approvals_reviewer: "auto_review",
+      };
+    case "full_access":
+      return {
+        mode,
+        permission_profile: "danger_full_access",
+        approval_policy: "never",
+        approvals_reviewer: "user",
+      };
+    case "agent":
+    default:
+      return {
+        mode: "agent",
+        permission_profile: "workspace_write",
+        approval_policy: "on_request",
+        approvals_reviewer: "user",
+      };
+  }
+}
+
+function initializedForSelectedPermissionMode(
+  initialized: InitializeResult | undefined,
+  mode: PermissionMode | undefined,
+): InitializeResult | undefined {
+  if (!initialized || mode === undefined) {
+    return initialized;
+  }
+  return {
+    ...initialized,
+    permissions: permissionSummaryForMode(mode),
+    tool_policy: { profile: mode },
+  };
+}
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
@@ -509,6 +558,8 @@ export function App(): JSX.Element {
   );
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
+  const [selectedPermissionMode, setSelectedPermissionMode] =
+    useState<PermissionMode | undefined>(undefined);
   const [codexRuntimeMenu, setCodexRuntimeMenu] =
     useState<CodexRuntimeMenu>(null);
   const [codexModels, setCodexModels] = useState<CodexModelLoadState>({
@@ -663,6 +714,14 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const composerInitialized = useMemo(
+    () =>
+      initializedForSelectedPermissionMode(
+        state.initialized,
+        selectedPermissionMode,
+      ),
+    [state.initialized, selectedPermissionMode],
+  );
   // Per-thread keep-alive for the main conversation pane. We keep the active
   // thread and a small recency buffer mounted so switching back does not
   // unmount/remount the entire <TurnView> tree. Keeping every open tab mounted
@@ -2482,7 +2541,7 @@ export function App(): JSX.Element {
           activeThreadReadOnly ? false : streamStatus?.liveProgress
         }
         readOnly={activeThreadReadOnly}
-        initialized={state.initialized}
+        initialized={composerInitialized}
         gitStatus={state.gitStatus}
         projects={state.projects}
         activeContext={state.activeContext}
@@ -5053,6 +5112,7 @@ export function App(): JSX.Element {
         images,
         message.id,
         files,
+        selectedPermissionMode,
       );
       enqueueComposerMessage(targetThread.id, {
         ...message,
@@ -5180,7 +5240,13 @@ export function App(): JSX.Element {
       );
       const encodedImages = await awaitComposerImages(message.images);
       const images = inputImagesFromComposer(encodedImages);
-      const result = await window.wuu.startTurn(thread.id, text, images, files);
+      const result = await window.wuu.startTurn(
+        thread.id,
+        text,
+        images,
+        files,
+        selectedPermissionMode,
+      );
       setState((current) =>
         updateThreadByID(
           setThreadForPane(current, targetPane, thread),
@@ -5362,7 +5428,13 @@ export function App(): JSX.Element {
       );
       const encodedImages = await awaitComposerImages(message.images);
       const images = inputImagesFromComposer(encodedImages);
-      const result = await window.wuu.startTurn(targetThread.id, text, images, files);
+      const result = await window.wuu.startTurn(
+        targetThread.id,
+        text,
+        images,
+        files,
+        selectedPermissionMode,
+      );
       setState((current) =>
         updateThreadByID(
           { ...current, activePane: pane },
@@ -5486,7 +5558,13 @@ export function App(): JSX.Element {
       );
       const encodedImages = await awaitComposerImages(message.images);
       const images = inputImagesFromComposer(encodedImages);
-      const result = await window.wuu.startTurn(targetThread.id, text, images, files);
+      const result = await window.wuu.startTurn(
+        targetThread.id,
+        text,
+        images,
+        files,
+        selectedPermissionMode,
+      );
       setState((current) =>
         updateThreadByID(
           current,
@@ -5836,14 +5914,7 @@ export function App(): JSX.Element {
     if (!state.initialized || viewContextSwitchPending) {
       return;
     }
-    await updateRuntimeSettings(
-      state.initialized.provider,
-      state.initialized.model,
-      undefined,
-      undefined,
-      undefined,
-      mode,
-    );
+    setSelectedPermissionMode(mode);
     setAccessMenuOpen(false);
   }
 

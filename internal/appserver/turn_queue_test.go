@@ -3,6 +3,7 @@ package appserver
 import (
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -56,6 +57,30 @@ func TestReplaceQueuedUserTurnPreservesOrder(t *testing.T) {
 		if got[index] != want[index] {
 			t.Fatalf("drain order mismatch at %d: got %q want %q (all got %v)", index, got[index], want[index], got)
 		}
+	}
+}
+
+func TestReplaceQueuedUserTurnPreservesRuntimeSnapshot(t *testing.T) {
+	readOnly, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
+	if err != nil {
+		t.Fatalf("ResolvePermissionModePreset: %v", err)
+	}
+	s := &Server{}
+	s.enqueueQueuedUserTurn("thread-1", queuedTurn{
+		id:       "queue-1",
+		msg:      providers.ChatMessage{Role: "user", Content: "first"},
+		snapshot: turnRuntimeSnapshot{}.withPermissions(readOnly),
+	})
+
+	updated, ok := s.replaceQueuedUserTurn("thread-1", "queue-1", providers.ChatMessage{
+		Role:    "user",
+		Content: "edited",
+	})
+	if !ok {
+		t.Fatal("replaceQueuedUserTurn returned false")
+	}
+	if got := updated.snapshot.permissions(); got.Mode != config.PermissionModeReadOnly || got.PermissionProfile != config.PermissionProfileReadOnly {
+		t.Fatalf("replacement lost permission snapshot: %+v", got)
 	}
 }
 
