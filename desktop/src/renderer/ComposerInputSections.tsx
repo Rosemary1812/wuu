@@ -20,7 +20,7 @@ import {
   type QueuedComposerMessage
 } from "./ComposerMessages";
 import { useComposerQueryHistory } from "./ComposerQueryHistory";
-import { composerStatusText } from "./ComposerTypes";
+import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerTypes";
 
 export function ComposerAttachmentStrip({
   files,
@@ -124,6 +124,7 @@ export function SplitPaneComposer({
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const statusText = composerStatusText(status);
+  const statusIsLiveProgress = composerStatusIsLiveProgress(status);
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
     disabled: readOnly || hasAttachments,
     prompt,
@@ -211,7 +212,11 @@ export function SplitPaneComposer({
           </button>
           {statusText ? (
             <span className="split-composer-status" title={statusText}>
-              <span className="split-composer-status-text">{statusText}</span>
+              <span
+                className={`split-composer-status-text${statusIsLiveProgress ? " live-progress-chip" : ""}`}
+              >
+                {statusText}
+              </span>
             </span>
           ) : (
             <span />

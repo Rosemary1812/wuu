@@ -92,7 +92,7 @@ export function ContextCompactionNotice({
         aria-live="polite"
       >
         <span className="turn-event-content">
-          <strong className="turn-event-title">
+          <strong className="turn-event-title live-progress-chip">
           正在自动压缩上下文
           </strong>
         </span>

@@ -846,6 +846,35 @@ export type TurnUsageNotification = {
   context_window_tokens?: number;
 };
 
+export type StreamLifecyclePhase =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "failed";
+
+export type StreamLifecyclePayload = {
+  phase: StreamLifecyclePhase | string;
+  attempt?: number;
+  max_attempts?: number;
+  retry_count?: number;
+  max_retries?: number;
+  retry_in_ms?: number;
+  elapsed_ms?: number;
+  budget_ms?: number;
+  reason?: string;
+};
+
+export type StreamEventPayload = {
+  type: string;
+  lifecycle?: StreamLifecyclePayload;
+};
+
+export type TurnEventNotification = {
+  thread_id: string;
+  turn_id: string;
+  event: StreamEventPayload;
+};
+
 export type ThreadItem = {
   id: string;
   source_id?: string;

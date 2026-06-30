@@ -3828,7 +3828,8 @@
 .process-surface-row.is-live-gray,
 .turn-reasoning-summary-text.is-live-gray,
 .turn-process-preview.is-live,
-.turn-event-notice.is-progress .turn-event-title {
+.live-progress-chip {
+  display: inline-block;
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -3837,7 +3838,7 @@
 .process-surface-row.is-live-gray::after,
 .turn-reasoning-summary-text.is-live-gray::after,
 .turn-process-preview.is-live::after,
-.turn-event-notice.is-progress .turn-event-title::after {
+.live-progress-chip::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -3881,7 +3882,7 @@
   .process-surface-row.is-live-gray::after,
   .turn-reasoning-summary-text.is-live-gray::after,
   .turn-process-preview.is-live::after,
-  .turn-event-notice.is-progress .turn-event-title::after {
+  .live-progress-chip::after {
     animation: none;
     transform: translateX(50%);
   }

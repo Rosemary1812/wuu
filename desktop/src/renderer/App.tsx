@@ -186,6 +186,7 @@ import {
   threadIDFromParams,
   threadSessionTabID,
   turnFromRecord,
+  turnStreamStatusForThread,
   updateThreadByID,
   upsertManagedProcess,
   upsertThread,
@@ -2451,6 +2452,7 @@ export function App(): JSX.Element {
       contextWindowTokens:
         state.initialized?.advanced_settings?.context_window_tokens,
     });
+    const streamStatus = turnStreamStatusForThread(state, activeThread);
     return (
       <Composer
         variant={variant}
@@ -2474,7 +2476,7 @@ export function App(): JSX.Element {
             ? activeThreadIsRunning
               ? "子任务运行中"
               : "子任务会话只读"
-            : state.status
+            : streamStatus ?? state.status
         }
         readOnly={activeThreadReadOnly}
         initialized={state.initialized}
@@ -2568,6 +2570,7 @@ export function App(): JSX.Element {
         active={state.activePane === pane}
         activeContextCwd={state.activeContext?.cwd}
         appStatus={state.status}
+        streamStatus={turnStreamStatusForThread(state, thread)}
         draft={splitComposerDrafts[pane] ?? emptyComposerDraft()}
         viewSwitchPending={viewContextSwitchPending}
         queryHistory={queryTextsForThread(thread)}

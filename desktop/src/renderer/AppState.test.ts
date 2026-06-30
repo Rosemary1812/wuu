@@ -21,6 +21,7 @@ import {
   summarizeThreadsForSidebar,
   threadProjectPath,
   threadSessionTabID,
+  turnStreamStatusForThread,
   type SessionTab,
 } from "./AppState";
 import { streamTextKey, streamTextStore } from "./StreamText";
@@ -507,6 +508,127 @@ describe("AppState token usage", () => {
     expect(usage?.requestContext?.turnPrefix).toBe(6);
     expect(usage?.requestContext?.toolCount).toBe(14);
     expect(usage?.requestContext?.promptCacheKey).toBe("thread-1");
+  });
+
+  it("surfaces live stream reconnect attempts as transient turn status", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+      running: true,
+    };
+
+    const reconnecting = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "reconnecting",
+              attempt: 2,
+              retry_count: 1,
+              max_retries: 3,
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toBe(
+      "正在重连 1/3",
+    );
+
+    const connected = reduceServerEvent(reconnecting, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/event",
+        params: {
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          event: {
+            lifecycle: {
+              phase: "connected",
+              attempt: 2,
+            },
+          },
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(connected, connected.thread)).toBeUndefined();
+  });
+
+  it("clears stream reconnect status when the turn settles", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = reduceServerEvent(
+      {
+        ...initialState,
+        thread,
+        threads: [thread],
+        running: true,
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/event",
+          params: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+            event: {
+              lifecycle: {
+                phase: "reconnecting",
+                retry_count: 2,
+              },
+            },
+          },
+        },
+      },
+    );
+
+    const settledTurn = {
+      ...thread.turns[0],
+      status: "failed" as const,
+    };
+    const settled = reduceServerEvent(state, {
+      kind: "notification",
+      workdir: "/repo",
+      message: {
+        method: "turn/error",
+        params: {
+          thread_id: "thread-1",
+          turn: settledTurn,
+        },
+      },
+    });
+
+    expect(turnStreamStatusForThread(settled, settled.thread)).toBeUndefined();
   });
 });
 

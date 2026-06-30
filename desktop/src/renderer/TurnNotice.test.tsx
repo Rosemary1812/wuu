@@ -75,6 +75,7 @@ describe("ContextCompactionNotice", () => {
     const label = host.querySelector(".turn-event-title");
     expect(label).not.toBeNull();
     expect(label?.textContent).toBe("正在自动压缩上下文");
+    expect(label?.classList.contains("live-progress-chip")).toBe(true);
 
     // The event divider uses text and line color as the affordance; icons
     // would make these lightweight stream events compete with message text.

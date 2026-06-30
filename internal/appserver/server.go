@@ -389,6 +389,9 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 	if ev.PlanUpdate != nil {
 		out.PlanUpdate = ev.PlanUpdate
 	}
+	if ev.Lifecycle != nil {
+		out.Lifecycle = sanitizeStreamLifecycle(ev.Lifecycle)
+	}
 	if ev.RequestContext != nil {
 		out.RequestContext = ev.RequestContext
 	}
@@ -408,6 +411,30 @@ func sanitizeStreamEvent(ev providers.StreamEvent) StreamEventPayload {
 		out.Error = ev.Error.Error()
 	}
 	return out
+}
+
+func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecyclePayload {
+	if lifecycle == nil {
+		return nil
+	}
+	return &StreamLifecyclePayload{
+		Phase:       string(lifecycle.Phase),
+		Attempt:     lifecycle.Attempt,
+		MaxAttempts: lifecycle.MaxAttempts,
+		RetryCount:  lifecycle.RetryCount,
+		MaxRetries:  lifecycle.MaxRetries,
+		RetryInMS:   durationMilliseconds(lifecycle.RetryIn),
+		ElapsedMS:   durationMilliseconds(lifecycle.Elapsed),
+		BudgetMS:    durationMilliseconds(lifecycle.Budget),
+		Reason:      lifecycle.Reason,
+	}
+}
+
+func durationMilliseconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	return duration.Milliseconds()
 }
 
 func decodeParams(raw json.RawMessage, dst any) error {

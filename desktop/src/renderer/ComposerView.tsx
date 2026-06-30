@@ -81,7 +81,7 @@ import type {
   ComposerVariant,
   PermissionMode
 } from "./ComposerTypes";
-import { composerStatusText } from "./ComposerTypes";
+import { composerStatusIsLiveProgress, composerStatusText } from "./ComposerTypes";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
@@ -249,6 +249,7 @@ export function Composer({
   queryHistory?: string[];
 }): JSX.Element {
   const statusText = composerStatusText(status);
+  const statusIsLiveProgress = composerStatusIsLiveProgress(status);
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
@@ -878,7 +879,11 @@ export function Composer({
                 )}
                 {statusText ? (
                   <span className="status-label" title={statusText}>
-                    <span className="status-label-text">{statusText}</span>
+                    <span
+                      className={`status-label-text${statusIsLiveProgress ? " live-progress-chip" : ""}`}
+                    >
+                      {statusText}
+                    </span>
                   </span>
                 ) : null}
                 <button

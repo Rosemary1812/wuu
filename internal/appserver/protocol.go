@@ -1274,6 +1274,7 @@ type StreamEventPayload struct {
 	ToolCall       *providers.ToolCall              `json:"tool_call,omitempty"`
 	ToolResult     string                           `json:"tool_result,omitempty"`
 	PlanUpdate     *providers.PlanUpdate            `json:"plan_update,omitempty"`
+	Lifecycle      *StreamLifecyclePayload          `json:"lifecycle,omitempty"`
 	RequestContext *providers.RequestContextSummary `json:"request_context,omitempty"`
 	ProviderState  *providers.ProviderStateSummary  `json:"provider_state,omitempty"`
 	Usage          *providers.TokenUsage            `json:"usage,omitempty"`
@@ -1281,6 +1282,18 @@ type StreamEventPayload struct {
 	FinishReason   string                           `json:"finish_reason,omitempty"`
 	Truncated      bool                             `json:"truncated,omitempty"`
 	Error          string                           `json:"error,omitempty"`
+}
+
+type StreamLifecyclePayload struct {
+	Phase       string `json:"phase"`
+	Attempt     int    `json:"attempt,omitempty"`
+	MaxAttempts int    `json:"max_attempts,omitempty"`
+	RetryCount  int    `json:"retry_count,omitempty"`
+	MaxRetries  int    `json:"max_retries,omitempty"`
+	RetryInMS   int64  `json:"retry_in_ms,omitempty"`
+	ElapsedMS   int64  `json:"elapsed_ms,omitempty"`
+	BudgetMS    int64  `json:"budget_ms,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 // SettingsUsageRange selects which time window the settings/usage RPC

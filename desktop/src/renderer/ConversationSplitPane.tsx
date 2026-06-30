@@ -18,6 +18,7 @@ export function ConversationSplitPane({
   active,
   activeContextCwd,
   appStatus,
+  streamStatus,
   draft,
   viewSwitchPending,
   queryHistory,
@@ -45,6 +46,7 @@ export function ConversationSplitPane({
   active: boolean;
   activeContextCwd?: string;
   appStatus: string;
+  streamStatus?: string;
   draft: ComposerDraftState;
   viewSwitchPending: boolean;
   queryHistory: string[];
@@ -82,7 +84,7 @@ export function ConversationSplitPane({
       ? "子任务运行中"
       : "子任务会话只读"
     : paneRunning
-      ? "运行中"
+      ? streamStatus ?? "运行中"
       : active && appStatus !== "ready"
         ? appStatus
         : "";

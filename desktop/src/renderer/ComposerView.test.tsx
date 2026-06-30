@@ -426,6 +426,17 @@ describe("Composer send control", () => {
     expect(container.querySelector(".status-label")?.textContent).toBe("发送失败");
   });
 
+  it("renders reconnect status with the shared live progress chip", () => {
+    renderComposer({
+      prompt: "retry later",
+      running: true,
+      status: "正在重连 1/3",
+    });
+
+    expect(container.querySelector(".status-label")?.textContent).toBe("正在重连 1/3");
+    expect(container.querySelector(".status-label-text")?.classList.contains("live-progress-chip")).toBe(true);
+  });
+
   it("hides the transient sending status from the split-pane composer bar", () => {
     renderSplitPaneComposer({
       prompt: "continue this branch",
@@ -435,6 +446,17 @@ describe("Composer send control", () => {
 
     expect(container.querySelector(".split-composer-status")).toBeNull();
     expect(container.textContent).not.toContain("正在发送请求");
+  });
+
+  it("renders split-pane reconnect status with the shared live progress chip", () => {
+    renderSplitPaneComposer({
+      prompt: "continue this branch",
+      running: true,
+      status: "正在重连 2/3",
+    });
+
+    expect(container.querySelector(".split-composer-status")?.textContent).toBe("正在重连 2/3");
+    expect(container.querySelector(".split-composer-status-text")?.classList.contains("live-progress-chip")).toBe(true);
   });
 
   it("hides session context chips in the dock composer", () => {

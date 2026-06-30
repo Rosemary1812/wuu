@@ -127,6 +127,10 @@ type AppState = {
   // during a turn. It explains cache-sensitive context structure without
   // treating provider cache counters as retained conversation size.
   turnRequestContext: Record<string, TurnRequestContextDigest>;
+  // turnStreamStatus tracks transient transport lifecycle text for live
+  // turns. It is UI-only state, cleared as soon as the stream reconnects or
+  // the turn settles.
+  turnStreamStatus: Record<string, string>;
   // lastViewedTurnByThreadID remembers the most recent turn that the user
   // has actually been on the thread for. It is the source of truth for the
   // sidebar / session-tab "has-unread" indicator — a thread is unread when
@@ -237,6 +241,7 @@ const initialState: AppState = {
   status: "connecting",
   turnTokenUsage: {},
   turnRequestContext: {},
+  turnStreamStatus: {},
   lastViewedTurnByThreadID: {},
 };
 
@@ -701,14 +706,17 @@ function reduceNotification(
           : state;
       }
       releaseSettledTurnStreams(turn);
-      return updateThreadByID(
-        state,
-        threadID,
-        (thread) => upsertTurn(thread, turn),
-        {
-          running: false,
-          status: "ready",
-        },
+      return clearTurnStreamStatus(
+        updateThreadByID(
+          state,
+          threadID,
+          (thread) => upsertTurn(thread, turn),
+          {
+            running: false,
+            status: "ready",
+          },
+        ),
+        turn.id,
       );
     }
     case "turn/usage": {
@@ -736,13 +744,23 @@ function reduceNotification(
       const digest = requestContextDigestFromRecord(
         recordValue(event, "request_context"),
       );
-      if (!turnID || !digest) {
+      if (!turnID) {
         return state;
       }
+      const streamStatus = streamStatusFromLifecycle(
+        recordValue(event, "lifecycle"),
+      );
+      const stateWithLifecycle =
+        streamStatus === undefined
+          ? state
+          : setTurnStreamStatus(state, turnID, streamStatus);
+      if (!digest) {
+        return stateWithLifecycle;
+      }
       return {
-        ...state,
+        ...stateWithLifecycle,
         turnRequestContext: {
-          ...state.turnRequestContext,
+          ...stateWithLifecycle.turnRequestContext,
           [turnID]: digest,
         },
       };
@@ -750,6 +768,70 @@ function reduceNotification(
     default:
       return state;
   }
+}
+
+function setTurnStreamStatus(
+  state: AppState,
+  turnID: string,
+  status: string,
+): AppState {
+  if (!status) {
+    return clearTurnStreamStatus(state, turnID);
+  }
+  if (state.turnStreamStatus[turnID] === status) {
+    return state;
+  }
+  return {
+    ...state,
+    turnStreamStatus: {
+      ...state.turnStreamStatus,
+      [turnID]: status,
+    },
+  };
+}
+
+function clearTurnStreamStatus(state: AppState, turnID: string): AppState {
+  if (!state.turnStreamStatus[turnID]) {
+    return state;
+  }
+  const next = { ...state.turnStreamStatus };
+  delete next[turnID];
+  return {
+    ...state,
+    turnStreamStatus: next,
+  };
+}
+
+function streamStatusFromLifecycle(
+  lifecycle: JsonRecord | undefined,
+): string | undefined {
+  if (!lifecycle) {
+    return undefined;
+  }
+  if (stringValue(lifecycle, "phase") !== "reconnecting") {
+    return "";
+  }
+  const retryCount =
+    positiveInteger(numberValue(lifecycle, "retry_count")) ??
+    retryCountFromAttempt(numberValue(lifecycle, "attempt"));
+  const maxRetries = positiveInteger(numberValue(lifecycle, "max_retries"));
+  if (maxRetries) {
+    return `正在重连 ${retryCount}/${maxRetries}`;
+  }
+  return `正在重连第 ${retryCount} 次`;
+}
+
+function retryCountFromAttempt(attempt: number | undefined): number {
+  const safeAttempt = positiveInteger(attempt);
+  return safeAttempt ? Math.max(1, safeAttempt - 1) : 1;
+}
+
+function positiveInteger(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const integer = Math.floor(value);
+  return integer > 0 ? integer : undefined;
 }
 
 function releaseSettledTurnStreams(turn: Turn): void {
@@ -1744,6 +1826,14 @@ function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
   return undefined;
 }
 
+function turnStreamStatusForThread(
+  state: AppState,
+  thread: Thread | undefined,
+): string | undefined {
+  const turnID = activeTurnIDForThread(thread);
+  return turnID ? state.turnStreamStatus[turnID] : undefined;
+}
+
 function isStateActiveThreadRunning(state: AppState): boolean {
   return Boolean(state.running || isThreadRunning(activeThreadForState(state)));
 }
@@ -2297,6 +2387,7 @@ export {
   activeTurnIDForThread,
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
+  turnStreamStatusForThread,
   agentFromRecord,
   appendStreamingTokenSample,
   appendTurnTokenSample,

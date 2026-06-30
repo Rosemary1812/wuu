@@ -28,3 +28,7 @@ const HIDDEN_COMPOSER_STATUSES = new Set(["ready", "正在发送请求"]);
 export function composerStatusText(status: string): string {
   return HIDDEN_COMPOSER_STATUSES.has(status) ? "" : status;
 }
+
+export function composerStatusIsLiveProgress(status: string): boolean {
+  return composerStatusText(status).startsWith("正在重连");
+}
