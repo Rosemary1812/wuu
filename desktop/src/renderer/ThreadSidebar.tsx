@@ -263,7 +263,6 @@ function ThreadList({
     stickyVisibleThreadIDs,
   );
   const hiddenCount = visibleThreads.length - limitedThreads.length;
-  const showMoreCount = Math.min(PROJECT_THREAD_VISIBLE_INCREMENT, hiddenCount);
   const expanded = visibleCount > PROJECT_THREAD_INITIAL_VISIBLE_COUNT;
   const showFooter = hiddenCount > 0 || expanded;
 
@@ -289,25 +288,20 @@ function ThreadList({
         <div className="thread-list-footer">
           {hiddenCount > 0 ? (
             <button className="thread-list-more" type="button" onClick={onShowMore}>
-              {hiddenCount > PROJECT_THREAD_VISIBLE_INCREMENT ? `再显示 ${showMoreCount} 条` : `显示剩余 ${hiddenCount} 条`}
+              展开
             </button>
           ) : null}
-          <div className="thread-list-footer-aside">
-            {hiddenCount > 0 ? (
-              <span className="thread-list-more-count">剩余 {hiddenCount} 条</span>
-            ) : null}
-            {expanded ? (
-              <button
-                className="thread-list-collapse-btn"
-                type="button"
-                onClick={collapseVisibleThreads}
-                aria-label="收起已展开的会话"
-                title="收起"
-              >
-                收起
-              </button>
-            ) : null}
-          </div>
+          {expanded ? (
+            <button
+              className="thread-list-collapse-btn"
+              type="button"
+              onClick={collapseVisibleThreads}
+              aria-label="收起已展开的会话"
+              title="收起"
+            >
+              收起
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
