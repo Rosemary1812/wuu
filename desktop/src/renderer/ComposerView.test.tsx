@@ -446,11 +446,11 @@ describe("Composer send control", () => {
     renderComposer({
       prompt: "retry later",
       running: true,
-      status: "WebSocket 不可用，已切到 SSE",
+      status: "WebSocket 不可用，已切到 HTTP",
       statusLiveProgress: false,
     });
 
-    expect(container.querySelector(".status-label")?.textContent).toBe("WebSocket 不可用，已切到 SSE");
+    expect(container.querySelector(".status-label")?.textContent).toBe("WebSocket 不可用，已切到 HTTP");
     expect(container.querySelector(".status-label-text")?.classList.contains("live-progress-chip")).toBe(false);
   });
 
@@ -469,11 +469,11 @@ describe("Composer send control", () => {
     renderSplitPaneComposer({
       prompt: "continue this branch",
       running: true,
-      status: "SSE 消息流重连中 2/3",
+      status: "HTTP 消息流重连中 2/3",
       statusLiveProgress: true,
     });
 
-    expect(container.querySelector(".split-composer-status")?.textContent).toBe("SSE 消息流重连中 2/3");
+    expect(container.querySelector(".split-composer-status")?.textContent).toBe("HTTP 消息流重连中 2/3");
     expect(container.querySelector(".split-composer-status-text")?.classList.contains("live-progress-chip")).toBe(true);
   });
 

@@ -986,7 +986,6 @@ function transportLabel(transport: string | undefined): string | undefined {
     case "ws":
       return "WebSocket";
     case "sse":
-      return "SSE";
     case "http":
     case "https":
       return "HTTP";

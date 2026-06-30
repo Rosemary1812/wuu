@@ -984,12 +984,12 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 		secondStates[0].DeltaInputItems != 1 {
 		t.Fatalf("unexpected websocket attempt state: %+v", secondStates[0])
 	}
-	if secondStates[1].Transport != "sse" ||
+	if secondStates[1].Transport != "http" ||
 		secondStates[1].ReplayMode != "full_request" ||
 		secondStates[1].PreviousResponseIDUsed ||
 		secondStates[1].Diagnostic != "provider_transport_failure" ||
 		secondStates[1].TransportFailurePhase != "before_message_stream_start" ||
-		secondStates[1].FallbackTransport != "sse" ||
+		secondStates[1].FallbackTransport != "http" ||
 		secondStates[1].EventsEmitted ||
 		!secondStates[1].FallbackActive ||
 		secondStates[1].FallbackReason != "websocket_failed_before_first_event" ||
@@ -1145,11 +1145,11 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 		t.Fatalf("third stream should use SSE fallback: %v", err)
 	}
 	if len(thirdStates) != 1 ||
-		thirdStates[0].Transport != "sse" ||
+		thirdStates[0].Transport != "http" ||
 		thirdStates[0].ReplayMode != "full_request" ||
 		thirdStates[0].Diagnostic != "provider_transport_failure" ||
 		thirdStates[0].TransportFailurePhase != "after_message_stream_start" ||
-		thirdStates[0].FallbackTransport != "sse" ||
+		thirdStates[0].FallbackTransport != "http" ||
 		!thirdStates[0].EventsEmitted ||
 		!thirdStates[0].FallbackActive ||
 		thirdStates[0].FallbackReason != "stream_error_after_provider_event" ||

@@ -604,7 +604,7 @@ describe("AppState token usage", () => {
           turn_id: "turn-1",
           event: {
             provider_state: {
-              transport: "sse",
+              transport: "http",
             },
           },
         },
@@ -630,12 +630,12 @@ describe("AppState token usage", () => {
     });
 
     expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
-      text: "SSE 消息流重连中 2/3",
+      text: "HTTP 消息流重连中 2/3",
       liveProgress: true,
     });
   });
 
-  it("surfaces websocket to sse fallback as a static stream status", () => {
+  it("surfaces websocket to http fallback as a static stream status", () => {
     const thread: Thread = {
       ...threadWithUserTexts(["hi"]),
       turns: [
@@ -665,9 +665,9 @@ describe("AppState token usage", () => {
           event: {
             provider_state: {
               diagnostic: "provider_transport_failure",
-              transport: "sse",
+              transport: "http",
               failed_transport: "websocket",
-              fallback_transport: "sse",
+              fallback_transport: "http",
               fallback_active: true,
               transport_failure_phase: "before_message_stream_start",
             },
@@ -677,7 +677,7 @@ describe("AppState token usage", () => {
     });
 
     expect(turnStreamStatusForThread(fallback, fallback.thread)).toEqual({
-      text: "WebSocket 不可用，已切到 SSE",
+      text: "WebSocket 不可用，已切到 HTTP",
       liveProgress: false,
     });
   });

@@ -452,7 +452,7 @@ func responsesWebSocketTransportFailureState(state *providers.ProviderStateSumma
 	diagnostic.TransportFailurePhase = responsesWebSocketFallbackPhase(reason)
 	diagnostic.FailedTransport = strings.TrimSpace(state.Transport)
 	if diagnostic.TransportFailurePhase == "before_message_stream_start" {
-		diagnostic.FallbackTransport = "sse"
+		diagnostic.FallbackTransport = "http"
 	} else {
 		diagnostic.FallbackTransport = ""
 	}

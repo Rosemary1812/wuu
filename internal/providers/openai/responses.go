@@ -89,7 +89,7 @@ func responsesSSEProviderState(payload responsesRequest, fallbackReason string) 
 	state := &providers.ProviderStateSummary{
 		Provider:         "openai",
 		Protocol:         "responses_sse",
-		Transport:        "sse",
+		Transport:        "http",
 		ReplayMode:       "full_request",
 		FallbackActive:   fallbackReason != "",
 		FallbackReason:   fallbackReason,
@@ -102,7 +102,7 @@ func responsesSSEProviderState(payload responsesRequest, fallbackReason string) 
 		state.Diagnostic = "provider_transport_failure"
 		state.TransportFailurePhase = responsesWebSocketFallbackPhase(fallbackReason)
 		state.FailedTransport = "websocket"
-		state.FallbackTransport = "sse"
+		state.FallbackTransport = "http"
 		state.EventsEmitted = state.TransportFailurePhase == "after_message_stream_start"
 	}
 	return state
