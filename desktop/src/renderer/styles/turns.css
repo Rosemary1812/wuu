@@ -378,29 +378,34 @@
                                                                      
                                                                      
                                         
-.user-message-block.user-message-jump-flash {
+.user-message-block.user-message-jump-flash > .user-message,
+.user-message-block.user-message-jump-flash > .user-message-edit {
   animation: user-message-jump-flash 1.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes user-message-jump-flash {
   0% {
-    background: transparent;
-    box-shadow: 0 0 0 0 rgba(228, 0, 43, 0);
+    background: var(--user-message-background, #e8e8e4);
+    box-shadow: 0 0 0 0 rgba(138, 91, 16, 0);
   }
   12% {
-    background: rgba(228, 0, 43, 0.06);
-    box-shadow: 0 0 0 6px rgba(228, 0, 43, 0.18);
+    background: #eee7da;
+    box-shadow:
+      0 0 0 4px rgba(138, 91, 16, 0.18),
+      0 12px 30px rgba(138, 91, 16, 0.08);
   }
   100% {
-    background: transparent;
-    box-shadow: 0 0 0 0 rgba(228, 0, 43, 0);
+    background: var(--user-message-background, #e8e8e4);
+    box-shadow: 0 0 0 0 rgba(138, 91, 16, 0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .user-message-block.user-message-jump-flash {
+  .user-message-block.user-message-jump-flash > .user-message,
+  .user-message-block.user-message-jump-flash > .user-message-edit {
     animation: none;
-    background: rgba(228, 0, 43, 0.06);
+    background: #eee7da;
+    box-shadow: 0 0 0 4px rgba(138, 91, 16, 0.18);
     transition: background-color 600ms ease;
   }
 }
