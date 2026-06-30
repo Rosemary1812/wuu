@@ -111,7 +111,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 		"grep", "glob",
 		"web_search", "web_fetch",
 		"bash", "apply_patch",
-		"spawn_agent",
+		"spawn_agent", "helpme",
 		"update_plan", "load_skill", "tool_search",
 	}
 	for _, name := range mustVisible {
@@ -120,7 +120,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 	mustDeferred := []string{
-		"send_message", "followup_task", "await_agents", "close_agent", "list_agents", "helpme",
+		"send_message", "followup_task", "await_agents", "close_agent", "list_agents",
 		"session_memory", "read_memory", "write_memory",
 		"create_goal", "get_goal", "update_goal",
 		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
@@ -473,8 +473,11 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 	}
 	for _, tt := range cases {
 		mainSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
-		if _, ok := mainSurface.DeferredTools["helpme"]; !ok {
-			t.Errorf("%s/%s main-agent surface must defer helpme", tt.provider, tt.model)
+		if mainSurface.Tools["helpme"] != capability.CapabilityTaskSpawn {
+			t.Errorf("%s/%s main-agent direct helpme capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["helpme"], capability.CapabilityTaskSpawn)
+		}
+		if _, ok := mainSurface.DeferredTools["helpme"]; ok {
+			t.Errorf("%s/%s main-agent surface must not defer helpme", tt.provider, tt.model)
 		}
 		if mainSurface.Tools["inception"] != capability.CapabilityContextRewrite {
 			t.Errorf("%s/%s main-agent direct inception capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["inception"], capability.CapabilityContextRewrite)

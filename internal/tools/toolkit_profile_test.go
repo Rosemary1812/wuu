@@ -84,6 +84,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"bash",
 		"apply_patch",
 		"spawn_agent",
+		"helpme",
 		"tool_search",
 		"load_skill",
 		"inception",
@@ -96,6 +97,11 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		t.Fatalf("ToolInfo(%q) not found", "inception")
 	} else if info.Exposure != ToolExposureDirect {
 		t.Fatalf("inception exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	}
+	if info, ok := kit.ToolInfo("helpme"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "helpme")
+	} else if info.Exposure != ToolExposureDirect {
+		t.Fatalf("helpme exposure = %s, want %s", info.Exposure, ToolExposureDirect)
 	}
 
 	for _, name := range []string{"checkpoint", "thread_get"} {
@@ -588,14 +594,26 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 	if !containsProfileDef(defs, "spawn_agent") {
 		t.Fatalf("spawn_agent should be visible by default, got %v", sortedProfileDefNames(defs))
 	}
+	if !containsProfileDef(defs, "helpme") {
+		t.Fatalf("helpme should be visible by default, got %v", sortedProfileDefNames(defs))
+	}
 	if info, ok := kit.ToolInfo("spawn_agent"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "spawn_agent")
 	} else if info.Exposure != ToolExposureDirect {
 		t.Fatalf("spawn_agent exposure = %s, want %s", info.Exposure, ToolExposureDirect)
 	}
+	if info, ok := kit.ToolInfo("helpme"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "helpme")
+	} else if info.Exposure != ToolExposureDirect {
+		t.Fatalf("helpme exposure = %s, want %s", info.Exposure, ToolExposureDirect)
+	}
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`})
 	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("visible spawn_agent should reach tool validation, got %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "helpme", Arguments: `{}`})
+	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("visible helpme should reach runtime validation, got %v", err)
 	}
 
 	for _, name := range subagentManagementTools {
@@ -626,7 +644,7 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 		t.Fatalf("tool_search should not activate subagent management tools before spawn_agent succeeds: %s", resp)
 	}
 
-	kit.activateToolBundlesAfterSuccess("spawn_agent")
+	kit.activateToolBundlesAfterSuccess("helpme")
 	defs = kit.Definitions()
 	tailStart := len(defs) - len(subagentManagementTools)
 	if tailStart < 0 {
@@ -682,8 +700,24 @@ func TestMiniMaxM3ProfileExposesSpawnAgentDirectly(t *testing.T) {
 	if !found.CacheStable {
 		t.Fatalf("direct spawn_agent should stay inside the cache-stable prefix: %+v", *found)
 	}
+	var helpmeFound *providers.ToolDefinition
+	for i := range defs {
+		if defs[i].Name == "helpme" {
+			helpmeFound = &defs[i]
+			break
+		}
+	}
+	if helpmeFound == nil {
+		t.Fatalf("MiniMax M3 should receive helpme in the default tool list: %v", sortedProfileDefNames(defs))
+	}
+	if !helpmeFound.CacheStable {
+		t.Fatalf("direct helpme should stay inside the cache-stable prefix: %+v", *helpmeFound)
+	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "spawn_agent", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("MiniMax M3 should call spawn_agent directly, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "helpme", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("MiniMax M3 should call helpme directly, got %v", err)
 	}
 	for _, name := range subagentManagementTools {
 		if containsProfileDef(defs, name) {

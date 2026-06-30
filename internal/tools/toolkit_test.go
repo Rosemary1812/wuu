@@ -2064,6 +2064,84 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	}
 }
 
+func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	sessionDir := filepath.Join(root, ".wuu", "sessions", "helpme-session")
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "helper done"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "helpme-session",
+		HistoryDir:   filepath.Join(sessionDir, "workers"),
+		ThreadDir:    filepath.Join(sessionDir, "threads"),
+		HarnessDir:   filepath.Join(sessionDir, "harness"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+	kit.SetSessionDir(sessionDir)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	if !containsProfileDef(kit.Definitions(), "helpme") {
+		t.Fatalf("helpme should be directly visible before recovery, got %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if containsProfileDef(kit.Definitions(), "await_agents") {
+		t.Fatalf("await_agents should be deferred before helpme succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
+	}
+
+	helpMeCall := providers.ToolCall{
+		ID:   "helpme_1",
+		Name: "helpme",
+		Arguments: `{
+			"reason":"parent is stuck",
+			"original_goal":"finish the task",
+			"current_understanding":"uncertain",
+			"ask":"re-evaluate the task",
+			"failed_attempts":[],
+			"constraints":[],
+			"evidence":[]
+		}`,
+	}
+	resultJSON, err := kit.Execute(context.Background(), helpMeCall)
+	if err != nil {
+		t.Fatalf("helpme: %v", err)
+	}
+	var result struct {
+		Action  string `json:"action"`
+		AgentID string `json:"agent_id"`
+	}
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		t.Fatalf("decode helpme result: %v", err)
+	}
+	if result.Action != "helpme" || result.AgentID == "" {
+		t.Fatalf("unexpected helpme result: %s", resultJSON)
+	}
+	discovered := kit.DiscoveredTools(helpMeCall)
+	if len(discovered) != len(subagentManagementTools) {
+		t.Fatalf("helpme should discover subagent management tools, got %+v", discovered)
+	}
+	for i, want := range subagentManagementTools {
+		if discovered[i].Name != want {
+			t.Fatalf("discovered tool %d = %q, want %q; all=%+v", i, discovered[i].Name, want, discovered)
+		}
+	}
+	for _, name := range []string{"await_agents", "list_agents"} {
+		if !containsProfileDef(kit.Definitions(), name) {
+			t.Fatalf("%s should be available after helpme succeeds, got %v", name, sortedProfileDefNames(kit.Definitions()))
+		}
+	}
+}
+
 func TestToolkit_PathEscapeBlocked(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

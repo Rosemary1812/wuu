@@ -321,7 +321,7 @@ func addTaskTools(b *surfaceBuilder) {
 // in internal/agentcontrol/worker_types.go and the path check in
 // HelpMeTool.Execute) is unchanged.
 func addHelpmeTool(b *surfaceBuilder) {
-	b.addDeferred("helpme", capability.CapabilityTaskSpawn)
+	b.addVisible("helpme", capability.CapabilityTaskSpawn)
 }
 
 // addInceptionTool registers the context rewrite tool directly. It rewrites

@@ -16,7 +16,7 @@ var subagentManagementTools = []string{
 
 func (t *Toolkit) activateToolBundlesAfterSuccess(toolName string) []providers.LoadableToolDefinition {
 	switch strings.TrimSpace(toolName) {
-	case "spawn_agent":
+	case "spawn_agent", "helpme":
 		return t.activateSubagentManagementTools()
 	}
 	return nil
