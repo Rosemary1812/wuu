@@ -135,9 +135,21 @@ func TestSupportsNativeToolDiscovery(t *testing.T) {
 			want:     true,
 		},
 		{
+			name:     "zai official anthropic endpoint",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.z.ai/api/anthropic"},
+			model:    "glm-4.7",
+			want:     true,
+		},
+		{
 			name:     "minimax m3 proxy fallback",
 			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://anthropic-proxy.example.com"},
 			model:    "MiniMax-M3",
+			want:     false,
+		},
+		{
+			name:     "kimi official fallback",
+			provider: config.ProviderConfig{Type: "anthropic", BaseURL: "https://api.moonshot.cn/anthropic"},
+			model:    "kimi-k2",
 			want:     false,
 		},
 		{

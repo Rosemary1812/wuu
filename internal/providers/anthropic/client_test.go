@@ -834,47 +834,72 @@ func TestBuildAnthropicRequest_ToolSearchDisabledForProxyByDefault(t *testing.T)
 	}
 }
 
-func TestBuildAnthropicRequest_ToolSearchEnabledForMiniMaxM3EndpointByDefault(t *testing.T) {
-	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-		Model: "MiniMax-M3",
-		Messages: []providers.ChatMessage{
-			{Role: "user", Content: "run a worker"},
-		},
-		Tools: []providers.ToolDefinition{
-			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
-			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
-		},
-	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://api.minimaxi.com/anthropic"})
-	if err != nil {
-		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
-	}
-	if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
-		t.Fatalf("expected MiniMax M3 tool search beta, got %+v", payload.Betas)
-	}
-	if len(payload.Tools) != 2 || !payload.Tools[1].DeferLoading {
-		t.Fatalf("expected MiniMax M3 endpoint to defer load management tool, got %+v", payload.Tools)
+func TestBuildAnthropicRequest_ToolSearchEnabledForOfficialCompatibleEndpointsByDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		baseURL string
+		model   string
+	}{
+		{name: "minimax cn", baseURL: "https://api.minimaxi.com/anthropic", model: "MiniMax-M3"},
+		{name: "minimax global", baseURL: "https://api.minimax.io/anthropic", model: "MiniMax-M3"},
+		{name: "zai", baseURL: "https://api.z.ai/api/anthropic", model: "glm-4.7"},
+		{name: "bigmodel", baseURL: "https://open.bigmodel.cn/api/anthropic", model: "glm-4.7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+				Model: tc.model,
+				Messages: []providers.ChatMessage{
+					{Role: "user", Content: "run a worker"},
+				},
+				Tools: []providers.ToolDefinition{
+					{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+					{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+				},
+			}, 1024, false, anthropicToolSearchSupport{BaseURL: tc.baseURL})
+			if err != nil {
+				t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+			}
+			if len(payload.Betas) != 1 || payload.Betas[0] != toolSearchBetaHeader1P {
+				t.Fatalf("expected tool search beta, got %+v", payload.Betas)
+			}
+			if len(payload.Tools) != 2 || !payload.Tools[1].DeferLoading {
+				t.Fatalf("expected endpoint to defer load management tool, got %+v", payload.Tools)
+			}
+		})
 	}
 }
 
-func TestBuildAnthropicRequest_ToolSearchDisabledForMiniMaxM3ProxyByDefault(t *testing.T) {
-	payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
-		Model: "MiniMax-M3",
-		Messages: []providers.ChatMessage{
-			{Role: "user", Content: "run a worker"},
-		},
-		Tools: []providers.ToolDefinition{
-			{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
-			{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
-		},
-	}, 1024, false, anthropicToolSearchSupport{BaseURL: "https://anthropic-proxy.example.com/minimax"})
-	if err != nil {
-		t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
-	}
-	if len(payload.Betas) != 0 {
-		t.Fatalf("MiniMax M3 proxy default should not enable tool search beta, got %+v", payload.Betas)
-	}
-	if payload.Tools[1].DeferLoading {
-		t.Fatalf("MiniMax M3 proxy default should not send defer_loading: %+v", payload.Tools[1])
+func TestBuildAnthropicRequest_ToolSearchDisabledForCompatibleEndpointsWithoutEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		baseURL string
+		model   string
+	}{
+		{name: "minimax m3 proxy", baseURL: "https://anthropic-proxy.example.com/minimax", model: "MiniMax-M3"},
+		{name: "kimi official keeps fallback", baseURL: "https://api.moonshot.cn/anthropic", model: "kimi-k2"},
+		{name: "official host with wrong path", baseURL: "https://api.z.ai/anthropic", model: "glm-4.7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := buildAnthropicRequestWithSupport(providers.ChatRequest{
+				Model: tc.model,
+				Messages: []providers.ChatMessage{
+					{Role: "user", Content: "run a worker"},
+				},
+				Tools: []providers.ToolDefinition{
+					{Name: "tool_search", InputSchema: map[string]any{"type": "object"}},
+					{Name: "await_agents", InputSchema: map[string]any{"type": "object"}, DeferLoading: true},
+				},
+			}, 1024, false, anthropicToolSearchSupport{BaseURL: tc.baseURL})
+			if err != nil {
+				t.Fatalf("buildAnthropicRequestWithSupport: %v", err)
+			}
+			if len(payload.Betas) != 0 {
+				t.Fatalf("endpoint default should not enable tool search beta, got %+v", payload.Betas)
+			}
+			if payload.Tools[1].DeferLoading {
+				t.Fatalf("endpoint default should not send defer_loading: %+v", payload.Tools[1])
+			}
+		})
 	}
 }
 

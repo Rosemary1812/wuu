@@ -39,6 +39,20 @@ const (
 	toolSearchBetaHeader1P  = "advanced-tool-use-2025-11-20"
 )
 
+type anthropicToolSearchEndpoint struct {
+	host          string
+	pathPrefix    string
+	modelContains []string
+}
+
+var officialAnthropicToolSearchEndpoints = []anthropicToolSearchEndpoint{
+	{host: "api.anthropic.com"},
+	{host: "api.minimaxi.com", pathPrefix: "/anthropic", modelContains: []string{"minimax-m3"}},
+	{host: "api.minimax.io", pathPrefix: "/anthropic", modelContains: []string{"minimax-m3"}},
+	{host: "open.bigmodel.cn", pathPrefix: "/api/anthropic", modelContains: []string{"glm-"}},
+	{host: "api.z.ai", pathPrefix: "/api/anthropic", modelContains: []string{"glm-"}},
+}
+
 // resolveMaxTokens picks the per-request override if positive,
 // then the client-level configured value, then falls back to a
 // model-aware default from the registry.
@@ -565,8 +579,7 @@ func SupportsNativeToolSearch(baseURL, model string, options map[string]any) boo
 	if enabled, ok := anthropicToolSearchOption(options); ok {
 		return enabled
 	}
-	return isFirstPartyAnthropicBaseURL(baseURL) ||
-		(isMiniMaxAnthropicBaseURL(baseURL) && isMiniMaxM3Model(model))
+	return isOfficialAnthropicToolSearchEndpoint(baseURL, model)
 }
 
 func hasToolSearchTool(defs []providers.ToolDefinition) bool {
@@ -586,26 +599,31 @@ func modelSupportsAnthropicToolReference(model string) bool {
 	return !strings.Contains(normalized, "haiku")
 }
 
-func isFirstPartyAnthropicBaseURL(raw string) bool {
+func isOfficialAnthropicToolSearchEndpoint(raw, model string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return false
 	}
 	host := strings.ToLower(parsed.Hostname())
-	return host == "api.anthropic.com"
-}
-
-func isMiniMaxAnthropicBaseURL(raw string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return false
+	path := strings.TrimRight(strings.ToLower(parsed.EscapedPath()), "/")
+	normalizedModel := strings.ToLower(strings.TrimSpace(model))
+	for _, endpoint := range officialAnthropicToolSearchEndpoints {
+		if host != endpoint.host {
+			continue
+		}
+		if endpoint.pathPrefix != "" && path != strings.TrimRight(endpoint.pathPrefix, "/") {
+			continue
+		}
+		if len(endpoint.modelContains) == 0 {
+			return true
+		}
+		for _, fragment := range endpoint.modelContains {
+			if strings.Contains(normalizedModel, fragment) {
+				return true
+			}
+		}
 	}
-	host := strings.ToLower(parsed.Hostname())
-	return host == "api.minimaxi.com"
-}
-
-func isMiniMaxM3Model(model string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(model)), "minimax-m3")
+	return false
 }
 
 func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {
