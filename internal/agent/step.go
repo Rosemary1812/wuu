@@ -212,7 +212,7 @@ type LoopConfig struct {
 	// default usable-window calculation.
 	CompactThresholdPct float64
 	// CompactKeepRecentTokens overrides the default recent raw-history budget
-	// kept after compaction. Zero means use the Pi-aligned default.
+	// kept after compaction. Zero means use the default.
 	CompactKeepRecentTokens int
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history

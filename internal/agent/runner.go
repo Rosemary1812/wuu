@@ -89,7 +89,7 @@ type Runner struct {
 	// usable-window calculation. Zero means auto.
 	CompactThresholdPct float64
 	// CompactKeepRecentTokens overrides the default recent raw-history budget
-	// kept after compaction. Zero means use the Pi-aligned default.
+	// kept after compaction. Zero means use the default.
 	CompactKeepRecentTokens int
 }
 
