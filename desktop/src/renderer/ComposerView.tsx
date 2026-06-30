@@ -471,8 +471,19 @@ export function Composer({
     focusComposerSoon();
   }
 
-  function revealCollapsedPromptBlocks(): void {
-    setCollapsedPromptBlocks([]);
+  function revealCollapsedPromptBlock(index: number): void {
+    if (!hasCollapsedPromptBlocks) {
+      return;
+    }
+    const revealedBlock = activeCollapsedPromptBlocks[index];
+    if (!revealedBlock) {
+      return;
+    }
+    const nextBlocks = activeCollapsedPromptBlocks.filter((_, blockIndex) => blockIndex !== index);
+    const nextPrefix = nextBlocks.map((block) => block.text).join("");
+    const nextVisiblePrompt = `${visiblePromptValue}${revealedBlock.text}`;
+    setCollapsedPromptBlocks(nextBlocks);
+    setPrompt(`${nextPrefix}${nextVisiblePrompt}`);
     focusComposerSoon();
   }
 
@@ -707,7 +718,7 @@ export function Composer({
                   <CollapsedComposerPromptCard
                     text={block.text}
                     key={block.id}
-                    onReveal={revealCollapsedPromptBlocks}
+                    onReveal={() => revealCollapsedPromptBlock(index)}
                     onRemove={() => removeCollapsedPromptBlock(index)}
                   />
                 ))}

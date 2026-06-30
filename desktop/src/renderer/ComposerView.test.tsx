@@ -742,6 +742,59 @@ describe("Composer long text folding", () => {
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(longText);
   });
 
+  it("reveals folded rows into the textarea in click order", () => {
+    const firstLongText = longPastedPrompt("# A 交接提示词", "A");
+    const secondLongText = longPastedPrompt("# B 交接提示词", "B");
+    const thirdLongText = longPastedPrompt("# C 交接提示词", "C");
+    const onSend = vi.fn();
+    renderStatefulComposer({ onSend });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).not.toBeNull();
+
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, firstLongText);
+    });
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, secondLongText);
+    });
+    act(() => {
+      pastePlainText(textarea as HTMLTextAreaElement, thirdLongText);
+    });
+
+    expect(container.querySelectorAll(".composer-collapsed-prompt-card")).toHaveLength(3);
+
+    act(() => {
+      foldedPromptButton("# B 交接提示词")?.click();
+    });
+
+    expect(container.querySelectorAll(".composer-collapsed-prompt-card")).toHaveLength(2);
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(secondLongText);
+
+    act(() => {
+      foldedPromptButton("# A 交接提示词")?.click();
+    });
+
+    expect(container.querySelectorAll(".composer-collapsed-prompt-card")).toHaveLength(1);
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(`${secondLongText}${firstLongText}`);
+
+    act(() => {
+      foldedPromptButton("# C 交接提示词")?.click();
+    });
+
+    expect(container.querySelector(".composer-collapsed-prompt-card")).toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      `${secondLongText}${firstLongText}${thirdLongText}`,
+    );
+
+    const sendButton = container.querySelector<HTMLButtonElement>("button[aria-label=\"发送\"]");
+    act(() => {
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(`${secondLongText}${firstLongText}${thirdLongText}`);
+  });
+
   it("folds repeated long pastes into sequential rows", () => {
     const firstLongText = longPastedPrompt("# A 交接提示词", "A");
     const secondLongText = longPastedPrompt("# B 交接提示词", "B");
@@ -809,6 +862,12 @@ describe("Composer long text folding", () => {
     expect(onSend).toHaveBeenCalledWith("要求后续变更");
   });
 });
+
+function foldedPromptButton(title: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll<HTMLButtonElement>(".composer-collapsed-prompt-main")).find((button) =>
+    button.textContent?.includes(title),
+  );
+}
 
 describe("Composer queue strip", () => {
   it("renders queued and guide messages in combined sequential order", () => {
