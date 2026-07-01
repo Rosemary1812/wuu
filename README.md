@@ -1,6 +1,6 @@
 <h1 align="center">wuu</h1>
 
-<p align="center">Open source AI coding agent with a source-built desktop app and a scriptable CLI.</p>
+<p align="center">Open-source, BYOK AI coding agent — a Go core with a desktop app, a scriptable CLI, and built-in multi-agent orchestration.</p>
 
 <p align="center">
   <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
@@ -16,13 +16,13 @@
 
 ---
 
-**wuu** is an open-source AI coding agent for your local repository. It reads and edits files, runs commands, reviews changes, attaches local files or screenshots, and resumes previous sessions — all from either a desktop UI or a scriptable CLI.
+**wuu** is an open-source AI coding agent that works in your local repository. It reads and edits files, runs commands, reviews changes, and resumes sessions — all through a BYOK model that works with Anthropic and any OpenAI-compatible provider.
 
-Use the desktop app for interactive work, and reach for `wuu exec` when you want the same agent from scripts, CI pipelines, or another agent.
+Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, run durable workflows, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
 
 ## Installation
 
-Wuu does not have published npm, Homebrew, or release binaries yet. Install the CLI from source:
+Wuu does not have published release binaries yet. Install the CLI from source:
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
@@ -60,13 +60,33 @@ wuu session list --json
 
 ## Features
 
+**Repository work**
 - **File operations** — read, edit, and inspect files inside the working repository
 - **Shell execution** — run commands, capture output, and iterate on failures
 - **Attachments** — pass local files (`--file`) and screenshots (`--image`) directly to a turn
 - **Sessions** — resume previous turns, list history, and fork from a checkpoint
+
+**Agent orchestration**
+- **Subagents** — delegate to specialized agents (planner, worker, reviewer, debugger, QA, and more) for parallel or isolated work
+- **Workflows** — durable multi-step runs with phases, worker spawns, and recovery
+- **Skills** — task-specific instruction sets for focused work like planning, reviewing, or frontend design
+- **Persistent memory** — agent profiles that remember preferences and context across sessions
+- **Scheduled tasks** — run prompts or workflows on cron schedules
+
+**Providers and integration**
+- **BYOK / multi-provider** — bring your own API key; works with Anthropic and OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
 - **JSONL output** — scriptable, streamable output for CI and other agents
-- **Multi-provider** — Anthropic plus OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
 - **Desktop app** — source-built UI for interactive use alongside the CLI
+
+## Architecture
+
+Wuu is split into a reusable **Go core** and a thin **shell**:
+
+- The **Go core** (`internal/`, `cmd/wuu/`) provides the agent runtime, providers, tool loop, sessions, and config. It runs as a subprocess via `wuu app-server`.
+- The **current shell** is the Electron desktop in `desktop/`, which spawns the core and owns the UI and native integrations.
+- **Future shells** (VS Code extension, JetBrains plugin, etc.) can consume the same core by spawning `wuu app-server` — no need to import or fork the Go code.
+
+See the [`app-server` protocol](docs/app-server-protocol.md) for the JSON-RPC interface.
 
 ## Desktop App
 
@@ -92,7 +112,7 @@ See [`docs/exec.md`](docs/exec.md) for JSONL output, attachments, resume, fork, 
 
 ## Providers
 
-Wuu supports Anthropic and OpenAI-compatible providers such as OpenAI, OpenRouter, one-api, and local gateways.
+Wuu supports Anthropic and OpenAI-compatible providers such as OpenAI, OpenRouter, one-api, and local gateways. Bring your own API key — set the matching environment variable and point wuu at any compatible endpoint.
 
 Project config usually lives in `.wuu.json`; global config can live in `~/.config/wuu/config.json`.
 
@@ -131,7 +151,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## Status
 
-Wuu is pre-1.0 and under active development. Package-manager installs and release binaries are not published yet. Interfaces, configuration, and desktop behavior may change.
+Wuu is pre-1.0 and under active development. Release binaries are not published yet. Interfaces, configuration, and desktop behavior may change.
 
 ## License
 

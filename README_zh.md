@@ -1,6 +1,6 @@
 <h1 align="center">wuu</h1>
 
-<p align="center">开源的 AI Coding Agent，提供源码运行的桌面应用和可脚本调用的 CLI。</p>
+<p align="center">开源、自带 API Key 的 AI Coding Agent —— Go 核心 + 桌面应用 + 可脚本化 CLI，内置多智能体编排能力。</p>
 
 <p align="center">
   <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
@@ -16,13 +16,13 @@
 
 ---
 
-Wuu 用来在本地仓库里处理软件开发任务。它可以阅读和修改文件、运行命令、审查改动、接收文件或截图，并恢复之前的会话。
+**wuu** 是一个开源的 AI Coding Agent，在本地仓库里处理软件开发任务。它可以阅读和修改文件、运行命令、审查改动、接收文件或截图，并恢复之前的会话——全部通过 BYOK（自带 API Key）模式运行，支持 Anthropic 和任何 OpenAI 兼容的提供商。
 
-桌面应用目前需要从源码启动；脚本、CI 或其他工具调用用 `wuu exec`。
+除了单轮任务，wuu 还能规划多步工作、委派给专门的子智能体、运行可持久化的工作流、应用任务专属技能，并跨会话记住上下文。桌面应用用于交互式工作，`wuu exec` 则适合脚本、CI 和其他 agent 调用。
 
 ## 安装
 
-Wuu 还没有发布 npm、Homebrew 或 release 二进制包。CLI 可以从源码安装：
+Wuu 还没有发布 release 二进制包。CLI 可以从源码安装：
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
@@ -58,6 +58,36 @@ wuu exec resume --last "继续"
 wuu session list --json
 ```
 
+## 功能
+
+**仓库操作**
+- **文件操作** — 读取、编辑和检查工作仓库中的文件
+- **命令执行** — 运行命令、捕获输出、在失败时迭代
+- **附件** — 通过 `--file` 和 `--image` 将本地文件和截图直接传入对话
+- **会话** — 恢复之前的对话、列出历史、从检查点 fork
+
+**智能体编排**
+- **子智能体** — 委派给专门的智能体（规划器、执行器、审查器、调试器、QA 等），支持并行或隔离工作
+- **工作流** — 可持久化的多步运行，包含阶段、工作进程派生和恢复
+- **技能** — 针对规划、审查、前端设计等特定任务的指令集
+- **持久记忆** — 智能体档案可跨会话记住偏好和上下文
+- **定时任务** — 按 cron 计划运行提示或工作流
+
+**提供商与集成**
+- **BYOK / 多提供商** — 自带 API Key；支持 Anthropic 和 OpenAI 兼容网关（OpenAI、OpenRouter、one-api、本地等）
+- **JSONL 输出** — 可脚本化、可流式的输出，适合 CI 和其他 agent
+- **桌面应用** — 源码运行的 UI，与 CLI 配合使用
+
+## 架构
+
+Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
+
+- **Go 核心**（`internal/`、`cmd/wuu/`）提供智能体运行时、提供商、工具循环、会话和配置。它通过 `wuu app-server` 作为子进程运行。
+- **当前 Shell** 是 `desktop/` 中的 Electron 桌面应用，负责派生核心并管理 UI 和原生集成。
+- **未来的 Shell**（VS Code 插件、JetBrains 插件等）可以通过派生 `wuu app-server` 来复用同一个核心——无需导入或 fork Go 代码。
+
+JSON-RPC 接口详见 [`app-server` 协议](docs/app-server-protocol.md)。
+
 ## 桌面应用
 
 桌面端代码在 `desktop/`。从源码启动：
@@ -82,7 +112,7 @@ JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`docs/exec
 
 ## 模型提供商
 
-Wuu 支持 Anthropic 和 OpenAI 兼容提供商，例如 OpenAI、OpenRouter、one-api、本地网关等。
+Wuu 支持 Anthropic 和 OpenAI 兼容提供商，例如 OpenAI、OpenRouter、one-api、本地网关等。自带 API Key——设置对应的环境变量，将 wuu 指向任意兼容端点即可。
 
 项目配置通常放在 `.wuu.json`，全局配置可以放在 `~/.config/wuu/config.json`。
 
@@ -121,7 +151,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## 状态
 
-Wuu 还没有到 1.0，正在持续开发中。包管理器安装和 release 二进制包还没有发布。接口、配置和桌面端行为都可能继续调整。
+Wuu 还没有到 1.0，正在持续开发中。Release 二进制包还没有发布。接口、配置和桌面端行为都可能继续调整。
 
 ## 许可证
 
