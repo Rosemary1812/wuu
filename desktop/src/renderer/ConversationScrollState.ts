@@ -17,6 +17,7 @@ import {
   atLatestScrollView,
   clampScrollTop,
   eventTargetsNestedAutoFollowScroll,
+  maxScrollTop,
   observeAutoFollowResizeTargets,
   setAutoFollowOverflowAnchor,
 } from "./AutoFollowScroll";
@@ -127,6 +128,7 @@ export function useConversationScrollState({
   const suppressAutoFollowRearmRef = useRef(false);
   const userScrollAwayIntentRef = useRef(false);
   const userScrollAwayIntentTimerRef = useRef<number | undefined>(undefined);
+  const userScrollAwayStartTopRef = useRef<number | undefined>(undefined);
   const touchLastYRef = useRef<number | undefined>(undefined);
   const threadScrollSnapshotsRef = useRef(
     new Map<string, ConversationScrollSnapshot>()
@@ -201,6 +203,7 @@ export function useConversationScrollState({
 
   const clearUserScrollAwayIntent = useCallback((): void => {
     userScrollAwayIntentRef.current = false;
+    userScrollAwayStartTopRef.current = undefined;
     touchLastYRef.current = undefined;
     if (userScrollAwayIntentTimerRef.current !== undefined) {
       window.clearTimeout(userScrollAwayIntentTimerRef.current);
@@ -208,13 +211,17 @@ export function useConversationScrollState({
     }
   }, []);
 
-  const markUserScrollAwayIntent = useCallback((): void => {
+  const markUserScrollAwayIntent = useCallback((startTop?: number): void => {
     userScrollAwayIntentRef.current = true;
+    if (startTop !== undefined) {
+      userScrollAwayStartTopRef.current = startTop;
+    }
     if (userScrollAwayIntentTimerRef.current !== undefined) {
       window.clearTimeout(userScrollAwayIntentTimerRef.current);
     }
     userScrollAwayIntentTimerRef.current = window.setTimeout(() => {
       userScrollAwayIntentRef.current = false;
+      userScrollAwayStartTopRef.current = undefined;
       userScrollAwayIntentTimerRef.current = undefined;
     }, CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS);
   }, []);
@@ -396,6 +403,15 @@ export function useConversationScrollState({
     //
     // User intent overrides position: any user-initiated upward scroll
     // disarms auto-follow, regardless of how small the delta is. But
+    // do not derive that solely from `previousScrollTop`: when the
+    // conversation was hidden while content streamed, the old scrollTop can
+    // be lower than the remounted bottom, making the first user scroll-up
+    // look like a downward move.
+    //
+    // Still, only disarm after the viewport has actually left the absolute
+    // bottom. A nested reasoning/process scroll can emit an upward wheel
+    // without moving the outer conversation; that should keep following.
+    //
     // layout-driven scrollTop clamps (for example a completed process fold
     // shrinking above the viewport) can also move scrollTop upward while
     // the viewport is still at the latest content. Those must keep
@@ -411,9 +427,19 @@ export function useConversationScrollState({
       node,
       CONVERSATION_AUTO_SCROLL_THRESHOLD_PX
     );
+    const scrollAwayStartTop = userScrollAwayStartTopRef.current;
+    const movedAboveUserIntentStart =
+      userScrollAwayIntent &&
+      scrollAwayStartTop !== undefined &&
+      node.scrollTop < scrollAwayStartTop - 1;
+    const movedAbovePreviousScroll = userScrollAwayIntent && scrolledUp;
     let nextAutoFollow = conversationAutoFollowRef.current;
-    if (scrolledUp && userScrollAwayIntent) {
+    if (
+      (movedAboveUserIntentStart || movedAbovePreviousScroll) &&
+      node.scrollTop < maxScrollTop(node) - 1
+    ) {
       suppressAutoFollowRearmRef.current = false;
+      userScrollAwayStartTopRef.current = undefined;
       nextAutoFollow = false;
       setAutoFollow(false);
       setAutoFollowOverflowAnchor(node, false);
@@ -521,10 +547,13 @@ export function useConversationScrollState({
     }
     const handleWheel = (event: WheelEvent): void => {
       if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
+        if (event.deltaY < 0) {
+          markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
+        }
         return;
       }
       if (event.deltaY < 0) {
-        markUserScrollAwayIntent();
+        markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
       }
     };
     const handlePointerDown = (event: PointerEvent): void => {
@@ -532,7 +561,7 @@ export function useConversationScrollState({
         return;
       }
       if (event.target === node) {
-        markUserScrollAwayIntent();
+        markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
       }
     };
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -540,25 +569,38 @@ export function useConversationScrollState({
         return;
       }
       if (SCROLL_AWAY_KEYS.has(event.key)) {
-        markUserScrollAwayIntent();
+        markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
       }
     };
     const handleTouchStart = (event: TouchEvent): void => {
       if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
-        touchLastYRef.current = undefined;
+        touchLastYRef.current = event.touches[0]?.clientY;
         return;
       }
       touchLastYRef.current = event.touches[0]?.clientY;
     };
     const handleTouchMove = (event: TouchEvent): void => {
       if (eventTargetsNestedAutoFollowScroll(event.target, node)) {
-        touchLastYRef.current = undefined;
+        const currentY = event.touches[0]?.clientY;
+        const previousY = touchLastYRef.current;
+        if (
+          currentY !== undefined &&
+          previousY !== undefined &&
+          currentY > previousY
+        ) {
+          markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
+        }
+        touchLastYRef.current = currentY;
         return;
       }
       const currentY = event.touches[0]?.clientY;
       const previousY = touchLastYRef.current;
-      if (currentY !== undefined && previousY !== undefined && currentY > previousY) {
-        markUserScrollAwayIntent();
+      if (
+        currentY !== undefined &&
+        previousY !== undefined &&
+        currentY > previousY
+      ) {
+        markUserScrollAwayIntent(clampScrollTop(node, node.scrollTop));
       }
       touchLastYRef.current = currentY;
     };
@@ -581,12 +623,7 @@ export function useConversationScrollState({
       node.removeEventListener("touchcancel", handleTouchEnd);
       node.removeEventListener("keydown", handleKeyDown);
     };
-  }, [
-    activePane,
-    activeThreadID,
-    markUserScrollAwayIntent,
-    splitConversation
-  ]);
+  });
 
   // Pin the conversation content to the new bottom while the window is
   // being dragged. We only shift the content if the user is following the

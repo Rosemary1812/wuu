@@ -98,6 +98,55 @@ async function run() {
   );
   assert.match(primaryScroll.overflowY, /auto|scroll/, "Primary conversation scroll region should use native scrolling.");
 
+  const settingsReturnScrollAway = await evaluate(win, () => {
+    const node = document.querySelector(".scroll-region");
+    if (!(node instanceof HTMLElement)) {
+      throw new Error("Primary conversation scroll region not found after returning from Settings.");
+    }
+    node.scrollTop = node.scrollHeight;
+    const maxBefore = Math.max(0, node.scrollHeight - node.clientHeight);
+    node.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -160 }));
+    node.scrollTop = Math.max(0, node.scrollTop - 160);
+    node.dispatchEvent(new Event("scroll", { bubbles: true }));
+    return {
+      maxBefore,
+      afterScrollTop: node.scrollTop
+    };
+  });
+  assert.ok(
+    settingsReturnScrollAway.afterScrollTop < settingsReturnScrollAway.maxBefore,
+    `Conversation must not snap back to bottom after Settings return: ${JSON.stringify(settingsReturnScrollAway)}`
+  );
+  const settingsReturnJumpVisible = await waitFor(
+    win,
+    () => Boolean(document.querySelector(".jump-to-latest-pill")) || null,
+    1000
+  );
+  assert.equal(
+    settingsReturnJumpVisible,
+    true,
+    "Jump-to-latest should appear after scrolling away from the remounted conversation."
+  );
+  await evaluate(win, () => {
+    const node = document.querySelector(".scroll-region");
+    if (node instanceof HTMLElement) {
+      node.scrollTop = node.scrollHeight;
+      node.dispatchEvent(new Event("scroll", { bubbles: true }));
+    }
+  });
+  await waitFor(
+    win,
+    () => {
+      const node = document.querySelector(".scroll-region");
+      if (!(node instanceof HTMLElement)) {
+        return null;
+      }
+      const max = Math.max(0, node.scrollHeight - node.clientHeight);
+      return Math.abs(node.scrollTop - max) <= 2 ? true : null;
+    },
+    1000
+  );
+
   const scrollbarInitiallyHidden = await waitFor(
     win,
     () => {

@@ -89,9 +89,11 @@ type HookHandle = ReturnType<typeof useConversationScrollState> & {
 
 function Probe({
   turns,
+  showConversation = true,
   onReady
 }: {
   turns?: Turn[];
+  showConversation?: boolean;
   onReady: (handle: HookHandle, node: HTMLDivElement) => void;
 }): ReactNode {
   const handle = useConversationScrollState({
@@ -105,6 +107,12 @@ function Probe({
     showingWorkspaceMode: false,
     initialized: true,
   });
+  if (!showConversation) {
+    return createElement("section", {
+      "data-testid": "settings-placeholder",
+      "data-user-scrolled-away": handle.userScrolledAway ? "true" : "false",
+    });
+  }
   return createElement(
     "div",
     {
@@ -252,6 +260,25 @@ describe("useConversationScrollState — high-frequency stream", () => {
       root!.render(
         createElement(Probe, {
           turns,
+          onReady: (h, n) => {
+            handle = h;
+            node = n;
+          },
+        }),
+      );
+    });
+  }
+
+  function rerenderProbe(opts: {
+    turns?: Turn[];
+    showConversation?: boolean;
+  }): void {
+    if (!root) throw new Error("not mounted");
+    act(() => {
+      root!.render(
+        createElement(Probe, {
+          turns: opts.turns,
+          showConversation: opts.showConversation,
           onReady: (h, n) => {
             handle = h;
             node = n;
@@ -432,6 +459,58 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
+  it("disengages auto-follow on the first scroll after the conversation remounts with taller content", () => {
+    mount({
+      scrollHeight: 2000,
+      clientHeight: 600,
+      turns: makeLongTurnsSnapshot(0),
+    });
+    if (!layout || !node || !handle) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1400);
+
+    rerenderProbe({
+      turns: makeLongTurnsSnapshot(1),
+      showConversation: false,
+    });
+    expect(
+      container.querySelector("[data-testid='settings-placeholder']"),
+    ).not.toBeNull();
+
+    rerenderProbe({
+      turns: makeLongTurnsSnapshot(1),
+      showConversation: true,
+    });
+    node = container.querySelector(
+      "[data-testid='scroll-container']",
+    ) as HTMLDivElement | null;
+    if (!node) throw new Error("conversation did not remount");
+    layout = stubLayout(node, {
+      scrollHeight: 2400,
+      clientHeight: 600,
+      scrollTop: 2400 - 600,
+    });
+
+    act(() => {
+      node!.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: -80 }),
+      );
+      layout!.scrollTop = 1700;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(layout.scrollTop).toBe(1700);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(1700);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
   it("disengages auto-follow the moment the user scrolls up — no 16px dead zone", () => {
     // Regression gate for the scroll-up "resistance" bug: any wheel-up
     // from the bottom must take auto-follow off immediately, including
@@ -550,7 +629,7 @@ describe("useConversationScrollState — high-frequency stream", () => {
 
   it("does not treat nested reasoning scroll as leaving the conversation bottom", () => {
     mount({ scrollHeight: 2000, clientHeight: 600 });
-    if (!layout || !node) throw new Error("not mounted");
+    if (!layout || !node || !handle) throw new Error("not mounted");
     flushScheduledScroll();
     expect(layout.scrollTop).toBe(1400);
 
@@ -558,16 +637,44 @@ describe("useConversationScrollState — high-frequency stream", () => {
       nestedScrollNode().dispatchEvent(
         new WheelEvent("wheel", { bubbles: true, deltaY: -80 }),
       );
-      // Simulate a worst-case scroll-chain/clamp where the outer
-      // conversation receives a scroll event after the nested scroller
-      // hits its top. The nested wheel must not count as conversation
-      // scroll-away intent, so the outer container re-anchors.
+    });
+    expect(layout.scrollTop).toBe(1400);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+
+    act(() => {
+      layout!.scrollHeight += 80;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("disengages auto-follow when a nested scroll chains upward into the conversation", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !node || !handle) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1400);
+
+    act(() => {
+      nestedScrollNode().dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: -80 }),
+      );
       layout!.scrollTop = 1180;
       node!.dispatchEvent(new Event("scroll", { bubbles: false }));
     });
 
-    expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+    expect(layout.scrollTop).toBe(1180);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(1180);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("keeps following when layout shrink clamps the viewport to the new bottom", () => {
