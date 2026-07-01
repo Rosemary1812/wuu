@@ -37,6 +37,44 @@ function render(element: JSX.Element): void {
 }
 
 describe("RichContent code block", () => {
+  it("turns bare workspace file references into clickable inline links", async () => {
+    const openFile = vi.fn();
+    render(
+      <RichContent
+        text={"See README_zh.md (line 19) before editing."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />,
+    );
+
+    const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain("README_zh.md (line 19)");
+    expect(link?.querySelector(".rich-link-icon")).not.toBeNull();
+
+    await act(async () => {
+      link?.click();
+    });
+
+    expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/README_zh.md");
+  });
+
+  it("decorates web links with an inline site icon", () => {
+    render(<RichContent text={"Open https://github.com/blueberrycongee/wuu"} />);
+
+    const link = container.querySelector("a.rich-web-link") as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("https://github.com/blueberrycongee/wuu");
+    expect(link?.querySelector(".rich-link-icon")).not.toBeNull();
+  });
+
+  it("does not turn inline code file names into file links", () => {
+    render(<RichContent text={"Keep `README_zh.md` literal here."} cwd="/Users/zzzz/wuu" />);
+
+    expect(container.querySelector(".rich-file-link")).toBeNull();
+    expect(container.querySelector("code")?.textContent).toBe("README_zh.md");
+  });
+
   it("wraps fenced code in a header with the language label and a copy button", () => {
     render(<RichContent text={"```typescript\nconst x = 1;\n```"} />);
 

@@ -32,6 +32,7 @@ type StreamingMarkdownProps = {
   streamKey: string;
   initialText?: string;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   className?: string;
   /** Whether the source item is still receiving deltas. */
   isLive: boolean;
@@ -69,6 +70,7 @@ export function StreamingMarkdown({
   streamKey,
   initialText = "",
   cwd,
+  onOpenFile,
   className = DEFAULT_CLASS_NAME,
   isLive,
   onFrame,
@@ -343,6 +345,7 @@ export function StreamingMarkdown({
           <MemoMarkdownContent
             text={block}
             cwd={cwd}
+            onOpenFile={onOpenFile}
             renderMermaid={renderMermaid}
           />
         </div>
@@ -350,6 +353,7 @@ export function StreamingMarkdown({
       <MarkdownContent
         text={tailText}
         cwd={cwd}
+        onOpenFile={onOpenFile}
         renderText={cursorTextRenderer}
         renderMermaid={renderMermaid}
       />

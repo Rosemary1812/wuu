@@ -47,6 +47,7 @@ export function ThreadItemView({
   turnStatus,
   item,
   cwd,
+  onOpenFile,
   streaming,
   pendingCompanionReasoning,
   actionableAgentMessageID,
@@ -64,6 +65,7 @@ export function ThreadItemView({
   turnStatus: Turn["status"];
   item: ThreadItem;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   streaming: boolean;
   pendingCompanionReasoning?: boolean;
   actionableAgentMessageID?: string;
@@ -122,6 +124,7 @@ export function ThreadItemView({
               images={item.images ?? []}
               files={item.files ?? []}
               cwd={cwd}
+              onOpenFile={onOpenFile}
             />
           )}
           {!editing && (copyable || editable) ? (
@@ -178,6 +181,7 @@ export function ThreadItemView({
               turnID={turnID}
               item={item}
               cwd={cwd}
+              onOpenFile={onOpenFile}
               pendingCompanionReasoning={pendingCompanionReasoning}
               onStreamFrame={onStreamFrame}
             />
@@ -200,6 +204,8 @@ export function ThreadItemView({
           <ReasoningContent
             turnID={turnID}
             item={item}
+            cwd={cwd}
+            onOpenFile={onOpenFile}
             onStreamFrame={onStreamFrame}
           />
         </article>
@@ -232,11 +238,13 @@ function UserMessageBubble({
   images,
   files,
   cwd,
+  onOpenFile,
 }: {
   text: string;
   images: InputImage[];
   files: InputFile[];
   cwd?: string;
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   const [expandedState, setExpandedState] = useState({
     text,
@@ -262,7 +270,7 @@ function UserMessageBubble({
       {collapsible ? (
         <div className="user-message-raw-query">{displayedText}</div>
       ) : text ? (
-        <RichContent text={text} cwd={cwd} />
+        <RichContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
       ) : null}
       {collapsible ? (
         <button
@@ -562,12 +570,14 @@ function AgentMessageContent({
   turnID,
   item,
   cwd,
+  onOpenFile,
   pendingCompanionReasoning,
   onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   /**
    * True when the turn has a reasoning block that the model just finished
    * writing. The first answer item waits a short beat so the reasoning
@@ -618,6 +628,7 @@ function AgentMessageContent({
           : item.text
       }
       cwd={cwd}
+      onOpenFile={onOpenFile}
       isLive={isLive && cursorArmed}
       phase={
         item.phase === "final_answer" ||
@@ -638,10 +649,14 @@ function AgentMessageContent({
 function ReasoningContent({
   turnID,
   item,
+  cwd,
+  onOpenFile,
   onStreamFrame,
 }: {
   turnID: string;
   item: ThreadItem;
+  cwd?: string;
+  onOpenFile?: (path: string) => void;
   onStreamFrame: () => void;
 }): JSX.Element {
   const streamKeyValue = streamTextKey(turnID, item.id, "text");
@@ -659,6 +674,8 @@ function ReasoningContent({
           : item.text
       }
       className="streaming-markdown rich-content reasoning-stream"
+      cwd={cwd}
+      onOpenFile={onOpenFile}
       isLive={isLive}
       phase="commentary"
       onFrame={onStreamFrame}

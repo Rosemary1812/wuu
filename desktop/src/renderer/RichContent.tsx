@@ -1,4 +1,5 @@
 import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { FileText, Github, Globe2, Mail } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useImagePreview } from "./ImagePreview";
@@ -7,6 +8,7 @@ import { MessageCopyButton } from "./MessageActions";
 type RichContentProps = {
   text?: string;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
 };
 
 export type RichBlock =
@@ -21,6 +23,13 @@ export type RichBlockWithOffset = RichBlock & {
 
 export type RichTextRenderer = (text: string, keyPrefix: string) => Array<JSX.Element | string>;
 
+type RichTextRenderOptions = {
+  cwd?: string;
+  onOpenFile?: (path: string) => void;
+  renderText?: RichTextRenderer;
+  autoLinkFiles?: boolean;
+};
+
 type MermaidState =
   | { status: "rendering" }
   | { status: "rendered"; svg: string }
@@ -28,11 +37,76 @@ type MermaidState =
 
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
+const AUTO_FILE_REFERENCE_PATTERN = /(^|[\s([{"'])(?:(?:~|\.{1,2})\/|\/)?(?:[A-Za-z0-9_@+.-]+\/)*[A-Za-z0-9_@+.-]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}(?::\d+(?::\d+)?|\s+\((?:line|lines)\s+\d+(?:[-:]\d+)?\))?/gi;
+const AUTO_FILE_LINE_SUFFIX_PATTERN = /^(.*?)(?::\d+(?::\d+)?|\s+\((?:line|lines)\s+\d+(?:[-:]\d+)?\))$/i;
+const AUTO_LINK_FILE_EXTENSIONS = new Set([
+  ".avif",
+  ".bash",
+  ".c",
+  ".cc",
+  ".cjs",
+  ".cpp",
+  ".cs",
+  ".css",
+  ".csv",
+  ".dart",
+  ".dockerignore",
+  ".env",
+  ".fish",
+  ".gif",
+  ".gitignore",
+  ".go",
+  ".h",
+  ".hpp",
+  ".htm",
+  ".html",
+  ".java",
+  ".jpeg",
+  ".jpg",
+  ".js",
+  ".json",
+  ".jsonl",
+  ".jsx",
+  ".kt",
+  ".kts",
+  ".less",
+  ".lock",
+  ".lua",
+  ".md",
+  ".mdx",
+  ".mjs",
+  ".mod",
+  ".pdf",
+  ".php",
+  ".png",
+  ".py",
+  ".rb",
+  ".rs",
+  ".sass",
+  ".scss",
+  ".sh",
+  ".sql",
+  ".sum",
+  ".svg",
+  ".svelte",
+  ".swift",
+  ".toml",
+  ".ts",
+  ".tsv",
+  ".tsx",
+  ".txt",
+  ".vue",
+  ".webp",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".zsh"
+]);
 
-export const RichContent = memo(function RichContent({ text = "", cwd }: RichContentProps): JSX.Element {
+export const RichContent = memo(function RichContent({ text = "", cwd, onOpenFile }: RichContentProps): JSX.Element {
   return (
     <div className="rich-content">
-      <MarkdownContent text={text} cwd={cwd} />
+      <MarkdownContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
     </div>
   );
 });
@@ -41,16 +115,18 @@ function MarkdownContentView({
   text,
   cwd,
   renderText,
+  onOpenFile,
   renderMermaid = true
 }: {
   text: string;
   cwd?: string;
   renderText?: RichTextRenderer;
+  onOpenFile?: (path: string) => void;
   renderMermaid?: boolean;
 }): JSX.Element {
   const components = useMemo(
-    () => markdownComponents(cwd, renderText, renderMermaid),
-    [cwd, renderText, renderMermaid]
+    () => markdownComponents(cwd, renderText, renderMermaid, onOpenFile),
+    [cwd, renderText, renderMermaid, onOpenFile]
   );
   return (
     <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
@@ -65,12 +141,14 @@ export function RichContentBlock({
   block,
   blockKey,
   cwd,
-  renderText
+  renderText,
+  onOpenFile
 }: {
   block: RichBlock;
   blockKey: string;
   cwd?: string;
   renderText?: RichTextRenderer;
+  onOpenFile?: (path: string) => void;
 }): JSX.Element {
   if (block.kind === "image") {
     return <RichImage source={block.source} alt={block.alt ?? ""} cwd={cwd} />;
@@ -87,7 +165,7 @@ export function RichContentBlock({
   }
   return (
     <p className="rich-paragraph">
-      {renderInlineContent(block.text, cwd, blockKey, renderText)}
+      {renderInlineContent(block.text, cwd, blockKey, renderText, onOpenFile)}
     </p>
   );
 }
@@ -177,14 +255,22 @@ function renderInlineContent(
   text: string,
   cwd: string | undefined,
   keyPrefix: string,
-  renderText: RichTextRenderer | undefined
+  renderText: RichTextRenderer | undefined,
+  onOpenFile: ((path: string) => void) | undefined
 ): Array<JSX.Element | string> {
   const output: Array<JSX.Element | string> = [];
   const pushText = (value: string, key: string): void => {
     if (!value) {
       return;
     }
-    output.push(...(renderText ? renderText(value, key) : [value]));
+    output.push(
+      ...renderRichText(value, key, {
+        cwd,
+        onOpenFile,
+        renderText,
+        autoLinkFiles: true
+      })
+    );
   };
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -213,41 +299,48 @@ type CodeElementProps = {
 function markdownComponents(
   cwd: string | undefined,
   renderText: RichTextRenderer | undefined,
-  renderMermaid: boolean
+  renderMermaid: boolean,
+  onOpenFile: ((path: string) => void) | undefined
 ): Components {
+  const richTextOptions: RichTextRenderOptions = {
+    cwd,
+    onOpenFile,
+    renderText,
+    autoLinkFiles: true
+  };
+  const plainTextOptions: RichTextRenderOptions = {
+    renderText,
+    autoLinkFiles: false
+  };
   return {
     p({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "p")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "p")}</p>;
     },
     h1({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h1")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h1")}</p>;
     },
     h2({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h2")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h2")}</p>;
     },
     h3({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h3")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h3")}</p>;
     },
     h4({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h4")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h4")}</p>;
     },
     h5({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h5")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h5")}</p>;
     },
     h6({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, renderText, "h6")}</p>;
+      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h6")}</p>;
     },
     a({ href, title, children }) {
-      const inner = renderMarkdownText(children, renderText, "a");
+      const inner = renderMarkdownText(children, plainTextOptions, "a");
       const safeHref = safeMarkdownHref(href);
       if (!safeHref) {
         return <span>{inner}</span>;
       }
-      return (
-        <a className="rich-link" href={safeHref} title={title} target="_blank" rel="noreferrer">
-          {inner}
-        </a>
-      );
+      return <RichWebLink href={safeHref} title={title}>{inner}</RichWebLink>;
     },
     img({ src, alt }) {
       if (!src) {
@@ -272,10 +365,10 @@ function markdownComponents(
       return <pre className="rich-code">{children}</pre>;
     },
     code({ className, children }) {
-      return <code className={className}>{renderMarkdownText(children, renderText, "code")}</code>;
+      return <code className={className}>{renderMarkdownText(children, plainTextOptions, "code")}</code>;
     },
     li({ children }) {
-      return <li>{renderMarkdownText(children, renderText, "li")}</li>;
+      return <li>{renderMarkdownText(children, richTextOptions, "li")}</li>;
     },
     table({ children }) {
       return (
@@ -285,13 +378,13 @@ function markdownComponents(
       );
     },
     th({ children }) {
-      return <th>{renderMarkdownText(children, renderText, "th")}</th>;
+      return <th>{renderMarkdownText(children, richTextOptions, "th")}</th>;
     },
     td({ children }) {
-      return <td>{renderMarkdownText(children, renderText, "td")}</td>;
+      return <td>{renderMarkdownText(children, richTextOptions, "td")}</td>;
     },
     blockquote({ children }) {
-      return <blockquote className="rich-blockquote">{renderMarkdownText(children, renderText, "blockquote")}</blockquote>;
+      return <blockquote className="rich-blockquote">{renderMarkdownText(children, richTextOptions, "blockquote")}</blockquote>;
     },
     hr() {
       return <hr className="rich-rule" />;
@@ -336,27 +429,212 @@ function RichCodeBlock({
 
 function renderMarkdownText(
   children: ReactNode,
-  renderText: RichTextRenderer | undefined,
+  options: RichTextRenderOptions,
   keyPrefix: string
 ): ReactNode {
-  if (!renderText) {
+  if (!options.renderText && (!options.autoLinkFiles || !options.onOpenFile)) {
     return children;
   }
   return Children.toArray(children).flatMap((child, index): ReactNode[] => {
     const childKey = `${keyPrefix}-${index}`;
     if (typeof child === "string" || typeof child === "number") {
       const text = String(child);
-      return renderText(text, childKey);
+      return renderRichText(text, childKey, options);
     }
     if (!isValidElement<{ children?: ReactNode }>(child) || child.props.children === undefined) {
       return [child];
     }
     return [
       cloneElement(child, {
-        children: renderMarkdownText(child.props.children, renderText, childKey)
+        children: renderMarkdownText(child.props.children, options, childKey)
       })
     ];
   });
+}
+
+function renderRichText(
+  text: string,
+  keyPrefix: string,
+  options: RichTextRenderOptions
+): Array<JSX.Element | string> {
+  if (!options.autoLinkFiles || !options.onOpenFile) {
+    return options.renderText ? options.renderText(text, keyPrefix) : [text];
+  }
+
+  const output: Array<JSX.Element | string> = [];
+  const pushPlain = (value: string, key: string): void => {
+    if (!value) {
+      return;
+    }
+    output.push(...(options.renderText ? options.renderText(value, key) : [value]));
+  };
+
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  AUTO_FILE_REFERENCE_PATTERN.lastIndex = 0;
+  while ((match = AUTO_FILE_REFERENCE_PATTERN.exec(text))) {
+    const prefixLength = match[1].length;
+    const referenceStart = match.index + prefixLength;
+    const reference = match[0].slice(prefixLength);
+    const targetPath = linkedFileTarget(reference, options.cwd);
+    if (!targetPath) {
+      continue;
+    }
+    pushPlain(text.slice(cursor, referenceStart), `${keyPrefix}-text-${cursor}`);
+    output.push(
+      <RichFileLink
+        key={`${keyPrefix}-file-${referenceStart}`}
+        display={reference}
+        path={targetPath}
+        onOpenFile={options.onOpenFile}
+      />
+    );
+    cursor = referenceStart + reference.length;
+  }
+
+  pushPlain(text.slice(cursor), `${keyPrefix}-text-${cursor}`);
+  return output;
+}
+
+function RichFileLink({
+  display,
+  path,
+  onOpenFile
+}: {
+  display: string;
+  path: string;
+  onOpenFile: (path: string) => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="rich-link rich-file-link"
+      title={`打开文件：${path}`}
+      onClick={() => onOpenFile(path)}
+    >
+      <span className="rich-link-content">
+        <span className="rich-link-icon" aria-hidden="true">
+          <FileText className="icon-xs" />
+        </span>
+        <span className="rich-link-label">{display}</span>
+      </span>
+    </button>
+  );
+}
+
+function RichWebLink({
+  href,
+  title,
+  children
+}: {
+  href: string;
+  title?: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <a className="rich-link rich-web-link" href={href} title={title} target="_blank" rel="noreferrer">
+      <span className="rich-link-content">
+        <RichWebLinkIcon href={href} />
+        <span className="rich-link-label">{children}</span>
+      </span>
+    </a>
+  );
+}
+
+function RichWebLinkIcon({ href }: { href: string }): JSX.Element {
+  if (/^mailto:/i.test(href)) {
+    return (
+      <span className="rich-link-icon" aria-hidden="true">
+        <Mail className="icon-xs" />
+      </span>
+    );
+  }
+
+  const host = linkHost(href);
+  if (host && /(^|\.)github\.com$/i.test(host)) {
+    return (
+      <span className="rich-link-icon" aria-hidden="true">
+        <Github className="icon-xs" />
+      </span>
+    );
+  }
+
+  const favicon = faviconSource(href);
+  return (
+    <span className="rich-link-icon rich-link-favicon-frame" aria-hidden="true">
+      <Globe2 className="icon-xs rich-link-fallback-icon" />
+      {favicon ? (
+        <img
+          className="rich-link-favicon"
+          src={favicon}
+          alt=""
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function linkedFileTarget(reference: string, cwd: string | undefined): string | undefined {
+  const path = filePathFromReference(reference);
+  if (!isAutoLinkFilePath(path)) {
+    return undefined;
+  }
+  if (path.startsWith("/")) {
+    return path;
+  }
+  if (path.startsWith("~/")) {
+    return cwd ? resolveHomePath(cwd, path) : undefined;
+  }
+  if (!cwd) {
+    return undefined;
+  }
+  return resolveRelativePath(cwd, path);
+}
+
+function filePathFromReference(reference: string): string {
+  const match = reference.match(AUTO_FILE_LINE_SUFFIX_PATTERN);
+  return (match?.[1] ?? reference).trim();
+}
+
+function isAutoLinkFilePath(path: string): boolean {
+  const normalizedPath = path.trim();
+  if (!normalizedPath || /^https?:\/\//i.test(normalizedPath)) {
+    return false;
+  }
+  return AUTO_LINK_FILE_EXTENSIONS.has(fileExtension(normalizedPath));
+}
+
+function fileExtension(path: string): string {
+  const fileName = path.split("/").pop() ?? "";
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex < 0) {
+    return "";
+  }
+  return fileName.slice(dotIndex).toLowerCase();
+}
+
+function faviconSource(href: string): string | undefined {
+  try {
+    const url = new URL(href);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return undefined;
+    }
+    return `${url.origin}/favicon.ico`;
+  } catch {
+    return undefined;
+  }
+}
+
+function linkHost(href: string): string | undefined {
+  try {
+    return new URL(href).hostname;
+  } catch {
+    return undefined;
+  }
 }
 
 function languageFromClassName(className: string | undefined): string {

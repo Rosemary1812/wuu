@@ -1578,6 +1578,24 @@ export function App(): JSX.Element {
       handleNoticeAction(action);
     },
   );
+  const openWorkspaceFile = useStableCallback((path: string): void => {
+    const context = appStateRef.current.activeContext;
+    if (!context) {
+      return;
+    }
+    const fileTab = createFileSessionTab(context, path);
+    const outgoingDraft = currentPrimaryComposerDraft();
+    ensureWorkspaceToolTab("files");
+    setWorkspacePanelView("files");
+    setWorkspaceRightPanelView("files");
+    setRightPanelOpenWithMotion(true);
+    setWorkspaceMode("files");
+    setState((current) => ({
+      ...persistActiveSessionTabDraft(current, outgoingDraft),
+      sessionTabs: ensureSessionTab(current.sessionTabs, fileTab),
+      activeSessionTabID: fileTab.id,
+    }));
+  });
   const sidebarProjectThreadsByProjectID = useMemo(() => {
     if (state.activeContext?.kind !== "project" || !state.activeProjectId) {
       return projectThreadsByProjectID;
@@ -1944,25 +1962,6 @@ export function App(): JSX.Element {
       });
     }, PROJECT_THREAD_COLLAPSE_MS);
     projectCollapseTimersRef.current.set(projectID, timer);
-  }
-
-  function openWorkspaceFile(path: string): void {
-    const context = appStateRef.current.activeContext;
-    if (!context) {
-      return;
-    }
-    const fileTab = createFileSessionTab(context, path);
-    const outgoingDraft = currentPrimaryComposerDraft();
-    ensureWorkspaceToolTab("files");
-    setWorkspacePanelView("files");
-    setWorkspaceRightPanelView("files");
-    setRightPanelOpenWithMotion(true);
-    setWorkspaceMode("files");
-    setState((current) => ({
-      ...persistActiveSessionTabDraft(current, outgoingDraft),
-      sessionTabs: ensureSessionTab(current.sessionTabs, fileTab),
-      activeSessionTabID: fileTab.id,
-    }));
   }
 
   function openSkillsTab(): void {
@@ -2700,6 +2699,7 @@ export function App(): JSX.Element {
         onForkMessage={(turnID, itemID) =>
           void forkThreadFromMessage(thread, turnID, itemID)
         }
+        onOpenFile={openWorkspaceFile}
         onEditMessage={
           canShowHistoryEditButton(thread)
             ? (turnID, item) =>
@@ -6511,6 +6511,7 @@ export function App(): JSX.Element {
                 onDismissContextComposition={dismissContextCompositionEntry}
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
+                onOpenFile={openWorkspaceFile}
                 onEditMessage={handleCachedPaneEditMessage}
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
@@ -6694,6 +6695,7 @@ type CachedConversationPanesProps = {
   onDismissContextComposition: (id: string) => void;
   canEditThreadMessage: (thread: Thread) => boolean;
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
+  onOpenFile?: (path: string) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
   onCancelEditMessage: () => void;
   onSubmitEditMessage: (
@@ -6736,6 +6738,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onDismissContextComposition,
   canEditThreadMessage,
   onForkMessage,
+  onOpenFile,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
@@ -6830,6 +6833,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   <TurnView
                     turn={turn}
                     cwd={thread.cwd ?? activeContextCwd}
+                    onOpenFile={onOpenFile}
                     latestAgentMessageID={threadLatestAgentMessageID}
                     isLatestTurn={
                       thread.turns[thread.turns.length - 1]?.id === turn.id

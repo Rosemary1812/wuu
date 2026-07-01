@@ -29,6 +29,7 @@ export { latestAgentMessageItemID, scrollToUserMessage };
 export function TurnView({
   turn,
   cwd,
+  onOpenFile,
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
@@ -47,6 +48,7 @@ export function TurnView({
 }: {
   turn: Turn;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
@@ -86,6 +88,7 @@ export function TurnView({
         turnStatus={turn.status}
         item={item}
         cwd={cwd}
+        onOpenFile={onOpenFile}
         streaming={streaming}
         pendingCompanionReasoning={pendingCompanionReasoning}
         actionableAgentMessageID={actionableAgentMessageID}
@@ -143,6 +146,7 @@ export function TurnView({
           turn={turn}
           display={assistantDisplay}
           cwd={cwd}
+          onOpenFile={onOpenFile}
           actionableAgentMessageID={actionableAgentMessageID}
           latestAgentMessageID={latestAgentMessageID}
           onStreamFrame={onStreamFrame}
