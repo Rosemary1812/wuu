@@ -30,6 +30,7 @@ The summary must preserve:
 - Verification state: checks passed, failed, skipped, or still needed
 - Evidence pointers: exact files, commands, errors, logs, ids, or artifacts needed to resume
 - Next steps in order
+- Uncertainty, open questions, and pending user confirmation; never turn a proposal, recommendation, or plan into user approval unless the visible user history explicitly says so
 
 Rules:
 - This rewrites conversation history only. It never rolls back files, processes, browser state, remote systems, or other external state.

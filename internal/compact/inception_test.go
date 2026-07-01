@@ -61,17 +61,38 @@ func TestRewriteHistoryWithInceptionContinuationCutsAfterAnchor(t *testing.T) {
 	if !changed {
 		t.Fatal("expected rewrite to report changed")
 	}
-	if len(rewritten) != 3 {
-		t.Fatalf("expected base, user, continuation; got %+v", rewritten)
+	if len(rewritten) != 4 {
+		t.Fatalf("expected base, user, anchor, continuation; got %+v", rewritten)
 	}
 	if rewritten[0].Content != "base" || rewritten[1].Content != "fix it" {
 		t.Fatalf("anchor prefix history not preserved: %+v", rewritten)
 	}
-	if rewritten[2].Role != "user" || rewritten[2].Name != ContextContinuationName || !rewritten[2].Hidden || !strings.Contains(rewritten[2].Content, InceptionContinuationPrefix) || !strings.Contains(rewritten[2].Content, "replaces the low-value conversation suffix") || !strings.Contains(rewritten[2].Content, "external state remain current") {
-		t.Fatalf("missing continuation summary: %+v", rewritten[2])
+	if id, ok := ContextAnchorIDFromMessage(rewritten[2]); !ok || id != 0 {
+		t.Fatalf("rewrite must retain the selected anchor before the continuation, got %+v", rewritten[2])
+	}
+	if next := NextContextAnchorID(rewritten); next != 1 {
+		t.Fatalf("rewrite must not make the next injected anchor reuse id 0; got next=%d", next)
+	}
+	if rewritten[3].Role != "user" || rewritten[3].Name != ContextContinuationName || !rewritten[3].Hidden || !strings.Contains(rewritten[3].Content, InceptionContinuationPrefix) || !strings.Contains(rewritten[3].Content, "replaces the low-value conversation suffix") || !strings.Contains(rewritten[3].Content, "external state remain current") {
+		t.Fatalf("missing continuation summary: %+v", rewritten[3])
 	}
 	if err := providers.ValidateToolCallHistory(rewritten); err != nil {
 		t.Fatalf("rewritten history must be provider-valid: %v", err)
+	}
+}
+
+func TestBuildInceptionContinuationContentMarksSummaryAsAssistantAuthored(t *testing.T) {
+	content := BuildInceptionContinuationContent(4, "## Task state\nUser asked for a plan.\n\n## Next step\nWait for approval.")
+
+	for _, want := range []string{
+		"assistant-authored internal summary",
+		"not a new user instruction",
+		"not user authorization",
+		"Do not upgrade a proposal, plan, or open question into user approval",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("continuation content missing %q:\n%s", want, content)
+		}
 	}
 }
 
@@ -100,11 +121,14 @@ func TestRewriteHistoryFromInceptionToolMessages(t *testing.T) {
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
-	if len(rewritten) != 5 {
+	if len(rewritten) != 6 {
 		t.Fatalf("expected history through anchor 1 plus continuation, got %+v", rewritten)
 	}
 	if id, ok := ContextAnchorIDFromMessage(rewritten[2]); !ok || id != 0 {
 		t.Fatalf("expected older anchor to remain, got %+v", rewritten[2])
+	}
+	if id, ok := ContextAnchorIDFromMessage(rewritten[4]); !ok || id != 1 {
+		t.Fatalf("expected selected anchor to remain before continuation, got %+v", rewritten[4])
 	}
 	if strings.Contains(rewritten[len(rewritten)-1].Content, "call_inception") {
 		t.Fatalf("continuation must not contain tool-chain details: %+v", rewritten)
