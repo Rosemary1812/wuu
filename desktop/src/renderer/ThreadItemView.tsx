@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { ChevronDown, ChevronUp, Paperclip } from "lucide-react";
+import { ChevronDown, ChevronUp, Paperclip, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import {
@@ -531,7 +531,6 @@ function UserMessageInlineEditor({
           onClick={() => fileInputRef.current?.click()}
         >
           <Paperclip aria-hidden="true" />
-          <span>附件</span>
         </button>
         <div className="user-message-edit-spacer" />
         <div className="user-message-edit-actions">
@@ -546,10 +545,12 @@ function UserMessageInlineEditor({
           <button
             className="user-message-edit-button primary"
             type="button"
+            aria-label="发送"
+            title="发送"
             disabled={!canSubmit || submitting}
             onClick={submit}
           >
-            发送
+            <Send aria-hidden="true" />
           </button>
         </div>
       </div>
