@@ -810,6 +810,15 @@
   overflow-y: visible;
 }
 
+.settings-usage-table-title {
+  margin: 0;
+  padding: 18px 24px 4px;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+}
+
 .settings-usage-table {
   width: 100%;
   min-width: 720px;

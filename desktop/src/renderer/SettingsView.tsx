@@ -502,6 +502,12 @@ export function SettingsView({
               compactThreshold={compactThresholdDraft}
               compactKeepRecent={compactKeepRecentDraft}
               providerContextWindow={providerContextWindowDraft}
+              providerContextWindowCurrent={formatOptionalTokenCount(
+                initialized?.advanced_settings?.context_window_tokens,
+              )}
+              providerContextWindowSource={advancedContextSourceLabel(
+                initialized?.advanced_settings?.context_window_source,
+              )}
               maxContextTokens={maxContextTokensDraft}
               maxSteps={maxStepsDraft}
               temperature={temperatureDraft}
@@ -992,6 +998,8 @@ function SettingsAdvancedPage({
   compactThreshold,
   compactKeepRecent,
   providerContextWindow,
+  providerContextWindowCurrent,
+  providerContextWindowSource,
   maxContextTokens,
   maxSteps,
   temperature,
@@ -1012,6 +1020,8 @@ function SettingsAdvancedPage({
   compactThreshold: string;
   compactKeepRecent: string;
   providerContextWindow: string;
+  providerContextWindowCurrent: string;
+  providerContextWindowSource: string;
   maxContextTokens: string;
   maxSteps: string;
   temperature: string;
@@ -1079,7 +1089,9 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="当前服务上下文上限"
-          description="自定义模型或网关别名时使用"
+          description={`自定义模型或网关别名时使用；${providerContextWindowSource}${
+            providerContextWindowCurrent ? `；当前 ${providerContextWindowCurrent} token` : ""
+          }`}
           block
         >
           <input
@@ -1355,6 +1367,9 @@ function SettingsUsagePage({
       setHeatmapHeight(7 * cellW + 6 * GAP);
     };
     update();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
@@ -1405,8 +1420,9 @@ function SettingsUsagePage({
         {usage && (
           <div className="settings-usage-stats">
             <UsageStat label="输入" value={formatTokenCount(usage.metrics.input_tokens)} />
+            <UsageStat label="上下文" value={formatTokenCount(usage.metrics.context_tokens)} />
             <UsageStat label="输出" value={formatTokenCount(usage.metrics.output_tokens)} />
-            <UsageStat label="缓存命中" value={formatPercent(usage.metrics.cache_hit_rate)} />
+            <UsageStat label="缓存命中率" value={formatPercent(usage.metrics.cache_hit_rate)} />
             <UsageStat label="活跃" value={`${usage.metrics.active_days} 天`} />
           </div>
         )}
@@ -1463,6 +1479,7 @@ function SettingsUsagePage({
       {usage ? (
         usage.model_breakdowns.length > 0 ? (
           <div className="settings-card settings-usage-table-wrap">
+            <h2 className="settings-usage-table-title">模型使用</h2>
             <table className="settings-usage-table">
               <thead>
                 <tr>
@@ -1703,6 +1720,13 @@ type CacheHeatmapCell = SettingsUsageDay & {
 
 function formatTokenCount(value: number): string {
   return Math.max(0, value).toLocaleString();
+}
+
+function formatOptionalTokenCount(value: number | undefined): string {
+  if (!value || !Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+  return formatTokenCount(value);
 }
 
 function formatUsageRange(range: SettingsUsageRange): string {

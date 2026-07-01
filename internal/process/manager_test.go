@@ -242,7 +242,18 @@ func TestReadOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	offset := int64(0)
+	snapshot, err := m.ReadOutputSnapshot(context.Background(), p.ID, OutputReadOptions{
+		MaxBytes:    4096,
+		OffsetBytes: &offset,
+		Wait:        2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.TimedOut {
+		t.Fatalf("timed out waiting for output: %+v", snapshot)
+	}
 	out, _, err := m.ReadOutput(p.ID, 4096)
 	if err != nil {
 		t.Fatal(err)

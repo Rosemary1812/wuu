@@ -1047,9 +1047,7 @@ describe("AssistantTurnShell — turn divider styles", () => {
     expect(turnsCSS).toContain(".process-surface-row.is-live-gray");
     expect(turnsCSS).toContain(".turn-reasoning-summary-text.is-live-gray");
     expect(turnsCSS).toContain(".turn-process-preview.is-live");
-    expect(turnsCSS).toContain(
-      ".turn-event-notice.is-progress .turn-event-title::after",
-    );
+    expect(turnsCSS).toContain(".live-progress-chip::after");
     expect(turnsCSS).toContain("animation: live-gray-shimmer 4.8s linear infinite;");
     expect(turnsCSS).not.toContain(".process-surface-row.is-streaming::after");
     expect(turnsCSS).not.toContain(
