@@ -870,14 +870,14 @@
 }
 
 /*
- * Make the Plus button icon (composer-project-control, the "open
- * project" affordance) visibly larger than the slanted utility icons
- * (Paperclip, Slash). The Plus glyph is two thin strokes with empty
- * interior — at .icon-xl (20px) it reads smaller than a 16px Paperclip
- * despite being nominally bigger. Bumping to 24px gives the Plus clear
- * visual prominence as the primary composer-bar action, while the two
- * rotated utility icons stay subordinate. Specificity (0,2,1) beats
- * the .icon-xl rule (0,1,0) and the .composer-bar svg rule (0,1,1).
+ * Make only the dock Plus button icon (composer-project-control, the
+ * "open project" affordance) visibly larger than the slanted utility
+ * icons (Paperclip, Slash). The hero project picker also uses
+ * composer-project-control on its outer anchor, so this selector must stay
+ * on the actual button and its direct SVG child; otherwise the folder icon
+ * and chevron in the hero pill get forced to 24px and crowd the label.
+ * Specificity (0,2,2) beats the .icon-xl rule (0,1,0) and the
+ * .composer-bar svg rule (0,1,1).
  *
  * stroke-width: 1.5 — matches the absolute stroke of Paperclip/Slash
  * so the three icons share the same line weight. At 24px this gives
@@ -885,8 +885,7 @@
  * reads as the larger but lighter primary action — visual prominence
  * comes from size, not stroke weight.
  */
-.composer-bar .composer-project-control > svg,
-.composer-bar .composer-project-control svg {
+.composer-bar button.composer-project-control > svg {
   width: 24px;
   height: 24px;
   stroke-width: 1.5;

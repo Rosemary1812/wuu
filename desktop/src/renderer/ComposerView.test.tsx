@@ -558,6 +558,11 @@ describe("Composer send control", () => {
     expect(selector?.getAttribute("title")).toBe("/repo/wuu");
   });
 
+  it("does not apply dock Plus icon sizing to the hero project selector", () => {
+    expect(composerCSS).toContain(".composer-bar button.composer-project-control > svg");
+    expect(composerCSS).not.toContain(".composer-bar .composer-project-control svg");
+  });
+
   it("separates auxiliary controls from the send action for responsive collapse", () => {
     renderComposer({
       variant: "dock",
