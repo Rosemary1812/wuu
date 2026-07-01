@@ -213,6 +213,24 @@ func TestBuildTurnError_InternalFallback(t *testing.T) {
 	}
 }
 
+// TestBuildTurnError_MaxStepsExceededDoesNotExposeLimitAsCode covers
+// the agent loop's local safety limit. The "(8)" suffix is the max-step
+// value, not a provider error code, so it must not become the visible
+// turn chip title.
+func TestBuildTurnError_MaxStepsExceededDoesNotExposeLimitAsCode(t *testing.T) {
+	err := errors.New("max steps exceeded (8)")
+	out := BuildTurnError(err, "anthropic-gateway")
+	if out.Category != string("internal") {
+		t.Errorf("expected category=internal, got %q", out.Category)
+	}
+	if out.Code != "" {
+		t.Errorf("expected no code for local max-step limit, got %q", out.Code)
+	}
+	if out.Action == nil || out.Action.Reason != "copy_debug" {
+		t.Errorf("expected copy_debug action, got %+v", out.Action)
+	}
+}
+
 // TestBuildTurnError_LocalPermissionDenied covers the local
 // permissions path. The "permission denied: file" combination
 // triggers isLocalOperationError.

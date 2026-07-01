@@ -333,8 +333,12 @@ func extractCodeFromBody(body string) string {
 // wuu-style "stream request failed: stream error (CODE)" wrapping.
 // Mirrors the front-end's extractSpecificTitle logic.
 func extractCodeFromMessage(message string) string {
-	if isResponseCompletedMissingMessage(strings.ToLower(message)) {
+	lower := strings.ToLower(message)
+	if isResponseCompletedMissingMessage(lower) {
 		return responseCompletedMissingCode
+	}
+	if !strings.Contains(lower, "stream error (") {
+		return ""
 	}
 	idx := strings.LastIndex(message, "(")
 	end := strings.LastIndex(message, ")")
