@@ -705,9 +705,6 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 	if providerName == "" {
 		return s.writeResponse(req.ID, nil, errors.New("provider is required"))
 	}
-	if s.hasRunningThread() {
-		return s.writeResponse(req.ID, nil, errors.New("cannot remove provider while a turn is running"))
-	}
 	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)

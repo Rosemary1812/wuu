@@ -1898,6 +1898,66 @@ func TestServerConfigProviderRemoveActiveSwapsDefault(t *testing.T) {
 	}
 }
 
+func TestServerConfigProviderRemoveActiveAllowedWithRunningThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "drop",
+  "providers": {
+    "drop": {
+      "type": "openai-compatible",
+      "base_url": "https://drop.example.test/v1",
+      "api_key": "drop-key",
+      "model": "drop-model"
+    },
+    "keep": {
+      "type": "openai-compatible",
+      "base_url": "https://keep.example.test/v1",
+      "api_key": "keep-key",
+      "model": "keep-model"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	rt.ProviderName = "drop"
+	rt.Model = "drop-model"
+	rt.StreamRunner.Model = "drop-model"
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	now := time.Now().UTC()
+	running := newThreadState("running-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, now)
+	running.execRuntime = &runtime.ThreadRuntime{
+		StreamRunner: &agent.StreamRunner{Model: "drop-model", APIModel: "drop-model"},
+	}
+	running.startTurnLocked("running-turn", providers.ChatMessage{Role: "user", Content: "keep running"}, now)
+	srv.threads[running.ID] = running
+
+	req := `{"id":"1","method":"config/provider/remove","params":{"provider":"drop","fallback_provider":"keep","fallback_model":"keep-model"}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/provider/remove: %v", err)
+	}
+
+	response := responseByID(t, parseOutput(t, out.String()), "1")
+	if response["error"] != nil {
+		t.Fatalf("unexpected error response: %+v", response["error"])
+	}
+	if rt.ProviderName != "keep" || rt.Model != "keep-model" {
+		t.Fatalf("runtime selection not updated: provider=%q model=%q", rt.ProviderName, rt.Model)
+	}
+	running.mu.Lock()
+	defer running.mu.Unlock()
+	if running.ModelProvider != "keep" || running.Model != "keep-model" {
+		t.Fatalf("running thread next model should update: provider=%q model=%q", running.ModelProvider, running.Model)
+	}
+	if running.execRuntime.StreamRunner.Model != "drop-model" || running.execRuntime.StreamRunner.APIModel != "drop-model" {
+		t.Fatalf("running turn runtime should stay on removed provider until completion: model=%q api=%q",
+			running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
+	}
+	if running.pendingRuntimeUpdate == nil {
+		t.Fatal("running thread should defer runtime refresh until the turn finishes")
+	}
+}
+
 func TestServerConfigProviderRemoveRejectsOAuth(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{

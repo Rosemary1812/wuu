@@ -278,10 +278,10 @@ type ConfigModelUpdateResult struct {
 
 // ConfigProviderRemoveParams requests the deletion of a configured
 // provider. The handler enforces the same safety guards as the
-// existing config handlers (no removal of the last provider, no
-// removal of OAuth/connection-locked providers, no removal while
-// a turn is running) and atomically swaps the default provider to
-// FallbackProvider when the removed provider was active.
+// existing config handlers (no removal of the last provider and no
+// removal of OAuth/connection-locked providers) and atomically swaps
+// the default provider to FallbackProvider when the removed provider
+// was active.
 //
 // FallbackModel is applied to the new default after the swap so
 // the runtime has a model to use. When the caller does not
