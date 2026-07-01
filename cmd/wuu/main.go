@@ -1957,10 +1957,8 @@ Debug commands:
   protocol events [--json] [--workdir DIR] THREAD_ID
                    print trace JSONL events recorded for a session
 
-Legacy run:
-  wuu run forwards to wuu exec. Use Exec flags for new automation.
-  Legacy-only flags --max-steps, --temperature, and --system-prompt are not
-  supported by the app-server path.
+Run:
+  wuu run forwards to wuu exec; --max-steps, --temperature, and --system-prompt are not accepted.
 
 Eval flags:
   --provider        provider name from config
@@ -1975,7 +1973,7 @@ Eval flags:
   --keep-workdirs   keep temporary task workdirs
   --replay-trace    replay an eval trace JSONL without calling a model or tools
   --live-codex-oauth
-                   run live MCP E2E with local Codex OAuth
+                   run live Codex OAuth E2E eval using local Codex CLI or wuu OAuth credentials
 
 Goal flags:
   demo --workdir DIR --goal TEXT [--id ID] [--verify-command CMD]
