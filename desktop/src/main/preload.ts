@@ -30,6 +30,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:file-directory-list", path),
   readWorkspaceFile: (path: string) =>
     ipcRenderer.invoke("wuu:file-read", path),
+  resolveWorkspaceFileReference: (reference: string) =>
+    ipcRenderer.invoke("wuu:file-reference-resolve", reference),
   startTerminalSession: (params) =>
     ipcRenderer.invoke("wuu:terminal-start", params),
   writeTerminalSession: (id: string, data: string) =>
@@ -102,6 +104,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-rename", threadId, title),
   revealSession: (threadId: string) =>
     ipcRenderer.invoke("wuu:reveal-session", threadId),
+  openExternal: (url: string) =>
+    ipcRenderer.invoke("wuu:open-external", url),
   startTurn: (threadId: string, prompt: string, images, files, permissionMode) =>
     ipcRenderer.invoke("wuu:turn-start", threadId, prompt, images, files, permissionMode),
   queueTurn: (threadId: string, prompt: string, images, clientId, files, permissionMode) =>

@@ -519,6 +519,15 @@ export type WorkspaceFileReadResult = {
   text?: string;
 };
 
+export type WorkspaceFileReferenceResolveResult = {
+  root: string;
+  reference: string;
+  status: "resolved" | "missing" | "ambiguous" | "invalid";
+  path?: string;
+  absolute_path?: string;
+  matches?: string[];
+};
+
 export type TerminalSessionStartParams = {
   cols?: number;
   rows?: number;
@@ -1144,6 +1153,7 @@ export type WuuDesktopApi = {
   listWorkspaceFiles: () => Promise<FileTreeListResult>;
   listWorkspaceDirectory: (path?: string) => Promise<WorkspaceDirectoryListResult>;
   readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
+  resolveWorkspaceFileReference: (reference: string) => Promise<WorkspaceFileReferenceResolveResult>;
   startTerminalSession: (params?: TerminalSessionStartParams) => Promise<TerminalSessionStartResult>;
   writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;
   resizeTerminalSession: (id: string, cols: number, rows: number) => Promise<TerminalSessionActionResult>;
@@ -1230,6 +1240,13 @@ export type WuuDesktopApi = {
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
   renameThread: (threadId: string, title: string) => Promise<{ thread: Thread }>;
   revealSession: (threadId: string) => Promise<void>;
+  // Open an external URL via the OS default browser. Used by the
+  // assistant turn's 来源 pill to send the user to the page the agent
+  // actually consulted (web_search hit / web_fetch target) instead of
+  // pretending the agent fetched it for them. Validation that the
+  // URL is http(s) lives in the main-process handler so the renderer
+  // can't escalate arbitrary schemes via this channel.
+  openExternal: (url: string) => Promise<void>;
   getSettingsUsage: (range?: SettingsUsageRange) => Promise<SettingsUsageResponse>;
   // Composer goal banner surface. The renderer only needs a lightweight
   // summary plus explicit runtime controls; the full GoalSnapshot and

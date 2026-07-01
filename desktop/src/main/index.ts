@@ -311,6 +311,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:file-read", (_event, path: string) =>
     workspaceFiles.readFile(path),
   );
+  ipcMain.handle("wuu:file-reference-resolve", (_event, reference: string) =>
+    workspaceFiles.resolveFileReference(reference),
+  );
   ipcMain.handle(
     "wuu:terminal-start",
     (_event, params?: TerminalSessionStartParams) =>
@@ -360,6 +363,18 @@ app.whenReady().then(async () => {
     core: cachedCoreBuildInfo,
     desktop: DESKTOP_BUILD_INFO,
   }));
+  ipcMain.handle("wuu:open-external", async (_event, url: string) => {
+    // Hand the URL to the OS default browser. We only accept http(s) to
+    // avoid the renderer escalating arbitrary protocols (file://,
+    // custom-scheme deeplinks, etc.) through this channel. Anything
+    // non-conforming is silently dropped — the renderer is the
+    // producer of all URLs (collectTurnSources parses them from
+    // tool_call results), so a malformed value is a bug, not a user
+    // decision; failing silently keeps the assistant turn UI clean.
+    if (typeof url !== "string" || url.length === 0) return;
+    if (!/^https?:\/\//i.test(url)) return;
+    await shell.openExternal(url);
+  });
   ipcMain.handle("wuu:config-codex-models", (_event, provider?: string) =>
     appServerClientPool.request<ConfigCodexModelsResult>("config/codex/models", {
       provider: provider ?? "",
