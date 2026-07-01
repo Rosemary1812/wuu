@@ -154,6 +154,17 @@ export ANTHROPIC_API_KEY="..."
 
 Wuu 还没有到 1.0，正在持续开发中。Release 二进制包还没有发布。接口、配置和桌面端行为都可能继续调整。
 
+## 致谢
+
+wuu 的设计深度借鉴并受益于以下项目。它们在智能体运行时、工具循环、多智能体编排和开发者体验方面的工作，影响了 wuu 许多架构决策与权衡取舍。
+
+- [Codex](https://github.com/openai/codex) — OpenAI 的 coding agent
+- [OpenCode](https://github.com/sst/opencode) — 开源的终端 coding agent
+- [pi](https://github.com/badlogic/pi-mono) — Mario Zechner 的极简 AI agent 工具集
+- [Kimi Code](https://github.com/MoonshotAI/kimi-cli) — 月之暗面(Moonshot AI)的 coding agent
+
+感谢这些项目背后的团队和社区，正是你们的实践与思考让 wuu 成为可能。
+
 ## 许可证
 
 MIT

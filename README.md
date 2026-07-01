@@ -155,6 +155,17 @@ export ANTHROPIC_API_KEY="..."
 
 Wuu is pre-1.0 and under active development. Release binaries are not published yet. Interfaces, configuration, and desktop behavior may change.
 
+## Acknowledgments
+
+Wuu's design draws heavily from — and stands on the shoulders of — these projects. Their work on agent runtimes, tool loops, multi-agent orchestration, and developer experience shaped many of wuu's decisions and trade-offs.
+
+- [Codex](https://github.com/openai/codex) — OpenAI's coding agent
+- [OpenCode](https://github.com/sst/opencode) — the open-source terminal coding agent
+- [pi](https://github.com/badlogic/pi-mono) — Mario Zechner's minimal AI agent toolkit
+- [Kimi Code](https://github.com/MoonshotAI/kimi-cli) — Moonshot AI's coding agent
+
+Thank you to the teams and communities behind these projects for the inspiration and ideas that helped make wuu possible.
+
 ## License
 
 MIT
