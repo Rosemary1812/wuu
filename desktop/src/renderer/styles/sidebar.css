@@ -724,10 +724,11 @@
   height: 32px;
   min-width: 0;
   border-radius: var(--radius-sm);
+  column-gap: var(--sidebar-nav-column-gap);
   color: var(--ink-tertiary);
   font-size: var(--font-body);
   grid-template-columns:
-    var(--sidebar-tree-icon-col)
+    var(--sidebar-nav-icon-col)
     minmax(0, 1fr);
 }
 
