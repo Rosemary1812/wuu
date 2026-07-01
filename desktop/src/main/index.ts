@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import type {
   ComposerGoalSummary,
   ConfigAdvancedUpdateResult,
+  ConfigGeneralUpdateResult,
   ConfigCodexModelsResult,
   ConfigModelUpdateResult,
   GitCommitParams,
@@ -29,6 +30,7 @@ import type {
   ManagedProcessStopResult,
   ServerEvent,
   RuntimeAdvancedSettingsUpdate,
+  RuntimeGeneralSettingsUpdate,
   SettingsUsageQuery,
   SettingsUsageRange,
   SettingsUsageResponse,
@@ -406,6 +408,14 @@ app.whenReady().then(async () => {
     (_event, settings: RuntimeAdvancedSettingsUpdate) =>
       appServerClientPool.request<ConfigAdvancedUpdateResult>(
         "config/advanced/update",
+        settings ?? {},
+      ),
+  );
+  ipcMain.handle(
+    "wuu:config-general-update",
+    (_event, settings: RuntimeGeneralSettingsUpdate) =>
+      appServerClientPool.request<ConfigGeneralUpdateResult>(
+        "config/general/update",
         settings ?? {},
       ),
   );

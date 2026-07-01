@@ -110,10 +110,11 @@ function installWindowStubs(): void {
   });
 }
 
-function installWuuApi(): {
+function installWuuApi(options: { threads?: Thread[] } = {}): {
   respondToServerRequest: ReturnType<typeof vi.fn>;
 } {
   const thread = threadWithToolCall();
+  const threads = options.threads ?? [thread];
   const respondToServerRequest = vi.fn().mockResolvedValue(undefined);
   const api = {
     listProjects: vi.fn().mockResolvedValue({
@@ -125,8 +126,12 @@ function installWuuApi(): {
       active_context: { kind: "no_project", cwd: workspace },
     }),
     initialize: vi.fn().mockResolvedValue(initialized()),
-    listThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
-    resumeThread: vi.fn().mockResolvedValue({ thread }),
+    listThreads: vi.fn().mockResolvedValue({ threads }),
+    resumeThread: vi.fn().mockImplementation((threadID: string) =>
+      Promise.resolve({
+        thread: threads.find((candidate) => candidate.id === threadID) ?? thread,
+      }),
+    ),
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     listManagedProcesses: vi.fn().mockResolvedValue({ processes: [] }),
     gitStatus: vi.fn().mockResolvedValue({
@@ -231,6 +236,26 @@ describe("App tool approval flow", () => {
     });
   });
 
+  it("locks permission and model controls while the active thread is running", async () => {
+    installWuuApi();
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    const permissionButton = container.querySelector<HTMLButtonElement>(
+      ".permission-chip",
+    );
+    const runtimeButton = container.querySelector<HTMLButtonElement>(
+      ".codex-runtime-trigger",
+    );
+
+    expect(permissionButton?.disabled).toBe(true);
+    expect(runtimeButton?.disabled).toBe(true);
+  });
+
   it("clears the waiting approval status after approving a running turn", async () => {
     installWuuApi();
 
@@ -275,5 +300,76 @@ describe("App tool approval flow", () => {
     });
 
     expect(container.textContent).not.toContain("等待审批");
+  });
+
+  it("does not show waiting approval status on another active thread", async () => {
+    const backgroundThread: Thread = {
+      ...threadWithToolCall(),
+      id: "background-thread",
+      preview: "background needs approval",
+      status: "idle",
+      updated_at: "2026-01-01T00:00:00Z",
+      turns: [
+        {
+          id: "background-turn",
+          items_view: "full",
+          status: "completed",
+          items: [
+            {
+              id: "background-tool-call",
+              source_id: "call-1",
+              type: "tool_call",
+              status: "in_progress",
+              name: "run_shell",
+              arguments: '{"command":"npm install"}',
+            },
+          ],
+        },
+      ],
+    };
+    const activeThread: Thread = {
+      ...threadWithToolCall(),
+      id: "active-thread",
+      preview: "active thread",
+      status: "idle",
+      updated_at: "2026-01-02T00:00:00Z",
+      turns: [],
+    };
+    installWuuApi({ threads: [backgroundThread, activeThread] });
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain("active thread");
+
+    await act(async () => {
+      for (const handler of serverEventHandlers) {
+        handler({
+          kind: "server-request",
+          workdir: workspace,
+          message: {
+            id: "server-request-1",
+            method: "tool/approval/request",
+            params: {
+              id: "approval-1",
+              tool_name: "run_shell",
+              call_id: "call-1",
+              risk: "high",
+              policy_reason: "需要审批",
+              arguments_preview: '{"command":"npm install"}',
+              capability: "command.bash",
+              capability_object: "npm install",
+              capability_action: "execute",
+            },
+          },
+        });
+      }
+    });
+
+    expect(container.textContent).not.toContain("等待审批");
+    expect(container.textContent).not.toContain("批准一次");
   });
 });

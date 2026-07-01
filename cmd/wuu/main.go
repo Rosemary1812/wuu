@@ -216,9 +216,10 @@ func runModels(args []string) error {
 	}
 
 	client, err := codex.New(codex.ClientConfig{
-		BaseURL: providerCfg.BaseURL,
-		APIKey:  explicitProviderAPIKey(providerCfg),
-		Headers: providerCfg.Headers,
+		BaseURL:               providerCfg.BaseURL,
+		APIKey:                explicitProviderAPIKey(providerCfg),
+		Headers:               providerCfg.Headers,
+		ReuseCodexCredentials: providerCfg.ReuseCodexCredentials,
 	})
 	if err != nil {
 		return err

@@ -2146,6 +2146,11 @@
   color: var(--ink);
 }
 
+.codex-runtime-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .codex-runtime-trigger span {
   min-width: 0;
   overflow: hidden;

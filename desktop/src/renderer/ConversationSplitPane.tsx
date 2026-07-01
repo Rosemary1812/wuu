@@ -98,10 +98,16 @@ export function ConversationSplitPane({
   const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
   const paneRunning = isThreadRunning(thread);
   const paneReadOnly = Boolean(thread.read_only);
+  const panePendingApproval = pendingApprovalForThread(
+    pendingToolApproval,
+    thread,
+  );
   const paneStatus = paneReadOnly
     ? paneRunning
       ? "子任务运行中"
       : "子任务会话只读"
+    : panePendingApproval
+      ? "等待审批"
     : paneRunning
       ? streamStatus?.text ?? "运行中"
       : active && appStatus !== "ready"
@@ -142,15 +148,10 @@ export function ConversationSplitPane({
               editingMessage ? [editingMessage.turnID] : undefined
             }
             renderTurn={(turn) => {
-              const callID = pendingToolApproval?.call_id;
-              const approval =
-                pendingToolApproval && callID
-                  ? turn.items.some(
-                      (item) => item.id === callID || item.source_id === callID,
-                    )
-                    ? pendingToolApproval
-                    : undefined
-                  : undefined;
+              const approval = pendingApprovalForTurn(
+                panePendingApproval,
+                turn,
+              );
               return (
                 <TurnView
                   turn={turn}
@@ -224,4 +225,40 @@ export function ConversationSplitPane({
       />
     </section>
   );
+}
+
+function pendingApprovalForThread(
+  approval: PendingToolApproval | undefined,
+  thread: Thread | undefined,
+): PendingToolApproval | undefined {
+  if (!approval || !thread) {
+    return undefined;
+  }
+  if (approval.thread_id) {
+    return approval.thread_id === thread.id ? approval : undefined;
+  }
+  const callID = approval.call_id;
+  if (!callID) {
+    return undefined;
+  }
+  return thread.turns.some((turn) => pendingApprovalForTurn(approval, turn))
+    ? approval
+    : undefined;
+}
+
+function pendingApprovalForTurn(
+  approval: PendingToolApproval | undefined,
+  turn: { id: string; items: ThreadItem[] },
+): PendingToolApproval | undefined {
+  if (!approval) return undefined;
+  if (approval.turn_id) {
+    return approval.turn_id === turn.id ? approval : undefined;
+  }
+  const callID = approval.call_id;
+  if (!callID) return undefined;
+  return turn.items.some(
+    (item) => item.id === callID || item.source_id === callID,
+  )
+    ? approval
+    : undefined;
 }

@@ -167,6 +167,10 @@ type ProviderConfig struct {
 	Model        string                         `json:"model"`
 	Models       map[string]ProviderModelConfig `json:"models,omitempty"`
 	Headers      map[string]string              `json:"headers,omitempty"`
+	// ReuseCodexCredentials lets Codex subscription providers read the local
+	// Codex CLI auth store (CODEX_HOME/auth.json or ~/.codex/auth.json) as a
+	// read-only fallback when wuu does not have its own OAuth session.
+	ReuseCodexCredentials bool `json:"reuse_codex_credentials,omitempty"`
 	// StreamConnectTimeoutMS bounds dial/TLS/response-header wait for one
 	// streaming connection attempt. It does not cap the whole turn.
 	StreamConnectTimeoutMS int `json:"stream_connect_timeout_ms,omitempty"`
@@ -364,6 +368,12 @@ type AdvancedRuntimeUpdate struct {
 	CompactKeepRecentTokens *int
 	DisableAutoCompact      *bool
 	ProviderContextWindow   *int
+}
+
+type GeneralSettingsUpdate struct {
+	AppendSystemPrompt *string
+	MemoryDisable      *bool
+	MCPEnabledToggles  map[string]*bool // server name → enabled; nil = skip
 }
 
 // Load reads config with priority: .wuu.json, wuu.json, ~/.config/wuu/config.json.
@@ -728,10 +738,11 @@ func Default() Config {
 				Model:     "gpt-5-codex",
 			},
 			"openai-codex": {
-				Type:    "openai-codex",
-				BaseURL: "https://chatgpt.com/backend-api/codex",
-				WireAPI: "responses",
-				Model:   "gpt-5.5",
+				Type:                  "openai-codex",
+				BaseURL:               "https://chatgpt.com/backend-api/codex",
+				WireAPI:               "responses",
+				Model:                 "gpt-5.5",
+				ReuseCodexCredentials: true,
 			},
 			"anthropic": {
 				Type:      "anthropic",
@@ -1081,6 +1092,93 @@ func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRunti
 		return err
 	}
 	return os.WriteFile(configPath, append(out, '\n'), 0644)
+}
+
+func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	if update.AppendSystemPrompt != nil {
+		agent, _ := raw["agent"].(map[string]any)
+		if agent == nil {
+			agent = make(map[string]any)
+			raw["agent"] = agent
+		}
+		setOptionalString(agent, "append_system_prompt", update.AppendSystemPrompt)
+		if len(agent) == 0 {
+			delete(raw, "agent")
+		}
+	}
+
+	if update.MemoryDisable != nil {
+		memory, _ := raw["memory"].(map[string]any)
+		if memory == nil {
+			memory = make(map[string]any)
+			raw["memory"] = memory
+		}
+		if *update.MemoryDisable {
+			memory["disable"] = true
+		} else {
+			delete(memory, "disable")
+		}
+		if len(memory) == 0 {
+			delete(raw, "memory")
+		}
+	}
+
+	if len(update.MCPEnabledToggles) > 0 {
+		mcpServers, _ := raw["mcp_servers"].(map[string]any)
+		if mcpServers == nil {
+			mcpServers = make(map[string]any)
+			raw["mcp_servers"] = mcpServers
+		}
+		for name, enabled := range update.MCPEnabledToggles {
+			if enabled == nil {
+				continue
+			}
+			server, _ := mcpServers[name].(map[string]any)
+			if server == nil {
+				server = make(map[string]any)
+				mcpServers[name] = server
+			}
+			if *enabled {
+				delete(server, "enabled")
+			} else {
+				server["enabled"] = false
+			}
+		}
+	}
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		return err
+	}
+	applyDefaults(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, append(out, '\n'), 0644)
+}
+
+func setOptionalString(target map[string]any, key string, value *string) {
+	if value == nil {
+		return
+	}
+	if *value == "" {
+		delete(target, key)
+		return
+	}
+	target[key] = *value
 }
 
 func setOptionalInt(target map[string]any, key string, value *int) {

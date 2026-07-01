@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
   X
 } from "lucide-react";
-import type { RuntimeAdvancedSettingsUpdate, SettingsUsageRange } from "../shared/protocol";
+import type { RuntimeAdvancedSettingsUpdate, RuntimeGeneralSettingsUpdate, SettingsUsageRange } from "../shared/protocol";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -55,6 +55,7 @@ export function SettingsView({
   onSave,
   onRemoveProvider,
   onAdvancedSave,
+  onGeneralSave,
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,

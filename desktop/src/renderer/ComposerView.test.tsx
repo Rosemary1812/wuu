@@ -34,6 +34,10 @@ const turnsCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/turns.css"),
   "utf8",
 );
+const workspaceCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/workspace.css"),
+  "utf8",
+);
 const responsiveDesignCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/responsive-design.css"),
   "utf8",
@@ -588,6 +592,12 @@ describe("Composer send control", () => {
 
     expect(runtimeButton?.disabled).toBe(true);
     expect(sendButton?.disabled).toBe(false);
+  });
+
+  it("uses the disabled cursor for locked runtime model controls", () => {
+    expect(workspaceCSS).toMatch(
+      /\.codex-runtime-trigger:disabled\s*{[^}]*cursor:\s*not-allowed;/,
+    );
   });
 
   it("declares composer-width collapse rules for the least important controls first", () => {

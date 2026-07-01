@@ -22,14 +22,15 @@ const (
 
 // ClientConfig configures the ChatGPT-backed Codex provider.
 type ClientConfig struct {
-	BaseURL         string
-	APIKey          string
-	Headers         map[string]string
-	Home            string
-	HTTPClient      *http.Client
-	RetryConfig     *providers.RetryConfig
-	StreamConfig    *providers.StreamTransportConfig
-	StreamTransport providers.StreamTransportMode
+	BaseURL               string
+	APIKey                string
+	Headers               map[string]string
+	Home                  string
+	HTTPClient            *http.Client
+	RetryConfig           *providers.RetryConfig
+	StreamConfig          *providers.StreamTransportConfig
+	StreamTransport       providers.StreamTransportMode
+	ReuseCodexCredentials bool
 }
 
 // Client uses a local Codex OAuth session as an OpenAI Responses-compatible
@@ -73,7 +74,7 @@ func New(cfg ClientConfig) (*Client, error) {
 	}
 	return &Client{
 		baseURL:         baseURL,
-		auth:            NewOAuthSource(OAuthConfig{BaseURL: baseURL, APIKey: cfg.APIKey, Home: home, HTTPClient: cfg.HTTPClient}),
+		auth:            NewOAuthSource(OAuthConfig{BaseURL: baseURL, APIKey: cfg.APIKey, Home: home, HTTPClient: cfg.HTTPClient, ReuseCodexCredentials: cfg.ReuseCodexCredentials}),
 		headers:         cloneHeaders(cfg.Headers),
 		httpClient:      cfg.HTTPClient,
 		retryConfig:     cfg.RetryConfig,

@@ -17,7 +17,41 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
+func TestClientDoesNotUseCodexCLIAuthUnlessEnabled(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	token := fakeJWT(t, time.Now().Add(time.Hour), "acct_disabled")
+	writeCodexCLIAuth(t, codexHome, token, "refresh-token")
+
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"unexpected"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-5-codex",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err == nil {
+		t.Fatal("expected local Codex credentials to require reuse_codex_credentials")
+	}
+	if !strings.Contains(err.Error(), "reuse_codex_credentials") {
+		t.Fatalf("expected error to mention reuse_codex_credentials, got %v", err)
+	}
+	if called {
+		t.Fatal("client should not call Codex backend when local Codex credential reuse is disabled")
+	}
+}
+
+func TestClientUsesCodexCLIAuthReadOnlyWhenEnabled(t *testing.T) {
 	home := t.TempDir()
 	codexHome := t.TempDir()
 	t.Setenv("CODEX_HOME", codexHome)
@@ -72,7 +106,7 @@ func TestClientUsesCodexCLIAuthReadOnly(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client()})
+	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client(), ReuseCodexCredentials: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -280,7 +314,7 @@ func TestClientModelsUsesCodexOAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client()})
+	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client(), ReuseCodexCredentials: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -347,7 +381,7 @@ func TestCompactWithCodexClientUsesNormalResponsesEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client()})
+	client, err := New(ClientConfig{BaseURL: server.URL, Home: home, HTTPClient: server.Client(), ReuseCodexCredentials: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

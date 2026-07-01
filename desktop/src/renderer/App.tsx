@@ -50,6 +50,7 @@ import type {
   ProjectListResult,
   PermissionSummary,
   RuntimeAdvancedSettingsUpdate,
+  RuntimeGeneralSettingsUpdate,
   RuntimeConnectionUpdate,
   RuntimeContext,
   ServerEvent,
@@ -326,6 +327,42 @@ function initializedForSelectedPermissionMode(
     permissions: permissionSummaryForMode(mode),
     tool_policy: { profile: mode },
   };
+}
+
+function pendingApprovalForThread(
+  approval: PendingToolApproval | undefined,
+  thread: Thread | undefined,
+): PendingToolApproval | undefined {
+  if (!approval || !thread) {
+    return undefined;
+  }
+  if (approval.thread_id) {
+    return approval.thread_id === thread.id ? approval : undefined;
+  }
+  const callID = approval.call_id;
+  if (!callID) {
+    return undefined;
+  }
+  return thread.turns.some((turn) => pendingApprovalForTurn(approval, turn))
+    ? approval
+    : undefined;
+}
+
+function pendingApprovalForTurn(
+  approval: PendingToolApproval | undefined,
+  turn: Turn,
+): PendingToolApproval | undefined {
+  if (!approval) return undefined;
+  if (approval.turn_id) {
+    return approval.turn_id === turn.id ? approval : undefined;
+  }
+  const callID = approval.call_id;
+  if (!callID) return undefined;
+  return turn.items.some(
+    (item) => item.id === callID || item.source_id === callID,
+  )
+    ? approval
+    : undefined;
 }
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
@@ -2553,6 +2590,10 @@ export function App(): JSX.Element {
         state.initialized?.advanced_settings?.context_window_tokens,
     });
     const streamStatus = turnStreamStatusForThread(state, activeThread);
+    const pendingApproval = pendingApprovalForThread(
+      state.pendingToolApproval,
+      activeThread,
+    );
     return (
       <Composer
         variant={variant}
@@ -2566,7 +2607,10 @@ export function App(): JSX.Element {
         running={
           (!activeThreadReadOnly && activeThreadIsRunning) || viewContextSwitchPending
         }
-        runtimeControlsDisabled={viewContextSwitchPending}
+        runtimeControlsDisabled={
+          (!activeThreadReadOnly && activeThreadIsRunning) ||
+          viewContextSwitchPending
+        }
         tokensPerSecond={tokenSpeed.tokensPerSecond}
         tokenSpeedSampledAt={tokenSpeed.sampledAt}
         tokenSpeedSource={tokenSpeed.source}
@@ -2576,10 +2620,14 @@ export function App(): JSX.Element {
             ? activeThreadIsRunning
               ? "子任务运行中"
               : "子任务会话只读"
-            : streamStatus?.text ?? state.status
+            : pendingApproval
+              ? "等待审批"
+              : streamStatus?.text ?? state.status
         }
         statusLiveProgress={
-          activeThreadReadOnly ? false : streamStatus?.liveProgress
+          activeThreadReadOnly || pendingApproval
+            ? false
+            : streamStatus?.liveProgress
         }
         readOnly={activeThreadReadOnly}
         initialized={composerInitialized}
@@ -5844,6 +5892,39 @@ export function App(): JSX.Element {
     }
   }
 
+  async function updateGeneralSettings(
+    settings: RuntimeGeneralSettingsUpdate,
+  ): Promise<void> {
+    if (!state.initialized || viewContextSwitchPending) {
+      return;
+    }
+    try {
+      const updated = await window.wuu.updateGeneralSettings(settings);
+      setState((current) => {
+        const initialized = current.initialized
+          ? {
+              ...current.initialized,
+              general_settings: updated.general_settings,
+            }
+          : current.initialized;
+        return {
+          ...current,
+          initialized,
+          status: current.status === "ready" ? current.status : "ready",
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : "update general settings failed",
+      }));
+      throw error;
+    }
+  }
+
   async function removeProvider(
     provider: string,
     options?: { fallbackProvider?: string; fallbackModel?: string },
@@ -6074,35 +6155,10 @@ export function App(): JSX.Element {
         ? {
             ...current,
             pendingToolApproval: undefined,
-            status: "ready",
+            status: current.status === "等待审批" ? "ready" : current.status,
           }
         : current,
     );
-  }
-
-  /**
-   * Find the pending approval (if any) whose tool call landed in this
-   * turn. The AppState holds a single pending slot, but the card should
-   * render inside the assistant turn where the model actually asked the
-   * question — not floating above the entire conversation.
-   *
-   * Matching is by `call_id` against turn items. The server emits the
-   * approval request right after pushing the tool_call item, so the
-   * call_id is reliably present on the turn before the user can switch
-   * away. If no item in this turn matches, the card skips this turn.
-   */
-  function pendingApprovalForTurn(
-    approval: PendingToolApproval | undefined,
-    turn: Turn,
-  ): PendingToolApproval | undefined {
-    if (!approval) return undefined;
-    const callID = approval.call_id;
-    if (!callID) return undefined;
-    return turn.items.some(
-      (item) => item.id === callID || item.source_id === callID,
-    )
-      ? approval
-      : undefined;
   }
 
   if (settingsOpen) {
@@ -6125,6 +6181,7 @@ export function App(): JSX.Element {
         onSave={updateRuntimeSettings}
         onRemoveProvider={removeProvider}
         onAdvancedSave={updateAdvancedSettings}
+        onGeneralSave={updateGeneralSettings}
         onDebugControlsChange={setDebugControlsEnabled}
         onSidebarResizeStart={startSettingsSidebarResize}
         onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
@@ -6758,6 +6815,10 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
         const threadContextEntries = contextCompositionEntries.filter(
           (entry) => entry.threadID === threadID,
         );
+        const threadPendingToolApproval = pendingApprovalForThread(
+          pendingToolApproval,
+          thread,
+        );
         const turnIDs = new Set(threadTurns.map((turn) => turn.id));
         const entriesBeforeTurns = threadContextEntries.filter(
           (entry) => !entry.afterTurnID,
@@ -6815,20 +6876,10 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     : undefined
                 }
                 renderTurn={(turn) => {
-                  // Inline the matching that AppState's pendingToolApproval
-                  // belongs to this turn: a turn "owns" the approval when
-                  // any of its items has the matching call_id. Render the
-                  // card only for that turn so the decision surface sits
-                  // next to the tool call it actually gates.
-                  const callID = pendingToolApproval?.call_id;
-                  const approval =
-                    pendingToolApproval && callID
-                      ? turn.items.some(
-                          (item) => item.id === callID || item.source_id === callID,
-                        )
-                        ? pendingToolApproval
-                        : undefined
-                      : undefined;
+                  const approval = pendingApprovalForTurn(
+                    threadPendingToolApproval,
+                    turn,
+                  );
                   return (
                   <TurnView
                     turn={turn}

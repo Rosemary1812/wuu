@@ -118,12 +118,13 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 	case wireOpenAIChat, wireOpenAIResponses:
 		if profile.Auth == authCodexOAuth {
 			client, newErr := codex.New(codex.ClientConfig{
-				BaseURL:         provider.BaseURL,
-				APIKey:          resolveExplicitAPIKey(provider),
-				Headers:         provider.Headers,
-				RetryConfig:     retry,
-				StreamConfig:    providerStreamTransportConfig(provider),
-				StreamTransport: providerStreamTransportMode(provider),
+				BaseURL:               provider.BaseURL,
+				APIKey:                resolveExplicitAPIKey(provider),
+				Headers:               provider.Headers,
+				RetryConfig:           retry,
+				StreamConfig:          providerStreamTransportConfig(provider),
+				StreamTransport:       providerStreamTransportMode(provider),
+				ReuseCodexCredentials: provider.ReuseCodexCredentials,
 			})
 			if newErr != nil {
 				return nil, newErr

@@ -144,7 +144,81 @@ describe("AppState server requests", () => {
     expect(next.pendingToolApproval?.capability_object).toBe("printf hi");
     expect(next.pendingToolApproval?.capability_action).toBe("execute");
     expect(next.pendingToolApproval?.capability_rule).toBe("bash-readonly-echo");
-    expect(next.status).toBe("等待审批");
+    expect(next.status).toBe(initialState.status);
+  });
+
+  it("does not mark the active thread waiting when a background thread needs approval", () => {
+    const rejectServerRequest = vi.fn();
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { rejectServerRequest },
+    });
+    const context: RuntimeContext = {
+      kind: "no_project",
+      cwd: "/tmp/project",
+    };
+    const activeThread: Thread = {
+      ...threadWithUserTexts(["active prompt"]),
+      id: "active-thread",
+      preview: "active",
+      cwd: context.cwd,
+    };
+    const backgroundThread: Thread = {
+      ...threadWithUserTexts(["background prompt"]),
+      id: "background-thread",
+      preview: "background",
+      cwd: context.cwd,
+      status: "in_progress",
+      turns: [
+        {
+          id: "background-turn",
+          items_view: "full",
+          status: "in_progress",
+          items: [
+            {
+              id: "background-call-item",
+              source_id: "background-call",
+              type: "tool_call",
+              status: "in_progress",
+              name: "run_shell",
+              arguments: "{\"command\":\"npm install\"}",
+            },
+          ],
+        },
+      ],
+    };
+
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: activeThread,
+        activePane: "primary",
+        activeSessionTabID: threadSessionTabID(activeThread.id),
+        sessionTabs: [createThreadSessionTab(activeThread, context)],
+        threads: [activeThread, backgroundThread],
+        status: "ready",
+      },
+      {
+        kind: "server-request",
+        workdir: context.cwd,
+        message: {
+          id: "server-request-1",
+          method: "tool/approval/request",
+          params: {
+            id: "approval-1",
+            tool_name: "run_shell",
+            call_id: "background-call",
+            risk: "high",
+            arguments_preview: "{\"command\":\"npm install\"}",
+          },
+        },
+      },
+    );
+
+    expect(rejectServerRequest).not.toHaveBeenCalled();
+    expect(next.pendingToolApproval?.call_id).toBe("background-call");
+    expect(next.status).toBe("ready");
   });
 });
 

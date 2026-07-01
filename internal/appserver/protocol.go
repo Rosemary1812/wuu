@@ -19,6 +19,7 @@ const (
 	MethodConfigRead           = "config/read"
 	MethodConfigModelUpdate    = "config/model/update"
 	MethodConfigAdvancedUpdate = "config/advanced/update"
+	MethodConfigGeneralUpdate  = "config/general/update"
 	MethodConfigCodexModels    = "config/codex/models"
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
@@ -157,6 +158,7 @@ type InitializeResult struct {
 	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
 	Providers        []ProviderSummary       `json:"providers,omitempty"`
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
+	GeneralSettings  GeneralSettingsSummary `json:"general_settings"`
 }
 
 type ModelProfileSummary struct {
@@ -185,6 +187,7 @@ type ConfigReadResult struct {
 	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
 	Providers        []ProviderSummary       `json:"providers,omitempty"`
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
+	GeneralSettings  GeneralSettingsSummary `json:"general_settings"`
 }
 
 type ToolPolicySummary struct {
@@ -334,6 +337,22 @@ type ConfigAdvancedUpdateParams struct {
 type ConfigAdvancedUpdateResult struct {
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
 	Providers        []ProviderSummary       `json:"providers,omitempty"`
+}
+
+type ConfigGeneralUpdateParams struct {
+	AppendSystemPrompt *string          `json:"append_system_prompt,omitempty"`
+	MemoryDisable      *bool            `json:"memory_disable,omitempty"`
+	MCPEnabledToggles  map[string]*bool `json:"mcp_enabled_toggles,omitempty"`
+}
+
+type ConfigGeneralUpdateResult struct {
+	GeneralSettings GeneralSettingsSummary `json:"general_settings"`
+}
+
+type GeneralSettingsSummary struct {
+	AppendSystemPrompt string          `json:"append_system_prompt"`
+	MemoryDisabled     bool            `json:"memory_disabled"`
+	MCPServerEnabled   map[string]bool `json:"mcp_server_enabled"`
 }
 
 type AdvancedSettingsSummary struct {

@@ -1,10 +1,18 @@
 package providerfactory
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 func TestBuildClient_OpenAICompatible(t *testing.T) {
@@ -37,6 +45,51 @@ func TestBuildClient_OpenAICodexDoesNotRequireAPIKey(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatal("expected client")
+	}
+}
+
+func TestBuildClient_OpenAICodexUsesCodexCredentialsWhenConfigured(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	token := providerFactoryFakeJWT(t, time.Now().Add(time.Hour), "acct_factory")
+	writeProviderFactoryCodexAuth(t, codexHome, token)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if got := r.Header.Get("chatgpt-account-id"); got != "acct_factory" {
+			t.Fatalf("chatgpt-account-id = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	client, err := BuildClient(config.ProviderConfig{
+		Type:                  "openai-codex",
+		BaseURL:               server.URL,
+		WireAPI:               "responses",
+		Model:                 "gpt-5-codex",
+		ReuseCodexCredentials: true,
+	}, "openai-codex")
+	if err != nil {
+		t.Fatalf("BuildClient returned error: %v", err)
+	}
+	resp, err := client.Chat(context.Background(), providers.ChatRequest{
+		Model:    "gpt-5-codex",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	if resp.Content != "ok" {
+		t.Fatalf("content = %q, want ok", resp.Content)
 	}
 }
 
@@ -314,4 +367,38 @@ func TestBuildClient_MissingAPIKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+}
+
+func writeProviderFactoryCodexAuth(t *testing.T, codexHome, token string) {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{
+		"auth_mode": "chatgpt",
+		"tokens": map[string]string{
+			"access_token":  token,
+			"refresh_token": "refresh-token",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), data, 0o600); err != nil {
+		t.Fatalf("write auth.json: %v", err)
+	}
+}
+
+func providerFactoryFakeJWT(t *testing.T, exp time.Time, accountID string) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	claims := map[string]any{
+		"exp": exp.Unix(),
+		"https://api.openai.com/auth": map[string]any{
+			"chatgpt_account_id": accountID,
+		},
+	}
+	data, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("Marshal claims: %v", err)
+	}
+	payload := base64.RawURLEncoding.EncodeToString(data)
+	return header + "." + payload + ".sig"
 }

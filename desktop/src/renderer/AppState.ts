@@ -266,8 +266,10 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
         if (approval) {
           return {
             ...state,
-            pendingToolApproval: approval,
-            status: "等待审批",
+            pendingToolApproval: pendingToolApprovalWithOwner(
+              approval,
+              state,
+            ),
           };
         }
       }
@@ -331,6 +333,43 @@ function toolApprovalFromServerRequest(
     capability_rule: stringValue(params, "capability_rule"),
     model_next_action: stringValue(params, "model_next_action"),
   };
+}
+
+function pendingToolApprovalWithOwner(
+  approval: PendingToolApproval,
+  state: AppState,
+): PendingToolApproval {
+  const callID = approval.call_id;
+  if (!callID) {
+    return approval;
+  }
+  const matches: Array<{ threadID: string; turnID: string }> = [];
+  const seenThreadIDs = new Set<string>();
+  for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
+    if (!thread || seenThreadIDs.has(thread.id)) {
+      continue;
+    }
+    seenThreadIDs.add(thread.id);
+    for (const turn of thread.turns) {
+      if (turnOwnsToolCall(turn, callID)) {
+        matches.push({ threadID: thread.id, turnID: turn.id });
+        break;
+      }
+    }
+  }
+  if (matches.length !== 1) {
+    return approval;
+  }
+  const [match] = matches;
+  return {
+    ...approval,
+    thread_id: match.threadID,
+    turn_id: match.turnID,
+  };
+}
+
+function turnOwnsToolCall(turn: Turn, callID: string): boolean {
+  return turn.items.some((item) => item.id === callID || item.source_id === callID);
 }
 
 function stringArrayValue(record: JsonRecord, key: string): string[] | undefined {

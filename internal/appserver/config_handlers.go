@@ -50,6 +50,7 @@ func (s *Server) handleInitialize(req Request) error {
 		ModelRoles:       s.currentModelRoleSummaries(),
 		Providers:        s.providerSummaries(),
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
+		GeneralSettings:  s.currentGeneralSettingsSummary(),
 	}, nil)
 }
 
@@ -71,6 +72,7 @@ func (s *Server) handleConfigRead(req Request) error {
 		ModelRoles:       s.currentModelRoleSummaries(),
 		Providers:        s.providerSummaries(),
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
+		GeneralSettings:  s.currentGeneralSettingsSummary(),
 	}, nil)
 }
 
@@ -208,6 +210,27 @@ func (s *Server) currentAdvancedSettingsSummary() AdvancedSettingsSummary {
 	summary.InputLimitTokens = budget.InputLimitTokens
 	summary.OutputReserveTokens = budget.OutputReserveTokens
 	summary.CompactThresholdTokens = advancedCompactThresholdTokens(budget, summary.CompactThresholdPct)
+	return summary
+}
+
+func (s *Server) currentGeneralSettingsSummary() GeneralSettingsSummary {
+	if s == nil || s.rt == nil {
+		return GeneralSettingsSummary{}
+	}
+	summary := GeneralSettingsSummary{
+		MCPServerEnabled: map[string]bool{},
+	}
+	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
+		summary.AppendSystemPrompt = cfg.Agent.AppendSystemPrompt
+		summary.MemoryDisabled = cfg.Memory.Disable
+		for name, server := range cfg.MCPServers {
+			if server.Enabled == nil || *server.Enabled {
+				summary.MCPServerEnabled[name] = true
+			} else {
+				summary.MCPServerEnabled[name] = false
+			}
+		}
+	}
 	return summary
 }
 
@@ -388,6 +411,29 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 	return s.writeResponse(req.ID, ConfigAdvancedUpdateResult{
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
 		Providers:        s.providerSummaries(),
+	}, nil)
+}
+
+func (s *Server) handleConfigGeneralUpdate(req Request) error {
+	var params ConfigGeneralUpdateParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if s.hasRunningThread() {
+		return s.writeResponse(req.ID, nil, errors.New("cannot change general settings while a turn is running"))
+	}
+	if s.rt == nil {
+		return s.writeResponse(req.ID, nil, errors.New("runtime is not initialized"))
+	}
+	if err := config.UpdateGeneralSettings(s.rt.ConfigPath, config.GeneralSettingsUpdate{
+		AppendSystemPrompt: params.AppendSystemPrompt,
+		MemoryDisable:      params.MemoryDisable,
+		MCPEnabledToggles:  params.MCPEnabledToggles,
+	}); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, ConfigGeneralUpdateResult{
+		GeneralSettings: s.currentGeneralSettingsSummary(),
 	}, nil)
 }
 
@@ -683,9 +729,10 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 		return s.writeResponse(req.ID, nil, fmt.Errorf("provider %s uses type %s; Codex models require openai-codex", resolvedName, providerCfg.Type))
 	}
 	client, err := codex.New(codex.ClientConfig{
-		BaseURL: providerCfg.BaseURL,
-		APIKey:  explicitProviderAPIKey(providerCfg),
-		Headers: providerCfg.Headers,
+		BaseURL:               providerCfg.BaseURL,
+		APIKey:                explicitProviderAPIKey(providerCfg),
+		Headers:               providerCfg.Headers,
+		ReuseCodexCredentials: providerCfg.ReuseCodexCredentials,
 	})
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -1091,6 +1138,9 @@ func providerSummariesFromConfig(cfg config.Config, home string) []ProviderSumma
 
 func providerHasAuth(name string, provider config.ProviderConfig, home string) bool {
 	if provider.APIKey != "" || provider.APIKeyEnv != "" || provider.AuthToken != "" || provider.AuthTokenEnv != "" {
+		return true
+	}
+	if isCodexProviderType(provider.Type) && provider.ReuseCodexCredentials {
 		return true
 	}
 	key, err := config.LoadAuthKey(home, name)

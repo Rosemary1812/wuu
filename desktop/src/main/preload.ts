@@ -65,6 +65,8 @@ const api: WuuDesktopApi = {
   ) => ipcRenderer.invoke("wuu:config-provider-remove", provider, options),
   updateAdvancedSettings: (settings) =>
     ipcRenderer.invoke("wuu:config-advanced-update", settings),
+  updateGeneralSettings: (settings) =>
+    ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   getSettingsUsage: (range?: SettingsUsageRange) =>
     ipcRenderer.invoke("wuu:settings-usage", range),

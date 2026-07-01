@@ -201,6 +201,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigModelUpdate(req)
 	case MethodConfigAdvancedUpdate:
 		return s.handleConfigAdvancedUpdate(req)
+	case MethodConfigGeneralUpdate:
+		return s.handleConfigGeneralUpdate(req)
 	case MethodConfigCodexModels:
 		return s.handleConfigCodexModels(ctx, req)
 	case MethodConfigProviderRemove:

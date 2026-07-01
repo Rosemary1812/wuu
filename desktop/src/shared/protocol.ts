@@ -67,6 +67,7 @@ export type InitializeResult = {
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
+  general_settings?: GeneralSettingsSummary;
 };
 
 export type AdvancedSettingsSummary = {
@@ -82,6 +83,12 @@ export type AdvancedSettingsSummary = {
   input_limit_tokens?: number;
   output_reserve_tokens?: number;
   compact_threshold_tokens?: number;
+};
+
+export type GeneralSettingsSummary = {
+  append_system_prompt: string;
+  memory_disabled: boolean;
+  mcp_server_enabled: Record<string, boolean>;
 };
 
 export type ToolPolicySummary = {
@@ -351,6 +358,16 @@ export type RuntimeAdvancedSettingsUpdate = {
 export type ConfigAdvancedUpdateResult = {
   advanced_settings: AdvancedSettingsSummary;
   providers?: ProviderSummary[];
+};
+
+export type RuntimeGeneralSettingsUpdate = {
+  append_system_prompt?: string;
+  memory_disable?: boolean;
+  mcp_enabled_toggles?: Record<string, boolean>;
+};
+
+export type ConfigGeneralUpdateResult = {
+  general_settings: GeneralSettingsSummary;
 };
 
 export type CodexModelSummary = {
@@ -988,6 +1005,8 @@ export type ToolApprovalRequest = {
 
 export type PendingToolApproval = ToolApprovalRequest & {
   server_request_id: string;
+  thread_id?: string;
+  turn_id?: string;
 };
 
 export type WindowResizeState = {
@@ -1148,6 +1167,9 @@ export type WuuDesktopApi = {
   updateAdvancedSettings: (
     settings: RuntimeAdvancedSettingsUpdate
   ) => Promise<ConfigAdvancedUpdateResult>;
+  updateGeneralSettings: (
+    settings: RuntimeGeneralSettingsUpdate
+  ) => Promise<ConfigGeneralUpdateResult>;
   listManagedProcesses: () => Promise<ManagedProcessListResult>;
   stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listMCPServers: () => Promise<MCPListResult>;

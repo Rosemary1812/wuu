@@ -850,6 +850,37 @@ func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 	}
 }
 
+func TestConfig_CodexSubscriptionParsesReuseCodexCredentials(t *testing.T) {
+	workdir := t.TempDir()
+	home := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-codex",
+      "wire_api": "responses",
+      "model": "gpt-5-codex",
+      "reuse_codex_credentials": true
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if !cfg.Providers["main"].ReuseCodexCredentials {
+		t.Fatal("expected reuse_codex_credentials to parse as true")
+	}
+}
+
 func TestConfig_CodexSubscriptionRejectsChatWireAPI(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

@@ -26,20 +26,22 @@ const (
 
 // OAuthConfig configures the local ChatGPT/Codex OAuth credential source.
 type OAuthConfig struct {
-	BaseURL    string
-	APIKey     string
-	Home       string
-	HTTPClient *http.Client
+	BaseURL               string
+	APIKey                string
+	Home                  string
+	HTTPClient            *http.Client
+	ReuseCodexCredentials bool
 }
 
 // OAuthSource resolves the bearer credentials used by the ChatGPT-backed
 // Codex endpoint. It is intentionally separate from the wire client so wuu can
 // keep its own agent loop while reusing a local Codex subscription login.
 type OAuthSource struct {
-	baseURL    string
-	apiKey     string
-	home       string
-	httpClient *http.Client
+	baseURL               string
+	apiKey                string
+	home                  string
+	httpClient            *http.Client
+	reuseCodexCredentials bool
 }
 
 type credentials struct {
@@ -61,10 +63,11 @@ func NewOAuthSource(cfg OAuthConfig) *OAuthSource {
 		home = os.Getenv("HOME")
 	}
 	return &OAuthSource{
-		baseURL:    baseURL,
-		apiKey:     strings.TrimSpace(cfg.APIKey),
-		home:       home,
-		httpClient: cfg.HTTPClient,
+		baseURL:               baseURL,
+		apiKey:                strings.TrimSpace(cfg.APIKey),
+		home:                  home,
+		httpClient:            cfg.HTTPClient,
+		reuseCodexCredentials: cfg.ReuseCodexCredentials,
 	}
 }
 
@@ -111,6 +114,10 @@ func (s *OAuthSource) Credentials(ctx context.Context, forceRefresh bool) (crede
 			creds.accountID = firstNonEmpty(state.Tokens.AccountID, accountIDFromToken(state.Tokens.AccessToken))
 		}
 		return creds, nil
+	}
+
+	if !s.reuseCodexCredentials {
+		return credentials{}, errors.New("no wuu Codex OAuth credentials found; set reuse_codex_credentials to true on this openai-codex provider to read local Codex CLI credentials")
 	}
 
 	cliState, cliErr := loadCodexCLIAuth(s.home)
