@@ -35,6 +35,24 @@ const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = AUTO_FOLLOW_SCROLLBAR_HIDE_DELAY_MS
 const CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS =
   USER_SCROLL_AWAY_INTENT_WINDOW_MS;
 
+function cssPixelValue(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function dockComposerVisualHeight(node: HTMLElement): number {
+  const layoutHeight = Math.ceil(node.getBoundingClientRect().height);
+  const frame = node.querySelector<HTMLElement>(".composer-frame");
+  if (!frame) {
+    return layoutHeight;
+  }
+  const expandedOffset = cssPixelValue(
+    frame.style.getPropertyValue("--composer-expanded-offset") ||
+      window.getComputedStyle(frame).getPropertyValue("--composer-expanded-offset")
+  );
+  return layoutHeight + expandedOffset;
+}
+
 type ConversationScrollSnapshot = {
   scrollTop: number;
   autoFollow: boolean;
@@ -770,7 +788,7 @@ export function useConversationScrollState({
         windowResizeHeight?.schedule();
         return;
       }
-      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      const nextHeight = dockComposerVisualHeight(node);
       applyHeight(nextHeight);
     };
 
@@ -778,6 +796,10 @@ export function useConversationScrollState({
     updateHeight();
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(node);
+    const frame = node.querySelector<HTMLElement>(".composer-frame");
+    if (frame) {
+      resizeObserver.observe(frame);
+    }
     return () => {
       windowResizeHeight?.cancel();
       resizeObserver.disconnect();
