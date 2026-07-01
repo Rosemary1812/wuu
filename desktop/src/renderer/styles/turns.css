@@ -6940,3 +6940,111 @@ pre {
     grid-template-columns: 1fr;
   }
 }
+
+/*
+ * Assistant-turn sources pill (ChatGPT / Claude "来源 N" treatment).
+ *
+ * Lives at the very bottom of an assistant turn. One stacked favicon
+ * per unique host the turn consulted through web_search /
+ * web_fetch. Each icon is a real button that hands its URL to the
+ * OS default browser via window.wuu.openExternal.
+ *
+ * Layout: flex row of overlapping icon buttons + trailing label.
+ * The icons overlap so 5 hosts read as a compact stack rather than
+ * 5 separate circles eating the right margin. The label sits after
+ * the icon stack so the user's eye lands on the count first.
+ *
+ * Token reuse: turns.css already has --font-xs / --font-sm /
+ * --ink-strong / --ink-muted / --bg-soft and friends via the
+ * shared design tokens; the pill should keep its palette aligned
+ * with `.message-actions` (the like / dislike row that already
+ * lives at the bottom of an assistant message) so the two read as
+ * the same footer surface.
+ */
+.turn-sources-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 999px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.16));
+  font-size: var(--font-sm, 13px);
+  line-height: 1;
+  color: var(--ink-muted, rgba(127, 127, 127, 0.85));
+  /* Align with the answer body, not the message rail, so the pill
+   * reads as part of the answer surface the user just finished
+   * reading. */
+  align-self: flex-start;
+}
+
+.turn-sources-icons {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Negative margin pulls adjacent icons into the overlap; the
+ * explicit ring keeps each icon readable on the dark / noisy
+ * surfaces where the pill can sit. */
+.turn-source-icon {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--bg-soft, #fff);
+  background: var(--bg, #fff);
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  /* Dim the chrome so the favicon dominates; the icon is the
+   * affordance, the button border is just legibility. */
+  color: var(--ink-strong, rgba(0, 0, 0, 0.85));
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.turn-source-icon + .turn-source-icon {
+  margin-left: -6px;
+}
+
+.turn-source-icon:hover,
+.turn-source-icon:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  z-index: 1;
+}
+
+.turn-source-icon img {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* Hosts whose favicon 404s fall through to a first-letter avatar.
+ * Kept tiny — the favicon stack is a glance affordance, not a
+ * label surface. */
+.turn-source-fallback {
+  font-size: 10px;
+  font-weight: var(--weight-semibold, 600);
+  line-height: 1;
+  color: var(--ink-strong, rgba(0, 0, 0, 0.85));
+  user-select: none;
+}
+
+.turn-sources-label {
+  font-weight: var(--weight-medium, 500);
+  white-space: nowrap;
+}
+
+/* Honor the OS-level "reduce motion" preference — the hover lift
+ * transitions from `transition: transform` are motion rather than
+ * decorative; users who opted out shouldn't see them. */
+@media (prefers-reduced-motion: reduce) {
+  .turn-source-icon {
+    transition: none;
+  }
+}

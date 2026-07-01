@@ -3,6 +3,7 @@ import {
   type SyntheticEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -29,6 +30,8 @@ import {
   turnHasAssistantOutput,
   turnProgressContent,
 } from "./TurnViewHelpers";
+import { collectTurnSources } from "./ToolActivityHelpers";
+import { TurnSourcesRow } from "./TurnSourcesRow";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
 import {
   AUTO_FOLLOW_NESTED_SCROLL_ATTR,
@@ -83,6 +86,26 @@ export function AssistantTurnShell({
   const answerEntries = display.entries.filter(
     (entry) => entry.position === "answer",
   );
+  // Sources pill derives from the full turn — web_search and
+  // web_fetch happen in the process region, but the user sees the
+  // pill at the very end of the answer so it doesn't make the
+  // process fold feel longer. Dedupe by host is handled inside
+  // collectTurnSources so a burst of hits on docs.anthropic.com
+  // still produces a single icon. process_group entries wrap
+  // several raw items under one .items array, so we flatten
+  // entries.items ?? [entry.item] before feeding the helper.
+  const turnSources = useMemo(
+    () =>
+      collectTurnSources(
+        display.entries.flatMap((entry) => entry.items ?? [entry.item]),
+      ),
+    [display.entries],
+  );
+  const handleOpenSource = useCallback((url: string): void => {
+    if (typeof window !== "undefined") {
+      void window.wuu?.openExternal?.(url);
+    }
+  }, []);
 
   // Collapse the process fold once the turn is fully settled: the final
   // text is on screen and streaming has stopped. Keeping the fold open
@@ -151,6 +174,17 @@ export function AssistantTurnShell({
           ))}
         </div>
       ) : null}
+      {/*
+        Sources pill lives at the very bottom of the turn, just like
+        ChatGPT / Claude. collectTurnSources filters out non-web
+        tool calls and dedupes by host, so a long docs.* crawl still
+        shows one stacked icon rather than 8. The pill is also
+        rendered when the turn had only process activity (no final
+        answer) but still consulted web tools — turning the pill on
+        only after hasAnswer would silently drop sources from
+        interrupted turns, which is the moment users most want them.
+      */}
+      <TurnSourcesRow sources={turnSources} onOpen={handleOpenSource} />
       {/*
         No inline "missing reply" notice here. The hand-rolled legacy
         aside used to live here, but it bypassed the chip pipeline

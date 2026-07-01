@@ -1071,3 +1071,146 @@ describe("AssistantTurnShell — turn divider styles", () => {
     expect(turnsCSS).not.toContain("activity-timeline-item-in");
   });
 });
+
+// Fake web tools so the end-to-end pill assertion doesn't need a
+// live LLM. They mirror the real `web_search` / `web_fetch` shapes
+// that `collectTurnSources` parses (ToolActivityHelpers.ts:1245):
+//   web_search.result.results[]   — array of { url, title }
+//   web_fetch.arguments.url       — the page the agent asked to read
+function makeWebFetch(url: string): ThreadItem {
+  return {
+    id: nextID("tool"),
+    type: "tool_call",
+    status: "completed",
+    name: "web_fetch",
+    arguments: JSON.stringify({ url }),
+  };
+}
+
+function makeWebSearch(
+  hits: ReadonlyArray<{ url: string; title?: string }>,
+): ThreadItem {
+  return {
+    id: nextID("tool"),
+    type: "tool_call",
+    status: "completed",
+    name: "web_search",
+    result: JSON.stringify({ results: hits }),
+  };
+}
+
+describe("AssistantTurnShell — turn sources pill end-to-end", () => {
+  it("renders the sources pill at the bottom of a turn that ran a single web_fetch", () => {
+    const turn = makeTurn("completed", [
+      makeFinalAnswer("this turn read the docs page"),
+      makeWebFetch("https://docs.anthropic.com/api"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const pill = container.querySelector(".turn-sources-pill");
+    expect(pill).not.toBeNull();
+    // Single source → singular "来源" (ToolActivityHelpers.ts →
+    // collectTurnSources dedupes by host). Confirm via the
+    // role="group" + aria-label so the assertion is on the rendered
+    // contract, not the localized string the user sees.
+    expect(pill?.getAttribute("aria-label")).toBe("来源");
+    const icons = container.querySelectorAll("button.turn-source-icon");
+    expect(icons.length).toBe(1);
+    expect(icons[0].getAttribute("aria-label")).toBe("打开 docs.anthropic.com");
+    // Favicon URL must be the Google favicon service hit for the
+    // canonical host (the host comes from `addSource(byHost, ...)`
+    // after `normalizeHost` strips `www.`).
+    const img = icons[0].querySelector("img");
+    expect(img?.getAttribute("src")).toContain(
+      "google.com/s2/favicons?domain=docs.anthropic.com",
+    );
+    // Pill sits at the bottom of the assistant turn, after the answer
+    // body — not before it.
+    const answerBody = container.querySelector(".turn-answer-body");
+    expect(answerBody).not.toBeNull();
+    expect(
+      answerBody?.compareDocumentPosition(pill as Node) ?? 0,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("collapses multiple hits on the same host across web_search and web_fetch into one slot", () => {
+    const turn = makeTurn("completed", [
+      makeFinalAnswer(""),
+      makeWebSearch([
+        { url: "https://docs.anthropic.com/a", title: "Doc A" },
+        { url: "https://docs.anthropic.com/b", title: "Doc B" },
+      ]),
+      makeWebFetch("https://docs.anthropic.com/c"),
+    ]);
+    const { container } = renderShell(turn);
+
+    expect(container.querySelector(".turn-sources-pill")).not.toBeNull();
+    expect(container.querySelectorAll("button.turn-source-icon").length).toBe(1);
+  });
+
+  it("stacks one icon per unique host and labels the pill with the host count", () => {
+    const turn = makeTurn("completed", [
+      makeFinalAnswer(""),
+      makeWebSearch([
+        { url: "https://www.anthropic.com/news/a", title: "Anthropic news" },
+        { url: "https://platform.openai.com/docs", title: "OpenAI docs" },
+        { url: "https://huggingface.co/models", title: "HF models" },
+      ]),
+    ]);
+    const { container } = renderShell(turn);
+
+    expect(container.querySelector(".turn-sources-label")?.textContent).toBe(
+      "来源 3",
+    );
+    const icons = container.querySelectorAll("button.turn-source-icon");
+    expect(icons.length).toBe(3);
+    // First-seen order — Anthropic, then OpenAI, then HF. Pull the
+    // host out of the accessible label rather than introducing a
+    // data-host attribute on the component, so this assertion
+    // survives any future i18n of the visible pill label without
+    // forcing a dataset hook that screen readers would otherwise
+    // ignore.
+    expect(icons[0].getAttribute("aria-label")).toContain("anthropic.com");
+    expect(icons[1].getAttribute("aria-label")).toContain(
+      "platform.openai.com",
+    );
+    expect(icons[2].getAttribute("aria-label")).toContain("huggingface.co");
+  });
+
+  it("does not render the pill when no web tool ran this turn", () => {
+    const turn = makeTurn("completed", [
+      makeFinalAnswer("plain answer with no web lookup"),
+      makeReadFileTool("local.ts"),
+    ]);
+    const { container } = renderShell(turn);
+
+    expect(container.querySelector(".turn-sources-pill")).toBeNull();
+  });
+
+  it("clicking a favicon hands the URL to window.wuu.openExternal", () => {
+    // End-to-end: shell mounts → pill renders → user clicks →
+    // handleOpenSource fires → window.wuu.openExternal called with
+    // the exact URL. This is the path Electron takes when the user
+    // actually taps a source.
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    (
+      window as unknown as { wuu: { openExternal: typeof openExternal } }
+    ).wuu = { openExternal };
+
+    const turn = makeTurn("completed", [
+      makeFinalAnswer(""),
+      makeWebFetch("https://docs.anthropic.com/api"),
+    ]);
+    const { container } = renderShell(turn);
+
+    const button = container.querySelector<HTMLButtonElement>(
+      "button.turn-source-icon",
+    );
+    act(() => {
+      button?.click();
+    });
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://docs.anthropic.com/api",
+    );
+  });
+});
