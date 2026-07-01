@@ -100,10 +100,6 @@ wuu exec review --commit <sha>
 
 `resume --last` asks app-server to resume the latest visible session for the
 current workspace. `resume <thread-id>` resumes a specific session.
-`resume --all <thread-id>` is accepted for agent workflows that want to be
-explicit about restoring all available persisted context; app-server resume
-already loads the full persisted thread context, so this flag uses the same
-runtime path.
 
 `fork <thread-id>` creates a new session through app-server `thread/fork`, then
 starts the requested turn in that fork.
@@ -273,11 +269,3 @@ workspace-scoped artifacts Wuu can locate for that thread.
 `wuu exec` runs through the normal Wuu permission model. Non-interactive runs
 must fail closed when they need approval and no approval handler is available.
 They must not silently approve destructive work.
-
-## Legacy `wuu run`
-
-`wuu run` is a legacy compatibility wrapper around `wuu exec`, so
-non-interactive product behavior is defined by the app-server-backed exec path.
-
-Legacy run-only flags such as `--max-steps`, `--temperature`, and
-`--system-prompt` are not supported by the app-server path and fail clearly.
