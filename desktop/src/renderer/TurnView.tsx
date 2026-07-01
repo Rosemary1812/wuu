@@ -11,6 +11,7 @@ import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
+import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import { TurnEventNotice } from "./TurnNotice";
 import { turnEventForTurn } from "./TurnEvents";
 import {
@@ -40,6 +41,7 @@ export function TurnView({
   onApproveTool,
   onApproveToolForSession,
   onDenyTool,
+  isLatestTurn,
 }: {
   turn: Turn;
   cwd?: string;
@@ -62,6 +64,7 @@ export function TurnView({
   onApproveTool?: () => void;
   onApproveToolForSession?: () => void;
   onDenyTool?: () => void;
+  isLatestTurn?: boolean;
 }): JSX.Element {
   const actionableAgentMessageID =
     turn.status === "completed"
@@ -149,6 +152,7 @@ export function TurnView({
           onDenyTool={onDenyTool}
         />
       ) : null}
+      {isLatestTurn ? <TurnEditSummaryCard turn={turn} cwd={cwd} /> : null}
       {event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null}
     </section>
   );

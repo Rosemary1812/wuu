@@ -1,0 +1,75 @@
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import type { ThreadItem } from "../shared/protocol";
+import { ToolDiffPreview } from "./ToolDiffPreview";
+
+beforeAll(() => {
+  Element.prototype.getBoundingClientRect = function (): DOMRect {
+    return {
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      toJSON() {
+        return this;
+      },
+    } as DOMRect;
+  };
+});
+
+function buildEditItem(result: string): ThreadItem {
+  return {
+    id: "item-1",
+    type: "tool_call",
+    name: "edit_file",
+    status: "completed",
+    result,
+  };
+}
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+function mount(item: ThreadItem): void {
+  if (container) unmount();
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root!.render(
+      <ToolDiffPreview item={item}>
+        <span>已编辑 .zshrc</span>
+      </ToolDiffPreview>,
+    );
+  });
+}
+
+function unmount(): void {
+  if (root) {
+    act(() => {
+      root!.unmount();
+    });
+    root = null;
+  }
+  if (container) {
+    container.remove();
+    container = null;
+  }
+}
+
+afterEach(() => {
+  unmount();
+});
+
+describe("ToolDiffPreview", () => {
+  it("renders children when no diff is present", () => {
+    mount(buildEditItem('{"path": "/tmp/a.txt"}'));
+    expect(container?.textContent).toContain("已编辑 .zshrc");
+    expect(container?.querySelector('.tool-diff-preview-card')).toBeFalsy();
+  });
+});

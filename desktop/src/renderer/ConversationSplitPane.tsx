@@ -151,6 +151,9 @@ export function ConversationSplitPane({
                   turn={turn}
                   cwd={thread.cwd ?? activeContextCwd}
                   latestAgentMessageID={paneLatestAgentMessageID}
+                  isLatestTurn={
+                    paneTurns[paneTurns.length - 1]?.id === turn.id
+                  }
                   onStreamFrame={onStreamFrame}
                   onForkMessage={onForkMessage}
                   onEditMessage={

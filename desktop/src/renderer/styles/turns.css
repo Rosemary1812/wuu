@@ -6614,13 +6614,9 @@ pre {
 }
 
 .tool-diff-preview-card {
-  position: absolute;
   z-index: 100;
-  left: 0;
-  bottom: calc(100% + 8px);
   display: flex;
   flex-direction: column;
-  width: 520px;
   max-width: calc(100vw - 48px);
   max-height: 360px;
   overflow: hidden;
@@ -6667,6 +6663,13 @@ pre {
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.tool-diff-preview-summary {
+  display: block;
+  padding: 8px 12px;
+  color: var(--ink-muted);
+  white-space: normal;
 }
 
 .tool-diff-hunk {
@@ -6725,9 +6728,97 @@ pre {
   color: var(--ink);
 }
 
+/*
+ * Turn-level edit summary card
+ * Shown at the bottom of the latest turn when file edits occurred,
+ * listing changed files with +additions/-deletions and a hover diff preview.
+ */
+.turn-edit-summary-card {
+  margin: 14px 0 0;
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: 0 2px 10px var(--ink-overlay-8);
+  overflow: hidden;
+}
+
+.turn-edit-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--surface-2);
+  background: var(--surface-1);
+}
+
+.turn-edit-summary-title {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+}
+
+.turn-edit-summary-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+}
+
+.turn-edit-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: default;
+  transition: background-color 120ms ease;
+}
+
+.turn-edit-summary-row:hover {
+  background: var(--surface-1);
+}
+
+.turn-edit-summary-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: var(--font-sm);
+  color: var(--ink);
+}
+
+.turn-edit-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-edit-summary-add {
+  color: #12a150;
+}
+
+.turn-edit-summary-delete {
+  color: #cf2e2e;
+}
+
+.turn-edit-summary-more {
+  padding: 8px 12px;
+  font-size: var(--font-sm);
+  color: var(--ink-muted);
+  text-align: center;
+}
+
 @media (max-width: 720px) {
   .chip-gallery-entry {
     grid-template-columns: 1fr;
   }
 }
-

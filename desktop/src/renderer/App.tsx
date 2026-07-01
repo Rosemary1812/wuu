@@ -6766,6 +6766,9 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     turn={turn}
                     cwd={thread.cwd ?? activeContextCwd}
                     latestAgentMessageID={threadLatestAgentMessageID}
+                    isLatestTurn={
+                      thread.turns[thread.turns.length - 1]?.id === turn.id
+                    }
                     onStreamFrame={onStreamFrame}
                     onCollapseComplete={onCollapseComplete}
                     onForkMessage={(turnID, itemID) =>

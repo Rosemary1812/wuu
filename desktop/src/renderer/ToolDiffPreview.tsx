@@ -1,0 +1,349 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { ThreadItem } from "../shared/protocol";
+
+function useTriggerPosition() {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLSpanElement | null>(null);
+
+  const measure = () => {
+    if (triggerRef.current) {
+      setRect(triggerRef.current.getBoundingClientRect());
+    }
+  };
+
+  const clear = () => setRect(null);
+
+  return { triggerRef, rect, measure, clear };
+}
+
+type DiffLineOp = "equal" | "insert" | "delete";
+
+type DiffLine = {
+  op: DiffLineOp;
+  content: string;
+};
+
+type DiffHunk = {
+  oldStart: number;
+  newStart: number;
+  lines: DiffLine[];
+};
+
+type FileDiff = {
+  path?: string;
+  newFile?: boolean;
+  hunks: DiffHunk[];
+  truncated?: boolean;
+  lines?: number;
+  oldLines?: number;
+  newLines?: number;
+  summary?: string;
+};
+
+export type ToolDiffPreviewFileDiff = FileDiff;
+
+function parseJSON(value: string | undefined): unknown {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(record: unknown, key: string): string | undefined {
+  if (!isRecord(record)) return undefined;
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function arrayValue(record: unknown, key: string): unknown[] {
+  if (!isRecord(record)) return [];
+  const value = record[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function numberValue(record: unknown, key: string): number | undefined {
+  if (!isRecord(record)) return undefined;
+  const value = record[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function parseDiffLineOp(value: unknown): DiffLineOp {
+  if (value === "insert" || value === "delete" || value === "equal") {
+    return value;
+  }
+  return "equal";
+}
+
+export function extractToolDiffPreview(
+  rawDiff: unknown,
+  path?: string,
+): ToolDiffPreviewFileDiff | undefined {
+  if (!isRecord(rawDiff)) return undefined;
+
+  const hunks: DiffHunk[] = [];
+  for (const rawHunk of arrayValue(rawDiff, "hunks")) {
+    if (!isRecord(rawHunk)) continue;
+    const oldStart = numberValue(rawHunk, "old_start") ?? 1;
+    const newStart = numberValue(rawHunk, "new_start") ?? 1;
+    const hunkLines: DiffLine[] = [];
+    for (const rawLine of arrayValue(rawHunk, "lines")) {
+      if (!isRecord(rawLine)) continue;
+      hunkLines.push({
+        op: parseDiffLineOp(rawLine.op),
+        content: stringValue(rawLine, "content") ?? "",
+      });
+    }
+    if (hunkLines.length > 0) {
+      hunks.push({ oldStart, newStart, lines: hunkLines });
+    }
+  }
+
+  const newFile = rawDiff.new_file === true;
+  const truncated = rawDiff.truncated === true;
+  const summary = stringValue(rawDiff, "summary");
+  const lines = numberValue(rawDiff, "lines");
+  const oldLines = numberValue(rawDiff, "old_lines");
+  const newLines = numberValue(rawDiff, "new_lines");
+  if (
+    hunks.length === 0 &&
+    !newFile &&
+    !truncated &&
+    !summary &&
+    lines === undefined &&
+    oldLines === undefined &&
+    newLines === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    path,
+    newFile,
+    hunks,
+    truncated,
+    lines,
+    oldLines,
+    newLines,
+    summary,
+  };
+}
+
+function extractFileDiff(item: ThreadItem): FileDiff | undefined {
+  const name = (item.name ?? "").trim();
+  const capability = item.display?.capability?.trim();
+  const isEditTool =
+    name === "edit_file" ||
+    name === "write_file" ||
+    name === "apply_patch" ||
+    capability === "file.edit";
+  if (!isEditTool) return undefined;
+
+  const result = parseJSON(item.result);
+  const diff = isRecord(result) ? (result.diff as unknown) : undefined;
+  if (!isRecord(diff)) return undefined;
+
+  const path =
+    stringValue(result, "path") ??
+    stringValue(result, "file") ??
+    stringValue(diff, "path");
+
+  const newFile = diff.new_file === true;
+  const preview = extractToolDiffPreview(diff, path);
+  return preview ? { ...preview, newFile } : undefined;
+}
+
+function useHoverDelay(delayMs: number): [boolean, () => void, () => void] {
+  const [active, setActive] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  const enter = () => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setActive(true), delayMs);
+  };
+
+  const leave = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setActive(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  return [active, enter, leave];
+}
+
+function DiffHunkView({ hunk }: { hunk: DiffHunk }): JSX.Element {
+  let oldLine = hunk.oldStart;
+  let newLine = hunk.newStart;
+
+  const rows = hunk.lines.map((line, index) => {
+    const op = line.op;
+    let oldNumber: number | null = null;
+    let newNumber: number | null = null;
+
+    if (op === "equal") {
+      oldNumber = oldLine;
+      newNumber = newLine;
+      oldLine++;
+      newLine++;
+    } else if (op === "delete") {
+      oldNumber = oldLine;
+      oldLine++;
+    } else {
+      newNumber = newLine;
+      newLine++;
+    }
+
+    return (
+      <div
+        className={`tool-diff-line tool-diff-line-${op}`}
+        key={`${oldNumber ?? newNumber}-${index}`}
+      >
+        <span className="tool-diff-line-number tool-diff-line-number-old">
+          {oldNumber ?? ""}
+        </span>
+        <span className="tool-diff-line-number tool-diff-line-number-new">
+          {newNumber ?? ""}
+        </span>
+        <span className="tool-diff-line-content" title={line.content}>
+          {line.content || " "}
+        </span>
+      </div>
+    );
+  });
+
+  return <div className="tool-diff-hunk">{rows}</div>;
+}
+
+function DiffSummaryView({ diff }: { diff: FileDiff }): JSX.Element {
+  const parts: string[] = [];
+  if (diff.newFile) {
+    parts.push(
+      diff.lines === undefined ? "新建文件" : `新建文件，${diff.lines} 行`,
+    );
+  } else if (diff.summary) {
+    parts.push(diff.summary);
+  } else if (
+    diff.oldLines !== undefined ||
+    diff.newLines !== undefined
+  ) {
+    parts.push(
+      `旧文件 ${diff.oldLines ?? 0} 行，新文件 ${diff.newLines ?? 0} 行`,
+    );
+  }
+  if (diff.truncated && !parts.some((part) => part.includes("截断"))) {
+    parts.push("行级 diff 已截断");
+  }
+  return (
+    <span className="tool-diff-preview-summary">
+      {parts.length > 0 ? parts.join("；") : "没有可用的行级 diff"}
+    </span>
+  );
+}
+
+export function ToolDiffPreview({
+  item,
+  diff: explicitDiff,
+  children,
+}: {
+  item: ThreadItem | undefined;
+  diff?: ToolDiffPreviewFileDiff;
+  children: React.ReactNode;
+}): JSX.Element {
+  const diff = useMemo(
+    () => explicitDiff ?? (item ? extractFileDiff(item) : undefined),
+    [explicitDiff, item],
+  );
+  const [visible, enter, leave] = useHoverDelay(300);
+  const { triggerRef, rect, measure, clear } = useTriggerPosition();
+
+  if (!diff) {
+    return <>{children}</>;
+  }
+
+  const handleEnter = () => {
+    measure();
+    enter();
+  };
+
+  const handleLeave = () => {
+    leave();
+    clear();
+  };
+
+  const cardStyle: React.CSSProperties = rect
+    ? (() => {
+        const cardWidth = Math.min(640, window.innerWidth - 48);
+        const left = Math.max(
+          24,
+          Math.min(rect.left, window.innerWidth - cardWidth - 24),
+        );
+        // Show above the trigger by default, but if there is not enough room
+        // above the viewport top edge, show it below instead.
+        const cardHeightEstimate = 360;
+        const showAbove = rect.top >= cardHeightEstimate + 16;
+        return {
+          position: "fixed",
+          left,
+          ...(showAbove
+            ? { bottom: window.innerHeight - rect.top + 8 }
+            : { top: rect.bottom + 8, maxHeight: "calc(100vh - 120px)" }),
+          width: cardWidth,
+        };
+      })()
+    : {};
+
+  return (
+    <span
+      ref={triggerRef}
+      className="tool-diff-preview-trigger"
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      onFocus={handleEnter}
+      onBlur={handleLeave}
+    >
+      {children}
+      {visible &&
+        createPortal(
+          <span
+            className="tool-diff-preview-card"
+            role="region"
+            style={cardStyle}
+            aria-label={`${diff.path ? diff.path : "文件"} 的变更预览`}
+          >
+            <span className="tool-diff-preview-header">
+              <span className="tool-diff-preview-title">
+                {diff.path ? diff.path : "变更预览"}
+              </span>
+              {diff.truncated ? (
+                <span className="tool-diff-preview-truncated">已截断</span>
+              ) : null}
+            </span>
+            <span className="tool-diff-preview-body">
+              {diff.hunks.length > 0 ? (
+                diff.hunks.map((hunk, index) => (
+                  <DiffHunkView hunk={hunk} key={index} />
+                ))
+              ) : (
+                <DiffSummaryView diff={diff} />
+              )}
+            </span>
+          </span>,
+          document.body,
+        )}
+    </span>
+  );
+}
