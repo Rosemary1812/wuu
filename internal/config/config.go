@@ -23,6 +23,8 @@ const (
 	DefaultMemoryCharLimit     = 2200
 	DefaultUserMemoryCharLimit = 1375
 	DefaultDreamIntervalDays   = 7
+
+	defaultCodexSubscriptionBaseURL = "https://chatgpt.com/backend-api/codex"
 )
 
 type ToolLoadingMode string
@@ -445,15 +447,45 @@ func readConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	var raw struct {
-		Agent map[string]json.RawMessage `json:"agent"`
+		Agent     map[string]json.RawMessage            `json:"agent"`
+		Providers map[string]map[string]json.RawMessage `json:"providers"`
 	}
 	if err := json.Unmarshal(data, &raw); err == nil && raw.Agent != nil {
 		if _, ok := raw.Agent["temperature"]; ok {
 			cfg.Agent.temperatureSet = true
 		}
 	}
+	applyLegacyCodexCredentialReuseDefaults(&cfg, raw.Providers)
 
 	return cfg, nil
+}
+
+func applyLegacyCodexCredentialReuseDefaults(cfg *Config, rawProviders map[string]map[string]json.RawMessage) {
+	if cfg == nil || len(rawProviders) == 0 || len(cfg.Providers) == 0 {
+		return
+	}
+	for name, rawProvider := range rawProviders {
+		if rawProvider == nil {
+			continue
+		}
+		if _, explicit := rawProvider["reuse_codex_credentials"]; explicit {
+			continue
+		}
+		provider, ok := cfg.Providers[name]
+		if !ok || !isCodexSubscriptionProvider(provider.Type) {
+			continue
+		}
+		if !usesDefaultCodexSubscriptionBaseURL(provider.BaseURL) {
+			continue
+		}
+		provider.ReuseCodexCredentials = true
+		cfg.Providers[name] = provider
+	}
+}
+
+func usesDefaultCodexSubscriptionBaseURL(baseURL string) bool {
+	normalized := strings.TrimRight(strings.ToLower(strings.TrimSpace(baseURL)), "/")
+	return normalized == "" || normalized == defaultCodexSubscriptionBaseURL
 }
 
 // ResolveProvider returns explicit provider or default one.
@@ -739,7 +771,7 @@ func Default() Config {
 			},
 			"openai-codex": {
 				Type:                  "openai-codex",
-				BaseURL:               "https://chatgpt.com/backend-api/codex",
+				BaseURL:               defaultCodexSubscriptionBaseURL,
 				WireAPI:               "responses",
 				Model:                 "gpt-5.5",
 				ReuseCodexCredentials: true,

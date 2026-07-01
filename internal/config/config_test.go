@@ -881,6 +881,69 @@ func TestConfig_CodexSubscriptionParsesReuseCodexCredentials(t *testing.T) {
 	}
 }
 
+func TestConfig_CodexSubscriptionDefaultsLegacyCredentialReuse(t *testing.T) {
+	workdir := t.TempDir()
+	home := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-codex",
+      "base_url": "https://chatgpt.com/backend-api/codex",
+      "wire_api": "responses",
+      "model": "gpt-5-codex"
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if !cfg.Providers["main"].ReuseCodexCredentials {
+		t.Fatal("expected legacy openai-codex config to default reuse_codex_credentials")
+	}
+}
+
+func TestConfig_CodexSubscriptionPreservesExplicitCredentialReuseFalse(t *testing.T) {
+	workdir := t.TempDir()
+	home := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-codex",
+      "base_url": "https://chatgpt.com/backend-api/codex",
+      "wire_api": "responses",
+      "model": "gpt-5-codex",
+      "reuse_codex_credentials": false
+    }
+  },
+  "agent": {
+    "system_prompt": "test"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if cfg.Providers["main"].ReuseCodexCredentials {
+		t.Fatal("expected explicit reuse_codex_credentials=false to be preserved")
+	}
+}
+
 func TestConfig_CodexSubscriptionRejectsChatWireAPI(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
