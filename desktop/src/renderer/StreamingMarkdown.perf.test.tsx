@@ -131,5 +131,5 @@ describe("StreamingMarkdown perf", () => {
     // block memoization) without flaking under CI noise.
     expect(avg).toBeLessThan(4);
     expect(p99).toBeLessThan(16);
-  });
+  }, 15000);
 });

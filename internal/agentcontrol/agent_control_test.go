@@ -448,9 +448,17 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	if task.ReportPath != "" {
 		t.Fatalf("worker completion without agent_report must not create a synthetic report: %+v", task)
 	}
-	runs, err := store.ListRuns()
-	if err != nil {
-		t.Fatalf("ListRuns: %v", err)
+	var runs []harness.AgentRun
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		runs, err = store.ListRuns()
+		if err != nil {
+			t.Fatalf("ListRuns: %v", err)
+		}
+		if len(runs) == 1 && runs[0].TaskID == res.AgentID && runs[0].Status == harness.TaskStatusAwaitingReport {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if len(runs) != 1 || runs[0].TaskID != res.AgentID || runs[0].Status != harness.TaskStatusAwaitingReport {
 		t.Fatalf("unexpected runs: %+v", runs)
