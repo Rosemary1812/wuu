@@ -5364,6 +5364,15 @@ func TestServerChildAgentSessionIsLiveWhileRunning(t *testing.T) {
 	if !childDelta || !childCompleted {
 		t.Fatalf("expected child delta and completion notifications, delta=%v completed=%v output:\n%s", childDelta, childCompleted, out.String())
 	}
+	awaitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	awaited, err := coord.AwaitFrom(agentthread.RootPath, awaitCtx, []string{spawned.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom after child completion: %v", err)
+	}
+	if len(awaited.Results) != 1 || awaited.Results[0].AgentID != spawned.AgentID {
+		t.Fatalf("unexpected awaited child result: %+v", awaited)
+	}
 }
 
 func TestServerThreadPinAndArchive(t *testing.T) {
