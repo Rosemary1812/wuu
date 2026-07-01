@@ -41,6 +41,8 @@ The target event family list is:
 - `reasoning_delta`
 - `reasoning_final`
 - `plan_updated`
+- `provider_state`
+- `request_context`
 - `tool_started`
 - `tool_output_delta`
 - `tool_completed`
@@ -139,6 +141,80 @@ Emitted when an existing thread is resumed.
   "turn_id": "turn-id",
   "input_tokens": 100,
   "output_tokens": 20
+}
+```
+
+### `provider_state`
+
+Per-step diagnostic snapshot of the live provider transport. Surfaces the
+current provider, protocol, transport, replay mode, response-id reuse,
+connection reuse, and any transport-fallback state.
+
+```json
+{
+  "type": "provider_state",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "step_index": 1,
+  "provider": "anthropic",
+  "protocol": "messages",
+  "transport": "https",
+  "replay_mode": "off",
+  "previous_response_id_used": false,
+  "connection_reused": true,
+  "diagnostic": "",
+  "transport_failure_phase": "",
+  "fallback_transport": "",
+  "events_emitted": ["lifecycle", "content_delta"],
+  "fallback_active": false,
+  "fallback_reason": "",
+  "input_items": 12,
+  "full_input_items": 0,
+  "delta_input_items": 12
+}
+```
+
+### `request_context`
+
+Per-step snapshot of the composed request the runner sent to the provider:
+message counts and bytes by segment, tool surface hash, stable-prefix
+hashing, and the prompt-cache key. Lets offline tooling reproduce or audit
+what the model saw on this step.
+
+```json
+{
+  "type": "request_context",
+  "thread_id": "thread-id",
+  "turn_id": "turn-id",
+  "step_index": 1,
+  "transient_messages": 0,
+  "content_bytes": 4128,
+  "block_kinds": ["text", "tool_use"],
+  "block_kind_counts": {"text": 4, "tool_use": 1},
+  "block_kind_bytes": {"text": 2048, "tool_use": 2080},
+  "segment_lifecycle_counts": {"turn": 1, "stable": 2},
+  "segment_placement_counts": {"system": 1, "history": 4},
+  "segment_cache_policy_counts": {"cached": 3, "fresh": 2},
+  "message_count": 5,
+  "system_messages": 1,
+  "hidden_messages": 0,
+  "tool_count": 12,
+  "stable_prefix": "…",
+  "turn_prefix": "…",
+  "dynamic_context_bytes": 4128,
+  "system_bytes": 512,
+  "stable_prefix_bytes": 2048,
+  "turn_prefix_bytes": 1024,
+  "message_bytes": 4128,
+  "tool_schema_bytes": 8192,
+  "loadable_tool_count": 24,
+  "loadable_tool_schema_bytes": 24576,
+  "loadable_tool_surface_hash": "sha256:…",
+  "system_hash": "sha256:…",
+  "stable_prefix_hash": "sha256:…",
+  "turn_prefix_hash": "sha256:…",
+  "tool_surface_hash": "sha256:…",
+  "prompt_cache_key": "provider-specific"
 }
 ```
 
