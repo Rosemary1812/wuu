@@ -37,8 +37,15 @@ type MermaidState =
 
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
-const AUTO_FILE_REFERENCE_PATTERN = /(^|[\s([{"'])(?:(?:~|\.{1,2})\/|\/)?(?:[A-Za-z0-9_@+.-]+\/)*[A-Za-z0-9_@+.-]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}(?::\d+(?::\d+)?|\s+\((?:line|lines)\s+\d+(?:[-:]\d+)?\))?/gi;
-const AUTO_FILE_LINE_SUFFIX_PATTERN = /^(.*?)(?::\d+(?::\d+)?|\s+\((?:line|lines)\s+\d+(?:[-:]\d+)?\))$/i;
+const AUTO_FILE_REFERENCE_PREFIX_SOURCE = String.raw`(^|[\s([{"'])`;
+const AUTO_FILE_PATH_SOURCE = String.raw`(?:(?:~|\.{1,2})\/|\/)?(?:[A-Za-z0-9_@+.-]+\/)*[A-Za-z0-9_@+.-]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}`;
+const AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE = String.raw`[-:\u2013\u2014]`;
+const AUTO_FILE_LINE_SUFFIX_SOURCE = String.raw`(?::\d+(?:${AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE}\d+)?|\s+\((?:line|lines)\s+\d+(?:${AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE}\d+)?\))`;
+const AUTO_FILE_REFERENCE_PATTERN = new RegExp(
+  `${AUTO_FILE_REFERENCE_PREFIX_SOURCE}${AUTO_FILE_PATH_SOURCE}${AUTO_FILE_LINE_SUFFIX_SOURCE}?`,
+  "gi",
+);
+const AUTO_FILE_LINE_SUFFIX_PATTERN = new RegExp(`^(.*?)${AUTO_FILE_LINE_SUFFIX_SOURCE}$`, "i");
 const AUTO_LINK_FILE_EXTENSIONS = new Set([
   ".avif",
   ".bash",

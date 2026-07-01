@@ -59,6 +59,22 @@ describe("RichContent code block", () => {
     expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/README_zh.md");
   });
 
+  it("keeps complete file line ranges inside the inline file link", async () => {
+    const openFile = vi.fn();
+    const reference = "internal/appserver/model.go:789\u2013926";
+    render(<RichContent text={`See ${reference} before editing.`} cwd="/Users/zzzz/wuu" onOpenFile={openFile} />);
+
+    const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain(reference);
+
+    await act(async () => {
+      link?.click();
+    });
+
+    expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/internal/appserver/model.go");
+  });
+
   it("decorates web links with an inline site icon", () => {
     render(<RichContent text={"Open https://github.com/blueberrycongee/wuu"} />);
 
