@@ -927,8 +927,9 @@ func CreateProviderRuntime(configPath, providerName string, providerType *string
 // The function preserves unknown top-level fields and formatting by
 // editing the raw JSON map directly, mirroring UpdateProviderModel and
 // UpdateAdvancedRuntime. Callers are responsible for refusing the
-// removal before this point (last provider, OAuth-locked, running
-// thread, etc.) — this function only handles the on-disk mutation.
+// removal before this point (last provider, OAuth-locked, provider used
+// by a running turn, etc.) — this function only handles the on-disk
+// mutation.
 func RemoveProvider(configPath, providerName, fallbackName, fallbackModel string) (newDefault string, err error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {

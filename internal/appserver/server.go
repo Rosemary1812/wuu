@@ -58,11 +58,13 @@ type threadState struct {
 	pendingRuntimeUpdate *threadRuntimeUpdate
 	runtimeSubscription  *threadRuntimeSubscription
 
-	mu            sync.Mutex
-	running       bool
-	currentTurn   string
-	cancel        context.CancelFunc
-	pendingSteers []providers.ChatMessage
+	mu                  sync.Mutex
+	running             bool
+	currentTurn         string
+	runningProviderName string
+	runningModel        string
+	cancel              context.CancelFunc
+	pendingSteers       []providers.ChatMessage
 
 	nextItemIndex         int
 	activeAgentItemID     string

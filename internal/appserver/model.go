@@ -79,6 +79,8 @@ func threadWorktreeInfo(path, baseHEAD, baseRepo string) *WorktreeInfo {
 func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
 	th.currentTurn = turnID
 	th.running = true
+	th.runningProviderName = th.ModelProvider
+	th.runningModel = th.Model
 	th.UpdatedAt = now
 	th.pendingSteers = nil
 	th.nextItemIndex = 0
@@ -101,6 +103,8 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Turn {
 	th.currentTurn = turnID
 	th.running = true
+	th.runningProviderName = th.ModelProvider
+	th.runningModel = th.Model
 	th.UpdatedAt = now
 	th.pendingSteers = nil
 	th.nextItemIndex = 0
@@ -120,6 +124,12 @@ func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Tur
 
 func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	if th.running && th.currentTurn != "" {
+		if strings.TrimSpace(th.runningProviderName) == "" {
+			th.runningProviderName = th.ModelProvider
+		}
+		if strings.TrimSpace(th.runningModel) == "" {
+			th.runningModel = th.Model
+		}
 		turn := th.ensureTurnLocked(th.currentTurn, now)
 		th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
 		return turn, false
@@ -136,6 +146,8 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 		th.Turns = append(th.Turns, turn)
 		th.currentTurn = turnID
 		th.running = true
+		th.runningProviderName = th.ModelProvider
+		th.runningModel = th.Model
 		th.pendingSteers = nil
 		th.nextItemIndex = 0
 		return turn, true
@@ -157,6 +169,8 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	th.Turns[index] = turn
 	th.currentTurn = turn.ID
 	th.running = true
+	th.runningProviderName = th.ModelProvider
+	th.runningModel = th.Model
 	th.pendingSteers = nil
 	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
 	if th.toolItems == nil {
@@ -168,6 +182,8 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err error, now time.Time, finishReason, stopReason string, truncated bool) Turn {
 	th.running = false
 	th.currentTurn = ""
+	th.runningProviderName = ""
+	th.runningModel = ""
 	th.cancel = nil
 	th.UpdatedAt = now
 	if th.activeAgentItemID != "" {

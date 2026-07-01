@@ -709,12 +709,15 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	existing, _, lookupErr := cfg.ResolveProvider(providerName)
+	existing, resolvedName, lookupErr := cfg.ResolveProvider(providerName)
 	if lookupErr != nil {
 		return s.writeResponse(req.ID, nil, lookupErr)
 	}
 	if isCodexProviderType(existing.Type) {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("provider %q is managed by OpenAI OAuth and cannot be removed", providerName))
+	}
+	if threadID, inUse := s.runningTurnUsingProvider(resolvedName); inUse {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("cannot remove provider %q while it is used by a running turn in thread %q", resolvedName, threadID))
 	}
 	// Refuse to remove the last remaining provider when no fallback is
 	// supplied — config.RemoveProvider would surface a similar error but
@@ -768,6 +771,29 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("marshal fallback params: %w", err))
 	}
 	return s.handleConfigModelUpdate(synthetic)
+}
+
+func (s *Server) runningTurnUsingProvider(providerName string) (string, bool) {
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return "", false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		running := th.running
+		runningProvider := strings.TrimSpace(th.runningProviderName)
+		if running && runningProvider == "" {
+			runningProvider = strings.TrimSpace(th.ModelProvider)
+		}
+		threadID := th.ID
+		th.mu.Unlock()
+		if running && runningProvider == providerName {
+			return threadID, true
+		}
+	}
+	return "", false
 }
 
 func (s *Server) handleSkillList(req Request) error {
