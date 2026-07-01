@@ -477,7 +477,21 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	if len(events) < 6 {
 		t.Fatalf("expected lifecycle events, got %+v", events)
 	}
-	if events[0].Type != harness.EventTaskCreated || events[len(events)-1].Status != string(harness.TaskStatusAwaitingReport) {
+	// The last emitted *lifecycle* event must transition the task to
+	// awaiting_report. artifact_recorded events can follow run_completed
+	// because the harness keeps observing worker artifacts even after
+	// the worker falls silent, which would otherwise push a non-status
+	// event into the tail slot this test was checking. Walk back from
+	// the tail to find the last non-artifact event and verify its status
+	// is awaiting_report rather than asserting a positional `last`.
+	lastIdx := -1
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type != harness.EventArtifactRecorded {
+			lastIdx = i
+			break
+		}
+	}
+	if lastIdx < 0 || events[lastIdx].Status != string(harness.TaskStatusAwaitingReport) {
 		t.Fatalf("unexpected event sequence: %+v", events)
 	}
 }
