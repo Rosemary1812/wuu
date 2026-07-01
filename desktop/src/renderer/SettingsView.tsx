@@ -1736,7 +1736,7 @@ function hitRateLevel(rate: number | undefined): number {
 function buildCacheHeatmap(days: SettingsUsageDay[]): CacheHeatmapCell[] {
   const byDate = new Map(days.map((day) => [day.date, day]));
   const end = startOfLocalDay(new Date());
-  const start = startOfWeek(addDays(end, -77));
+  const start = startOfWeek(addDays(end, -364));
   const cells: CacheHeatmapCell[] = [];
   for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
     const date = localDateKey(cursor);
