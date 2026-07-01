@@ -21,7 +21,7 @@ describe("session.css design tokens (single source of truth)", () => {
   });
 
   it("defines --session-outer-padding-inline at :root", () => {
-    expect(sessionCss).toMatch(/--session-outer-padding-inline:\s*72px/);
+    expect(sessionCss).toMatch(/--session-outer-padding-inline:\s*48px/);
   });
 
   it("defines --session-composer-width at :root", () => {
