@@ -1114,6 +1114,11 @@ func (c *AgentControl) agentNotificationSignal(currentID string, n subagent.Noti
 		return WaitAgentSignal{}, false
 	}
 	if n.Snapshot.ID == currentID {
+		if n.Snapshot.PendingMessageCount > 0 {
+			signal := waitAgentSignalFromSnapshot(WaitAgentSignalQueuedMessage, n.Snapshot)
+			signal.PendingMessageCount = n.Snapshot.PendingMessageCount
+			return signal, true
+		}
 		if signal, ok := c.queuedMessageSignal(currentID); ok {
 			return signal, true
 		}

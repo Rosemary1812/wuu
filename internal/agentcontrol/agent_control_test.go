@@ -1116,6 +1116,7 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer c.StopAll()
 	parent, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:     DefaultSubagentType,
 		TaskName: "parent",
@@ -1301,8 +1302,9 @@ func TestWaitForAgentNotificationFromRootReportsChildFinalStatus(t *testing.T) {
 func TestWaitForAgentNotificationFromAgentReturnsQueuedMessageSignal(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
+	client := newBlockingClient()
 	c, err := New(Config{
-		Client:        &slowClient{},
+		Client:        client,
 		DefaultModel:  "fake-model",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
@@ -1320,22 +1322,42 @@ func TestWaitForAgentNotificationFromAgentReturnsQueuedMessageSignal(t *testing.
 	if err != nil {
 		t.Fatalf("parent spawn: %v", err)
 	}
+	client.waitStarted(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan struct {
+		signal WaitAgentSignal
+		err    error
+	}, 1)
+	go func() {
+		signal, err := c.WaitForAgentNotificationFrom(parent.AgentPath, ctx)
+		done <- struct {
+			signal WaitAgentSignal
+			err    error
+		}{signal: signal, err: err}
+	}()
+
 	if err := c.SendMessage(parent.AgentID, "queued update"); err != nil {
 		t.Fatalf("send message: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	signal, err := c.WaitForAgentNotificationFrom(parent.AgentPath, ctx)
-	if err != nil {
-		t.Fatalf("wait mailbox: %v", err)
+
+	var signal WaitAgentSignal
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("wait mailbox: %v", got.err)
+		}
+		signal = got.signal
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for queued message signal")
 	}
 	if !signal.Received {
-		t.Fatal("expected already queued mailbox update to complete immediately")
+		t.Fatal("expected queued mailbox update to wake wait")
 	}
 	if signal.SignalType != WaitAgentSignalQueuedMessage || signal.AgentID != parent.AgentID || signal.PendingMessageCount != 1 {
 		t.Fatalf("unexpected queued message signal: %+v", signal)
 	}
-	c.StopAll()
 }
 
 func TestSpawn_InplaceSkipsWorktree(t *testing.T) {
@@ -1743,6 +1765,45 @@ func (slowClient) Chat(ctx context.Context, _ providers.ChatRequest) (providers.
 // caller's context is cancelled. Mirrors Chat's blocking semantics so
 // the concurrency-cap test still pins a worker until StopAll fires.
 func (slowClient) StreamChat(ctx context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	ch := make(chan providers.StreamEvent, 1)
+	go func() {
+		defer close(ch)
+		<-ctx.Done()
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+	}()
+	return ch, nil
+}
+
+type blockingClient struct {
+	started chan struct{}
+	once    sync.Once
+}
+
+func newBlockingClient() *blockingClient {
+	return &blockingClient{started: make(chan struct{})}
+}
+
+func (c *blockingClient) markStarted() {
+	c.once.Do(func() { close(c.started) })
+}
+
+func (c *blockingClient) waitStarted(t *testing.T) {
+	t.Helper()
+	select {
+	case <-c.started:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not enter model request")
+	}
+}
+
+func (c *blockingClient) Chat(ctx context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	c.markStarted()
+	<-ctx.Done()
+	return providers.ChatResponse{}, ctx.Err()
+}
+
+func (c *blockingClient) StreamChat(ctx context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.markStarted()
 	ch := make(chan providers.StreamEvent, 1)
 	go func() {
 		defer close(ch)

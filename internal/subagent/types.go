@@ -198,6 +198,7 @@ type SubAgentSnapshot struct {
 	OutputTokens        int
 	CacheCreationTokens int
 	CacheReadTokens     int
+	PendingMessageCount int
 	Activity            string
 	ActivityAt          time.Time
 }

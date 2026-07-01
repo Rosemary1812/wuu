@@ -375,7 +375,10 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 
 // notify pushes a notification to all listeners. Drops on full channels.
 func (m *Manager) notify(sa *SubAgent, status Status) {
-	snap := sa.Snapshot()
+	m.notifySnapshot(sa, status, sa.Snapshot())
+}
+
+func (m *Manager) notifySnapshot(sa *SubAgent, status Status, snap SubAgentSnapshot) {
 	n := Notification{AgentID: sa.ID, Status: status, Snapshot: snap}
 
 	m.mu.Lock()
@@ -477,7 +480,10 @@ func (m *Manager) QueueMessage(id, message string) bool {
 	if sa == nil {
 		return false
 	}
-	sa.pushPendingMessage(message)
+	snap, queued := sa.pushPendingMessageSnapshot(message)
+	if queued {
+		m.notifySnapshot(sa, snap.Status, snap)
+	}
 	return true
 }
 
@@ -600,13 +606,18 @@ func (m *Manager) CountRunning() int {
 }
 
 func (s *SubAgent) pushPendingMessage(message string) {
+	_, _ = s.pushPendingMessageSnapshot(message)
+}
+
+func (s *SubAgent) pushPendingMessageSnapshot(message string) (SubAgentSnapshot, bool) {
 	trimmed := strings.TrimSpace(message)
 	if trimmed == "" {
-		return
+		return SubAgentSnapshot{}, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pendingMessages = append(s.pendingMessages, trimmed)
+	return snapshotLocked(s), true
 }
 
 func (s *SubAgent) popPendingMessage() (string, bool) {
@@ -740,6 +751,7 @@ func snapshotLocked(s *SubAgent) SubAgentSnapshot {
 		OutputTokens:        s.OutputTokens,
 		CacheCreationTokens: s.CacheCreationTokens,
 		CacheReadTokens:     s.CacheReadTokens,
+		PendingMessageCount: len(s.pendingMessages),
 		Activity:            s.Activity,
 		ActivityAt:          s.ActivityAt,
 	}

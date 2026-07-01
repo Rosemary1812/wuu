@@ -538,6 +538,46 @@ func TestQueueMessageFIFO(t *testing.T) {
 	}
 }
 
+func TestQueueMessageBroadcastsPendingMessageSnapshot(t *testing.T) {
+	client := &fakeClient{delay: time.Hour}
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:    "explorer",
+		Prompt:  "initial task",
+		Toolkit: fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer mgr.StopAll()
+
+	deadline := time.Now().Add(time.Second)
+	for client.calls.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("worker did not enter model request")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	ch := make(chan Notification, 4)
+	mgr.Subscribe(ch)
+	defer mgr.Unsubscribe(ch)
+
+	if ok := mgr.QueueMessage(sa.ID, "queued mailbox note"); !ok {
+		t.Fatal("QueueMessage returned false")
+	}
+
+	select {
+	case n := <-ch:
+		if n.AgentID != sa.ID || n.Status != StatusRunning || n.Snapshot.PendingMessageCount != 1 {
+			t.Fatalf("unexpected queue notification: %+v", n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for queue notification")
+	}
+}
+
 func TestQueueMessageTrimAndDrainToUserMessages(t *testing.T) {
 	sa := &SubAgent{}
 	sa.pushPendingMessage("  hello  ")
