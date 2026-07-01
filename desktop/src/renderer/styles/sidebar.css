@@ -940,9 +940,37 @@
   transition: padding-right 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* When the row carries a fork icon, reserve space at the right of the
+ * title so the truncated text (with its ellipsis) doesn't overlap with
+ * the icon. The icon's footprint shifts on hover, so the title's
+ * padding-right also shifts:
+ *   - Default: icon at right: 12px (14px wide → left edge at right:
+ *     26px); padding-right: 28px leaves a 2px gap.
+ *   - Hover: icon slides to right: 66px (left edge at right: 80px); the
+ *     hover-specific rule below bumps padding-right to 82px (2px gap on
+ *     the other side of the icon). The base `.thread-row:hover` rule
+ *     in between still applies for non-forked rows (58px, just enough
+ *     to clear the action overlay). */
+.thread-row:has(.thread-row-fork-icon) .thread-row-main > .thread-row-title {
+  padding-right: 28px;
+}
+
 .thread-row:hover .thread-row-main > .thread-row-title,
 .thread-row:has(.thread-row-action:focus-visible) .thread-row-main > .thread-row-title {
   padding-right: 58px;
+}
+
+/* Hover-specific override for forked rows. The icon sits at right: 66px
+ * on hover (14px wide → left edge at right: 80px), so the title needs
+ * 82px of right padding to leave a 2px gap between the truncated text
+ * and the icon. Nesting `:has(.thread-row-fork-icon)` under `:hover`
+ * gives this selector one more class than the plain hover rule above,
+ * so it wins without `!important`. The base `padding-right` transition
+ * above animates the bump from 28px → 82px as the row enters hover,
+ * and 82px → 28px as it leaves. */
+.thread-row:hover:has(.thread-row-fork-icon) .thread-row-main > .thread-row-title,
+.thread-row:has(.thread-row-action:focus-visible):has(.thread-row-fork-icon) .thread-row-main > .thread-row-title {
+  padding-right: 82px;
 }
 
   
