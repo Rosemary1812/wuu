@@ -331,8 +331,7 @@
 }
 
 .nav-item:active,
-.project-row:active,
-.thread-row:active {
+.project-row:active {
   transform: translateX(1px) scale(0.992);
 }
 
@@ -755,13 +754,7 @@
 .thread-row.active {
   background: var(--sidebar-glass-active);
   color: var(--ink);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.68),
-    inset 0 -1px 0 rgba(17, 19, 21, 0.08),
-    0 2px 8px var(--ink-overlay-6);
   font-weight: var(--weight-medium);
-  backdrop-filter: blur(14px) saturate(1.22);
-  -webkit-backdrop-filter: blur(14px) saturate(1.22);
 }
 
 .thread-row.active::before {

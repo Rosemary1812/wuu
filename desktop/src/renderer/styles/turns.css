@@ -4099,7 +4099,16 @@
                                                                     
                                   
   border: 0;
-  background: #f3f3f0;
+  /*
+   * Code surface color. Neutral cool gray (#E9EAEA), shared with
+   * `.rich-code-block` below. Slightly darker and more neutral than
+   * the warm #f3f3f0 it replaced — better contrast against syntax-
+   * highlighted code text and avoids the yellow undertone #f3f3f0
+   * picked up on the near-white message stream surface (a #f3f3f0
+   * block on a #fff conversation column read as visually muddy;
+   * sampling landed it at ≈ #F2F2F2 in the rendered UI).
+   */
+  background: #e9eaea;
   border-radius: var(--radius-sm);
 }
 
@@ -4109,7 +4118,7 @@
 
 .rich-code-block {
   margin: 8px 0;
-  background: #f3f3f0;
+  background: #e9eaea;
   border: 1px solid var(--ink-overlay-6);
   border-radius: var(--radius-sm);
   overflow: hidden;
