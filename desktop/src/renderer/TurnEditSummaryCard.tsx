@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
   extractToolDiffPreview,
@@ -232,7 +233,7 @@ export function turnHasFileEdits(turn: Turn): boolean {
   return collectTurnFileEdits(turn).length > 0;
 }
 
-const VISIBLE_FILE_COUNT = 5;
+const FILE_BATCH_SIZE = 3;
 
 export function TurnEditSummaryCard({
   turn,
@@ -241,6 +242,8 @@ export function TurnEditSummaryCard({
   turn: Turn;
   cwd?: string;
 }): JSX.Element | null {
+  const [visibleCount, setVisibleCount] = useState(FILE_BATCH_SIZE);
+
   if (turn.status === "in_progress") return null;
 
   const rawEdits = collectTurnFileEdits(turn);
@@ -248,8 +251,9 @@ export function TurnEditSummaryCard({
 
   if (edits.length === 0) return null;
 
-  const visibleEdits = edits.slice(0, VISIBLE_FILE_COUNT);
-  const hiddenCount = Math.max(0, edits.length - VISIBLE_FILE_COUNT);
+  const visibleEdits = edits.slice(0, visibleCount);
+  const hiddenCount = Math.max(0, edits.length - visibleCount);
+  const nextCount = Math.min(FILE_BATCH_SIZE, hiddenCount);
 
   return (
     <div className="turn-edit-summary-card">
@@ -278,7 +282,18 @@ export function TurnEditSummaryCard({
         ))}
         {hiddenCount > 0 ? (
           <div className="turn-edit-summary-more">
-            还有 {hiddenCount} 个文件
+            <span>还有 {hiddenCount} 个文件</span>
+            <button
+              className="turn-edit-summary-more-button"
+              type="button"
+              onClick={() =>
+                setVisibleCount((current) =>
+                  Math.min(current + FILE_BATCH_SIZE, edits.length),
+                )
+              }
+            >
+              再显示 {nextCount} 个
+            </button>
           </div>
         ) : null}
       </div>

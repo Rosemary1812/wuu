@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ThreadItem } from "../shared/protocol";
@@ -63,6 +63,7 @@ function unmount(): void {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   unmount();
 });
 
@@ -71,5 +72,52 @@ describe("ToolDiffPreview", () => {
     mount(buildEditItem('{"path": "/tmp/a.txt"}'));
     expect(container?.textContent).toContain("已编辑 .zshrc");
     expect(container?.querySelector('.tool-diff-preview-card')).toBeFalsy();
+  });
+
+  it("keeps the scrollable diff preview open when moving from trigger into the preview", () => {
+    vi.useFakeTimers();
+    mount(
+      buildEditItem(
+        JSON.stringify({
+          path: "/tmp/a.txt",
+          diff: {
+            hunks: [
+              {
+                old_start: 1,
+                new_start: 1,
+                lines: Array.from({ length: 40 }, (_, index) => ({
+                  op: index % 2 === 0 ? "equal" : "insert",
+                  content: `line ${index}`,
+                })),
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const trigger = container?.querySelector<HTMLElement>(
+      ".tool-diff-preview-trigger",
+    );
+    expect(trigger).toBeTruthy();
+
+    act(() => {
+      trigger!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      vi.advanceTimersByTime(300);
+    });
+
+    const card = document.body.querySelector<HTMLElement>(
+      ".tool-diff-preview-card",
+    );
+    expect(card).toBeTruthy();
+    const body = card?.querySelector<HTMLElement>(".tool-diff-preview-body");
+    expect(body?.className).toContain("tool-diff-preview-body");
+
+    act(() => {
+      trigger!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+      card!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+
+    expect(document.body.querySelector(".tool-diff-preview-card")).toBeTruthy();
   });
 });

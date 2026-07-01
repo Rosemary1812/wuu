@@ -249,6 +249,39 @@ describe("TurnEditSummaryCard", () => {
     };
     mount(<TurnEditSummaryCard turn={turn} />);
     expect(container?.textContent).toContain("已编辑 7 个文件");
-    expect(container?.textContent).toContain("还有 2 个文件");
+    expect(container?.querySelectorAll(".turn-edit-summary-row")).toHaveLength(3);
+    expect(container?.textContent).toContain("还有 4 个文件");
+    expect(container?.textContent).toContain("再显示 3 个");
+  });
+
+  it("reveals additional files three at a time", () => {
+    const turn: Turn = {
+      id: "turn-1",
+      status: "completed",
+      items_view: "full",
+      items: Array.from({ length: 7 }, (_, i) =>
+        buildEditItem(`/tmp/file${i}.txt`, 1, 0),
+      ),
+    };
+    mount(<TurnEditSummaryCard turn={turn} />);
+
+    const showMore = () =>
+      container?.querySelector<HTMLButtonElement>(".turn-edit-summary-more-button");
+
+    expect(container?.querySelectorAll(".turn-edit-summary-row")).toHaveLength(3);
+    expect(showMore()?.textContent).toContain("再显示 3 个");
+
+    act(() => {
+      showMore()?.click();
+    });
+    expect(container?.querySelectorAll(".turn-edit-summary-row")).toHaveLength(6);
+    expect(showMore()?.textContent).toContain("再显示 1 个");
+    expect(container?.textContent).toContain("还有 1 个文件");
+
+    act(() => {
+      showMore()?.click();
+    });
+    expect(container?.querySelectorAll(".turn-edit-summary-row")).toHaveLength(7);
+    expect(showMore()).toBeFalsy();
   });
 });

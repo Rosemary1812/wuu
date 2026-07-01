@@ -159,30 +159,58 @@ function extractFileDiff(item: ThreadItem): FileDiff | undefined {
   return preview ? { ...preview, newFile } : undefined;
 }
 
-function useHoverDelay(delayMs: number): [boolean, () => void, () => void] {
+function useHoverPreview(openDelayMs: number, closeDelayMs: number) {
   const [active, setActive] = useState(false);
-  const timerRef = useRef<number | null>(null);
+  const openTimerRef = useRef<number | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
 
-  const enter = () => {
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setActive(true), delayMs);
+  const clearOpenTimer = () => {
+    if (openTimerRef.current) {
+      window.clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
   };
 
-  const leave = () => {
-    if (timerRef.current) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
     }
-    setActive(false);
+  };
+
+  const enter = () => {
+    clearCloseTimer();
+    clearOpenTimer();
+    openTimerRef.current = window.setTimeout(() => {
+      openTimerRef.current = null;
+      setActive(true);
+    }, openDelayMs);
+  };
+
+  const keepOpen = () => {
+    clearCloseTimer();
+    clearOpenTimer();
+    setActive(true);
+  };
+
+  const leave = (onClose?: () => void) => {
+    clearOpenTimer();
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      setActive(false);
+      onClose?.();
+    }, closeDelayMs);
   };
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) window.clearTimeout(timerRef.current);
+      clearOpenTimer();
+      clearCloseTimer();
     };
   }, []);
 
-  return [active, enter, leave];
+  return { active, enter, keepOpen, leave };
 }
 
 function DiffHunkView({ hunk }: { hunk: DiffHunk }): JSX.Element {
@@ -267,7 +295,7 @@ export function ToolDiffPreview({
     () => explicitDiff ?? (item ? extractFileDiff(item) : undefined),
     [explicitDiff, item],
   );
-  const [visible, enter, leave] = useHoverDelay(300);
+  const preview = useHoverPreview(300, 120);
   const { triggerRef, rect, measure, clear } = useTriggerPosition();
 
   if (!diff) {
@@ -276,12 +304,11 @@ export function ToolDiffPreview({
 
   const handleEnter = () => {
     measure();
-    enter();
+    preview.enter();
   };
 
   const handleLeave = () => {
-    leave();
-    clear();
+    preview.leave(clear);
   };
 
   const cardStyle: React.CSSProperties = rect
@@ -316,13 +343,15 @@ export function ToolDiffPreview({
       onBlur={handleLeave}
     >
       {children}
-      {visible &&
+      {preview.active &&
         createPortal(
           <span
             className="tool-diff-preview-card"
             role="region"
             style={cardStyle}
             aria-label={`${diff.path ? diff.path : "文件"} 的变更预览`}
+            onMouseEnter={preview.keepOpen}
+            onMouseLeave={handleLeave}
           >
             <span className="tool-diff-preview-header">
               <span className="tool-diff-preview-title">
