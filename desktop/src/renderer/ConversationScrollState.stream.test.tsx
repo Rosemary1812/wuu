@@ -300,7 +300,28 @@ describe("useConversationScrollState — high-frequency stream", () => {
   function flushResizeObservers(): void {
     for (const observer of resizeObservers) {
       if (!observer.disconnected) {
-        observer.callback([], observer as unknown as ResizeObserver);
+        const entries = Array.from(observer.observed).map((target) => {
+          const height =
+            target === node && layout ? layout.clientHeight : 0;
+          return {
+            target,
+            contentRect: {
+              x: 0,
+              y: 0,
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: height,
+              width: 0,
+              height,
+              toJSON: () => ({}),
+            },
+            borderBoxSize: [{ blockSize: height, inlineSize: 0 }],
+            contentBoxSize: [{ blockSize: height, inlineSize: 0 }],
+            devicePixelContentBoxSize: [{ blockSize: height, inlineSize: 0 }],
+          } as unknown as ResizeObserverEntry;
+        });
+        observer.callback(entries, observer as unknown as ResizeObserver);
       }
     }
   }

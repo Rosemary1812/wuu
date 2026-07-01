@@ -53,6 +53,27 @@ function dockComposerVisualHeight(node: HTMLElement): number {
   return layoutHeight + expandedOffset;
 }
 
+function resizeEntryBlockSize(
+  entry: ResizeObserverEntry | undefined,
+  fallback: () => number,
+): number {
+  const borderBox = entry?.borderBoxSize;
+  const firstBox = Array.isArray(borderBox) ? borderBox[0] : borderBox;
+  const blockSize = firstBox?.blockSize;
+  if (Number.isFinite(blockSize) && blockSize > 0) {
+    return blockSize;
+  }
+  const contentHeight = entry?.contentRect?.height;
+  if (
+    typeof contentHeight === "number" &&
+    Number.isFinite(contentHeight) &&
+    contentHeight > 0
+  ) {
+    return contentHeight;
+  }
+  return fallback();
+}
+
 type ConversationScrollSnapshot = {
   scrollTop: number;
   autoFollow: boolean;
@@ -165,12 +186,10 @@ export function useConversationScrollState({
   // with the user's intent.
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
   const liveResizeShiftRef = useRef(0);
-  // Pre-resize viewport height, captured on the first ResizeObserver
-  // fire. The first fire always sees a clientHeight that pre-dates the
-  // current resize (or just the current height if no resize is in
-  // progress), so it's a safe baseline. We can't capture it earlier —
-  // `useLayoutEffect` runs before any stubbed layout exists, and the
-  // very first render may not reflect the post-stub viewport.
+  const liveResizeOverflowingRef = useRef(false);
+  // Resting viewport height before a live resize starts. The live resize
+  // callback consumes the height already carried by ResizeObserver entries
+  // instead of rereading scroll metrics on every drag frame.
   const liveResizeBaselineClientHeightRef = useRef<number | null>(null);
 
   function conversationViewport(): HTMLElement | undefined {
@@ -654,10 +673,18 @@ export function useConversationScrollState({
   // resize, since the first fire is either a layout-stable observation
   // (no resize yet) or the first observation of a content change while
   // the window is already being dragged.
-  function applyLiveResizeShift(node: HTMLElement): void {
+  function rememberLiveResizeRestingMetrics(
+    node: HTMLElement,
+    clientHeight: number,
+  ): void {
+    liveResizeBaselineClientHeightRef.current = clientHeight;
+    liveResizeOverflowingRef.current = node.scrollHeight > clientHeight;
+  }
+
+  function applyLiveResizeShift(clientHeight: number): void {
     if (
       !conversationAutoFollowRef.current ||
-      node.scrollHeight <= node.clientHeight
+      !liveResizeOverflowingRef.current
     ) {
       return;
     }
@@ -669,7 +696,7 @@ export function useConversationScrollState({
     if (baseline === null) {
       return;
     }
-    const shiftY = node.clientHeight - baseline;
+    const shiftY = clientHeight - baseline;
     liveResizeShiftRef.current = shiftY;
     content.style.transform = `translateY(${shiftY}px)`;
   }
@@ -690,10 +717,16 @@ export function useConversationScrollState({
       return undefined;
     }
     // Clear any stale transform and reset the baseline from a previous
-    // mount or effect run. The new ResizeObserver will re-establish the
-    // baseline on its first fire.
+    // mount or effect run. Capture the resting metrics before the drag so
+    // live resize does not need to read scrollHeight/clientHeight on every
+    // ResizeObserver tick.
     clearLiveResizeShift();
-    liveResizeBaselineClientHeightRef.current = null;
+    if (isWindowResizing()) {
+      liveResizeBaselineClientHeightRef.current = null;
+      liveResizeOverflowingRef.current = true;
+    } else {
+      rememberLiveResizeRestingMetrics(node, node.clientHeight);
+    }
     const windowResizeScroll = createWindowResizeSettleScheduler(() => {
       // The resize has settled. Drop the visual pin and commit the real
       // scrollTop so the scrollbar position, the "jump to latest" pill,
@@ -702,15 +735,16 @@ export function useConversationScrollState({
       clearLiveResizeShift();
       scrollConversationToBottom();
     });
-    const resizeObserver = new ResizeObserver(() => {
-      const newH = node.clientHeight;
+    const resizeObserver = new ResizeObserver((entries) => {
       const isResizing = isWindowResizing();
+      const newH = resizeEntryBlockSize(
+        entries[0],
+        () => liveResizeBaselineClientHeightRef.current ?? node.clientHeight,
+      );
 
-      // First observation: the clientHeight we see right now is the
-      // pre-resize value (no resize has been observed yet), so it's a
-      // safe baseline. After the first fire we only ever update the
-      // baseline on a class-OFF fire — that's the end of a resize
-      // session and the right moment to lock in the new resting height.
+      // Normally the baseline is captured while the window is not resizing.
+      // If this effect is remounted mid-drag, the first observer entry is
+      // still the best available baseline until the resize settles.
       if (liveResizeBaselineClientHeightRef.current === null) {
         liveResizeBaselineClientHeightRef.current = newH;
       }
@@ -719,7 +753,7 @@ export function useConversationScrollState({
         // Live drag: pin the visual to the new bottom via a composited
         // transform instead of writing scrollTop. The scheduler is set
         // so the real scroll commits once the drag has settled.
-        applyLiveResizeShift(node);
+        applyLiveResizeShift(newH);
         windowResizeScroll.schedule();
         return;
       }
@@ -727,7 +761,7 @@ export function useConversationScrollState({
       // non-window resize like a fold collapsing). Refresh the baseline
       // so the next resize session measures from the current viewport,
       // clear the pin, and commit the real scrollTop in a single paint.
-      liveResizeBaselineClientHeightRef.current = newH;
+      rememberLiveResizeRestingMetrics(node, newH);
       clearLiveResizeShift();
       scrollConversationToBottom();
     });

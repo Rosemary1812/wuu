@@ -61,7 +61,9 @@ async function run() {
   await evaluate(win, () => {
     window.__wuuWindowResizePerfProbe = {
       turnScansDuringResize: 0,
-      scrollTopWritesDuringResize: 0
+      scrollTopWritesDuringResize: 0,
+      scrollMetricReadsDuringResize: 0,
+      boundingRectReadsDuringResize: 0
     };
     if (!window.__wuuWindowResizePerfProbeInstalled) {
       window.__wuuWindowResizePerfProbeInstalled = true;
@@ -74,6 +76,13 @@ async function run() {
           window.__wuuWindowResizePerfProbe.turnScansDuringResize += 1;
         }
         return originalQuerySelectorAll.call(this, selector);
+      };
+      const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function getBoundingClientRectProbe() {
+        if (document.documentElement.classList.contains("window-resizing")) {
+          window.__wuuWindowResizePerfProbe.boundingRectReadsDuringResize += 1;
+        }
+        return originalGetBoundingClientRect.call(this);
       };
 
       let scrollTopProto = HTMLElement.prototype;
@@ -104,6 +113,34 @@ async function run() {
             return scrollTopDescriptor.set.call(this, value);
           }
         });
+      }
+      for (const property of ["scrollHeight", "clientHeight"]) {
+        let metricProto = Element.prototype;
+        let metricDescriptor;
+        while (metricProto && !metricDescriptor) {
+          const descriptor = Object.getOwnPropertyDescriptor(metricProto, property);
+          if (descriptor?.get && descriptor.configurable) {
+            metricDescriptor = descriptor;
+            break;
+          }
+          metricProto = Object.getPrototypeOf(metricProto);
+        }
+        if (metricDescriptor && metricProto) {
+          Object.defineProperty(metricProto, property, {
+            configurable: true,
+            enumerable: metricDescriptor.enumerable,
+            get() {
+              if (
+                document.documentElement.classList.contains("window-resizing") &&
+                this instanceof HTMLElement &&
+                this.matches(".scroll-region")
+              ) {
+                window.__wuuWindowResizePerfProbe.scrollMetricReadsDuringResize += 1;
+              }
+              return metricDescriptor.get.call(this);
+            }
+          });
+        }
       }
     }
     window.__wuuWindowResizePerfSamples = [];
@@ -161,6 +198,8 @@ async function run() {
     maxWidth: Math.max(...widths),
     turnScansDuringResize: probe.turnScansDuringResize ?? 0,
     scrollTopWritesDuringResize: probe.scrollTopWritesDuringResize ?? 0,
+    scrollMetricReadsDuringResize: probe.scrollMetricReadsDuringResize ?? 0,
+    boundingRectReadsDuringResize: probe.boundingRectReadsDuringResize ?? 0,
     disableGpu,
     visible
   };
@@ -172,6 +211,8 @@ async function run() {
   assert.ok(summary.maxFrameMs <= 120, `Window resize max frame time should stay below 120ms. Summary=${JSON.stringify(summary)}`);
   assert.equal(summary.turnScansDuringResize, 0, `Turn rail should not scan turn DOM during live window resize. Summary=${JSON.stringify(summary)}`);
   assert.equal(summary.scrollTopWritesDuringResize, 0, `Auto-follow should not write scrollTop during live window resize. Summary=${JSON.stringify(summary)}`);
+  assert.equal(summary.scrollMetricReadsDuringResize, 0, `Auto-follow should not read scroll metrics during live window resize. Summary=${JSON.stringify(summary)}`);
+  assert.equal(summary.boundingRectReadsDuringResize, 0, `Resize handlers should not force element rect reads during live window resize. Summary=${JSON.stringify(summary)}`);
 
   win.close();
   app.quit();

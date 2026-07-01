@@ -207,8 +207,15 @@ export function ConversationTurnRail({
     }
 
     let frameID: number | undefined;
+    let resizeSettleUpdate: ReturnType<
+      typeof createWindowResizeSettleScheduler
+    > | undefined;
     const updateLimit = () => {
       frameID = undefined;
+      if (isWindowResizing()) {
+        resizeSettleUpdate?.schedule();
+        return;
+      }
       const parentHeight =
         container.parentElement?.getBoundingClientRect().height ?? 0;
       const scrollHeight =
@@ -221,12 +228,17 @@ export function ConversationTurnRail({
       );
     };
     const scheduleUpdate = () => {
+      if (isWindowResizing()) {
+        resizeSettleUpdate?.schedule();
+        return;
+      }
       if (frameID !== undefined) {
         return;
       }
       frameID = window.requestAnimationFrame(updateLimit);
     };
 
+    resizeSettleUpdate = createWindowResizeSettleScheduler(scheduleUpdate);
     scheduleUpdate();
     window.addEventListener("resize", scheduleUpdate);
     const observed = new Set<Element>();
@@ -250,6 +262,7 @@ export function ConversationTurnRail({
       if (frameID !== undefined) {
         window.cancelAnimationFrame(frameID);
       }
+      resizeSettleUpdate?.cancel();
       window.removeEventListener("resize", scheduleUpdate);
       resizeObserver?.disconnect();
     };
