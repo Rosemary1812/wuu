@@ -19,6 +19,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import type {
@@ -736,7 +737,7 @@ function SettingsProvidersPage({
   return (
     <SettingsSection
       title="模型服务"
-      description="管理 BYOK provider、模型名称、Base URL 和 API key。"
+      description=""
       testID="settings-providers"
     >
       {providers.length > 0 ? (
@@ -1033,13 +1034,6 @@ function SettingsAdvancedPage({
     >
       <form className="settings-card" onSubmit={onSubmit}>
         <SettingsRow
-          title="上下文与压缩"
-          description="控制长会话的上下文窗口和压缩行为"
-          block
-        >
-          <span />
-        </SettingsRow>
-        <SettingsRow
           title="自动压缩"
           description="接近上下文上限时自动整理旧历史"
         >
@@ -1112,39 +1106,8 @@ function SettingsAdvancedPage({
           />
         </SettingsRow>
         <SettingsRow
-          title="上下文上限"
-          description={advancedContextSourceLabel(initialized?.advanced_settings?.context_window_source)}
-        >
-          <span className="settings-row-control-value">
-            {formatTokenCount(initialized?.advanced_settings?.context_window_tokens ?? 0)}
-          </span>
-        </SettingsRow>
-        <SettingsRow
-          title="压缩触发"
-          description="扣除输出预留后触发压缩的 token 点"
-        >
-          <span className="settings-row-control-value">
-            {formatTokenCount(initialized?.advanced_settings?.compact_threshold_tokens ?? 0)}
-          </span>
-        </SettingsRow>
-        <SettingsRow
-          title="输出预留"
-          description="为模型回答保留的 token 预算"
-        >
-          <span className="settings-row-control-value">
-            {formatTokenCount(initialized?.advanced_settings?.output_reserve_tokens ?? 0)}
-          </span>
-        </SettingsRow>
-        <SettingsRow
-          title="Agent 预算"
-          description="单轮自动执行的上限"
-          block
-        >
-          <span />
-        </SettingsRow>
-        <SettingsRow
           title="最大步数"
-          description="0 表示不设上限"
+          description="0 不限"
           block
         >
           <input
@@ -1378,14 +1341,48 @@ function SettingsUsagePage({
 }): JSX.Element {
   const ranges: SettingsUsageRange[] = ["all", "7d", "30d", "90d"];
   const heatmap = usage ? buildCacheHeatmap(usage.days) : [];
-  const heatmapWeeks = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
+  const heatmapCols = heatmap.length > 0 ? Math.ceil(heatmap.length / 7) : 12;
+
+  // Keep grid height = 7 × cell-size so cells stay square as panel resizes
+  const heatmapRef = useRef<HTMLDivElement>(null);
+  const [heatmapHeight, setHeatmapHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = heatmapRef.current;
+    if (!el) return;
+    const GAP = 3;
+    const update = () => {
+      const cellW = (el.offsetWidth - (heatmapCols - 1) * GAP) / heatmapCols;
+      setHeatmapHeight(7 * cellW + 6 * GAP);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [heatmapCols]);
+
+  // Build month label positions: for each column (week), find the first day;
+  // when the month changes from the previous column, record (colIndex, monthLabel).
+  const monthLabels: { col: number; label: string }[] = [];
+  if (heatmap.length > 0) {
+    let prevMonth = -1;
+    for (let col = 0; col < heatmapCols; col++) {
+      const firstDayIdx = col * 7;
+      if (firstDayIdx < heatmap.length) {
+        const d = new Date(heatmap[firstDayIdx].date);
+        const month = d.getMonth();
+        if (month !== prevMonth) {
+          // Skip the very first column if it's at the left edge — avoid label clipping
+          if (col > 0) {
+            monthLabels.push({ col, label: `${d.getMonth() + 1}月` });
+          }
+          prevMonth = month;
+        }
+      }
+    }
+  }
   return (
-    <>
-      <SettingsSection
-        title="本地用量"
-        description="显示当前桌面已加载会话的 token 统计。"
-        testID="settings-usage"
-      >
+    <div className="settings-usage-page" data-testid="settings-usage">
+      <div className="settings-usage-toolbar">
         <div
           className="settings-usage-range"
           role="tablist"
@@ -1405,148 +1402,118 @@ function SettingsUsagePage({
             </button>
           ))}
         </div>
-        {usage ? (
-          <div className="settings-usage-metrics">
-            <UsageMetric
-              label="上下文 token"
-              value={usage.metrics.context_tokens}
-              detail={`输入 ${formatTokenCount(usage.metrics.input_tokens)} · 缓存读取 ${formatTokenCount(usage.metrics.cache_read_tokens)}`}
-            />
-            <UsageMetric
-              label="输入 token"
-              value={usage.metrics.input_tokens}
-              detail={`${usage.metrics.turns} 轮主会话`}
-            />
-            <UsageMetric
-              label="输出 token"
-              value={usage.metrics.output_tokens}
-              detail={`${usage.metrics.agents} 个子任务`}
-            />
-            <UsageMetric
-              label="缓存命中率"
-              value={formatPercent(usage.metrics.cache_hit_rate)}
-              detail={`读取 ${formatTokenCount(usage.metrics.cache_read_tokens)} / 提示 ${formatTokenCount(usage.metrics.prompt_tokens)}`}
-            />
-            <UsageMetric
-              label="缓存写入"
-              value={usage.metrics.cache_creation_tokens}
-              detail="供后续请求复用"
-            />
+        {usage && (
+          <div className="settings-usage-stats">
+            <UsageStat label="输入" value={formatTokenCount(usage.metrics.input_tokens)} />
+            <UsageStat label="输出" value={formatTokenCount(usage.metrics.output_tokens)} />
+            <UsageStat label="缓存命中" value={formatPercent(usage.metrics.cache_hit_rate)} />
+            <UsageStat label="活跃" value={`${usage.metrics.active_days} 天`} />
           </div>
-        ) : (
-          <div className="settings-empty">加载中…</div>
         )}
-      </SettingsSection>
+      </div>
+
+      <div className="settings-heatmap-panel">
+        {/* Month labels row */}
+        <div
+          className="settings-heatmap-months"
+          aria-hidden="true"
+          style={{ "--heatmap-cols": heatmapCols } as CSSProperties}
+        >
+          {monthLabels.map(({ col, label }) => (
+            <span
+              key={col}
+              className="settings-heatmap-month-label"
+              style={{ gridColumn: col + 1 } as CSSProperties}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+        {/* Grid */}
+        <div
+          ref={heatmapRef}
+          className="settings-cache-heatmap"
+          aria-label="缓存命中率热力图"
+          role="grid"
+          style={{
+            "--heatmap-cols": heatmapCols,
+            ...(heatmapHeight !== undefined ? { height: `${heatmapHeight}px` } : {})
+          } as CSSProperties}
+        >
+          {heatmap.map((day) => (
+            <span
+              className="settings-cache-heatmap-cell"
+              data-level={day.level}
+              key={day.date}
+              role="gridcell"
+              title={formatHeatmapTitle(day)}
+              aria-label={formatHeatmapTitle(day)}
+            />
+          ))}
+        </div>
+        <div className="settings-heatmap-legend" aria-hidden="true">
+          <span>少</span>
+          {[0, 1, 2, 3, 4].map((level) => (
+            <i className="settings-heatmap-legend-cell" data-level={level} key={level} />
+          ))}
+          <span>多</span>
+        </div>
+      </div>
 
       {usage ? (
-        <>
-          <SettingsSection
-            title="模型使用"
-            description="用过的模型服务、模型名称和缓存命中情况。"
-          >
-            <div className="settings-card">
-              {usage.model_breakdowns.length > 0 ? (
-                <div className="settings-usage-table-wrap">
-                  <table className="settings-usage-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">模型</th>
-                        <th scope="col" className="settings-usage-num">上下文</th>
-                        <th scope="col" className="settings-usage-num">缓存命中</th>
-                        <th scope="col" className="settings-usage-num">输入</th>
-                        <th scope="col" className="settings-usage-num">输出</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usage.model_breakdowns.map((b) => {
-                        const ctx = b.input_tokens + b.cache_read_tokens + b.output_tokens;
-                        const prompt = b.input_tokens + b.cache_read_tokens;
-                        const rate = prompt > 0 ? b.cache_read_tokens / prompt : undefined;
-                        return (
-                          <tr key={`${b.provider}\n${b.model}`}>
-                            <td>
-                              <strong>{b.provider || "(未知服务)"}</strong>
-                              <small>{b.model || "(未知模型)"}</small>
-                            </td>
-                            <td className="settings-usage-num">{formatTokenCount(ctx)}</td>
-                            <td className="settings-usage-num">
-                              <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
-                                {formatPercent(rate)}
-                              </span>
-                            </td>
-                            <td className="settings-usage-num">{formatTokenCount(b.input_tokens)}</td>
-                            <td className="settings-usage-num">{formatTokenCount(b.output_tokens)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="settings-empty">暂无用量记录</div>
-              )}
-            </div>
-          </SettingsSection>
-
-          <SettingsSection
-            title="缓存命中热力图"
-            description="最近 12 周每天的缓存命中率。"
-          >
-            <div className="settings-card settings-cache-heatmap-card">
-              <div className="settings-cache-heatmap-summary">
-                <span className="settings-cache-heatmap-summary-value">
-                  {formatPercent(usage.metrics.cache_hit_rate)}
-                </span>
-                <span className="settings-cache-heatmap-summary-label">
-                  整体缓存命中率
-                </span>
-                <span className="settings-cache-heatmap-summary-detail">
-                  活跃 {usage.metrics.active_days} 天 · 读取 {formatTokenCount(usage.metrics.cache_read_tokens)} · 写入 {formatTokenCount(usage.metrics.cache_creation_tokens)}
-                </span>
-              </div>
-              <div
-                className="settings-cache-heatmap"
-                aria-label="缓存命中率热力图"
-                role="grid"
-                style={{ "--heatmap-cols": heatmapWeeks } as CSSProperties}
-              >
-                {heatmap.map((day) => (
-                  <span
-                    className="settings-cache-heatmap-cell"
-                    data-level={day.level}
-                    key={day.date}
-                    role="gridcell"
-                    title={formatHeatmapTitle(day)}
-                    aria-label={formatHeatmapTitle(day)}
-                  />
-                ))}
-              </div>
-              <div className="settings-cache-heatmap-legend" aria-hidden="true">
-                <span>低</span>
-                {[0, 1, 2, 3, 4].map((level) => (
-                  <i data-level={level} key={level} />
-                ))}
-                <span>高</span>
-              </div>
-            </div>
-          </SettingsSection>
-        </>
-      ) : null}
-    </>
-  );
-}
-
-function UsageMetric({ label, value, detail }: { label: string; value: number | string; detail: string }): JSX.Element {
-  return (
-    <div className="settings-usage-metric">
-      <span className="settings-usage-metric-label">{label}</span>
-      <strong className="settings-usage-metric-value">
-        {typeof value === "number" ? formatTokenCount(value) : value}
-      </strong>
-      <small className="settings-usage-metric-detail">{detail}</small>
+        usage.model_breakdowns.length > 0 ? (
+          <div className="settings-card settings-usage-table-wrap">
+            <table className="settings-usage-table">
+              <thead>
+                <tr>
+                  <th scope="col">模型</th>
+                  <th scope="col" className="settings-usage-num">输入</th>
+                  <th scope="col" className="settings-usage-num">输出</th>
+                  <th scope="col" className="settings-usage-num">命中率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.model_breakdowns.map((b) => {
+                  const prompt = b.input_tokens + b.cache_read_tokens;
+                  const rate = prompt > 0 ? b.cache_read_tokens / prompt : undefined;
+                  return (
+                    <tr key={`${b.provider}\n${b.model}`}>
+                      <td>
+                        <strong>{b.provider || "(未知服务)"}</strong>
+                        <small>{b.model || "(未知模型)"}</small>
+                      </td>
+                      <td className="settings-usage-num">{formatTokenCount(b.input_tokens)}</td>
+                      <td className="settings-usage-num">{formatTokenCount(b.output_tokens)}</td>
+                      <td className="settings-usage-num">
+                        <span className={`settings-usage-rate rate-${hitRateLevel(rate)}`}>
+                          {formatPercent(rate)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="settings-empty">暂无用量记录</div>
+        )
+      ) : (
+        <div className="settings-empty">加载中…</div>
+      )}
     </div>
   );
 }
+
+function UsageStat({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="settings-usage-stat">
+      <span className="settings-usage-stat-value">{value}</span>
+      <span className="settings-usage-stat-label">{label}</span>
+    </div>
+  );
+}
+
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers (kept at module scope, no behavior change)                         */
@@ -1588,7 +1555,7 @@ function settingsPageMeta(
     case "usage":
       return {
         title: "用量",
-        description: "本地会话的 token 消耗、缓存命中和模型使用情况。"
+        description: ""
       };
   }
 }

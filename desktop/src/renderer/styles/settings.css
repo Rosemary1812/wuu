@@ -724,7 +724,23 @@
   padding: 20px 24px;
 }
 
-/* --- Usage metrics grid -------------------------------------------------- */
+/* --- Usage page layout --------------------------------------------------- */
+
+.settings-usage-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.settings-usage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* --- Range selector ------------------------------------------------------- */
 
 .settings-usage-range {
   display: inline-flex;
@@ -759,49 +775,42 @@
   box-shadow: 0 1px 2px var(--ink-overlay-12);
 }
 
-.settings-usage-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+/* --- Stat strip ----------------------------------------------------------- */
+
+.settings-usage-stats {
+  display: flex;
+  gap: 28px;
 }
 
-.settings-usage-metric {
+.settings-usage-stat {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
-  padding: 14px 16px;
+  gap: 3px;
   min-width: 0;
 }
 
-.settings-usage-metric-label {
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-}
-
-.settings-usage-metric-value {
+.settings-usage-stat-value {
   color: var(--ink-strong);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
-.settings-usage-metric-detail {
+.settings-usage-stat-label {
   color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  line-height: 1.4;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 /* --- Usage table --------------------------------------------------------- */
 
 .settings-usage-table-wrap {
   overflow-x: auto;
+  overflow-y: visible;
 }
 
 .settings-usage-table {
@@ -923,103 +932,113 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Cache heatmap ------------------------------------------------------- */
+/* --- Heatmap panel ------------------------------------------------------- */
 
-.settings-cache-heatmap-card {
+.settings-heatmap-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px 24px;
+  gap: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+  padding: 20px 24px 16px;
+  overflow: hidden;
 }
 
-.settings-cache-heatmap-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 12px;
-}
-
-.settings-cache-heatmap-summary-value {
-  color: var(--ink-strong);
-  font-size: 24px;
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.settings-cache-heatmap-summary-label {
-  color: var(--ink);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-}
-
-.settings-cache-heatmap-summary-detail {
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  margin-left: auto;
-}
-
-.settings-cache-heatmap {
+/* Month labels: same column grid as the cell grid, labels positioned by col */
+.settings-heatmap-months {
   display: grid;
-  grid-template-columns: repeat(var(--heatmap-cols, 12), minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(var(--heatmap-cols, 12), 1fr);
   width: 100%;
+  color: var(--ink-faint);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.01em;
+  user-select: none;
+  min-height: 14px;
+}
+
+.settings-heatmap-month-label {
+  /* grid-column set inline */
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Grid: column = week, row = day-of-week */
+.settings-cache-heatmap {
+  --heatmap-gap: 3px;
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  grid-template-columns: repeat(var(--heatmap-cols, 12), 1fr);
+  grid-auto-flow: column;
+  gap: var(--heatmap-gap);
+  width: 100%;
+  /* height set inline via JS to keep cells square */
 }
 
 .settings-cache-heatmap-cell {
-  aspect-ratio: 1;
-  border: 1px solid var(--hairline);
-  border-radius: 3px;
-  background: var(--surface-2);
-  min-height: 0;
+  border-radius: 2px;
+  background: var(--surface-3);
+  cursor: default;
+  transition: opacity 100ms ease;
   min-width: 0;
-  transition: background 140ms var(--menu-enter-easing);
+  min-height: 0;
 }
 
-.settings-cache-heatmap-legend i {
-  width: 12px;
-  height: 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 3px;
-  background: var(--surface-2);
-  transition: border-color 140ms var(--menu-enter-easing);
+.settings-cache-heatmap-cell:hover {
+  opacity: 0.7;
 }
 
-.settings-cache-heatmap-cell:hover,
-.settings-cache-heatmap-legend i:hover {
-  border-color: var(--ink-overlay-18);
+/* Level 0 = no data */
+.settings-cache-heatmap-cell[data-level="0"] {
+  background: var(--surface-3);
 }
 
+/* Levels 1–4: blue scale */
 .settings-cache-heatmap-cell[data-level="1"],
-.settings-cache-heatmap-legend i[data-level="1"] {
-  background: #d6ecdb;
+.settings-heatmap-legend-cell[data-level="1"] {
+  background: #bad0f0;
 }
 
 .settings-cache-heatmap-cell[data-level="2"],
-.settings-cache-heatmap-legend i[data-level="2"] {
-  background: #93ce9e;
+.settings-heatmap-legend-cell[data-level="2"] {
+  background: #7aaae0;
 }
 
 .settings-cache-heatmap-cell[data-level="3"],
-.settings-cache-heatmap-legend i[data-level="3"] {
-  background: #4aab68;
+.settings-heatmap-legend-cell[data-level="3"] {
+  background: #3d74cc;
 }
 
 .settings-cache-heatmap-cell[data-level="4"],
-.settings-cache-heatmap-legend i[data-level="4"] {
-  background: #1f7a3d;
+.settings-heatmap-legend-cell[data-level="4"] {
+  background: #1a4fa8;
 }
 
-.settings-cache-heatmap-legend {
+/* Legend row */
+.settings-heatmap-legend {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
+  color: var(--ink-faint);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  user-select: none;
+  margin-top: 4px;
+}
+
+.settings-heatmap-legend-cell {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+
+.settings-heatmap-legend-cell[data-level="0"] {
+  background: var(--surface-3);
 }
 
 /* --- Misc ---------------------------------------------------------------- */
