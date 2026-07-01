@@ -34,4 +34,13 @@ describe("threadDisplayTitle", () => {
 
     expect(threadDisplayTitle(fork, [fork])).toBe("Fix tabs · 分叉");
   });
+
+  it("does not label a fork that has visible child forks as the fork endpoint", () => {
+    const root = thread({ id: "root", preview: "Root session" });
+    const middle = thread({ id: "middle", preview: "Middle session", forked_from_id: "root" });
+    const leaf = thread({ id: "leaf", preview: "Leaf session", forked_from_id: "middle" });
+
+    expect(threadDisplayTitle(middle, [root, middle, leaf])).toBe("Middle session");
+    expect(threadDisplayTitle(leaf, [root, middle, leaf])).toBe("Middle session · 分叉");
+  });
 });

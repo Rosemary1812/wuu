@@ -2,7 +2,7 @@ import { Archive, ChevronRight, Folder, FolderOpen, GitFork, MessageSquarePlus, 
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
-import { baseThreadTitle } from "./ThreadTitles";
+import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
 import { isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
 
 function threadsForProjectPath(
@@ -416,6 +416,7 @@ function ThreadRows({
         const pendingSwitch = pendingThreadID === thread.id;
         const running = threadRunning(thread);
         const title = baseThreadTitle(thread, threads);
+        const forkMarker = threadShowsForkMarker(thread, threads);
         const unread =
           !running &&
           !pendingSwitch &&
@@ -438,12 +439,12 @@ function ThreadRows({
                 className="thread-row-main"
                 type="button"
                 aria-busy={pendingSwitch || running}
-                aria-label={`${title}${thread.forked_from_id ? "，分叉自其他会话" : ""}，${running ? "响应中" : "已完成"}`}
+                aria-label={`${title}${forkMarker ? "，分叉自其他会话" : ""}，${running ? "响应中" : "已完成"}`}
                 onClick={() => onSelect(thread.id)}
               >
                 <ThreadRowTitle title={title} />
               </button>
-              {thread.forked_from_id ? (
+              {forkMarker ? (
                 <GitFork
                   className="icon-sm thread-row-fork-icon"
                   aria-hidden="true"

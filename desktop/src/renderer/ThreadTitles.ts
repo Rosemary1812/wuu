@@ -8,6 +8,16 @@ export type ThreadTitleSource = Pick<
   "id" | "preview" | "title" | "forked_from_id"
 >;
 
+export function threadShowsForkMarker(
+  thread: ThreadTitleSource,
+  threads: ThreadTitleSource[] = [],
+): boolean {
+  if (!thread.forked_from_id) {
+    return false;
+  }
+  return !threads.some((candidate) => candidate.forked_from_id === thread.id);
+}
+
 /**
  * Base title for a thread (no fork marker). The sidebar uses this and pairs
  * the result with a separate `GitFork` icon to indicate forks, instead of
@@ -18,7 +28,7 @@ export function baseThreadTitle(
   threads: ThreadTitleSource[] = [],
   fallback = DEFAULT_THREAD_TITLE
 ): string {
-  if (thread.forked_from_id) {
+  if (threadShowsForkMarker(thread, threads)) {
     const source = threads.find((candidate) => candidate.id === thread.forked_from_id);
     // Prefer source.title (set by the right-click Rename menu) over
     // source.preview (auto-generated) so a renamed source shows the
@@ -43,7 +53,7 @@ export function threadDisplayTitle(
     return fallback;
   }
   const baseTitle = baseThreadTitle(thread, threads, fallback);
-  if (!thread.forked_from_id) {
+  if (!threadShowsForkMarker(thread, threads)) {
     return baseTitle;
   }
   return `${baseTitle}${FORK_TITLE_SUFFIX}`;

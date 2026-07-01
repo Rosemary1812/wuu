@@ -205,6 +205,7 @@ describe("ProjectList", () => {
       id: string;
       status: "completed" | "in_progress" | "failed" | "interrupted";
     }> = [],
+    overrides: Partial<Thread> = {},
   ): Thread {
     return {
       id,
@@ -223,6 +224,7 @@ describe("ProjectList", () => {
         items_view: "full" as const,
         status: turn.status,
       })),
+      ...overrides,
     };
   }
 
@@ -322,5 +324,67 @@ describe("ProjectList", () => {
     expect(projectRow?.classList.contains("has-unread")).toBe(true);
     expect(projectRow?.getAttribute("aria-label")).toContain("有未读会话");
     expect(projectRow?.querySelector(".project-row-unread")).not.toBeNull();
+  });
+
+  it("marks only the visible fork endpoint in a chained fork list", () => {
+    const projects = [makeProject("project-1", "wuu", "/repo/wuu")];
+    const rootThread = makeProjectThread("root-thread", "/repo/wuu", "Root session");
+    const middleThread = makeProjectThread(
+      "middle-thread",
+      "/repo/wuu",
+      "Middle session",
+      [],
+      { forked_from_id: rootThread.id },
+    );
+    const leafThread = makeProjectThread(
+      "leaf-thread",
+      "/repo/wuu",
+      "Leaf session",
+      [],
+      { forked_from_id: middleThread.id },
+    );
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectList
+          projects={projects}
+          activeID="project-1"
+          pendingProjectID={undefined}
+          collapsedProjectIDs={new Set()}
+          expandedProjectIDs={new Set()}
+          collapsingProjectIDs={new Set()}
+          threadsByProjectID={{
+            "project-1": summarizeThreadsForSidebar([
+              rootThread,
+              middleThread,
+              leafThread,
+            ]),
+          }}
+          activeThreadID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
+          scratchPseudoActive={false}
+          onToggleProjectCollapsed={() => {}}
+          onStartNewThread={() => {}}
+          onSelectThread={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    expect(container.querySelectorAll(".thread-row-fork-icon").length).toBe(1);
+    const middleRow = container.querySelector(
+      '.thread-row-main[aria-label^="Middle session"]',
+    );
+    const leafRow = container.querySelector(
+      '.thread-row-main[aria-label^="Middle session，分叉自其他会话"]',
+    );
+    expect(middleRow?.getAttribute("aria-label")).not.toContain("分叉自其他会话");
+    expect(leafRow).not.toBeNull();
   });
 });
