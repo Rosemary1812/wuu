@@ -1465,6 +1465,7 @@ export function App(): JSX.Element {
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const {
     conversationScrollRef,
+    scrollContentRef,
     splitPaneRefs,
     conversationPaneRef,
     dockComposerRef,
@@ -6388,7 +6389,8 @@ export function App(): JSX.Element {
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
-            {showingSkillsCatalog ? (
+            <div ref={scrollContentRef} className="scroll-region-content">
+              {showingSkillsCatalog ? (
               <SkillsCatalog
                 activeContext={state.activeContext}
               />
@@ -6450,6 +6452,7 @@ export function App(): JSX.Element {
             )}
               </>
             )}
+            </div>
           </div>
         ) : (
           <RuntimeLoading

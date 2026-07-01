@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useConversationScrollState } from "./ConversationScrollState";
 import type { Turn } from "../shared/protocol";
 import { AUTO_FOLLOW_NESTED_SCROLL_ATTR } from "./AutoFollowScroll";
+import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
 function makeLongTurns(): Turn[] {
   return [
@@ -115,7 +116,12 @@ function Probe({
       "data-testid": "scroll-container",
       "data-user-scrolled-away": handle.userScrolledAway ? "true" : "false",
     },
-    createElement("div", { "data-testid": "scroll-content" }),
+    createElement("div", {
+      ref: (node: HTMLDivElement | null) => {
+        if (node) handle.scrollContentRef.current = node;
+      },
+      "data-testid": "scroll-content",
+    }),
     createElement("div", {
       [AUTO_FOLLOW_NESTED_SCROLL_ATTR]: "true",
       "data-testid": "nested-scroll",
@@ -588,5 +594,100 @@ describe("useConversationScrollState — high-frequency stream", () => {
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
     expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+  });
+
+  it("pins the visual bottom via transform during live window resize, then commits the real scrollTop when the resize settles", () => {
+    // User parked at the bottom of a tall conversation. We want the
+    // visual to keep tracking the new bottom while the window is being
+    // dragged (no scrollTop writes — those would re-trigger layout) and
+    // then to commit the real scrollTop in a single paint once the
+    // drag settles.
+    mount({ scrollHeight: 2200, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+    // Fire the ResizeObserver once on mount (class OFF) so the hook
+    // captures the pre-resize baseline (600px). If we skip this, the
+    // first observer fire happens after the resize has already started
+    // and the "baseline" would be the post-shrink height — making the
+    // shift math always land at zero.
+    flushResizeObservers();
+    expect(layout.scrollTop).toBe(1600);
+
+    const contentNode = container.querySelector(
+      "[data-testid='scroll-content']",
+    ) as HTMLDivElement | null;
+    if (!contentNode) throw new Error("scroll-content not rendered");
+    expect(contentNode.style.transform).toBe("");
+
+    // Simulate a live window drag: the main process / window emits the
+    // resizing marker, the viewport shrinks, and the ResizeObserver
+    // fires while we are still inside the drag.
+    act(() => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      layout!.clientHeight = 400;
+      flushResizeObservers();
+    });
+
+    // The wrapper now carries a composited translateY that pins the
+    // visual bottom of the content to the new bottom of the smaller
+    // viewport. 600 - 400 = 200, so the content moves up by 200px.
+    // The real scrollTop is untouched, so no layout / paint round-trip
+    // fires during the drag.
+    expect(contentNode.style.transform).toBe("translateY(-200px)");
+    expect(layout.scrollTop).toBe(1600);
+    // The user is still considered "following" — the pill stays hidden
+    // and the next stream tick would happily stick to the new bottom.
+    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+
+    // The drag ends: the resizing marker drops, the ResizeObserver
+    // fires one more time. We commit the real scrollTop in a single
+    // paint and clear the transform.
+    act(() => {
+      document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+      flushResizeObservers();
+    });
+
+    expect(contentNode.style.transform).toBe("");
+    expect(layout.scrollTop).toBe(2200 - 400);
+  });
+
+  it("keeps the visual pinned as the user keeps dragging past the initial viewport size", () => {
+    // A second live-resize fire after a partial settle. The transform
+    // should re-anchor against the original clientHeight captured at
+    // the start of the drag, not the last seen clientHeight, so the
+    // math doesn't drift if the user briefly lets go mid-drag.
+    mount({ scrollHeight: 2200, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+    // Establish the pre-resize baseline (600px) before the drag starts.
+    flushResizeObservers();
+    expect(layout.scrollTop).toBe(1600);
+
+    const contentNode = container.querySelector(
+      "[data-testid='scroll-content']",
+    ) as HTMLDivElement | null;
+    if (!contentNode) throw new Error("scroll-content not rendered");
+
+    act(() => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      layout!.clientHeight = 500;
+      flushResizeObservers();
+    });
+    expect(contentNode.style.transform).toBe("translateY(-100px)");
+
+    act(() => {
+      layout!.clientHeight = 350;
+      flushResizeObservers();
+    });
+    // Still 600 - 350 = 250, not 500 - 350 = 150. We never reset the
+    // initial baseline mid-drag.
+    expect(contentNode.style.transform).toBe("translateY(-250px)");
+
+    act(() => {
+      document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+      flushResizeObservers();
+    });
+    expect(contentNode.style.transform).toBe("");
+    expect(layout.scrollTop).toBe(2200 - 350);
   });
 });

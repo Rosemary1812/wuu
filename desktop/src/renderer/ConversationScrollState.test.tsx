@@ -89,7 +89,12 @@ function Probe({ activeThreadID }: { activeThreadID?: string }): ReactNode {
     onScroll: () => h.handleConversationScroll(),
     "data-testid": "scroll-container",
     "data-user-scrolled-away": h.userScrolledAway ? "true" : "false",
-  });
+  }, createElement("div", {
+    ref: (node: HTMLDivElement | null) => {
+      h.scrollContentRef.current = node;
+    },
+    "data-testid": "scroll-content",
+  }));
 }
 
 describe("useConversationScrollState — userScrolledAway", () => {
