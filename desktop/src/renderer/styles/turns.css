@@ -4062,17 +4062,18 @@
 
 .rich-web-link,
 .rich-file-link {
-  display: inline-flex;
+  display: inline;
   max-width: 100%;
-  align-items: baseline;
-  gap: 4px;
   vertical-align: baseline;
 }
 
 .rich-file-link {
+  appearance: none;
+  -webkit-appearance: none;
   border: 0;
   background: transparent;
   font: inherit;
+  line-height: inherit;
   letter-spacing: inherit;
   margin: 0;
   padding: 0;
@@ -4081,11 +4082,9 @@
 }
 
 .rich-link-content {
-  display: inline-flex;
+  display: inline;
   max-width: 100%;
   min-width: 0;
-  align-items: center;
-  gap: 4px;
 }
 
 .rich-link-label {
@@ -4098,9 +4097,9 @@
   display: inline-flex;
   width: 1em;
   height: 1em;
-  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  margin-right: 4px;
   color: currentColor;
   vertical-align: -0.12em;
 }
@@ -4127,6 +4126,14 @@
 .rich-link:hover,
 .rich-file-link:focus-visible {
   color: #0f5da8;
+}
+
+.rich-file-link:hover {
+  background: transparent;
+}
+
+.rich-file-link:active {
+  background: transparent;
 }
 
 .rich-file-link:focus-visible {

@@ -6,7 +6,7 @@ const turnsCss = readFileSync(resolve(__dirname, "turns.css"), "utf-8");
 
 function cssRuleBody(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = turnsCss.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`));
+  const match = turnsCss.match(new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`));
   if (!match) {
     throw new Error(`missing CSS rule for ${selector}`);
   }
@@ -27,5 +27,15 @@ describe("turns.css rich links", () => {
     expect(cssRuleBody(".rich-link")).toMatch(/text-decoration-line:\s*none;/);
     expect(cssRuleBody(".rich-link-favicon-frame")).not.toMatch(/\bbackground\s*:/);
     expect(cssRuleBody(".rich-link-favicon")).not.toMatch(/\bbackground\s*:/);
+  });
+
+  it("keeps file links on the same text rhythm as surrounding prose", () => {
+    expect(turnsCss).toMatch(
+      /\.rich-web-link,\s*\.rich-file-link\s*\{[\s\S]*?display:\s*inline;/,
+    );
+    expect(cssRuleBody(".rich-file-link")).toMatch(/appearance:\s*none;/);
+    expect(cssRuleBody(".rich-file-link")).toMatch(/line-height:\s*inherit;/);
+    expect(cssRuleBody(".rich-file-link")).toMatch(/background:\s*transparent;/);
+    expect(cssRuleBody(".rich-file-link:active")).toMatch(/background:\s*transparent;/);
   });
 });
