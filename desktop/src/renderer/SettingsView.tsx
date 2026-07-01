@@ -43,6 +43,7 @@ export function SettingsView({
   initialPage,
   running,
   usage,
+  runningProviderNames,
   showDebugControlsSetting,
   debugControlsEnabled,
   sidebarWidth,
@@ -64,6 +65,7 @@ export function SettingsView({
   initialPage?: SettingsPage;
   running: boolean;
   usage?: SettingsUsageResponse;
+  runningProviderNames?: readonly string[];
   usageRange: SettingsUsageRange;
   setUsageRange: (range: SettingsUsageRange) => void;
   showDebugControlsSetting: boolean;
@@ -82,6 +84,10 @@ export function SettingsView({
   onSidebarSeparatorDoubleClick: () => void;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
+  const runningProviderNameSet = useMemo(
+    () => new Set((runningProviderNames ?? []).map((name) => name.trim()).filter(Boolean)),
+    [runningProviderNames],
+  );
   const [providerDraft, setProviderDraft] = useState(initialized?.provider ?? "");
   const [modelDraft, setModelDraft] = useState(initialized?.model ?? "");
   const [variantDraft, setVariantDraft] = useState(initialized?.variant ?? initialized?.effort ?? "");
@@ -474,6 +480,7 @@ export function SettingsView({
               }}
               onSubmit={submit}
               onRemoveProvider={requestRemoveProvider}
+              runningProviderNames={runningProviderNameSet}
               disabled={disabled}
             />
           ) : activePage === "advanced" ? (
@@ -680,6 +687,7 @@ function SettingsProvidersPage({
   onAPIKeyDraftChange,
   onSubmit,
   onRemoveProvider,
+  runningProviderNames,
   disabled
 }: {
   providers: ProviderSummary[];
@@ -709,6 +717,7 @@ function SettingsProvidersPage({
   onAPIKeyDraftChange: (value: string) => void;
   onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
   onRemoveProvider?: (provider: string) => Promise<void> | void;
+  runningProviderNames: ReadonlySet<string>;
   disabled: boolean;
 }): JSX.Element {
   const reasoningMode = providerModelReasoningMode(selectedProvider, modelDraft);
@@ -742,6 +751,10 @@ function SettingsProvidersPage({
                   disabled={running}
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (runningProviderNames.has(provider.name.trim())) {
+                      window.alert("这个模型服务正在被运行中的会话使用，等当前回复结束后再删除。");
+                      return;
+                    }
                     if (
                       typeof window !== "undefined" &&
                       typeof window.confirm === "function" &&

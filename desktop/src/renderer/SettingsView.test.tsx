@@ -69,7 +69,9 @@ function renderSettings(props: {
   usage?: SettingsUsageResponse;
   usageRange?: SettingsUsageRange;
   initialPage?: SettingsPage;
+  runningProviderNames?: string[];
   onSave?: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
+  onRemoveProvider?: (provider: string) => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
@@ -84,6 +86,7 @@ function renderSettings(props: {
         usage={props.usage}
         usageRange={usageRange}
         setUsageRange={setUsageRange}
+        runningProviderNames={props.runningProviderNames}
         showDebugControlsSetting={false}
         debugControlsEnabled={false}
         sidebarWidth={320}
@@ -92,7 +95,7 @@ function renderSettings(props: {
         resizingSidebar={false}
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
-        onRemoveProvider={async () => {}}
+        onRemoveProvider={props.onRemoveProvider ?? (async () => {})}
         onAdvancedSave={props.onAdvancedSave ?? (async () => {})}
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
@@ -204,6 +207,52 @@ describe("SettingsView provider configuration", () => {
       },
       "",
     );
+  });
+
+  it("shows an alert instead of removing a provider used by a running turn", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onRemoveProvider = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      initialPage: "providers",
+      runningProviderNames: ["drop"],
+      initialized: baseInitialized({
+        provider: "keep",
+        model: "keep-model",
+        providers: [
+          {
+            name: "keep",
+            type: "openai-compatible",
+            model: "keep-model",
+            base_url: "https://keep.example.test/v1",
+            api_key_configured: true,
+          },
+          {
+            name: "drop",
+            type: "openai-compatible",
+            model: "drop-model",
+            base_url: "https://drop.example.test/v1",
+            api_key_configured: true,
+          },
+        ],
+      }),
+      onRemoveProvider,
+    });
+
+    const removeButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-provider-remove"));
+    expect(removeButtons).toHaveLength(2);
+    await act(async () => {
+      removeButtons[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(alert).toHaveBeenCalledWith("这个模型服务正在被运行中的会话使用，等当前回复结束后再删除。");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onRemoveProvider).not.toHaveBeenCalled();
   });
 });
 

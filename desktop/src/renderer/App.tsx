@@ -1641,6 +1641,16 @@ export function App(): JSX.Element {
     pendingViewSwitch?.visible === true &&
     pendingViewSwitch.kind !== "thread";
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
+  const runningProviderNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
+      const provider = thread?.model_provider.trim();
+      if (provider && isThreadRunning(thread)) {
+        names.add(provider);
+      }
+    }
+    return Array.from(names);
+  }, [state.thread, state.secondaryThread, state.threads]);
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !previewingLaunch &&
@@ -6045,6 +6055,7 @@ export function App(): JSX.Element {
         initialized={state.initialized}
         initialPage={settingsInitialPage}
         running={viewContextSwitchPending}
+        runningProviderNames={runningProviderNames}
         usage={settingsUsage}
         usageRange={usageRange}
         setUsageRange={setUsageRange}
