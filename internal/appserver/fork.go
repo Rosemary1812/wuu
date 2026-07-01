@@ -23,8 +23,7 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 	toolItems := make(map[string]string)
 	targetTurnSeen := false
 	targetTurnLastIndex := -1
-	matchedToolCallID := ""
-	matchedToolCutoffIndex := -1
+	var matchedToolBatch forkToolBatch
 
 	nextItemID := func() string {
 		itemIndex++
@@ -59,8 +58,8 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 		if msg.Hidden {
 			continue
 		}
-		if matchedToolCallID != "" && !(msg.Role == "tool" && msg.ToolCallID == matchedToolCallID) {
-			return returnPrefix(matchedToolCutoffIndex), nil
+		if matchedToolBatch.active() && msg.Role != "tool" {
+			return nil, fmt.Errorf("fork target tool results not found")
 		}
 		if msg.Role == "system" {
 			continue
@@ -106,8 +105,7 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 					if strings.TrimSpace(call.ID) == "" {
 						return returnPrefix(i), nil
 					}
-					matchedToolCallID = call.ID
-					matchedToolCutoffIndex = i
+					matchedToolBatch = newForkToolBatch(msg.ToolCalls, i)
 				}
 			}
 		case "tool":
@@ -118,8 +116,12 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 					toolItems[msg.ToolCallID] = itemID
 				}
 			}
-			if matchedToolCallID != "" && msg.ToolCallID == matchedToolCallID {
-				matchedToolCutoffIndex = i
+			if matchedToolBatch.active() {
+				matchedToolBatch.markSeen(msg.ToolCallID, i)
+				if matchedToolBatch.complete() {
+					return returnPrefix(matchedToolBatch.cutoffIndex), nil
+				}
+				continue
 			}
 			if itemMatches(itemID) {
 				return returnPrefix(i), nil
@@ -131,13 +133,54 @@ func forkHistoryAtTarget(history []providers.ChatMessage, sourceThreadID string,
 		}
 	}
 
-	if matchedToolCallID != "" {
-		return returnPrefix(matchedToolCutoffIndex), nil
+	if matchedToolBatch.active() {
+		return nil, fmt.Errorf("fork target tool results not found")
 	}
 	if targetTurnSeen && targetItemID == "" {
 		return returnPrefix(targetTurnLastIndex), nil
 	}
 	return nil, fmt.Errorf("fork target not found")
+}
+
+type forkToolBatch struct {
+	required    map[string]struct{}
+	seen        map[string]struct{}
+	cutoffIndex int
+}
+
+func newForkToolBatch(calls []providers.ToolCall, cutoffIndex int) forkToolBatch {
+	batch := forkToolBatch{
+		required:    make(map[string]struct{}),
+		seen:        make(map[string]struct{}),
+		cutoffIndex: cutoffIndex,
+	}
+	for _, call := range calls {
+		id := strings.TrimSpace(call.ID)
+		if id == "" {
+			continue
+		}
+		batch.required[id] = struct{}{}
+	}
+	return batch
+}
+
+func (batch forkToolBatch) active() bool {
+	return len(batch.required) > 0
+}
+
+func (batch *forkToolBatch) markSeen(toolCallID string, index int) {
+	if !batch.active() {
+		return
+	}
+	batch.cutoffIndex = index
+	id := strings.TrimSpace(toolCallID)
+	if _, ok := batch.required[id]; ok {
+		batch.seen[id] = struct{}{}
+	}
+}
+
+func (batch forkToolBatch) complete() bool {
+	return batch.active() && len(batch.seen) >= len(batch.required)
 }
 
 func editHistoryBeforeUserMessage(history []providers.ChatMessage, sourceThreadID string, turns []Turn, targetTurnID, targetItemID string) ([]providers.ChatMessage, ThreadEditDraft, error) {
