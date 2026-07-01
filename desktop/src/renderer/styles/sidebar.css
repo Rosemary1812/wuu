@@ -611,8 +611,7 @@
   color: var(--ink-muted);
   padding: 4px var(--sidebar-row-pad-x) 4px
     calc(
-      var(--sidebar-row-pad-x) + var(--sidebar-tree-toggle-col) +
-        var(--sidebar-tree-column-gap) + var(--sidebar-tree-icon-col) +
+      var(--sidebar-row-pad-x) + var(--sidebar-tree-icon-col) +
         var(--sidebar-tree-column-gap)
     );
   font-size: var(--font-sm);
@@ -660,8 +659,7 @@
   gap: 6px;
   margin-top: 2px;
   padding-left: calc(
-    var(--sidebar-row-pad-x) + var(--sidebar-tree-toggle-col) +
-      var(--sidebar-tree-column-gap) + var(--sidebar-tree-icon-col) +
+    var(--sidebar-row-pad-x) + var(--sidebar-tree-icon-col) +
       var(--sidebar-tree-column-gap) - var(--sidebar-row-control-pad-x)
   );
   padding-right: var(--sidebar-row-pad-x);
@@ -728,10 +726,13 @@
   border-radius: var(--radius-sm);
   color: var(--ink-tertiary);
   font-size: var(--font-body);
+  grid-template-columns:
+    var(--sidebar-tree-icon-col)
+    minmax(0, 1fr);
 }
 
 .thread-row::before {
-  grid-column: 2;
+  grid-column: 1;
   justify-self: center;
   width: 5px;
   height: 5px;
@@ -773,7 +774,7 @@
 }
 
 .thread-row-spinner {
-  grid-column: 2;
+  grid-column: 1;
   justify-self: center;
   width: 9px;
   height: 9px;
@@ -915,7 +916,7 @@
 
 .thread-row-main {
   display: flex;
-  grid-column: 3;
+  grid-column: 2;
   min-width: 0;
   height: 100%;
   flex: 1;
