@@ -240,7 +240,7 @@ export function AppSidebar({
         </div>
         <div className="sidebar-settings">
           <button
-            className="settings-button"
+            className="sidebar-settings-button"
             type="button"
             disabled={!state.initialized}
             onClick={onOpenSettings}
