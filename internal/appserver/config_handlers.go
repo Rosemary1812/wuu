@@ -424,11 +424,12 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 		baseURL := strings.TrimSpace(stringValue(params.BaseURL))
 		apiKey := strings.TrimSpace(stringValue(params.APIKey))
+		authToken := strings.TrimSpace(stringValue(params.AuthToken))
 		if baseURL == "" {
 			return s.writeResponse(req.ID, nil, errors.New("base_url is required"))
 		}
-		if apiKey == "" {
-			return s.writeResponse(req.ID, nil, errors.New("api_key is required"))
+		if apiKey == "" && authToken == "" {
+			return s.writeResponse(req.ID, nil, errors.New("api_key or auth_token is required"))
 		}
 		// Resolve the requested provider type. Empty / missing falls back to
 		// "openai-compatible" (preserves the historical default). Unknown
@@ -449,10 +450,11 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			}
 		}
 		providerCfg = config.ProviderConfig{
-			Type:    providerTypeValue,
-			BaseURL: baseURL,
-			APIKey:  apiKey,
-			Model:   model,
+			Type:      providerTypeValue,
+			BaseURL:   baseURL,
+			APIKey:    apiKey,
+			AuthToken: authToken,
+			Model:     model,
 		}
 		resolvedName = providerName
 	} else {
@@ -467,7 +469,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	providerCfg.Model = model
 	connectionChanged := creatingProvider
 	connectionLocked := isCodexProviderType(providerCfg.Type)
-	if connectionLocked && (params.BaseURL != nil || strings.TrimSpace(stringValue(params.APIKey)) != "") {
+	if connectionLocked && (params.BaseURL != nil || strings.TrimSpace(stringValue(params.APIKey)) != "" || strings.TrimSpace(stringValue(params.AuthToken)) != "") {
 		return s.writeResponse(req.ID, nil, errors.New("connection settings are managed by OpenAI OAuth for this provider"))
 	}
 	if params.BaseURL != nil {
@@ -481,7 +483,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		providerCfg.BaseURL = baseURL
 	}
 	apiKeyForConfig := params.APIKey
+	authTokenForConfig := params.AuthToken
 	authKeyForStore := ""
+	authTokenForStore := ""
 	if params.APIKey != nil {
 		apiKey := strings.TrimSpace(*params.APIKey)
 		if apiKey != "" {
@@ -489,10 +493,28 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			authKeyForStore = apiKey
 			providerCfg.APIKey = apiKey
 			providerCfg.APIKeyEnv = ""
+			providerCfg.AuthToken = ""
+			providerCfg.AuthTokenEnv = ""
 			empty := ""
 			apiKeyForConfig = &empty
 		} else {
 			apiKeyForConfig = nil
+		}
+	}
+	if params.AuthToken != nil {
+		authToken := strings.TrimSpace(*params.AuthToken)
+		if authToken != "" {
+			connectionChanged = true
+			authTokenForStore = authToken
+			providerCfg.AuthToken = authToken
+			providerCfg.AuthTokenEnv = ""
+			providerCfg.APIKey = ""
+			providerCfg.APIKeyEnv = ""
+			empty := ""
+			authTokenForConfig = &empty
+			apiKeyForConfig = &empty
+		} else {
+			authTokenForConfig = nil
 		}
 	}
 	variant := s.currentVariant()
@@ -539,10 +561,15 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
+	if authTokenForStore != "" {
+		if err := config.SaveAuthToken(os.Getenv("HOME"), resolvedName, authTokenForStore); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	if creatingProvider {
-		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, &providerTypeValue, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, &providerTypeValue, model, params.BaseURL, apiKeyForConfig, authTokenForConfig, effortForConfig, variantForConfig, params.PermissionMode)
 	} else {
-		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, effortForConfig, variantForConfig, params.PermissionMode)
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, authTokenForConfig, effortForConfig, variantForConfig, params.PermissionMode)
 	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -1067,7 +1094,11 @@ func providerHasAuth(name string, provider config.ProviderConfig, home string) b
 		return true
 	}
 	key, err := config.LoadAuthKey(home, name)
-	return err == nil && strings.TrimSpace(key) != ""
+	if err == nil && strings.TrimSpace(key) != "" {
+		return true
+	}
+	token, err := config.LoadAuthToken(home, name)
+	return err == nil && strings.TrimSpace(token) != ""
 }
 
 func providerModelSummaries(providerName string, provider config.ProviderConfig) []ProviderModelSummary {

@@ -50,4 +50,16 @@ describe("IPC channel parity", () => {
     expect(duplicateChannels(rawMainChannels)).toEqual([]);
     expect(duplicateChannels(rawPreloadChannels)).toEqual([]);
   });
+
+  it("forwards all runtime connection fields to the app server", () => {
+    const index = source("index.ts");
+    const handlerStart = index.indexOf('"wuu:config-model-update"');
+    const handlerEnd = index.indexOf('"wuu:config-advanced-update"', handlerStart);
+    const handler = index.slice(handlerStart, handlerEnd);
+
+    expect(handler).toContain("auth_token?: string");
+    expect(handler).toContain("type?: string");
+    expect(handler).toContain("auth_token: connection.auth_token");
+    expect(handler).toContain("type: connection.type");
+  });
 });

@@ -120,6 +120,38 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_PreservesExplicitZeroTemperature(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "model": "gpt-5.5",
+      "wire_api": "responses"
+    }
+  },
+  "agent": {
+    "temperature": 0
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if cfg.Agent.Temperature != 0 {
+		t.Fatalf("expected explicit temperature 0 to be preserved, got %v", cfg.Agent.Temperature)
+	}
+}
+
 func TestLoadFrom_ToolLoadingConfig(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
@@ -1596,7 +1628,7 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
+	if err := UpdateProviderRuntime(path, "next", "custom-model", &baseURL, &apiKey, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1645,7 +1677,7 @@ func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 	}
 
 	mode := PermissionModeAutoReview
-	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, &mode); err != nil {
+	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, nil, &mode); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
@@ -1685,7 +1717,7 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 
 	baseURL := "https://custom.example.com/v1"
 	apiKey := "sk-custom"
-	if err := CreateProviderRuntime(path, "custom-1", nil, "custom-model", &baseURL, &apiKey, nil, nil, nil); err != nil {
+	if err := CreateProviderRuntime(path, "custom-1", nil, "custom-model", &baseURL, &apiKey, nil, nil, nil, nil); err != nil {
 		t.Fatalf("CreateProviderRuntime: %v", err)
 	}
 

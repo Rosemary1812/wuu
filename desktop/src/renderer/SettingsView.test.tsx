@@ -254,6 +254,75 @@ describe("SettingsView provider configuration", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(onRemoveProvider).not.toHaveBeenCalled();
   });
+
+  it("submits a new Anthropic-compatible provider with bearer token auth", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      initialPage: "providers",
+      initialized: baseInitialized({
+        provider: "openai",
+        model: "gpt-5.5",
+        providers: [
+          {
+            name: "openai",
+            type: "openai",
+            model: "gpt-5.5",
+            base_url: "https://api.openai.com/v1",
+            api_key_configured: true,
+          },
+        ],
+      }),
+      onSave,
+    });
+    const addButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("新增服务"),
+    );
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const providerTypeSelect = container.querySelector("[data-testid=\"settings-provider-type-select\"]") as HTMLSelectElement;
+    const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    await act(async () => {
+      selectSetter?.call(providerTypeSelect, "anthropic");
+      providerTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const inputs = Array.from(container.querySelectorAll("input"));
+    const [providerInput, modelInput, baseURLInput, authTokenInput] = inputs;
+    await act(async () => {
+      setInputValue(providerInput, "anthropic-gateway");
+      setInputValue(modelInput, "claude-sonnet-4-6[1M]");
+      setInputValue(baseURLInput, "https://tokenhub.zhuanspirit.com/anthropic/");
+      setInputValue(authTokenInput, "sk-token");
+    });
+
+    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("添加服务"),
+    ) as HTMLButtonElement | undefined;
+    expect(submitButton?.disabled).toBe(false);
+    await act(async () => {
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onSave).toHaveBeenCalledWith(
+      "anthropic-gateway",
+      "claude-sonnet-4-6[1M]",
+      undefined,
+      {
+        base_url: "https://tokenhub.zhuanspirit.com/anthropic/",
+        auth_token: "sk-token",
+        type: "anthropic",
+        create_provider: true,
+      },
+      "",
+    );
+  });
 });
 
 describe("SettingsView advanced settings", () => {

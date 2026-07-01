@@ -1545,6 +1545,62 @@ func TestServerConfigModelUpdateCreatesProvider(t *testing.T) {
 	}
 }
 
+func TestServerConfigModelUpdateCreatesAnthropicProviderWithAuthToken(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "old-key",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	req := `{"id":"1","method":"config/model/update","params":{"provider":"anthropic-gateway","model":"claude-sonnet-4-6[1M]","base_url":"https://tokenhub.zhuanspirit.com/anthropic/","auth_token":"sk-token","type":"anthropic","create_provider":true}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/model/update: %v", err)
+	}
+
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Provider != "anthropic-gateway" || result.Model != "claude-sonnet-4-6[1M]" {
+		t.Fatalf("unexpected update result: %+v", result)
+	}
+	var customSummary ProviderSummary
+	for _, summary := range result.Providers {
+		if summary.Name == "anthropic-gateway" {
+			customSummary = summary
+			break
+		}
+	}
+	if customSummary.Type != "anthropic" ||
+		customSummary.BaseURL != "https://tokenhub.zhuanspirit.com/anthropic/" ||
+		!customSummary.APIKeyConfigured {
+		t.Fatalf("unexpected anthropic provider summary: %+v", result.Providers)
+	}
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"type": "anthropic"`) ||
+		!strings.Contains(string(data), `"base_url": "https://tokenhub.zhuanspirit.com/anthropic/"`) ||
+		strings.Contains(string(data), `"auth_token": "sk-token"`) ||
+		strings.Contains(string(data), `"api_key": "sk-token"`) {
+		t.Fatalf("anthropic provider was not persisted safely: %s", data)
+	}
+	token, err := config.LoadAuthToken(os.Getenv("HOME"), "anthropic-gateway")
+	if err != nil || token != "sk-token" {
+		t.Fatalf("provider auth token was not saved to auth store: token=%q err=%v", token, err)
+	}
+}
+
 func TestServerConfigModelUpdateRejectsOAuthConnectionChanges(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{

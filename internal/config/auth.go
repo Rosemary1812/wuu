@@ -12,6 +12,7 @@ const authRelativePath = ".config/wuu/auth.json"
 
 type authStore struct {
 	Keys       map[string]string `json:"keys"`
+	AuthTokens map[string]string `json:"auth_tokens,omitempty"`
 	CodexOAuth *CodexOAuthState  `json:"codex_oauth,omitempty"`
 }
 
@@ -60,6 +61,38 @@ func LoadAuthKey(home, providerName string) (string, error) {
 		return "", fmt.Errorf("no auth key for provider %q", providerName)
 	}
 	return key, nil
+}
+
+func SaveAuthToken(home, providerName, token string) error {
+	path, err := authPath(home)
+	if err != nil {
+		return err
+	}
+	store, _ := loadAuthStore(path)
+	if store.Keys == nil {
+		store.Keys = make(map[string]string)
+	}
+	if store.AuthTokens == nil {
+		store.AuthTokens = make(map[string]string)
+	}
+	store.AuthTokens[providerName] = token
+	return writeAuthStore(path, store)
+}
+
+func LoadAuthToken(home, providerName string) (string, error) {
+	path, err := authPath(home)
+	if err != nil {
+		return "", err
+	}
+	store, err := loadAuthStore(path)
+	if err != nil {
+		return "", err
+	}
+	token, ok := store.AuthTokens[providerName]
+	if !ok || token == "" {
+		return "", fmt.Errorf("no auth token for provider %q", providerName)
+	}
+	return token, nil
 }
 
 // SaveCodexOAuth stores wuu's own Codex OAuth session.
@@ -118,6 +151,9 @@ func loadAuthStore(path string) (authStore, error) {
 	}
 	if store.Keys == nil {
 		store.Keys = make(map[string]string)
+	}
+	if store.AuthTokens == nil {
+		store.AuthTokens = make(map[string]string)
 	}
 	return store, nil
 }

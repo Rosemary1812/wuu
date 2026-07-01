@@ -328,6 +328,7 @@ export type MCPServerActionResult = {
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
+  auth_token?: string;
   // Optional provider protocol type used when creating a new provider.
   // Supported values: "openai", "openai-compatible", "anthropic", "claude",
   // "anthropic-official". Omitted or empty keeps the default of

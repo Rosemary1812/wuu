@@ -373,6 +373,8 @@ app.whenReady().then(async () => {
       connection?: {
         base_url?: string;
         api_key?: string;
+        auth_token?: string;
+        type?: string;
         create_provider?: boolean;
       },
       variant?: string,
@@ -387,6 +389,10 @@ app.whenReady().then(async () => {
         ...(connection?.api_key === undefined
           ? {}
           : { api_key: connection.api_key }),
+        ...(connection?.auth_token === undefined
+          ? {}
+          : { auth_token: connection.auth_token }),
+        ...(connection?.type === undefined ? {} : { type: connection.type }),
         ...(connection?.create_provider ? { create_provider: true } : {}),
         ...(effort === undefined ? {} : { effort }),
         ...(variant === undefined ? {} : { variant }),

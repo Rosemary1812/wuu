@@ -249,6 +249,7 @@ type AgentConfig struct {
 	MaxSteps         int     `json:"max_steps"`
 	MaxContextTokens int     `json:"max_context_tokens"`
 	Temperature      float64 `json:"temperature"`
+	temperatureSet   bool
 	// CompactThresholdPct overrides the default usable-window trigger for
 	// proactive compaction. Zero means auto; custom values are fractions in
 	// (0,1), for example 0.5 for 50%.
@@ -432,6 +433,14 @@ func readConfig(path string) (Config, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	var raw struct {
+		Agent map[string]json.RawMessage `json:"agent"`
+	}
+	if err := json.Unmarshal(data, &raw); err == nil && raw.Agent != nil {
+		if _, ok := raw.Agent["temperature"]; ok {
+			cfg.Agent.temperatureSet = true
+		}
 	}
 
 	return cfg, nil
@@ -894,19 +903,19 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // UpdateProviderSelection changes the default provider and the selected
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, false, nil)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, nil, false, nil)
 }
 
 // UpdateProviderSelectionAndEffort changes the default provider, selected
 // provider's model, and global reasoning effort in the config file at configPath.
 func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, &effort, nil, nil, false, nil)
+	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, &effort, nil, nil, false, nil)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
 // fields for that provider. A nil apiKey keeps the existing key configuration.
-func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, false, nil)
+func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, apiKey, authToken, effort, variant, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, authToken, effort, variant, permissionMode, false, nil)
 }
 
 // CreateProviderRuntime creates a new provider with the requested type
@@ -914,8 +923,8 @@ func UpdateProviderRuntime(configPath, providerName, newModel string, baseURL, a
 // editable runtime fields. A nil or empty providerType defaults to
 // "openai-compatible". The caller is responsible for whitelisting allowed
 // type values before invocation; this function writes the type verbatim.
-func CreateProviderRuntime(configPath, providerName string, providerType *string, newModel string, baseURL, apiKey, effort, variant, permissionMode *string) error {
-	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, effort, variant, permissionMode, true, providerType)
+func CreateProviderRuntime(configPath, providerName string, providerType *string, newModel string, baseURL, apiKey, authToken, effort, variant, permissionMode *string) error {
+	return updateProviderSelection(configPath, providerName, newModel, baseURL, apiKey, authToken, effort, variant, permissionMode, true, providerType)
 }
 
 // RemoveProvider deletes a configured provider from the config file and,
@@ -1107,7 +1116,7 @@ func setOptionalBool(target map[string]any, key string, value *bool) {
 	target[key] = true
 }
 
-func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, effort, variant, permissionMode *string, createProvider bool, providerType *string) error {
+func updateProviderSelection(configPath, providerName, newModel string, baseURL, apiKey, authToken, effort, variant, permissionMode *string, createProvider bool, providerType *string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -1149,6 +1158,9 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		if apiKey != nil && strings.TrimSpace(*apiKey) != "" {
 			provider["api_key"] = strings.TrimSpace(*apiKey)
 		}
+		if authToken != nil && strings.TrimSpace(*authToken) != "" {
+			provider["auth_token"] = strings.TrimSpace(*authToken)
+		}
 		providers[providerName] = provider
 	} else if !ok {
 		return fmt.Errorf("provider %q not found", providerName)
@@ -1166,6 +1178,15 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 			delete(provider, "api_key")
 		}
 		delete(provider, "api_key_env")
+	}
+	if authToken != nil {
+		if token := strings.TrimSpace(*authToken); token != "" {
+			provider["auth_token"] = token
+		}
+		if strings.TrimSpace(*authToken) == "" {
+			delete(provider, "auth_token")
+		}
+		delete(provider, "auth_token_env")
 	}
 	if effort != nil {
 		agent, _ := raw["agent"].(map[string]any)
@@ -1236,9 +1257,8 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Agent.ApprovalsReviewer) == "" {
 		cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
 	}
-	// max_steps = 0 means unlimited (no step cap, the model decides
-	// when to stop). Users who set an explicit positive value get a hard cap.
-	if cfg.Agent.Temperature == 0 {
+	// temperature = 0 means provider default when the user sets it explicitly.
+	if cfg.Agent.Temperature == 0 && !cfg.Agent.temperatureSet {
 		cfg.Agent.Temperature = 0.2
 	}
 }

@@ -5677,6 +5677,9 @@ export function App(): JSX.Element {
             ...(connection.api_key === undefined
               ? {}
               : { api_key: connection.api_key.trim() }),
+            ...(connection.auth_token === undefined
+              ? {}
+              : { auth_token: connection.auth_token.trim() }),
             ...(connection.type !== undefined && connection.type !== ""
               ? { type: connection.type }
               : {}),
@@ -5688,6 +5691,7 @@ export function App(): JSX.Element {
     const connectionChanged =
       Boolean(nextConnection?.create_provider) ||
       Boolean(nextConnection?.api_key) ||
+      Boolean(nextConnection?.auth_token) ||
       (nextConnection?.base_url !== undefined &&
         nextConnection.base_url !== (currentProvider?.base_url ?? ""));
     const currentPermissionMode =

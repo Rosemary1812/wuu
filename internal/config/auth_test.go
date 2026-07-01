@@ -29,6 +29,23 @@ func TestAuthStore_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestAuthStore_AnthropicAuthTokenRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	if err := SaveAuthToken(home, "anthropic-gateway", "sk-token-123"); err != nil {
+		t.Fatalf("SaveAuthToken: %v", err)
+	}
+	token, err := LoadAuthToken(home, "anthropic-gateway")
+	if err != nil {
+		t.Fatalf("LoadAuthToken: %v", err)
+	}
+	if token != "sk-token-123" {
+		t.Fatalf("expected sk-token-123, got %q", token)
+	}
+	if _, err := LoadAuthKey(home, "anthropic-gateway"); err == nil {
+		t.Fatal("auth token should not be returned as an api key")
+	}
+}
+
 func TestAuthStore_UnknownProvider(t *testing.T) {
 	home := t.TempDir()
 	_, err := LoadAuthKey(home, "nonexistent")

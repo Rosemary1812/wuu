@@ -112,7 +112,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 
 	// Resolve auth token for anthropic providers (Bearer auth, aligned with
 	// the Anthropic SDK's ANTHROPIC_AUTH_TOKEN support).
-	authToken := resolveAuthToken(provider)
+	authToken := resolveAuthToken(provider, providerName)
 
 	switch profile.Wire {
 	case wireOpenAIChat, wireOpenAIResponses:
@@ -246,7 +246,7 @@ func resolveExplicitAPIKey(provider config.ProviderConfig) string {
 
 // resolveAuthToken resolves a Bearer auth token from config or environment.
 // This mirrors the Anthropic SDK's ANTHROPIC_AUTH_TOKEN support.
-func resolveAuthToken(provider config.ProviderConfig) string {
+func resolveAuthToken(provider config.ProviderConfig, providerName string) string {
 	if t := strings.TrimSpace(provider.AuthToken); t != "" {
 		return t
 	}
@@ -254,7 +254,16 @@ func resolveAuthToken(provider config.ProviderConfig) string {
 	if envKey == "" {
 		envKey = "ANTHROPIC_AUTH_TOKEN"
 	}
-	return strings.TrimSpace(os.Getenv(envKey))
+	if token := strings.TrimSpace(os.Getenv(envKey)); token != "" {
+		return token
+	}
+	if providerName != "" {
+		token, err := config.LoadAuthToken(os.Getenv("HOME"), providerName)
+		if err == nil && strings.TrimSpace(token) != "" {
+			return strings.TrimSpace(token)
+		}
+	}
+	return ""
 }
 
 func defaultAPIKeyEnv(providerType string) string {

@@ -240,20 +240,30 @@ export function SettingsView({
     setSaved(false);
     try {
       let connection: RuntimeConnectionUpdate | undefined;
+      const providerType = addingProvider ? providerTypeDraft : selectedProvider?.type;
+      const usesAuthToken = isAnthropicProviderType(providerType);
       if (addingProvider) {
         connection = {
           base_url: baseURLDraft.trim(),
-          api_key: apiKeyDraft.trim(),
           type: providerTypeDraft,
           create_provider: true
         };
+        if (usesAuthToken) {
+          connection.auth_token = apiKeyDraft.trim();
+        } else {
+          connection.api_key = apiKeyDraft.trim();
+        }
       } else if (!connectionLocked) {
         connection = {
           base_url: baseURLDraft.trim()
         };
         const apiKey = apiKeyDraft.trim();
         if (apiKey) {
-          connection.api_key = apiKey;
+          if (usesAuthToken) {
+            connection.auth_token = apiKey;
+          } else {
+            connection.api_key = apiKey;
+          }
         }
       }
       await onSave(providerDraft, modelDraft, undefined, connection, variantDraft);
@@ -721,6 +731,8 @@ function SettingsProvidersPage({
   disabled: boolean;
 }): JSX.Element {
   const reasoningMode = providerModelReasoningMode(selectedProvider, modelDraft);
+  const authFieldUsesToken = isAnthropicProviderType(addingProvider ? providerTypeDraft : selectedProvider?.type);
+  const authFieldLabel = authFieldUsesToken ? "Auth token" : "API key";
   return (
     <SettingsSection
       title="模型服务"
@@ -925,7 +937,7 @@ function SettingsProvidersPage({
           />
         </SettingsRow>
         <SettingsRow
-          title="API key"
+          title={authFieldLabel}
           description={
             connectionLocked
               ? "由 OpenAI OAuth 管理"
@@ -933,7 +945,9 @@ function SettingsProvidersPage({
                 ? "保存时写入这个服务"
                 : selectedProvider?.api_key_configured
                   ? "已配置，留空不修改"
-                  : "用于访问这个 Provider"
+                  : authFieldUsesToken
+                    ? "用于 Bearer 鉴权"
+                    : "用于访问这个 Provider"
           }
           block
         >
@@ -944,12 +958,12 @@ function SettingsProvidersPage({
             autoComplete="new-password"
             placeholder={
               connectionLocked
-                ? "不需要 API key"
+                ? `不需要 ${authFieldLabel}`
                 : addingProvider
-                  ? "输入 API key"
+                  ? `输入 ${authFieldLabel}`
                   : selectedProvider?.api_key_configured
                     ? "留空保持当前密钥"
-                    : "输入 API key"
+                    : `输入 ${authFieldLabel}`
             }
             onChange={(event) => onAPIKeyDraftChange(event.target.value)}
             disabled={running || connectionLocked}
@@ -1702,12 +1716,18 @@ function providerConnectionStatus(provider: ProviderSummary): string {
   if (provider.connection_locked) {
     return "OAuth";
   }
-  return provider.api_key_configured ? "API key 已配置" : "缺少 API key";
+  const label = isAnthropicProviderType(provider.type) ? "Auth token" : "API key";
+  return provider.api_key_configured ? `${label} 已配置` : `缺少 ${label}`;
 }
 
 function providerTypeLabel(provider: ProviderSummary): string {
   const type = provider.type.trim() || "openai-compatible";
   return provider.connection_locked ? "OAuth 管理的服务" : type;
+}
+
+function isAnthropicProviderType(type: string | undefined): boolean {
+  const normalized = (type ?? "").trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "anthropic" || normalized === "claude" || normalized === "anthropic-official";
 }
 
 type CacheHeatmapCell = SettingsUsageDay & {
@@ -1978,7 +1998,7 @@ function providerServiceLabel(provider: ProviderSummary): string {
   if (baseURLLabel) {
     return baseURLLabel;
   }
-  if (type === "anthropic" || type === "claude" || type === "anthropic-official") {
+  if (isAnthropicProviderType(type)) {
     return "Anthropic";
   }
   if (type === "openai" || type === "codex") {
