@@ -16,6 +16,8 @@
 
 ---
 
+<img width="2272" height="2494" alt="image" src="https://github.com/user-attachments/assets/2d9030aa-ca03-42b1-9333-f79cc5aff95b" />
+
 **wuu** is an open-source AI coding agent that works in your local repository. It reads and edits files, runs commands, reviews changes, and resumes sessions — all through a BYOK model that works with Anthropic and any OpenAI-compatible provider.
 
 Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, run durable workflows, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
