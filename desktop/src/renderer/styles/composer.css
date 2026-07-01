@@ -186,6 +186,7 @@
 }
 
 .composer {
+  --composer-text-start: 16px;
   position: relative;
   width: 100%;
   min-height: var(--composer-collapsed-min-height);
@@ -206,20 +207,17 @@
 }
 
 .hero-composer-wrap .composer {
+  --composer-text-start: 24px;
   min-height: var(--composer-collapsed-min-height);
 }
 
+/* Match .composer textarea padding-left so the attachment thumbnail's left
+   edge sits flush with the placeholder/text x-origin. */
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px 16px 0;
-}
-
-/* Match .composer textarea padding-left so the attachment thumbnail's left
-   edge sits flush with the placeholder/text x-origin (16px dock, 24px hero). */
-.hero-composer-wrap .composer-attachments {
-  padding-left: 24px;
+  padding: 12px var(--composer-text-start) 0;
 }
 
 .composer-file-input {
@@ -604,7 +602,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  padding: 16px 44px 8px 16px;
+  padding: 16px 44px 8px var(--composer-text-start);
   color: var(--ink);
   font-size: var(--font-body);
   line-height: 24px;
@@ -612,7 +610,7 @@
 
 .hero-composer-wrap .composer textarea {
   min-height: 88px;
-  padding: 24px 52px 8px 24px;
+  padding: 24px 52px 8px var(--composer-text-start);
 }
 
 .composer-stack.is-expanded .composer textarea {
@@ -773,6 +771,8 @@
   cursor: default;
 }
 
+/* Align the toolbar's left edge with the textarea text x-origin so hover
+   chrome starts where typed text starts. Mirrors .composer-attachments. */
 .composer-bar {
   display: flex;
   min-width: 0;
@@ -780,15 +780,8 @@
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  padding: 0 8px 8px;
+  padding: 0 8px 8px var(--composer-text-start);
   container: composer-toolbar / inline-size;
-}
-
-/* On the new-session (hero) screen, align the toolbar's left edge with the
-   textarea text x-origin (24px) so the project pill and tool buttons start
-   where typed text starts. Mirrors .composer-attachments' padding-left. */
-.hero-composer-wrap .composer-bar {
-  padding-left: 24px;
 }
 
 .composer-bar-left,

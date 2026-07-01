@@ -58,7 +58,7 @@
   .composer-bar {
     gap: 6px;
     padding-right: 8px;
-    padding-left: 8px;
+    padding-left: var(--composer-text-start);
   }
 
   .hero-project-pill-anchor {
