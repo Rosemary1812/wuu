@@ -477,6 +477,12 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	if len(events) < 6 {
 		t.Fatalf("expected lifecycle events, got %+v", events)
 	}
+	// First-event guard: any warm-up or diagnostic event emitted before
+	// task_created would regress the harness lifecycle contract and
+	// would have been caught by the previous positional check.
+	if events[0].Type != harness.EventTaskCreated {
+		t.Fatalf("expected first event task_created, got %+v", events[0])
+	}
 	// The last emitted *lifecycle* event must transition the task to
 	// awaiting_report. artifact_recorded events can follow run_completed
 	// because the harness keeps observing worker artifacts even after
