@@ -4,6 +4,7 @@ import { readableToolActivityCommand } from "./ToolActivity";
 import {
   buildToolActivityProcessSegments,
   buildToolActivitySections,
+  collectTurnSources,
   summarizeToolActivity,
 } from "./ToolActivityHelpers";
 
@@ -254,5 +255,217 @@ describe("context (inception) tool activity", () => {
     expect(segment.kind).toBe("context");
     expect(segment.text).toBe("潜入上下文 · 植入续行摘要");
     expect(segment.status).toBe("completed");
+  });
+});
+
+describe("collectTurnSources", () => {
+  it("returns an empty list when the turn has no web_search or web_fetch items", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "tool-1",
+          type: "tool_call",
+          name: "read_file",
+          status: "completed",
+          arguments: JSON.stringify({ path: "foo.ts" }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([]);
+  });
+
+  it("collects one source per web_search hit with the canonical host", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "ws-1",
+          type: "tool_call",
+          name: "web_search",
+          status: "completed",
+          result: JSON.stringify({
+            results: [
+              {
+                url: "https://www.anthropic.com/news/claude-opus-4-7",
+                title: "Opus 4.7",
+              },
+              { url: "https://docs.anthropic.com/api", title: "API docs" },
+            ],
+          }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([
+      {
+        url: "https://www.anthropic.com/news/claude-opus-4-7",
+        host: "anthropic.com",
+        title: "Opus 4.7",
+        origin: "web_search",
+      },
+      {
+        url: "https://docs.anthropic.com/api",
+        host: "docs.anthropic.com",
+        title: "API docs",
+        origin: "web_search",
+      },
+    ]);
+  });
+
+  it("captures a web_fetch URL from arguments even when result has none", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "wf-1",
+          type: "tool_call",
+          name: "web_fetch",
+          status: "completed",
+          arguments: JSON.stringify({
+            url: "https://platform.openai.com/docs/models",
+          }),
+          result: JSON.stringify({ status_code: 200, text: "..." }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([
+      {
+        url: "https://platform.openai.com/docs/models",
+        host: "platform.openai.com",
+        origin: "web_fetch",
+      },
+    ]);
+  });
+
+  it("collapses multiple hits on the same host into a single favicon slot", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "ws-1",
+          type: "tool_call",
+          name: "web_search",
+          status: "completed",
+          result: JSON.stringify({
+            results: [
+              { url: "https://docs.anthropic.com/a", title: "Doc A" },
+              { url: "https://docs.anthropic.com/b", title: "Doc B" },
+            ],
+          }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([
+      {
+        url: "https://docs.anthropic.com/a",
+        host: "docs.anthropic.com",
+        title: "Doc A",
+        origin: "web_search",
+      },
+    ]);
+  });
+
+  it("upgrades a slot's title when a later hit on the same host provides one", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "wf-1",
+          type: "tool_call",
+          name: "web_fetch",
+          status: "completed",
+          arguments: JSON.stringify({
+            url: "https://www.anthropic.com/landing",
+          }),
+        } satisfies ThreadItem,
+        {
+          id: "ws-1",
+          type: "tool_call",
+          name: "web_search",
+          status: "completed",
+          result: JSON.stringify({
+            results: [
+              {
+                url: "https://anthropic.com/news/claude-opus-4-7",
+                title: "Claude Opus 4.7 迁移指南",
+              },
+            ],
+          }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([
+      {
+        url: "https://www.anthropic.com/landing",
+        host: "anthropic.com",
+        title: "Claude Opus 4.7 迁移指南",
+        origin: "web_fetch",
+      },
+    ]);
+  });
+
+  it("preserves first-seen order across the turn", () => {
+    const sources = collectTurnSources([
+      {
+        id: "ws-1",
+        type: "tool_call",
+        name: "web_search",
+        status: "completed",
+        result: JSON.stringify({
+          results: [{ url: "https://example.com/a" }],
+        }),
+      } satisfies ThreadItem,
+      {
+        id: "wf-1",
+        type: "tool_call",
+        name: "web_fetch",
+        status: "completed",
+        arguments: JSON.stringify({ url: "https://other.test/page" }),
+      } satisfies ThreadItem,
+    ]);
+    expect(sources.map((source) => source.host)).toEqual([
+      "example.com",
+      "other.test",
+    ]);
+  });
+
+  it("skips web_search hits with no parseable URL", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "ws-1",
+          type: "tool_call",
+          name: "web_search",
+          status: "completed",
+          result: JSON.stringify({
+            results: [
+              { title: "no URL" },
+              { url: "https://valid.example/x" },
+            ],
+          }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([
+      {
+        url: "https://valid.example/x",
+        host: "valid.example",
+        origin: "web_search",
+      },
+    ]);
+  });
+
+  it("treats collab_agent_tool_call web_search items the same as tool_call", () => {
+    expect(
+      collectTurnSources([
+        {
+          id: "ws-collab",
+          type: "collab_agent_tool_call",
+          name: "web_search",
+          status: "completed",
+          result: JSON.stringify({
+            results: [
+              { url: "https://collab.example/x", title: "Collab result" },
+            ],
+          }),
+        } satisfies ThreadItem,
+      ]),
+    ).toEqual([
+      {
+        url: "https://collab.example/x",
+        host: "collab.example",
+        title: "Collab result",
+        origin: "web_search",
+      },
+    ]);
   });
 });

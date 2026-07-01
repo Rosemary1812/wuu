@@ -1215,6 +1215,94 @@ export function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary 
   };
 }
 
+/**
+ * One external page the agent consulted in a turn via web_search or
+ * web_fetch. The renderer uses this list to draw the favicon pill at the
+ * bottom of an assistant message (mirroring the ChatGPT / Claude
+ * "来源" treatment).
+ *
+ * `host` is the canonical domain used both for favicon lookup and for
+ * dedupe: multiple pages on the same domain collapse to a single icon.
+ */
+export type TurnSource = {
+  url: string;
+  host: string;
+  title?: string;
+  origin: "web_search" | "web_fetch";
+};
+
+/**
+ * Collect the unique external sources a turn consulted through
+ * `web_search` and `web_fetch`. Order is first-seen across the turn.
+ *
+ * web_search contributes one source per hit (each result has its own
+ * page). web_fetch contributes one source per call (the URL the agent
+ * asked to read). Both are deduped by host so multiple pages from the
+ * same domain collapse to a single icon — that matches what users
+ * expect from the ChatGPT / Claude sources row and keeps the pill
+ * readable when the agent makes many hits on docs.anthropic.com.
+ */
+export function collectTurnSources(items: ThreadItem[]): TurnSource[] {
+  const byHost = new Map<string, TurnSource>();
+  for (const item of items) {
+    if (item.type !== "tool_call" && item.type !== "collab_agent_tool_call") {
+      continue;
+    }
+    const name = (item.name ?? "").trim();
+    if (name === "web_search") {
+      const result = parseJSONRecord(item.result);
+      for (const hit of arrayValue(result, "results")) {
+        if (!isRecord(hit)) continue;
+        const url = stringValue(hit, "url");
+        if (!url) continue;
+        addSource(byHost, { url, title: stringValue(hit, "title"), origin: "web_search" });
+      }
+      continue;
+    }
+    if (name === "web_fetch") {
+      const args = parseJSONRecord(item.arguments);
+      const result = parseJSONRecord(item.result);
+      const url = stringValue(args, "url") ?? stringValue(result, "url");
+      if (!url) continue;
+      addSource(byHost, { url, origin: "web_fetch" });
+      continue;
+    }
+  }
+  return Array.from(byHost.values());
+}
+
+function addSource(
+  byHost: Map<string, TurnSource>,
+  candidate: Omit<TurnSource, "host">,
+): void {
+  const host = normalizeHost(candidate.url);
+  if (!host) return;
+  const existing = byHost.get(host);
+  if (!existing) {
+    byHost.set(host, { ...candidate, host });
+    return;
+  }
+  // First-seen wins for the canonical URL, but upgrade title when the
+  // existing slot doesn't have one and the new candidate does — common
+  // when the first hit was a fetch with no title and a later search hit
+  // surfaces a titled result for the same domain.
+  if (!existing.title && candidate.title) {
+    byHost.set(host, { ...existing, title: candidate.title });
+  }
+}
+
+function normalizeHost(rawUrl: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return undefined;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (!host) return undefined;
+  return host.startsWith("www.") ? host.slice(4) : host;
+}
+
 function summarizeDiff(result: JsonRecord | undefined): DiffStats {
   const riskSummary = recordValue(result, "risk_summary");
   if (riskSummary) {
