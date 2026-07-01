@@ -1,0 +1,143 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RuntimeContext, WorkspaceDirectoryListResult } from "../shared/protocol";
+import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
+
+let container: HTMLDivElement;
+let root: Root | null = null;
+let listWorkspaceDirectory: ReturnType<typeof vi.fn>;
+let readWorkspaceFile: ReturnType<typeof vi.fn>;
+let scrollIntoView: ReturnType<typeof vi.fn>;
+
+const activeContext: RuntimeContext = {
+  kind: "project",
+  project_id: "project-1",
+  cwd: "/repo",
+};
+
+const directoryResults: Record<string, WorkspaceDirectoryListResult> = {
+  "": {
+    root: "/repo",
+    path: "",
+    entries: [
+      { kind: "directory", name: "src", path: "src/" },
+      { kind: "file", name: "README.md", path: "README.md" },
+    ],
+    truncated: false,
+  },
+  src: {
+    root: "/repo",
+    path: "src",
+    entries: [
+      { kind: "directory", name: "components", path: "src/components/" },
+      { kind: "file", name: "index.ts", path: "src/index.ts" },
+    ],
+    truncated: false,
+  },
+  "src/components": {
+    root: "/repo",
+    path: "src/components",
+    entries: [
+      { kind: "file", name: "Button.tsx", path: "src/components/Button.tsx" },
+    ],
+    truncated: false,
+  },
+};
+
+beforeEach(() => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  listWorkspaceDirectory = vi.fn((path?: string) =>
+    Promise.resolve(directoryResults[path ?? ""]),
+  );
+  readWorkspaceFile = vi.fn((path: string) =>
+    Promise.resolve({
+      root: "/repo",
+      path,
+      absolute_path: `/repo/${path}`,
+      size_bytes: 12,
+      binary: false,
+      truncated: false,
+      text: "button code",
+    }),
+  );
+  Object.defineProperty(window, "wuu", {
+    configurable: true,
+    value: {
+      listWorkspaceDirectory,
+      readWorkspaceFile,
+    },
+  });
+  scrollIntoView = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+});
+
+afterEach(() => {
+  act(() => {
+    root?.unmount();
+  });
+  root = null;
+  container.remove();
+  vi.restoreAllMocks();
+});
+
+async function render(element: JSX.Element): Promise<void> {
+  await act(async () => {
+    root?.render(element);
+    await Promise.resolve();
+  });
+}
+
+async function settleDirectoryLoads(): Promise<void> {
+  for (let index = 0; index < 4; index += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+
+describe("WorkspaceFileTree", () => {
+  it("expands and scrolls to the selected workspace file path", async () => {
+    await render(
+      <WorkspaceFileTree
+        activeContext={activeContext}
+        open
+        selectedFilePath="/repo/src/components/Button.tsx"
+        onOpenFile={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("");
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src");
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src/components");
+
+    const selected = container.querySelector<HTMLButtonElement>(
+      ".workspace-file-tree-row.selected",
+    );
+    expect(selected?.title).toBe("src/components/Button.tsx");
+    expect(selected?.textContent).toContain("Button.tsx");
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
+  });
+
+  it("reads an absolute selected file path relative to the workspace root", async () => {
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/components/Button.tsx"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(readWorkspaceFile).toHaveBeenCalledWith("src/components/Button.tsx");
+    expect(container.textContent).toContain("button code");
+  });
+});

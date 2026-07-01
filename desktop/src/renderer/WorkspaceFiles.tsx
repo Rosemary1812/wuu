@@ -15,7 +15,7 @@ import {
   Terminal,
   type LucideIcon
 } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
@@ -51,6 +51,10 @@ export function WorkspaceFileTree({
   const directoriesRef = useRef(directories);
   const workspaceRootRef = useRef<string | undefined>(undefined);
   const workspaceRoot = activeContext?.cwd;
+  const selectedWorkspaceFilePath = useMemo(
+    () => normalizeSelectedWorkspaceFilePath(selectedFilePath, workspaceRoot),
+    [selectedFilePath, workspaceRoot]
+  );
 
   useEffect(() => {
     directoriesRef.current = directories;
@@ -115,6 +119,37 @@ export function WorkspaceFileTree({
     loadDirectory("");
   }, [loadDirectory, open, workspaceRoot]);
 
+  useEffect(() => {
+    if (!open || !workspaceRoot || !selectedWorkspaceFilePath) {
+      return;
+    }
+
+    const parentPaths = parentDirectoryPathsForFile(selectedWorkspaceFilePath);
+    setSearch("");
+    if (parentPaths.length === 0) {
+      return;
+    }
+
+    setExpandedPaths((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const path of parentPaths) {
+        if (!next.has(path)) {
+          changed = true;
+          next.add(path);
+        }
+      }
+      return changed ? next : current;
+    });
+
+    for (const path of parentPaths) {
+      const directoryState = directoriesRef.current[path];
+      if (!directoryState?.entries && !directoryState?.loading) {
+        loadDirectory(path);
+      }
+    }
+  }, [loadDirectory, open, selectedWorkspaceFilePath, workspaceRoot]);
+
   const toggleDirectory = useCallback(
     (path: string) => {
       const directoryPath = normalizeDirectoryPath(path);
@@ -164,7 +199,7 @@ export function WorkspaceFileTree({
         directories={directories}
         entries={rootDirectory.entries}
         expandedPaths={expandedPaths}
-        selectedFilePath={selectedFilePath}
+        selectedFilePath={selectedWorkspaceFilePath}
         search={search}
         onSearchChange={setSearch}
         onToggleDirectory={toggleDirectory}
@@ -198,6 +233,15 @@ function WorkspaceFileTreeView({
 }): JSX.Element {
   const query = search.trim().toLowerCase();
   const visibleEntries = entries.filter((entry) => shouldShowFileTreeEntry(entry, query, directories));
+  const selectedRowRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const row = selectedRowRef.current;
+    if (!selectedFilePath || !row) {
+      return;
+    }
+    row.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [directories, expandedPaths, query, selectedFilePath]);
 
   return (
     <div className="workspace-file-tree-frame">
@@ -218,6 +262,7 @@ function WorkspaceFileTreeView({
               expandedPaths={expandedPaths}
               selectedFilePath={selectedFilePath}
               query={query}
+              selectedRowRef={selectedRowRef}
               depth={0}
               onToggleDirectory={onToggleDirectory}
               onOpenFile={onOpenFile}
@@ -238,6 +283,7 @@ function WorkspaceFileTreeRows({
   expandedPaths,
   selectedFilePath,
   query,
+  selectedRowRef,
   depth,
   onToggleDirectory,
   onOpenFile,
@@ -248,6 +294,7 @@ function WorkspaceFileTreeRows({
   expandedPaths: Set<string>;
   selectedFilePath?: string;
   query: string;
+  selectedRowRef: RefObject<HTMLButtonElement | null>;
   depth: number;
   onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
@@ -263,6 +310,7 @@ function WorkspaceFileTreeRows({
           expandedPaths={expandedPaths}
           selectedFilePath={selectedFilePath}
           query={query}
+          selectedRowRef={selectedRowRef}
           depth={depth}
           onToggleDirectory={onToggleDirectory}
           onOpenFile={onOpenFile}
@@ -279,6 +327,7 @@ function WorkspaceFileTreeNode({
   expandedPaths,
   selectedFilePath,
   query,
+  selectedRowRef,
   depth,
   onToggleDirectory,
   onOpenFile,
@@ -289,6 +338,7 @@ function WorkspaceFileTreeNode({
   expandedPaths: Set<string>;
   selectedFilePath?: string;
   query: string;
+  selectedRowRef: RefObject<HTMLButtonElement | null>;
   depth: number;
   onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
@@ -308,10 +358,12 @@ function WorkspaceFileTreeNode({
 
   if (entry.kind === "file") {
     const fileIcon = fileIconFor(entry.name);
+    const selected = selectedFilePath === entry.path;
     return (
       <button
         type="button"
-        className={`workspace-file-tree-row${selectedFilePath === entry.path ? " selected" : ""}${isHidden ? " hidden" : ""}`}
+        className={`workspace-file-tree-row${selected ? " selected" : ""}${isHidden ? " hidden" : ""}`}
+        ref={selected ? selectedRowRef : undefined}
         style={rowStyle}
         role="treeitem"
         title={entry.path}
@@ -363,6 +415,7 @@ function WorkspaceFileTreeNode({
           expandedPaths={expandedPaths}
           selectedFilePath={selectedFilePath}
           query={query}
+          selectedRowRef={selectedRowRef}
           depth={depth + 1}
           onToggleDirectory={onToggleDirectory}
           onOpenFile={onOpenFile}
@@ -390,8 +443,53 @@ function shouldShowFileTreeEntry(entry: WorkspaceFileTreeEntry, query: string, d
   return Boolean(directory?.entries?.some((child) => shouldShowFileTreeEntry(child, query, directories)));
 }
 
+function normalizeSelectedWorkspaceFilePath(path: string | undefined, workspaceRoot: string | undefined): string | undefined {
+  if (!path || !workspaceRoot) {
+    return undefined;
+  }
+  const normalizedPath = normalizePathSeparators(path).replace(/\/+$/, "");
+  const normalizedRoot = normalizePathSeparators(workspaceRoot).replace(/\/+$/, "");
+  const relativePath = normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length + 1)
+    : normalizedPath.startsWith("/")
+      ? undefined
+      : normalizedPath;
+  if (!relativePath) {
+    return undefined;
+  }
+  return normalizeWorkspaceRelativeFilePath(relativePath);
+}
+
+function normalizeWorkspaceRelativeFilePath(path: string): string | undefined {
+  const value = normalizePathSeparators(path)
+    .trim()
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  if (!value || value.includes("\0") || value.split("/").some((segment) => !segment || segment === "..")) {
+    return undefined;
+  }
+  return value;
+}
+
+function parentDirectoryPathsForFile(path: string): string[] {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length <= 1) {
+    return [];
+  }
+  const parentPaths: string[] = [];
+  for (let index = 1; index < segments.length; index += 1) {
+    parentPaths.push(segments.slice(0, index).join("/"));
+  }
+  return parentPaths;
+}
+
+function normalizePathSeparators(path: string): string {
+  return path.trim().replace(/\\/g, "/");
+}
+
 function normalizeDirectoryPath(path: string): string {
-  return path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+  return normalizePathSeparators(path).replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
 type FileIconTone = "code" | "config" | "doc" | "shell" | "data" | "default";
@@ -456,9 +554,13 @@ export function WorkspaceFilePreview({
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const selectedWorkspaceFilePath = useMemo(
+    () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
+    [activeContext?.cwd, selectedFilePath]
+  );
 
   useEffect(() => {
-    if (!selectedFilePath) {
+    if (!selectedWorkspaceFilePath) {
       setFile(undefined);
       setError(undefined);
       setLoading(false);
@@ -470,7 +572,7 @@ export function WorkspaceFilePreview({
     setLoading(true);
     setError(undefined);
     void window.wuu
-      .readWorkspaceFile(selectedFilePath)
+      .readWorkspaceFile(selectedWorkspaceFilePath)
       .then((result) => {
         if (!cancelled) {
           setFile(result);
@@ -490,7 +592,7 @@ export function WorkspaceFilePreview({
     return () => {
       cancelled = true;
     };
-  }, [selectedFilePath]);
+  }, [selectedWorkspaceFilePath]);
 
   if (!activeContext) {
     return (
@@ -502,7 +604,7 @@ export function WorkspaceFilePreview({
     );
   }
 
-  if (!selectedFilePath) {
+  if (!selectedWorkspaceFilePath) {
     return (
       <div className="workspace-main-empty">
         <FolderOpen size={38} />
@@ -520,7 +622,7 @@ export function WorkspaceFilePreview({
       <div className="workspace-main-empty">
         <FileText size={36} />
         <strong>正在打开</strong>
-        <span>{selectedFilePath}</span>
+        <span>{selectedWorkspaceFilePath}</span>
       </div>
     );
   }
@@ -540,7 +642,7 @@ export function WorkspaceFilePreview({
       <div className="workspace-main-empty">
         <FileText size={36} />
         <strong>没有内容</strong>
-        <span>{selectedFilePath}</span>
+        <span>{selectedWorkspaceFilePath}</span>
       </div>
     );
   }
