@@ -145,6 +145,7 @@ export ANTHROPIC_API_KEY="..."
 ## 文档
 
 - [`wuu exec`](docs/exec.md)
+- [配置模型与迁移设计](docs/configuration-model-zh.md)
 - [`app-server` 协议](docs/app-server-protocol.md)
 - [`jsonl-events`](docs/jsonl-events.md)
 - [贡献指南](CONTRIBUTING.md)
