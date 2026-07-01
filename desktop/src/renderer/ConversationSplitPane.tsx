@@ -1,5 +1,11 @@
 import { X } from "lucide-react";
-import type { InputFile, InputImage, Thread, ThreadItem } from "../shared/protocol";
+import type {
+  InputFile,
+  InputImage,
+  PendingToolApproval,
+  Thread,
+  ThreadItem,
+} from "../shared/protocol";
 import { SplitPaneComposer } from "./ComposerView";
 import {
   isThreadRunning,
@@ -40,6 +46,8 @@ export function ConversationSplitPane({
   onSubmitEditMessage,
   onStreamFrame,
   onNoticeAction,
+  pendingToolApproval,
+  onResolveToolApproval,
 }: {
   pane: ConversationPaneID;
   thread: Thread;
@@ -74,6 +82,11 @@ export function ConversationSplitPane({
   ) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  pendingToolApproval?: PendingToolApproval;
+  onResolveToolApproval?: (
+    approval: PendingToolApproval,
+    decision: "approved" | "approved_for_session" | "denied",
+  ) => void;
 }): JSX.Element {
   const paneTurns = thread.turns ?? [];
   const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
@@ -123,29 +136,58 @@ export function ConversationSplitPane({
             forcedFullTurnIDs={
               editingMessage ? [editingMessage.turnID] : undefined
             }
-            renderTurn={(turn) => (
-              <TurnView
-                turn={turn}
-                cwd={thread.cwd ?? activeContextCwd}
-                latestAgentMessageID={paneLatestAgentMessageID}
-                onStreamFrame={onStreamFrame}
-                onForkMessage={onForkMessage}
-                onEditMessage={
-                  onEditMessage
-                    ? (turnID, item) => onEditMessage(turnID, item)
+            renderTurn={(turn) => {
+              const callID = pendingToolApproval?.call_id;
+              const approval =
+                pendingToolApproval && callID
+                  ? turn.items.some((item) => item.id === callID)
+                    ? pendingToolApproval
                     : undefined
-                }
-                editingMessage={editingMessage}
-                onCancelEditMessage={onCancelEditMessage}
-                onSubmitEditMessage={
-                  onSubmitEditMessage
-                    ? (turnID, item, text, images, files) =>
-                        onSubmitEditMessage(turnID, item, text, images, files)
-                    : undefined
-                }
-                onNoticeAction={onNoticeAction}
-              />
-            )}
+                  : undefined;
+              return (
+                <TurnView
+                  turn={turn}
+                  cwd={thread.cwd ?? activeContextCwd}
+                  latestAgentMessageID={paneLatestAgentMessageID}
+                  onStreamFrame={onStreamFrame}
+                  onForkMessage={onForkMessage}
+                  onEditMessage={
+                    onEditMessage
+                      ? (turnID, item) => onEditMessage(turnID, item)
+                      : undefined
+                  }
+                  editingMessage={editingMessage}
+                  onCancelEditMessage={onCancelEditMessage}
+                  onSubmitEditMessage={
+                    onSubmitEditMessage
+                      ? (turnID, item, text, images, files) =>
+                          onSubmitEditMessage(turnID, item, text, images, files)
+                      : undefined
+                  }
+                  onNoticeAction={onNoticeAction}
+                  pendingApproval={approval}
+                  onApproveTool={
+                    approval && onResolveToolApproval
+                      ? () => onResolveToolApproval(approval, "approved")
+                      : undefined
+                  }
+                  onApproveToolForSession={
+                    approval && onResolveToolApproval
+                      ? () =>
+                          onResolveToolApproval(
+                            approval,
+                            "approved_for_session",
+                          )
+                      : undefined
+                  }
+                  onDenyTool={
+                    approval && onResolveToolApproval
+                      ? () => onResolveToolApproval(approval, "denied")
+                      : undefined
+                  }
+                />
+              );
+            }}
           />
         </div>
       </div>

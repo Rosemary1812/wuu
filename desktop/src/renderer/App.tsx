@@ -2669,6 +2669,10 @@ export function App(): JSX.Element {
         }
         onStreamFrame={scheduleStreamScroll}
         onNoticeAction={handleNoticeAction}
+        pendingToolApproval={state.pendingToolApproval}
+        onResolveToolApproval={(approval, decision) =>
+          void resolveToolApproval(approval, decision)
+        }
       />
     );
   }
@@ -6459,6 +6463,10 @@ export function App(): JSX.Element {
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
+                pendingToolApproval={state.pendingToolApproval}
+                onResolveToolApproval={(approval, decision) =>
+                  void resolveToolApproval(approval, decision)
+                }
               />
             )}
               </>
