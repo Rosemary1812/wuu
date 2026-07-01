@@ -611,8 +611,8 @@
   color: var(--ink-muted);
   padding: 4px var(--sidebar-row-pad-x) 4px
     calc(
-      var(--sidebar-row-pad-x) + var(--sidebar-tree-icon-col) +
-        var(--sidebar-tree-column-gap)
+      var(--sidebar-row-pad-x) + var(--sidebar-nav-icon-col) +
+        var(--sidebar-nav-column-gap)
     );
   font-size: var(--font-sm);
   line-height: 1.4;

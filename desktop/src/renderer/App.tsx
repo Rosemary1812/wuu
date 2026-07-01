@@ -6028,7 +6028,7 @@ export function App(): JSX.Element {
         ? {
             ...current,
             pendingToolApproval: undefined,
-            status: current.running ? current.status : "ready",
+            status: "ready",
           }
         : current,
     );

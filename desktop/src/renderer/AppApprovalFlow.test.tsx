@@ -230,4 +230,50 @@ describe("App tool approval flow", () => {
       reason: "user approved the requested tool call",
     });
   });
+
+  it("clears the waiting approval status after approving a running turn", async () => {
+    installWuuApi();
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    await act(async () => {
+      for (const handler of serverEventHandlers) {
+        handler({
+          kind: "server-request",
+          workdir: workspace,
+          message: {
+            id: "server-request-1",
+            method: "tool/approval/request",
+            params: {
+              id: "approval-1",
+              tool_name: "run_shell",
+              call_id: "call-1",
+              risk: "high",
+              policy_reason: "需要审批",
+              arguments_preview: '{"command":"npm install"}',
+              capability: "command.bash",
+              capability_object: "npm install",
+              capability_action: "execute",
+            },
+          },
+        });
+      }
+    });
+
+    expect(container.textContent).toContain("等待审批");
+
+    const approve = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "批准一次",
+    );
+
+    await act(async () => {
+      approve?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).not.toContain("等待审批");
+  });
 });
