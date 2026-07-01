@@ -244,6 +244,8 @@ func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 		status := "current"
 		if info, err := os.Stat(absPath); err != nil || info.IsDir() || !readEntryMatchesInfo(entry, info) {
 			status = "possibly_stale"
+		} else if entry.BaselineOnly {
+			status = "current_baseline"
 		}
 		fmt.Fprintf(&b, "- path=%s status=%s file_sha=%s size_bytes=%d read_range=%s\n",
 			compactContextLine(redactToolOutput(t.env.NormalizeDisplayPath(absPath))),
@@ -256,7 +258,7 @@ func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 	if omitted := len(paths) - len(listed); omitted > 0 {
 		fmt.Fprintf(&b, "omitted_files: %d\n", omitted)
 	}
-	b.WriteString("note: file bodies are omitted; use the previous read_file result as evidence only while status=current, otherwise read_file again.\n")
+	b.WriteString("note: file bodies are omitted; use the previous read_file result as evidence only while status=current. status=current_baseline means this agent wrote the current content but should call read_file if it needs the body. Otherwise read_file again.\n")
 
 	return wuucontext.Block{
 		Kind:        wuucontext.BlockActiveFiles,

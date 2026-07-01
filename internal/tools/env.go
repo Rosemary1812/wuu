@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ type ReadFileEntry struct {
 	ContentSHA256 string
 	Offset        int
 	Limit         int
+	BaselineOnly  bool
 }
 
 // readFileState is a thread-safe record of read_file calls.
@@ -43,6 +45,12 @@ func (r *readFileState) record(absPath string, entry ReadFileEntry) {
 		r.state = make(map[string]ReadFileEntry)
 	}
 	r.state[absPath] = entry
+}
+
+func (r *readFileState) delete(absPath string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.state, absPath)
 }
 
 func (r *readFileState) hasBeenRead(absPath string) bool {
@@ -258,6 +266,33 @@ func (e *Env) RecordRead(absPath string, entry ReadFileEntry) {
 		e.readState = &readFileState{}
 	}
 	e.readState.record(absPath, entry)
+}
+
+// RecordWriteBaseline records the content just written by a mutating file
+// tool. It guards later edits in this agent without claiming that read_file
+// already returned the new full file body to the model.
+func (e *Env) RecordWriteBaseline(absPath string, content []byte) {
+	if e == nil || strings.TrimSpace(absPath) == "" {
+		return
+	}
+	entry := ReadFileEntry{
+		Size:          int64(len(content)),
+		ContentSHA256: sha256Hex(content),
+		BaselineOnly:  true,
+	}
+	if info, err := os.Stat(absPath); err == nil && !info.IsDir() {
+		entry.MtimeUnix = info.ModTime().Unix()
+		entry.MtimeUnixNano = info.ModTime().UnixNano()
+		entry.Size = info.Size()
+	}
+	e.RecordRead(absPath, entry)
+}
+
+func (e *Env) ForgetRead(absPath string) {
+	if e == nil || e.readState == nil {
+		return
+	}
+	e.readState.delete(absPath)
 }
 
 // HasBeenRead reports whether a file has been read via read_file.

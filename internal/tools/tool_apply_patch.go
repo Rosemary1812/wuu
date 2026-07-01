@@ -58,7 +58,7 @@ func (t *ApplyPatchTool) Classify(argsJSON string) ToolClassification {
 func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "apply_patch",
-		Description: "Apply a structured workspace patch using *** Begin Patch / *** End Patch. Supports Add, Update, optional Move, and Delete sections. Existing-file changes require a fresh read_file baseline or expected_old_sha(s). dry_run validates without writing.",
+		Description: "Apply a structured workspace patch using *** Begin Patch / *** End Patch. Supports Add, Update, optional Move, and Delete sections. Update and delete hunks are validated against the current file content; stale or ambiguous anchors fail. dry_run validates without writing.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -69,15 +69,6 @@ func (t *ApplyPatchTool) Definition() providers.ToolDefinition {
 				"dry_run": map[string]any{
 					"type":        "boolean",
 					"description": "Validate and preview the patch without writing files or firing file-change hooks.",
-				},
-				"expected_old_sha": map[string]any{
-					"type":        "string",
-					"description": "Optional sha256 digest from read_file file_sha for a single existing source file.",
-				},
-				"expected_old_shas": map[string]any{
-					"type":                 "object",
-					"additionalProperties": map[string]any{"type": "string"},
-					"description":          "Optional source path to read_file file_sha mapping for multi-file patches.",
 				},
 			},
 			"required": []string{"patchText"},
@@ -104,13 +95,11 @@ func (t *ApplyPatchTool) ValidateInput(argsJSON string) error {
 
 func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		PatchText       string            `json:"patchText"`
-		Patch           string            `json:"patch"`
-		PatchText2      string            `json:"patch_text"`
-		DryRun          bool              `json:"dry_run"`
-		DryRun2         bool              `json:"dryRun"`
-		ExpectedOldSHA  string            `json:"expected_old_sha"`
-		ExpectedOldSHAs map[string]string `json:"expected_old_shas"`
+		PatchText  string `json:"patchText"`
+		Patch      string `json:"patch"`
+		PatchText2 string `json:"patch_text"`
+		DryRun     bool   `json:"dry_run"`
+		DryRun2    bool   `json:"dryRun"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -135,11 +124,6 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 
 	dryRun := args.DryRun || args.DryRun2
-	if !dryRun {
-		if err := t.validatePatchBaselines(patch, strings.TrimSpace(args.ExpectedOldSHA), args.ExpectedOldSHAs); err != nil {
-			return "", fmt.Errorf("apply_patch verification failed: %w", err)
-		}
-	}
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
 
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
@@ -166,6 +150,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 			_ = rollbackPatchSnapshots(snapshots)
 			return "", fmt.Errorf("apply_patch apply failed: %w", err)
 		}
+		t.recordPatchPlanBaselines(plans)
 		t.notifyPatchPlans(plans)
 	}
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
@@ -367,138 +352,6 @@ func diffLineChangeCounts(diff DiffResult) (added, deleted int) {
 		}
 	}
 	return added, deleted
-}
-
-type applyPatchBaselineTarget struct {
-	Path        string
-	DisplayPath string
-	AbsPath     string
-	Action      string
-}
-
-func (t *ApplyPatchTool) validatePatchBaselines(patch applyPatch, expectedOldSHA string, expectedOldSHAs map[string]string) error {
-	targets, err := t.patchBaselineTargets(patch)
-	if err != nil {
-		return err
-	}
-	if len(targets) == 0 {
-		return nil
-	}
-	if expectedOldSHA != "" && len(targets) > 1 && len(expectedOldSHAs) == 0 {
-		return errors.New("expected_old_sha only supports single existing-file patches. Use expected_old_shas for multi-file patches")
-	}
-
-	expectedByPath := t.normalizeExpectedPatchSHAs(expectedOldSHAs)
-	for _, target := range targets {
-		expected := expectedByPath[normalizePatchPathKey(target.DisplayPath)]
-		if expected == "" {
-			expected = expectedByPath[normalizePatchPathKey(target.Path)]
-		}
-		if expected == "" && expectedOldSHA != "" && len(targets) == 1 {
-			expected = expectedOldSHA
-		}
-		if err := t.validatePatchBaselineTarget(target, expected); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *ApplyPatchTool) patchBaselineTargets(patch applyPatch) ([]applyPatchBaselineTarget, error) {
-	seen := make(map[string]bool)
-	targets := make([]applyPatchBaselineTarget, 0, len(patch.Hunks))
-	for _, hunk := range patch.Hunks {
-		switch hunk.Type {
-		case "update", "delete":
-		default:
-			continue
-		}
-		resolved, err := t.env.ResolvePath(hunk.Path)
-		if err != nil {
-			return nil, err
-		}
-		action := hunk.Type
-		if hunk.Type == "update" && hunk.MovePath != "" {
-			action = "move"
-		}
-		if err := t.rejectSensitivePatchPath(resolved, action); err != nil {
-			return nil, err
-		}
-		if seen[resolved] {
-			continue
-		}
-		seen[resolved] = true
-		targets = append(targets, applyPatchBaselineTarget{
-			Path:        hunk.Path,
-			DisplayPath: t.env.NormalizeDisplayPath(resolved),
-			AbsPath:     resolved,
-			Action:      action,
-		})
-	}
-	return targets, nil
-}
-
-func (t *ApplyPatchTool) normalizeExpectedPatchSHAs(values map[string]string) map[string]string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(values)*2)
-	for rawPath, sha := range values {
-		rawPath = strings.TrimSpace(rawPath)
-		sha = strings.TrimSpace(sha)
-		if rawPath == "" || sha == "" {
-			continue
-		}
-		out[normalizePatchPathKey(rawPath)] = sha
-		if resolved, err := t.env.ResolvePath(rawPath); err == nil {
-			out[normalizePatchPathKey(t.env.NormalizeDisplayPath(resolved))] = sha
-		}
-	}
-	return out
-}
-
-func normalizePatchPathKey(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return ""
-	}
-	return filepath.ToSlash(filepath.Clean(path))
-}
-
-func (t *ApplyPatchTool) validatePatchBaselineTarget(target applyPatchBaselineTarget, expectedOldSHA string) error {
-	info, err := os.Stat(target.AbsPath)
-	if err != nil {
-		return fmt.Errorf("read file to %s %s: %w", target.Action, target.DisplayPath, err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("path is a directory: %s", target.DisplayPath)
-	}
-	content, err := os.ReadFile(target.AbsPath)
-	if err != nil {
-		return fmt.Errorf("read file: %w", err)
-	}
-	currentSHA := sha256Hex(content)
-	if expectedOldSHA != "" {
-		if normalizeFileSHA(expectedOldSHA) != currentSHA {
-			return fmt.Errorf("expected_old_sha for %s does not match current file. Use read_file again before applying patch", target.DisplayPath)
-		}
-		return nil
-	}
-
-	readEntry, ok := t.env.GetReadEntry(target.AbsPath)
-	if !ok {
-		return fmt.Errorf("%s has not been read yet. Use read_file first or pass expected_old_shas[%q] from read_file before applying patch", target.DisplayPath, target.DisplayPath)
-	}
-	if readEntry.Size != 0 && readEntry.Size != info.Size() {
-		return fmt.Errorf("%s changed since last read. Use read_file again before applying patch", target.DisplayPath)
-	}
-	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return fmt.Errorf("%s changed since last read. Use read_file again before applying patch", target.DisplayPath)
-	}
-	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
-		return fmt.Errorf("%s changed since last read. Use read_file again before applying patch", target.DisplayPath)
-	}
-	return nil
 }
 
 func parseApplyPatch(raw string) (applyPatch, error) {
@@ -879,6 +732,17 @@ func (t *ApplyPatchTool) commitPatchPlans(plans []applyPatchHunkPlan) error {
 		}
 	}
 	return nil
+}
+
+func (t *ApplyPatchTool) recordPatchPlanBaselines(plans []applyPatchHunkPlan) {
+	for _, plan := range plans {
+		if plan.WriteTarget {
+			t.env.RecordWriteBaseline(plan.TargetAbs, plan.Content)
+		}
+		if plan.RemoveSource || plan.DeleteSource {
+			t.env.ForgetRead(plan.SourceAbs)
+		}
+	}
 }
 
 func (t *ApplyPatchTool) notifyPatchPlans(plans []applyPatchHunkPlan) {

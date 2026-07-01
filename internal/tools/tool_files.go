@@ -226,7 +226,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 
 	// Dedup check: same file, same range, same content → return stub.
 	if entry, ok := t.env.GetReadEntry(resolved); ok {
-		if entry.Offset == args.Offset && entry.Limit == limit {
+		if !entry.BaselineOnly && entry.Offset == args.Offset && entry.Limit == limit {
 			unchanged := entry.ContentSHA256 != "" && entry.ContentSHA256 == contentHash
 			if entry.ContentSHA256 == "" {
 				unchanged = readEntryMatchesInfo(entry, info)
@@ -848,6 +848,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if err := os.WriteFile(resolved, []byte(args.Content), 0o644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
+	t.env.RecordWriteBaseline(resolved, []byte(args.Content))
 	if t.env.OnFileChanged != nil {
 		t.env.OnFileChanged(resolved)
 	}
@@ -1254,6 +1255,7 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if err := os.WriteFile(resolved, []byte(newContent), 0o644); err != nil {
 		return "", fmt.Errorf("write file: %w", err)
 	}
+	t.env.RecordWriteBaseline(resolved, []byte(newContent))
 	if t.env.OnFileChanged != nil {
 		t.env.OnFileChanged(resolved)
 	}
