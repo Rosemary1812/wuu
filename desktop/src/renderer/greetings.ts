@@ -16,28 +16,28 @@ export function greetingFor(hour: number, ctx: GreetingContext): string {
 
   if (hour >= 5 && hour < 11) {
     return project
-      ? `早上好,今天想在 ${project} 里搞定什么？`
-      : "早上好,今天想搞定什么？";
+      ? `早上好，今天想在 ${project} 里先搞定什么？`
+      : "早上好，今天想先搞定什么？";
   }
   if (hour >= 11 && hour < 14) {
     return project
-      ? `中午好,${project} 接下来想做什么？`
-      : "中午好,休息一下还是接着干？";
+      ? `中午好，接下来想在 ${project} 里做什么？`
+      : "中午好，休息一下，还是接着做点什么？";
   }
   if (hour >= 14 && hour < 18) {
     return project
-      ? `下午好,${project} 有什么想推进的？`
-      : "下午好,有什么我能帮上的？";
+      ? `下午好，今天想在 ${project} 里推进什么？`
+      : "下午好，有什么我能帮忙推进的？";
   }
   if (hour >= 18 && hour < 22) {
     return project
-      ? `晚上好,${project} 今天还想做什么？`
-      : "晚上好,今天还想推进什么？";
+      ? `晚上好，今天还想在 ${project} 里处理什么？`
+      : "晚上好，今天还想处理什么？";
   }
   // 22:00 – 04:59 late night.
   return project
-    ? `夜深了,${project} 还能帮你做点什么？`
-    : "夜深了,继续还是先歇会儿？";
+    ? `夜深了，还想在 ${project} 里做点什么？`
+    : "夜深了，还要继续吗？";
 }
 
 // Re-render once a minute so the greeting updates when the user crosses
