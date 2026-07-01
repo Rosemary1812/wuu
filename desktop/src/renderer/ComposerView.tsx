@@ -615,7 +615,7 @@ export function Composer({
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
             {visibleSlashCommands.length > 0 ? (
-              <div className="slash-command-list">
+              <div className="slash-command-list scrollbar-hidden">
                 {visibleSlashCommands.map((command, index) => {
                   const selected = index === selectedSlashIndex;
                   const optionID = `${slashMenuID}-${command.id}`;
