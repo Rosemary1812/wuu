@@ -978,25 +978,43 @@
 }
 
 /*
- * Forked-thread status icon. Sits next to the title inside the row's main
- * button so it reads as a label, not an action — the row's hover-only
- * pin/archive affordances remain the only interactive controls. The
- * `position: relative; z-index: 2` lifts it above the absolutely-positioned
- * action overlay that fades in on hover.
+ * Forked-thread status icon. Sits as a sibling of the row's main button
+ * and is always visible — unlike the hover-only pin/archive actions, it
+ * is a persistent status indicator, not an action. The icon uses the
+ * same `icon-sm` class as the action icons (14px, matching the
+ * pin/archive glyphs exactly) and the default lucide-react stroke
+ * width, so the three icons share one size and weight.
+ *
+ * Layout: by default it sits at `right: 12px` — the same offset as the
+ * action overlay, but the actions are hidden by default so there's no
+ * visual conflict. On hover, the icon slides left to `right: 66px`,
+ * stopping 3px left of the pin button. The 3px gap matches the gap the
+ * pin/archive pair uses internally, so the three controls read as one
+ * rhythmic group on the right edge of the row. The title's own
+ * `padding-right: 58px` on hover pushes the text leftward, keeping it
+ * clear of the icon.
+ *
+ * `pointer-events: none` keeps the icon from intercepting clicks
+ * intended for the row or the action overlay. The icon is purely
+ * decorative — the row's `aria-label` already announces the fork, and
+ * the icon is `aria-hidden`.
  */
 .thread-row-fork-icon {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  margin-left: 6px;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--ink-tertiary);
   opacity: 0.75;
-  position: relative;
-  z-index: 2;
-  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: 1;
+  transition:
+    opacity 120ms ease,
+    right 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .thread-row:hover .thread-row-fork-icon {
+  right: 66px;
   opacity: 0.95;
 }
 

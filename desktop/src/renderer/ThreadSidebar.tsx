@@ -1,8 +1,8 @@
-import { Archive, ChevronRight, Folder, FolderOpen, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
+import { Archive, ChevronRight, Folder, FolderOpen, GitFork, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
-import { threadDisplayTitle } from "./ThreadTitles";
+import { baseThreadTitle } from "./ThreadTitles";
 import { isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
 
 function threadsForProjectPath(
@@ -415,7 +415,7 @@ function ThreadRows({
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingSwitch = pendingThreadID === thread.id;
         const running = threadRunning(thread);
-        const title = threadDisplayTitle(thread, threads);
+        const title = baseThreadTitle(thread, threads);
         const unread =
           !running &&
           !pendingSwitch &&
@@ -438,11 +438,17 @@ function ThreadRows({
                 className="thread-row-main"
                 type="button"
                 aria-busy={pendingSwitch || running}
-                aria-label={`${title}，${running ? "响应中" : "已完成"}`}
+                aria-label={`${title}${thread.forked_from_id ? "，分叉自其他会话" : ""}，${running ? "响应中" : "已完成"}`}
                 onClick={() => onSelect(thread.id)}
               >
                 <ThreadRowTitle title={title} />
               </button>
+              {thread.forked_from_id ? (
+                <GitFork
+                  className="icon-sm thread-row-fork-icon"
+                  aria-hidden="true"
+                />
+              ) : null}
               <div className="thread-row-actions" aria-label="对话操作">
                 <button
                   className={`sidebar-row-icon-button thread-row-action ${thread.pinned ? "active" : ""}`}
