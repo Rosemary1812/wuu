@@ -861,24 +861,37 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 
 	now := time.Now().UTC()
 	th.mu.Lock()
-	rewriteHistory := res.HistoryRewritten
-	if res.HistoryRewritten {
-		th.History = cloneHistory(res.NewMessages)
-	} else {
-		th.History = append(th.History, res.NewMessages...)
-	}
 	var historyErr error
-	if repaired, nerr := providers.RepairAndValidateToolCallHistory(th.History); nerr != nil {
-		historyErr = nerr
-	} else if !reflect.DeepEqual(repaired, th.History) {
-		th.History = repaired
-		rewriteHistory = true
-	}
 	var persistErr error
-	if historyErr != nil {
-		persistErr = historyErr
+	if err == nil {
+		rewriteHistory := res.HistoryRewritten
+		if res.HistoryRewritten {
+			th.History = cloneHistory(res.NewMessages)
+		} else {
+			th.History = append(th.History, res.NewMessages...)
+		}
+		if repaired, nerr := providers.RepairAndValidateToolCallHistory(th.History); nerr != nil {
+			historyErr = nerr
+		} else if !reflect.DeepEqual(repaired, th.History) {
+			th.History = repaired
+			rewriteHistory = true
+		}
+		if historyErr != nil {
+			persistErr = historyErr
+		} else {
+			persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, turnRuntime.ProviderName, turnRuntime.Model)
+		}
 	} else {
-		persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, turnRuntime.ProviderName, turnRuntime.Model)
+		if usageErr := appendTokenUsage(s.rt.SessionDir, th.ID, turnRuntime.ProviderName, turnRuntime.Model, providers.TokenUsage{
+			InputTokens:         res.InputTokens,
+			OutputTokens:        res.OutputTokens,
+			CacheCreationTokens: res.CacheCreationTokens,
+			CacheReadTokens:     res.CacheReadTokens,
+		}, res.ContextTokens); usageErr != nil {
+			persistErr = usageErr
+		} else if th.PersistHistory {
+			persistErr = session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
+		}
 	}
 	status := TurnStatusCompleted
 	if err != nil {
@@ -890,6 +903,8 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if err == nil && persistErr != nil {
 		err = persistErr
 		status = TurnStatusFailed
+	} else if err != nil && persistErr != nil {
+		err = errors.Join(err, persistErr)
 	}
 	var titleHistory []providers.ChatMessage
 	if err == nil {
