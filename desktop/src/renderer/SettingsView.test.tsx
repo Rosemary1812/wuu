@@ -346,7 +346,7 @@ describe("SettingsView advanced settings", () => {
         advanced_settings: {
           max_steps: 0,
           max_context_tokens: 0,
-          temperature: 0.2,
+          temperature: 0,
           disable_auto_compact: false,
           compact_keep_recent_tokens: 20000,
           context_window_tokens: 400000,
@@ -366,10 +366,12 @@ describe("SettingsView advanced settings", () => {
     expect(rootText()).toContain("当前服务上下文上限");
     expect(rootText()).toContain("来自当前通道输入上限");
     expect(rootText()).toContain("400,000");
+    expect(rootText()).toContain("Auto");
 
     const inputs = Array.from(container.querySelectorAll("input"));
     expect(inputs.length).toBeGreaterThanOrEqual(6);
     const [compactThreshold, compactKeepRecent, providerContextWindow, maxContextTokens, maxSteps, temperature] = inputs;
+    expect((temperature as HTMLInputElement).value).toBe("");
     await act(async () => {
       setInputValue(compactThreshold, "50");
       setInputValue(compactKeepRecent, "20000");
@@ -397,6 +399,45 @@ describe("SettingsView advanced settings", () => {
       max_steps: 12,
       temperature: 0.4,
     });
+  });
+
+  it("saves blank temperature as Auto", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onAdvancedSave = vi.fn().mockResolvedValue(undefined);
+    renderSettings({
+      initialPage: "advanced",
+      initialized: baseInitialized({
+        provider: "openrouter",
+        model: "openai/gpt-5.5",
+        advanced_settings: {
+          max_steps: 0,
+          max_context_tokens: 0,
+          temperature: 0,
+          disable_auto_compact: false,
+        },
+      }),
+      onAdvancedSave,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("保存高级设置"),
+    ) as HTMLButtonElement | undefined;
+    await act(async () => {
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onAdvancedSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        temperature: 0,
+      }),
+    );
   });
 });
 

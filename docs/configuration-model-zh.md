@@ -130,7 +130,7 @@ Wuu 的读取顺序是：
 | `name` | profile 名；默认 profile 写 `default` 或省略 | `default` | 文件手动 |
 | `max_steps` | 非负整数，`0` 表示不限 | `0` | 高级页可见 |
 | `max_context_tokens` | 非负整数，`0` 表示自动 | `0` | 高级页可见 |
-| `temperature` | `0` 到 `2`；显式 `0` 会保留 | `0.2` | 高级页可见 |
+| `temperature` | 大于 `0` 到 `2`；省略或 `0` 表示 Auto，会省略请求参数 | Auto | 高级页可见 |
 | `compact_threshold_pct` | `0` 到 `<1` 的小数，例如 `0.5` | `0` 表示自动 | 高级页可见，UI 用百分比填写 |
 | `compact_keep_recent_tokens` | 非负整数 | `0` 表示默认 `20000` | 高级页可见 |
 | `system_prompt` | 旧字段，追加到内置提示后 | 空 | 文件手动；新配置不要新增 |

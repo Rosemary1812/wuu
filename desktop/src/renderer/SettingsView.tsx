@@ -116,7 +116,7 @@ export function SettingsView({
   const [providerContextWindowDraft, setProviderContextWindowDraft] = useState("");
   const [maxContextTokensDraft, setMaxContextTokensDraft] = useState("");
   const [maxStepsDraft, setMaxStepsDraft] = useState("0");
-  const [temperatureDraft, setTemperatureDraft] = useState("0.2");
+  const [temperatureDraft, setTemperatureDraft] = useState("");
   const [advancedError, setAdvancedError] = useState("");
   const [advancedSaved, setAdvancedSaved] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>("idle");
@@ -1136,13 +1136,14 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="Temperature"
-          description="0 到 2；默认 0.2"
+          description="留空或 0 为 Auto；旧模型可填大于 0 到 2 的采样覆盖值"
           block
         >
           <input
             className="settings-input"
             value={temperature}
             inputMode="decimal"
+            placeholder="Auto"
             onChange={(event) => onTemperatureChange(event.target.value)}
             disabled={running || !initialized}
           />
@@ -1738,12 +1739,9 @@ function parseAdvancedSettingsDraft(draft: AdvancedDraft): { settings: RuntimeAd
   if (maxSteps.error) {
     return { settings: {}, error: maxSteps.error };
   }
-  const temperature = parseRequiredNumber(draft.temperature, "Temperature");
+  const temperature = parseTemperatureDraft(draft.temperature);
   if (temperature.error) {
     return { settings: {}, error: temperature.error };
-  }
-  if (temperature.value < 0 || temperature.value > 2) {
-    return { settings: {}, error: "Temperature 必须在 0 到 2 之间" };
   }
   return {
     settings: {
@@ -1781,14 +1779,14 @@ function parseOptionalNumber(raw: string, label: string): { value: number; error
   return { value: parsed };
 }
 
-function parseRequiredNumber(raw: string, label: string): { value: number; error?: string } {
+function parseTemperatureDraft(raw: string): { value: number; error?: string } {
   const value = raw.trim();
-  if (value === "") {
-    return { value: 0, error: `${label} 不能为空` };
+  if (value === "" || value.toLowerCase() === "auto") {
+    return { value: 0 };
   }
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return { value: 0, error: `${label} 必须是数字` };
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 2) {
+    return { value: 0, error: "Temperature 必须是 Auto 或 0 到 2 之间的数字" };
   }
   return { value: parsed };
 }
@@ -1808,8 +1806,8 @@ function formatOptionalNumberDraft(value: number | undefined): string {
 }
 
 function formatTemperatureDraft(value: number | undefined): string {
-  if (value === undefined || !Number.isFinite(value)) {
-    return "0.2";
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return "";
   }
   return String(value);
 }

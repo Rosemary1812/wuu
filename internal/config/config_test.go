@@ -120,7 +120,7 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	}
 }
 
-func TestLoadFrom_PreservesExplicitZeroTemperature(t *testing.T) {
+func TestLoadFrom_DefaultsTemperatureToAuto(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
@@ -134,9 +134,7 @@ func TestLoadFrom_PreservesExplicitZeroTemperature(t *testing.T) {
       "wire_api": "responses"
     }
   },
-  "agent": {
-    "temperature": 0
-  }
+  "agent": {}
 }`
 
 	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
@@ -148,7 +146,7 @@ func TestLoadFrom_PreservesExplicitZeroTemperature(t *testing.T) {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
 	if cfg.Agent.Temperature != 0 {
-		t.Fatalf("expected explicit temperature 0 to be preserved, got %v", cfg.Agent.Temperature)
+		t.Fatalf("expected missing temperature to use Auto/0, got %v", cfg.Agent.Temperature)
 	}
 }
 
@@ -406,6 +404,9 @@ func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
 	}
 	if strings.Contains(tpl, "You are wuu") {
 		t.Fatalf("template should not serialize built-in system prompt:\n%s", tpl)
+	}
+	if strings.Contains(tpl, `"temperature"`) {
+		t.Fatalf("template should omit Auto temperature override:\n%s", tpl)
 	}
 }
 
@@ -1369,6 +1370,46 @@ func TestUpdateAdvancedRuntimePersistsAgentAndProviderSettings(t *testing.T) {
 	}
 	if cfg.Providers["main"].ContextWindow != providerContext {
 		t.Fatalf("provider context_window = %d, want %d", cfg.Providers["main"].ContextWindow, providerContext)
+	}
+}
+
+func TestUpdateAdvancedRuntimeDeletesTemperatureForAuto(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://x",
+      "api_key": "k",
+      "model": "test"
+    }
+  },
+  "agent": {
+    "temperature": 0.4
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	auto := 0.0
+	if err := UpdateAdvancedRuntime(configPath, "main", AdvancedRuntimeUpdate{Temperature: &auto}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.Temperature != 0 {
+		t.Fatalf("temperature = %v, want Auto/0", cfg.Agent.Temperature)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"temperature"`) {
+		t.Fatalf("Auto temperature should remove config override:\n%s", string(data))
 	}
 }
 

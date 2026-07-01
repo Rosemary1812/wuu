@@ -251,11 +251,13 @@ type AgentConfig struct {
 	// Name identifies a durable agent profile. The default profile is a
 	// temporary session; non-default names opt into profile-scoped memory shared
 	// across workspaces.
-	Name             string  `json:"name,omitempty"`
-	MaxSteps         int     `json:"max_steps"`
-	MaxContextTokens int     `json:"max_context_tokens"`
-	Temperature      float64 `json:"temperature"`
-	temperatureSet   bool
+	Name             string `json:"name,omitempty"`
+	MaxSteps         int    `json:"max_steps"`
+	MaxContextTokens int    `json:"max_context_tokens"`
+	// Temperature overrides model/provider sampling when greater than zero.
+	// Zero means Auto: omit the request field and let the provider or model
+	// compatibility layer choose.
+	Temperature float64 `json:"temperature,omitempty"`
 	// CompactThresholdPct overrides the default usable-window trigger for
 	// proactive compaction. Zero means auto; custom values are fractions in
 	// (0,1), for example 0.5 for 50%.
@@ -447,14 +449,9 @@ func readConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	var raw struct {
-		Agent     map[string]json.RawMessage            `json:"agent"`
 		Providers map[string]map[string]json.RawMessage `json:"providers"`
 	}
-	if err := json.Unmarshal(data, &raw); err == nil && raw.Agent != nil {
-		if _, ok := raw.Agent["temperature"]; ok {
-			cfg.Agent.temperatureSet = true
-		}
-	}
+	_ = json.Unmarshal(data, &raw)
 	applyLegacyCodexCredentialReuseDefaults(&cfg, raw.Providers)
 
 	return cfg, nil
@@ -596,7 +593,7 @@ func (c Config) Validate() error {
 		return errors.New("agent.max_context_tokens cannot be negative (use 0 for auto)")
 	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
-		return errors.New("agent.temperature must be in [0,2]")
+		return errors.New("agent.temperature must be in [0,2] (0 means Auto)")
 	}
 	if c.Agent.CompactThresholdPct < 0 || c.Agent.CompactThresholdPct >= 1 {
 		return errors.New("agent.compact_threshold_pct must be in [0,1)")
@@ -801,8 +798,7 @@ func Default() Config {
 			ApprovalsReviewer: ApprovalsReviewerUser,
 			// 0 = unlimited; the model decides when to stop. Users who
 			// want a runaway safety net can set this explicitly.
-			MaxSteps:    0,
-			Temperature: 0.2,
+			MaxSteps: 0,
 		},
 	}
 }
@@ -1083,7 +1079,7 @@ func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRunti
 	}
 	setOptionalInt(agent, "max_steps", update.MaxSteps)
 	setOptionalInt(agent, "max_context_tokens", update.MaxContextTokens)
-	setOptionalFloat(agent, "temperature", update.Temperature, 0.2)
+	setOptionalFloat(agent, "temperature", update.Temperature, 0)
 	setOptionalFloat(agent, "compact_threshold_pct", update.CompactThresholdPct, 0)
 	setOptionalInt(agent, "compact_keep_recent_tokens", update.CompactKeepRecentTokens)
 	setOptionalBool(agent, "disable_auto_compact", update.DisableAutoCompact)
@@ -1386,9 +1382,5 @@ func applyDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.Agent.ApprovalsReviewer) == "" {
 		cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
-	}
-	// temperature = 0 means provider default when the user sets it explicitly.
-	if cfg.Agent.Temperature == 0 && !cfg.Agent.temperatureSet {
-		cfg.Agent.Temperature = 0.2
 	}
 }
