@@ -587,7 +587,7 @@ function RichWebLinkIcon({ href }: { href: string }): JSX.Element {
 
 function linkedFileTarget(reference: string, cwd: string | undefined): string | undefined {
   const path = filePathFromReference(reference);
-  if (!isAutoLinkFilePath(path)) {
+  if (!isAutoLinkFilePath(path, reference)) {
     return undefined;
   }
   if (path.startsWith("/")) {
@@ -607,12 +607,19 @@ function filePathFromReference(reference: string): string {
   return (match?.[1] ?? reference).trim();
 }
 
-function isAutoLinkFilePath(path: string): boolean {
+function isAutoLinkFilePath(path: string, reference: string): boolean {
   const normalizedPath = path.trim();
   if (!normalizedPath || /^https?:\/\//i.test(normalizedPath)) {
     return false;
   }
-  return AUTO_LINK_FILE_EXTENSIONS.has(fileExtension(normalizedPath));
+  if (!AUTO_LINK_FILE_EXTENSIONS.has(fileExtension(normalizedPath))) {
+    return false;
+  }
+  return isQualifiedFileReference(normalizedPath, reference);
+}
+
+function isQualifiedFileReference(path: string, reference: string): boolean {
+  return path.includes("/") || AUTO_FILE_LINE_SUFFIX_PATTERN.test(reference);
 }
 
 function fileExtension(path: string): string {

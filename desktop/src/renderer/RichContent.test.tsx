@@ -37,7 +37,7 @@ function render(element: JSX.Element): void {
 }
 
 describe("RichContent code block", () => {
-  it("turns bare workspace file references into clickable inline links", async () => {
+  it("turns line-specific bare workspace file references into clickable inline links", async () => {
     const openFile = vi.fn();
     render(
       <RichContent
@@ -57,6 +57,29 @@ describe("RichContent code block", () => {
     });
 
     expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/README_zh.md");
+  });
+
+  it("does not turn unqualified bare filenames into file links", () => {
+    render(<RichContent text={"The likely tool file is tool_search.go."} cwd="/Users/zzzz/wuu" onOpenFile={vi.fn()} />);
+
+    expect(container.querySelector(".rich-file-link")).toBeNull();
+    expect(container.textContent).toContain("tool_search.go");
+  });
+
+  it("turns qualified workspace file paths into clickable inline links", async () => {
+    const openFile = vi.fn();
+    const reference = "internal/tools/tool_discovery.go";
+    render(<RichContent text={`Open ${reference} instead.`} cwd="/Users/zzzz/wuu" onOpenFile={openFile} />);
+
+    const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain(reference);
+
+    await act(async () => {
+      link?.click();
+    });
+
+    expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/internal/tools/tool_discovery.go");
   });
 
   it("keeps complete file line ranges inside the inline file link", async () => {
