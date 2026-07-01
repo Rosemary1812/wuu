@@ -1072,6 +1072,12 @@
 
 .workspace-scroll-region {
   background: var(--paper);
+  overflow: hidden;
+}
+
+.workspace-scroll-region .scroll-region-content {
+  height: 100%;
+  min-height: 0;
 }
 
 .workspace-title-icon {
@@ -1409,8 +1415,9 @@
 
 .workspace-file-preview {
   display: grid;
+  height: 100%;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
