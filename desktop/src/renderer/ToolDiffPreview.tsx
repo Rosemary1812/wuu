@@ -282,6 +282,24 @@ function DiffSummaryView({ diff }: { diff: FileDiff }): JSX.Element {
   );
 }
 
+export function ToolDiffContent({
+  diff,
+}: {
+  diff: ToolDiffPreviewFileDiff;
+}): JSX.Element {
+  return (
+    <>
+      {diff.hunks.length > 0 ? (
+        diff.hunks.map((hunk, index) => (
+          <DiffHunkView hunk={hunk} key={index} />
+        ))
+      ) : (
+        <DiffSummaryView diff={diff} />
+      )}
+    </>
+  );
+}
+
 export function ToolDiffPreview({
   item,
   diff: explicitDiff,
@@ -362,13 +380,7 @@ export function ToolDiffPreview({
               ) : null}
             </span>
             <span className="tool-diff-preview-body">
-              {diff.hunks.length > 0 ? (
-                diff.hunks.map((hunk, index) => (
-                  <DiffHunkView hunk={hunk} key={index} />
-                ))
-              ) : (
-                <DiffSummaryView diff={diff} />
-              )}
+              <ToolDiffContent diff={diff} />
             </span>
           </span>,
           document.body,

@@ -16,6 +16,7 @@ import {
 import { ConversationTurnList } from "./ConversationTurnList";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { TurnView, latestAgentMessageItemID } from "./TurnView";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
 
 export function ConversationSplitPane({
@@ -46,6 +47,7 @@ export function ConversationSplitPane({
   onSubmitEditMessage,
   onStreamFrame,
   onNoticeAction,
+  onOpenFileDiff,
   pendingToolApproval,
   onResolveToolApproval,
 }: {
@@ -82,6 +84,7 @@ export function ConversationSplitPane({
   ) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
   pendingToolApproval?: PendingToolApproval;
   onResolveToolApproval?: (
     approval: PendingToolApproval,
@@ -170,6 +173,7 @@ export function ConversationSplitPane({
                       : undefined
                   }
                   onNoticeAction={onNoticeAction}
+                  onOpenFileDiff={onOpenFileDiff}
                   pendingApproval={approval}
                   onApproveTool={
                     approval && onResolveToolApproval

@@ -12,6 +12,7 @@ import { useAssistantTurnPresentation } from "./AssistantTurnPresentation";
 import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { TurnEventNotice } from "./TurnNotice";
 import { turnEventForTurn } from "./TurnEvents";
 import {
@@ -37,6 +38,7 @@ export function TurnView({
   onSubmitEditMessage,
   onCollapseComplete,
   onNoticeAction,
+  onOpenFileDiff,
   pendingApproval,
   onApproveTool,
   onApproveToolForSession,
@@ -60,6 +62,7 @@ export function TurnView({
   ) => void;
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
   pendingApproval?: PendingToolApproval;
   onApproveTool?: () => void;
   onApproveToolForSession?: () => void;
@@ -152,7 +155,13 @@ export function TurnView({
           onDenyTool={onDenyTool}
         />
       ) : null}
-      {isLatestTurn ? <TurnEditSummaryCard turn={turn} cwd={cwd} /> : null}
+      {isLatestTurn ? (
+        <TurnEditSummaryCard
+          turn={turn}
+          cwd={cwd}
+          onOpenFileDiff={onOpenFileDiff}
+        />
+      ) : null}
       {event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null}
     </section>
   );

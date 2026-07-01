@@ -215,6 +215,41 @@ describe("TurnEditSummaryCard", () => {
     expect(document.body.textContent).toContain("export const value = true;");
   });
 
+  it("opens the selected file diff when a file row is clicked", () => {
+    const onOpenFileDiff = vi.fn();
+    const turn: Turn = {
+      id: "turn-1",
+      status: "completed",
+      items_view: "full",
+      items: [buildEditItem("/tmp/a.txt", 2, 1)],
+    };
+
+    mount(
+      <TurnEditSummaryCard turn={turn} onOpenFileDiff={onOpenFileDiff} />,
+    );
+
+    const row = container?.querySelector<HTMLButtonElement>(
+      ".turn-edit-summary-row",
+    );
+    expect(row).toBeTruthy();
+
+    act(() => {
+      row?.click();
+    });
+
+    expect(onOpenFileDiff).toHaveBeenCalledTimes(1);
+    expect(onOpenFileDiff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/tmp/a.txt",
+        additions: 2,
+        deletions: 1,
+        diff: expect.objectContaining({
+          path: "/tmp/a.txt",
+        }),
+      }),
+    );
+  });
+
   it("renders newly-created files from write_file", () => {
     const writeFileItem: ThreadItem = {
       id: "item-new",

@@ -5,6 +5,7 @@ import {
   ToolDiffPreview,
   type ToolDiffPreviewFileDiff,
 } from "./ToolDiffPreview";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 
 type FileEdit = {
   path: string;
@@ -238,9 +239,11 @@ const FILE_BATCH_SIZE = 3;
 export function TurnEditSummaryCard({
   turn,
   cwd,
+  onOpenFileDiff,
 }: {
   turn: Turn;
   cwd?: string;
+  onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
 }): JSX.Element | null {
   const [visibleCount, setVisibleCount] = useState(FILE_BATCH_SIZE);
 
@@ -263,9 +266,10 @@ export function TurnEditSummaryCard({
         </span>
       </div>
       <div className="turn-edit-summary-list">
-        {visibleEdits.map((edit) => (
-          <ToolDiffPreview diff={edit.diff} item={edit.item} key={edit.path}>
-            <div className="turn-edit-summary-row">
+        {visibleEdits.map((edit) => {
+          const canOpenDiff = Boolean(edit.diff && onOpenFileDiff);
+          const rowContent = (
+            <>
               <span className="turn-edit-summary-name" title={edit.path}>
                 {fileDisplayName(edit.path)}
               </span>
@@ -277,9 +281,35 @@ export function TurnEditSummaryCard({
                   <span className="turn-edit-summary-delete">-{edit.deletions}</span>
                 ) : null}
               </span>
-            </div>
-          </ToolDiffPreview>
-        ))}
+            </>
+          );
+          return (
+            <ToolDiffPreview diff={edit.diff} item={edit.item} key={edit.path}>
+              {canOpenDiff ? (
+                <button
+                  className="turn-edit-summary-row is-clickable"
+                  type="button"
+                  aria-label={`在右侧查看 ${edit.path} 的 diff`}
+                  onClick={() =>
+                    edit.diff
+                      ? onOpenFileDiff?.({
+                          path: edit.path,
+                          diff: edit.diff,
+                          additions: edit.additions,
+                          deletions: edit.deletions,
+                          newFile: edit.newFile,
+                        })
+                      : undefined
+                  }
+                >
+                  {rowContent}
+                </button>
+              ) : (
+                <div className="turn-edit-summary-row">{rowContent}</div>
+              )}
+            </ToolDiffPreview>
+          );
+        })}
         {hiddenCount > 0 ? (
           <div className="turn-edit-summary-more">
             <span>还有 {hiddenCount} 个文件</span>

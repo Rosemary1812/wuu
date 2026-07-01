@@ -115,6 +115,8 @@ import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
+import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { lastUserMessageAnchor } from "./TurnViewHelpers";
 import { AppSidebar } from "./AppSidebar";
 import {
@@ -503,6 +505,10 @@ export function App(): JSX.Element {
   >(initialSplitComposerDrafts);
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
+  const [turnFileDiffSelection, setTurnFileDiffSelection] =
+    useState<(TurnFileDiffSelection & { threadID: string }) | undefined>(
+      undefined,
+    );
   const [, setQueuedMessageEditTarget] =
     useState<QueuedMessageEditTarget | undefined>(undefined);
   const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
@@ -760,6 +766,14 @@ export function App(): JSX.Element {
       ),
     [state.threads, state.thread, state.secondaryThread],
   );
+  const openTurnFileDiffPanel = useStableCallback(
+    (threadID: string, selection: TurnFileDiffSelection) => {
+      setTurnFileDiffSelection({ ...selection, threadID });
+    },
+  );
+  const closeTurnFileDiffPanel = useStableCallback(() => {
+    setTurnFileDiffSelection(undefined);
+  });
   const activePendingComposerMessages = pendingComposerMessagesForThread(
     pendingComposerMessagesByThread,
     activeThreadID,
@@ -1463,6 +1477,28 @@ export function App(): JSX.Element {
   }, [turns]);
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
+
+  useEffect(() => {
+    setTurnFileDiffSelection((current) => {
+      if (!current) return current;
+      if (
+        !activeThreadID ||
+        current.threadID !== activeThreadID ||
+        showingWorkspaceMode ||
+        showingSkillsCatalog ||
+        emptyConversation
+      ) {
+        return undefined;
+      }
+      return current;
+    });
+  }, [
+    activeThreadID,
+    emptyConversation,
+    showingSkillsCatalog,
+    showingWorkspaceMode,
+  ]);
+
   const {
     conversationScrollRef,
     scrollContentRef,
@@ -2672,6 +2708,9 @@ export function App(): JSX.Element {
         pendingToolApproval={state.pendingToolApproval}
         onResolveToolApproval={(approval, decision) =>
           void resolveToolApproval(approval, decision)
+        }
+        onOpenFileDiff={(selection) =>
+          openTurnFileDiffPanel(thread.id, selection)
         }
       />
     );
@@ -6473,6 +6512,9 @@ export function App(): JSX.Element {
                 onResolveToolApproval={(approval, decision) =>
                   void resolveToolApproval(approval, decision)
                 }
+                onOpenFileDiff={(thread, selection) =>
+                  openTurnFileDiffPanel(thread.id, selection)
+                }
               />
             )}
               </>
@@ -6486,6 +6528,11 @@ export function App(): JSX.Element {
             onExitPreview={() => setLaunchPreviewPinned(false)}
           />
         )}
+
+        <TurnFileDiffPanel
+          selection={turnFileDiffSelection}
+          onClose={closeTurnFileDiffPanel}
+        />
 
         {state.initialized &&
         !previewingLaunch &&
@@ -6642,6 +6689,7 @@ type CachedConversationPanesProps = {
     files: InputFile[],
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   /**
    * Tool approval waiting for a decision. The matching turn is found
    * inside this component by `call_id` lookup, so the card only renders
@@ -6676,6 +6724,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onCancelEditMessage,
   onSubmitEditMessage,
   onNoticeAction,
+  onOpenFileDiff,
   pendingToolApproval,
   onResolveToolApproval,
 }: CachedConversationPanesProps): JSX.Element {
@@ -6796,6 +6845,9 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                       )
                     }
                     onNoticeAction={onNoticeAction}
+                    onOpenFileDiff={(selection) =>
+                      onOpenFileDiff(thread, selection)
+                    }
                     pendingApproval={approval}
                     onApproveTool={
                       approval && onResolveToolApproval
