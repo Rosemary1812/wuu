@@ -154,6 +154,114 @@ async function run() {
     `Sidebar content width should sync after drag ends. Summary=${JSON.stringify(summary)}`
   );
 
+  await waitFor(
+    win,
+    () => {
+      const button = Array.from(document.querySelectorAll(".side-panel-toggle-button")).find((candidate) =>
+        candidate.getAttribute("aria-label")?.includes("右侧栏")
+      );
+      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+        return null;
+      }
+      button.click();
+      return true;
+    },
+    3000
+  );
+  await waitFor(win, () => Boolean(document.querySelector(".workspace-right-panel-resizer")), 3000);
+
+  const rightPanelProbe = await evaluate(
+    win,
+    async () => {
+      const resizer = document.querySelector(".workspace-right-panel-resizer");
+      const shell = document.querySelector(".app-shell");
+      if (!(resizer instanceof HTMLElement) || !(shell instanceof HTMLElement)) {
+        throw new Error("Right panel resizer not found.");
+      }
+
+      let dragging = false;
+      let storageWritesDuringDrag = 0;
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function setItemProbe(key, value) {
+        if (dragging && key === "wuu.desktop.workspaceRightPanelWidth") {
+          storageWritesDuringDrag += 1;
+        }
+        return originalSetItem.call(this, key, value);
+      };
+
+      const samples = [];
+      let previousTs;
+      let sampling = true;
+      const sample = (ts) => {
+        samples.push({
+          dt: previousTs === undefined ? 0 : ts - previousTs,
+          width: Number.parseFloat(getComputedStyle(shell).getPropertyValue("--workspace-right-panel-width")) || 0,
+          resizing: shell.classList.contains("resizing-right-panel")
+        });
+        previousTs = ts;
+        if (sampling) {
+          window.requestAnimationFrame(sample);
+        }
+      };
+      window.requestAnimationFrame(sample);
+
+      const rect = resizer.getBoundingClientRect();
+      const startX = rect.left + rect.width / 2;
+      dragging = true;
+      resizer.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: startX, pointerId: 2 }));
+      for (let index = 0; index < 20 && !shell.classList.contains("resizing-right-panel"); index += 1) {
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      }
+      for (let index = 0; index < 96; index += 1) {
+        const direction = index < 48 ? -1 : 1;
+        const offset = direction === -1 ? index * -3 : (96 - index) * -3;
+        window.dispatchEvent(
+          new PointerEvent("pointermove", {
+            bubbles: true,
+            button: 0,
+            clientX: startX + offset,
+            pointerId: 2
+          })
+        );
+        await new Promise((resolve) => window.setTimeout(resolve, 8));
+      }
+      window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: startX, pointerId: 2 }));
+      dragging = false;
+      await new Promise((resolve) => window.setTimeout(resolve, 160));
+      sampling = false;
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      Storage.prototype.setItem = originalSetItem;
+      return { samples, storageWritesDuringDrag };
+    }
+  );
+
+  const rightPanelSamples = rightPanelProbe.samples;
+  const rightPanelMaxFrameMs = Math.max(...rightPanelSamples.map((sample) => sample.dt));
+  const rightPanelResizingSamples = rightPanelSamples.filter((sample) => sample.resizing);
+  const rightPanelMinWidth = Math.min(...rightPanelSamples.map((sample) => sample.width));
+  const rightPanelMaxWidth = Math.max(...rightPanelSamples.map((sample) => sample.width));
+  const rightPanelSummary = {
+    samples: rightPanelSamples.length,
+    resizingSamples: rightPanelResizingSamples.length,
+    maxFrameMs: Math.round(rightPanelMaxFrameMs),
+    minWidth: rightPanelMinWidth,
+    maxWidth: rightPanelMaxWidth,
+    storageWritesDuringDrag: rightPanelProbe.storageWritesDuringDrag,
+    disableGpu,
+    visible
+  };
+  console.log(JSON.stringify({ rightPanel: rightPanelSummary }, null, 2));
+  assert.ok(rightPanelResizingSamples.length > 0, "Right panel resize marker should be set while dragging.");
+  assert.ok(
+    rightPanelMaxWidth - rightPanelMinWidth >= 90,
+    `Right panel drag should change width. Summary=${JSON.stringify(rightPanelSummary)}`
+  );
+  assert.equal(
+    rightPanelSummary.storageWritesDuringDrag,
+    0,
+    `Right panel drag should not persist width on every pointer move. Summary=${JSON.stringify(rightPanelSummary)}`
+  );
+
   win.close();
   app.quit();
 }

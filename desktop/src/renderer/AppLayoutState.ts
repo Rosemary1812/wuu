@@ -42,6 +42,7 @@ type SidebarResizeSession = {
 type RightPanelResizeSession = {
   startX: number;
   startWidth: number;
+  currentWidth: number;
 };
 
 type WindowPointerResizeController<Session> = {
@@ -165,6 +166,8 @@ export function useAppLayoutState({
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
   const sidebarLiveFrameRef = useRef<number | undefined>(undefined);
   const pendingLiveSidebarWidthRef = useRef<number | undefined>(undefined);
+  const rightPanelLiveFrameRef = useRef<number | undefined>(undefined);
+  const pendingLiveWorkspaceRightPanelWidthRef = useRef<number | undefined>(undefined);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
@@ -248,6 +251,59 @@ export function useAppLayoutState({
     [writeLiveSidebarWidth]
   );
 
+  const writeLiveWorkspaceRightPanelWidth = useCallback(
+    (nextWidth: number): void => {
+      const root = layoutRootRef?.current;
+      if (!root) {
+        return;
+      }
+      const clampedWidth = clampWorkspaceRightPanelWidth(
+        nextWidth,
+        effectiveSidebarWidth
+      );
+      root.style.setProperty("--workspace-right-panel-width", `${clampedWidth}px`);
+    },
+    [effectiveSidebarWidth, layoutRootRef]
+  );
+
+  const cancelPendingLiveWorkspaceRightPanelWidth = useCallback((): void => {
+    if (rightPanelLiveFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(rightPanelLiveFrameRef.current);
+      rightPanelLiveFrameRef.current = undefined;
+    }
+    pendingLiveWorkspaceRightPanelWidthRef.current = undefined;
+  }, []);
+
+  const flushPendingLiveWorkspaceRightPanelWidth = useCallback((): void => {
+    if (rightPanelLiveFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(rightPanelLiveFrameRef.current);
+      rightPanelLiveFrameRef.current = undefined;
+    }
+    const nextWidth = pendingLiveWorkspaceRightPanelWidthRef.current;
+    pendingLiveWorkspaceRightPanelWidthRef.current = undefined;
+    if (nextWidth !== undefined) {
+      writeLiveWorkspaceRightPanelWidth(nextWidth);
+    }
+  }, [writeLiveWorkspaceRightPanelWidth]);
+
+  const applyLiveWorkspaceRightPanelWidth = useCallback(
+    (nextWidth: number): void => {
+      pendingLiveWorkspaceRightPanelWidthRef.current = nextWidth;
+      if (rightPanelLiveFrameRef.current !== undefined) {
+        return;
+      }
+      rightPanelLiveFrameRef.current = window.requestAnimationFrame(() => {
+        rightPanelLiveFrameRef.current = undefined;
+        const pendingWidth = pendingLiveWorkspaceRightPanelWidthRef.current;
+        pendingLiveWorkspaceRightPanelWidthRef.current = undefined;
+        if (pendingWidth !== undefined) {
+          writeLiveWorkspaceRightPanelWidth(pendingWidth);
+        }
+      });
+    },
+    [writeLiveWorkspaceRightPanelWidth]
+  );
+
   const applySidebarWidth = useCallback(
     (nextWidth: number): void => {
       if (nextWidth <= SIDEBAR_MIN_WIDTH) {
@@ -302,8 +358,9 @@ export function useAppLayoutState({
         window.clearTimeout(rightPanelMotionTimerRef.current);
       }
       cancelPendingLiveSidebarWidth();
+      cancelPendingLiveWorkspaceRightPanelWidth();
     };
-  }, [cancelPendingLiveSidebarWidth]);
+  }, [cancelPendingLiveSidebarWidth, cancelPendingLiveWorkspaceRightPanelWidth]);
 
   const handleSidebarResizeMove = useCallback(
     (event: PointerEvent, session: SidebarResizeSession): void => {
@@ -363,19 +420,26 @@ export function useAppLayoutState({
 
   const handleRightPanelResizeMove = useCallback(
     (event: PointerEvent, session: RightPanelResizeSession): void => {
-      setWorkspaceRightPanelWidth(
-        clampWorkspaceRightPanelWidth(
-          session.startWidth - (event.clientX - session.startX),
-          effectiveSidebarWidth
-        )
-      );
+      const nextWidth = session.startWidth - (event.clientX - session.startX);
+      session.currentWidth = nextWidth;
+      applyLiveWorkspaceRightPanelWidth(nextWidth);
     },
-    [effectiveSidebarWidth]
+    [applyLiveWorkspaceRightPanelWidth]
   );
 
-  const handleRightPanelResizeEnd = useCallback((): void => {
+  const handleRightPanelResizeEnd = useCallback((session: RightPanelResizeSession | null): void => {
+    if (session) {
+      flushPendingLiveWorkspaceRightPanelWidth();
+      applyWorkspaceRightPanelWidth(session.currentWidth);
+    } else {
+      cancelPendingLiveWorkspaceRightPanelWidth();
+    }
     setResizingRightPanel(false);
-  }, []);
+  }, [
+    applyWorkspaceRightPanelWidth,
+    cancelPendingLiveWorkspaceRightPanelWidth,
+    flushPendingLiveWorkspaceRightPanelWidth,
+  ]);
 
   useWindowPointerResize({
     resizing: resizingRightPanel,
@@ -437,7 +501,8 @@ export function useAppLayoutState({
     event.preventDefault();
     rightPanelResizeSessionRef.current = {
       startX: event.clientX,
-      startWidth: clampedWorkspaceRightPanelWidth
+      startWidth: clampedWorkspaceRightPanelWidth,
+      currentWidth: clampedWorkspaceRightPanelWidth
     };
     setResizingRightPanel(true);
   }
