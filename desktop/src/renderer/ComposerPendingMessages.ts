@@ -16,6 +16,8 @@ export type LocatedPendingComposerMessage = {
   message: QueuedComposerMessage;
 };
 
+export type PendingComposerMessageRemovalScope = "queue" | "guide" | "all";
+
 export function emptyThreadPendingComposerMessages(): ThreadPendingComposerMessages {
   return { queued: [], guides: [] };
 }
@@ -34,6 +36,44 @@ export function threadPendingComposerMessagesIsEmpty(
   pending: ThreadPendingComposerMessages,
 ): boolean {
   return pending.queued.length === 0 && pending.guides.length === 0;
+}
+
+export function removePendingComposerMessagesByID(
+  messagesByThread: PendingComposerMessagesByThread,
+  threadID: string | undefined,
+  id: string,
+  scope: PendingComposerMessageRemovalScope = "all",
+): PendingComposerMessagesByThread {
+  if (!threadID || !id) {
+    return messagesByThread;
+  }
+  const previous = messagesByThread[threadID];
+  if (!previous) {
+    return messagesByThread;
+  }
+  const next: ThreadPendingComposerMessages = {
+    queued:
+      scope === "guide"
+        ? previous.queued
+        : previous.queued.filter((message) => message.id !== id),
+    guides:
+      scope === "queue"
+        ? previous.guides
+        : previous.guides.filter((message) => message.id !== id),
+  };
+  if (
+    next.queued.length === previous.queued.length &&
+    next.guides.length === previous.guides.length
+  ) {
+    return messagesByThread;
+  }
+  const nextByThread = { ...messagesByThread };
+  if (threadPendingComposerMessagesIsEmpty(next)) {
+    delete nextByThread[threadID];
+  } else {
+    nextByThread[threadID] = next;
+  }
+  return nextByThread;
 }
 
 export function findPendingComposerMessage(

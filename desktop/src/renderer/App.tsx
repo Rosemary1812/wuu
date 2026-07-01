@@ -80,7 +80,9 @@ import {
   emptyThreadPendingComposerMessages,
   findPendingComposerMessage,
   pendingComposerMessagesForThread,
+  removePendingComposerMessagesByID,
   threadPendingComposerMessagesIsEmpty,
+  type PendingComposerMessageRemovalScope,
   type PendingComposerMessagesByThread,
   type ThreadPendingComposerMessages,
 } from "./ComposerPendingMessages";
@@ -2254,14 +2256,16 @@ export function App(): JSX.Element {
   function removePendingComposerMessageByID(
     threadID: string | undefined,
     id: string,
+    scope: PendingComposerMessageRemovalScope = "all",
   ): void {
-    if (!threadID || !id) {
-      return;
-    }
-    updateThreadPendingComposerMessages(threadID, (previous) => ({
-      queued: previous.queued.filter((message) => message.id !== id),
-      guides: previous.guides.filter((message) => message.id !== id),
-    }));
+    setPendingComposerMessagesByThreadNow(
+      removePendingComposerMessagesByID(
+        pendingComposerMessagesByThreadRef.current,
+        threadID,
+        id,
+        scope,
+      ),
+    );
   }
 
   function syncPendingComposerMessagesFromServerEvent(event: ServerEvent): void {
@@ -2278,14 +2282,14 @@ export function App(): JSX.Element {
     if (event.message.method === "turn/started") {
       const queueID = stringValue(params, "queue_id");
       if (queueID) {
-        removePendingComposerMessageByID(threadID, queueID);
+        removePendingComposerMessageByID(threadID, queueID, "queue");
       }
       return;
     }
     if (event.message.method === "turn/dequeued") {
       const queueID = stringValue(params, "queue_id");
       if (queueID) {
-        removePendingComposerMessageByID(threadID, queueID);
+        removePendingComposerMessageByID(threadID, queueID, "queue");
       }
       return;
     }

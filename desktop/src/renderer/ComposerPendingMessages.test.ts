@@ -4,6 +4,7 @@ import {
   findPendingComposerMessage,
   pendingComposerMessageCount,
   pendingComposerMessagesForThread,
+  removePendingComposerMessagesByID,
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
 
@@ -60,5 +61,43 @@ describe("composer pending messages", () => {
       index: 0,
       message: { id: "guide-b" },
     });
+  });
+
+  it("removes only queued messages when a queue id is dequeued", () => {
+    const byThread: PendingComposerMessagesByThread = {
+      "thread-a": {
+        queued: [message("shared-id", "queued")],
+        guides: [message("shared-id", "guide")],
+      },
+    };
+
+    const next = removePendingComposerMessagesByID(
+      byThread,
+      "thread-a",
+      "shared-id",
+      "queue",
+    );
+
+    expect(next["thread-a"]?.queued).toEqual([]);
+    expect(next["thread-a"]?.guides.map((item) => item.id)).toEqual([
+      "shared-id",
+    ]);
+  });
+
+  it("removes queued and guide messages by default when a user message completes", () => {
+    const byThread: PendingComposerMessagesByThread = {
+      "thread-a": {
+        queued: [message("shared-id", "queued")],
+        guides: [message("shared-id", "guide")],
+      },
+    };
+
+    const next = removePendingComposerMessagesByID(
+      byThread,
+      "thread-a",
+      "shared-id",
+    );
+
+    expect(next["thread-a"]).toBeUndefined();
   });
 });
