@@ -1477,6 +1477,48 @@
   white-space: pre;
 }
 
+.workspace-file-code .hljs-keyword {
+  color: #2f6ea5;
+}
+
+.workspace-file-code .hljs-built_in,
+.workspace-file-code .hljs-title,
+.workspace-file-code .hljs-function {
+  color: #7a4b9d;
+}
+
+.workspace-file-code .hljs-string {
+  color: #2f7d5c;
+}
+
+.workspace-file-code .hljs-number {
+  color: #98651f;
+}
+
+.workspace-file-code .hljs-comment {
+  color: #879098;
+  font-style: italic;
+}
+
+.workspace-file-code .hljs-attr,
+.workspace-file-code .hljs-attribute,
+.workspace-file-code .hljs-name,
+.workspace-file-code .hljs-tag {
+  color: #9a4f55;
+}
+
+.workspace-file-code .hljs-literal,
+.workspace-file-code .hljs-symbol {
+  color: #6f5ca7;
+}
+
+.workspace-file-code .hljs-meta,
+.workspace-file-code .hljs-variable,
+.workspace-file-code .hljs-params,
+.workspace-file-code .hljs-property {
+  color: #5f6870;
+}
+
 .workspace-diff-review {
   display: grid;
   height: 100%;

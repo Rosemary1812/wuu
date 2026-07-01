@@ -28,4 +28,11 @@ describe("workspace file preview layout", () => {
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/min-height:\s*0;/);
     expect(cssRuleBody(".workspace-file-code-scroll")).toMatch(/overflow:\s*auto;/);
   });
+
+  it("adds a restrained syntax palette for highlighted code tokens", () => {
+    expect(cssRuleBody(".workspace-file-code .hljs-keyword")).toMatch(/color:\s*#[0-9a-f]{6};/i);
+    expect(cssRuleBody(".workspace-file-code .hljs-string")).toMatch(/color:\s*#[0-9a-f]{6};/i);
+    expect(cssRuleBody(".workspace-file-code .hljs-number")).toMatch(/color:\s*#[0-9a-f]{6};/i);
+    expect(cssRuleBody(".workspace-file-code .hljs-comment")).toMatch(/color:\s*#[0-9a-f]{6};/i);
+  });
 });

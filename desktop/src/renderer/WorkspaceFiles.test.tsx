@@ -140,4 +140,36 @@ describe("WorkspaceFileTree", () => {
     expect(readWorkspaceFile).toHaveBeenCalledWith("src/components/Button.tsx");
     expect(container.textContent).toContain("button code");
   });
+
+  it("renders code files with syntax highlighted tokens", async () => {
+    readWorkspaceFile.mockResolvedValueOnce({
+      root: "/repo",
+      path: "src/index.ts",
+      absolute_path: "/repo/src/index.ts",
+      size_bytes: 44,
+      binary: false,
+      truncated: false,
+      text: 'const answer = 42;\nconsole.log("<tag>", answer);\n',
+    });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    const code = container.querySelector<HTMLElement>(".workspace-file-code code");
+    expect(code?.textContent).toContain('console.log("<tag>", answer);');
+    expect(code?.innerHTML).not.toContain("<tag>");
+    expect(container.querySelector(".workspace-file-code .hljs-keyword")?.textContent).toBe(
+      "const",
+    );
+    expect(container.querySelector(".workspace-file-code .hljs-number")?.textContent).toBe(
+      "42",
+    );
+  });
 });
