@@ -15,13 +15,15 @@ import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dn
 import { CSS } from "@dnd-kit/utilities";
 import { FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
+import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
-export type WorkspaceRightPanelView = "tools" | WorkspacePanelView;
+export type WorkspaceRightPanelView = "tools" | "turn-diff" | WorkspacePanelView;
 
 export function WorkspaceMainPanel({
   view,
@@ -80,7 +82,9 @@ export function WorkspaceRightPanel({
   onClose,
   pendingBrowserURL,
   onBrowserURLConsumed,
-  onBrowserURLChange
+  onBrowserURLChange,
+  turnFileDiffSelection,
+  onCloseTurnFileDiff
 }: {
   open: boolean;
   present: boolean;
@@ -98,6 +102,8 @@ export function WorkspaceRightPanel({
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onBrowserURLChange?: (url: string) => void;
+  turnFileDiffSelection?: TurnFileDiffSelection;
+  onCloseTurnFileDiff?: () => void;
 }): JSX.Element {
   const detailView = view === "tools" ? undefined : view;
   const [draggingTab, setDraggingTab] = useState<WorkspacePanelView | undefined>(undefined);
@@ -134,7 +140,7 @@ export function WorkspaceRightPanel({
 
   return (
     <aside
-      className={`workspace-right-panel${detailView ? " detail" : " tools"}${detailView === "review" ? " review" : ""}`}
+      className={`workspace-right-panel${detailView ? " detail" : " tools"}${detailView === "review" ? " review" : ""}${detailView === "turn-diff" ? " turn-diff" : ""}`}
       aria-hidden={!open}
     >
       <div className="workspace-panel-tabbar">
@@ -177,6 +183,11 @@ export function WorkspaceRightPanel({
             ) : null}
           </DragOverlay>
         </DndContext>
+        {view === "turn-diff" ? (
+          <span className="workspace-panel-detail-tab" role="tab" aria-selected="true">
+            本轮变更
+          </span>
+        ) : null}
         <span className="workspace-panel-tabbar-spacer" />
         <button
           className={`icon-button workspace-panel-add${view === "tools" ? " active" : ""}`}
@@ -203,6 +214,11 @@ export function WorkspaceRightPanel({
           <div className={`workspace-panel-body${view === "tools" ? " picker" : ""}`}>
             {view === "tools" ? (
               <WorkspaceToolPicker openTabs={openTabs} onSelectTool={onSelectView} />
+            ) : view === "turn-diff" ? (
+              <TurnFileDiffPanel
+                selection={turnFileDiffSelection}
+                onClose={onCloseTurnFileDiff ?? onClose}
+              />
             ) : view === "files" ? (
               <WorkspaceFileTree
                 activeContext={activeContext}

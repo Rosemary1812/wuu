@@ -115,7 +115,6 @@ import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
-import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { lastUserMessageAnchor } from "./TurnViewHelpers";
 import { AppSidebar } from "./AppSidebar";
@@ -769,10 +768,15 @@ export function App(): JSX.Element {
   const openTurnFileDiffPanel = useStableCallback(
     (threadID: string, selection: TurnFileDiffSelection) => {
       setTurnFileDiffSelection({ ...selection, threadID });
+      setWorkspaceRightPanelView("turn-diff");
+      setRightPanelOpenWithMotion(true);
+      closeEnvironmentPanel({ dismissed: true });
     },
   );
   const closeTurnFileDiffPanel = useStableCallback(() => {
     setTurnFileDiffSelection(undefined);
+    setWorkspaceRightPanelView("tools");
+    setRightPanelOpenWithMotion(false);
   });
   const activePendingComposerMessages = pendingComposerMessagesForThread(
     pendingComposerMessagesByThread,
@@ -1479,24 +1483,27 @@ export function App(): JSX.Element {
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
 
   useEffect(() => {
-    setTurnFileDiffSelection((current) => {
-      if (!current) return current;
-      if (
-        !activeThreadID ||
-        current.threadID !== activeThreadID ||
-        showingWorkspaceMode ||
-        showingSkillsCatalog ||
-        emptyConversation
-      ) {
-        return undefined;
+    if (!turnFileDiffSelection) return;
+    if (
+      !activeThreadID ||
+      turnFileDiffSelection.threadID !== activeThreadID ||
+      showingWorkspaceMode ||
+      showingSkillsCatalog ||
+      emptyConversation
+    ) {
+      setTurnFileDiffSelection(undefined);
+      if (workspaceRightPanelView === "turn-diff") {
+        setWorkspaceRightPanelView("tools");
+        setRightPanelOpenWithMotion(false);
       }
-      return current;
-    });
+    }
   }, [
     activeThreadID,
     emptyConversation,
     showingSkillsCatalog,
     showingWorkspaceMode,
+    turnFileDiffSelection,
+    workspaceRightPanelView,
   ]);
 
   const {
@@ -6529,11 +6536,6 @@ export function App(): JSX.Element {
           />
         )}
 
-        <TurnFileDiffPanel
-          selection={turnFileDiffSelection}
-          onClose={closeTurnFileDiffPanel}
-        />
-
         {state.initialized &&
         !previewingLaunch &&
         !emptyConversation &&
@@ -6601,15 +6603,29 @@ export function App(): JSX.Element {
         activeContext={state.activeContext}
         gitStatus={state.gitStatus}
         selectedFilePath={activeWorkspaceFile}
-        onSelectView={openWorkspaceTool}
-        onShowTools={showWorkspaceToolPicker}
+        onSelectView={(view) => {
+          setTurnFileDiffSelection(undefined);
+          openWorkspaceTool(view);
+        }}
+        onShowTools={() => {
+          setTurnFileDiffSelection(undefined);
+          showWorkspaceToolPicker();
+        }}
         onCloseTab={closeWorkspaceToolTab}
         onReorderTabs={reorderWorkspaceToolTabs}
         onOpenFile={openWorkspaceFile}
-        onClose={() => setRightPanelOpenWithMotion(false)}
+        onClose={() => {
+          setTurnFileDiffSelection(undefined);
+          if (workspaceRightPanelView === "turn-diff") {
+            setWorkspaceRightPanelView("tools");
+          }
+          setRightPanelOpenWithMotion(false);
+        }}
         pendingBrowserURL={pendingBrowserURL}
         onBrowserURLConsumed={consumePendingBrowserURL}
         onBrowserURLChange={rememberBrowserURLForActiveThread}
+        turnFileDiffSelection={turnFileDiffSelection}
+        onCloseTurnFileDiff={closeTurnFileDiffPanel}
       />
       {environmentDialog === "commit" ? (
         <CommitChangesDialog

@@ -12,7 +12,7 @@ export function TurnFileDiffPanel({
   if (!selection) return null;
 
   return (
-    <aside
+    <section
       className="turn-file-diff-panel"
       aria-label={`${selection.path} 的代码差异`}
     >
@@ -49,6 +49,6 @@ export function TurnFileDiffPanel({
       <div className="turn-file-diff-body">
         <ToolDiffContent diff={selection.diff} />
       </div>
-    </aside>
+    </section>
   );
 }
