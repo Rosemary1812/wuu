@@ -97,6 +97,7 @@ function renderSettings(props: {
         onSave={props.onSave ?? (async () => {})}
         onRemoveProvider={props.onRemoveProvider ?? (async () => {})}
         onAdvancedSave={props.onAdvancedSave ?? (async () => {})}
+        onGeneralSave={async () => {}}
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}

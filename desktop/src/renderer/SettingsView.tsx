@@ -80,6 +80,7 @@ export function SettingsView({
   onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onRemoveProvider: (provider: string) => Promise<void>;
   onAdvancedSave: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
+  onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
