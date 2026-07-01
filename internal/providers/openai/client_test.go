@@ -1353,6 +1353,9 @@ func TestResponsesChat_SendsResponsesPayloadAndParsesToolCall(t *testing.T) {
 		if body["max_output_tokens"] != float64(123) {
 			t.Fatalf("expected max_output_tokens=123, got %#v", body["max_output_tokens"])
 		}
+		if body["store"] != false {
+			t.Fatalf("expected store=false by default, got %#v", body["store"])
+		}
 
 		tools, ok := body["tools"].([]any)
 		if !ok || len(tools) != 1 {

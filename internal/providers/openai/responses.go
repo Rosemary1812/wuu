@@ -145,6 +145,9 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 	}
 	if c.responsesStore != nil {
 		payload.Store = c.responsesStore
+	} else {
+		store := false
+		payload.Store = &store
 	}
 	if key := responsePromptCacheKey(req.CacheHint); key != "" {
 		payload.PromptCacheKey = key
