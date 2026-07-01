@@ -6071,6 +6071,7 @@ export function App(): JSX.Element {
       return;
     }
     await window.wuu.interruptTurn(thread.id);
+    clearThreadPendingComposerMessages(thread.id);
   }
 
   /**
@@ -6129,6 +6130,7 @@ export function App(): JSX.Element {
       return;
     }
     await window.wuu.interruptTurn(thread.id);
+    clearThreadPendingComposerMessages(thread.id);
   }
 
   async function resolveToolApproval(

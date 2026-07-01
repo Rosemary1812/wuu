@@ -554,18 +554,26 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	th := s.thread(strings.TrimSpace(params.ThreadID))
+	threadID := strings.TrimSpace(params.ThreadID)
+	th := s.thread(threadID)
 	if th == nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q not found", params.ThreadID))
 	}
 	th.mu.Lock()
 	cancel := th.cancel
-	th.mu.Unlock()
 	if cancel == nil {
+		th.mu.Unlock()
 		return s.writeResponse(req.ID, nil, errors.New("thread has no running turn"))
 	}
+	th.pendingSteers = nil
+	th.mu.Unlock()
+	discardedQueueIDs := s.discardQueuedUserWork(threadID)
 	cancel()
-	return s.writeResponse(req.ID, OKResult{OK: true}, nil)
+	if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
+		return err
+	}
+	s.notifyQueuedTurnsDequeued(threadID, discardedQueueIDs)
+	return nil
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
@@ -1436,10 +1444,51 @@ func (s *Server) hasQueuedUserWork(threadID string) bool {
 	return len(s.pendingQueuedTurns[threadID]) > 0 || s.drainingQueuedTurns[threadID]
 }
 
-func (s *Server) discardQueuedUserTurns(threadID string) {
+func (s *Server) discardQueuedUserTurns(threadID string) []string {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil
+	}
 	s.queuedTurnMu.Lock()
 	defer s.queuedTurnMu.Unlock()
+	queueIDs := queuedTurnIDs(s.pendingQueuedTurns[threadID])
 	delete(s.pendingQueuedTurns, threadID)
+	return queueIDs
+}
+
+func (s *Server) discardQueuedUserWork(threadID string) []string {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil
+	}
+	s.queuedTurnMu.Lock()
+	defer s.queuedTurnMu.Unlock()
+	queueIDs := queuedTurnIDs(s.pendingQueuedTurns[threadID])
+	delete(s.pendingQueuedTurns, threadID)
+	delete(s.drainingQueuedTurns, threadID)
+	return queueIDs
+}
+
+func queuedTurnIDs(entries []queuedTurn) []string {
+	if len(entries) == 0 {
+		return nil
+	}
+	queueIDs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if id := strings.TrimSpace(entry.id); id != "" {
+			queueIDs = append(queueIDs, id)
+		}
+	}
+	return queueIDs
+}
+
+func (s *Server) notifyQueuedTurnsDequeued(threadID string, queueIDs []string) {
+	for _, queueID := range queueIDs {
+		_ = s.writeNotification(NotificationTurnDequeued, TurnDequeuedNotification{
+			ThreadID: threadID,
+			QueueID:  queueID,
+		})
+	}
 }
 
 func (s *Server) clearQueuedTurnDrain(threadID string) {

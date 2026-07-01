@@ -3920,6 +3920,67 @@ func TestServerQueuesUserTurnWhileThreadIsRunning(t *testing.T) {
 	}
 }
 
+func TestServerInterruptDiscardsPendingUserWorkBeforeHistoryEdit(t *testing.T) {
+	client := newBlockingStreamClient("done")
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StreamRunner.Client = client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	startReq := fmt.Sprintf(`{"id":"2","method":"turn/start","params":{"thread_id":%q,"prompt":"first"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	started := remarshal[TurnStartResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	<-client.started
+
+	queueReq := fmt.Sprintf(`{"id":"3","method":"turn/queue","params":{"thread_id":%q,"prompt":"queued follow-up","client_id":"queued-1"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(queueReq)); err != nil {
+		t.Fatalf("turn/queue: %v", err)
+	}
+
+	steerReq := fmt.Sprintf(`{"id":"4","method":"turn/steer","params":{"thread_id":%q,"expected_turn_id":%q,"prompt":"guide now","client_id":"guide-1"}}`, threadID, started.Turn.ID)
+	if err := srv.handleLine(context.Background(), []byte(steerReq)); err != nil {
+		t.Fatalf("turn/steer: %v", err)
+	}
+
+	interruptReq := fmt.Sprintf(`{"id":"5","method":"turn/interrupt","params":{"thread_id":%q}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(interruptReq)); err != nil {
+		t.Fatalf("turn/interrupt: %v", err)
+	}
+	interruptResponse := responseByID(t, parseOutput(t, out.String()), "5")
+	if interruptResponse["error"] != nil {
+		t.Fatalf("turn/interrupt returned error: %+v", interruptResponse["error"])
+	}
+	if srv.hasQueuedUserTurns(threadID) {
+		t.Fatal("interrupt should discard queued user turns")
+	}
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	pendingSteers := len(th.pendingSteers)
+	th.mu.Unlock()
+	if pendingSteers != 0 {
+		t.Fatalf("interrupt should discard pending steers, got %d", pendingSteers)
+	}
+
+	waitForMethod(t, out, NotificationTurnError)
+
+	target := started.Turn.Items[0]
+	editReq := fmt.Sprintf(`{"id":"6","method":"thread/edit-message","params":{"thread_id":%q,"turn_id":%q,"item_id":%q}}`, threadID, started.Turn.ID, target.ID)
+	if err := srv.handleLine(context.Background(), []byte(editReq)); err != nil {
+		t.Fatalf("thread/edit-message: %v", err)
+	}
+	editResponse := responseByID(t, parseOutput(t, out.String()), "6")
+	if editResponse["error"] != nil {
+		t.Fatalf("thread/edit-message returned error after interrupt: %+v", editResponse["error"])
+	}
+}
+
 func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{
