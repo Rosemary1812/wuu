@@ -7,6 +7,8 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-01
+
 ### Added
 
 - `LICENSE` (MIT) so the project is unambiguously open source
