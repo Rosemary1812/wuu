@@ -918,6 +918,79 @@ func TestServerConfigAdvancedUpdatePersistsAndRefreshesRuntime(t *testing.T) {
 	}
 }
 
+func TestServerConfigGeneralUpdatePersistsAndRefreshesRuntime(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  },
+  "agent": {
+    "append_system_prompt": "old custom behavior"
+  },
+  "mcp_servers": {
+    "docs": {
+      "command": "docs-mcp"
+    },
+    "search": {
+      "command": "search-mcp",
+      "enabled": false
+    }
+  }
+}
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldPrompt := rt.StreamRunner.SystemPrompt
+	th := newThreadState("thread-1", []providers.ChatMessage{{Role: "system", Content: oldPrompt}}, rt.ProviderName, rt.Model, rt.RootDir, false, time.Now().UTC())
+	th.execRuntime = &runtime.ThreadRuntime{StreamRunner: &agent.StreamRunner{SystemPrompt: oldPrompt}}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	srv.threads[th.ID] = th
+
+	req := `{"id":"1","method":"config/general/update","params":{"append_system_prompt":"默认用中文回答。","memory_disable":true,"mcp_enabled_toggles":{"docs":false,"search":true}}}`
+	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
+		t.Fatalf("config/general/update: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ConfigGeneralUpdateResult](t, responseByID(t, msgs, "1")["result"])
+	if result.GeneralSettings.AppendSystemPrompt != "默认用中文回答。" ||
+		!result.GeneralSettings.MemoryDisabled ||
+		result.GeneralSettings.MCPServerEnabled["docs"] ||
+		!result.GeneralSettings.MCPServerEnabled["search"] {
+		t.Fatalf("unexpected general settings result: %+v", result.GeneralSettings)
+	}
+	cfg, _, err := config.LoadPath(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if cfg.Agent.AppendSystemPrompt != "默认用中文回答。" || !cfg.Memory.Disable {
+		t.Fatalf("config general settings not persisted: %+v", cfg)
+	}
+	if cfg.MCPServers["docs"].Enabled == nil || *cfg.MCPServers["docs"].Enabled {
+		t.Fatalf("docs MCP server should be disabled: %+v", cfg.MCPServers["docs"])
+	}
+	if cfg.MCPServers["search"].Enabled != nil {
+		t.Fatalf("enabled MCP server should omit explicit enabled flag: %+v", cfg.MCPServers["search"])
+	}
+	if rt.UserSystemPrompt != "默认用中文回答。" || !strings.Contains(rt.StreamRunner.SystemPrompt, "默认用中文回答。") {
+		t.Fatalf("runtime prompt not refreshed: user=%q prompt=%q", rt.UserSystemPrompt, rt.StreamRunner.SystemPrompt)
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	if th.execRuntime != nil {
+		t.Fatalf("thread runtime should be reset after general settings change")
+	}
+	if len(th.History) == 0 || !strings.Contains(th.History[0].Content, "默认用中文回答。") {
+		t.Fatalf("thread history prompt not refreshed: %+v", th.History)
+	}
+}
+
 func TestCurrentAdvancedSettingsUsesEffectiveInputLimit(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

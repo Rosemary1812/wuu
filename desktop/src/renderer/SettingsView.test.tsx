@@ -7,6 +7,7 @@ import type {
   InitializeResult,
   RuntimeAdvancedSettingsUpdate,
   RuntimeConnectionUpdate,
+  RuntimeGeneralSettingsUpdate,
   SettingsUsageRange,
   SettingsUsageResponse,
   WuuDesktopApi
@@ -48,8 +49,11 @@ function installBuildInfoStub(info: BuildInfoResult): void {
   (window as unknown as GlobalWindow).wuu = stub as WuuDesktopApi;
 }
 
-function setInputValue(input: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const prototype = input instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -73,6 +77,7 @@ function renderSettings(props: {
   onSave?: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onRemoveProvider?: (provider: string) => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
+  onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
   const setUsageRange = vi.fn();
@@ -97,7 +102,7 @@ function renderSettings(props: {
         onSave={props.onSave ?? (async () => {})}
         onRemoveProvider={props.onRemoveProvider ?? (async () => {})}
         onAdvancedSave={props.onAdvancedSave ?? (async () => {})}
-        onGeneralSave={async () => {}}
+        onGeneralSave={props.onGeneralSave ?? (async () => {})}
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}
@@ -395,6 +400,76 @@ describe("SettingsView advanced settings", () => {
   });
 });
 
+describe("SettingsView general settings", () => {
+  it("renders and saves prompt, memory, and MCP toggles", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onGeneralSave = vi.fn().mockResolvedValue(undefined);
+    const { rootText } = renderSettings({
+      initialPage: "general",
+      initialized: baseInitialized({
+        general_settings: {
+          append_system_prompt: "Keep answers compact.",
+          memory_disabled: false,
+          mcp_server_enabled: {
+            docs: true,
+            search: false,
+          },
+        },
+      }),
+      onGeneralSave,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(container.querySelector("[data-testid=\"settings-general\"]")).not.toBeNull();
+    expect(rootText()).toContain("附加系统提示");
+    expect(rootText()).toContain("记忆");
+    expect(rootText()).toContain("docs");
+    expect(rootText()).toContain("search");
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    await act(async () => {
+      setInputValue(textarea!, "默认用中文回答。");
+    });
+
+    const memorySwitch = Array.from(container.querySelectorAll("button[role=\"switch\"]")).find((button) =>
+      button.textContent?.includes("关闭记忆"),
+    ) as HTMLButtonElement | undefined;
+    expect(memorySwitch).not.toBeUndefined();
+    await act(async () => {
+      memorySwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const docsSwitch = container.querySelector("[data-testid=\"settings-mcp-enabled-docs\"]") as HTMLButtonElement | null;
+    expect(docsSwitch).not.toBeNull();
+    await act(async () => {
+      docsSwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("保存常规设置"),
+    ) as HTMLButtonElement | undefined;
+    expect(submitButton?.disabled).toBe(false);
+    await act(async () => {
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onGeneralSave).toHaveBeenCalledWith({
+      append_system_prompt: "默认用中文回答。",
+      memory_disable: true,
+      mcp_enabled_toggles: {
+        docs: false,
+        search: false,
+      },
+    });
+  });
+});
+
 describe("SettingsView About section", () => {
   it("includes core version in the copied version info when initialized", async () => {
     installBuildInfoStub({
@@ -429,7 +504,7 @@ describe("SettingsView About section", () => {
     // lives in the clipboard payload instead.
     expect(text()).toContain("v0.0.0-test");
     expect(text()).not.toContain("v0.2.3");
-    const button = container.querySelector("button.settings-button");
+    const button = about?.querySelector("button.settings-button");
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
@@ -449,13 +524,13 @@ describe("SettingsView About section", () => {
       configurable: true,
       value: { writeText }
     });
-    const { text } = renderSettings({ initialized: baseInitialized() });
+    const { about, text } = renderSettings({ initialized: baseInitialized() });
     await act(async () => {
       await Promise.resolve();
     });
     expect(text()).toContain("关于");
     expect(text()).not.toContain("未连接");
-    const button = container.querySelector("button.settings-button");
+    const button = about?.querySelector("button.settings-button");
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
@@ -473,7 +548,7 @@ describe("SettingsView About section", () => {
       configurable: true,
       value: { writeText }
     });
-    const { text } = renderSettings({ initialized: baseInitialized() });
+    const { about, text } = renderSettings({ initialized: baseInitialized() });
     await act(async () => {
       await Promise.resolve();
     });
@@ -481,7 +556,7 @@ describe("SettingsView About section", () => {
     expect(text()).toContain("v0.0.0-test");
     expect(text()).not.toContain("更新于");
     expect(text()).toContain("复制版本信息");
-    const button = container.querySelector("button.settings-button");
+    const button = about?.querySelector("button.settings-button");
     expect(button?.textContent).toBe("复制");
     await act(async () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

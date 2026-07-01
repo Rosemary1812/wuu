@@ -323,6 +323,13 @@
   text-overflow: ellipsis;
 }
 
+.settings-textarea {
+  min-height: 112px;
+  resize: vertical;
+  line-height: 1.55;
+  padding: 10px 12px;
+}
+
 /* Inline status flag (e.g. "未连接", "已配置") sitting next to a value. */
 .settings-inline-flag {
   display: inline-flex;

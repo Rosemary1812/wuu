@@ -455,6 +455,56 @@ func TestNewSessionMemoryDisableDisablesDreamScheduler(t *testing.T) {
 	}
 }
 
+func TestApplyGeneralConfigRefreshesPromptAndMemory(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	baseConfig := config.Config{
+		DefaultProvider: "test",
+		Providers: map[string]config.ProviderConfig{
+			"test": {
+				Type:      "openai-compatible",
+				BaseURL:   "https://example.test/v1",
+				APIKeyEnv: "TEST_WUU_KEY",
+				Model:     "gpt-test",
+			},
+		},
+	}
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config:     baseConfig,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.Toolkit == nil || rt.Toolkit.Memory() == nil {
+		t.Fatal("expected default session to start with memory enabled")
+	}
+
+	baseConfig.Agent.AppendSystemPrompt = "默认用中文回答。"
+	baseConfig.Memory.Disable = true
+	prompt := rt.ApplyGeneralConfig(baseConfig, home)
+
+	if rt.UserSystemPrompt != "默认用中文回答。" || !strings.Contains(prompt, "默认用中文回答。") || !strings.Contains(rt.StreamRunner.SystemPrompt, "默认用中文回答。") {
+		t.Fatalf("user prompt not refreshed: user=%q prompt=%q runner=%q", rt.UserSystemPrompt, prompt, rt.StreamRunner.SystemPrompt)
+	}
+	if rt.Toolkit.Memory() != nil {
+		t.Fatal("memory.disable should detach toolkit memory provider")
+	}
+	if rt.DreamIntervalDays != 0 {
+		t.Fatalf("DreamIntervalDays = %d, want disabled", rt.DreamIntervalDays)
+	}
+	for _, def := range rt.Toolkit.Definitions() {
+		if def.Name == "read_memory" || def.Name == "write_memory" {
+			t.Fatalf("memory tool %q should be hidden after memory.disable", def.Name)
+		}
+	}
+}
+
 func TestNewSessionDiscoversWorkflowDefinitions(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

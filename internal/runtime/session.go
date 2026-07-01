@@ -1619,6 +1619,44 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 	return baseSystemPrompt
 }
 
+// ApplyGeneralConfig refreshes user-owned prompt and memory settings on the
+// shared session runtime without changing provider or model selection.
+func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
+	if s == nil {
+		return ""
+	}
+	if strings.TrimSpace(homeDir) == "" {
+		homeDir = os.Getenv("HOME")
+	}
+	s.UserSystemPrompt = cfg.Agent.UserSystemPrompt()
+	s.ProfileMemoryNudgeInterval = cfg.Memory.ProfileMemoryNudgeInterval()
+	s.ProfileMemoryCharLimit = cfg.Memory.ProfileMemoryCharLimit()
+	s.ProfileUserMemoryCharLimit = cfg.Memory.ProfileUserCharLimit()
+	s.Memory = discoverMemory(s.RootDir, homeDir, cfg.Memory)
+	s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
+	if cfg.Memory.Disable {
+		s.DreamIntervalDays = 0
+	}
+	if s.Toolkit != nil {
+		s.Toolkit.SetMemoryLimits(s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit)
+		if cfg.Agent.ProfileMemoryEnabled() && !cfg.Memory.Disable {
+			if memProvider, err := newProfileMemoryProvider(s.WuuHome, cfg.Agent.ProfileName()); err == nil {
+				s.Toolkit.SetMemory(memProvider)
+			} else {
+				providers.DebugLogf("refresh profile memory provider after general settings update: %v", err)
+				s.Toolkit.SetMemory(nil)
+			}
+		} else {
+			s.Toolkit.SetMemory(nil)
+		}
+	}
+	apiModel := s.Model
+	if s.StreamRunner != nil && strings.TrimSpace(s.StreamRunner.APIModel) != "" {
+		apiModel = s.StreamRunner.APIModel
+	}
+	return s.RefreshSystemPrompt(s.ProviderName, apiModel)
+}
+
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
 	return buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, wuucontext.Block{}, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 }

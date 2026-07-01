@@ -432,6 +432,12 @@ func (s *Server) handleConfigGeneralUpdate(req Request) error {
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	cfg, _, err := config.LoadPath(s.rt.ConfigPath)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	systemPrompt := s.rt.ApplyGeneralConfig(cfg, os.Getenv("HOME"))
+	s.resetThreadRuntimesForGeneralSettings(systemPrompt)
 	return s.writeResponse(req.ID, ConfigGeneralUpdateResult{
 		GeneralSettings: s.currentGeneralSettingsSummary(),
 	}, nil)
@@ -917,6 +923,33 @@ func (s *Server) updateThreadRuntimeForModelUpdate(providerName, ruleProviderNam
 		th.mu.Lock()
 		s.updateThreadRuntimeLocked(th, update)
 		th.mu.Unlock()
+	}
+}
+
+func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	var release []*threadState
+	s.mu.Lock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		if strings.TrimSpace(systemPrompt) != "" {
+			th.History = replaceBaseSystemPrompt(th.History, systemPrompt)
+			if th.PersistHistory {
+				if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
+					providers.DebugLogf("rewrite thread %q system prompt after general settings update: %v", th.ID, err)
+				}
+			}
+		}
+		if th.execRuntime != nil {
+			release = append(release, th)
+		}
+		th.mu.Unlock()
+	}
+	s.mu.Unlock()
+	for _, th := range release {
+		releaseThreadRuntime(th)
 	}
 }
 

@@ -548,6 +548,7 @@ export function SettingsView({
           ) : activePage === "general" ? (
             <SettingsGeneralPage
               initialized={initialized}
+              running={running}
               desktopBuild={desktopBuild}
               showDebugControlsSetting={showDebugControlsSetting}
               debugControlsEnabled={debugControlsEnabled}
@@ -556,6 +557,7 @@ export function SettingsView({
               mcpError={mcpError}
               mcpBusyServer={mcpBusyServer}
               onDebugControlsChange={onDebugControlsChange}
+              onGeneralSave={onGeneralSave}
               onMCPAction={runMCPAction}
               copyState={copyState}
               onCopyVersion={copyVersionInfo}
@@ -1162,6 +1164,7 @@ function SettingsAdvancedPage({
 
 function SettingsGeneralPage({
   initialized,
+  running,
   desktopBuild,
   showDebugControlsSetting,
   debugControlsEnabled,
@@ -1170,11 +1173,13 @@ function SettingsGeneralPage({
   mcpError,
   mcpBusyServer,
   onDebugControlsChange,
+  onGeneralSave,
   onMCPAction,
   copyState,
   onCopyVersion
 }: {
   initialized: InitializeResult | undefined;
+  running: boolean;
   desktopBuild: DesktopBuildInfo | undefined;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
@@ -1183,12 +1188,134 @@ function SettingsGeneralPage({
   mcpError: string;
   mcpBusyServer: string;
   onDebugControlsChange: (enabled: boolean) => void;
+  onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onMCPAction: (name: string, action: "connect" | "disconnect" | "refresh") => Promise<void>;
   copyState: CopyState;
   onCopyVersion: () => Promise<void>;
 }): JSX.Element {
+  const generalSettings = initialized?.general_settings;
+  const configuredMCPEnabled = generalSettings?.mcp_server_enabled ?? {};
+  const configuredMCPKey = stableBoolRecordSignature(configuredMCPEnabled);
+  const [appendSystemPromptDraft, setAppendSystemPromptDraft] = useState(generalSettings?.append_system_prompt ?? "");
+  const [memoryDisabledDraft, setMemoryDisabledDraft] = useState(generalSettings?.memory_disabled ?? false);
+  const [mcpEnabledDraft, setMCPEnabledDraft] = useState<Record<string, boolean>>(() => ({ ...configuredMCPEnabled }));
+  const [generalError, setGeneralError] = useState("");
+  const [generalSaved, setGeneralSaved] = useState(false);
+
+  useEffect(() => {
+    setAppendSystemPromptDraft(generalSettings?.append_system_prompt ?? "");
+    setMemoryDisabledDraft(generalSettings?.memory_disabled ?? false);
+    setMCPEnabledDraft({ ...configuredMCPEnabled });
+    setGeneralError("");
+    setGeneralSaved(false);
+  }, [generalSettings?.append_system_prompt, generalSettings?.memory_disabled, configuredMCPKey]);
+
+  async function submitGeneral(event: ReactFormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setGeneralError("");
+    setGeneralSaved(false);
+    try {
+      await onGeneralSave({
+        append_system_prompt: appendSystemPromptDraft.trim(),
+        memory_disable: memoryDisabledDraft,
+        mcp_enabled_toggles: mcpEnabledDraft,
+      });
+      setGeneralSaved(true);
+    } catch (saveError) {
+      setGeneralError(saveError instanceof Error ? saveError.message : "保存失败");
+    }
+  }
+
+  const mcpToggleNames = Object.keys(mcpEnabledDraft).sort((a, b) => a.localeCompare(b));
+
   return (
     <>
+      <SettingsSection
+        title="常规配置"
+        description="设置每次新会话都会继承的 Agent 行为。"
+        testID="settings-general"
+      >
+        <form className="settings-card" onSubmit={submitGeneral}>
+          <SettingsRow
+            title="附加系统提示"
+            description="追加到 Wuu 内置行为提示之后"
+            block
+          >
+            <textarea
+              className="settings-input settings-textarea"
+              value={appendSystemPromptDraft}
+              placeholder="例如：默认用中文回答。"
+              rows={5}
+              onChange={(event) => {
+                setAppendSystemPromptDraft(event.target.value);
+                setGeneralSaved(false);
+              }}
+              disabled={running || !initialized}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title="记忆"
+            description="关闭后不读取或写入长期记忆"
+          >
+            <button
+              className="settings-switch"
+              type="button"
+              role="switch"
+              aria-checked={!memoryDisabledDraft}
+              disabled={running || !initialized}
+              onClick={() => {
+                setMemoryDisabledDraft((value) => !value);
+                setGeneralSaved(false);
+              }}
+            >
+              <span className="settings-switch-thumb" aria-hidden="true" />
+              <span className="sr-only">{memoryDisabledDraft ? "打开记忆" : "关闭记忆"}</span>
+            </button>
+          </SettingsRow>
+          {mcpToggleNames.length > 0 ? (
+            mcpToggleNames.map((name) => {
+              const enabled = mcpEnabledDraft[name] ?? true;
+              return (
+                <SettingsRow
+                  key={name}
+                  title={name}
+                  description={enabled ? "启动时允许连接这个 MCP 服务器" : "保持关闭，不加载这个 MCP 服务器"}
+                >
+                  <button
+                    className="settings-switch"
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    data-testid={`settings-mcp-enabled-${name}`}
+                    disabled={running || !initialized}
+                    onClick={() => {
+                      setMCPEnabledDraft((draft) => ({ ...draft, [name]: !enabled }));
+                      setGeneralSaved(false);
+                    }}
+                  >
+                    <span className="settings-switch-thumb" aria-hidden="true" />
+                    <span className="sr-only">{enabled ? `关闭 ${name}` : `打开 ${name}`}</span>
+                  </button>
+                </SettingsRow>
+              );
+            })
+          ) : (
+            <SettingsRow
+              title="MCP 服务器"
+              description="当前配置里没有可切换的 MCP 服务器"
+            >
+              <span className="settings-row-control-value">—</span>
+            </SettingsRow>
+          )}
+          <SettingsCardFooter
+            error={generalError}
+            saved={generalSaved}
+            submitLabel="保存常规设置"
+            disabled={running || !initialized}
+          />
+        </form>
+      </SettingsSection>
+
       {showDebugControlsSetting ? (
         <SettingsSection
           title="开发"
@@ -1262,6 +1389,7 @@ function SettingsGeneralPage({
             mcpServers.map((server) => {
               const busy = mcpBusyServer === server.name;
               const connected = server.connected || server.state === "connected";
+              const disabledByConfig = server.state === "disabled";
               return (
                 <SettingsRow
                   key={server.name}
@@ -1278,7 +1406,7 @@ function SettingsGeneralPage({
                     type="button"
                     title="刷新"
                     aria-label={`刷新 ${server.name}`}
-                    disabled={busy}
+                    disabled={busy || disabledByConfig}
                     onClick={() => void onMCPAction(server.name, "refresh")}
                   >
                     <RefreshCw size={15} aria-hidden="true" />
@@ -1286,9 +1414,9 @@ function SettingsGeneralPage({
                   <button
                     className="settings-button settings-icon-button"
                     type="button"
-                    title={connected ? "断开" : "连接"}
+                    title={disabledByConfig ? "已在配置中关闭" : connected ? "断开" : "连接"}
                     aria-label={`${connected ? "断开" : "连接"} ${server.name}`}
-                    disabled={busy}
+                    disabled={busy || disabledByConfig}
                     onClick={() => void onMCPAction(server.name, connected ? "disconnect" : "connect")}
                   >
                     {connected ? <PlugZap size={15} aria-hidden="true" /> : <Plug size={15} aria-hidden="true" />}
@@ -1577,6 +1705,13 @@ function settingsPageMeta(
         description: ""
       };
   }
+}
+
+function stableBoolRecordSignature(record: Record<string, boolean>): string {
+  return Object.keys(record)
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => `${key}:${record[key] ? "1" : "0"}`)
+    .join("|");
 }
 
 function parseAdvancedSettingsDraft(draft: AdvancedDraft): { settings: RuntimeAdvancedSettingsUpdate; error?: string } {
