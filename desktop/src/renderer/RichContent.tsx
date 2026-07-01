@@ -2,6 +2,7 @@ import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo
 import { FileText, Github, Globe2, Mail } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
 import { useImagePreview } from "./ImagePreview";
 import { MessageCopyButton } from "./MessageActions";
 
@@ -483,16 +484,16 @@ function renderRichText(
     const prefixLength = match[1].length;
     const referenceStart = match.index + prefixLength;
     const reference = match[0].slice(prefixLength);
-    const targetPath = linkedFileTarget(reference, options.cwd);
-    if (!targetPath) {
+    const candidatePath = filePathFromReference(reference);
+    if (!isFileReferenceCandidate(candidatePath)) {
       continue;
     }
     pushPlain(text.slice(cursor, referenceStart), `${keyPrefix}-text-${cursor}`);
     output.push(
-      <RichFileLink
+      <RichResolvedFileReference
         key={`${keyPrefix}-file-${referenceStart}`}
         display={reference}
-        path={targetPath}
+        cwd={options.cwd}
         onOpenFile={options.onOpenFile}
       />
     );
@@ -501,6 +502,64 @@ function renderRichText(
 
   pushPlain(text.slice(cursor), `${keyPrefix}-text-${cursor}`);
   return output;
+}
+
+function RichResolvedFileReference({
+  display,
+  cwd,
+  onOpenFile
+}: {
+  display: string;
+  cwd: string | undefined;
+  onOpenFile: (path: string) => void;
+}): JSX.Element {
+  const [resolvedPath, setResolvedPath] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedPath(undefined);
+    void resolveWorkspaceFileReference(display, cwd).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setResolvedPath(result.status === "resolved" ? result.path : undefined);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, display]);
+
+  if (!resolvedPath) {
+    return <>{display}</>;
+  }
+
+  return (
+    <RichFileLink
+      display={display}
+      path={resolvedPath}
+      onOpenFile={onOpenFile}
+    />
+  );
+}
+
+function resolveWorkspaceFileReference(
+  reference: string,
+  cwd: string | undefined,
+): Promise<WorkspaceFileReferenceResolveResult> {
+  const resolver = window.wuu?.resolveWorkspaceFileReference;
+  if (!resolver) {
+    return Promise.resolve({
+      root: cwd ?? "",
+      reference,
+      status: "missing",
+    });
+  }
+
+  return resolver(reference).catch(() => ({
+    root: cwd ?? "",
+    reference,
+    status: "invalid" as const,
+  }));
 }
 
 function RichFileLink({
@@ -585,41 +644,18 @@ function RichWebLinkIcon({ href }: { href: string }): JSX.Element {
   );
 }
 
-function linkedFileTarget(reference: string, cwd: string | undefined): string | undefined {
-  const path = filePathFromReference(reference);
-  if (!isAutoLinkFilePath(path, reference)) {
-    return undefined;
-  }
-  if (path.startsWith("/")) {
-    return path;
-  }
-  if (path.startsWith("~/")) {
-    return cwd ? resolveHomePath(cwd, path) : undefined;
-  }
-  if (!cwd) {
-    return undefined;
-  }
-  return resolveRelativePath(cwd, path);
-}
-
-function filePathFromReference(reference: string): string {
+function filePathFromReference(reference: string): string | undefined {
   const match = reference.match(AUTO_FILE_LINE_SUFFIX_PATTERN);
-  return (match?.[1] ?? reference).trim();
+  const path = (match?.[1] ?? reference).trim();
+  return path ? path : undefined;
 }
 
-function isAutoLinkFilePath(path: string, reference: string): boolean {
-  const normalizedPath = path.trim();
+function isFileReferenceCandidate(path: string | undefined): boolean {
+  const normalizedPath = path?.trim() ?? "";
   if (!normalizedPath || /^https?:\/\//i.test(normalizedPath)) {
     return false;
   }
-  if (!AUTO_LINK_FILE_EXTENSIONS.has(fileExtension(normalizedPath))) {
-    return false;
-  }
-  return isQualifiedFileReference(normalizedPath, reference);
-}
-
-function isQualifiedFileReference(path: string, reference: string): boolean {
-  return path.includes("/") || AUTO_FILE_LINE_SUFFIX_PATTERN.test(reference);
+  return AUTO_LINK_FILE_EXTENSIONS.has(fileExtension(normalizedPath));
 }
 
 function fileExtension(path: string): string {

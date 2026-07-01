@@ -1,11 +1,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
 import { RichContent } from "./RichContent";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
 let writeTextMock: ReturnType<typeof vi.fn>;
+let resolveWorkspaceFileReferenceMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   writeTextMock = vi.fn().mockResolvedValue(undefined);
@@ -14,6 +16,17 @@ beforeEach(() => {
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: writeTextMock }
+  });
+  resolveWorkspaceFileReferenceMock = vi.fn(async (reference: string): Promise<WorkspaceFileReferenceResolveResult> => ({
+    root: "/Users/zzzz/wuu",
+    reference,
+    status: "missing",
+  }));
+  Object.defineProperty(window, "wuu", {
+    configurable: true,
+    value: {
+      resolveWorkspaceFileReference: resolveWorkspaceFileReferenceMock,
+    },
   });
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -25,6 +38,7 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  delete (window as { wuu?: unknown }).wuu;
 });
 
 function render(element: JSX.Element): void {
@@ -36,9 +50,33 @@ function render(element: JSX.Element): void {
   });
 }
 
+async function settleFileReferenceResolution(): Promise<void> {
+  for (let index = 0; index < 3; index += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
+
+function resolvedFileReference(
+  reference: string,
+  path: string,
+): WorkspaceFileReferenceResolveResult {
+  return {
+    root: "/Users/zzzz/wuu",
+    reference,
+    status: "resolved",
+    path,
+    absolute_path: `/Users/zzzz/wuu/${path}`,
+  };
+}
+
 describe("RichContent code block", () => {
   it("turns line-specific bare workspace file references into clickable inline links", async () => {
     const openFile = vi.fn();
+    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
+      resolvedFileReference("README_zh.md (line 19)", "README_zh.md"),
+    );
     render(
       <RichContent
         text={"See README_zh.md (line 19) before editing."}
@@ -46,6 +84,7 @@ describe("RichContent code block", () => {
         onOpenFile={openFile}
       />,
     );
+    await settleFileReferenceResolution();
 
     const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
     expect(link).not.toBeNull();
@@ -56,20 +95,27 @@ describe("RichContent code block", () => {
       link?.click();
     });
 
-    expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/README_zh.md");
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith("README_zh.md (line 19)");
+    expect(openFile).toHaveBeenCalledWith("README_zh.md");
   });
 
-  it("does not turn unqualified bare filenames into file links", () => {
+  it("does not turn unresolved bare filenames into file links", async () => {
     render(<RichContent text={"The likely tool file is tool_search.go."} cwd="/Users/zzzz/wuu" onOpenFile={vi.fn()} />);
+    await settleFileReferenceResolution();
 
     expect(container.querySelector(".rich-file-link")).toBeNull();
     expect(container.textContent).toContain("tool_search.go");
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith("tool_search.go");
   });
 
   it("turns qualified workspace file paths into clickable inline links", async () => {
     const openFile = vi.fn();
     const reference = "internal/tools/tool_discovery.go";
+    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
+      resolvedFileReference(reference, reference),
+    );
     render(<RichContent text={`Open ${reference} instead.`} cwd="/Users/zzzz/wuu" onOpenFile={openFile} />);
+    await settleFileReferenceResolution();
 
     const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
     expect(link).not.toBeNull();
@@ -79,13 +125,17 @@ describe("RichContent code block", () => {
       link?.click();
     });
 
-    expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/internal/tools/tool_discovery.go");
+    expect(openFile).toHaveBeenCalledWith("internal/tools/tool_discovery.go");
   });
 
   it("keeps complete file line ranges inside the inline file link", async () => {
     const openFile = vi.fn();
     const reference = "internal/appserver/model.go:789\u2013926";
+    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
+      resolvedFileReference(reference, "internal/appserver/model.go"),
+    );
     render(<RichContent text={`See ${reference} before editing.`} cwd="/Users/zzzz/wuu" onOpenFile={openFile} />);
+    await settleFileReferenceResolution();
 
     const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
     expect(link).not.toBeNull();
@@ -95,7 +145,7 @@ describe("RichContent code block", () => {
       link?.click();
     });
 
-    expect(openFile).toHaveBeenCalledWith("/Users/zzzz/wuu/internal/appserver/model.go");
+    expect(openFile).toHaveBeenCalledWith("internal/appserver/model.go");
   });
 
   it("decorates web links with an inline site icon", () => {

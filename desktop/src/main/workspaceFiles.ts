@@ -7,16 +7,19 @@ import {
   statSync,
   type Dirent,
 } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type {
   FileTreeListResult,
   RuntimeContext,
   WorkspaceDirectoryListResult,
+  WorkspaceFileReferenceResolveResult,
   WorkspaceFileReadResult,
 } from "../shared/protocol";
 
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
+const FILE_REFERENCE_SEARCH_MAX_VISITS = 8000;
 const FILE_TREE_IGNORED_DIRS = new Set([
   ".git",
   ".next",
@@ -43,6 +46,13 @@ export class WorkspaceFileService {
 
   readFile(path: string): WorkspaceFileReadResult {
     return readWorkspaceFileResult(this.getRuntimeContext(), path);
+  }
+
+  resolveFileReference(reference: string): WorkspaceFileReferenceResolveResult {
+    return resolveWorkspaceFileReferenceResult(
+      this.getRuntimeContext(),
+      reference,
+    );
   }
 }
 
@@ -152,6 +162,189 @@ function readWorkspaceFileResult(
     truncated,
     text: binary ? undefined : previewBuffer.toString("utf8"),
   };
+}
+
+function resolveWorkspaceFileReferenceResult(
+  context: RuntimeContext,
+  reference: string,
+): WorkspaceFileReferenceResolveResult {
+  const root = context.cwd;
+  const filePath = filePathFromReference(reference);
+  if (!filePath) {
+    return { root, reference, status: "invalid" };
+  }
+
+  if (isQualifiedWorkspaceReference(filePath)) {
+    const resolved = resolveDirectWorkspaceFile(root, filePath);
+    return resolved
+      ? { root, reference, status: "resolved", ...resolved }
+      : { root, reference, status: "missing" };
+  }
+
+  const search = collectBasenameMatches(root, filePath);
+  if (search.matches.length === 1 && !search.truncated) {
+    const resolved = resolveDirectWorkspaceFile(root, search.matches[0]);
+    return resolved
+      ? { root, reference, status: "resolved", ...resolved }
+      : { root, reference, status: "missing" };
+  }
+  if (search.matches.length > 1 || search.truncated) {
+    return { root, reference, status: "ambiguous", matches: search.matches };
+  }
+  return { root, reference, status: "missing" };
+}
+
+const FILE_REFERENCE_LINE_RANGE_SEPARATOR_SOURCE = String.raw`[-:\u2013\u2014]`;
+const FILE_REFERENCE_LINE_SUFFIX_PATTERN = new RegExp(
+  String.raw`^(.*?)(?::\d+(?:${FILE_REFERENCE_LINE_RANGE_SEPARATOR_SOURCE}\d+)?|\s+\((?:line|lines)\s+\d+(?:${FILE_REFERENCE_LINE_RANGE_SEPARATOR_SOURCE}\d+)?\))$`,
+  "i",
+);
+
+function filePathFromReference(reference: string): string | undefined {
+  if (typeof reference !== "string") {
+    return undefined;
+  }
+  const trimmed = stripReferenceWrappers(reference.trim());
+  const filePath = (trimmed.match(FILE_REFERENCE_LINE_SUFFIX_PATTERN)?.[1] ?? trimmed)
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "");
+  if (!filePath || filePath.includes("\0") || /^[a-z][a-z0-9+.-]*:\/\//i.test(filePath)) {
+    return undefined;
+  }
+  return filePath;
+}
+
+function stripReferenceWrappers(value: string): string {
+  const pairs: Array<[string, string]> = [
+    ["`", "`"],
+    ["<", ">"],
+    ['"', '"'],
+    ["'", "'"],
+  ];
+  for (const [open, close] of pairs) {
+    if (value.startsWith(open) && value.endsWith(close)) {
+      return value.slice(open.length, -close.length).trim();
+    }
+  }
+  return value;
+}
+
+function isQualifiedWorkspaceReference(path: string): boolean {
+  return path.includes("/") || path.startsWith("~");
+}
+
+function resolveDirectWorkspaceFile(
+  root: string,
+  path: string,
+): Pick<WorkspaceFileReferenceResolveResult, "path" | "absolute_path"> | undefined {
+  const absolutePath = absolutePathForReference(root, path);
+  if (!absolutePath || !isPathInsideRoot(absolutePath, root)) {
+    return undefined;
+  }
+
+  let stats;
+  try {
+    stats = statSync(absolutePath);
+  } catch {
+    return undefined;
+  }
+  if (!stats.isFile()) {
+    return undefined;
+  }
+
+  const realRoot = realpathSync(root);
+  const realFile = realpathSync(absolutePath);
+  if (!isPathInsideRoot(realFile, realRoot)) {
+    return undefined;
+  }
+
+  return {
+    path: toWorkspaceSlash(relative(root, absolutePath)),
+    absolute_path: absolutePath,
+  };
+}
+
+function absolutePathForReference(root: string, path: string): string | undefined {
+  if (path.startsWith("~/")) {
+    return resolve(homedir(), path.slice(2));
+  }
+  if (isAbsolute(path)) {
+    return resolve(path);
+  }
+  return resolve(root, path.replace(/^\.\/+/, ""));
+}
+
+function collectBasenameMatches(
+  root: string,
+  fileName: string,
+): { matches: string[]; truncated: boolean } {
+  if (basename(fileName) !== fileName || fileName === "." || fileName === "..") {
+    return { matches: [], truncated: false };
+  }
+
+  const matches: string[] = [];
+  const directoriesToRead = [""];
+  let visited = 0;
+
+  for (let index = 0; index < directoriesToRead.length; index += 1) {
+    if (visited >= FILE_REFERENCE_SEARCH_MAX_VISITS) {
+      return { matches, truncated: true };
+    }
+
+    const currentRelativeDirectory = directoriesToRead[index];
+    const directory = currentRelativeDirectory
+      ? join(root, currentRelativeDirectory)
+      : root;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    entries.sort(compareFileTreeEntries);
+
+    for (const entry of entries) {
+      visited += 1;
+      if (FILE_TREE_IGNORED_FILES.has(entry.name)) {
+        continue;
+      }
+
+      const relativePath = currentRelativeDirectory
+        ? `${currentRelativeDirectory}/${entry.name}`
+        : entry.name;
+      if (entry.isDirectory()) {
+        if (!FILE_TREE_IGNORED_DIRS.has(entry.name)) {
+          directoriesToRead.push(relativePath);
+        }
+        continue;
+      }
+      if ((entry.isFile() || entry.isSymbolicLink()) && entry.name === fileName) {
+        const resolved = resolveDirectWorkspaceFile(root, relativePath);
+        if (resolved) {
+          matches.push(resolved.path ?? relativePath);
+          if (matches.length > 1) {
+            return { matches, truncated: false };
+          }
+        }
+      }
+    }
+  }
+
+  return { matches, truncated: false };
+}
+
+function isPathInsideRoot(path: string, root: string): boolean {
+  const relativePath = relative(root, path);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+  );
+}
+
+function toWorkspaceSlash(path: string): string {
+  return path.replace(/\\/g, "/");
 }
 
 function normalizeWorkspaceRelativePath(path: string): string {
