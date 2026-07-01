@@ -181,7 +181,7 @@ func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
 	for _, want := range []string{
 		"status=complete",
 		"status=blocked",
-		"pause, resume, or usage-limit",
+		"pause or resume",
 	} {
 		if !strings.Contains(updateDesc, want) {
 			t.Fatalf("update_goal description missing %q: %q", want, updateDesc)

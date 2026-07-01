@@ -46,19 +46,12 @@ func TestActorStatusOwnership(t *testing.T) {
 	if err := ValidateActorTransition(ActorUser, StatusPaused, StatusActive); err != nil {
 		t.Fatalf("user resume should be allowed: %v", err)
 	}
-	if err := ValidateActorTransition(ActorUser, StatusActive, StatusUsageLimited); err == nil {
-		t.Fatal("user should not set usage_limited directly")
-	}
-	if err := ValidateActorTransition(ActorSystem, StatusActive, StatusUsageLimited); err != nil {
-		t.Fatalf("system usage limit should be allowed: %v", err)
-	}
 }
 
 func TestTerminalStatusesDoNotAutoContinue(t *testing.T) {
 	for _, status := range []Status{
 		StatusPaused,
 		StatusBlocked,
-		StatusUsageLimited,
 		StatusComplete,
 		StatusCancelled,
 	} {

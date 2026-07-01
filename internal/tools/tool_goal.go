@@ -79,7 +79,7 @@ func (t *UpdateGoalTool) Definition() providers.ToolDefinition {
 			"Set status=complete only when the objective has actually been achieved and no required work remains. " +
 			"Set status=blocked only when the same blocking condition has repeated for at least three consecutive goal turns and the agent cannot make meaningful progress without user input or an external-state change. " +
 			"Do not use blocked merely because the work is hard, slow, uncertain, incomplete, or would benefit from clarification. " +
-			"You cannot use this tool to pause, resume, or usage-limit a goal; those status changes are controlled by the user or system.",
+			"You cannot use this tool to pause or resume a goal; those status changes are controlled by the user or system.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

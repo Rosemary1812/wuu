@@ -350,7 +350,7 @@ func (s *Server) runtimeGoalSummary(goal goalruntime.Goal, threadID string) (*Go
 		Blocker:                 goal.BlockerAudit.Message,
 		BlockerConsecutiveTurns: goal.BlockerAudit.ConsecutiveTurns,
 		CanPause:                goal.Status == goalruntime.StatusActive,
-		CanResume:               goal.Status == goalruntime.StatusPaused || goal.Status == goalruntime.StatusBlocked || goal.Status == goalruntime.StatusUsageLimited,
+		CanResume:               goal.Status == goalruntime.StatusPaused || goal.Status == goalruntime.StatusBlocked,
 		CanCancel:               !goalruntime.IsTerminalStatus(goal.Status),
 		CanClear:                !goalruntime.IsTerminalStatus(goal.Status),
 	}, nil
@@ -362,8 +362,6 @@ func runtimeGoalStopReason(status goalruntime.Status) string {
 		return "paused"
 	case goalruntime.StatusBlocked:
 		return "blocked"
-	case goalruntime.StatusUsageLimited:
-		return "usage_limited"
 	default:
 		return ""
 	}

@@ -442,8 +442,6 @@ function goalStatusText(summary: ComposerGoalSummary): string {
       return "已暂停";
     case "blocked":
       return "已阻塞";
-    case "usage_limited":
-      return "用量受限";
     case "needs_human":
       return "等待人工";
     default:

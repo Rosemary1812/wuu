@@ -1043,11 +1043,7 @@ func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr 
 	if goal.Status != goalruntime.StatusActive {
 		return nil
 	}
-	status := goalruntime.StatusBlocked
-	if providers.IsContextOverflow(turnErr) {
-		status = goalruntime.StatusUsageLimited
-	}
-	if _, err := threadRuntime.GoalRuntime.SetSystemStatus(status, completedAt); err != nil {
+	if _, err := threadRuntime.GoalRuntime.SetSystemStatus(goalruntime.StatusBlocked, completedAt); err != nil {
 		return fmt.Errorf("stop active goal after turn error: %w", err)
 	}
 	return nil

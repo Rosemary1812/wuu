@@ -3679,14 +3679,6 @@ func TestServerGoalContinuationSkipsNonActiveGoals(t *testing.T) {
 			status: goalruntime.StatusBlocked,
 		},
 		{
-			name: "usage limited",
-			apply: func(runtime *goalruntime.Runtime) error {
-				_, err := runtime.SetSystemStatus(goalruntime.StatusUsageLimited, time.Now().UTC())
-				return err
-			},
-			status: goalruntime.StatusUsageLimited,
-		},
-		{
 			name: "complete",
 			apply: func(runtime *goalruntime.Runtime) error {
 				_, err := runtime.Complete(time.Now().UTC())
@@ -3778,14 +3770,14 @@ func TestServerTurnErrorStopsActiveGoal(t *testing.T) {
 			wantReason: "blocked",
 		},
 		{
-			name: "context overflow usage limits goal",
+			name: "context overflow blocks goal",
 			err: &providers.HTTPError{
 				StatusCode:      http.StatusBadRequest,
 				Body:            "context_length_exceeded",
 				ContextOverflow: true,
 			},
-			wantStatus: goalruntime.StatusUsageLimited,
-			wantReason: "usage_limited",
+			wantStatus: goalruntime.StatusBlocked,
+			wantReason: "blocked",
 		},
 	}
 
