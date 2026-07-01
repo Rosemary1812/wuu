@@ -784,6 +784,13 @@
   container: composer-toolbar / inline-size;
 }
 
+/* On the new-session (hero) screen, align the toolbar's left edge with the
+   textarea text x-origin (24px) so the project pill and tool buttons start
+   where typed text starts. Mirrors .composer-attachments' padding-left. */
+.hero-composer-wrap .composer-bar {
+  padding-left: 24px;
+}
+
 .composer-bar-left,
 .composer-bar-right {
   display: flex;
