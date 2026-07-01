@@ -296,6 +296,52 @@ func TestRepairAndValidateToolCallHistory_repairsNonContiguousToolResult(t *test
 	}
 }
 
+func TestRepairAndValidateToolCallHistory_allowsDuplicateToolCallIDsAcrossTurns(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "", ToolCalls: []ToolCall{{ID: "call_1", Name: "a"}}},
+		{Role: "tool", ToolCallID: "call_1", Content: "first"},
+		{Role: "assistant", Content: "", ToolCalls: []ToolCall{{ID: "call_1", Name: "b"}}},
+		{Role: "tool", ToolCallID: "call_1", Content: "second"},
+	}
+	got, err := RepairAndValidateToolCallHistory(msgs)
+	if err != nil {
+		t.Fatalf("RepairAndValidateToolCallHistory: %v", err)
+	}
+	if err := ValidateToolCallHistory(got); err != nil {
+		t.Fatalf("ValidateToolCallHistory: %v: %+v", err, got)
+	}
+	if gotOrder := roleToolOrder(got); gotOrder != "user,assistant,tool:call_1,assistant,tool:call_1" {
+		t.Fatalf("unexpected order: got %s: %+v", gotOrder, got)
+	}
+	contents := toolContents(got, "call_1")
+	if len(contents) != 2 || contents[0] != "first" || contents[1] != "second" {
+		t.Fatalf("unexpected duplicate call contents: %+v", contents)
+	}
+}
+
+func TestRepairAndValidateToolCallHistory_usesLocalInvalidArgumentResultForDuplicateID(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "read", Arguments: `{"path":"a"}`}}},
+		{Role: "tool", ToolCallID: "call_1", Content: "first"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "read", Arguments: `{"path":`}}},
+		{
+			Role:       "tool",
+			ToolCallID: "call_1",
+			Content:    `{"error":"invalid tool arguments: invalid arguments JSON for read","ok":false}`,
+		},
+	}
+	got, err := RepairAndValidateToolCallHistory(msgs)
+	if err != nil {
+		t.Fatalf("RepairAndValidateToolCallHistory: %v", err)
+	}
+	contents := toolContents(got, "call_1")
+	if len(contents) != 2 || contents[0] != "first" || !strings.Contains(contents[1], "invalid tool arguments") {
+		t.Fatalf("unexpected duplicate call contents: %+v", contents)
+	}
+}
+
 func TestRepairAndValidateToolCallHistory_asyncTimingScenarios(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -452,15 +498,16 @@ func TestValidateToolCallHistory_rejectsAssistantToolCallMissingID(t *testing.T)
 	}
 }
 
-func TestValidateToolCallHistory_rejectsAssistantToolCallDuplicateIDAcrossTurns(t *testing.T) {
+func TestValidateToolCallHistory_allowsAssistantToolCallDuplicateIDAcrossTurns(t *testing.T) {
 	msgs := []ChatMessage{
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "", ToolCalls: []ToolCall{{ID: "call_1", Name: "a"}}},
 		{Role: "tool", ToolCallID: "call_1", Content: "ok"},
 		{Role: "assistant", Content: "", ToolCalls: []ToolCall{{ID: "call_1", Name: "b"}}},
+		{Role: "tool", ToolCallID: "call_1", Content: "ok again"},
 	}
-	if err := ValidateToolCallHistory(msgs); err == nil {
-		t.Fatal("expected error for duplicate tool_call id across turns")
+	if err := ValidateToolCallHistory(msgs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -491,4 +538,14 @@ func toolContent(msgs []ChatMessage, callID string) string {
 		}
 	}
 	return ""
+}
+
+func toolContents(msgs []ChatMessage, callID string) []string {
+	out := []string{}
+	for _, msg := range msgs {
+		if msg.Role == "tool" && msg.ToolCallID == callID {
+			out = append(out, msg.Content)
+		}
+	}
+	return out
 }

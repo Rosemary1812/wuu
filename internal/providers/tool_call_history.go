@@ -28,46 +28,18 @@ func ValidateAssistantToolCalls(calls []ToolCall) error {
 // tool_calls is followed immediately by matching tool results,
 // repairing interleaved history when needed and removing orphan tool
 // outputs that lack a corresponding tool_call.
-//
-// This is aligned with Codex's ensure_call_outputs_present +
-// remove_orphan_outputs, with one extra repair: if non-tool messages
-// were mistakenly inserted between an assistant tool_call and its
-// tool results, the tool results are pulled back up so the provider
-// still receives a valid sequence.
 func RepairToolCallHistory(msgs []ChatMessage) []ChatMessage {
 	if len(msgs) == 0 {
 		return nil
 	}
 
-	// 1. Collect every declared tool-call ID and the first matching
-	// tool result we saw for it. Duplicate outputs are dropped so one
-	// bad write cannot keep the history invalid forever.
-	callIDs := make(map[string]struct{}, 8)
-	toolResults := make(map[string]ChatMessage, 8)
-	for _, msg := range msgs {
-		switch msg.Role {
-		case "assistant":
-			for _, tc := range msg.ToolCalls {
-				if tc.ID != "" {
-					callIDs[tc.ID] = struct{}{}
-				}
-			}
-		case "tool":
-			if msg.ToolCallID == "" {
-				continue
-			}
-			if _, ok := toolResults[msg.ToolCallID]; ok {
-				continue
-			}
-			toolResults[msg.ToolCallID] = msg
-		}
-	}
+	usedToolResults := make([]bool, len(msgs))
 
-	// 2. Rebuild the history with tool results attached directly to
+	// Rebuild the history with tool results attached directly to
 	// their declaring assistant. Any interleaved non-tool messages are
 	// kept, but they naturally fall after the assistant's tool block.
 	out := make([]ChatMessage, 0, len(msgs))
-	for _, msg := range msgs {
+	for i, msg := range msgs {
 		if msg.Role == "tool" {
 			continue
 		}
@@ -82,15 +54,11 @@ func RepairToolCallHistory(msgs []ChatMessage) []ChatMessage {
 			if tc.ID == "" {
 				continue
 			}
-			if _, ok := callIDs[tc.ID]; !ok {
-				continue
-			}
-			if tm, ok := toolResults[tc.ID]; ok {
+			if tm, ok := findToolResultForCall(msgs, usedToolResults, i, tc.ID); ok {
 				if tm.ToolResultKind == "" {
 					tm.ToolResultKind = tc.Kind
 				}
 				ordered = append(ordered, tm)
-				delete(toolResults, tc.ID)
 			} else {
 				content := `{"error":"aborted"}`
 				if err := validateToolCallArguments(tc); err != nil {
@@ -110,6 +78,27 @@ func RepairToolCallHistory(msgs []ChatMessage) []ChatMessage {
 	}
 
 	return out
+}
+
+func findToolResultForCall(msgs []ChatMessage, used []bool, assistantIndex int, callID string) (ChatMessage, bool) {
+	for i := assistantIndex + 1; i < len(msgs); i++ {
+		msg := msgs[i]
+		if msg.Role == "assistant" {
+			break
+		}
+		if msg.Role == "tool" && !used[i] && msg.ToolCallID == callID {
+			used[i] = true
+			return msg, true
+		}
+	}
+	for i := 0; i < assistantIndex; i++ {
+		msg := msgs[i]
+		if msg.Role == "tool" && !used[i] && msg.ToolCallID == callID {
+			used[i] = true
+			return msg, true
+		}
+	}
+	return ChatMessage{}, false
 }
 
 func validateToolCallArguments(call ToolCall) error {
@@ -144,6 +133,19 @@ func isInvalidToolArgumentsResult(content string) bool {
 	return strings.HasPrefix(payload.Error, "invalid tool arguments")
 }
 
+func hasInvalidToolArgumentsResultInCurrentBlock(msgs []ChatMessage, assistantIndex int, callID string) bool {
+	for i := assistantIndex + 1; i < len(msgs); i++ {
+		msg := msgs[i]
+		if msg.Role != "tool" {
+			break
+		}
+		if msg.ToolCallID == callID && isInvalidToolArgumentsResult(msg.Content) {
+			return true
+		}
+	}
+	return false
+}
+
 // RepairAndValidateToolCallHistory repairs any sequence issues that can be
 // safely synthesized client-side, then rejects histories that still
 // violate tool ordering invariants.
@@ -160,15 +162,6 @@ func RepairAndValidateToolCallHistory(msgs []ChatMessage) ([]ChatMessage, error)
 // It is intended for diagnostics and tests, not as a gate (RepairToolCallHistory
 // should be used to repair sequences instead).
 func ValidateToolCallHistory(msgs []ChatMessage) error {
-	declaredToolCalls := make(map[string]int, 8)
-	toolResults := make(map[string]ChatMessage, 8)
-	for _, msg := range msgs {
-		if msg.Role == "tool" && msg.ToolCallID != "" {
-			if _, exists := toolResults[msg.ToolCallID]; !exists {
-				toolResults[msg.ToolCallID] = msg
-			}
-		}
-	}
 	for i, msg := range msgs {
 		switch msg.Role {
 		case "system":
@@ -180,16 +173,11 @@ func ValidateToolCallHistory(msgs []ChatMessage) error {
 				return fmt.Errorf("message %d: invalid assistant tool_calls: %w", i, err)
 			}
 			for _, tc := range msg.ToolCalls {
-				if prev, ok := declaredToolCalls[tc.ID]; ok {
-					return fmt.Errorf("message %d: tool_call id %q already declared in message %d", i, tc.ID, prev)
-				}
 				if err := validateToolCallArguments(tc); err != nil {
-					result, ok := toolResults[tc.ID]
-					if !ok || !isInvalidToolArgumentsResult(result.Content) {
+					if !hasInvalidToolArgumentsResultInCurrentBlock(msgs, i, tc.ID) {
 						return fmt.Errorf("message %d: invalid assistant tool_calls: tool_call %q: %w", i, tc.ID, err)
 					}
 				}
-				declaredToolCalls[tc.ID] = i
 			}
 		case "tool":
 			if i == 0 {

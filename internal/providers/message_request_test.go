@@ -45,6 +45,31 @@ func TestPrepareMessagesForModelRequestScrubsClaudeToolCallIDs(t *testing.T) {
 	}
 }
 
+func TestPrepareMessagesForModelRequestAllowsDuplicateToolCallIDsAcrossTurns(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "read"}}},
+		{Role: "tool", ToolCallID: "call_1", Content: "first"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "read"}}},
+		{Role: "tool", ToolCallID: "call_1", Content: "second"},
+	}
+
+	for _, model := range []string{"gpt-test", "claude-opus-4.7"} {
+		t.Run(model, func(t *testing.T) {
+			got, err := PrepareMessagesForModelRequest(model, msgs)
+			if err != nil {
+				t.Fatalf("PrepareMessagesForModelRequest: %v", err)
+			}
+			if len(got) != len(msgs) {
+				t.Fatalf("expected %d messages, got %d: %+v", len(msgs), len(got), got)
+			}
+			if got[2].Content != "first" || got[4].Content != "second" {
+				t.Fatalf("tool results were not preserved in turn order: %+v", got)
+			}
+		})
+	}
+}
+
 func TestPrepareMessagesForModelRequestScrubsMistralIDsAndSeparatesToolThenUser(t *testing.T) {
 	msgs := []ChatMessage{
 		{Role: "user", Content: "hello"},
