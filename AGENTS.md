@@ -27,7 +27,7 @@
 ## Agent-Friendly Text Entrypoint
 
 - Wuu has no TUI. Use Electron for human interaction and `wuu exec` for agents, scripts, CI, and automation.
-- When an agent modifies Wuu's agent-facing runtime, verify the product path with `wuu exec --json` or the `wuu debug app-server ...` protocol probes when practical. Do not rely on `wuu run` as a separate behavior; it is a legacy wrapper around `wuu exec`.
+- When an agent modifies Wuu's agent-facing runtime, verify the product path with `wuu exec --json` or the `wuu debug app-server ...` protocol probes when practical.
 - Preserve automation-safe output: default `wuu exec` stdout is only the final answer, JSON mode stdout is only JSONL, and diagnostics belong on stderr.
 
 ## Intent First
