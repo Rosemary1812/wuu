@@ -6048,7 +6048,9 @@ export function App(): JSX.Element {
     if (!approval) return undefined;
     const callID = approval.call_id;
     if (!callID) return undefined;
-    return turn.items.some((item) => item.id === callID)
+    return turn.items.some(
+      (item) => item.id === callID || item.source_id === callID,
+    )
       ? approval
       : undefined;
   }
@@ -6749,7 +6751,9 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   const callID = pendingToolApproval?.call_id;
                   const approval =
                     pendingToolApproval && callID
-                      ? turn.items.some((item) => item.id === callID)
+                      ? turn.items.some(
+                          (item) => item.id === callID || item.source_id === callID,
+                        )
                         ? pendingToolApproval
                         : undefined
                       : undefined;

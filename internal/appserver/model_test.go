@@ -148,6 +148,32 @@ func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	}
 }
 
+func TestThreadStateCarriesProviderToolCallIDAsSourceID(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{
+			ID:   "call_provider_1",
+			Name: "run_shell",
+		},
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and tool items, got %+v", turn.Items)
+	}
+	toolItem := turn.Items[1]
+	if toolItem.ID == "call_provider_1" {
+		t.Fatalf("tool item should keep UI item id separate from provider call id: %+v", toolItem)
+	}
+	if toolItem.SourceID != "call_provider_1" {
+		t.Fatalf("tool item SourceID = %q, want provider call id", toolItem.SourceID)
+	}
+}
+
 func TestChatMessageItemUsesDisplayContentForUserMessage(t *testing.T) {
 	item := chatMessageItem("item-1", providers.ChatMessage{
 		Role:           "user",

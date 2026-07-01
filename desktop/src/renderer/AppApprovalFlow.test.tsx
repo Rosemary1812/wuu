@@ -74,7 +74,8 @@ function threadWithToolCall(): Thread {
         status: "in_progress",
         items: [
           {
-            id: "call-1",
+            id: "turn-1:2",
+            source_id: "call-1",
             type: "tool_call",
             status: "in_progress",
             name: "run_shell",

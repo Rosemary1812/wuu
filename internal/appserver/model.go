@@ -643,6 +643,9 @@ func (th *threadState) toolItemFromCallLocked(turnID string, call providers.Tool
 	}
 	if itemID := th.toolItems[id]; itemID != "" {
 		if item, ok := th.itemLocked(turnID, itemID); ok {
+			if id != "" {
+				item.SourceID = id
+			}
 			if strings.TrimSpace(call.Name) != "" {
 				item.Name = call.Name
 			}
@@ -658,6 +661,7 @@ func (th *threadState) toolItemFromCallLocked(turnID string, call providers.Tool
 	}
 	item := ThreadItem{
 		ID:        th.nextItemIDLocked(turnID),
+		SourceID:  id,
 		Type:      threadItemTypeForTool(call.Name),
 		Status:    ThreadItemStatusInProgress,
 		Name:      call.Name,
@@ -889,6 +893,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			for _, call := range msg.ToolCalls {
 				item := ThreadItem{
 					ID:        nextItemID(current.ID),
+					SourceID:  call.ID,
 					Type:      threadItemTypeForTool(call.Name),
 					Status:    ThreadItemStatusCompleted,
 					Name:      call.Name,
@@ -987,10 +992,11 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 		}
 	case "tool":
 		return ThreadItem{
-			ID:     id,
-			Type:   ThreadItemToolCall,
-			Status: ThreadItemStatusCompleted,
-			Result: msg.Content,
+			ID:       id,
+			SourceID: msg.ToolCallID,
+			Type:     ThreadItemToolCall,
+			Status:   ThreadItemStatusCompleted,
+			Result:   msg.Content,
 		}
 	}
 	return ThreadItem{}

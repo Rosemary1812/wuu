@@ -140,7 +140,9 @@ export function ConversationSplitPane({
               const callID = pendingToolApproval?.call_id;
               const approval =
                 pendingToolApproval && callID
-                  ? turn.items.some((item) => item.id === callID)
+                  ? turn.items.some(
+                      (item) => item.id === callID || item.source_id === callID,
+                    )
                     ? pendingToolApproval
                     : undefined
                   : undefined;
