@@ -1125,7 +1125,6 @@ export type ComposerGoalSummary = {
   blocker_consecutive_turns?: number;
   can_pause?: boolean;
   can_resume?: boolean;
-  can_cancel?: boolean;
   can_clear?: boolean;
 };
 
@@ -1238,7 +1237,6 @@ export type WuuDesktopApi = {
   getActiveGoalSummary: (threadId?: string) => Promise<ComposerGoalSummary | null>;
   pauseGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   resumeGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
-  cancelGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   clearGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   updateGoalText: (
     goalId: string,

@@ -20,8 +20,8 @@ import type { ComposerGoalSummary } from "../shared/protocol";
 const ACTION_CONFIRM_WINDOW_MS = 3000;
 const ELAPSED_TICK_MS = 1000;
 
-type GoalBusyAction = "edit" | "pause" | "resume" | "cancel" | "clear";
-type ConfirmableGoalAction = "cancel" | "clear";
+type GoalBusyAction = "edit" | "pause" | "resume" | "clear";
+type ConfirmableGoalAction = "clear";
 
 export function ComposerGoalStrip({
   summary,
@@ -29,7 +29,6 @@ export function ComposerGoalStrip({
   onEdit,
   onPause,
   onResume,
-  onCancel,
   onClear
 }: {
   summary: ComposerGoalSummary | null;
@@ -37,7 +36,6 @@ export function ComposerGoalStrip({
   onEdit: (nextText: string) => void | Promise<void>;
   onPause: () => void | Promise<void>;
   onResume: () => void | Promise<void>;
-  onCancel: () => void | Promise<void>;
   onClear: () => void | Promise<void>;
 }): JSX.Element | null {
   const [editing, setEditing] = useState(false);
@@ -108,7 +106,6 @@ export function ComposerGoalStrip({
   const elapsedElement = renderElapsed(startedAtMs, now);
   const canPause = summary.can_pause === true;
   const canResume = summary.can_resume === true;
-  const canCancel = summary.can_cancel !== false;
   const canClear = summary.can_clear === true;
 
   function clearConfirmTimer(): void {
@@ -161,9 +158,7 @@ export function ComposerGoalStrip({
       return;
     }
     resetConfirmation();
-    const operation = action === "cancel" ? onCancel : onClear;
-    const failureMessage = action === "cancel" ? "取消目标失败" : "清除目标失败";
-    runAction(action, operation, failureMessage);
+    runAction(action, onClear, "清除目标失败");
   }
 
   function runAction(
@@ -377,31 +372,6 @@ export function ComposerGoalStrip({
               />
             ) : (
               <Trash2 className="icon-sm" aria-hidden="true" />
-            )}
-          </button>
-        ) : null}
-        {canCancel ? (
-          <button
-            className={
-              `composer-goal-strip-action${
-                confirmingAction === "cancel" ? " danger" : ""
-              }`
-            }
-            type="button"
-            aria-label={
-              confirmingAction === "cancel" ? "再次点击确认取消目标" : "取消目标"
-            }
-            title={confirmingAction === "cancel" ? "再次点击确认" : "取消目标"}
-            disabled={disabled || busy !== null}
-            onClick={() => handleConfirmableGoalAction("cancel")}
-          >
-            {busy === "cancel" ? (
-              <Loader2
-                className="icon-sm composer-goal-strip-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <X className="icon-sm" aria-hidden="true" />
             )}
           </button>
         ) : null}

@@ -878,17 +878,6 @@ export function App(): JSX.Element {
     await window.wuu.resumeGoal(goalSummary.id, threadID);
     await refreshGoalSummary(threadID);
   }, [activeThreadID, goalSummary, refreshGoalSummary]);
-  const cancelCurrentGoal = useCallback(async () => {
-    if (!goalSummary) {
-      return;
-    }
-    const threadID = goalSummary.thread_id ?? activeThreadID;
-    if (!threadID) {
-      return;
-    }
-    await window.wuu.cancelGoal(goalSummary.id, threadID);
-    await refreshGoalSummary(threadID);
-  }, [activeThreadID, goalSummary, refreshGoalSummary]);
   const clearCurrentGoal = useCallback(async () => {
     if (!goalSummary) {
       return;
@@ -2705,7 +2694,6 @@ export function App(): JSX.Element {
         onEditGoal={editGoalText}
         onPauseGoal={pauseCurrentGoal}
         onResumeGoal={resumeCurrentGoal}
-        onCancelGoal={cancelCurrentGoal}
         onClearGoal={clearCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}

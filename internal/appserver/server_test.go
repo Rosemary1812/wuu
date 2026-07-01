@@ -3686,14 +3686,6 @@ func TestServerGoalContinuationSkipsNonActiveGoals(t *testing.T) {
 			},
 			status: goalruntime.StatusComplete,
 		},
-		{
-			name: "cancelled",
-			apply: func(runtime *goalruntime.Runtime) error {
-				_, err := runtime.SetUserStatus(goalruntime.StatusCancelled, time.Now().UTC())
-				return err
-			},
-			status: goalruntime.StatusCancelled,
-		},
 	}
 
 	for _, tt := range tests {

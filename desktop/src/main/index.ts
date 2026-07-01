@@ -678,13 +678,6 @@ app.whenReady().then(async () => {
       confirm_user_approved: true,
     }),
   );
-  ipcMain.handle("wuu:goal-cancel", (_event, goalID: string, threadID?: string) =>
-    appServerClientPool.request<{ ok: boolean }>("goal/cancel", {
-      goal_id: goalID,
-      thread_id: threadID,
-      confirm_user_approved: true,
-    }),
-  );
   ipcMain.handle("wuu:goal-clear", (_event, goalID: string, threadID?: string) =>
     appServerClientPool.request<{ ok: boolean }>("goal/clear", {
       goal_id: goalID,

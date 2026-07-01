@@ -15,11 +15,10 @@ const (
 type Status string
 
 const (
-	StatusActive    Status = "active"
-	StatusPaused    Status = "paused"
-	StatusBlocked   Status = "blocked"
-	StatusComplete  Status = "complete"
-	StatusCancelled Status = "cancelled"
+	StatusActive   Status = "active"
+	StatusPaused   Status = "paused"
+	StatusBlocked  Status = "blocked"
+	StatusComplete Status = "complete"
 )
 
 type Actor string
@@ -99,8 +98,7 @@ func IsKnownStatus(status Status) bool {
 	case StatusActive,
 		StatusPaused,
 		StatusBlocked,
-		StatusComplete,
-		StatusCancelled:
+		StatusComplete:
 		return true
 	default:
 		return false
@@ -109,7 +107,7 @@ func IsKnownStatus(status Status) bool {
 
 func IsTerminalStatus(status Status) bool {
 	switch status {
-	case StatusComplete, StatusCancelled:
+	case StatusComplete:
 		return true
 	default:
 		return false
@@ -238,14 +236,14 @@ func validateActorOwnsStatus(actor Actor, to Status) error {
 		}
 	case ActorUser:
 		switch to {
-		case StatusActive, StatusPaused, StatusCancelled:
+		case StatusActive, StatusPaused:
 			return nil
 		default:
 			return fmt.Errorf("user cannot set goal runtime status %s", to)
 		}
 	case ActorSystem:
 		switch to {
-		case StatusActive, StatusPaused, StatusBlocked, StatusComplete, StatusCancelled:
+		case StatusActive, StatusPaused, StatusBlocked, StatusComplete:
 			return nil
 		default:
 			return fmt.Errorf("system cannot set goal runtime status %s", to)
@@ -261,19 +259,15 @@ func normalizeBlocker(message string) string {
 
 var goalTransitions = map[Status]map[Status]bool{
 	StatusActive: {
-		StatusPaused:    true,
-		StatusBlocked:   true,
-		StatusComplete:  true,
-		StatusCancelled: true,
+		StatusPaused:   true,
+		StatusBlocked:  true,
+		StatusComplete: true,
 	},
 	StatusPaused: {
-		StatusActive:    true,
-		StatusCancelled: true,
+		StatusActive: true,
 	},
 	StatusBlocked: {
-		StatusActive:    true,
-		StatusCancelled: true,
+		StatusActive: true,
 	},
-	StatusComplete:  {},
-	StatusCancelled: {},
+	StatusComplete: {},
 }

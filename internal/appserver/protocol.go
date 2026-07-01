@@ -37,7 +37,6 @@ const (
 	MethodGoalPause                = "goal/pause"
 	MethodGoalResume               = "goal/resume"
 	MethodGoalClear                = "goal/clear"
-	MethodGoalCancel               = "goal/cancel"
 	MethodGoalUpdateText           = "goal/update-text"
 	MethodThreadStart              = "thread/start"
 	MethodThreadResume             = "thread/resume"
@@ -158,7 +157,7 @@ type InitializeResult struct {
 	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
 	Providers        []ProviderSummary       `json:"providers,omitempty"`
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
-	GeneralSettings  GeneralSettingsSummary `json:"general_settings"`
+	GeneralSettings  GeneralSettingsSummary  `json:"general_settings"`
 }
 
 type ModelProfileSummary struct {
@@ -187,7 +186,7 @@ type ConfigReadResult struct {
 	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
 	Providers        []ProviderSummary       `json:"providers,omitempty"`
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
-	GeneralSettings  GeneralSettingsSummary `json:"general_settings"`
+	GeneralSettings  GeneralSettingsSummary  `json:"general_settings"`
 }
 
 type ToolPolicySummary struct {
@@ -419,7 +418,7 @@ type GoalSnapshotResult struct {
 
 // GoalActiveSummary is the composer-banner view of the most recently
 // updated non-terminal goal in one thread/session orchestration scope.
-// The handler filters terminal statuses (completed, failed, cancelled)
+// The handler filters terminal statuses
 // so the renderer can treat a nil summary as "no active goal" without
 // re-checking status.
 // Text is the first line of goal.Goal. The renderer owns visual ellipsis
@@ -446,7 +445,6 @@ type GoalActiveSummary struct {
 	BlockerConsecutiveTurns int    `json:"blocker_consecutive_turns,omitempty"`
 	CanPause                bool   `json:"can_pause,omitempty"`
 	CanResume               bool   `json:"can_resume,omitempty"`
-	CanCancel               bool   `json:"can_cancel,omitempty"`
 	CanClear                bool   `json:"can_clear,omitempty"`
 }
 
@@ -456,12 +454,6 @@ type GoalActiveSummaryParams struct {
 
 type GoalActiveSummaryResult struct {
 	Summary *GoalActiveSummary `json:"summary,omitempty"`
-}
-
-type GoalCancelParams struct {
-	GoalID              string `json:"goal_id"`
-	ThreadID            string `json:"thread_id,omitempty"`
-	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
 }
 
 type GoalPauseParams struct {
@@ -487,10 +479,6 @@ type GoalUpdateTextParams struct {
 	ThreadID            string `json:"thread_id,omitempty"`
 	Text                string `json:"text"`
 	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
-}
-
-type GoalCancelResult struct {
-	OK bool `json:"ok"`
 }
 
 type GoalPauseResult struct {

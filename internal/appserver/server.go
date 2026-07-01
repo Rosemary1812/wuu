@@ -229,8 +229,6 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleGoalResume(req)
 	case MethodGoalClear:
 		return s.handleGoalClear(req)
-	case MethodGoalCancel:
-		return s.handleGoalCancel(req)
 	case MethodGoalUpdateText:
 		return s.handleGoalUpdateText(req)
 	case MethodThreadStart:

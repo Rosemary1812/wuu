@@ -25,7 +25,6 @@ function renderStrip(props: {
   onEdit?: (text: string) => void | Promise<void>;
   onPause?: () => void | Promise<void>;
   onResume?: () => void | Promise<void>;
-  onCancel?: () => void | Promise<void>;
   onClear?: () => void | Promise<void>;
   disabled?: boolean;
 }): void {
@@ -38,7 +37,6 @@ function renderStrip(props: {
         onEdit={props.onEdit ?? (() => {})}
         onPause={props.onPause ?? (() => {})}
         onResume={props.onResume ?? (() => {})}
-        onCancel={props.onCancel ?? (() => {})}
         onClear={props.onClear ?? (() => {})}
       />,
     );
@@ -51,7 +49,6 @@ function goalSummary(text = "Ship the composer goal strip"): ComposerGoalSummary
     text,
     status: "running",
     can_pause: true,
-    can_cancel: true,
     can_clear: true,
   };
 }
@@ -80,16 +77,15 @@ describe("ComposerGoalStrip", () => {
     expect(strip).not.toBeNull();
     expect(container.querySelector(".composer-goal-strip-label")?.textContent).toBe("Goal");
     expect(container.querySelector(".composer-goal-strip-text")?.textContent).toBe("first line");
-    expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(4);
+    expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(3);
     expect(container.querySelector("button[aria-label=\"暂停目标\"]")).not.toBeNull();
     expect(container.querySelector("button[aria-label=\"编辑目标\"]")).not.toBeNull();
     expect(container.querySelector("button[aria-label=\"清除目标\"]")).not.toBeNull();
-    expect(container.querySelector("button[aria-label=\"取消目标\"]")).not.toBeNull();
     expect(
       Array.from(container.querySelectorAll(".composer-goal-strip-action")).map(
         (button) => button.textContent,
       ),
-    ).toEqual(["", "", "", ""]);
+    ).toEqual(["", "", ""]);
   });
 
   it("renders runtime detail text from status, progress, and usage", () => {
@@ -137,7 +133,6 @@ describe("ComposerGoalStrip", () => {
           onEdit={() => {}}
           onPause={onPause}
           onResume={onResume}
-          onCancel={() => {}}
           onClear={() => {}}
         />,
       );
@@ -179,37 +174,6 @@ describe("ComposerGoalStrip", () => {
 
     expect(onEdit).toHaveBeenCalledWith("new goal");
     expect(container.querySelector(".composer-goal-strip-input")).toBeNull();
-  });
-
-  it("requires a second click before cancelling the active goal", async () => {
-    const onCancel = vi.fn().mockResolvedValue(undefined);
-    renderStrip({ summary: goalSummary(), onCancel });
-
-    const cancelButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"取消目标\"]",
-    );
-    expect(cancelButton).not.toBeNull();
-
-    act(() => {
-      cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    });
-    expect(onCancel).not.toHaveBeenCalled();
-    expect(
-      container.querySelector<HTMLButtonElement>(
-        "button[aria-label=\"再次点击确认取消目标\"]",
-      ),
-    ).not.toBeNull();
-
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(
-          "button[aria-label=\"再次点击确认取消目标\"]",
-        )
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-      await Promise.resolve();
-    });
-
-    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("requires a second click before clearing the active goal", async () => {
@@ -263,7 +227,6 @@ describe("ComposerGoalStrip", () => {
         status: "running",
         started_at: startedAt,
         can_pause: true,
-        can_cancel: true,
         can_clear: true,
       };
     }

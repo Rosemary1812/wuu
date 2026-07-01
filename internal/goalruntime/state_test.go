@@ -53,7 +53,6 @@ func TestTerminalStatusesDoNotAutoContinue(t *testing.T) {
 		StatusPaused,
 		StatusBlocked,
 		StatusComplete,
-		StatusCancelled,
 	} {
 		goal := Goal{Status: status}
 		if goal.CanAutoContinue() {
@@ -62,9 +61,6 @@ func TestTerminalStatusesDoNotAutoContinue(t *testing.T) {
 	}
 	if !IsTerminalStatus(StatusComplete) {
 		t.Fatal("complete should be terminal")
-	}
-	if !IsTerminalStatus(StatusCancelled) {
-		t.Fatal("cancelled should be terminal")
 	}
 }
 

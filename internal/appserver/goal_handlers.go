@@ -257,32 +257,6 @@ func (s *Server) handleGoalClear(req Request) error {
 	return s.writeResponse(req.ID, GoalClearResult{OK: true}, nil)
 }
 
-// handleGoalCancel marks the named goal as cancelled. Terminal-status
-// goals (completed/failed/cancelled) refuse the request to keep the
-// renderer's banner from racing against a finished goal.
-func (s *Server) handleGoalCancel(req Request) error {
-	var params GoalCancelParams
-	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("parse goal cancel params: %w", err))
-		}
-	}
-	if !params.ConfirmUserApproved {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("goal cancel requires confirm_user_approved=true"))
-	}
-	_, runtime, err := s.runtimeGoalForControl(params.GoalID, params.ThreadID)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	if runtime == nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("active runtime goal not found"))
-	}
-	if _, err := runtime.SetUserStatus(goalruntime.StatusCancelled, time.Now().UTC()); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	return s.writeResponse(req.ID, GoalCancelResult{OK: true}, nil)
-}
-
 // handleGoalUpdateText rewrites the goal objective. The renderer is
 // expected to obtain explicit user confirmation before invoking this;
 // the server enforces confirm_user_approved as a guardrail.
@@ -351,7 +325,6 @@ func (s *Server) runtimeGoalSummary(goal goalruntime.Goal, threadID string) (*Go
 		BlockerConsecutiveTurns: goal.BlockerAudit.ConsecutiveTurns,
 		CanPause:                goal.Status == goalruntime.StatusActive,
 		CanResume:               goal.Status == goalruntime.StatusPaused || goal.Status == goalruntime.StatusBlocked,
-		CanCancel:               !goalruntime.IsTerminalStatus(goal.Status),
 		CanClear:                !goalruntime.IsTerminalStatus(goal.Status),
 	}, nil
 }
