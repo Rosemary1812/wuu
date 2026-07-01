@@ -113,16 +113,13 @@
 .settings-page {
   display: flex;
   min-height: 100%;
-  --settings-page-max-width: 880px;
+  --settings-page-max-width: 800px;
   width: min(var(--settings-page-max-width), calc(100% - var(--wuu-grid-margin) * 2));
   flex: 1;
   flex-direction: column;
   gap: 36px;
   margin: 0 auto;
-  /* 8px horizontal padding is a defensive gutter: on very narrow viewports
-   * where the page fills the scroll area, the content still keeps a small
-   * margin from the card edge. */
-  padding: 40px 8px 72px;
+  padding: 40px 24px 72px;
 }
 
 /* --- Page header --------------------------------------------------------- */
