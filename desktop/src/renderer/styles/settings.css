@@ -165,7 +165,7 @@
   flex-direction: column;
   gap: 36px;
   margin: 0 auto;
-  padding: 40px 24px 72px;
+  padding: clamp(24px, 4vw, 40px) clamp(12px, 3vw, 24px) clamp(48px, 8vh, 72px);
 }
 
 /* --- Page header --------------------------------------------------------- */
@@ -180,7 +180,7 @@
 .settings-page-title {
   margin: 0;
   color: var(--ink-strong);
-  font-size: 24px;
+  font-size: clamp(20px, 3vw, 24px);
   font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   line-height: 1.2;
@@ -376,18 +376,19 @@
   padding: 10px 12px;
 }
 
-/* Inline status flag (e.g. "未连接", "已配置") sitting next to a value. */
+/* Inline flag occupying a control slot (e.g. "新的模型服务", "暂无模型服务").
+ * Matches the 36px control height so it aligns with adjacent buttons. */
 .settings-inline-flag {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  border-radius: var(--radius-pill);
+  height: 36px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink-muted);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.01em;
-  padding: 0 8px;
+  padding: 0 12px;
 }
 
 .settings-inline-flag.success {
@@ -402,9 +403,12 @@
 
 /* --- Buttons ------------------------------------------------------------- */
 
+/* All interactive controls in a row share a 36px height (inputs, selects,
+ * buttons, inline flags) so mixed rows — e.g. a cancel button next to a
+ * "new provider" flag — read as one aligned unit. */
 .settings-button {
   display: inline-flex;
-  height: 32px;
+  height: 36px;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -461,7 +465,8 @@
 }
 
 .settings-icon-button {
-  width: 30px;
+  width: 36px;
+  flex: 0 0 auto;
   padding: 0;
 }
 
@@ -803,7 +808,7 @@
 }
 
 .settings-usage-range-button {
-  height: 28px;
+  height: 30px;
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--ink-soft);
@@ -829,7 +834,8 @@
 
 .settings-usage-stats {
   display: flex;
-  gap: 28px;
+  flex-wrap: wrap;
+  gap: 20px 28px;
 }
 
 .settings-usage-stat {
@@ -1130,11 +1136,13 @@
   }
 
   .settings-row-control {
-    justify-content: stretch;
+    justify-content: flex-start;
   }
 
-  .settings-page {
-    padding: 24px 8px 48px;
+  .settings-page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 }
 
