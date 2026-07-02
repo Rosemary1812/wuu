@@ -990,6 +990,20 @@ export function App(): JSX.Element {
       : liveBackgroundProcesses.some((process) => process.lifecycle === "managed")
         ? "后台任务运行中，包含需手动清理任务"
         : "后台任务运行中";
+  const activePlanTotal = activePlanUpdate?.plan.length ?? 0;
+  const activePlanCompleted =
+    activePlanUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
+  const activePlanVisible = Boolean(activePlanUpdate && activePlanTotal > 0);
+  const activePlanCurrentItem = activePlanUpdate?.plan.find(
+    (item) => item.status === "in_progress",
+  );
+  const activePlanNextItem = activePlanUpdate?.plan.find(
+    (item) => item.status === "pending",
+  );
+  const activePlanDetailItems = [activePlanCurrentItem, activePlanNextItem].flatMap(
+    (item, index, items) =>
+      item && items.findIndex((other) => other === item) === index ? [item] : [],
+  );
   const forkWorktreeDisabledReason =
     state.gitStatus?.is_repo === false
       ? WORKTREE_FORK_NON_GIT_REASON
@@ -6607,32 +6621,53 @@ export function App(): JSX.Element {
         !showingWorkspaceMode &&
         !splitConversation &&
         !showingSkillsCatalog &&
-        userScrolledAway ? (
-          <button
-            type="button"
-            className="jump-to-latest-pill"
-            aria-label="跳到最新"
-            onClick={() =>
-              scrollConversationToBottom({ force: true, smooth: true })
-            }
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M7 1V11M7 11L3 7M7 11L11 7"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>跳到最新</span>
-          </button>
+        (userScrolledAway || activePlanVisible) ? (
+          <div className="jump-to-latest-cluster" aria-label="当前位置与进度">
+            {userScrolledAway ? (
+              <button
+                type="button"
+                className="jump-to-latest-pill"
+                aria-label="跳到最新"
+                onClick={() =>
+                  scrollConversationToBottom({ force: true, smooth: true })
+                }
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 1V11M7 11L3 7M7 11L11 7"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>跳到最新</span>
+              </button>
+            ) : null}
+            {activePlanVisible ? (
+              <div
+                className="jump-to-latest-progress"
+                aria-label={`当前计划已完成 ${activePlanCompleted} 项，共 ${activePlanTotal} 项`}
+              >
+                进度 {activePlanCompleted}/{activePlanTotal}
+                {activePlanDetailItems.length > 0 ? (
+                  <span className="jump-to-latest-progress-detail" aria-hidden="true">
+                    {activePlanDetailItems.map((item) => (
+                      <span className={`jump-to-latest-progress-step ${item.status}`} key={item.step}>
+                        {item.status === "in_progress" ? "进行中" : "下一步"}：{item.step}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </main>
 

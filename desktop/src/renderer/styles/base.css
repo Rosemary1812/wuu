@@ -358,7 +358,9 @@ code,
 .window-resizing .workspace-right-panel,
 .window-resizing .empty-home,
 .window-resizing .empty-home-inner,
+.window-resizing .jump-to-latest-cluster,
 .window-resizing .jump-to-latest-pill,
+.window-resizing .jump-to-latest-progress,
 .window-resizing .launch-preview-button {
   transition: none !important;
   animation-play-state: paused !important;

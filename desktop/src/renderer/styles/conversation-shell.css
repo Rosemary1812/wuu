@@ -752,25 +752,33 @@
                                                                           
                                                                         
                                                                        
-.jump-to-latest-pill {
+.jump-to-latest-cluster {
   position: absolute;
   bottom: calc(var(--dock-composer-height, 0px) + 12px);
   left: var(--conversation-visible-inset-left);
   right: var(--conversation-visible-inset-right);
-  width: max-content;
+  display: inline-flex;
+  width: fit-content;
   max-width: calc(
     100% - var(--conversation-visible-inset-left) -
       var(--conversation-visible-inset-right) - 32px
   );
+  align-items: center;
+  gap: 6px;
   margin-inline: auto;
   transform: translateY(0);
   z-index: 20;
+  animation: jump-to-latest-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  -webkit-app-region: no-drag;
+}
 
+.jump-to-latest-pill,
+.jump-to-latest-progress {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-
-  padding: 6px 12px;
+  height: 38px;
   border-radius: var(--radius-pill);
   border: 1px solid rgba(17, 19, 21, 0.10);
   background: rgba(255, 255, 255, 0.96);
@@ -782,17 +790,34 @@
   font-weight: var(--weight-semibold);
   line-height: 1;
 
-  cursor: pointer;
   -webkit-app-region: no-drag;
 
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
     box-shadow 140ms ease;
-  animation: jump-to-latest-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.jump-to-latest-pill:hover {
+.jump-to-latest-pill {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.jump-to-latest-progress {
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 0;
+  min-width: 92px;
+  max-width: min(520px, calc(100vw - 220px));
+  overflow: hidden;
+  padding: 0 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jump-to-latest-pill:hover,
+.jump-to-latest-progress:hover,
+.jump-to-latest-progress:focus-within {
   background: rgba(255, 255, 255, 1);
   border-color: rgba(17, 19, 21, 0.18);
   box-shadow: 0 6px 20px rgba(20, 24, 28, 0.12);
@@ -808,6 +833,47 @@
 .jump-to-latest-pill svg {
   flex: 0 0 auto;
   color: currentColor;
+}
+
+.jump-to-latest-progress-detail {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 0;
+  max-height: 0;
+  gap: 4px;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 160ms ease,
+    max-width 160ms ease,
+    opacity 120ms ease;
+}
+
+.jump-to-latest-progress:hover .jump-to-latest-progress-detail,
+.jump-to-latest-progress:focus-within .jump-to-latest-progress-detail {
+  margin-left: 6px;
+  max-width: min(360px, calc(100vw - 320px));
+  max-height: 24px;
+  opacity: 1;
+}
+
+.jump-to-latest-progress-step {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(17, 19, 21, 0.06);
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  padding: 5px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jump-to-latest-progress-step.in_progress {
+  background: rgba(17, 19, 21, 0.08);
+  color: var(--ink);
 }
 
 @keyframes jump-to-latest-enter {
