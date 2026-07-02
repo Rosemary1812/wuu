@@ -64,6 +64,12 @@ type Surface struct {
 	// which mental model to follow (bash-first, apply_patch
 	// preferred, exact-edit preferred, etc.).
 	SystemFragment string
+
+	// DeferredToolCatalog is a session-level static prompt section
+	// built from trusted toolkit metadata. It lists deferred tool
+	// names and short summaries without exposing their parameter
+	// schemas until tool_search loads them.
+	DeferredToolCatalog string
 }
 
 // HasCapability reports whether the surface knows a capability

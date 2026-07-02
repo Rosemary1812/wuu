@@ -32,6 +32,7 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"raw_output_bytes":      record.RawOutputBytes,
 			"returned_output_bytes": record.ReturnedOutputBytes,
 			"result_budgeted":       record.ResultBudgeted,
+			"tool_surface_changed":  record.ToolSurfaceChanged,
 			"error_present":         record.Error != "",
 			"error_kind":            record.ErrorKind,
 		},
@@ -46,6 +47,15 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 	}
 	if len(record.ArtifactRefs) > 0 {
 		envelope.Data["artifact_refs"] = append([]string(nil), record.ArtifactRefs...)
+	}
+	if len(record.LoadedDeferredTools) > 0 {
+		envelope.Data["loaded_deferred_tools"] = append([]string(nil), record.LoadedDeferredTools...)
+	}
+	if len(record.NewlyLoadedDeferredTools) > 0 {
+		envelope.Data["newly_loaded_deferred_tools"] = append([]string(nil), record.NewlyLoadedDeferredTools...)
+	}
+	if len(record.AlreadyLoadedDeferredTools) > 0 {
+		envelope.Data["already_loaded_deferred_tools"] = append([]string(nil), record.AlreadyLoadedDeferredTools...)
 	}
 	if record.ApprovalRef != "" {
 		envelope.Data["approval_ref"] = record.ApprovalRef

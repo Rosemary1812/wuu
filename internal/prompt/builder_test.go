@@ -160,9 +160,10 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 		"<available-deferred-tools>",
 		"`tool_search`",
 		"select:<tool_name>",
+		"select:tool_a tool_b",
 		"desktop port reporting",
 		"context rewrite/continuation",
-		"already loaded a deferred schema",
+		"`already_loaded`",
 		"Do not use `tool_search` for visible core tools",
 	} {
 		if !strings.Contains(result, want) {

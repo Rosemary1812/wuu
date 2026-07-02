@@ -1574,6 +1574,20 @@ func TestNewSessionAutoFallsBackToWuuToolSearchForUnsupportedFirstPartyOpenAIRes
 	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
 		t.Fatal("unsupported OpenAI model must not mark provider requests as native deferred")
 	}
+	for _, want := range []string{
+		"# Deferred Tool Catalog",
+		"<available-deferred-tools>",
+		"await_agents",
+	} {
+		if !strings.Contains(rt.BaseSystemPrompt, want) {
+			t.Fatalf("Wuu tool_search prompt missing static catalog entry %q:\n%s", want, rt.BaseSystemPrompt)
+		}
+	}
+	for _, block := range rt.Toolkit.ContextBlocks() {
+		if block.Kind == wuucontext.BlockAvailableDeferred {
+			t.Fatalf("deferred catalog must not be emitted as request-only context: %+v", block)
+		}
+	}
 }
 
 func TestNewSessionAutoFlattensCompatibleOpenAIResponses(t *testing.T) {
@@ -2094,6 +2108,7 @@ func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 
 func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T) {
 	surface := compiledSurfaceForProviderModel("openai", "gpt-5-codex")
+	surface.DeferredToolCatalog = "# Deferred Tool Catalog\n\n<available-deferred-tools>\n- await_agents: Wait for helper agents. [tags: agent]\n</available-deferred-tools>"
 	promptText := buildBaseSystemPrompt(
 		t.TempDir(),
 		"base prompt",
@@ -2113,7 +2128,9 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 	for _, want := range []string{
 		"# Tool Discovery",
 		"`tool_search`",
+		"# Deferred Tool Catalog",
 		"<available-deferred-tools>",
+		"await_agents: Wait for helper agents.",
 		"select:<tool_name>",
 		"Do not use `tool_search` for visible core tools",
 	} {

@@ -26,8 +26,8 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "tool_search",
 		Description: "Search deferred tools and load matching tool schemas.\n\n" +
-			"Deferred tool names are listed in <available-deferred-tools> system reminders, but those tools are not callable until their schemas are loaded. " +
-			"Use this when you need a listed deferred tool or a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, context rewrite/continuation, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Do not use this for tools that are already visible.",
+			"Deferred tool names are listed in the static Deferred Tool Catalog under <available-deferred-tools>, but those tools are not callable until their schemas are loaded. " +
+			"Use this when you need a listed deferred tool or a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, context rewrite/continuation, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Load related tools in one call when you expect to need several, for example select:tool_a tool_b. Do not use this for tools that are already visible.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -70,27 +70,39 @@ func (t *ToolSearchTool) Execute(_ context.Context, argsJSON string) (string, er
 
 	matches := t.toolkit.searchDeferredTools(query, limit)
 	names := make([]string, 0, len(matches))
+	alreadyLoaded := make([]string, 0)
+	newlyLoaded := make([]string, 0)
 	loadableTools := make([]providers.LoadableToolDefinition, 0, len(matches))
 	for _, match := range matches {
 		names = append(names, match.Name)
+		if t.toolkit.isDeferredToolLoaded(match.Name) {
+			alreadyLoaded = append(alreadyLoaded, match.Name)
+		} else {
+			newlyLoaded = append(newlyLoaded, match.Name)
+		}
 		loadableTools = append(loadableTools, match.LoadableTool)
 	}
 	t.toolkit.markDeferredToolsLoaded(names...)
 
 	return mustJSON(map[string]any{
-		"action":         "tool_search",
-		"query":          query,
-		"matched":        len(matches),
-		"loaded_tools":   names,
-		"loadable_tools": loadableTools,
-		"tools":          matches,
-		"schemas_loaded": len(matches) > 0,
+		"action":          "tool_search",
+		"query":           query,
+		"matched":         len(matches),
+		"loaded_tools":    names,
+		"already_loaded":  alreadyLoaded,
+		"newly_loaded":    newlyLoaded,
+		"loadable_tools":  loadableTools,
+		"tools":           matches,
+		"schemas_loaded":  len(matches) > 0,
+		"surface_changed": len(newlyLoaded) > 0,
 	})
 }
 
 type toolSearchMatch struct {
 	Name            string                           `json:"name"`
 	Kind            ToolKind                         `json:"kind"`
+	Summary         string                           `json:"summary"`
+	Tags            []string                         `json:"tags,omitempty"`
 	Description     string                           `json:"description"`
 	ReadOnly        bool                             `json:"read_only"`
 	ConcurrencySafe bool                             `json:"concurrency_safe"`
@@ -120,14 +132,17 @@ func (t *Toolkit) searchDeferredTools(query string, limit int) []toolSearchMatch
 			continue
 		}
 		def := tool.Definition()
-		score := scoreToolSearchMatch(def, tokens)
+		score := scoreToolSearchMatch(tool, def, tokens)
 		if score == 0 {
 			continue
 		}
 		desc, _ := truncate(def.Description, 600)
+		entry := deferredToolCatalogEntry(tool)
 		matches = append(matches, toolSearchMatch{
 			Name:            tool.Name(),
 			Kind:            classifyToolKind(tool.Name()),
+			Summary:         entry.Summary,
+			Tags:            entry.Tags,
 			Description:     desc,
 			ReadOnly:        tool.IsReadOnly(),
 			ConcurrencySafe: tool.IsConcurrencySafe(),
@@ -222,9 +237,12 @@ func (t *Toolkit) allKnownTools() []Tool {
 func buildToolSearchMatch(tool Tool, score int) toolSearchMatch {
 	def := tool.Definition()
 	desc, _ := truncate(def.Description, 600)
+	entry := deferredToolCatalogEntry(tool)
 	return toolSearchMatch{
 		Name:            tool.Name(),
 		Kind:            classifyToolKind(tool.Name()),
+		Summary:         entry.Summary,
+		Tags:            entry.Tags,
 		Description:     desc,
 		ReadOnly:        tool.IsReadOnly(),
 		ConcurrencySafe: tool.IsConcurrencySafe(),
@@ -277,9 +295,9 @@ func searchTokens(query string) []string {
 	return out
 }
 
-func scoreToolSearchMatch(def providers.ToolDefinition, tokens []string) int {
+func scoreToolSearchMatch(tool Tool, def providers.ToolDefinition, tokens []string) int {
 	name := strings.ToLower(def.Name)
-	haystack := toolSearchText(def)
+	haystack := toolSearchText(tool, def)
 	score := 0
 	for _, token := range tokens {
 		if token == "" {
@@ -295,10 +313,13 @@ func scoreToolSearchMatch(def providers.ToolDefinition, tokens []string) int {
 	return score
 }
 
-func toolSearchText(def providers.ToolDefinition) string {
+func toolSearchText(tool Tool, def providers.ToolDefinition) string {
+	entry := deferredToolCatalogEntry(tool)
 	parts := []string{
 		strings.ToLower(def.Name),
 		strings.ToLower(strings.ReplaceAll(def.Name, "_", " ")),
+		strings.ToLower(entry.Summary),
+		strings.ToLower(strings.Join(entry.Tags, " ")),
 		strings.ToLower(def.Description),
 	}
 	if len(def.InputSchema) > 0 {

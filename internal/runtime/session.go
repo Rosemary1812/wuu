@@ -97,6 +97,7 @@ type Session struct {
 	ToolSearchEnabled           bool
 	NativeDeferredToolDiscovery bool
 	ExperimentalDeferredBundles bool
+	DeferredToolCatalogPrompt   string
 	CronScheduler               *cron.Scheduler
 	CronLock                    *cron.Lock
 }
@@ -231,6 +232,11 @@ func NewSession(opts Options) (*Session, error) {
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
 	mainSurface := activeSurface(toolkit)
+	deferredToolCatalogPrompt, err := deferredToolCatalogPromptForToolkit(toolkit)
+	if err != nil {
+		return nil, err
+	}
+	mainSurface.DeferredToolCatalog = deferredToolCatalogPrompt
 	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryEntries, profileMemoryProvider != nil, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
@@ -413,6 +419,7 @@ func NewSession(opts Options) (*Session, error) {
 		ToolSearchEnabled:           toolSearchEnabled,
 		NativeDeferredToolDiscovery: nativeDeferredDiscovery,
 		ExperimentalDeferredBundles: experimentalDeferredBundles,
+		DeferredToolCatalogPrompt:   deferredToolCatalogPrompt,
 	}, nil
 }
 
@@ -1603,7 +1610,7 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		s.UserSystemPrompt,
 		providerName,
 		model,
-		activeSurface(s.Toolkit),
+		activeSurfaceWithDeferredToolCatalog(s.Toolkit, s.DeferredToolCatalogPrompt),
 		toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 		s.Memory,
 		profileMemoryEntries,
@@ -1675,6 +1682,7 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 	pb.AddSection("tool_surface", toolSurface.SystemFragment, true)
 	if _, ok := toolSurface.Tools["tool_search"]; ok {
 		pb.AddToolDiscovery()
+		pb.AddSection("deferred_tool_catalog", toolSurface.DeferredToolCatalog, true)
 	}
 	pb.AddSection("environment", environmentSystemPromptSection(rootDir), true)
 	if strings.TrimSpace(userPrompt) != "" {
@@ -1757,6 +1765,19 @@ func activeSurface(kit *tools.Toolkit) capability.Surface {
 		return capability.Surface{}
 	}
 	return kit.ActiveSurface()
+}
+
+func activeSurfaceWithDeferredToolCatalog(kit *tools.Toolkit, catalogPrompt string) capability.Surface {
+	surface := activeSurface(kit)
+	surface.DeferredToolCatalog = catalogPrompt
+	return surface
+}
+
+func deferredToolCatalogPromptForToolkit(kit *tools.Toolkit) (string, error) {
+	if kit == nil {
+		return "", nil
+	}
+	return kit.DeferredToolCatalogSystemSection()
 }
 
 // compiledSurfaceForProviderModel is the worker-only entry point in

@@ -642,12 +642,15 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 			t.Fatalf("deferred name index should include %s before spawn_agent succeeds: %v", name, deferredNames)
 		}
 	}
-	block, ok := kit.AvailableDeferredToolsContextBlock()
-	if !ok {
-		t.Fatal("deferred name index should be emitted as a context block")
+	catalog, err := kit.DeferredToolCatalogSystemSection()
+	if err != nil {
+		t.Fatalf("deferred catalog: %v", err)
 	}
-	if !strings.Contains(block.Content, "<available-deferred-tools>") || !strings.Contains(block.Content, "await_agents") {
-		t.Fatalf("deferred context block missing stable names:\n%s", block.Content)
+	if !strings.Contains(catalog, "<available-deferred-tools>") || !strings.Contains(catalog, "await_agents") {
+		t.Fatalf("deferred catalog missing stable names:\n%s", catalog)
+	}
+	if _, ok := kit.AvailableDeferredToolsContextBlock(); ok {
+		t.Fatal("deferred name index should not be emitted as a request-only context block")
 	}
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{

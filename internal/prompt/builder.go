@@ -184,12 +184,12 @@ func (b *Builder) AddToolDiscovery() {
 	b.AddSection("tool_discovery", strings.Join([]string{
 		"# Tool Discovery",
 		"",
-		"Some less common tool schemas are deferred so the direct tool list stays small and cacheable. Deferred tools are listed by name, but their parameter schemas are not available until loaded.",
-		"- Deferred tool names appear in `<available-deferred-tools>` system-reminder blocks. A name in that list means the tool can be loaded; it does not mean the tool is callable yet.",
+		"Some less common tool schemas are deferred so the direct tool list stays small and cacheable. Deferred tools may be listed by trusted Wuu metadata in the static Deferred Tool Catalog, but their parameter schemas are not available until loaded.",
+		"- When `<available-deferred-tools>` appears in the Deferred Tool Catalog, a name in that list means the tool can be loaded; it does not mean the tool is callable yet.",
 		"- Use `tool_search` when you need a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, desktop port reporting, context rewrite/continuation, or specialized helpers.",
-		"- Search by capability words, or use `select:<tool_name>` when you already know the exact tool name.",
+		"- Search by capability words, or use `select:<tool_name>` when you already know the exact tool name. Load related tools in one call when several are likely needed, for example `select:tool_a tool_b`.",
 		"- After `tool_search` returns matching schemas, use the loaded tool normally in the next tool step if it fits the task.",
-		"- If `tool_search` has already loaded a deferred schema, use that loaded tool directly; do not call `tool_search` again for the same tool.",
+		"- If `tool_search` reports a schema in `already_loaded`, use that loaded tool directly; do not call `tool_search` again for the same tool.",
 		"- Do not use `tool_search` for visible core tools already listed in this session, such as file reading, file editing, grep/glob search, patching, planning, or skill loading.",
 		"- Do not call MCP list/resource tools only to discover available tools; use `tool_search` for tool discovery.",
 	}, "\n"), true)

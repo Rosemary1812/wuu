@@ -57,6 +57,10 @@ type ToolExecutionRecord struct {
 	ResultBudgeted                   bool                 `json:"result_budgeted"`
 	ResultRef                        string               `json:"result_ref,omitempty"`
 	ArtifactRefs                     []string             `json:"artifact_refs,omitempty"`
+	LoadedDeferredTools              []string             `json:"loaded_deferred_tools,omitempty"`
+	NewlyLoadedDeferredTools         []string             `json:"newly_loaded_deferred_tools,omitempty"`
+	AlreadyLoadedDeferredTools       []string             `json:"already_loaded_deferred_tools,omitempty"`
+	ToolSurfaceChanged               bool                 `json:"tool_surface_changed,omitempty"`
 	ApprovalRef                      string               `json:"approval_ref,omitempty"`
 	ApprovalDecision                 ToolApprovalDecision `json:"approval_decision,omitempty"`
 	ApprovalReason                   string               `json:"approval_reason,omitempty"`
@@ -353,6 +357,7 @@ func (t *Toolkit) recordToolExecution(
 	err error,
 ) {
 	artifactRefs := extractToolArtifactRefs(result, resultRef)
+	loadedDeferredTools, newlyLoadedDeferredTools, alreadyLoadedDeferredTools, toolSurfaceChanged := extractToolSearchLoadMetadata(call.Name, result)
 	if approvalRef != "" {
 		artifactRefs = appendUniqueString(artifactRefs, approvalRef)
 	}
@@ -387,6 +392,10 @@ func (t *Toolkit) recordToolExecution(
 		ResultBudgeted:                   resultBudgeted,
 		ResultRef:                        resultRef,
 		ArtifactRefs:                     artifactRefs,
+		LoadedDeferredTools:              loadedDeferredTools,
+		NewlyLoadedDeferredTools:         newlyLoadedDeferredTools,
+		AlreadyLoadedDeferredTools:       alreadyLoadedDeferredTools,
+		ToolSurfaceChanged:               toolSurfaceChanged,
 		ApprovalRef:                      approvalRef,
 		ApprovalDecision:                 approvalReview.Decision,
 		ApprovalReason:                   approvalReview.Reason,
@@ -422,6 +431,46 @@ func extractToolResultAction(result string) string {
 	}
 	action, _ := payload["action"].(string)
 	return sanitizeShortToolValue(action, 80)
+}
+
+func extractToolSearchLoadMetadata(toolName, result string) ([]string, []string, []string, bool) {
+	if toolName != "tool_search" {
+		return nil, nil, nil, false
+	}
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return nil, nil, nil, false
+	}
+	var payload struct {
+		LoadedTools    []string `json:"loaded_tools"`
+		NewlyLoaded    []string `json:"newly_loaded"`
+		AlreadyLoaded  []string `json:"already_loaded"`
+		SurfaceChanged bool     `json:"surface_changed"`
+	}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		return nil, nil, nil, false
+	}
+	return sanitizeToolNameList(payload.LoadedTools), sanitizeToolNameList(payload.NewlyLoaded), sanitizeToolNameList(payload.AlreadyLoaded), payload.SurfaceChanged
+}
+
+func sanitizeToolNameList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = sanitizeShortToolValue(value, 120)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func sanitizeShortToolValue(value string, limit int) string {
