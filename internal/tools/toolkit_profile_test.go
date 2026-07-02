@@ -882,6 +882,12 @@ func TestActiveProfileExposesTaskEntrypointsDirectly(t *testing.T) {
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "helpme", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("main agent surface should call helpme directly, got %v", err)
 	}
+	if containsProfileDef(defs, "post_message") {
+		t.Fatalf("ordinary main agent surface must not advertise post_message: %v", sortedProfileDefNames(defs))
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
+		t.Fatalf("ordinary main agent post_message should be blocked by speech capability, got %v", err)
+	}
 	for _, name := range subagentManagementTools {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("main agent surface should keep management tool %s deferred until tool_search loads it, got %v", name, sortedProfileDefNames(defs))
