@@ -6,6 +6,7 @@ import type {
   GitStatusResult,
   InitializeResult,
   ManagedProcess,
+  ParticipantSummary,
   PendingToolApproval,
   PlanUpdate,
   RuntimeContext,
@@ -1292,6 +1293,7 @@ function summarizeAgentForSidebar(agent: Agent): Agent {
     completed_at: agent.completed_at,
     pinned: agent.pinned,
     archived: agent.archived,
+    participant: agent.participant,
   };
 }
 
@@ -2307,6 +2309,27 @@ function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {
     nested_running_count: numberValue(record, "nested_running_count"),
     started_at: stringValue(record, "started_at"),
     completed_at: stringValue(record, "completed_at"),
+    participant: participantFromRecord(recordValue(record, "participant")),
+  };
+}
+
+// participantFromRecord validates the participant payload embedded in
+// agent/updated notifications. A payload missing id or name is treated
+// as absent so the renderer falls back to the legacy label chain.
+function participantFromRecord(
+  record: JsonRecord | undefined,
+): ParticipantSummary | undefined {
+  const id = stringValue(record, "id");
+  const name = stringValue(record, "name");
+  if (!id || !name) {
+    return undefined;
+  }
+  return {
+    id,
+    name,
+    kind: stringValue(record, "kind") ?? "",
+    role: stringValue(record, "role"),
+    avatar: stringValue(record, "avatar"),
   };
 }
 

@@ -12,6 +12,10 @@ export function sortChildAgents(agents: Agent[]): Agent[] {
 }
 
 export function agentLabel(agent: Agent): string {
+  const participantName = agent.participant?.name.trim();
+  if (participantName) {
+    return participantName;
+  }
   const pathParts = agent.agent_path?.split("/").filter(Boolean) ?? [];
   return agent.task_name || agent.description || pathParts[pathParts.length - 1] || agent.id;
 }

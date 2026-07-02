@@ -22,6 +22,7 @@ export type SubagentRowSummary = Pick<
   | "completed_at"
   | "nested_count"
   | "nested_running_count"
+  | "participant"
 >;
 
 export function EnvironmentSideStack({
