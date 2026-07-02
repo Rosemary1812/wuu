@@ -1407,7 +1407,7 @@
   max-width: 100%;
   margin: 6px 0 -2px;
   color: var(--ink-muted);
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
 }
@@ -1426,7 +1426,7 @@
   align-items: flex-start;
   gap: 8px;
   color: #777b80;
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
 }
@@ -3432,7 +3432,9 @@
   color: #73787c;
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
-  line-height: 1.48;
+  /* Reasoning narration is still running text — 1.48 wrapped multi-line
+     thoughts too tightly against the 1.75 prose next to it. */
+  line-height: 1.58;
 }
 
 .turn-process-entry::before {
@@ -3571,7 +3573,13 @@
   align-items: center;
   gap: 6px;
   color: var(--conversation-process-control-color, #A4A4A5);
-  font-size: var(--font-body);
+  /*
+   * Tool-call rows are meta information, so they sit one size below the
+   * 14px prose. They previously used --font-body, which made the muted
+   * activity lines physically larger than the 13px process narration
+   * they accompany — an inverted hierarchy.
+   */
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-control-line-height);
   padding: 0;
@@ -3694,7 +3702,9 @@
 .activity-command {
   display: inline;
   color: var(--ink-faint);
-  font-size: var(--font-body);
+  /* Monospace runs visually larger than the UI face at equal px, so
+     the 13px meta size already reads on par with 14px prose. */
+  font-size: var(--font-ui);
   line-height: var(--conversation-control-line-height);
   font-weight: var(--weight-medium);
   font-family: "SFMono-Regular", Consolas, monospace;
@@ -3736,7 +3746,7 @@
   flex: 0 0 auto;
   margin-top: 0;
   color: var(--ink-faint);
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
 }
 
@@ -3756,7 +3766,7 @@
   background: transparent;
   border-left: 2px solid #e89088;
   color: var(--danger);
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
   line-height: 1.55;
   margin: 4px 0 4px 0;
   padding: 0 0 0 10px;

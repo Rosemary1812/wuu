@@ -98,7 +98,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 1.8,
     step: 0.05,
     unit: "",
-    defaultValue: 1.8,
+    defaultValue: 1.6,
   },
   {
     key: "control-line-height",
@@ -108,7 +108,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 2.2,
     step: 0.05,
     unit: "",
-    defaultValue: 2,
+    defaultValue: 1.7,
   },
   {
     key: "process-gap",

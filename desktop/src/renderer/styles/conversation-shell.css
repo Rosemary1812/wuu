@@ -34,8 +34,15 @@
   --conversation-reading-line-height: 1.75;
   --conversation-prose-block-gap: 14px;
   --conversation-message-element-gap: 14px;
-  --conversation-meta-line-height: 1.8;
-  --conversation-control-line-height: 2;
+  /*
+   * Meta and control rows (process toggles, tool-call lines, previews)
+   * are labels, not reading prose — they hold their line at 1.6/1.7 so
+   * activity blocks stay compact and visually subordinate to the 1.75
+   * body text. The earlier 1.8/2.0 values made the muted tool rows
+   * float apart and occupy more vertical space than the answer itself.
+   */
+  --conversation-meta-line-height: 1.6;
+  --conversation-control-line-height: 1.7;
   --conversation-process-control-color: #BCBCBD;
   /* Lighten the message-flow process text one tier (was var(--ink-soft)
      = #5b6066). Pulls the body narration, process title, toggle, and
