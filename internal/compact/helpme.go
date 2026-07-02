@@ -176,6 +176,7 @@ func RewriteHistoryWithHelpMeCompact(messages []providers.ChatMessage, content s
 	if content == "" {
 		return providers.CloneChatMessages(messages)
 	}
+	nextAnchorID := NextContextAnchorID(messages)
 	systemPrefix, previousSummary, previousSummaryDiscoveredTools, conversation := splitLeadingSystemMessages(messages)
 	if previousSummary != "" {
 		content = content + "\n\n## Previous compact summary before HelpMe\n" + truncateHelpMeSection(previousSummary)
@@ -190,6 +191,7 @@ func RewriteHistoryWithHelpMeCompact(messages []providers.ChatMessage, content s
 		Content:         content,
 		DiscoveredTools: discovered,
 	})
+	rewritten = append(rewritten, BuildContextAnchorMessage(nextAnchorID))
 	return rewritten
 }
 
