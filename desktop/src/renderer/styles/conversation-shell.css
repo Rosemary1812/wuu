@@ -23,8 +23,16 @@
     "Hiragino Sans GB", "Microsoft YaHei", "Microsoft YaHei UI",
     "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
-  --conversation-reading-line-height: 1.9;
-  --conversation-prose-block-gap: 16px;
+  /*
+   * Reading rhythm: 1.75 keeps mixed CJK/Latin prose comfortable at 14px
+   * (24.5px baseline pitch) while letting each paragraph read as one
+   * coherent block. The previous 1.9 spread lines so far apart that the
+   * 16px paragraph gap lost contrast against the in-paragraph leading.
+   * Block gap 14px + half-leading ≈ one full line of space between
+   * paragraphs, so the vertical rhythm stays on the baseline grid.
+   */
+  --conversation-reading-line-height: 1.75;
+  --conversation-prose-block-gap: 14px;
   --conversation-message-element-gap: 14px;
   --conversation-meta-line-height: 1.8;
   --conversation-control-line-height: 2;

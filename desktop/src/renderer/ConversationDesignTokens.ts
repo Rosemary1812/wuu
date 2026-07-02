@@ -74,11 +74,11 @@ export const CONVERSATION_DESIGN_TOKENS = [
     key: "prose-line-height",
     cssVar: CONVERSATION_READING_LINE_HEIGHT_CSS_VAR,
     label: "正文行高",
-    min: 1.65,
+    min: 1.5,
     max: 2.3,
     step: 0.02,
     unit: "",
-    defaultValue: 1.9,
+    defaultValue: 1.75,
   },
   {
     key: "prose-block-gap",
@@ -88,7 +88,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 16,
+    defaultValue: 14,
   },
   {
     key: "meta-line-height",

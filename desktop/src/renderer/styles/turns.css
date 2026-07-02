@@ -4095,13 +4095,24 @@
  * bold for the few cases that genuinely need emphasis.
  */
 .rich-heading {
-  margin: 0;
+  /*
+   * Space before > space after: a heading belongs to the content below
+   * it, so it gets extra breathing room above (flex gap + 10px) while
+   * staying tight against its own section. Uniform flex gaps alone gave
+   * the heading equal distance to both neighbours, which destroyed the
+   * grouping the bold weight is trying to signal.
+   */
+  margin: 10px 0 0;
   color: var(--ink);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   line-height: var(--conversation-reading-line-height, inherit);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.rich-content > .rich-heading:first-child {
+  margin-top: 0;
 }
 
 .rich-paragraph {
@@ -4114,7 +4125,11 @@
 .rich-content ul,
 .rich-content ol {
   display: grid;
-  gap: 12px;
+  /*
+   * Item gap stays well under the paragraph gap (14px) so a list reads
+   * as one cohesive block instead of a run of near-paragraphs.
+   */
+  gap: 8px;
   margin: 0;
   padding-left: 24px;
 }
@@ -4130,7 +4145,7 @@
 
 .rich-content li > ul,
 .rich-content li > ol {
-  margin-top: 14px;
+  margin-top: 8px;
 }
 
 .rich-content input[type="checkbox"] {
