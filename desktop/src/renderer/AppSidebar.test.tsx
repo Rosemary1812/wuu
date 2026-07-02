@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InitializeResult } from "../shared/protocol";
 import { AppSidebar } from "./AppSidebar";
-import { initialState, type AppState } from "./AppState";
+import { initialState, type AppState, type ThreadSummary } from "./AppState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -30,9 +30,39 @@ function initialized(): InitializeResult {
   };
 }
 
+function makeThreadSummary(
+  id: string,
+  title: string,
+  overrides: Partial<ThreadSummary> = {},
+): ThreadSummary {
+  return {
+    id,
+    preview: title,
+    title,
+    model_provider: "test",
+    model: "test-model",
+    cwd: "/repo",
+    workspace_kind: "project",
+    status: "idle",
+    pinned: false,
+    archived: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    turns: [],
+    turn_count: 0,
+    ...overrides,
+  };
+}
+
 function renderSidebar({
   projectMenuOpen = false,
-}: { projectMenuOpen?: boolean } = {}): void {
+  pinnedThreads = [],
+  onTogglePinned = () => {},
+}: {
+  projectMenuOpen?: boolean;
+  pinnedThreads?: ThreadSummary[];
+  onTogglePinned?: (thread: ThreadSummary) => void;
+} = {}): void {
   const state: AppState = {
     ...initialState,
     initialized: initialized(),
@@ -49,6 +79,7 @@ function renderSidebar({
       <AppSidebar
         state={state}
         sidebarProjects={[]}
+        pinnedThreads={pinnedThreads}
         activeThreadID={undefined}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
@@ -68,7 +99,7 @@ function renderSidebar({
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
         onSelectThread={() => {}}
-        onTogglePinned={() => {}}
+        onTogglePinned={onTogglePinned}
         onArchiveThread={() => {}}
         onClearArchiveConfirm={() => {}}
         onToggleProjectMenu={() => {}}
@@ -110,5 +141,39 @@ describe("AppSidebar layout", () => {
     expect(primaryNav?.querySelector(".project-add-menu")).not.toBeNull();
     expect(settings?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
     expect(settings?.textContent).toBe("设置");
+  });
+
+  it("renders pinned sessions above the project list", () => {
+    const pinned = makeThreadSummary("thread-pinned", "Pinned session", {
+      pinned: true,
+    });
+    let toggled: ThreadSummary | undefined;
+    renderSidebar({
+      pinnedThreads: [pinned],
+      onTogglePinned: (thread) => {
+        toggled = thread;
+      },
+    });
+
+    const pinnedSection = container.querySelector(
+      'section[aria-label="置顶"]',
+    );
+    const projectSection = container.querySelector(
+      'section[aria-label="项目"]',
+    );
+    expect(pinnedSection).not.toBeNull();
+    expect(pinnedSection?.textContent).toContain("Pinned session");
+    expect(
+      pinnedSection?.compareDocumentPosition(projectSection as Node) ?? 0,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    const unpinButton = pinnedSection?.querySelector<HTMLButtonElement>(
+      'button[aria-label="取消置顶"]',
+    );
+    expect(unpinButton).not.toBeNull();
+    act(() => {
+      unpinButton?.click();
+    });
+    expect(toggled?.id).toBe("thread-pinned");
   });
 });

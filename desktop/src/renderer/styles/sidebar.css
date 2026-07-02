@@ -267,6 +267,12 @@
   padding: 0 10px 2px;
 }
 
+.section-label {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+}
+
 .nav-item.dev-fixture-button {
   height: 30px;
   color: #666f69;
@@ -353,6 +359,34 @@
 
 .project-list {
   min-height: 0;
+}
+
+.pinned-thread-section {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.pinned-thread-label {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.pinned-thread-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pinned-thread-list .thread-row {
+  height: 32px;
+  padding-left: 10px;
 }
 
 .project-add-menu {

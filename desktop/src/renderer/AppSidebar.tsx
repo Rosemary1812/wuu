@@ -17,11 +17,12 @@ import type { DesktopProject } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
-import { ProjectList } from "./ThreadSidebar";
+import { PinnedThreadList, ProjectList } from "./ThreadSidebar";
 
 export function AppSidebar({
   state,
   sidebarProjects,
+  pinnedThreads,
   activeThreadID,
   pendingThreadID,
   pendingProjectID,
@@ -59,6 +60,7 @@ export function AppSidebar({
   // state.projects list is unchanged; sidebarProjects is what the sidebar
   // actually shows.
   sidebarProjects: DesktopProject[];
+  pinnedThreads: ThreadSummary[];
   activeThreadID?: string;
   pendingThreadID?: string;
   pendingProjectID?: string;
@@ -209,6 +211,22 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-main scrollbar-hidden">
+          {pinnedThreads.length > 0 ? (
+            <section className="pinned-thread-section" aria-label="置顶">
+              <div className="section-label pinned-thread-label">置顶</div>
+              <PinnedThreadList
+                threads={pinnedThreads}
+                activeID={activeThreadID}
+                pendingThreadID={pendingThreadID}
+                archiveConfirmThreadID={archiveConfirmThreadID}
+                lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                onSelect={onSelectThread}
+                onTogglePinned={onTogglePinned}
+                onArchive={onArchiveThread}
+                onClearArchiveConfirm={onClearArchiveConfirm}
+              />
+            </section>
+          ) : null}
           <section className="project-section" aria-label="项目">
             <div className="project-list">
               {sidebarProjects.length === 0 ? (

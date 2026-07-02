@@ -14,6 +14,10 @@ function threadsForProjectPath(
   );
 }
 
+function unpinnedThreads(threads: ThreadSummary[]): ThreadSummary[] {
+  return threads.filter((thread) => !thread.pinned);
+}
+
 function sameSidebarPath(left: string, right: string): boolean {
   return cleanSidebarPath(left) === cleanSidebarPath(right);
 }
@@ -115,12 +119,14 @@ export function ProjectList({
         // directly: App.tsx already filtered scratch threads. Real
         // projects still go through the cwd-path filter so stale entries
         // can't leak into the wrong group.
-        const projectThreads = isScratchPseudo
-          ? threadsByProjectID[project.id] ?? []
-          : threadsForProjectPath(
-              threadsByProjectID[project.id] ?? [],
-              project.path,
-            );
+        const projectThreads = unpinnedThreads(
+          isScratchPseudo
+            ? threadsByProjectID[project.id] ?? []
+            : threadsForProjectPath(
+                threadsByProjectID[project.id] ?? [],
+                project.path,
+              ),
+        );
         const projectHasUnread = projectThreads.some((thread) =>
           projectThreadUnread(
             thread,
@@ -545,6 +551,44 @@ function ThreadRows({
         />
       ) : null}
     </>
+  );
+}
+
+export function PinnedThreadList({
+  threads,
+  activeID,
+  pendingThreadID,
+  archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
+  onSelect,
+  onTogglePinned,
+  onArchive,
+  onClearArchiveConfirm,
+}: {
+  threads: ThreadSummary[];
+  activeID?: string;
+  pendingThreadID?: string;
+  archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
+  onSelect: (id: string) => void;
+  onTogglePinned: (thread: ThreadSummary) => void;
+  onArchive: (thread: ThreadSummary) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
+}): JSX.Element {
+  return (
+    <div className="pinned-thread-list">
+      <ThreadRows
+        threads={threads}
+        activeID={activeID}
+        pendingThreadID={pendingThreadID}
+        archiveConfirmThreadID={archiveConfirmThreadID}
+        lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+        onSelect={onSelect}
+        onTogglePinned={onTogglePinned}
+        onArchive={onArchive}
+        onClearArchiveConfirm={onClearArchiveConfirm}
+      />
+    </div>
   );
 }
 

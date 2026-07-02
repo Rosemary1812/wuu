@@ -6209,6 +6209,7 @@ export function App(): JSX.Element {
       <AppSidebar
         state={state}
         sidebarProjects={sidebarProjects}
+        pinnedThreads={sidebarPinnedThreads}
         activeThreadID={activeThreadID}
         pendingThreadID={visiblePendingThreadID}
         pendingProjectID={visiblePendingProjectID}
