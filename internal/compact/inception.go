@@ -30,6 +30,15 @@ type InceptionHistoryRewrite struct {
 	Content  string `json:"content"`
 }
 
+type InceptionRewriteStats struct {
+	AnchorID                      int
+	MessagesRemoved               int
+	PreservedUserMessages         int
+	PreservedUserMessageBytes     int
+	PreservedUserSuffixStartIndex int
+	SummaryBytes                  int
+}
+
 type inceptionToolEnvelope struct {
 	Action         string                   `json:"action"`
 	Status         string                   `json:"status"`
@@ -231,8 +240,10 @@ func RewriteHistoryWithInceptionContinuation(messages []providers.ChatMessage, a
 		return nil, false, fmt.Errorf("inception history rewrite: anchor %d not found", anchorID)
 	}
 
+	suffix := messages[anchorIndex+1:]
+	discovered := providers.DiscoveredToolsFromMessages(suffix)
+	preserved := unansweredVisibleUserSuffix(suffix)
 	rewritten := providers.CloneChatMessages(messages[:anchorIndex+1])
-	discovered := providers.DiscoveredToolsFromMessages(messages[anchorIndex+1:])
 	rewritten = append(rewritten, providers.ChatMessage{
 		Role:            "user",
 		Name:            ContextContinuationName,
@@ -240,5 +251,105 @@ func RewriteHistoryWithInceptionContinuation(messages []providers.ChatMessage, a
 		Hidden:          true,
 		DiscoveredTools: discovered,
 	})
+	rewritten = append(rewritten, preserved...)
 	return rewritten, true, nil
+}
+
+func InceptionRewriteStatsFromToolMessages(messages []providers.ChatMessage, toolMessages []providers.ChatMessage) (InceptionRewriteStats, bool, error) {
+	rewrite, ok, err := InceptionRewriteFromToolMessages(toolMessages)
+	if err != nil || !ok {
+		return InceptionRewriteStats{}, false, err
+	}
+	return InceptionRewriteStatsForRewrite(messages, rewrite.AnchorID, rewrite.Content)
+}
+
+func InceptionRewriteStatsForRewrite(messages []providers.ChatMessage, anchorID int, content string) (InceptionRewriteStats, bool, error) {
+	anchorIndex, ok := FindContextAnchorIndex(messages, anchorID)
+	if !ok {
+		return InceptionRewriteStats{}, false, fmt.Errorf("inception history rewrite: anchor %d not found", anchorID)
+	}
+	suffix := messages[anchorIndex+1:]
+	preserved := unansweredVisibleUserSuffix(suffix)
+	stats := InceptionRewriteStats{
+		AnchorID:                      anchorID,
+		MessagesRemoved:               len(suffix),
+		PreservedUserMessages:         len(preserved),
+		PreservedUserSuffixStartIndex: preservedUserSuffixStartIndex(suffix),
+		SummaryBytes:                  len(strings.TrimSpace(content)),
+	}
+	for _, msg := range preserved {
+		stats.PreservedUserMessageBytes += len(msg.Content)
+	}
+	return stats, true, nil
+}
+
+func unansweredVisibleUserSuffix(messages []providers.ChatMessage) []providers.ChatMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	limit := len(messages)
+	if idx := inceptionToolUseMessageIndex(messages); idx >= 0 {
+		limit = idx
+	}
+	start := 0
+	for i := 0; i < limit; i++ {
+		if isVisibleAssistantTextReply(messages[i]) {
+			start = i + 1
+		}
+	}
+	var out []providers.ChatMessage
+	for _, msg := range messages[start:limit] {
+		if isVisibleExternalUserMessage(msg) {
+			out = append(out, providers.CloneChatMessage(msg))
+		}
+	}
+	return out
+}
+
+func preservedUserSuffixStartIndex(messages []providers.ChatMessage) int {
+	if len(messages) == 0 {
+		return -1
+	}
+	limit := len(messages)
+	if idx := inceptionToolUseMessageIndex(messages); idx >= 0 {
+		limit = idx
+	}
+	start := 0
+	for i := 0; i < limit; i++ {
+		if isVisibleAssistantTextReply(messages[i]) {
+			start = i + 1
+		}
+	}
+	for i := start; i < limit; i++ {
+		if isVisibleExternalUserMessage(messages[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func inceptionToolUseMessageIndex(messages []providers.ChatMessage) int {
+	for i, msg := range messages {
+		if !strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") {
+			continue
+		}
+		for _, call := range msg.ToolCalls {
+			if strings.EqualFold(strings.TrimSpace(call.Name), InceptionToolName) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isVisibleAssistantTextReply(msg providers.ChatMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") &&
+		!msg.Hidden &&
+		strings.TrimSpace(msg.Content) != ""
+}
+
+func isVisibleExternalUserMessage(msg providers.ChatMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(msg.Role), "user") &&
+		!msg.Hidden &&
+		!IsInternalContextMessage(msg)
 }

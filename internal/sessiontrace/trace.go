@@ -225,12 +225,18 @@ type ProviderStateRecord struct {
 }
 
 type CompactRecord struct {
-	Reason         string `json:"reason,omitempty"`
-	Status         string `json:"status,omitempty"`
-	TokensBefore   int    `json:"tokens_before,omitempty"`
-	MessagesBefore int    `json:"messages_before,omitempty"`
-	MessagesAfter  int    `json:"messages_after,omitempty"`
-	Error          string `json:"error,omitempty"`
+	Reason                        string `json:"reason,omitempty"`
+	Status                        string `json:"status,omitempty"`
+	TokensBefore                  int    `json:"tokens_before,omitempty"`
+	MessagesBefore                int    `json:"messages_before,omitempty"`
+	MessagesAfter                 int    `json:"messages_after,omitempty"`
+	AnchorID                      *int   `json:"anchor_id,omitempty"`
+	MessagesRemoved               int    `json:"messages_removed,omitempty"`
+	PreservedUserMessages         int    `json:"preserved_user_messages,omitempty"`
+	PreservedUserMessageBytes     int    `json:"preserved_user_message_bytes,omitempty"`
+	PreservedUserSuffixStartIndex int    `json:"preserved_user_suffix_start_index,omitempty"`
+	SummaryBytes                  int    `json:"summary_bytes,omitempty"`
+	Error                         string `json:"error,omitempty"`
 }
 
 type RequestStepSummary struct {

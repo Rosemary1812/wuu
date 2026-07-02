@@ -629,6 +629,10 @@ func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing
 	cfg.OnCompact = func(info CompactInfo) {
 		infos = append(infos, info)
 	}
+	var attempts []CompactAttemptInfo
+	cfg.OnCompactAttempt = func(info CompactAttemptInfo) {
+		attempts = append(attempts, info)
+	}
 
 	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{
 		{Role: "system", Content: "sys"},
@@ -642,6 +646,21 @@ func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing
 	}
 	if len(infos) != 1 || infos[0].Reason != CompactReasonInception {
 		t.Fatalf("expected Inception compact event, got %+v", infos)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("expected one compact attempt, got %+v", attempts)
+	}
+	if attempts[0].AnchorID == nil || *attempts[0].AnchorID != 0 {
+		t.Fatalf("expected inception attempt anchor 0, got %+v", attempts[0])
+	}
+	if attempts[0].MessagesRemoved != 2 {
+		t.Fatalf("expected rewrite to remove assistant tool call and tool result, got %+v", attempts[0])
+	}
+	if attempts[0].PreservedUserMessages != 0 {
+		t.Fatalf("did not expect preserved user suffix in this test, got %+v", attempts[0])
+	}
+	if attempts[0].SummaryBytes != len(content) {
+		t.Fatalf("expected summary bytes %d, got %+v", len(content), attempts[0])
 	}
 	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("rewritten history must be provider-valid: %v\n%+v", err, res.NewMessages)

@@ -420,17 +420,28 @@ func RunToolLoop(
 				}, rerr
 			}
 			if changed && compactChanged(messages, rewritten) {
-				messages = rewritten
-				historyRewritten = true
-				usage.Reset()
-				usage.RecordPendingMessages(messages)
-				emitCompactAttempt(cfg, CompactAttemptInfo{
+				attempt := CompactAttemptInfo{
 					Reason:         reason,
 					Status:         CompactAttemptSucceeded,
 					TokensBefore:   before,
 					MessagesBefore: msgsBefore,
-					MessagesAfter:  len(messages),
-				})
+					MessagesAfter:  len(rewritten),
+				}
+				if reason == CompactReasonInception {
+					if stats, ok, serr := compact.InceptionRewriteStatsFromToolMessages(messages, orderedToolMessages); serr == nil && ok {
+						attempt.AnchorID = intPtr(stats.AnchorID)
+						attempt.MessagesRemoved = stats.MessagesRemoved
+						attempt.PreservedUserMessages = stats.PreservedUserMessages
+						attempt.PreservedUserMessageBytes = stats.PreservedUserMessageBytes
+						attempt.PreservedUserSuffixStartIndex = stats.PreservedUserSuffixStartIndex
+						attempt.SummaryBytes = stats.SummaryBytes
+					}
+				}
+				messages = rewritten
+				historyRewritten = true
+				usage.Reset()
+				usage.RecordPendingMessages(messages)
+				emitCompactAttempt(cfg, attempt)
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{
 						Reason:         reason,
@@ -457,6 +468,10 @@ func emitCompactAttempt(cfg LoopConfig, info CompactAttemptInfo) {
 	if cfg.OnCompactAttempt != nil {
 		cfg.OnCompactAttempt(info)
 	}
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func toolDefinitionsContain(executor ToolExecutor, name string) bool {

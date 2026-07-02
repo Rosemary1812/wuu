@@ -1132,12 +1132,18 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 
 func compactRecord(info agent.CompactAttemptInfo) sessiontrace.CompactRecord {
 	return sessiontrace.CompactRecord{
-		Reason:         string(info.Reason),
-		Status:         string(info.Status),
-		TokensBefore:   info.TokensBefore,
-		MessagesBefore: info.MessagesBefore,
-		MessagesAfter:  info.MessagesAfter,
-		Error:          info.Error,
+		Reason:                        string(info.Reason),
+		Status:                        string(info.Status),
+		TokensBefore:                  info.TokensBefore,
+		MessagesBefore:                info.MessagesBefore,
+		MessagesAfter:                 info.MessagesAfter,
+		AnchorID:                      info.AnchorID,
+		MessagesRemoved:               info.MessagesRemoved,
+		PreservedUserMessages:         info.PreservedUserMessages,
+		PreservedUserMessageBytes:     info.PreservedUserMessageBytes,
+		PreservedUserSuffixStartIndex: info.PreservedUserSuffixStartIndex,
+		SummaryBytes:                  info.SummaryBytes,
+		Error:                         info.Error,
 	}
 }
 

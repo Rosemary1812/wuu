@@ -81,6 +81,102 @@ func TestRewriteHistoryWithInceptionContinuationCutsAfterAnchor(t *testing.T) {
 	}
 }
 
+func TestRewriteHistoryWithInceptionContinuationPreservesUnansweredUserSuffix(t *testing.T) {
+	content := BuildInceptionContinuationContent(0, "## Task state\nTurn A answer was already delivered.\n\n## Next step\nAnswer the latest user message.")
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "base"},
+		{Role: "user", Content: "Q1"},
+		BuildContextAnchorMessage(0),
+		{Role: "assistant", Content: "Answer to Q1"},
+		{Role: "user", Content: "Q2 new constraint"},
+		BuildContextAnchorMessage(1),
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_inception", Name: InceptionToolName}}},
+		{Role: "tool", Name: InceptionToolName, ToolCallID: "call_inception", Content: `{"action":"inception","status":"completed"}`},
+	}
+
+	rewritten, changed, err := RewriteHistoryWithInceptionContinuation(history, 0, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected rewrite to report changed")
+	}
+	if len(rewritten) != 5 {
+		t.Fatalf("expected base, Q1, anchor, continuation, Q2; got %+v", rewritten)
+	}
+	if rewritten[3].Name != ContextContinuationName || !rewritten[3].Hidden {
+		t.Fatalf("expected continuation before preserved user suffix, got %+v", rewritten[3])
+	}
+	if rewritten[4].Role != "user" || rewritten[4].Content != "Q2 new constraint" || rewritten[4].Hidden {
+		t.Fatalf("expected latest visible user suffix after continuation, got %+v", rewritten[4])
+	}
+	if strings.Contains(rewritten[3].Content, "Q2 new constraint") {
+		t.Fatalf("continuation should not be the only place preserving the latest user message: %+v", rewritten[3])
+	}
+	if err := providers.ValidateToolCallHistory(rewritten); err != nil {
+		t.Fatalf("rewritten history must be provider-valid: %v", err)
+	}
+}
+
+func TestRewriteHistoryWithInceptionContinuationDoesNotReactivateAnsweredUserMessages(t *testing.T) {
+	content := BuildInceptionContinuationContent(0, "## Task state\nOlder user request was answered.\n\n## Next step\nAnswer the current request.")
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "base"},
+		BuildContextAnchorMessage(0),
+		{Role: "user", Content: "old pasted log"},
+		{Role: "assistant", Content: "Answered old pasted log"},
+		{Role: "user", Content: "current request"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_inception", Name: InceptionToolName}}},
+		{Role: "tool", Name: InceptionToolName, ToolCallID: "call_inception", Content: `{"action":"inception","status":"completed"}`},
+	}
+
+	rewritten, changed, err := RewriteHistoryWithInceptionContinuation(history, 0, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected rewrite to report changed")
+	}
+	if len(rewritten) != 4 {
+		t.Fatalf("expected base, anchor, continuation, current request; got %+v", rewritten)
+	}
+	if rewritten[3].Role != "user" || rewritten[3].Content != "current request" {
+		t.Fatalf("expected current request after continuation, got %+v", rewritten[3])
+	}
+	for _, msg := range rewritten {
+		if msg.Role == "user" && msg.Content == "old pasted log" {
+			t.Fatalf("answered user message must not be reactivated after rewrite: %+v", rewritten)
+		}
+	}
+}
+
+func TestRewriteHistoryWithInceptionContinuationPreservesMultipleUserSuffixMessagesInOrder(t *testing.T) {
+	content := BuildInceptionContinuationContent(0, "## Task state\nReady to answer the latest constraints.\n\n## Next step\nContinue.")
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "base"},
+		BuildContextAnchorMessage(0),
+		{Role: "assistant", Content: "Delivered previous answer"},
+		{Role: "user", Content: "first follow-up"},
+		{Role: "user", Content: "second follow-up"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_inception", Name: InceptionToolName}}},
+		{Role: "tool", Name: InceptionToolName, ToolCallID: "call_inception", Content: `{"action":"inception","status":"completed"}`},
+	}
+
+	rewritten, changed, err := RewriteHistoryWithInceptionContinuation(history, 0, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected rewrite to report changed")
+	}
+	if len(rewritten) != 5 {
+		t.Fatalf("expected base, anchor, continuation, two user suffix messages; got %+v", rewritten)
+	}
+	if rewritten[3].Content != "first follow-up" || rewritten[4].Content != "second follow-up" {
+		t.Fatalf("expected preserved user suffix in original order, got %+v", rewritten)
+	}
+}
+
 func TestBuildInceptionContinuationContentMarksSummaryAsAssistantAuthored(t *testing.T) {
 	content := BuildInceptionContinuationContent(4, "## Task state\nUser asked for a plan.\n\n## Next step\nWait for approval.")
 
