@@ -108,11 +108,15 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 			if now.IsZero() {
 				now = time.Now().UTC()
 			}
+			name := firstNonEmpty(msg.TaskName, msg.AgentType, msg.AgentID)
+			if summary, ok := s.resolveParticipantSummary(msg.ParticipantID); ok && strings.TrimSpace(summary.Name) != "" {
+				name = summary.Name
+			}
 			rec := persistedMessage{
 				Role:          "participant",
 				Content:       msg.Text,
 				ClientID:      fmt.Sprintf("%s-%d", strings.TrimSpace(msg.AgentID), now.UnixNano()),
-				Name:          firstNonEmpty(msg.TaskName, msg.AgentType, msg.AgentID),
+				Name:          name,
 				ParticipantID: msg.ParticipantID,
 				PostKind:      msg.Kind,
 				At:            now,

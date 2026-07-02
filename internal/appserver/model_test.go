@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -306,6 +307,16 @@ func TestAppendParticipantMessageLockedAddsCurrentTurnItem(t *testing.T) {
 	}
 	if turn.ID != "turn" || len(turn.Items) != 2 {
 		t.Fatalf("expected participant item appended to current turn, got %+v", turn)
+	}
+	if len(th.History) != 1 {
+		t.Fatalf("expected participant context appended to model history, got %+v", th.History)
+	}
+	ctx := th.History[0]
+	if !ctx.Hidden || ctx.Name != participantModelContextMessageName || ctx.ParticipantID != "prt-reviewer" || ctx.ParticipantName != "reviewer" || ctx.PostKind != "result" {
+		t.Fatalf("unexpected participant context metadata: %+v", ctx)
+	}
+	if !strings.Contains(ctx.Content, "Found a missing nil check.") {
+		t.Fatalf("participant context missing result text: %q", ctx.Content)
 	}
 	if item.Type != ThreadItemParticipantMsg || item.Status != ThreadItemStatusCompleted || item.PostKind != "result" {
 		t.Fatalf("unexpected participant item: %+v", item)

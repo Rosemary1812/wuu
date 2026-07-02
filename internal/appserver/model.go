@@ -772,6 +772,9 @@ func (th *threadState) appendParticipantMessageLocked(rec persistedMessage, now 
 	turn := th.ensureTurnLocked(turnID, now)
 	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
 	item := participantMessageItem(th.nextItemIDLocked(turnID), rec, resolve)
+	if msg, ok := participantModelContextMessage(rec); ok {
+		th.History = append(th.History, msg)
+	}
 	turn.Items = append(turn.Items, item)
 	if createdTurn && !th.running {
 		turn.Status = TurnStatusCompleted

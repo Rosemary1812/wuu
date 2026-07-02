@@ -210,6 +210,11 @@ type ChatMessage struct {
 	// DiscoveredTools carries provider-native deferred tool state across
 	// compact/resume/fork boundaries without adding full schemas to prompt text.
 	DiscoveredTools []LoadableToolDefinition
+	// Participant metadata is app-level attribution for conversation-native
+	// result cards. Provider adapters ignore it.
+	ParticipantID   string `json:"participant_id,omitempty"`
+	ParticipantName string `json:"participant_name,omitempty"`
+	PostKind        string `json:"post_kind,omitempty"`
 }
 
 // CacheHint carries provider-agnostic prompt-cache guidance.

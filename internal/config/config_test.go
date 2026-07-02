@@ -1190,6 +1190,8 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 		"parallel implementation slices",
 		"risky verification",
 		"separate context",
+		"participant posted a result card",
+		"Reference the card",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include sub-agent decision guidance %q: %q", want, prompt)
