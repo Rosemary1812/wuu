@@ -286,11 +286,14 @@ context_compaction 标记              token usage / telemetry
 - named/ephemeral agent 通过两条通道感知对话：(a) spawn 时的 prompt；(b) 运行中父 agent 用现有 `send_message` 注入（"queue a message without triggering a new turn"——已经是 inbox 语义，保留）。
 - **不做广播**：不把每条用户消息推给所有 agent 的 context。这是 Raft agent inbox 的核心教训——"the agent decides what is worth its context"。wuu 的形态（单用户、任务导向）下更简单：**路由是显式的（@mention / spawn / send_message），没有环境广播**。Phase 5 之前甚至不需要 inbox 数据结构。
 
-**工具面约束（token 边界）**：
+**工具面约束（启动方式决定能力包）**：
 
-`participant_id` 只表示"谁在做/谁做的"，不等于"可以在群聊里发言"。只有由前端 conversation-native 群聊 / roster 入口创建、并由 app-server 标记为 `speech_capability=enabled` 的 participant run，才会在 toolkit 里看到 `post_message` / `decline` 等发言工具。普通 thread session、现有 `spawn_agent` 产生的 worker、旧 subagent session 即使有 `participant_id`，也只是用于署名和归属，**不得获得发言工具**。
+`participant_id` 只表示"谁在做/谁做的"，不等于"拥有群聊能力"。群聊里的特殊能力应该作为一个 `conversation-native` capability bundle，按 **run 的启动方式** 注入 toolkit：
 
-这个约束必须在 toolkit 构建阶段执行，而不是把工具暴露给所有 agent 再靠 prompt 说"不要用"。原因很直接：普通 coding thread 的 token 预算不应该为群聊发言工具付固定成本，也不应该增加无关工具带来的选择噪声。`can_post` 如果保留，应是 app-server 从群聊入口传入的内部授权，不应成为普通 LLM-facing `spawn_agent` 可以自我打开的参数。
+- `run_mode=ordinary_thread`：普通主对话、普通 subagent、旧 session。只加载常规 coding 工具面；即使有 `participant_id`，也只用于署名和归属。
+- `run_mode=conversation_participant`：由前端群聊 / roster / @mention 入口启动的带身份 participant run。启动前由 app-server 绑定 `conversation-native` bundle，直接加载 `post_message`、`decline`、群聊 steer/feedback 等能力。
+
+这不是 deferred tool loading，也不应该经过模型可见的 `tool_search`。这些能力是 run 级别的产品模式，不是模型临时发现的可选工具。toolkit 在第一次 provider request 之前就应该根据 launch context 决定完整工具面；普通 coding thread 的 token 预算不应为群聊工具付固定成本，也不应增加无关工具带来的选择噪声。`can_post` 如果保留，也只能是 app-server 内部 launch capability，不应成为普通 LLM-facing `spawn_agent` 可以自我打开的参数。
 
 **决定是否回应（action explicitness）**：
 
@@ -318,7 +321,7 @@ context_compaction 标记              token usage / telemetry
 
 ### 4.2 工具集
 
-以下工具集只属于 conversation-native participant run，不进入普通 thread/session 的工具列表。普通 primary turn 和普通 subagent worker 继续使用现有工具面；它们的进度可由 runtime 自动 Activity / mailbox 呈现，不额外注入群聊发言工具。
+以下工具集属于 `conversation-native` capability bundle。它在 participant run 启动时直接进入工具面，不是 deferred，不需要也不允许模型通过 `tool_search` 再加载。普通 primary turn 和普通 subagent worker 继续使用现有工具面；它们的进度可由 runtime 自动 Activity / mailbox 呈现，不额外注入群聊能力。
 
 ```
 post_message(text, kind, thread_id?)
@@ -342,16 +345,18 @@ decline(reason)
 
 **刻意不做的**：Raft 的 held draft / freshness check。那是多人多 agent 高并发房间的问题。wuu 是单用户产品，对话流由 turn 串行化，草稿过期场景基本不存在。等 Phase 5 出现多 agent 并发发言时再评估。
 
+**实现边界**：tool registry 可以认识这些工具，但 `Definitions()` / provider request 的可见工具面必须由 run mode 决定。推荐做法是在 app-server 创建 runtime/toolkit clone 时传入 `LaunchContext{Mode, ParticipantID, CapabilityBundles}`，由 toolkit factory 或 surface compiler 一次性生成该 run 的可见工具集合。不要让普通 toolkit 先暴露这些工具，再在 `Execute()` 阶段报错；那样仍然浪费 token，也会污染模型的动作选择。
+
 ### 4.3 权限矩阵
 
 | 能力 | primary | conversation-native named | conversation-native ephemeral | 普通 thread/session agent |
 |---|---|---|---|---|
 | 隐式发言（assistant 文本即消息） | ✅ 唯一 | ❌ | ❌ | ❌ |
-| `post_message(result)` | —（不需要） | ✅ 默认 | ⚙️ 仅 UI 授权时开启 | ❌ 不出现在工具列表 |
-| `post_message(question)` | — | ✅ 默认 | ⚙️ 仅 UI 授权时开启 | ❌ 不出现在工具列表 |
+| `post_message(result)` | —（不需要） | ✅ bundle 直接加载 | ✅ bundle 直接加载 | ❌ 不出现在工具列表 |
+| `post_message(question)` | — | ✅ bundle 直接加载 | ⚙️ 需要该 run 的 bundle 包含 question | ❌ 不出现在工具列表 |
 | `post_message(update)` | — | ✅ 默认（折叠） | ❌ 永远走 progress/mailbox | ❌ 不出现在工具列表 |
-| `report_progress`（显式工具） | — | ✅ | ⚙️ 仅 UI 授权时开启 | ❌ 不出现在工具列表，保留自动 Activity |
-| `decline` | — | ✅ | ⚙️ 被要求回应时开启 | ❌ 不出现在工具列表 |
+| `report_progress`（显式工具） | — | ✅ bundle 直接加载 | ✅ bundle 直接加载 | ❌ 不出现在工具列表，保留自动 Activity |
+| `decline` | — | ✅ bundle 直接加载 | ⚙️ 被要求回应时由 bundle 直接加载 | ❌ 不出现在工具列表 |
 | mailbox 回报父 agent | — | ✅ | ✅ | ✅（唯一产出通道，现状） |
 
 **频率约束**：named agent 每任务 `result` ≤ 1、`question` 不限但每条都阻塞、`update` 软限额（如每任务 5 条，超出自动降级为 report_progress）。约束由 runtime 执行，不依赖 prompt 自觉。
@@ -362,7 +367,7 @@ decline(reason)
 
 **Named long-running agent**：有直接发言权，但语义是"同事在群里说话"——低频、有署名、可被单独反馈。它的 result card 是它 track record 的原材料。question 直达用户（不经 primary 转述），因为向具体的人提问正是 name 的价值所在。
 
-**Temporary subagent**：默认哑巴，和今天一样。只有在前端群聊里被创建为带身份的 conversation-native ephemeral participant，并由 UI/app-server 授权 `speech_capability` 时，才可使用发言工具。普通 thread session 里的临时 worker 即使有 `participant_id`，也不能拿到这些工具；它的产出仍走 mailbox，由 primary 决定是否转述或引用。ephemeral 的 question 默认经父 agent：它没有跨 session 身份，用户对它没有心理模型，直接对话的价值低。
+**Temporary subagent**：默认哑巴，和今天一样。只有在前端群聊里被创建为带身份的 conversation-native ephemeral participant，并以 `run_mode=conversation_participant` 启动时，才可拿到对应 bundle 中的群聊工具。普通 thread session 里的临时 worker 即使有 `participant_id`，也不能拿到这些工具；它的产出仍走 mailbox，由 primary 决定是否转述或引用。ephemeral 的 question 默认经父 agent：它没有跨 session 身份，用户对它没有心理模型，直接对话的价值低。
 
 **为什么 primary 保持隐式发言**：曾考虑过统一到显式工具（所有 agent 一致），否决。理由：(a) primary 与用户是一对一主对话，每条输出本来就是给用户的，强制过一层工具徒增 token 和失败面；(b) 现有全部渲染/流式管线为此构建，改造成本大收益为零。分离原则的适用对象是"房间里的其他人"，不是对话的主持人。
 
@@ -403,10 +408,10 @@ decline(reason)
 
 - **用户体验**：conversation-native 群聊里创建的带身份 agent 完成后，主对话流出现一张署名 result card（结论摘要 + "查看完整过程"跳到其 session + report 链接）。primary 不再全文转述这类 agent 的结论，改为引用 card 补充观点。用户第一次能"看到 agent 本人说话"。普通 thread/session 中的 subagent 行为不变：结果走 mailbox，由 primary 处理。
 - **数据模型**：新 ThreadItem 类型 `participant_message`（persisted，进 `session_messages`）；`post_kind` 字段；mailbox 保持不变（父 agent 的 context 通道照旧）。
-- **后端**：实现 `post_message`（本阶段仅 kind=result，仅对 `speech_capability=enabled` 的 conversation-native participant run 开放）。授权来源只能是前端群聊 / roster 创建路径经 app-server 写入的内部 run capability；普通 LLM-facing `spawn_agent` 不暴露 `can_post`，也不能按 role 默认打开。runtime 在 agent 完成时若有授权且未调用过则**不**自动补发（静默是合法的，由父 agent 决定要不要引用 mailbox 内容）；primary 的 system prompt 更新引用策略。
+- **后端**：实现 `conversation-native` capability bundle，本阶段 bundle 里先只有 `post_message(kind=result)`。授权来源只能是前端群聊 / roster 创建路径经 app-server 写入的 launch context；普通 LLM-facing `spawn_agent` 不暴露 `can_post`，也不能按 role 默认打开。toolkit 在 participant run 启动时直接加载这个 bundle；普通 thread/session 的 toolkit 不包含它。runtime 在 agent 完成时若有 bundle 且未调用过则**不**自动补发（静默是合法的，由父 agent 决定要不要引用 mailbox 内容）；primary 的 system prompt 更新引用策略。
 - **前端**：`ParticipantMessageView`（card 形态：署名头 + markdown 正文 + 跳转链）；流式路径复用 item/started + delta 通知。
 - **风险**：中。(a) 双通道重复——card 和 primary 转述说同一件事，需要 prompt 策略 + 观察调优；(b) card 时序——subagent 完成时 primary turn 可能仍在进行，card 插入位置需定义（提议：作为独立 item 追加在当时的 turn 内，位置即完成时刻）。
-- **验证**：群聊入口创建 reviewer → 得到署名 card；primary 的回复引用而非复读；普通 thread/session 的 reviewer 工具列表不包含 `post_message` / `decline` / 显式 `report_progress`，行为与今天完全一致；LLM 通过普通 `spawn_agent` 不能自我授予发言能力。
+- **验证**：群聊入口创建 reviewer → 首个 provider request 的工具列表直接包含 `post_message`，并能得到署名 card；primary 的回复引用而非复读；普通 thread/session 的 reviewer 工具列表不包含 `post_message` / `decline` / 显式 `report_progress`，行为与今天完全一致；`tool_search` 在普通 thread 中搜不到/加载不到这些群聊工具；LLM 通过普通 `spawn_agent` 不能自我授予群聊能力。
 
 ### Phase 3 — Thread 与 Task 投影
 
