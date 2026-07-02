@@ -81,7 +81,8 @@ Wuu 的读取顺序是：
 
 | 字段 | 填写方式 | 默认值 | UI 策略 |
 | --- | --- | --- | --- |
-| `type` | `openai`、`openai-compatible`、`codex`、`openai-codex`、`codex-subscription`、`chatgpt-codex`、`anthropic`、`claude`、`anthropic-official` | 必填；starter 已填 | 新增 Provider 时默认可见；OAuth 型手动或专用连接流 |
+| `type` | `openai`、`openai-compatible`、`codex`、`openai-codex`、`codex-subscription`、`chatgpt-codex`、`anthropic` | 必填；starter 已填 | 新增 Provider 时默认可见；OAuth 型手动或专用连接流 |
+| `type` 别名 | `claude`、`anthropic-official`、`bedrock`、`gemini` | 读取时由 `internal/modelcatalog/catalog.go` 映射到对应规范名（`claude`、`anthropic-official` → `anthropic`；`bedrock` → `amazon-bedrock`；`gemini` → `google`），`providerfactory/factory.go` 不视作第一档 `type` | 文件手动；常见于现存配置 |
 | `base_url` | API 根地址，例如 `https://api.openai.com/v1` | 普通 provider 必填；Codex subscription 可省略但 starter 会写 | 默认可见 |
 | `api` | OpenCode/model metadata 的 API 标识 | 空 | 文件手动 |
 | `npm` | OpenCode/model metadata 的包名 | 空 | 文件手动 |
@@ -150,7 +151,7 @@ Wuu 的读取顺序是：
 | `disable_auto_compact` | `true` / `false` | `false` | 高级页可见，UI 反向显示为“自动压缩” |
 | `catwalk_autoupdate` | `true` / `false` | `false` | 文件手动 |
 | `tool_loading` | `auto`、`flat`、`native`、`wuu_tool_search` | `auto` | 文件手动 |
-| `tool_search` | 旧布尔别名 | 空 | 文件手动；新配置不要新增 |
+| `tool_search` | `true` / `false` | `null` | 文件手动 |
 | `experimental_deferred_tool_bundles` | `true` / `false` | `false` | 文件手动 |
 | `experimental_coordinator_mode` | `true` / `false` | `false` | 文件手动 |
 
@@ -172,7 +173,7 @@ Wuu 的读取顺序是：
 | `filenames` | 文件名数组，按优先级扫描 | `["AGENTS.md", "AGENTS.override.md", "CLAUDE.md"]` | 文件手动 |
 | `project_root_markers` | 根目录标记数组 | `[".git", ".hg", ".jj", ".svn"]` | 文件手动 |
 | `user_dirs` | 用户级记忆目录数组，支持 `~` | `["~/.config/wuu"]` | 文件手动 |
-| `include_legacy_memory` | `true` / `false` | `false` | 文件手动；只给显式迁移 |
+| `include_legacy_memory` | `true` / `false` | `false` | 文件手动 |
 | `disable` | `true` / `false` | `false` | 常规页默认可见为“记忆”开关 |
 | `nudge_interval` | 成功用户轮数；`0` 关闭后台 reviewer | `10` | 文件手动 |
 | `memory_char_limit` | workspace memory 字符上限 | `2200` | 文件手动 |
