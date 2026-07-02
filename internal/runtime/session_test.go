@@ -1514,7 +1514,7 @@ func TestNewSessionAutoUsesNativeDeferredForFirstPartyOpenAIResponses(t *testing
 					Type:    "openai-compatible",
 					BaseURL: "https://api.openai.com/v1",
 					APIKey:  "abc",
-					Model:   "gpt-test",
+					Model:   "gpt-5.4",
 					WireAPI: "responses",
 				},
 			},
@@ -1540,6 +1540,42 @@ func TestNewSessionAutoUsesNativeDeferredForFirstPartyOpenAIResponses(t *testing
 	}
 }
 
+func TestNewSessionAutoFallsBackToWuuToolSearchForUnsupportedFirstPartyOpenAIResponsesModel(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "openai",
+			Providers: map[string]config.ProviderConfig{
+				"openai": {
+					Type:    "openai-compatible",
+					BaseURL: "https://api.openai.com/v1",
+					APIKey:  "abc",
+					Model:   "gpt-test",
+					WireAPI: "responses",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingWuuToolSearch {
+		t.Fatalf("ToolLoadingMode = %q, want wuu_tool_search", rt.ToolLoadingMode)
+	}
+	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("unsupported OpenAI model should use Wuu tool_search fallback, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	}
+	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("unsupported OpenAI model must not mark provider requests as native deferred")
+	}
+}
+
 func TestNewSessionAutoFlattensCompatibleOpenAIResponses(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
@@ -1556,7 +1592,7 @@ func TestNewSessionAutoFlattensCompatibleOpenAIResponses(t *testing.T) {
 					Type:    "openai-compatible",
 					BaseURL: "https://compatible.example.com/v1",
 					APIKey:  "abc",
-					Model:   "gpt-test",
+					Model:   "gpt-5.4",
 					WireAPI: "responses",
 				},
 			},
@@ -1635,7 +1671,7 @@ func TestNewSessionAllowsCompatibleOpenAIResponsesToOptIntoNativeDeferred(t *tes
 					Type:    "openai-compatible",
 					BaseURL: "https://compatible.example.com/v1",
 					APIKey:  "abc",
-					Model:   "gpt-test",
+					Model:   "gpt-5.4",
 					WireAPI: "responses",
 				},
 			},
@@ -1656,6 +1692,43 @@ func TestNewSessionAllowsCompatibleOpenAIResponsesToOptIntoNativeDeferred(t *tes
 	}
 	if rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
 		t.Fatal("explicit native should mark compatible OpenAI provider requests as native deferred")
+	}
+}
+
+func TestNewSessionExplicitNativeFallsBackToWuuToolSearchForUnsupportedOpenAIResponsesModel(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "compatible",
+			Providers: map[string]config.ProviderConfig{
+				"compatible": {
+					Type:    "openai-compatible",
+					BaseURL: "https://compatible.example.com/v1",
+					APIKey:  "abc",
+					Model:   "gpt-test",
+					WireAPI: "responses",
+				},
+			},
+			Agent: config.AgentConfig{ToolLoading: config.ToolLoadingNative},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if rt.ToolLoadingMode != config.ToolLoadingWuuToolSearch {
+		t.Fatalf("ToolLoadingMode = %q, want wuu_tool_search", rt.ToolLoadingMode)
+	}
+	if rt.Toolkit == nil || !rt.Toolkit.ToolSearchEnabled() || rt.Toolkit.NativeDeferredToolDiscovery() {
+		t.Fatalf("unsupported explicit OpenAI native should fall back to Wuu tool_search, tool_search=%v native=%v", rt.Toolkit.ToolSearchEnabled(), rt.Toolkit.NativeDeferredToolDiscovery())
+	}
+	if rt.StreamRunner == nil || rt.StreamRunner.NativeDeferredToolDiscovery {
+		t.Fatal("unsupported explicit OpenAI native should not mark provider requests as native deferred")
 	}
 }
 

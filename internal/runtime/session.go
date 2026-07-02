@@ -428,12 +428,15 @@ func resolveToolLoadingModeForProvider(mode config.ToolLoadingMode, providerCfg 
 		if providerfactory.SupportsNativeToolDiscovery(providerCfg, model, providerOptions) {
 			return mode, true, true
 		}
-		return config.ToolLoadingFlat, false, false
+		return config.ToolLoadingWuuToolSearch, true, false
 	case config.ToolLoadingWuuToolSearch:
 		return mode, true, false
 	default:
 		if providerfactory.SupportsNativeToolDiscoveryByDefault(providerCfg, model, providerOptions) {
 			return config.ToolLoadingNative, true, true
+		}
+		if providerfactory.ShouldFallbackToWuuToolSearchByDefault(providerCfg, model, providerOptions) {
+			return config.ToolLoadingWuuToolSearch, true, false
 		}
 		return config.ToolLoadingFlat, false, false
 	}

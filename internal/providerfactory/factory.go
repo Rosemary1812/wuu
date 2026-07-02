@@ -3,6 +3,7 @@ package providerfactory
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,7 +73,8 @@ func SupportsNativeToolDiscoveryByDefault(provider config.ProviderConfig, model 
 	}
 	switch profile.Wire {
 	case wireOpenAIResponses:
-		return isFirstPartyOpenAIResponsesBaseURL(provider.BaseURL) || profile.Auth == authCodexOAuth
+		return openAIModelSupportsNativeToolSearch(model) &&
+			(isFirstPartyOpenAIResponsesBaseURL(provider.BaseURL) || profile.Auth == authCodexOAuth)
 	case wireAnthropicMessages:
 		return anthropic.SupportsNativeToolSearchByDefault(provider.BaseURL, model, providerOptions)
 	default:
@@ -89,12 +91,60 @@ func SupportsNativeToolDiscovery(provider config.ProviderConfig, model string, p
 	}
 	switch profile.Wire {
 	case wireOpenAIResponses:
-		return true
+		return openAIModelSupportsNativeToolSearch(model)
 	case wireAnthropicMessages:
 		return anthropic.SupportsNativeToolSearchWhenExplicitlyEnabled(model, providerOptions)
 	default:
 		return false
 	}
+}
+
+func ShouldFallbackToWuuToolSearchByDefault(provider config.ProviderConfig, model string, _ map[string]any) bool {
+	profile, err := resolveProviderProfile(provider)
+	if err != nil {
+		return false
+	}
+	switch profile.Wire {
+	case wireOpenAIResponses:
+		return !openAIModelSupportsNativeToolSearch(model) &&
+			(isFirstPartyOpenAIResponsesBaseURL(provider.BaseURL) || profile.Auth == authCodexOAuth)
+	default:
+		return false
+	}
+}
+
+func openAIModelSupportsNativeToolSearch(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if !strings.HasPrefix(model, "gpt-") {
+		return false
+	}
+	version := strings.TrimPrefix(model, "gpt-")
+	version = strings.TrimLeft(version, "-_")
+	versionToken := ""
+	for _, r := range version {
+		if (r >= '0' && r <= '9') || r == '.' {
+			versionToken += string(r)
+			continue
+		}
+		break
+	}
+	if versionToken == "" {
+		return false
+	}
+	majorText, minorText, hasMinor := strings.Cut(versionToken, ".")
+	major, err := strconv.Atoi(majorText)
+	if err != nil {
+		return false
+	}
+	minor := 0
+	if hasMinor {
+		minorValue, err := strconv.Atoi(minorText)
+		if err != nil {
+			return false
+		}
+		minor = minorValue
+	}
+	return major > 5 || (major == 5 && minor >= 4)
 }
 
 func isFirstPartyOpenAIResponsesBaseURL(raw string) bool {

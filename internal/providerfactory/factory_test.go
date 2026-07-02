@@ -158,9 +158,15 @@ func TestSupportsNativeToolDiscovery(t *testing.T) {
 		want     bool
 	}{
 		{
-			name:     "openai responses",
+			name:     "openai responses unsupported model",
 			provider: config.ProviderConfig{Type: "openai-compatible", WireAPI: "responses"},
 			model:    "gpt-test",
+			want:     false,
+		},
+		{
+			name:     "openai responses supported model",
+			provider: config.ProviderConfig{Type: "openai-compatible", WireAPI: "responses"},
+			model:    "gpt-5.4",
 			want:     true,
 		},
 		{
@@ -219,9 +225,15 @@ func TestSupportsNativeToolDiscoveryByDefault(t *testing.T) {
 		want     bool
 	}{
 		{
-			name:     "first party openai responses",
+			name:     "first party openai responses unsupported model",
 			provider: config.ProviderConfig{Type: "openai-compatible", BaseURL: "https://api.openai.com/v1", WireAPI: "responses"},
 			model:    "gpt-test",
+			want:     false,
+		},
+		{
+			name:     "first party openai responses supported model",
+			provider: config.ProviderConfig{Type: "openai-compatible", BaseURL: "https://api.openai.com/v1", WireAPI: "responses"},
+			model:    "gpt-5.4",
 			want:     true,
 		},
 		{
