@@ -157,6 +157,20 @@ describe("userFacingErrorForMessage", () => {
       expect(display.category).toBe("provider");
     });
 
+    it("uses structured status_code as a provider chip fallback when code is missing", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: "gateway returned a provider error without a parseable code",
+          category: "provider",
+          status_code: 429,
+        },
+        "turn",
+      );
+
+      expect(display.category).toBe("provider");
+      expect(display.title).toBe("429 rate limit");
+    });
+
     it("maps the 'reauth' action reason to the openSettings / focus=providers kind", () => {
       const display = userFacingErrorForMessage(
         {

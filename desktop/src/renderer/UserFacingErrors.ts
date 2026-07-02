@@ -95,6 +95,14 @@ function httpTitle(code: string): string {
   return HTTP_REASON_PHRASES[code] ? `${code} ${HTTP_REASON_PHRASES[code]}` : code;
 }
 
+function structuredStatusTitle(structured: TurnError | undefined): string | undefined {
+  const statusCode = structured?.status_code;
+  if (typeof statusCode !== "number" || !Number.isFinite(statusCode) || statusCode <= 0) {
+    return undefined;
+  }
+  return httpTitle(String(Math.trunc(statusCode)));
+}
+
 /**
  * Pull a specific identifier out of the raw error so the chip is readable
  * at a glance and the screenshot carries enough signal to triage. Returns
@@ -220,8 +228,9 @@ export function userFacingErrorForMessage(
   // user-visible label is always the most specific signal available so
   // a screenshot carries enough info to triage.
   const specificTitle = extractSpecificTitle(message, category);
+  const statusTitle = structuredStatusTitle(structured);
   const title =
-    structured?.code?.trim() || specificTitle || defaultTitleForCategory(category);
+    structured?.code?.trim() || statusTitle || specificTitle || defaultTitleForCategory(category);
 
   // Detail (hover): prefer the action's longer user-facing message
   // when the Go side provided one, fall back to the category's

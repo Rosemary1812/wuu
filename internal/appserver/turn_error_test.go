@@ -71,6 +71,54 @@ func TestBuildTurnError_HTTP429_OpenAIQuota(t *testing.T) {
 	}
 }
 
+func TestBuildTurnError_HTTP429PrefixedProviderBodies(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "openai compatible error.code",
+			body: `429 Too Many Requests: {"error": {"code": "insufficient_quota", "message": "You exceeded your current quota."}}`,
+			want: "insufficient_quota",
+		},
+		{
+			name: "anthropic compatible error.type",
+			body: `429 Too Many Requests: {"error": {"type": "rate_limit_error", "message": "Rate limit exceeded."}}`,
+			want: "rate_limit_error",
+		},
+		{
+			name: "glm compatible error.status",
+			body: `429 Too Many Requests: {"error": {"code": 7, "message": "Resource has been exhausted", "status": "RESOURCE_EXHAUSTED"}}`,
+			want: "RESOURCE_EXHAUSTED",
+		},
+		{
+			name: "sse data top-level code",
+			body: "429 Too Many Requests: event:error\n" +
+				`data:{"request_id":"req_1","code":"Throttling","message":"Allocated quota exceeded. Please increase your quota limit."}`,
+			want: "Throttling",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &providers.HTTPError{
+				StatusCode: 429,
+				Body:       tt.body,
+			}
+			out := BuildTurnError(err, "compatible")
+			if out.Category != "provider" {
+				t.Fatalf("expected category=provider, got %q", out.Category)
+			}
+			if out.Code != tt.want {
+				t.Fatalf("expected code=%q, got %q", tt.want, out.Code)
+			}
+			if out.Action == nil || out.Action.Reason != "wait" {
+				t.Fatalf("expected wait action, got %+v", out.Action)
+			}
+		})
+	}
+}
+
 // TestBuildTurnError_HTTPContextOverflow covers the typed context
 // overflow path: the HTTPError has ContextOverflow=true so the
 // category is provider and the action is "compact" regardless of
@@ -107,6 +155,40 @@ func TestBuildTurnError_StreamAnthropicRateLimit(t *testing.T) {
 	}
 	if out.Code != "rate_limit_error" {
 		t.Errorf("expected code=rate_limit_error, got %q", out.Code)
+	}
+}
+
+func TestBuildTurnError_StreamProviderQuotaCodes(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    string
+		message string
+	}{
+		{
+			name:    "throttling",
+			code:    "Throttling",
+			message: "Allocated quota exceeded. Please increase your quota limit.",
+		},
+		{
+			name:    "resource exhausted",
+			code:    "RESOURCE_EXHAUSTED",
+			message: "Resource has been exhausted.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := providers.NewProviderStreamError(tt.code, tt.message)
+			out := BuildTurnError(err, "compatible")
+			if out.Category != "provider" {
+				t.Fatalf("expected category=provider, got %q", out.Category)
+			}
+			if out.Code != tt.code {
+				t.Fatalf("expected code=%q, got %q", tt.code, out.Code)
+			}
+			if out.Action == nil || out.Action.Reason != "wait" {
+				t.Fatalf("expected wait action, got %+v", out.Action)
+			}
+		})
 	}
 }
 

@@ -151,7 +151,9 @@ func categoryFromStreamError(streamErr *providers.StreamError) string {
 	// code without depending on Retryable.
 	code := strings.ToLower(strings.TrimSpace(streamErr.Code))
 	if code == "429" || code == "529" || code == "1305" ||
-		code == "rate_limit_error" || code == "overloaded_error" {
+		code == "rate_limit_error" || code == "overloaded_error" ||
+		code == "throttling" || code == "resource_exhausted" ||
+		code == "insufficient_quota" || code == "usage_limit_reached" {
 		return "provider"
 	}
 	if streamErr.Retryable {
@@ -235,6 +237,13 @@ func isProviderBusinessMessage(lower string) bool {
 		strings.Contains(lower, "too many tokens") ||
 		strings.Contains(lower, "rate limit") ||
 		strings.Contains(lower, "rate_limit") ||
+		strings.Contains(lower, "too many requests") ||
+		strings.Contains(lower, "throttling") ||
+		strings.Contains(lower, "insufficient_quota") ||
+		strings.Contains(lower, "quota exceeded") ||
+		strings.Contains(lower, "usage_limit") ||
+		strings.Contains(lower, "resource_exhausted") ||
+		strings.Contains(lower, "resource has been exhausted") ||
 		strings.Contains(lower, "overloaded") ||
 		strings.Contains(lower, "content policy") ||
 		strings.Contains(lower, "content_policy") ||
@@ -296,6 +305,68 @@ func extractCodeFromBody(body string) string {
 	if strings.TrimSpace(body) == "" {
 		return ""
 	}
+	for _, candidate := range jsonCandidatesFromBody(body) {
+		if code := extractCodeFromJSON(candidate); code != "" {
+			return code
+		}
+	}
+	return ""
+}
+
+func jsonCandidatesFromBody(body string) []string {
+	var out []string
+	add := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || candidate == "[DONE]" {
+			return
+		}
+		for _, existing := range out {
+			if existing == candidate {
+				return
+			}
+		}
+		out = append(out, candidate)
+	}
+	add(body)
+	addFirstJSONObject := func(candidate string) {
+		for start := strings.Index(candidate, "{"); start >= 0; {
+			if raw := firstJSONObject(candidate[start:]); raw != "" {
+				add(raw)
+				return
+			}
+			next := strings.Index(candidate[start+1:], "{")
+			if next < 0 {
+				return
+			}
+			start += next + 1
+		}
+	}
+	addFirstJSONObject(body)
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(line), "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		add(data)
+		addFirstJSONObject(data)
+	}
+	return out
+}
+
+func firstJSONObject(body string) string {
+	decoder := json.NewDecoder(strings.NewReader(body))
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
+		return ""
+	}
+	if len(raw) == 0 || raw[0] != '{' {
+		return ""
+	}
+	return string(raw)
+}
+
+func extractCodeFromJSON(body string) string {
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
 		return ""
@@ -306,6 +377,9 @@ func extractCodeFromBody(body string) string {
 	}
 	if n, ok := parsed["code"].(float64); ok && n > 0 {
 		return strconv.FormatInt(int64(n), 10)
+	}
+	if s, ok := parsed["status"].(string); ok && strings.TrimSpace(s) != "" {
+		return strings.TrimSpace(s)
 	}
 	if e, ok := parsed["error"].(map[string]any); ok {
 		// Gemini-style "error.status" string (e.g. "RESOURCE_EXHAUSTED").
@@ -451,6 +525,7 @@ func isRateLimitPattern(lower string) bool {
 	return strings.Contains(lower, "rate limit") ||
 		strings.Contains(lower, "rate_limit") ||
 		strings.Contains(lower, "too many requests") ||
+		strings.Contains(lower, "throttling") ||
 		strings.Contains(lower, "insufficient_quota") ||
 		strings.Contains(lower, "quota exceeded") ||
 		strings.Contains(lower, "usage_limit") ||
