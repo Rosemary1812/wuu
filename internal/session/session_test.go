@@ -385,6 +385,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 		Content:        "done",
 		DisplayContent: "visible done",
 		Phase:          "final_answer",
+		ParticipantID:  "prt-x",
 		Hidden:         true,
 		ToolCalls:      json.RawMessage(`[{"id":"call_1","name":"read_file","arguments":"{}"}]`),
 		DiscoveredTools: json.RawMessage(
@@ -410,7 +411,7 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "done" || visible[0].DisplayContent != "visible done" || visible[0].Phase != "final_answer" || !visible[0].Hidden || string(visible[0].ToolCalls) == "" || string(visible[0].DiscoveredTools) == "" {
+	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "done" || visible[0].DisplayContent != "visible done" || visible[0].Phase != "final_answer" || visible[0].ParticipantID != "prt-x" || !visible[0].Hidden || string(visible[0].ToolCalls) == "" || string(visible[0].DiscoveredTools) == "" {
 		t.Fatalf("unexpected visible history: %+v", visible)
 	}
 
