@@ -57,6 +57,80 @@ function railPointerEvent(
   return event;
 }
 
+async function withManualAnimationFrames(
+  run: (flush: (limit?: number) => Promise<void>) => Promise<void>,
+): Promise<void> {
+  const realRequestAnimationFrame = window.requestAnimationFrame;
+  const realCancelAnimationFrame = window.cancelAnimationFrame;
+  const pending = new Map<number, FrameRequestCallback>();
+  let nextHandle = 1;
+
+  window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    const handle = nextHandle;
+    nextHandle += 1;
+    pending.set(handle, callback);
+    return handle;
+  }) as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((handle: number) => {
+    pending.delete(handle);
+  }) as typeof window.cancelAnimationFrame;
+
+  const flush = async (limit = 10): Promise<void> => {
+    for (let frame = 0; frame < limit && pending.size > 0; frame += 1) {
+      const callbacks = Array.from(pending.values());
+      pending.clear();
+      await act(async () => {
+        for (const callback of callbacks) {
+          callback((frame + 1) * 16);
+        }
+      });
+    }
+  };
+
+  try {
+    await run(flush);
+  } finally {
+    window.requestAnimationFrame = realRequestAnimationFrame;
+    window.cancelAnimationFrame = realCancelAnimationFrame;
+  }
+}
+
+function stubScrollMetrics(
+  node: HTMLElement,
+  layout: { scrollHeight: number; clientHeight: number; scrollTop: number },
+): void {
+  Object.defineProperty(node, "scrollHeight", {
+    configurable: true,
+    get: () => layout.scrollHeight,
+  });
+  Object.defineProperty(node, "clientHeight", {
+    configurable: true,
+    get: () => layout.clientHeight,
+  });
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => layout.scrollTop,
+    set: (value: number) => {
+      layout.scrollTop = value;
+    },
+  });
+}
+
+function stubRect(node: HTMLElement, top: number, height: number): void {
+  node.getBoundingClientRect = () =>
+    ({
+      x: 0,
+      y: top,
+      top,
+      right: 800,
+      bottom: top + height,
+      left: 0,
+      width: 800,
+      height,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
 function renderRail({
   turns,
   activeTurnID,
@@ -228,6 +302,43 @@ describe("ConversationTurnRail", () => {
 
     expect(activePaneNode.scrollTop).toBe(40);
     expect(wrapperNode.scrollTop).toBe(10);
+  });
+
+  it("marks the turn visible in the scroll viewport as active", async () => {
+    await withManualAnimationFrames(async (flush) => {
+      const scrollNode = document.createElement("div");
+      stubScrollMetrics(scrollNode, {
+        scrollHeight: 1200,
+        clientHeight: 400,
+        scrollTop: 120,
+      });
+      stubRect(scrollNode, 0, 400);
+
+      const firstTurn = document.createElement("div");
+      firstTurn.className = "turn";
+      firstTurn.dataset.turnId = "turn-1";
+      stubRect(firstTurn, 80, 260);
+
+      const secondTurn = document.createElement("div");
+      secondTurn.className = "turn";
+      secondTurn.dataset.turnId = "turn-2";
+      stubRect(secondTurn, 360, 260);
+
+      scrollNode.append(firstTurn, secondTurn);
+      renderRail({
+        activeTurnID: "turn-2",
+        getScrollContainer: () => scrollNode,
+        onSelectQueryHistory: () => {},
+      });
+
+      await flush();
+
+      const activeBar = container?.querySelector<HTMLElement>(
+        ".conversation-turn-rail-bar.active",
+      );
+      expect(activeBar?.dataset.turnId).toBe("turn-1");
+      expect(activeBar?.getAttribute("aria-current")).toBe("location");
+    });
   });
 
   it("centers the capped window around the focused turn", () => {

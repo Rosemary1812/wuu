@@ -152,7 +152,7 @@ export function ConversationTurnRail({
   );
 
   const isEmpty = turns.length === 0;
-  const windowFocusTurnID = viewportTurnID ?? activeTurnID;
+  const activeRailTurnID = viewportTurnID ?? activeTurnID;
   const effectiveMaxVisibleTurns = Math.min(
     maxVisibleTurns,
     measuredVisibleLimit ?? maxVisibleTurns,
@@ -161,10 +161,10 @@ export function ConversationTurnRail({
     () =>
       conversationTurnRailWindow(
         turns,
-        windowFocusTurnID,
+        activeRailTurnID,
         effectiveMaxVisibleTurns,
       ),
-    [effectiveMaxVisibleTurns, turns, windowFocusTurnID],
+    [activeRailTurnID, effectiveMaxVisibleTurns, turns],
   );
   // A pointer drag reuses the same hover/adjacent visual treatment. Dragging
   // wins over hover so a stale hover state cannot pin the highlight to the bar
@@ -587,7 +587,7 @@ export function ConversationTurnRail({
           const globalIndex = startIndex + index;
           const isHovered = turn.id === focusedTurnID;
           const isAdjacent = adjacentIndices.has(index);
-          const isActive = turn.id === activeTurnID;
+          const isActive = turn.id === activeRailTurnID;
           const className = [
             "conversation-turn-rail-bar",
             isActive && "active",
@@ -610,6 +610,7 @@ export function ConversationTurnRail({
               }}
               role="button"
               tabIndex={0}
+              aria-current={isActive ? "location" : undefined}
               aria-label={`跳转到第 ${globalIndex + 1} 轮对话`}
             >
               <div
