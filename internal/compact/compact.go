@@ -14,7 +14,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
-const defaultCompactTimeout = 60 * time.Second
+// Compact can be the only recovery path after a provider context overflow.
+// Large histories may require several summary requests, so the default must be
+// long enough for recovery while still bounding a stuck compaction.
+const defaultCompactTimeout = 20 * time.Minute
 const (
 	toolResultPruneProtectTokens = 40_000
 	toolResultPruneMinimumTokens = 20_000

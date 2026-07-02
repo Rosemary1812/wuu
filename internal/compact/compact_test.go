@@ -826,6 +826,14 @@ func (c *ctxAwareCompactClient) Chat(ctx context.Context, _ providers.ChatReques
 	return providers.ChatResponse{}, ctx.Err()
 }
 
+func TestCompact_DefaultTimeoutLeavesRoomForLargeRecovery(t *testing.T) {
+	t.Setenv("WUU_COMPACT_TIMEOUT_MS", "")
+
+	if got, want := compactTimeout(), 20*time.Minute; got != want {
+		t.Fatalf("compactTimeout() = %s, want %s", got, want)
+	}
+}
+
 func TestCompact_UsesInternalTimeout(t *testing.T) {
 	t.Setenv("WUU_COMPACT_TIMEOUT_MS", "20")
 
