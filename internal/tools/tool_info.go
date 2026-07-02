@@ -28,6 +28,7 @@ const (
 	ToolKindGit       ToolKind = "git"
 	ToolKindWeb       ToolKind = "web"
 	ToolKindMemory    ToolKind = "memory"
+	ToolKindSession   ToolKind = "session"
 	ToolKindSkill     ToolKind = "skill"
 	ToolKindGoal      ToolKind = "goal"
 	ToolKindWorkflow  ToolKind = "workflow"
@@ -229,6 +230,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindWeb
 	case "read_memory", "write_memory", "session_memory":
 		return ToolKindMemory
+	case "thread_get":
+		return ToolKindSession
 	case "load_skill":
 		return ToolKindSkill
 	case "create_goal", "get_goal", "update_goal":
@@ -258,7 +261,7 @@ func isDeferredByDefault(name string) bool {
 		return true
 	}
 	switch name {
-	case "schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow":
+	case "schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow", "thread_get":
 		return true
 	default:
 		return false

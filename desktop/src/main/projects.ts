@@ -147,7 +147,7 @@ function legacyProjectStorePath(): string {
   return join(app.getPath("userData"), "projects.json");
 }
 
-function wuuHomePath(): string {
+export function wuuHomePath(): string {
   const override = process.env.WUU_HOME?.trim();
   if (override) {
     return resolve(override);

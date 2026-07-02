@@ -40,9 +40,9 @@ func (t *ThreadGetTool) IsConcurrencySafe() bool { return true }
 func (t *ThreadGetTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: threadGetName,
-		Description: "Look up a session (thread) by ID and return its full data: metadata + history records. " +
-			"Use this when a user pastes a thread ID (e.g. from the desktop session tree right-click menu) " +
-			"and you need to inspect the conversation.",
+		Description: "thread_get looks up a Wuu thread ID / session ID and returns the full conversation data: metadata plus history records. " +
+			"Use this when a user pastes a thread ID or asks you to investigate a conversation by ID. " +
+			"Do not inspect legacy workspace session directories or guess session files; this tool reads the supported SQLite session store.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,

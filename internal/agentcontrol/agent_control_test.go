@@ -181,7 +181,7 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-1",
-		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-1", "workers"),
+		HistoryDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-1", "workers"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -218,14 +218,14 @@ func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
-	threadDir := filepath.Join(dir, ".wuu", "sessions", "sess-threads", "threads")
+	threadDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-threads", "threads")
 	c, err := New(Config{
 		Client:        &fakeClient{resp: providers.ChatResponse{Content: "task done"}},
 		DefaultModel:  "fake-model",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-threads",
-		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-threads", "workers"),
+		HistoryDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-threads", "workers"),
 		ThreadDir:     threadDir,
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
@@ -389,15 +389,15 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
-	harnessDir := filepath.Join(dir, ".wuu", "sessions", "sess-harness", "harness")
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-harness", "harness")
 	c, err := New(Config{
 		Client:        &fakeClient{resp: providers.ChatResponse{Content: "task done\n\nEvidence: go test ./internal/harness"}},
 		DefaultModel:  "fake-model",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-harness",
-		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-harness", "workers"),
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-harness", "threads"),
+		HistoryDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-harness", "workers"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-harness", "threads"),
 		HarnessDir:    harnessDir,
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
@@ -512,8 +512,8 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-agent-report",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-agent-report", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-agent-report", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -621,7 +621,7 @@ func TestRecordAgentReportRejectsMissingArtifact(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-missing-artifact",
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-missing-artifact", "harness"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-missing-artifact", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -659,8 +659,8 @@ func TestRecordAgentReportSyncsReportSinkWithGoalBinding(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-agent-report-goal",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-goal", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-goal", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-agent-report-goal", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-agent-report-goal", "harness"),
 		ReportSink:    reportSink,
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
@@ -734,8 +734,8 @@ func TestRecordAgentReportSyncsFailureSinkForBlockers(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-agent-report-failure",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-failure", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-agent-report-failure", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-agent-report-failure", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-agent-report-failure", "harness"),
 		FailureSink:   sink,
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
@@ -795,7 +795,7 @@ func TestRecordHarnessTaskFailureSyncsFailureSink(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-harness-failure",
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-harness-failure", "harness"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-harness-failure", "harness"),
 		FailureSink:   sink,
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
@@ -825,8 +825,8 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-await-report",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-await-report", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-await-report", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-await-report", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-await-report", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -895,8 +895,8 @@ func TestAwaitFromWarnsOnOverlappingChangedFiles(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-await-conflict",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-await-conflict", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-await-conflict", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-await-conflict", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-await-conflict", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -943,8 +943,8 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-await-timeout",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-await-timeout", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-await-timeout", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-await-timeout", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-await-timeout", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -988,8 +988,8 @@ func TestActiveTaskReminderListsIncompleteChildren(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:     "sess-active-reminder",
-		ThreadDir:     filepath.Join(dir, ".wuu", "sessions", "sess-active-reminder", "threads"),
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess-active-reminder", "harness"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-active-reminder", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-active-reminder", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
@@ -1021,8 +1021,8 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 		ParentRepo:   dir,
 		WorktreeRoot: filepath.Join(dir, ".wuu", "worktrees"),
 		SessionID:    "sess-patch-artifact",
-		ThreadDir:    filepath.Join(dir, ".wuu", "sessions", "sess-patch-artifact", "threads"),
-		HarnessDir:   filepath.Join(dir, ".wuu", "sessions", "sess-patch-artifact", "harness"),
+		ThreadDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-patch-artifact", "threads"),
+		HarnessDir:   filepath.Join(dir, ".wuu-state", "sessions", "sess-patch-artifact", "harness"),
 		WorkerFactory: func(root string, _ WorkerType, _ agentthread.Metadata) (agent.ToolExecutor, error) {
 			if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("changed\n"), 0o644); err != nil {
 				return nil, err
@@ -1601,7 +1601,7 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		SessionID:     "sess",
-		HarnessDir:    filepath.Join(dir, ".wuu", "sessions", "sess", "harness"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess", "harness"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 		MaxParallel:   2,
 	})
@@ -1678,8 +1678,8 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 func TestNewRestoresQueuedSpawnPayload(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
-	harnessDir := filepath.Join(dir, ".wuu", "sessions", "sess-restore-queue", "harness")
-	threadDir := filepath.Join(dir, ".wuu", "sessions", "sess-restore-queue", "threads")
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-restore-queue", "harness")
+	threadDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-restore-queue", "threads")
 	now := time.Now().UTC()
 	meta := agentthread.Metadata{
 		ID:        "worker-restored",
@@ -2204,7 +2204,7 @@ func TestAgentCompletionPersistsLongResultAndReturnsPreview(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
-	harnessDir := filepath.Join(dir, ".wuu", "sessions", "sess-long-result", "harness")
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-long-result", "harness")
 	longResult := "BEGIN\n" + strings.Repeat("middle payload\n", 500) + "END"
 	c, err := New(Config{
 		Client:        &fakeClient{resp: providers.ChatResponse{Content: longResult}},
@@ -2315,7 +2315,7 @@ func TestAgentMailboxMessage_IncludesErrorClass(t *testing.T) {
 func TestAgentControlRecordsRootCompletionMessageEvent(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
-	threadDir := filepath.Join(dir, ".wuu", "sessions", "sess-events", "threads")
+	threadDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-events", "threads")
 	c, err := New(Config{
 		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
 		DefaultModel:  "fake",

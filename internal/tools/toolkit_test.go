@@ -631,7 +631,7 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 
 	gitConfigContent := "remote = origin\n"
 	mustWriteFile(t, filepath.Join(root, ".git", "config"), gitConfigContent)
-	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "trace.jsonl"), "{}\n")
+	mustWriteFile(t, filepath.Join(root, ".wuu", "runtime", "trace.jsonl"), "{}\n")
 	gitConfigSHA := formatFileSHA(sha256Hex([]byte(gitConfigContent)))
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
@@ -644,12 +644,12 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
-		Arguments: `{"path":".wuu/sessions/new.json","content":"{}\n"}`,
+		Arguments: `{"path":".wuu/runtime/new.json","content":"{}\n"}`,
 	})
 	if err == nil || !strings.Contains(err.Error(), "wuu runtime state") {
 		t.Fatalf("expected write_file to reject wuu runtime state, got: %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, ".wuu", "sessions", "new.json")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(root, ".wuu", "runtime", "new.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("write_file should not create protected runtime state file, stat err=%v", statErr)
 	}
 
@@ -666,7 +666,7 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 
 	kit.SetEditToolMode(EditToolModePatch)
 	patchArgs, err := json.Marshal(map[string]any{
-		"patchText": "*** Begin Patch\n*** Add File: .wuu/sessions/new-from-patch.json\n+{}\n*** End Patch",
+		"patchText": "*** Begin Patch\n*** Add File: .wuu/runtime/new-from-patch.json\n+{}\n*** End Patch",
 	})
 	if err != nil {
 		t.Fatalf("marshal patch args: %v", err)
@@ -678,7 +678,7 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "wuu runtime state") {
 		t.Fatalf("expected apply_patch to reject wuu runtime state, got: %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, ".wuu", "sessions", "new-from-patch.json")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(root, ".wuu", "runtime", "new-from-patch.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("apply_patch should not create protected runtime state file, stat err=%v", statErr)
 	}
 }
@@ -1769,7 +1769,7 @@ func TestToolkit_ListFilesRejectsAndFiltersProtectedPaths(t *testing.T) {
 	mustWriteFile(t, filepath.Join(root, "visible.txt"), "hello\n")
 	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
 	mustWriteFile(t, filepath.Join(root, ".git", "config"), "remote = origin\n")
-	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "trace.jsonl"), "{}\n")
+	mustWriteFile(t, filepath.Join(root, ".wuu", "runtime", "trace.jsonl"), "{}\n")
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "list_files",
@@ -1924,9 +1924,9 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 		ParentRepo:   root,
 		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
 		SessionID:    "agent-telemetry-session",
-		HistoryDir:   filepath.Join(root, ".wuu", "sessions", "agent-telemetry-session", "workers"),
-		ThreadDir:    filepath.Join(root, ".wuu", "sessions", "agent-telemetry-session", "threads"),
-		HarnessDir:   filepath.Join(root, ".wuu", "sessions", "agent-telemetry-session", "harness"),
+		HistoryDir:   filepath.Join(root, ".wuu-state", "sessions", "agent-telemetry-session", "workers"),
+		ThreadDir:    filepath.Join(root, ".wuu-state", "sessions", "agent-telemetry-session", "threads"),
+		HarnessDir:   filepath.Join(root, ".wuu-state", "sessions", "agent-telemetry-session", "harness"),
 		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
 			return workflowNoopExecutor{}, nil
 		},
@@ -2048,7 +2048,7 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	sessionDir := filepath.Join(root, ".wuu", "sessions", "helpme-session")
+	sessionDir := filepath.Join(root, ".wuu-state", "sessions", "helpme-session")
 	control, err := agentcontrol.New(agentcontrol.Config{
 		Client:       &workflowFakeClient{content: "helper done"},
 		DefaultModel: "fake-model",
@@ -4256,7 +4256,7 @@ func TestWorkspaceRevisionIgnoresInternalStateDirs(t *testing.T) {
 		t.Fatalf("expected filesystem revision, got %q", before)
 	}
 	mustWriteFile(t, filepath.Join(root, ".wuu-home", "sessions", "eval", "trace.jsonl"), "{}\n")
-	mustWriteFile(t, filepath.Join(root, ".wuu", "sessions", "eval", "trace.jsonl"), "{}\n")
+	mustWriteFile(t, filepath.Join(root, ".wuu", "runtime", "eval", "trace.jsonl"), "{}\n")
 	afterState := workspaceRevision(context.Background(), root)
 	if afterState != before {
 		t.Fatalf("internal state dirs should not change workspace revision: before=%s after=%s", before, afterState)

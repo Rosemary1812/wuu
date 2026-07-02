@@ -122,6 +122,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 	mustDeferred := []string{
 		"send_message", "followup_task", "await_agents", "close_agent", "list_agents",
 		"session_memory", "read_memory", "write_memory",
+		"thread_get",
 		"create_goal", "get_goal", "update_goal",
 		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
 		"schedule_cron", "cancel_cron", "list_cron",

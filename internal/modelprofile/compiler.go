@@ -220,6 +220,7 @@ func compileOpenAICodex(b *surfaceBuilder, p Profile) {
 	addWebTools(b)
 	addTaskTools(b)
 	addMemoryTools(b)
+	addSessionTools(b)
 	addPlanningTools(b)
 	addWorkflowTools(b)
 	addScheduleTools(b)
@@ -236,6 +237,7 @@ func compileOpenAIGPT(b *surfaceBuilder, p Profile) {
 	addWebTools(b)
 	addTaskTools(b)
 	addMemoryTools(b)
+	addSessionTools(b)
 	addPlanningTools(b)
 	addWorkflowTools(b)
 	addScheduleTools(b)
@@ -252,6 +254,7 @@ func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
 	addWebTools(b)
 	addTaskTools(b)
 	addMemoryTools(b)
+	addSessionTools(b)
 	addPlanningTools(b)
 	addWorkflowTools(b)
 	addScheduleTools(b)
@@ -268,6 +271,7 @@ func compileGeneric(b *surfaceBuilder, p Profile) {
 	addWebTools(b)
 	addTaskTools(b)
 	addMemoryTools(b)
+	addSessionTools(b)
 	addPlanningTools(b)
 	addWorkflowTools(b)
 	addScheduleTools(b)
@@ -344,6 +348,10 @@ func addMemoryTools(b *surfaceBuilder) {
 	// memory is a thing on this surface".
 	b.addDeferred("read_memory", capability.CapabilityMemoryProject)
 	b.addDeferred("write_memory", capability.CapabilityMemoryProject)
+}
+
+func addSessionTools(b *surfaceBuilder) {
+	b.addDeferred("thread_get", capability.CapabilitySessionLookup)
 }
 
 func addPlanningTools(b *surfaceBuilder) {

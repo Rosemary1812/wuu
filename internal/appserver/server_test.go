@@ -2802,7 +2802,7 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 		Model:        "gpt-5.5",
 		RootDir:      root,
 		ConfigPath:   filepath.Join(root, ".wuu.json"),
-		SessionDir:   filepath.Join(root, ".wuu", "sessions"),
+		SessionDir:   filepath.Join(root, ".wuu-home", "sessions"),
 		StreamRunner: &agent.StreamRunner{
 			Client:       providers.AdaptStreamClient(client),
 			Model:        "gpt-5.5",
@@ -4293,7 +4293,7 @@ func TestServerGeneratesThreadTitleEndToEndWithStreaming(t *testing.T) {
 		Model:        "kimi-k2.6",
 		RootDir:      t.TempDir(),
 		ConfigPath:   "/tmp/.wuu.json",
-		SessionDir:   t.TempDir() + "/.wuu/sessions",
+		SessionDir:   t.TempDir() + "/.wuu-state/sessions",
 		StreamRunner: &agent.StreamRunner{
 			Client:       providers.AdaptStreamClient(mainClient),
 			Model:        "kimi-k2.6",
@@ -6716,7 +6716,7 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 		Model:          "fake-model",
 		RootDir:        root,
 		ConfigPath:     root + "/.wuu.json",
-		SessionDir:     root + "/.wuu/sessions",
+		SessionDir:     root + "/.wuu-state/sessions",
 		HookDispatcher: hooks.NewDispatcher(nil),
 		StreamRunner: &agent.StreamRunner{
 			Client:       providers.AdaptStreamClient(client),

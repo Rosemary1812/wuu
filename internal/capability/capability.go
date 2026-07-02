@@ -59,6 +59,10 @@ const (
 	CapabilityMemorySession Capability = "memory.session"
 	CapabilityMemoryProject Capability = "memory.project"
 
+	// Session lookup: resolve a copied Wuu thread/session ID to the
+	// persisted conversation record and history.
+	CapabilitySessionLookup Capability = "session.lookup"
+
 	// Plan / Goal / Workflow / context rewrite.
 	CapabilityPlan           Capability = "plan"
 	CapabilityGoal           Capability = "goal"
@@ -101,6 +105,7 @@ func All() []Capability {
 		CapabilityTaskManage,
 		CapabilityMemorySession,
 		CapabilityMemoryProject,
+		CapabilitySessionLookup,
 		CapabilityPlan,
 		CapabilityGoal,
 		CapabilityWorkflow,

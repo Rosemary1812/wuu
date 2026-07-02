@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 func TestCreateAndList(t *testing.T) {
@@ -38,7 +40,7 @@ func TestDirUsesUserHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", "")
 	t.Setenv("HOME", home)
-	want := filepath.Join(home, ".wuu", "sessions")
+	want := statepath.SessionsDir(filepath.Join(home, ".wuu"))
 	if got := Dir(home); got != want {
 		t.Fatalf("Dir() = %q, want %q", got, want)
 	}

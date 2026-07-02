@@ -43,7 +43,7 @@ import type {
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { GitService } from "./gitService";
-import { ProjectManager } from "./projects";
+import { ProjectManager, wuuHomePath } from "./projects";
 import {
   registerRenderableFileProtocol,
   registerRenderableFileScheme,
@@ -561,7 +561,7 @@ app.whenReady().then(async () => {
     // The session's data lives in the user-level sessions dir (a single
     // shared SQLite file). Reveal that dir in the OS file browser so
     // the user can inspect the database.
-    return shell.openPath(join(app.getPath("home"), ".wuu", "sessions"));
+    return shell.openPath(join(wuuHomePath(), "sessions"));
   });
   ipcMain.handle(
     "wuu:turn-start",

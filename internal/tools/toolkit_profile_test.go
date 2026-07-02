@@ -113,7 +113,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		t.Fatalf("helpme exposure = %s, want %s", info.Exposure, ToolExposureDirect)
 	}
 
-	for _, name := range []string{"checkpoint", "thread_get"} {
+	for _, name := range []string{"checkpoint"} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("non-surface tool %s should not be visible, got %v", name, sortedProfileDefNames(defs))
 		}
@@ -133,6 +133,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"session_memory",
 		"read_memory",
 		"write_memory",
+		"thread_get",
 		"list_workflows",
 		"load_workflow",
 		"save_workflow",
@@ -166,6 +167,38 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	}
 	if info.Exposure != ToolExposureHidden {
 		t.Fatalf("main-agent agent_report exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
+}
+
+func TestActiveProfileToolSearchLoadsThreadGetForSessionIDs(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+
+	if containsProfileDef(kit.Definitions(), "thread_get") {
+		t.Fatal("thread_get should be deferred by default")
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "tool_search",
+		Arguments: `{"query":"look up a thread id / session id conversation"}`,
+	})
+	if err != nil {
+		t.Fatalf("tool_search: %v", err)
+	}
+	var loaded struct {
+		LoadedTools []string `json:"loaded_tools"`
+	}
+	if err := json.Unmarshal([]byte(resp), &loaded); err != nil {
+		t.Fatalf("parse tool_search: %v", err)
+	}
+	if !containsString(loaded.LoadedTools, "thread_get") {
+		t.Fatalf("tool_search should load thread_get for session IDs: %s", resp)
+	}
+	if !containsProfileDef(kit.Definitions(), "thread_get") {
+		t.Fatalf("loaded thread_get should be visible in definitions: %v", sortedProfileDefNames(kit.Definitions()))
 	}
 }
 
