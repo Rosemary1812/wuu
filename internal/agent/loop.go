@@ -86,11 +86,13 @@ func RunToolLoop(
 		// Reactive auto-compact (overflow recovery) runs at most once
 		// per Run; if a single compaction isn't enough, surfacing the
 		// error is more honest than silently looping. Proactive compact
-		// is limited to the first model round of a Run so tool results
-		// produced mid-turn cannot rewrite the conversation out from
-		// under the current task.
-		overflowCompacted bool
-		historyRewritten  bool
+		// runs before provider requests, including mid-turn continuation
+		// requests after completed tool results. A failed or no-op
+		// proactive attempt suppresses further proactive attempts for
+		// this Run so the loop cannot spin on an unhelpful compactor.
+		overflowCompacted   bool
+		proactiveSuppressed bool
+		historyRewritten    bool
 		// Tracks current context fill so we can decide whether to
 		// proactively compact before the next round. Uses
 		// response.usage as ground truth + delta estimation for
@@ -109,6 +111,54 @@ func RunToolLoop(
 		usage.RecordPendingMessages(messages)
 	}
 	threshold := proactiveCompactThreshold(cfg)
+	tryProactiveCompact := func() {
+		if proactiveSuppressed || cfg.Compact == nil || threshold <= 0 || usage.EstimateCurrent() < threshold || !canProactivelyCompact(messages, cfg) {
+			return
+		}
+		before := usage.EstimateCurrent()
+		msgsBefore := len(messages)
+		compacted, cerr := cfg.Compact(ctx, messages)
+		switch {
+		case cerr != nil:
+			proactiveSuppressed = true
+			emitCompactAttempt(cfg, CompactAttemptInfo{
+				Reason:         CompactReasonProactive,
+				Status:         CompactAttemptFailed,
+				TokensBefore:   before,
+				MessagesBefore: msgsBefore,
+				Error:          cerr.Error(),
+			})
+		case compactChanged(messages, compacted):
+			messages = compacted
+			historyRewritten = true
+			usage.Reset()
+			usage.RecordPendingMessages(messages)
+			emitCompactAttempt(cfg, CompactAttemptInfo{
+				Reason:         CompactReasonProactive,
+				Status:         CompactAttemptSucceeded,
+				TokensBefore:   before,
+				MessagesBefore: msgsBefore,
+				MessagesAfter:  len(messages),
+			})
+			if cfg.OnCompact != nil {
+				cfg.OnCompact(CompactInfo{
+					Reason:         CompactReasonProactive,
+					TokensBefore:   before,
+					MessagesBefore: msgsBefore,
+					MessagesAfter:  len(messages),
+				})
+			}
+		default:
+			proactiveSuppressed = true
+			emitCompactAttempt(cfg, CompactAttemptInfo{
+				Reason:         CompactReasonProactive,
+				Status:         CompactAttemptUnchanged,
+				TokensBefore:   before,
+				MessagesBefore: msgsBefore,
+				MessagesAfter:  len(compacted),
+			})
+		}
+	}
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
 		if cfg.OnMessage != nil && !msg.Hidden {
@@ -126,49 +176,7 @@ func RunToolLoop(
 				usage.RecordPendingMessages(injected)
 			}
 		}
-		if stepIdx == 0 && cfg.Compact != nil && threshold > 0 && usage.EstimateCurrent() >= threshold && canProactivelyCompact(messages, cfg) {
-			before := usage.EstimateCurrent()
-			msgsBefore := len(messages)
-			compacted, cerr := cfg.Compact(ctx, messages)
-			switch {
-			case cerr != nil:
-				emitCompactAttempt(cfg, CompactAttemptInfo{
-					Reason:         CompactReasonProactive,
-					Status:         CompactAttemptFailed,
-					TokensBefore:   before,
-					MessagesBefore: msgsBefore,
-					Error:          cerr.Error(),
-				})
-			case compactChanged(messages, compacted):
-				messages = compacted
-				historyRewritten = true
-				usage.Reset()
-				usage.RecordPendingMessages(messages)
-				emitCompactAttempt(cfg, CompactAttemptInfo{
-					Reason:         CompactReasonProactive,
-					Status:         CompactAttemptSucceeded,
-					TokensBefore:   before,
-					MessagesBefore: msgsBefore,
-					MessagesAfter:  len(messages),
-				})
-				if cfg.OnCompact != nil {
-					cfg.OnCompact(CompactInfo{
-						Reason:         CompactReasonProactive,
-						TokensBefore:   before,
-						MessagesBefore: msgsBefore,
-						MessagesAfter:  len(messages),
-					})
-				}
-			default:
-				emitCompactAttempt(cfg, CompactAttemptInfo{
-					Reason:         CompactReasonProactive,
-					Status:         CompactAttemptUnchanged,
-					TokensBefore:   before,
-					MessagesBefore: msgsBefore,
-					MessagesAfter:  len(compacted),
-				})
-			}
-		}
+		tryProactiveCompact()
 		if repaired, changed, nerr := repairLiveToolCallHistory(messages); nerr != nil {
 			return LoopResult{
 				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),

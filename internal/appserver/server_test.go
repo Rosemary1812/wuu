@@ -5683,6 +5683,74 @@ func TestServerFailedTurnDoesNotPersistPartialToolHistory(t *testing.T) {
 	}
 }
 
+func TestServerFailedTurnPersistsCompactedHistoryRewrite(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{
+				ToolCalls: []providers.ToolCall{{
+					ID:        "call_1",
+					Name:      "grep",
+					Arguments: `{"pattern":"inspect","path":"."}`,
+				}},
+				Usage: &providers.TokenUsage{InputTokens: 950, OutputTokens: 10},
+			},
+			{Content: "compacted before provider failure"},
+		},
+	}
+	client.onChat = func(call int, _ providers.ChatRequest) {
+		if call == 2 {
+			client.mu.Lock()
+			client.err = fmt.Errorf("provider unavailable after compact")
+			client.mu.Unlock()
+		}
+	}
+	rt := newTestRuntime(t, client)
+	rt.StreamRunner.ContextWindowOverride = 1000
+	rt.StreamRunner.OutputReserveTokens = 100
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("new toolkit: %v", err)
+	}
+	rt.Toolkit = kit
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	raw, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "inspect"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnError)
+	failed := remarshal[TurnErrorNotification](t, notificationByMethod(t, msgs, NotificationTurnError)["params"])
+	if failed.Turn.Status != TurnStatusFailed {
+		t.Fatalf("turn status = %q, want failed", failed.Turn.Status)
+	}
+
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("load history: %v", err)
+	}
+	for _, msg := range persisted {
+		if msg.Role == "system" &&
+			compact.IsConversationSummaryContent(msg.Content) &&
+			strings.Contains(msg.Content, "compacted before provider failure") {
+			return
+		}
+	}
+	t.Fatalf("failed turn should persist the successful compact rewrite, got %+v", persisted)
+}
+
 func TestServerTurnItemsIncludeReasoningAndAgentMessage(t *testing.T) {
 	client := &fakeClient{
 		response: providers.ChatResponse{

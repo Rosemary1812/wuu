@@ -898,6 +898,18 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		} else {
 			persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, turnRuntime.ProviderName, turnRuntime.Model)
 		}
+	} else if res.HistoryRewritten && len(res.NewMessages) > 0 && th.PersistHistory {
+		th.History = cloneHistory(res.NewMessages)
+		if repaired, nerr := providers.RepairAndValidateToolCallHistory(th.History); nerr != nil {
+			historyErr = nerr
+		} else if !reflect.DeepEqual(repaired, th.History) {
+			th.History = repaired
+		}
+		if historyErr != nil {
+			persistErr = historyErr
+		} else {
+			persistErr = s.persistTurnResultLocked(th, res, true, turnRuntime.ProviderName, turnRuntime.Model)
+		}
 	} else {
 		if usageErr := appendTokenUsage(s.rt.SessionDir, th.ID, turnRuntime.ProviderName, turnRuntime.Model, providers.TokenUsage{
 			InputTokens:         res.InputTokens,

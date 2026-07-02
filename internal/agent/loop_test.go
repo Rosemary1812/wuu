@@ -185,6 +185,15 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+func containsRoleContent(messages []providers.ChatMessage, role, content string) bool {
+	for _, msg := range messages {
+		if msg.Role == role && msg.Content == content {
+			return true
+		}
+	}
+	return false
+}
+
 func hiddenReminderForTest(block wuucontext.Block, ordinal int) providers.ChatMessage {
 	rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
 	return providers.ChatMessage{
@@ -1408,7 +1417,7 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_DoesNotProactivelyCompactMidTurnToolResults(t *testing.T) {
+func TestRunToolLoop_ProactivelyCompactsMidTurnBeforeNextRequest(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300, OutputTokens: 0}},
 		{Content: "ok"},
@@ -1420,6 +1429,9 @@ func TestRunToolLoop_DoesNotProactivelyCompactMidTurnToolResults(t *testing.T) {
 		Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "t"}}},
 		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			compactCalled++
+			if !containsRoleContent(msgs, "tool", `{"ok":true}`) {
+				t.Fatalf("mid-turn compact should include completed tool result, got %+v", msgs)
+			}
 			return []providers.ChatMessage{{Role: "user", Content: "summary"}}, nil
 		},
 		MaxContextTokens: 1000,
@@ -1436,17 +1448,21 @@ func TestRunToolLoop_DoesNotProactivelyCompactMidTurnToolResults(t *testing.T) {
 	if res.Content != "ok" {
 		t.Fatalf("unexpected content %q", res.Content)
 	}
-	if compactCalled != 0 {
-		t.Fatalf("mid-turn tool results should not trigger proactive compact, got %d calls", compactCalled)
+	if compactCalled != 1 {
+		t.Fatalf("mid-turn tool results should trigger one proactive compact, got %d calls", compactCalled)
 	}
-	if len(attempts) != 0 {
-		t.Fatalf("expected no proactive compact attempts, got %+v", attempts)
+	if len(attempts) != 1 || attempts[0].Reason != CompactReasonProactive || attempts[0].Status != CompactAttemptSucceeded {
+		t.Fatalf("expected one successful proactive compact attempt, got %+v", attempts)
 	}
-	if res.HistoryRewritten {
-		t.Fatal("mid-turn proactive check must not rewrite history")
+	if !res.HistoryRewritten {
+		t.Fatal("mid-turn proactive compact should rewrite history")
 	}
 	if len(step.calls) != 2 {
 		t.Fatalf("expected two provider calls, got %d", len(step.calls))
+	}
+	visibleRequest := visibleMessagesForTest(step.calls[1].Messages)
+	if len(visibleRequest) != 1 || visibleRequest[0].Role != "user" || visibleRequest[0].Content != "summary" {
+		t.Fatalf("second request should use compacted history, got %+v", visibleRequest)
 	}
 }
 
