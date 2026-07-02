@@ -418,6 +418,60 @@ func TestRunToolLoop_RequestOnlyContextDoesNotChangeCachePrefix(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_CompactIgnoresRequestOnlyContext(t *testing.T) {
+	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
+	step := &fakeStep{
+		results: []StepResult{{}, {Content: "ok"}},
+		errs:    []error{overflow, nil},
+	}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "old request"},
+		{Role: "assistant", Content: "old answer"},
+		{Role: "user", Content: "latest request"},
+	}
+	goalBlock := wuucontext.Block{
+		Kind:    wuucontext.BlockGoalContinuation,
+		Title:   "Active goal continuation",
+		Source:  "runtime.goal_continuation",
+		Content: "Objective: new continuation objective",
+	}
+	var compactInput []providers.ChatMessage
+
+	res, err := RunToolLoop(context.Background(), history, LoopConfig{
+		Model: "m",
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextBlocks([]wuucontext.Block{goalBlock})
+		},
+		Compact: func(_ context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactInput = providers.CloneChatMessages(messages)
+			return []providers.ChatMessage{
+				{Role: "system", Content: "sys"},
+				{Role: "system", Content: compact.BuildSummaryContent("older history")},
+				{Role: "user", Content: "latest request"},
+			}, nil
+		},
+	}, step)
+	if err != nil {
+		t.Fatalf("RunToolLoop: %v", err)
+	}
+	if res.Content != "ok" {
+		t.Fatalf("unexpected content %q", res.Content)
+	}
+	if got := countMessagesContaining(step.calls[0].Messages, "new continuation objective"); got != 1 {
+		t.Fatalf("first request should include request-only goal context once, got %d in %+v", got, step.calls[0].Messages)
+	}
+	if got := countMessagesContaining(compactInput, "new continuation objective"); got != 0 {
+		t.Fatalf("compact input must not include request-only goal context, got %d in %+v", got, compactInput)
+	}
+	if got := countMessagesContaining(step.calls[1].Messages, "new continuation objective"); got != 1 {
+		t.Fatalf("retry request should re-add request-only goal context once, got %d in %+v", got, step.calls[1].Messages)
+	}
+	if got := countMessagesContaining(res.NewMessages, "new continuation objective"); got != 0 {
+		t.Fatalf("request-only goal context must not enter returned history, got %d in %+v", got, res.NewMessages)
+	}
+}
+
 func TestRequestContextInfoReportsLoadableToolSchemasSeparately(t *testing.T) {
 	assembly := RequestAssembly{
 		Messages: []providers.ChatMessage{

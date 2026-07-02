@@ -3566,6 +3566,55 @@ func TestServerAutoContinuesActiveGoalWhenThreadIsIdle(t *testing.T) {
 	}
 }
 
+func TestServerGoalObjectiveEditDuringContinuationAppliesToNextTurn(t *testing.T) {
+	var threadRuntime *runtime.ThreadRuntime
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{Content: "old objective turn done"},
+			{Content: "new objective turn done"},
+		},
+		onChat: func(call int, _ providers.ChatRequest) {
+			if threadRuntime == nil {
+				return
+			}
+			switch call {
+			case 1:
+				_, _ = threadRuntime.GoalRuntime.EditObjective("new continuation objective", time.Now().UTC())
+			case 2:
+				_, _ = threadRuntime.GoalRuntime.Complete(time.Now().UTC())
+			}
+		},
+	}
+	srv, out, threadID, rt := startThreadWithRuntimeGoal(t, client, "goal-edit-next-turn")
+	threadRuntime = rt
+
+	started, err := srv.startGoalContinuationTurn(context.Background(), threadID)
+	if err != nil {
+		t.Fatalf("startGoalContinuationTurn: %v", err)
+	}
+	if !started {
+		t.Fatal("expected first goal continuation turn to start")
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+	time.Sleep(50 * time.Millisecond)
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("expected two goal continuation requests, got %d", len(requests))
+	}
+
+	firstContinuation := goalContinuationContentForTest(requests[0].Messages)
+	secondContinuation := goalContinuationContentForTest(requests[1].Messages)
+	if !strings.Contains(firstContinuation, "continue only when safe") || strings.Contains(firstContinuation, "new continuation objective") {
+		t.Fatalf("first continuation should keep the objective snapshot it started with:\n%s", firstContinuation)
+	}
+	if !strings.Contains(secondContinuation, "new continuation objective") || strings.Contains(secondContinuation, "continue only when safe") {
+		t.Fatalf("second continuation should use the edited objective:\n%s", secondContinuation)
+	}
+}
+
 func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
 	client := &fakeClient{response: providers.ChatResponse{Content: "should not run"}}
 	rt := newTestRuntime(t, client)
@@ -3605,6 +3654,15 @@ func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
 	if requestCount != 0 {
 		t.Fatalf("expected no provider request, got %d", requestCount)
 	}
+}
+
+func goalContinuationContentForTest(messages []providers.ChatMessage) string {
+	for _, msg := range messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, "<goal_continuation>") {
+			return msg.Content
+		}
+	}
+	return ""
 }
 
 func TestGoalContinuationContextTrimsLongObjective(t *testing.T) {
