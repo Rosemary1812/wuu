@@ -28,6 +28,11 @@ import type {
   MCPServerActionResult,
   ManagedProcessListResult,
   ManagedProcessStopResult,
+  ParticipantFeedbackResult,
+  ParticipantListResult,
+  ParticipantResetResult,
+  ParticipantSaveParams,
+  ParticipantSaveResult,
   ServerEvent,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
@@ -523,6 +528,36 @@ app.whenReady().then(async () => {
     appServerClientPool.request<ThreadContextCompositionResult>("thread/context-composition", {
       thread_id: threadId,
     }),
+  );
+  ipcMain.handle("wuu:participant-list", () =>
+    appServerClientPool.request<ParticipantListResult>("participant/list"),
+  );
+  ipcMain.handle("wuu:participant-save", (_event, params: ParticipantSaveParams) =>
+    appServerClientPool.request<ParticipantSaveResult>("participant/save", params),
+  );
+  ipcMain.handle(
+    "wuu:participant-feedback",
+    (
+      _event,
+      participantId: string,
+      text: string,
+      taskId?: string,
+      messageId?: string,
+    ) =>
+      appServerClientPool.request<ParticipantFeedbackResult>("participant/feedback", {
+        participant_id: participantId,
+        text,
+        task_id: taskId ?? "",
+        message_id: messageId ?? "",
+      }),
+  );
+  ipcMain.handle(
+    "wuu:participant-reset",
+    (_event, participantId: string, scope: "restart" | "session" | "full") =>
+      appServerClientPool.request<ParticipantResetResult>("participant/reset", {
+        participant_id: participantId,
+        scope,
+      }),
   );
   ipcMain.handle("wuu:thread-list-sub", (_event, threadId: string) =>
     appServerClientPool.request<ThreadListSubResult>("thread/listSub", {

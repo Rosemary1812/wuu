@@ -661,6 +661,54 @@ export type ParticipantStartResult = {
   agent: Agent;
 };
 
+export type ParticipantRunEntry = {
+  task_id?: string;
+  summary?: string;
+  outcome?: string;
+  created_at?: string;
+};
+
+export type ParticipantProfile = {
+  id: string;
+  kind: string;
+  name: string;
+  role?: string;
+  avatar?: string;
+  tagline?: string;
+  workspace?: string;
+  model?: string;
+  memory?: string;
+  track_record?: ParticipantRunEntry[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ParticipantListResult = {
+  participants: ParticipantProfile[];
+};
+
+export type ParticipantSaveParams = {
+  id?: string;
+  name: string;
+  role?: string;
+  avatar?: string;
+  tagline?: string;
+  model?: string;
+  memory?: string;
+};
+
+export type ParticipantSaveResult = {
+  participant: ParticipantProfile;
+};
+
+export type ParticipantFeedbackResult = {
+  participant: ParticipantProfile;
+};
+
+export type ParticipantResetResult = {
+  participant: ParticipantProfile;
+};
+
 export type WorktreeInfo = {
   path: string;
   base_head?: string;
@@ -1271,6 +1319,18 @@ export type WuuDesktopApi = {
   ) => Promise<ThreadForkResult>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
+  listParticipants: () => Promise<ParticipantListResult>;
+  saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
+  sendParticipantFeedback: (
+    participantId: string,
+    text: string,
+    taskId?: string,
+    messageId?: string
+  ) => Promise<ParticipantFeedbackResult>;
+  resetParticipant: (
+    participantId: string,
+    scope: "restart" | "session" | "full"
+  ) => Promise<ParticipantResetResult>;
   listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
   openConversationSubthread: (
     threadId: string,

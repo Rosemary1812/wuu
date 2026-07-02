@@ -46,6 +46,8 @@ import type {
   InputFile,
   InputImage,
   ManagedProcess,
+  ParticipantProfile,
+  ParticipantSaveParams,
   PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
@@ -118,6 +120,10 @@ import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
+import {
+  ParticipantProfilePanel,
+  type ParticipantResetScope,
+} from "./ParticipantProfilePanel";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -441,6 +447,31 @@ type HistoryMessageEditState = {
   submitting: boolean;
 };
 
+type ParticipantPanelState = {
+  mode: "new" | "edit";
+  participant?: ParticipantProfile;
+  loading?: boolean;
+  error?: string;
+  saving?: boolean;
+  feedbackSubmitting?: boolean;
+  resettingScope?: ParticipantResetScope;
+};
+
+function replaceParticipantProfile(
+  participants: ParticipantProfile[],
+  participant: ParticipantProfile,
+): ParticipantProfile[] {
+  const index = participants.findIndex((item) => item.id === participant.id);
+  if (index === -1) {
+    return [...participants, participant].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }
+  const next = [...participants];
+  next[index] = participant;
+  return next;
+}
+
 type QueuedMessageEditTarget = {
   threadID: string;
   queueID: string;
@@ -667,6 +698,10 @@ export function App(): JSX.Element {
         error?: string;
       }
     | undefined
+  >(undefined);
+  const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
+  const [participantPanel, setParticipantPanel] = useState<
+    ParticipantPanelState | undefined
   >(undefined);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
     [],
@@ -980,6 +1015,27 @@ export function App(): JSX.Element {
   const activeContextKey = state.activeContext
     ? runtimeContextKey(state.activeContext)
     : "";
+  const refreshParticipants = useStableCallback(async (): Promise<
+    ParticipantProfile[]
+  > => {
+    if (!appStateRef.current.initialized) {
+      setParticipants([]);
+      return [];
+    }
+    const result = await window.wuu.listParticipants();
+    const nextParticipants = result.participants ?? [];
+    setParticipants(nextParticipants);
+    setParticipantPanel((current) => {
+      if (!current?.participant?.id) {
+        return current;
+      }
+      const fresh = nextParticipants.find(
+        (participant) => participant.id === current.participant?.id,
+      );
+      return fresh ? { ...current, participant: fresh } : current;
+    });
+    return nextParticipants;
+  });
   const backgroundProcesses = useMemo(
     () => buildBackgroundProcessItems(activeThread, managedProcesses),
     [activeThread, managedProcesses],
@@ -1285,6 +1341,25 @@ export function App(): JSX.Element {
     setManagedProcesses([]);
     scheduleManagedProcessRefresh(0);
   }, [state.initialized, activeContextKey]);
+
+  useEffect(() => {
+    if (!state.initialized || !state.activeContext) {
+      setParticipants([]);
+      setParticipantPanel(undefined);
+      return;
+    }
+    void refreshParticipants().catch((error) => {
+      setParticipantPanel((current) =>
+        current
+          ? {
+              ...current,
+              loading: false,
+              error: desktopApiErrorMessage(error, "无法加载 Agents"),
+            }
+          : current,
+      );
+    });
+  }, [state.initialized, activeContextKey, refreshParticipants]);
 
   useEffect(() => {
     if (liveBackgroundProcesses.length === 0) {
@@ -1773,7 +1848,9 @@ export function App(): JSX.Element {
     state.initialized &&
     !previewingLaunch &&
     !showingWorkspaceMode &&
-    !rightPanelOpen,
+    !rightPanelOpen &&
+    !openSubthreadPanel &&
+    !participantPanel,
   );
   const environmentPanelTargetVisible =
     environmentPanelCanShow &&
@@ -1783,6 +1860,7 @@ export function App(): JSX.Element {
         !emptyConversation));
   const environmentPanelVisible = environmentPanelTargetVisible;
   const subthreadPanelVisible = Boolean(openSubthreadPanel);
+  const participantPanelVisible = Boolean(participantPanel);
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
@@ -2609,10 +2687,155 @@ export function App(): JSX.Element {
     })();
   }
 
+  function openParticipantProfile(participant: ParticipantProfile): void {
+    closeConversationSearch({ immediate: true });
+    closeEnvironmentPanel({ dismissed: true });
+    setOpenSubthreadPanel(undefined);
+    setRightPanelOpenWithMotion(false);
+    setParticipantPanel({
+      mode: "edit",
+      participant,
+      loading: false,
+    });
+  }
+
+  function openNewParticipantProfile(): void {
+    closeConversationSearch({ immediate: true });
+    closeEnvironmentPanel({ dismissed: true });
+    setOpenSubthreadPanel(undefined);
+    setRightPanelOpenWithMotion(false);
+    setParticipantPanel({
+      mode: "new",
+      loading: false,
+    });
+  }
+
+  function handleParticipantSave(params: ParticipantSaveParams): void {
+    setParticipantPanel((current) =>
+      current
+        ? {
+            ...current,
+            saving: true,
+            error: undefined,
+          }
+        : current,
+    );
+    void (async () => {
+      try {
+        const result = await window.wuu.saveParticipant(params);
+        setParticipants((current) =>
+          replaceParticipantProfile(current, result.participant),
+        );
+        setParticipantPanel({
+          mode: "edit",
+          participant: result.participant,
+          loading: false,
+        });
+      } catch (error) {
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                saving: false,
+                error: desktopApiErrorMessage(error, "无法保存 Agent"),
+              }
+            : current,
+        );
+      }
+    })();
+  }
+
+  function handleParticipantFeedback(text: string): void {
+    const participant = participantPanel?.participant;
+    if (!participant) {
+      return;
+    }
+    setParticipantPanel((current) =>
+      current
+        ? {
+            ...current,
+            feedbackSubmitting: true,
+            error: undefined,
+          }
+        : current,
+    );
+    void (async () => {
+      try {
+        const result = await window.wuu.sendParticipantFeedback(participant.id, text);
+        setParticipants((current) =>
+          replaceParticipantProfile(current, result.participant),
+        );
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                participant: result.participant,
+                feedbackSubmitting: false,
+              }
+            : current,
+        );
+      } catch (error) {
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                feedbackSubmitting: false,
+                error: desktopApiErrorMessage(error, "无法写入反馈"),
+              }
+            : current,
+        );
+      }
+    })();
+  }
+
+  function handleParticipantReset(scope: ParticipantResetScope): void {
+    const participant = participantPanel?.participant;
+    if (!participant) {
+      return;
+    }
+    setParticipantPanel((current) =>
+      current
+        ? {
+            ...current,
+            resettingScope: scope,
+            error: undefined,
+          }
+        : current,
+    );
+    void (async () => {
+      try {
+        const result = await window.wuu.resetParticipant(participant.id, scope);
+        setParticipants((current) =>
+          replaceParticipantProfile(current, result.participant),
+        );
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                participant: result.participant,
+                resettingScope: undefined,
+              }
+            : current,
+        );
+      } catch (error) {
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                resettingScope: undefined,
+                error: desktopApiErrorMessage(error, "无法 reset Agent"),
+              }
+            : current,
+        );
+      }
+    })();
+  }
+
   function openConversationSubthread(thread: Thread, item: ThreadItem): void {
     const subthreadID = item.task?.subthread_id;
     setEnvironmentPanelOpen(false);
     setEnvironmentPanelDismissed(true);
+    setParticipantPanel(undefined);
     setOpenSubthreadPanel({
       threadID: thread.id,
       subthread: undefined,
@@ -6303,6 +6526,8 @@ export function App(): JSX.Element {
         sidebarProjects={sidebarProjects}
         pinnedThreads={sidebarPinnedThreads}
         activeThreadID={activeThreadID}
+        activeParticipantID={participantPanel?.participant?.id}
+        participants={participants}
         pendingThreadID={visiblePendingThreadID}
         pendingProjectID={visiblePendingProjectID}
         archiveConfirmThreadID={archiveConfirmThreadID}
@@ -6323,6 +6548,8 @@ export function App(): JSX.Element {
         onSeedAgentTreeDemo={seedAgentTreeDemo}
         onOpenChipGallery={() => setChipGalleryOpen(true)}
         onSelectThread={(id) => void activateThread(id)}
+        onSelectParticipant={openParticipantProfile}
+        onCreateParticipant={openNewParticipantProfile}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}
         onArchiveThread={(thread) => void archiveThread(thread)}
         onClearArchiveConfirm={(id) =>
@@ -6396,9 +6623,11 @@ export function App(): JSX.Element {
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
-          environmentPanelReserved || subthreadPanelVisible ? " environment-panel-reserved" : ""
+          environmentPanelReserved || subthreadPanelVisible || participantPanelVisible ? " environment-panel-reserved" : ""
         }${
           subthreadPanelVisible ? " subthread-panel-visible" : ""
+        }${
+          participantPanelVisible ? " participant-panel-visible" : ""
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
         }`}
@@ -6629,6 +6858,22 @@ export function App(): JSX.Element {
               }
             }}
             onNoticeAction={handleCachedPaneNoticeAction}
+          />
+        ) : null}
+
+        {participantPanel ? (
+          <ParticipantProfilePanel
+            mode={participantPanel.mode}
+            participant={participantPanel.participant}
+            loading={participantPanel.loading}
+            error={participantPanel.error}
+            saving={participantPanel.saving}
+            feedbackSubmitting={participantPanel.feedbackSubmitting}
+            resettingScope={participantPanel.resettingScope}
+            onClose={() => setParticipantPanel(undefined)}
+            onSave={handleParticipantSave}
+            onFeedback={handleParticipantFeedback}
+            onReset={handleParticipantReset}
           />
         ) : null}
 

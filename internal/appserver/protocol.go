@@ -54,6 +54,10 @@ const (
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
 	MethodParticipantStart         = "participant/start"
+	MethodParticipantList          = "participant/list"
+	MethodParticipantSave          = "participant/save"
+	MethodParticipantFeedback      = "participant/feedback"
+	MethodParticipantReset         = "participant/reset"
 	MethodTurnStart                = "turn/start"
 	MethodTurnQueue                = "turn/queue"
 	MethodTurnUpdateQueued         = "turn/update-queued"
@@ -782,6 +786,66 @@ type ParticipantStartParams struct {
 
 type ParticipantStartResult struct {
 	Agent Agent `json:"agent"`
+}
+
+type ParticipantProfile struct {
+	ID          string                `json:"id"`
+	Kind        string                `json:"kind"`
+	Name        string                `json:"name"`
+	Role        string                `json:"role,omitempty"`
+	Avatar      string                `json:"avatar,omitempty"`
+	Tagline     string                `json:"tagline,omitempty"`
+	Workspace   string                `json:"workspace,omitempty"`
+	Model       string                `json:"model,omitempty"`
+	Memory      string                `json:"memory,omitempty"`
+	TrackRecord []ParticipantRunEntry `json:"track_record,omitempty"`
+	CreatedAt   time.Time             `json:"created_at,omitempty"`
+	UpdatedAt   time.Time             `json:"updated_at,omitempty"`
+}
+
+type ParticipantRunEntry struct {
+	TaskID    string    `json:"task_id,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	Outcome   string    `json:"outcome,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+type ParticipantListResult struct {
+	Participants []ParticipantProfile `json:"participants"`
+}
+
+type ParticipantSaveParams struct {
+	ID      string `json:"id,omitempty"`
+	Name    string `json:"name"`
+	Role    string `json:"role,omitempty"`
+	Avatar  string `json:"avatar,omitempty"`
+	Tagline string `json:"tagline,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Memory  string `json:"memory,omitempty"`
+}
+
+type ParticipantSaveResult struct {
+	Participant ParticipantProfile `json:"participant"`
+}
+
+type ParticipantFeedbackParams struct {
+	ParticipantID string `json:"participant_id"`
+	Text          string `json:"text"`
+	TaskID        string `json:"task_id,omitempty"`
+	MessageID     string `json:"message_id,omitempty"`
+}
+
+type ParticipantFeedbackResult struct {
+	Participant ParticipantProfile `json:"participant"`
+}
+
+type ParticipantResetParams struct {
+	ParticipantID string `json:"participant_id"`
+	Scope         string `json:"scope,omitempty"`
+}
+
+type ParticipantResetResult struct {
+	Participant ParticipantProfile `json:"participant"`
 }
 
 type ContextCompositionCategory struct {

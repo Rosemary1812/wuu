@@ -8,12 +8,13 @@ import {
   LayoutGrid,
   List as ListIcon,
   MessageSquarePlus,
+  Plus,
   Search,
   Settings,
   Wrench,
 } from "lucide-react";
 import type { RefObject } from "react";
-import type { DesktopProject } from "../shared/protocol";
+import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
@@ -24,6 +25,8 @@ export function AppSidebar({
   sidebarProjects,
   pinnedThreads,
   activeThreadID,
+  activeParticipantID,
+  participants,
   pendingThreadID,
   pendingProjectID,
   archiveConfirmThreadID,
@@ -42,6 +45,8 @@ export function AppSidebar({
   onSeedAgentTreeDemo,
   onOpenChipGallery,
   onSelectThread,
+  onSelectParticipant,
+  onCreateParticipant,
   onTogglePinned,
   onArchiveThread,
   onClearArchiveConfirm,
@@ -62,6 +67,8 @@ export function AppSidebar({
   sidebarProjects: DesktopProject[];
   pinnedThreads: ThreadSummary[];
   activeThreadID?: string;
+  activeParticipantID?: string;
+  participants: ParticipantProfile[];
   pendingThreadID?: string;
   pendingProjectID?: string;
   archiveConfirmThreadID?: string;
@@ -80,6 +87,8 @@ export function AppSidebar({
   onSeedAgentTreeDemo: () => void;
   onOpenChipGallery: () => void;
   onSelectThread: (id: string) => void;
+  onSelectParticipant: (participant: ParticipantProfile) => void;
+  onCreateParticipant: () => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -211,6 +220,65 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-main scrollbar-hidden">
+          <section className="participant-roster-section" aria-label="Agents">
+            <div className="section-label participant-roster-label">
+              <span>Agents</span>
+              <button
+                type="button"
+                className="participant-roster-add"
+                aria-label="新建 Agent"
+                title="新建 Agent"
+                disabled={!state.initialized}
+                onClick={onCreateParticipant}
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            </div>
+            <div className="participant-roster-list">
+              {participants.length === 0 ? (
+                <button
+                  type="button"
+                  className="participant-roster-row empty"
+                  disabled={!state.initialized}
+                  onClick={onCreateParticipant}
+                >
+                  <span
+                    className="participant-roster-status"
+                    data-status="offline"
+                  />
+                  <span className="participant-roster-name">添加 Agent</span>
+                  <span className="participant-roster-meta">常驻身份</span>
+                </button>
+              ) : (
+                participants.map((participant) => (
+                  <button
+                    key={participant.id}
+                    type="button"
+                    className={`participant-roster-row${
+                      activeParticipantID === participant.id ? " active" : ""
+                    }`}
+                    onClick={() => onSelectParticipant(participant)}
+                  >
+                    <span
+                      className="participant-roster-status"
+                      data-status="online"
+                    />
+                    <span className="participant-roster-avatar" aria-hidden="true">
+                      {participant.avatar || "•"}
+                    </span>
+                    <span className="participant-roster-copy">
+                      <span className="participant-roster-name">
+                        {participant.name}
+                      </span>
+                      <span className="participant-roster-meta">
+                        {participant.tagline || participant.role || "named"}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
           {pinnedThreads.length > 0 ? (
             <section className="pinned-thread-section" aria-label="置顶">
               <div className="section-label pinned-thread-label">置顶</div>

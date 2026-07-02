@@ -81,6 +81,8 @@ function renderSidebar({
         sidebarProjects={[]}
         pinnedThreads={pinnedThreads}
         activeThreadID={undefined}
+        activeParticipantID={undefined}
+        participants={[]}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
         archiveConfirmThreadID={undefined}
@@ -99,6 +101,8 @@ function renderSidebar({
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
         onSelectThread={() => {}}
+        onSelectParticipant={() => {}}
+        onCreateParticipant={() => {}}
         onTogglePinned={onTogglePinned}
         onArchiveThread={() => {}}
         onClearArchiveConfirm={() => {}}

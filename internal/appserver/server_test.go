@@ -6925,6 +6925,85 @@ func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T)
 	waitForAgentStatus(t, th.execRuntime.AgentControl, result.Agent.ID, subagent.StatusCompleted)
 }
 
+func TestServerParticipantProfileLifecycle(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	savePayload := map[string]any{
+		"id":     "save",
+		"method": MethodParticipantSave,
+		"params": ParticipantSaveParams{
+			Name:    "Noel",
+			Role:    "reviewer",
+			Tagline: "Find regressions",
+			Memory:  "Prefers concise reports.",
+		},
+	}
+	rawSave, err := json.Marshal(savePayload)
+	if err != nil {
+		t.Fatalf("marshal save: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawSave); err != nil {
+		t.Fatalf("participant/save: %v", err)
+	}
+	save := remarshal[ParticipantSaveResult](t, responseByID(t, parseOutput(t, out.String()), "save")["result"])
+	if save.Participant.ID == "" || save.Participant.Name != "Noel" || save.Participant.Memory != "Prefers concise reports." {
+		t.Fatalf("unexpected saved participant: %+v", save.Participant)
+	}
+	if !strings.Contains(save.Participant.Workspace, filepath.Join(".wuu", "participants", save.Participant.ID)) {
+		t.Fatalf("participant workspace should live under wuu home: %+v", save.Participant)
+	}
+
+	rawList := []byte(fmt.Sprintf(`{"id":"list","method":%q}`, MethodParticipantList))
+	if err := srv.handleLine(context.Background(), rawList); err != nil {
+		t.Fatalf("participant/list: %v", err)
+	}
+	list := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
+	if len(list.Participants) != 1 || list.Participants[0].ID != save.Participant.ID {
+		t.Fatalf("unexpected participant list: %+v", list.Participants)
+	}
+
+	feedbackPayload := map[string]any{
+		"id":     "feedback",
+		"method": MethodParticipantFeedback,
+		"params": ParticipantFeedbackParams{
+			ParticipantID: save.Participant.ID,
+			Text:          "Use numbers instead of adjectives.",
+			TaskID:        "task-1",
+		},
+	}
+	rawFeedback, err := json.Marshal(feedbackPayload)
+	if err != nil {
+		t.Fatalf("marshal feedback: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawFeedback); err != nil {
+		t.Fatalf("participant/feedback: %v", err)
+	}
+	feedback := remarshal[ParticipantFeedbackResult](t, responseByID(t, parseOutput(t, out.String()), "feedback")["result"])
+	if !strings.Contains(feedback.Participant.Memory, "Use numbers instead of adjectives.") {
+		t.Fatalf("feedback was not appended to memory: %q", feedback.Participant.Memory)
+	}
+
+	resetPayload := map[string]any{
+		"id":     "reset",
+		"method": MethodParticipantReset,
+		"params": ParticipantResetParams{ParticipantID: save.Participant.ID, Scope: "full"},
+	}
+	rawReset, err := json.Marshal(resetPayload)
+	if err != nil {
+		t.Fatalf("marshal reset: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawReset); err != nil {
+		t.Fatalf("participant/reset: %v", err)
+	}
+	reset := remarshal[ParticipantResetResult](t, responseByID(t, parseOutput(t, out.String()), "reset")["result"])
+	if reset.Participant.Memory != "" {
+		t.Fatalf("full reset should clear memory, got %q", reset.Participant.Memory)
+	}
+}
+
 func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	t.Helper()
 	root := t.TempDir()

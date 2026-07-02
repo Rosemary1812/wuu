@@ -272,6 +272,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadRegenerateTitle(ctx, req)
 	case MethodParticipantStart:
 		return s.handleParticipantStart(ctx, req)
+	case MethodParticipantList:
+		return s.handleParticipantList(req)
+	case MethodParticipantSave:
+		return s.handleParticipantSave(req)
+	case MethodParticipantFeedback:
+		return s.handleParticipantFeedback(req)
+	case MethodParticipantReset:
+		return s.handleParticipantReset(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:
