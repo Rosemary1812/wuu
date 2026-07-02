@@ -291,6 +291,73 @@ describe("ProjectList", () => {
     expect(container.textContent).not.toContain("Wrong duplicate");
   });
 
+  it("renders paired expanded and collapsed icons for conversation and project rows", () => {
+    const projects = [
+      makeProject(SCRATCH_PSEUDO_PROJECT_ID, "对话", ""),
+      makeProject("project-1", "wuu", "/repo/wuu"),
+    ];
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectList
+          projects={projects}
+          activeID="project-1"
+          pendingProjectID={undefined}
+          collapsedProjectIDs={new Set([SCRATCH_PSEUDO_PROJECT_ID])}
+          expandedProjectIDs={new Set()}
+          collapsingProjectIDs={new Set()}
+          threadsByProjectID={{
+            [SCRATCH_PSEUDO_PROJECT_ID]: [],
+            "project-1": summarizeThreadsForSidebar([
+              makeProjectThread("thread-wuu", "/repo/wuu", "Wuu session"),
+            ]),
+          }}
+          activeThreadID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
+          scratchPseudoActive={false}
+          onToggleProjectCollapsed={() => {}}
+          onStartNewThread={() => {}}
+          onSelectThread={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    const [conversationRow, projectRow] = Array.from(
+      container.querySelectorAll(".project-row"),
+    );
+
+    expect(conversationRow?.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      conversationRow?.querySelector(
+        '[data-project-icon-kind="conversation"][data-project-icon-state="collapsed"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      conversationRow?.querySelector(
+        '[data-project-icon-kind="conversation"][data-project-icon-state="expanded"]',
+      ),
+    ).not.toBeNull();
+
+    expect(projectRow?.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      projectRow?.querySelector(
+        '[data-project-icon-kind="project"][data-project-icon-state="collapsed"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      projectRow?.querySelector(
+        '[data-project-icon-kind="project"][data-project-icon-state="expanded"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it("shows project-level unread state for collapsed unread threads", () => {
     const projects = [makeProject("project-1", "wuu", "/repo/wuu")];
 

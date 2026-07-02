@@ -220,6 +220,8 @@
   .project-row,
   .project-row-new-thread,
   .project-row-chevron,
+  .project-row-icon,
+  .project-row-icon-state,
   .project-row svg:not(.project-row-chevron),
   .thread-list-collapse,
   .thread-row,

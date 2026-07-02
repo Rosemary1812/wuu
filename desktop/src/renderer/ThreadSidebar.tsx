@@ -1,4 +1,4 @@
-import { Archive, ChevronRight, Folder, FolderOpen, GitFork, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
+import { Archive, ChevronRight, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
@@ -145,13 +145,7 @@ export function ProjectList({
               title={expanded ? "收起会话" : "展开会话"}
               onClick={() => onToggleProjectCollapsed(project.id)}
             >
-              {isScratchPseudo ? (
-                <MessagesSquare className="icon-lg" aria-hidden="true" />
-              ) : expanded ? (
-                <FolderOpen className="icon-lg" />
-              ) : (
-                <Folder className="icon-lg" />
-              )}
+              <ProjectRowIcon scratch={isScratchPseudo} expanded={expanded} />
               <span className="project-row-label">
                 <span className="project-row-name">{project.name}</span>
                 <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
@@ -201,6 +195,35 @@ export function ProjectList({
         );
       })}
     </div>
+  );
+}
+
+function ProjectRowIcon({
+  scratch,
+  expanded,
+}: {
+  scratch: boolean;
+  expanded: boolean;
+}): JSX.Element {
+  const CollapsedIcon = scratch ? MessageSquare : Folder;
+  const ExpandedIcon = scratch ? MessagesSquare : FolderOpen;
+
+  return (
+    <span
+      className={`project-row-icon${expanded ? " expanded" : ""}`}
+      aria-hidden="true"
+    >
+      <CollapsedIcon
+        className="icon-lg project-row-icon-state collapsed"
+        data-project-icon-kind={scratch ? "conversation" : "project"}
+        data-project-icon-state="collapsed"
+      />
+      <ExpandedIcon
+        className="icon-lg project-row-icon-state expanded"
+        data-project-icon-kind={scratch ? "conversation" : "project"}
+        data-project-icon-state="expanded"
+      />
+    </span>
   );
 }
 
