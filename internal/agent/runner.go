@@ -150,6 +150,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 		OutputReserveTokens:         r.OutputReserveTokens,
 		CompactThresholdPct:         r.CompactThresholdPct,
 		CompactKeepRecentTokens:     r.CompactKeepRecentTokens,
+		ToolPrune:                   true,
 		NativeDeferredToolDiscovery: r.NativeDeferredToolDiscovery,
 		SystemPromptSections:        cloneSystemPromptSections(r.SystemPromptSections),
 		OnUsage:                     onUsage,

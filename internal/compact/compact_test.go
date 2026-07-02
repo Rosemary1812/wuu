@@ -874,7 +874,7 @@ func TestCompact_PrunesOldLargeToolResultsBeforeSummary(t *testing.T) {
 	if strings.Contains(summaryInput, large) {
 		t.Fatal("expected old large tool result to be pruned from summary input")
 	}
-	if !strings.Contains(summaryInput, "[Old read_file result omitted during compact to save context.") {
+	if !strings.Contains(summaryInput, "[Pruned read_file result.") {
 		t.Fatalf("expected placeholder in summary input, got: %s", summaryInput)
 	}
 }
@@ -1056,4 +1056,121 @@ func TestPruneOldToolResults_ProtectsSkillTool(t *testing.T) {
 
 func largePrunableToolOutput(char string) string {
 	return strings.Repeat(char, (toolResultPruneProtectTokens+toolResultPruneMinimumTokens+1_000)*4)
+}
+
+func TestPruneToolResults_EmptyInput(t *testing.T) {
+	if got := PruneToolResults(nil); got != nil {
+		t.Fatalf("expected nil for empty input, got %v", got)
+	}
+}
+
+func TestPruneToolResults_TurnProtection(t *testing.T) {
+	large := largePrunableToolOutput("z")
+	messages := []providers.ChatMessage{
+		// Turn 1 (old, eligible for pruning)
+		{Role: "user", Content: "old question"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "c1", Content: large},
+		// Turn 2 (within last 2 turns, protected)
+		{Role: "user", Content: "recent question"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c2", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "c2", Content: large},
+		// Turn 3 (most recent, protected)
+		{Role: "user", Content: "latest question"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	pruned := PruneToolResults(messages)
+
+	if pruned[2].Content == large {
+		t.Fatal("expected old tool result to be pruned")
+	}
+	if !strings.Contains(pruned[2].Content, "[Pruned bash result") {
+		t.Fatalf("expected pruned placeholder, got %q", pruned[2].Content)
+	}
+	if pruned[5].Content != large {
+		t.Fatal("expected recent tool result to be preserved (turn protection)")
+	}
+}
+
+func TestPruneToolResults_ProtectsSkillTool(t *testing.T) {
+	large := largePrunableToolOutput("s")
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "q1"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "skill", Arguments: "{}"}}},
+		{Role: "tool", Name: "skill", ToolCallID: "c1", Content: large},
+		{Role: "user", Content: "q2"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "q3"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	pruned := PruneToolResults(messages)
+	if pruned[2].Content != large {
+		t.Fatal("skill tool output should be protected from pruning")
+	}
+}
+
+func TestPruneToolResults_RecallableAndNonRecallablePlaceholders(t *testing.T) {
+	large := largePrunableToolOutput("x")
+	messages := []providers.ChatMessage{
+		// Old turn 1: read_file (recallable)
+		{Role: "user", Content: "q1"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "rf1", Name: "read_file", Arguments: "{}"}}},
+		{Role: "tool", Name: "read_file", ToolCallID: "rf1", Content: large},
+		// Old turn 2: bash (non-recallable)
+		{Role: "user", Content: "q2"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "bs1", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "bs1", Content: large},
+		// Recent turns (protected)
+		{Role: "user", Content: "q3"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "q4"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	pruned := PruneToolResults(messages)
+
+	if !strings.Contains(pruned[2].Content, "Re-run read_file") {
+		t.Fatalf("expected recallable placeholder for read_file, got %q", pruned[2].Content)
+	}
+	if !strings.Contains(pruned[5].Content, "may not be reproducible") {
+		t.Fatalf("expected non-recallable placeholder for bash, got %q", pruned[5].Content)
+	}
+	// Non-destructive: originals unchanged.
+	if messages[2].Content != large {
+		t.Fatal("original read_file result should be unchanged (non-destructive)")
+	}
+	if messages[5].Content != large {
+		t.Fatal("original bash result should be unchanged (non-destructive)")
+	}
+}
+
+func TestPruneToolResults_BelowMinimumNotPruned(t *testing.T) {
+	// Recent old result (processed first going backwards) is under the 40K
+	// protect threshold; older result pushes total over 40K but the prunable
+	// amount is under the 20K minimum, so nothing is pruned.
+	recentOld := strings.Repeat("b", 150_000) // ~37.5K tokens, under 40K protect
+	farOld := strings.Repeat("a", 50_000)    // ~12.5K tokens, prunable < 20K minimum
+
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "q1"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "c1", Content: farOld},
+		{Role: "user", Content: "q2"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c2", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "c2", Content: recentOld},
+		{Role: "user", Content: "q3"},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "q4"},
+		{Role: "assistant", Content: "done"},
+	}
+
+	pruned := PruneToolResults(messages)
+	if pruned[2].Content != farOld {
+		t.Fatal("tool result with prunable amount below minimum should not be pruned")
+	}
+	if pruned[5].Content != recentOld {
+		t.Fatal("tool result under protect threshold should not be pruned")
+	}
 }

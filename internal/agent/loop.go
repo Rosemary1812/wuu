@@ -194,7 +194,15 @@ func RunToolLoop(
 			requestSegments = append(requestSegments, postToolContextSegments...)
 			postToolContextSegments = nil
 		}
-		assembly := assembleModelRequest(messages, requestSegments)
+		// Non-destructive tool-result prune: replace old tool results
+		// with compact placeholders in the request only. The live
+		// history retains full content for durability and future
+		// retrieval.
+		messagesForRequest := messages
+		if cfg.ToolPrune {
+			messagesForRequest = compact.PruneToolResults(messages)
+		}
+		assembly := assembleModelRequest(messagesForRequest, requestSegments)
 		requestMessages := assembly.Messages
 		cacheHint := buildCacheHint(requestMessages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)

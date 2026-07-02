@@ -232,6 +232,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		OutputReserveTokens:     r.OutputReserveTokens,
 		CompactThresholdPct:     r.CompactThresholdPct,
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
+		ToolPrune:               true,
 		BeforeStep:              beforeStep,
 		BeforeRequestContext:    r.BeforeRequestContext,
 		SystemPromptSections:    systemPromptSections,

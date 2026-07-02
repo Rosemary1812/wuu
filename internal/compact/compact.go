@@ -18,10 +18,25 @@ const defaultCompactTimeout = 60 * time.Second
 const (
 	toolResultPruneProtectTokens = 40_000
 	toolResultPruneMinimumTokens = 20_000
+	// pruneProtectedTurns is the number of recent user-anchored turns
+	// whose tool results are never pruned by the standalone prune pass.
+	// Aligned with OpenCode V1's "if (turns < 2) continue" guard.
+	pruneProtectedTurns = 2
 )
 
 var protectedToolResults = map[string]bool{
 	"skill": true,
+}
+
+// recallableTools lists tools whose results are deterministic and can be
+// re-obtained by re-calling the tool. Pruned results for these tools
+// include a re-call hint in the placeholder so the model knows it can
+// retrieve the current content by re-running the tool.
+var recallableTools = map[string]bool{
+	"read_file":  true,
+	"grep":       true,
+	"glob":       true,
+	"list_files": true,
 }
 
 // maxCompactOutputChars caps the summarization output to approximately
@@ -837,12 +852,78 @@ func pruneOldToolResults(messages []providers.ChatMessage) []providers.ChatMessa
 	return pruned
 }
 
+// PruneToolResults is a standalone, non-LLM prune pass that truncates
+// old tool-result content to save context before a provider request.
+// It is non-destructive: the input slice is never modified, and a new
+// slice with pruned content is returned only when pruning actually
+// removes content; otherwise the original slice is returned as-is.
+//
+// Recent turns (the last pruneProtectedTurns user-anchored turns) are
+// always preserved. Beyond that, the most recent tool-result tokens up
+// to toolResultPruneProtectTokens are protected; older tool results are
+// replaced with a truncated placeholder. Pruning is skipped entirely
+// when the prunable amount is below toolResultPruneMinimumTokens.
+//
+// The original tool-result content remains in the live history slice
+// for session durability and future archive retrieval; only the request
+// projection is truncated.
+func PruneToolResults(messages []providers.ChatMessage) []providers.ChatMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	total := 0
+	prunedTokens := 0
+	turnsSeen := 0
+	var indexes []int
+	for i := len(messages) - 1; i >= 0; i-- {
+		// Count user messages as turn boundaries going backwards.
+		if strings.EqualFold(messages[i].Role, "user") {
+			turnsSeen++
+		}
+		// Skip tool results in the last pruneProtectedTurns turns.
+		if turnsSeen < pruneProtectedTurns {
+			continue
+		}
+		if !strings.EqualFold(messages[i].Role, "tool") {
+			continue
+		}
+		if protectedToolResults[strings.TrimSpace(messages[i].Name)] {
+			continue
+		}
+		size := EstimateTokens(messages[i].Content)
+		if size <= 0 {
+			continue
+		}
+		total += size
+		if total <= toolResultPruneProtectTokens {
+			continue
+		}
+		prunedTokens += size
+		indexes = append(indexes, i)
+	}
+	if prunedTokens <= toolResultPruneMinimumTokens {
+		return messages
+	}
+
+	pruned := make([]providers.ChatMessage, len(messages))
+	copy(pruned, messages)
+	for _, i := range indexes {
+		pruned[i].Content = summarizePrunedToolResult(pruned[i])
+	}
+	return pruned
+}
+
 func summarizePrunedToolResult(msg providers.ChatMessage) string {
 	name := strings.TrimSpace(msg.Name)
 	if name == "" {
 		name = "unknown tool"
 	}
-	return fmt.Sprintf("[Old %s result omitted during compact to save context. Original output was %d characters. Tool call ID: %s]", name, len(msg.Content), toolCallLabel(msg.ToolCallID))
+	label := toolCallLabel(msg.ToolCallID)
+	if recallableTools[name] {
+		return fmt.Sprintf("[Pruned %s result. Original: %d characters. Tool call ID: %s. Re-run %s to retrieve current content.]", name, len(msg.Content), label, name)
+	}
+	return fmt.Sprintf("[Pruned %s result. Original: %d characters. Tool call ID: %s. This output is from a completed operation and may not be reproducible.]", name, len(msg.Content), label)
 }
 
 func toolCallLabel(id string) string {

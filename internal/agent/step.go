@@ -214,6 +214,12 @@ type LoopConfig struct {
 	// CompactKeepRecentTokens overrides the default recent raw-history budget
 	// kept after compaction. Zero means use the default.
 	CompactKeepRecentTokens int
+	// ToolPrune enables a lightweight, non-LLM tool-result prune pass that
+	// runs before each provider request. Old tool results beyond the protect
+	// threshold are replaced with compact placeholders in the request only;
+	// the live history retains full content. This delays the need for
+	// expensive LLM-summarized compaction.
+	ToolPrune bool
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
 	// before the next provider request is built. This is used by
