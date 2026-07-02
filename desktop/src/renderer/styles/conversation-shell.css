@@ -49,10 +49,17 @@
      glyph toward the --ink-tertiary band so the live thinking feed
      recedes relative to the final answer without losing readability. */
   --wuu-ink-soft: #6f7478;
-  --conversation-process-gap: 12px;
-  --conversation-process-answer-gap: 12px;
+  /*
+   * Grouping rhythm: tight within a group, loose between groups.
+   * 18px separates the muted process fold from the final answer (two
+   * different kinds of content), while 9px pulls consecutive tool-call
+   * rows together into one visual "activity block". The previous
+   * uniform 12px everywhere carried no grouping signal at all.
+   */
+  --conversation-process-gap: 18px;
+  --conversation-process-answer-gap: 18px;
   --conversation-answer-action-gap: 8px;
-  --conversation-activity-gap: 12px;
+  --conversation-activity-gap: 9px;
   --conversation-scrollbar-gutter: 12px;
   --conversation-visible-inset-left: 0px;
   --conversation-visible-inset-right: 0px;

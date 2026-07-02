@@ -18,7 +18,13 @@
    * (selection, a11y, copy-paste) without producing a heavier visual run.
    */
   font-weight: 400;
-  margin-bottom: 20px;
+  /*
+   * Turn-to-turn separation must beat every within-turn gap, or the
+   * eye can't find where one exchange ends and the next begins. 20px
+   * was smaller than the question→answer distance inside a turn,
+   * which inverted the grouping.
+   */
+  margin-bottom: 28px;
 }
 
 .turn[data-turn-status="in_progress"] {
@@ -358,7 +364,9 @@
   align-self: flex-end;
   justify-items: end;
   gap: 8px;
-  margin-bottom: 16px;
+  /* The question belongs to its answer — keep them close so the big
+     break lands between turns, not inside one. */
+  margin-bottom: 8px;
   border-radius: var(--radius-lg);
                                                                         
                                                      
