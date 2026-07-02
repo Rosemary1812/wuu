@@ -480,6 +480,33 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
+  it("disengages auto-follow when an upward scroll event leaves the bottom without preflight intent", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1400);
+
+    act(() => {
+      // Native scrollbar drags and some platform scroll paths can deliver
+      // only the scroll event. Once scrollTop has moved upward away from
+      // the latest content, auto-follow must stop before final-answer settle
+      // frames or fold-collapse re-anchors can pull the user back down.
+      layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 120;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(layout.scrollTop).toBe(2000 - 600 - 120);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(2000 - 600 - 120);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
   it("disengages auto-follow on the first scroll after the conversation remounts with taller content", () => {
     mount({
       scrollHeight: 2000,

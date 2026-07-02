@@ -480,6 +480,19 @@ export function useConversationScrollState({
       nextAutoFollow = false;
       setAutoFollow(false);
       setAutoFollowOverflowAnchor(node, false);
+    } else if (
+      conversationAutoFollowRef.current &&
+      scrolledUp &&
+      !atLatestView &&
+      node.scrollTop < maxScrollTop(node) - 1
+    ) {
+      // Native scrollbar drags and some platform scroll paths can arrive as
+      // a bare scroll event. If the viewport moved upward away from latest
+      // content, treat it as user control even without a prior wheel/key/touch.
+      suppressAutoFollowRearmRef.current = false;
+      nextAutoFollow = false;
+      setAutoFollow(false);
+      setAutoFollowOverflowAnchor(node, false);
     } else if (atLatestView && suppressAutoFollowRearmRef.current) {
       // Query-history / turn-rail jumps are programmatic smooth scrolls.
       // The browser can emit an unchanged or tiny upward scroll event while
