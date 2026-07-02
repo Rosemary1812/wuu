@@ -695,6 +695,49 @@ func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing
 	}
 }
 
+func TestRunToolLoop_RejectsInceptionBatchBeforeSiblingExecution(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{
+			{ID: "write_1", Name: "run_shell", Arguments: `{}`},
+			{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["x"],"next_action":"continue"}}`},
+		}},
+		{Content: "continued after rejection"},
+	}}
+	tools := &fakeLoopTools{defs: []providers.ToolDefinition{
+		{Name: "run_shell"},
+		{Name: compact.InceptionToolName},
+	}}
+	cfg := LoopConfig{
+		Model:           "m",
+		Tools:           tools,
+		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
+	}
+	var rejections []ToolBatchRejectionInfo
+	cfg.OnToolBatchRejected = func(info ToolBatchRejectionInfo) {
+		rejections = append(rejections, info)
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "user", Content: "do it"}}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HistoryRewritten {
+		t.Fatal("rejected barrier batch must not rewrite history")
+	}
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("rejected barrier batch must not execute any sibling tool, got %+v", calls)
+	}
+	if len(rejections) != 1 || rejections[0].BarrierTool != compact.InceptionToolName || rejections[0].ToolCallCount != 2 {
+		t.Fatalf("unexpected barrier rejection metadata: %+v", rejections)
+	}
+	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
+		t.Fatalf("rejected batch must still produce provider-valid tool results: %v\n%+v", err, res.NewMessages)
+	}
+	if res.Content != "continued after rejection" {
+		t.Fatalf("unexpected final content %q", res.Content)
+	}
+}
+
 func TestRunToolLoop_ToolCallThenAnswer(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "run_shell", Arguments: `{}`}}},

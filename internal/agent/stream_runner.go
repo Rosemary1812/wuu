@@ -96,6 +96,9 @@ type StreamRunner struct {
 	OnRequestContext func(info RequestContextInfo)
 	// OnCompactAttempt receives metadata-only compact attempt diagnostics.
 	OnCompactAttempt func(info CompactAttemptInfo)
+	// OnToolBatchRejected receives metadata-only diagnostics for whole
+	// tool-call batches rejected before any tool executes.
+	OnToolBatchRejected func(info ToolBatchRejectionInfo)
 
 	// AfterTurn, when set, is invoked after a successful turn has
 	// completed and usage state has been committed. It is best-effort:
@@ -326,6 +329,11 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				Content:       notice,
 				CompactReason: string(info.Reason),
 			})
+		},
+		OnToolBatchRejected: func(info ToolBatchRejectionInfo) {
+			if r.OnToolBatchRejected != nil {
+				r.OnToolBatchRejected(info)
+			}
 		},
 		UsageTracker:                runUsage,
 		Effort:                      r.Effort,

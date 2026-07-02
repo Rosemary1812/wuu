@@ -131,6 +131,16 @@ type CompactAttemptInfo struct {
 	Error                         string
 }
 
+// ToolBatchRejectionInfo describes a whole assistant tool-call batch that was
+// rejected before execution because a history-rewriting barrier tool appeared
+// with sibling tool calls. It is metadata-only and excludes raw arguments.
+type ToolBatchRejectionInfo struct {
+	StepIndex     int
+	BarrierTool   string
+	SiblingTools  []string
+	ToolCallCount int
+}
+
 // RequestContextInfo summarizes request-only model context assembled before a
 // provider call. It intentionally excludes raw prompt text.
 type RequestContextInfo struct {
@@ -268,6 +278,10 @@ type LoopConfig struct {
 	// OnCompactAttempt is invoked for every compact attempt, including
 	// failed and no-op attempts. It is intended for diagnostics and traces.
 	OnCompactAttempt func(info CompactAttemptInfo)
+	// OnToolBatchRejected is invoked when the loop rejects an entire
+	// assistant tool-call batch before execution because a barrier tool was
+	// called with siblings.
+	OnToolBatchRejected func(info ToolBatchRejectionInfo)
 	// UsageTracker, when non-nil, is the caller-owned conversation
 	// usage state to reuse across runs. This lets the loop make the
 	// same compact decision before the first request of a new turn

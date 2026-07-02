@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 
+	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
@@ -273,9 +275,13 @@ func (r *TurnToolRuntime) ExecuteFinalCalls(
 	ctx context.Context,
 	calls []providers.ToolCall,
 	onResult func(providers.ToolCall, string),
+	onRejected ...func(ToolBatchRejectionInfo),
 ) []providers.ChatMessage {
 	if r == nil {
 		r = NewTurnToolRuntime(nil)
+	}
+	if msgs, rejected := r.rejectBarrierToolBatch(calls, onResult, firstToolBatchRejectionCallback(onRejected)); rejected {
+		return msgs
 	}
 	r.registerFinalCalls(calls)
 	batches := partitionToolCalls(r.executor, calls)
@@ -286,6 +292,94 @@ func (r *TurnToolRuntime) ExecuteFinalCalls(
 		r.requestContext = append(r.requestContext, batchResult.requestContext...)
 	}
 	return toolMessages
+}
+
+func (r *TurnToolRuntime) rejectBarrierToolBatch(
+	calls []providers.ToolCall,
+	onResult func(providers.ToolCall, string),
+	onRejected func(ToolBatchRejectionInfo),
+) ([]providers.ChatMessage, bool) {
+	if len(calls) <= 1 {
+		return nil, false
+	}
+	barrierName := ""
+	for _, call := range calls {
+		if isBarrierTool(call.Name) {
+			barrierName = strings.TrimSpace(call.Name)
+			break
+		}
+	}
+	if barrierName == "" {
+		return nil, false
+	}
+	r.Cancel()
+	if onRejected != nil {
+		onRejected(ToolBatchRejectionInfo{
+			StepIndex:     r.currentStepIndex(),
+			BarrierTool:   barrierName,
+			SiblingTools:  siblingToolNames(calls, barrierName),
+			ToolCallCount: len(calls),
+		})
+	}
+	msgs := make([]providers.ChatMessage, 0, len(calls))
+	for _, call := range calls {
+		result := barrierToolBatchRejectionResult(call, barrierName)
+		if onResult != nil {
+			onResult(call, result)
+		}
+		msgs = append(msgs, toolResultMessage(call, result, nil, false))
+	}
+	return msgs, true
+}
+
+func firstToolBatchRejectionCallback(callbacks []func(ToolBatchRejectionInfo)) func(ToolBatchRejectionInfo) {
+	for _, callback := range callbacks {
+		if callback != nil {
+			return callback
+		}
+	}
+	return nil
+}
+
+func (r *TurnToolRuntime) currentStepIndex() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stepIndex == nil {
+		return 0
+	}
+	return *r.stepIndex
+}
+
+func siblingToolNames(calls []providers.ToolCall, barrierName string) []string {
+	out := make([]string, 0, len(calls)-1)
+	for _, call := range calls {
+		name := strings.TrimSpace(call.Name)
+		if name == "" || strings.EqualFold(name, barrierName) {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func barrierToolBatchRejectionResult(call providers.ToolCall, barrierName string) string {
+	if isBarrierTool(call.Name) {
+		name := strings.TrimSpace(call.Name)
+		return errorJSON(errors.New(name + " must be called alone; re-issue it as the only tool call after reviewing sibling results"))
+	}
+	return errorJSON(errors.New("not executed because a barrier tool was called in the same assistant message: " + strings.TrimSpace(barrierName)))
+}
+
+func isBarrierTool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case compact.InceptionToolName, compact.HelpMeToolName, compact.AwaitAgentsToolName:
+		return true
+	default:
+		return false
+	}
 }
 
 // TakeRequestContextSegments returns request-only context produced by tool

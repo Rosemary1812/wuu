@@ -142,23 +142,24 @@ type FinalRecord struct {
 }
 
 type ReplaySummary struct {
-	Path              string                 `json:"path,omitempty"`
-	Mode              string                 `json:"mode"`
-	EventCount        int                    `json:"event_count"`
-	EventTypes        map[string]int         `json:"event_types,omitempty"`
-	Turns             []TurnRecord           `json:"turns,omitempty"`
-	LatestTurn        *TurnRecord            `json:"latest_turn,omitempty"`
-	ContextRequests   []RequestContextRecord `json:"context_requests,omitempty"`
-	ProviderStates    []ProviderStateRecord  `json:"provider_states,omitempty"`
-	CompactAttempts   []CompactRecord        `json:"compact_attempts,omitempty"`
-	RequestSteps      []RequestStepSummary   `json:"request_steps,omitempty"`
-	ContextBlockKinds []string               `json:"context_block_kinds,omitempty"`
-	ToolInventory     []tools.ToolInfo       `json:"tool_inventory,omitempty"`
-	ToolNames         []string               `json:"tool_names,omitempty"`
-	ToolSummary       *ToolSummary           `json:"tool_summary,omitempty"`
-	Final             *FinalRecord           `json:"final,omitempty"`
-	Complete          bool                   `json:"complete"`
-	Warnings          []string               `json:"warnings,omitempty"`
+	Path                       string                            `json:"path,omitempty"`
+	Mode                       string                            `json:"mode"`
+	EventCount                 int                               `json:"event_count"`
+	EventTypes                 map[string]int                    `json:"event_types,omitempty"`
+	Turns                      []TurnRecord                      `json:"turns,omitempty"`
+	LatestTurn                 *TurnRecord                       `json:"latest_turn,omitempty"`
+	ContextRequests            []RequestContextRecord            `json:"context_requests,omitempty"`
+	ProviderStates             []ProviderStateRecord             `json:"provider_states,omitempty"`
+	CompactAttempts            []CompactRecord                   `json:"compact_attempts,omitempty"`
+	BarrierToolBatchRejections []BarrierToolBatchRejectionRecord `json:"barrier_tool_batch_rejections,omitempty"`
+	RequestSteps               []RequestStepSummary              `json:"request_steps,omitempty"`
+	ContextBlockKinds          []string                          `json:"context_block_kinds,omitempty"`
+	ToolInventory              []tools.ToolInfo                  `json:"tool_inventory,omitempty"`
+	ToolNames                  []string                          `json:"tool_names,omitempty"`
+	ToolSummary                *ToolSummary                      `json:"tool_summary,omitempty"`
+	Final                      *FinalRecord                      `json:"final,omitempty"`
+	Complete                   bool                              `json:"complete"`
+	Warnings                   []string                          `json:"warnings,omitempty"`
 }
 
 type RequestContextRecord struct {
@@ -237,6 +238,13 @@ type CompactRecord struct {
 	PreservedUserSuffixStartIndex int    `json:"preserved_user_suffix_start_index,omitempty"`
 	SummaryBytes                  int    `json:"summary_bytes,omitempty"`
 	Error                         string `json:"error,omitempty"`
+}
+
+type BarrierToolBatchRejectionRecord struct {
+	StepIndex     int      `json:"step_index"`
+	BarrierTool   string   `json:"barrier_tool,omitempty"`
+	SiblingTools  []string `json:"sibling_tools,omitempty"`
+	ToolCallCount int      `json:"tool_call_count,omitempty"`
 }
 
 type RequestStepSummary struct {
@@ -396,6 +404,12 @@ func replayEvent(summary *ReplaySummary, eventType, turnID string, data json.Raw
 			return err
 		}
 		summary.CompactAttempts = append(summary.CompactAttempts, records...)
+	case "barrier_tool_batch_rejected":
+		var records []BarrierToolBatchRejectionRecord
+		if err := json.Unmarshal(data, &records); err != nil {
+			return err
+		}
+		summary.BarrierToolBatchRejections = append(summary.BarrierToolBatchRejections, records...)
 	case "tool_inventory":
 		var inventory []tools.ToolInfo
 		if err := json.Unmarshal(data, &inventory); err != nil {
@@ -673,7 +687,7 @@ func (summary *ReplaySummary) finalizeToolSummary() {
 	summary.ToolSummary.argumentCounts = nil
 }
 
-func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests []RequestContextRecord, providerStates []ProviderStateRecord, compactAttempts []CompactRecord) error {
+func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []tools.ToolInfo, records []tools.ToolExecutionRecord, contextRequests []RequestContextRecord, providerStates []ProviderStateRecord, compactAttempts []CompactRecord, barrierRejectionsArg ...[]BarrierToolBatchRejectionRecord) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil
@@ -723,6 +737,19 @@ func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []too
 			Data:      redactCompactRecords(compactAttempts),
 		})
 	}
+	var barrierRejections []BarrierToolBatchRejectionRecord
+	if len(barrierRejectionsArg) > 0 {
+		barrierRejections = barrierRejectionsArg[0]
+	}
+	if len(barrierRejections) > 0 {
+		events = append(events, Event{
+			Type:      "barrier_tool_batch_rejected",
+			ThreadID:  turn.ThreadID,
+			TurnID:    turn.TurnID,
+			CreatedAt: createdAt,
+			Data:      cloneBarrierToolBatchRejectionRecords(barrierRejections),
+		})
+	}
 	if len(inventory) > 0 {
 		events = append(events, Event{
 			Type:      "tool_inventory",
@@ -756,6 +783,18 @@ func AppendTurn(path string, turn TurnRecord, final FinalRecord, inventory []too
 		}
 	}
 	return nil
+}
+
+func cloneBarrierToolBatchRejectionRecords(records []BarrierToolBatchRejectionRecord) []BarrierToolBatchRejectionRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]BarrierToolBatchRejectionRecord, len(records))
+	for i, record := range records {
+		out[i] = record
+		out[i].SiblingTools = append([]string(nil), record.SiblingTools...)
+	}
+	return out
 }
 
 func redactCompactRecords(records []CompactRecord) []CompactRecord {

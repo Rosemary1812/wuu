@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -198,6 +199,65 @@ func TestTurnToolRuntimeAttachesDiscoveredToolsToToolResult(t *testing.T) {
 	msgs[0].DiscoveredTools[0].Name = "mutated"
 	if tools.discovered["spawn_1"][0].Name != "await_agents" {
 		t.Fatalf("tool result discovered tools should be cloned before attaching")
+	}
+}
+
+func TestTurnToolRuntimeRejectsBarrierToolBatchBeforeExecutingSiblings(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{}
+	runtime := NewTurnToolRuntime(tools)
+	var seen []providers.ToolCall
+	var rejections []ToolBatchRejectionInfo
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+		{ID: "call_write", Name: "run_shell"},
+		{ID: "call_inception", Name: "inception"},
+	}, func(call providers.ToolCall, _ string) {
+		seen = append(seen, call)
+	}, func(info ToolBatchRejectionInfo) {
+		rejections = append(rejections, info)
+	})
+
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("barrier preflight must reject before executing siblings, got calls %+v", calls)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected paired results for every tool call, got %+v", msgs)
+	}
+	if msgs[0].ToolCallID != "call_write" || !strings.Contains(msgs[0].Content, "not executed because a barrier tool was called") {
+		t.Fatalf("unexpected sibling rejection result: %+v", msgs[0])
+	}
+	if msgs[1].ToolCallID != "call_inception" || !strings.Contains(msgs[1].Content, "inception must be called alone") {
+		t.Fatalf("unexpected barrier rejection result: %+v", msgs[1])
+	}
+	if len(seen) != 2 || seen[0].ID != "call_write" || seen[1].ID != "call_inception" {
+		t.Fatalf("OnToolResult should receive synthetic results in order, got %+v", seen)
+	}
+	if len(rejections) != 1 ||
+		rejections[0].BarrierTool != "inception" ||
+		rejections[0].ToolCallCount != 2 ||
+		len(rejections[0].SiblingTools) != 1 ||
+		rejections[0].SiblingTools[0] != "run_shell" {
+		t.Fatalf("unexpected barrier rejection metadata: %+v", rejections)
+	}
+}
+
+func TestTurnToolRuntimeExecutesBarrierToolWhenCalledAlone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{}
+	runtime := NewTurnToolRuntime(tools)
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call_inception", Name: "inception"}}, nil)
+
+	if calls := tools.recordedCalls(); len(calls) != 1 || calls[0].ID != "call_inception" {
+		t.Fatalf("single barrier tool should execute normally, got %+v", calls)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Content, "call_inception") {
+		t.Fatalf("unexpected single barrier result: %+v", msgs)
 	}
 }
 

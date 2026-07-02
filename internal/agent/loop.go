@@ -397,7 +397,7 @@ func RunToolLoop(
 			toolRuntime = NewTurnToolRuntime(cfg.Tools)
 		}
 		toolRuntime.SetStepIndex(stepIdx)
-		orderedToolMessages := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult)
+		orderedToolMessages := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult, cfg.OnToolBatchRejected)
 		postToolContextSegments = append(postToolContextSegments, toolRuntime.TakeRequestContextSegments()...)
 		enforceAggregateResultBudget(orderedToolMessages)
 		for _, toolMsg := range orderedToolMessages {

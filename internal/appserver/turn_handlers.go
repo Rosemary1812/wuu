@@ -698,6 +698,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	baseBeforeRequestContext := runner.BeforeRequestContext
 	baseOnRequestContext := runner.OnRequestContext
 	baseOnCompactAttempt := runner.OnCompactAttempt
+	baseOnToolBatchRejected := runner.OnToolBatchRejected
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
 	// provider exposes stream-time cumulative usage. We keep completed calls
@@ -748,6 +749,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	var contextRequests []sessiontrace.RequestContextRecord
 	var providerStates []sessiontrace.ProviderStateRecord
 	var compactAttempts []sessiontrace.CompactRecord
+	var barrierRejections []sessiontrace.BarrierToolBatchRejectionRecord
 	runner.OnTokenUsage = func(usage providers.TokenUsage) {
 		if baseOnTokenUsage != nil {
 			baseOnTokenUsage(usage)
@@ -807,6 +809,12 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		}
 		compactAttempts = append(compactAttempts, compactRecord(info))
 	}
+	runner.OnToolBatchRejected = func(info agent.ToolBatchRejectionInfo) {
+		if baseOnToolBatchRejected != nil {
+			baseOnToolBatchRejected(info)
+		}
+		barrierRejections = append(barrierRejections, barrierToolBatchRejectionRecord(info))
+	}
 	runner.BeforeStep = func() []providers.ChatMessage {
 		var messages []providers.ChatMessage
 		if baseBeforeStep != nil {
@@ -837,6 +845,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		runner.BeforeRequestContext = baseBeforeRequestContext
 		runner.OnRequestContext = baseOnRequestContext
 		runner.OnCompactAttempt = baseOnCompactAttempt
+		runner.OnToolBatchRejected = baseOnToolBatchRejected
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
 	}()
@@ -953,7 +962,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
-	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turnRuntime, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts)
+	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turnRuntime, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts, barrierRejections)
 	if traceErr != nil {
 		tracePath = ""
 	}
@@ -1057,7 +1066,7 @@ func stopActiveGoalAfterTurnError(threadRuntime *runtime.ThreadRuntime, turnErr 
 	return nil
 }
 
-func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turnRuntime turnRuntimeSnapshot, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord) (string, error) {
+func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *agent.StreamRunner, threadID string, turnRuntime turnRuntimeSnapshot, turn Turn, res agent.LoopResult, runErr error, toolRecordStart int, contextRequests []sessiontrace.RequestContextRecord, providerStates []sessiontrace.ProviderStateRecord, compactAttempts []sessiontrace.CompactRecord, barrierRejectionsArg ...[]sessiontrace.BarrierToolBatchRejectionRecord) (string, error) {
 	if threadRuntime == nil || threadRuntime.Toolkit == nil {
 		return "", nil
 	}
@@ -1124,7 +1133,11 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 	} else if toolRecordStart >= len(records) {
 		records = nil
 	}
-	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests, providerStates, compactAttempts); err != nil {
+	var barrierRejections []sessiontrace.BarrierToolBatchRejectionRecord
+	if len(barrierRejectionsArg) > 0 {
+		barrierRejections = barrierRejectionsArg[0]
+	}
+	if err := sessiontrace.AppendTurn(tracePath, turnRecord, finalRecord, threadRuntime.Toolkit.ToolInfos(), records, contextRequests, providerStates, compactAttempts, barrierRejections); err != nil {
 		return "", err
 	}
 	return tracePath, nil
@@ -1144,6 +1157,15 @@ func compactRecord(info agent.CompactAttemptInfo) sessiontrace.CompactRecord {
 		PreservedUserSuffixStartIndex: info.PreservedUserSuffixStartIndex,
 		SummaryBytes:                  info.SummaryBytes,
 		Error:                         info.Error,
+	}
+}
+
+func barrierToolBatchRejectionRecord(info agent.ToolBatchRejectionInfo) sessiontrace.BarrierToolBatchRejectionRecord {
+	return sessiontrace.BarrierToolBatchRejectionRecord{
+		StepIndex:     info.StepIndex,
+		BarrierTool:   info.BarrierTool,
+		SiblingTools:  append([]string(nil), info.SiblingTools...),
+		ToolCallCount: info.ToolCallCount,
 	}
 }
 

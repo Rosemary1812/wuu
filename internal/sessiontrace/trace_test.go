@@ -98,16 +98,22 @@ func TestAppendTurnWritesAgentFriendlyEvents(t *testing.T) {
 			MessagesBefore: 10,
 			Error:          "compact failed API_KEY=secret-value-compact",
 		}},
+		[]BarrierToolBatchRejectionRecord{{
+			StepIndex:     0,
+			BarrierTool:   "inception",
+			SiblingTools:  []string{"run_shell"},
+			ToolCallCount: 2,
+		}},
 	)
 	if err != nil {
 		t.Fatalf("AppendTurn: %v", err)
 	}
 
 	events := readTraceEvents(t, path)
-	if len(events) != 7 {
-		t.Fatalf("expected 7 events, got %d: %+v", len(events), events)
+	if len(events) != 8 {
+		t.Fatalf("expected 8 events, got %d: %+v", len(events), events)
 	}
-	wantTypes := []string{"turn", "context_requests", "provider_states", "compact_attempts", "tool_inventory", "tool_records", "final"}
+	wantTypes := []string{"turn", "context_requests", "provider_states", "compact_attempts", "barrier_tool_batch_rejected", "tool_inventory", "tool_records", "final"}
 	for i, want := range wantTypes {
 		if events[i].Type != want || events[i].ThreadID != "thread-1" || events[i].TurnID != "turn-1" {
 			t.Fatalf("unexpected event %d: %+v", i, events[i])
