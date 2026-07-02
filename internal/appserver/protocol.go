@@ -1236,6 +1236,7 @@ const (
 	ThreadItemToolCall          ThreadItemType = "tool_call"
 	ThreadItemCollabAgentTool   ThreadItemType = "collab_agent_tool_call"
 	ThreadItemParticipantMsg    ThreadItemType = "participant_message"
+	ThreadItemTaskCard          ThreadItemType = "task_card"
 	ThreadItemContextCompaction ThreadItemType = "context_compaction"
 	ThreadItemError             ThreadItemType = "error"
 )
@@ -1278,9 +1279,27 @@ type ThreadItem struct {
 	FinishReason string                     `json:"finish_reason,omitempty"`
 	StopReason   string                     `json:"stop_reason,omitempty"`
 	Truncated    bool                       `json:"truncated,omitempty"`
+	Task         *TaskCard                  `json:"task,omitempty"`
 	// Participant attributes this item to a conversation participant.
 	// Populated for agent-originated items; nil means the thread owner.
 	Participant *participant.Summary `json:"participant,omitempty"`
+}
+
+type TaskCard struct {
+	ID           string               `json:"id"`
+	Name         string               `json:"name,omitempty"`
+	Role         string               `json:"role,omitempty"`
+	Description  string               `json:"description,omitempty"`
+	Status       string               `json:"status"`
+	AgentID      string               `json:"agent_id,omitempty"`
+	SubthreadID  string               `json:"subthread_id,omitempty"`
+	ReplyCount   int                  `json:"reply_count,omitempty"`
+	Participant  *participant.Summary `json:"participant,omitempty"`
+	StartedAt    time.Time            `json:"started_at,omitempty"`
+	CompletedAt  time.Time            `json:"completed_at,omitempty"`
+	InputTokens  int                  `json:"input_tokens,omitempty"`
+	OutputTokens int                  `json:"output_tokens,omitempty"`
+	Error        string               `json:"error,omitempty"`
 }
 
 type ThreadItemImage struct {

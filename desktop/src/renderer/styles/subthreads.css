@@ -1,0 +1,111 @@
+.conversation-subthread-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  width: var(--environment-panel-reserved-width);
+  max-width: min(420px, 100vw - 48px);
+  grid-template-rows: 56px minmax(0, 1fr);
+  border-left: 1px solid var(--hairline-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.conversation-pane.session-tabs-visible .conversation-subthread-panel {
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+
+.conversation-subthread-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-3);
+  padding: 0 14px;
+}
+
+.conversation-subthread-title-group {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.conversation-subthread-title-group h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-subthread-meta {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+}
+
+.conversation-subthread-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.conversation-subthread-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.conversation-subthread-icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.conversation-subthread-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 16px 28px;
+}
+
+.conversation-subthread-body .conversation-width {
+  width: 100%;
+}
+
+.conversation-subthread-body .turn {
+  margin-block: 0 18px;
+}
+
+.conversation-subthread-state {
+  display: flex;
+  min-height: 112px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+}
+
+.conversation-subthread-state svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  animation: conversation-subthread-spin 900ms linear infinite;
+}
+
+.conversation-subthread-state.error {
+  color: var(--danger);
+}
+
+@keyframes conversation-subthread-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

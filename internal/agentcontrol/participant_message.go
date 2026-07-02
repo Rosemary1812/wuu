@@ -21,6 +21,7 @@ type ParticipantMessage struct {
 	TaskName      string
 	AgentType     string
 	Kind          string
+	ThreadID      string
 	Text          string
 	CreatedAt     time.Time
 }
@@ -85,8 +86,8 @@ func (c *AgentControl) ParticipantSpeechEnabled(agentID string) bool {
 }
 
 // PostParticipantMessage records that a worker explicitly chose to occupy the
-// visible conversation stream. Phase 2 only supports result posts.
-func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind, text string) (ParticipantMessage, error) {
+// visible conversation stream or a conversation subthread.
+func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind, text, threadID string) (ParticipantMessage, error) {
 	if c == nil || c.manager == nil {
 		return ParticipantMessage{}, errors.New("post_message: agent control not configured")
 	}
@@ -101,12 +102,18 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 	if kind == "" {
 		kind = "result"
 	}
-	if kind != "result" {
-		return ParticipantMessage{}, fmt.Errorf("post_message: kind %q is not supported yet", kind)
+	switch kind {
+	case "result", "question", "update":
+	default:
+		return ParticipantMessage{}, fmt.Errorf("post_message: kind %q is not supported", kind)
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ParticipantMessage{}, errors.New("post_message: text is required")
+	}
+	threadID = strings.TrimSpace(threadID)
+	if kind == "update" && threadID == "" {
+		return ParticipantMessage{}, errors.New("post_message: thread_id is required for update messages")
 	}
 
 	worker := c.manager.Get(agentID)
@@ -128,6 +135,7 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 		TaskName:      snap.TaskName,
 		AgentType:     snap.Type,
 		Kind:          kind,
+		ThreadID:      threadID,
 		Text:          text,
 		CreatedAt:     time.Now().UTC(),
 	}
@@ -136,16 +144,20 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 	if c.participantResultPosts == nil {
 		c.participantResultPosts = make(map[string]struct{})
 	}
-	if _, exists := c.participantResultPosts[agentID]; exists {
-		c.participantMessagesMu.Unlock()
-		return ParticipantMessage{}, fmt.Errorf("post_message: agent %q already posted a result", agentID)
+	if kind == "result" {
+		if _, exists := c.participantResultPosts[agentID]; exists {
+			c.participantMessagesMu.Unlock()
+			return ParticipantMessage{}, fmt.Errorf("post_message: agent %q already posted a result", agentID)
+		}
 	}
 	listeners := append([]chan<- ParticipantMessage(nil), c.participantMessages...)
 	if len(listeners) == 0 {
 		c.participantMessagesMu.Unlock()
 		return ParticipantMessage{}, errors.New("post_message: no conversation message sink is attached")
 	}
-	c.participantResultPosts[agentID] = struct{}{}
+	if kind == "result" {
+		c.participantResultPosts[agentID] = struct{}{}
+	}
 	c.participantMessagesMu.Unlock()
 
 	for _, listener := range listeners {

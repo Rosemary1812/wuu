@@ -50,6 +50,7 @@ function render({
   latestAgentMessageID,
   streaming,
   onOpenAgent,
+  onOpenSubthread,
 }: {
   item: ThreadItem;
   turnStatus: Turn["status"];
@@ -57,6 +58,7 @@ function render({
   latestAgentMessageID?: string;
   streaming: boolean;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
 }): void {
   if (!container) {
     container = document.createElement("div");
@@ -75,6 +77,7 @@ function render({
         onStreamFrame={() => {}}
         onNoticeAction={() => {}}
         onOpenAgent={onOpenAgent}
+        onOpenSubthread={onOpenSubthread}
       />,
     );
   });
@@ -323,5 +326,53 @@ describe("ThreadItemView", () => {
     });
 
     expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
+  });
+
+  it("renders a task card and opens its subthread", () => {
+    const onOpenSubthread = vi.fn();
+    const item: ThreadItem = {
+      id: "task-card-agent-1",
+      type: "task_card",
+      status: "completed",
+      task: {
+        id: "agent-1",
+        name: "review auth flow",
+        role: "reviewer",
+        status: "running",
+        agent_id: "agent-1",
+        subthread_id: "cth-review",
+        reply_count: 2,
+        participant: {
+          id: "prt-reviewer",
+          name: "Reviewer",
+          kind: "ephemeral",
+          role: "reviewer",
+        },
+      },
+    };
+
+    render({
+      item,
+      turnStatus: "completed",
+      streaming: false,
+      onOpenSubthread,
+    });
+
+    expect(container?.querySelector(".task-card")?.textContent).toContain(
+      "review auth flow",
+    );
+    expect(container?.querySelector(".task-card")?.textContent).toContain(
+      "2 条回复",
+    );
+    const button = container?.querySelector<HTMLButtonElement>(
+      'button[aria-label="查看过程"]',
+    );
+    expect(button).not.toBeNull();
+
+    act(() => {
+      button?.click();
+    });
+
+    expect(onOpenSubthread).toHaveBeenCalledWith(item);
   });
 });

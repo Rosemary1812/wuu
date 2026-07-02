@@ -1370,11 +1370,12 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 			BaseRepo:  strings.TrimSpace(baseRepo),
 			CreatedAt: now,
 		},
-		Status:    harness.TaskStatusRunning,
-		LastRunID: runID,
-		CreatedAt: meta.CreatedAt,
-		UpdatedAt: now,
-		StartedAt: now,
+		Status:     harness.TaskStatusRunning,
+		LastRunID:  runID,
+		CardItemID: taskCardItemID(meta.ID),
+		CreatedAt:  meta.CreatedAt,
+		UpdatedAt:  now,
+		StartedAt:  now,
 	}
 	if task.CreatedAt.IsZero() {
 		task.CreatedAt = now
@@ -1447,10 +1448,11 @@ func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, 
 			Mode:     workspaceMode,
 			BaseRepo: strings.TrimSpace(baseRepo),
 		},
-		Status:    harness.TaskStatusQueued,
-		LastRunID: runID,
-		CreatedAt: meta.CreatedAt,
-		UpdatedAt: now,
+		Status:     harness.TaskStatusQueued,
+		LastRunID:  runID,
+		CardItemID: taskCardItemID(meta.ID),
+		CreatedAt:  meta.CreatedAt,
+		UpdatedAt:  now,
 	}
 	if task.CreatedAt.IsZero() {
 		task.CreatedAt = now
@@ -1474,6 +1476,14 @@ func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, 
 		Status:    string(harness.TaskStatusQueued),
 		CreatedAt: now,
 	})
+}
+
+func taskCardItemID(taskID string) string {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return ""
+	}
+	return "task-card-" + taskID
 }
 
 func (c *AgentControl) enqueuePreparedSpawn(prepared preparedSpawn) error {

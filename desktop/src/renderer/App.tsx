@@ -37,6 +37,7 @@ import {
 import { arrayMove } from "@dnd-kit/sortable";
 import type {
   Agent,
+  ConversationSubthread,
   DesktopProject,
   GitCommitResult,
   GitPullRequestResult,
@@ -116,6 +117,7 @@ import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
+import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -657,6 +659,15 @@ export function App(): JSX.Element {
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
     ContextCompositionEntry[]
   >([]);
+  const [openSubthreadPanel, setOpenSubthreadPanel] = useState<
+    | {
+        threadID: string;
+        subthread?: ConversationSubthread;
+        loading: boolean;
+        error?: string;
+      }
+    | undefined
+  >(undefined);
   const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
     [],
   );
@@ -1771,6 +1782,7 @@ export function App(): JSX.Element {
         !environmentPanelDismissed &&
         !emptyConversation));
   const environmentPanelVisible = environmentPanelTargetVisible;
+  const subthreadPanelVisible = Boolean(openSubthreadPanel);
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
@@ -1826,6 +1838,16 @@ export function App(): JSX.Element {
       setEnvironmentPanelMenu(null);
     }
   }, [environmentPanelMenu, environmentPanelVisible]);
+
+  useEffect(() => {
+    if (
+      openSubthreadPanel &&
+      activeThreadID &&
+      openSubthreadPanel.threadID !== activeThreadID
+    ) {
+      setOpenSubthreadPanel(undefined);
+    }
+  }, [activeThreadID, openSubthreadPanel]);
 
   const handleCloseFilePreview = useCallback((): void => {
     setRightPanelFilePath(undefined);
@@ -2583,6 +2605,68 @@ export function App(): JSX.Element {
               : entry,
           ),
         );
+      }
+    })();
+  }
+
+  function openConversationSubthread(thread: Thread, item: ThreadItem): void {
+    const subthreadID = item.task?.subthread_id;
+    setEnvironmentPanelOpen(false);
+    setEnvironmentPanelDismissed(true);
+    setOpenSubthreadPanel({
+      threadID: thread.id,
+      subthread: undefined,
+      loading: true,
+    });
+    void (async () => {
+      try {
+        const result = await window.wuu.openConversationSubthread(thread.id, {
+          subthreadId: subthreadID,
+          anchorItemId: subthreadID ? undefined : item.id,
+          title: item.task?.name,
+          createdBy: item.participant?.id,
+        });
+        setOpenSubthreadPanel({
+          threadID: thread.id,
+          subthread: result.subthread,
+          loading: false,
+        });
+      } catch (error) {
+        setOpenSubthreadPanel({
+          threadID: thread.id,
+          loading: false,
+          error: desktopApiErrorMessage(error, "无法打开 thread"),
+        });
+      }
+    })();
+  }
+
+  function resolveOpenConversationSubthread(resolved: boolean): void {
+    const current = openSubthreadPanel;
+    if (!current?.subthread) {
+      return;
+    }
+    const threadID = current.threadID;
+    const subthreadID = current.subthread.id;
+    setOpenSubthreadPanel({ ...current, loading: true });
+    void (async () => {
+      try {
+        const result = await window.wuu.resolveConversationSubthread(
+          threadID,
+          subthreadID,
+          resolved,
+        );
+        setOpenSubthreadPanel({
+          threadID,
+          subthread: result.subthread,
+          loading: false,
+        });
+      } catch (error) {
+        setOpenSubthreadPanel({
+          ...current,
+          loading: false,
+          error: desktopApiErrorMessage(error, "无法更新 thread"),
+        });
       }
     })();
   }
@@ -6312,7 +6396,9 @@ export function App(): JSX.Element {
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
-          environmentPanelReserved ? " environment-panel-reserved" : ""
+          environmentPanelReserved || subthreadPanelVisible ? " environment-panel-reserved" : ""
+        }${
+          subthreadPanelVisible ? " subthread-panel-visible" : ""
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
         }`}
@@ -6525,6 +6611,27 @@ export function App(): JSX.Element {
           }
         />
 
+        {openSubthreadPanel ? (
+          <ConversationSubthreadPanel
+            subthread={openSubthreadPanel.subthread}
+            loading={openSubthreadPanel.loading}
+            error={openSubthreadPanel.error}
+            cwd={activeThread?.cwd ?? state.activeContext?.cwd}
+            onClose={() => setOpenSubthreadPanel(undefined)}
+            onResolve={resolveOpenConversationSubthread}
+            onOpenFile={openWorkspaceFile}
+            onOpenAgent={(agentID) => {
+              const agent = activeThread?.child_agents?.find(
+                (candidate) => candidate.id === agentID,
+              );
+              if (agent) {
+                void selectChildAgent(agent);
+              }
+            }}
+            onNoticeAction={handleCachedPaneNoticeAction}
+          />
+        ) : null}
+
         {viewContextSwitchPending ? <ViewSwitchLoading /> : null}
 
         {state.initialized && !previewingLaunch ? (
@@ -6594,6 +6701,7 @@ export function App(): JSX.Element {
                 onOpenAgent={(agent) => {
                   void selectChildAgent(agent);
                 }}
+                onOpenSubthread={openConversationSubthread}
                 onEditMessage={handleCachedPaneEditMessage}
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
@@ -6801,6 +6909,7 @@ type CachedConversationPanesProps = {
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
   onOpenFile?: (path: string) => void;
   onOpenAgent: (agent: Agent) => void;
+  onOpenSubthread: (thread: Thread, item: ThreadItem) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
   onCancelEditMessage: () => void;
   onSubmitEditMessage: (
@@ -6846,6 +6955,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onForkMessage,
   onOpenFile,
   onOpenAgent,
+  onOpenSubthread,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
@@ -6944,6 +7054,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                         void onOpenAgent(agent);
                       }
                     }}
+                    onOpenSubthread={(item) => onOpenSubthread(thread, item)}
                     latestAgentMessageID={threadLatestAgentMessageID}
                     isLatestTurn={
                       thread.turns[thread.turns.length - 1]?.id === turn.id

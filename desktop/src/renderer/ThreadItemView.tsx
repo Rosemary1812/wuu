@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { ChevronDown, ChevronUp, Paperclip, Send } from "lucide-react";
+import { ChevronDown, ChevronUp, PanelRightOpen, Paperclip, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import {
@@ -62,6 +62,7 @@ export function ThreadItemView({
   onSubmitEditMessage,
   onNoticeAction,
   onOpenAgent,
+  onOpenSubthread,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -87,6 +88,7 @@ export function ThreadItemView({
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
 }): JSX.Element | null {
   switch (item.type) {
     case "user_message": {
@@ -267,6 +269,15 @@ export function ThreadItemView({
         </article>
       );
     }
+    case "task_card":
+      return (
+        <TaskCardItem
+          item={item}
+          onOpenSubthread={
+            item.task?.subthread_id ? () => onOpenSubthread?.(item) : undefined
+          }
+        />
+      );
     case "context_compaction":
       return (
         <ContextCompactionNotice
@@ -284,6 +295,81 @@ export function ThreadItemView({
       );
     default:
       return null;
+  }
+}
+
+function TaskCardItem({
+  item,
+  onOpenSubthread,
+}: {
+  item: ThreadItem;
+  onOpenSubthread?: () => void;
+}): JSX.Element | null {
+  const task = item.task;
+  if (!task) {
+    return null;
+  }
+  const title = task.name?.trim() || task.id;
+  const status = taskStatusLabel(task.status);
+  const replyCount = task.reply_count ?? 0;
+  return (
+    <article className="task-card">
+      <header className="task-card-header">
+        <div className="task-card-title-group">
+          <span className="task-card-title">{title}</span>
+          <span className={`task-card-status task-card-status--${task.status || "unknown"}`}>
+            {status}
+          </span>
+        </div>
+        {task.participant ? (
+          <ParticipantChip participant={task.participant} size="sm" />
+        ) : item.participant ? (
+          <ParticipantChip participant={item.participant} size="sm" />
+        ) : null}
+      </header>
+      {task.description ? (
+        <p className="task-card-description">{task.description}</p>
+      ) : null}
+      <footer className="task-card-footer">
+        {task.role ? <span className="task-card-meta">{task.role}</span> : null}
+        {replyCount > 0 ? (
+          <span className="task-card-meta">{replyCount} 条回复</span>
+        ) : null}
+        {onOpenSubthread ? (
+          <button
+            type="button"
+            className="task-card-open-button"
+            aria-label="查看过程"
+            onClick={onOpenSubthread}
+          >
+            <PanelRightOpen aria-hidden="true" />
+            <span>查看过程</span>
+          </button>
+        ) : null}
+      </footer>
+    </article>
+  );
+}
+
+function taskStatusLabel(status: string): string {
+  switch (status) {
+    case "pending":
+      return "待开始";
+    case "queued":
+      return "排队中";
+    case "running":
+      return "进行中";
+    case "awaiting_report":
+      return "待报告";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "失败";
+    case "cancelled":
+    case "canceled":
+      return "已取消";
+    default:
+      return status || "未知";
   }
 }
 

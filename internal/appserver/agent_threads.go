@@ -118,6 +118,7 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 				Name:          name,
 				ParticipantID: msg.ParticipantID,
 				PostKind:      msg.Kind,
+				ThreadID:      msg.ThreadID,
 				At:            now,
 			}
 			if strings.TrimSpace(s.rt.SessionDir) != "" {
@@ -128,6 +129,7 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 					Name:          rec.Name,
 					ParticipantID: rec.ParticipantID,
 					PostKind:      rec.PostKind,
+					ThreadID:      rec.ThreadID,
 					At:            rec.At,
 				})
 				if err == nil {
@@ -135,6 +137,9 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 						_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
 					}
 				}
+			}
+			if strings.TrimSpace(rec.ThreadID) != "" {
+				continue
 			}
 
 			th := s.thread(threadID)

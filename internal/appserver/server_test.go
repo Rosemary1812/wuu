@@ -5420,12 +5420,27 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	if len(result.Threads) != 1 {
 		t.Fatalf("expected one root thread, got %+v", result.Threads)
 	}
-	agents := result.Threads[0].ChildAgents
+	thread := result.Threads[0]
+	agents := thread.ChildAgents
 	if len(agents) != 1 {
 		t.Fatalf("expected only the direct child agent, got %+v", agents)
 	}
 	if agents[0].ID != "worker-1" || agents[0].TaskName != "inspect" || agents[0].NestedCount != 1 || agents[0].NestedRunningCount != 1 {
 		t.Fatalf("unexpected child agent summary: %+v", agents[0])
+	}
+	if len(thread.Turns) == 0 || len(thread.Turns[0].Items) != 1 {
+		t.Fatalf("expected synthesized task card turn, got %+v", thread.Turns)
+	}
+	card := thread.Turns[0].Items[0]
+	if card.Type != ThreadItemTaskCard || card.Task == nil || card.Task.ID != "worker-1" || card.Task.SubthreadID == "" {
+		t.Fatalf("unexpected task card item: %+v", card)
+	}
+	subthreads, err := session.ListConversationThreads(rt.SessionDir, thread.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subthreads) != 1 || subthreads[0].AnchorItemID != "task-card-worker-1" {
+		t.Fatalf("expected task card subthread anchor, got %+v", subthreads)
 	}
 }
 

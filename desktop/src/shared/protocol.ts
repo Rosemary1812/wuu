@@ -575,6 +575,7 @@ export type ThreadItemType =
   | "tool_call"
   | "collab_agent_tool_call"
   | "participant_message"
+  | "task_card"
   | "context_compaction"
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
@@ -627,6 +628,23 @@ export type Agent = {
   pinned?: boolean;
   archived?: boolean;
   participant?: ParticipantSummary;
+};
+
+export type TaskCard = {
+  id: string;
+  name?: string;
+  role?: string;
+  description?: string;
+  status: string;
+  agent_id?: string;
+  subthread_id?: string;
+  reply_count?: number;
+  participant?: ParticipantSummary;
+  started_at?: string;
+  completed_at?: string | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  error?: string;
 };
 
 export type ParticipantStartParams = {
@@ -995,6 +1013,7 @@ export type ThreadItem = {
   result?: string;
   error?: string;
   reason?: string;
+  task?: TaskCard;
   participant?: ParticipantSummary;
 };
 

@@ -55,6 +55,7 @@ export function AssistantTurnShell({
   cwd,
   onOpenFile,
   onOpenAgent,
+  onOpenSubthread,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -71,6 +72,7 @@ export function AssistantTurnShell({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -203,6 +205,7 @@ function TurnProcessFold({
   cwd,
   onOpenFile,
   onOpenAgent,
+  onOpenSubthread,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -219,6 +222,7 @@ function TurnProcessFold({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -424,6 +428,7 @@ return (
                     cwd={cwd}
                     onOpenFile={onOpenFile}
                     onOpenAgent={onOpenAgent}
+                    onOpenSubthread={onOpenSubthread}
                     actionableAgentMessageID={actionableAgentMessageID}
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
@@ -462,6 +467,7 @@ function EntryRenderer({
   cwd,
   onOpenFile,
   onOpenAgent,
+  onOpenSubthread,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -474,6 +480,7 @@ function EntryRenderer({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -495,6 +502,7 @@ function EntryRenderer({
             cwd={cwd}
             onOpenFile={onOpenFile}
             onOpenAgent={onOpenAgent}
+            onOpenSubthread={onOpenSubthread}
             streaming={isStreaming}
             onStreamFrame={onStreamFrame}
             onNoticeAction={onNoticeAction}
@@ -520,6 +528,7 @@ function EntryRenderer({
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}
+        onOpenSubthread={onOpenSubthread}
         onStreamFrame={onStreamFrame}
         onNoticeAction={onNoticeAction}
       />
@@ -534,6 +543,7 @@ function EntryRenderer({
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}
+        onOpenSubthread={onOpenSubthread}
         streaming={streaming}
         actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
@@ -543,7 +553,7 @@ function EntryRenderer({
       />
     );
   }
-  if (item.type === "participant_message") {
+  if (item.type === "participant_message" || item.type === "task_card") {
     return (
       <ThreadItemView
         turnID={turn.id}
@@ -552,6 +562,7 @@ function EntryRenderer({
         cwd={cwd}
         onOpenFile={onOpenFile}
         onOpenAgent={onOpenAgent}
+        onOpenSubthread={onOpenSubthread}
         streaming={streaming}
         onStreamFrame={onStreamFrame}
         onNoticeAction={onNoticeAction}
@@ -574,6 +585,7 @@ function ReasoningFold({
   cwd,
   onOpenFile,
   onOpenAgent,
+  onOpenSubthread,
   onStreamFrame,
   onNoticeAction,
 }: {
@@ -585,6 +597,7 @@ function ReasoningFold({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -658,6 +671,7 @@ function ReasoningFold({
               cwd={cwd}
               onOpenFile={onOpenFile}
               onOpenAgent={onOpenAgent}
+              onOpenSubthread={onOpenSubthread}
               streaming={streaming}
               onStreamFrame={handleReasoningStreamFrame}
               onNoticeAction={onNoticeAction}

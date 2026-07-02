@@ -283,12 +283,12 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	}
 	<-client.started
 
-	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Not allowed yet."); err == nil {
+	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Not allowed yet.", ""); err == nil {
 		t.Fatal("expected participant speech capability error")
 	}
 	c.EnableParticipantSpeech("agent-1")
 
-	posted, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Found one bug.")
+	posted, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Found one bug.", "")
 	if err != nil {
 		t.Fatalf("PostParticipantMessage: %v", err)
 	}
@@ -303,7 +303,25 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for participant message event")
 	}
-	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Second result."); err == nil {
+	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "update", "Checking tests.", ""); err == nil {
+		t.Fatal("expected update without thread_id error")
+	}
+	updated, err := c.PostParticipantMessage(context.Background(), "agent-1", "update", "Checking tests.", "cth-review")
+	if err != nil {
+		t.Fatalf("PostParticipantMessage update: %v", err)
+	}
+	if updated.Kind != "update" || updated.ThreadID != "cth-review" {
+		t.Fatalf("unexpected update message: %+v", updated)
+	}
+	select {
+	case got := <-events:
+		if got.Kind != "update" || got.ThreadID != "cth-review" || got.Text != "Checking tests." {
+			t.Fatalf("unexpected update event: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for participant update event")
+	}
+	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Second result.", ""); err == nil {
 		t.Fatal("expected duplicate result error")
 	}
 }

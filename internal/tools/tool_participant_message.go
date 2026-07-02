@@ -21,19 +21,23 @@ func (t *PostMessageTool) Name() string { return "post_message" }
 func (t *PostMessageTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "post_message",
-		Description: "Post one signed result message from this worker into the visible conversation. Use only when the task has a concise result worth the user's attention. Silence is valid; do not use this for progress logs or routine status.",
+		Description: "Post one signed message from this worker into the visible conversation or a task thread. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only with thread_id for important task-thread progress. Silence is valid; do not post routine status.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"kind": map[string]any{
 					"type":        "string",
-					"enum":        []string{"result"},
-					"description": "Phase 2 only supports result messages.",
+					"enum":        []string{"result", "question", "update"},
+					"description": "result appears as a signed result card; question asks the user for blocking input; update belongs in a task thread and requires thread_id.",
 				},
 				"text": map[string]any{
 					"type":        "string",
 					"description": "Markdown result text to show in the conversation under this participant's identity.",
+				},
+				"thread_id": map[string]any{
+					"type":        "string",
+					"description": "Conversation subthread id for task-thread updates or scoped questions. Required for update.",
 				},
 			},
 			"required": []string{"kind", "text"},
@@ -46,8 +50,9 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 		return "", errors.New("post_message: agent control not configured")
 	}
 	var params struct {
-		Kind string `json:"kind"`
-		Text string `json:"text"`
+		Kind     string `json:"kind"`
+		Text     string `json:"text"`
+		ThreadID string `json:"thread_id"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
@@ -56,7 +61,7 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 	if kind == "" {
 		kind = "result"
 	}
-	msg, err := t.env.AgentControl.PostParticipantMessage(ctx, t.env.AgentID, kind, params.Text)
+	msg, err := t.env.AgentControl.PostParticipantMessage(ctx, t.env.AgentID, kind, params.Text, params.ThreadID)
 	if err != nil {
 		return "", err
 	}
@@ -64,6 +69,7 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 		"action":         "post_message",
 		"status":         "posted",
 		"kind":           msg.Kind,
+		"thread_id":      msg.ThreadID,
 		"agent_id":       msg.AgentID,
 		"participant_id": msg.ParticipantID,
 	}
