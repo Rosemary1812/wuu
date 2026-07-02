@@ -35,6 +35,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 	"github.com/coder/websocket"
@@ -6773,6 +6774,60 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 	}
 }
 
+func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T) {
+	workerRequests := make(chan providers.ChatRequest, 1)
+	client := &fakeClient{
+		response: providers.ChatResponse{Content: "agent done"},
+		onChat: func(_ int, req providers.ChatRequest) {
+			select {
+			case workerRequests <- req:
+			default:
+			}
+		},
+	}
+	rt := newTestRuntime(t, client)
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = kit
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+
+	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"task_name":"reviewer_card","description":"Review auth changes","prompt":"Post a concise result for the auth review.","subagent_type":"reviewer"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("participant/start: %v", err)
+	}
+	result := remarshal[ParticipantStartResult](t, responseByID(t, parseOutput(t, out.String()), "participant")["result"])
+	if result.Agent.ID == "" || result.Agent.Participant == nil {
+		t.Fatalf("expected started participant agent with identity, got %+v", result.Agent)
+	}
+	th := srv.thread(threadID)
+	if th == nil || th.execRuntime == nil || th.execRuntime.AgentControl == nil || !th.execRuntime.AgentControl.ParticipantSpeechEnabled(result.Agent.ID) {
+		t.Fatalf("participant agent %q should be speech-authorized", result.Agent.ID)
+	}
+	t.Cleanup(func() {
+		releaseThreadRuntime(th)
+	})
+
+	var req providers.ChatRequest
+	select {
+	case req = <-workerRequests:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for participant worker request; output:\n%s", out.String())
+	}
+	defs := toolDefinitionNames(req.Tools)
+	if !defs["post_message"] {
+		t.Fatalf("conversation-native participant request must directly include post_message, got %v", defs)
+	}
+	waitForAgentStatus(t, th.execRuntime.AgentControl, result.Agent.ID, subagent.StatusCompleted)
+}
+
 func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	t.Helper()
 	root := t.TempDir()
@@ -6843,6 +6898,20 @@ func toolDefinitionNames(defs []providers.ToolDefinition) map[string]bool {
 		names[def.Name] = true
 	}
 	return names
+}
+
+func waitForAgentStatus(t *testing.T, control *agentcontrol.AgentControl, agentID string, want subagent.Status) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, snap := range control.List() {
+			if snap.ID == agentID && snap.Status == want {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for agent %s status %s", agentID, want)
 }
 
 func parseOutput(t *testing.T, output string) []map[string]any {

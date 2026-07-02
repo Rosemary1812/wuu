@@ -335,10 +335,10 @@ func NewSession(opts Options) (*Session, error) {
 					wkit.SetMemory(nil)
 				}
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
+				applyWorkerToolFilter(wkit, wt)
 				if agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID) {
 					wkit.SetParticipantSpeechEnabled(true)
 				}
-				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
 			},
 			ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
@@ -795,10 +795,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 						workerKit.SetMemory(nil)
 					}
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
+					applyWorkerToolFilter(workerKit, wt)
 					if control != nil && control.ParticipantSpeechEnabled(meta.ID) {
 						workerKit.SetParticipantSpeechEnabled(true)
 					}
-					applyWorkerToolFilter(workerKit, wt)
 					return workerKit, nil
 				},
 				ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},

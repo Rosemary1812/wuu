@@ -50,6 +50,7 @@ const (
 	MethodThreadArchive            = "thread/archive"
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
+	MethodParticipantStart         = "participant/start"
 	MethodTurnStart                = "turn/start"
 	MethodTurnQueue                = "turn/queue"
 	MethodTurnUpdateQueued         = "turn/update-queued"
@@ -722,6 +723,20 @@ type ThreadContextCompositionResult struct {
 	SystemSections         []ContextCompositionSection  `json:"system_sections,omitempty"`
 	BlockKindBytes         map[string]int               `json:"block_kind_bytes,omitempty"`
 	SegmentCounts          ContextSegmentCountSummary   `json:"segment_counts,omitempty"`
+}
+
+type ParticipantStartParams struct {
+	ThreadID     string `json:"thread_id"`
+	TaskName     string `json:"task_name,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Prompt       string `json:"prompt"`
+	SubagentType string `json:"subagent_type,omitempty"`
+	AgentProfile string `json:"agent_profile,omitempty"`
+	Isolation    string `json:"isolation,omitempty"`
+}
+
+type ParticipantStartResult struct {
+	Agent Agent `json:"agent"`
 }
 
 type ContextCompositionCategory struct {

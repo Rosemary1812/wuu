@@ -2462,6 +2462,37 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 	}
 }
 
+func TestApplyWorkerToolFilter_AllowsAuthorizedParticipantSpeech(t *testing.T) {
+	kit, err := tools.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New toolkit: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", false)
+	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
+	wt, err := agentcontrol.LookupWorkerType(agentcontrol.DefaultSubagentType)
+	if err != nil {
+		t.Fatalf("agent type: %v", err)
+	}
+
+	applyWorkerToolFilter(kit, wt)
+	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); defs["post_message"] {
+		t.Fatalf("ordinary worker toolkit should hide post_message before speech authorization; defs=%v", defs)
+	}
+
+	kit.SetParticipantSpeechEnabled(true)
+	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); !defs["post_message"] {
+		t.Fatalf("authorized participant worker toolkit should expose post_message after role filtering; defs=%v", defs)
+	}
+}
+
+func toolDefinitionNamesForRuntimeTest(defs []providers.ToolDefinition) map[string]bool {
+	names := make(map[string]bool, len(defs))
+	for _, def := range defs {
+		names[def.Name] = true
+	}
+	return names
+}
+
 func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.T) {
 	kit, err := tools.New(t.TempDir())
 	if err != nil {

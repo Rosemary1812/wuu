@@ -629,6 +629,20 @@ export type Agent = {
   participant?: ParticipantSummary;
 };
 
+export type ParticipantStartParams = {
+  thread_id: string;
+  task_name?: string;
+  description?: string;
+  prompt: string;
+  subagent_type?: string;
+  agent_profile?: string;
+  isolation?: string;
+};
+
+export type ParticipantStartResult = {
+  agent: Agent;
+};
+
 export type WorktreeInfo = {
   path: string;
   base_head?: string;
