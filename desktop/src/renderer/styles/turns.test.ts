@@ -39,3 +39,12 @@ describe("turns.css rich links", () => {
     expect(cssRuleBody(".rich-file-link:active")).toMatch(/background:\s*transparent;/);
   });
 });
+
+describe("turns.css turn notice positioning", () => {
+  it("centers compact notice chips like the jump-to-latest pill", () => {
+    const body = cssRuleBody(".turn-notice");
+    expect(body).toMatch(/width:\s*max-content;/);
+    expect(body).toMatch(/max-width:\s*calc\(100% - 32px\);/);
+    expect(body).toMatch(/margin-inline:\s*auto;/);
+  });
+});

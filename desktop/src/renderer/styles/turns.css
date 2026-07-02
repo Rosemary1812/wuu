@@ -4843,8 +4843,9 @@ pre {
   justify-content: center;
   gap: 14px;
   color: var(--ink-tertiary);
-  width: 100%;
-  max-width: min(720px, 100%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin-inline: auto;
 }
 
 .turn-event-notice::before,
