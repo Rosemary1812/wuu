@@ -18,6 +18,7 @@ import type {
   DesktopProject,
   ComposerGoalSummary,
   InitializeResult,
+  ParticipantProfile,
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
@@ -113,6 +114,7 @@ function renderComposer(props: {
   onClearGoal?: () => void | Promise<void>;
   activeProject?: DesktopProject;
   projects?: DesktopProject[];
+  participants?: ParticipantProfile[];
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -186,6 +188,7 @@ function renderComposer(props: {
           tokensPerSecond={props.tokensPerSecond ?? 0}
           tokenSpeedSampledAt={props.tokenSpeedSampledAt}
           tokenSpeedSource={props.tokenSpeedSource}
+          participants={props.participants}
         />
       </ImagePreviewProvider>,
     );
@@ -750,6 +753,34 @@ describe("Composer send control", () => {
     });
 
     expect(setPrompt).toHaveBeenCalledWith("/slides ");
+  });
+
+  it("inserts a selected participant mention into the composer", () => {
+    const setPrompt = vi.fn();
+    renderComposer({
+      prompt: "@No",
+      setPrompt,
+      participants: [
+        {
+          id: "prt-noel",
+          kind: "named",
+          name: "Noel",
+          role: "reviewer",
+          tagline: "Find regressions",
+        },
+      ],
+    });
+
+    const mentionButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".mention-item"),
+    ).find((button) => button.textContent?.includes("@Noel"));
+    expect(mentionButton).not.toBeUndefined();
+
+    act(() => {
+      mentionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(setPrompt).toHaveBeenCalledWith("@Noel ");
   });
 
   it("sends an exact slash command with arguments on Enter", () => {

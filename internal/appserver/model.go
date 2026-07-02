@@ -101,6 +101,27 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 	return turn
 }
 
+func (th *threadState) appendUserMessageTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
+	th.currentTurn = turnID
+	th.UpdatedAt = now
+	th.nextItemIndex = 0
+	th.activeAgentItemID = ""
+	th.activeReasoningItemID = ""
+	th.toolItems = make(map[string]string)
+
+	userItem := chatMessageItem(th.nextItemIDLocked(turnID), userMsg)
+	turn := Turn{
+		ID:          turnID,
+		Items:       []ThreadItem{userItem},
+		ItemsView:   TurnItemsViewFull,
+		Status:      TurnStatusCompleted,
+		StartedAt:   &now,
+		CompletedAt: &now,
+	}
+	th.Turns = append(th.Turns, turn)
+	return turn
+}
+
 func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Turn {
 	th.currentTurn = turnID
 	th.running = true

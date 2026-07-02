@@ -33,6 +33,8 @@ import type {
   ParticipantResetResult,
   ParticipantSaveParams,
   ParticipantSaveResult,
+  ParticipantStartParams,
+  ParticipantStartResult,
   ServerEvent,
   RuntimeAdvancedSettingsUpdate,
   RuntimeGeneralSettingsUpdate,
@@ -498,6 +500,9 @@ app.whenReady().then(async () => {
     appServerClientPool.request<{ thread: Thread }>("thread/resume", {
       session_id: sessionId ?? "",
     }),
+  );
+  ipcMain.handle("wuu:participant-start", (_event, params: ParticipantStartParams) =>
+    appServerClientPool.request<ParticipantStartResult>("participant/start", params),
   );
   ipcMain.handle(
     "wuu:thread-fork",

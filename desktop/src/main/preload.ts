@@ -83,6 +83,7 @@ const api: WuuDesktopApi = {
   startThread: () => ipcRenderer.invoke("wuu:thread-start"),
   resumeThread: (sessionId?: string) =>
     ipcRenderer.invoke("wuu:thread-resume", sessionId),
+  startParticipant: (params) => ipcRenderer.invoke("wuu:participant-start", params),
   forkThread: (
     threadId: string,
     turnId?: string,

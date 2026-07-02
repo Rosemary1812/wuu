@@ -267,6 +267,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewListAgentsTool(e),
 		NewAgentReportTool(e),
 		NewPostMessageTool(e),
+		NewDeclineTool(e),
 		// Process management
 		NewStartProcessTool(e),
 		NewListProcessesTool(e),
@@ -698,6 +699,7 @@ func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
 		enableParticipantSpeechSurface(&t.activeSurface)
 	} else {
 		delete(t.activeSurface.Tools, "post_message")
+		delete(t.activeSurface.Tools, "decline")
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -710,6 +712,7 @@ func enableParticipantSpeechSurface(surface *capability.Surface) {
 		surface.Tools = map[string]capability.Capability{}
 	}
 	surface.Tools["post_message"] = capability.CapabilityTaskCommunicate
+	surface.Tools["decline"] = capability.CapabilityTaskCommunicate
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
 	}
@@ -910,7 +913,7 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 }
 
 func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
-	if name == "post_message" && !t.participantSpeechEnabled() {
+	if isParticipantSpeechTool(name) && !t.participantSpeechEnabled() {
 		return fmt.Errorf("tool %q is not available without participant speech capability", name)
 	}
 	surface := t.activeCompiledSurface()
@@ -930,6 +933,15 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 		return fmt.Errorf("tool %q is deferred; call tool_search first to load it", name)
 	}
 	return nil
+}
+
+func isParticipantSpeechTool(name string) bool {
+	switch name {
+	case "post_message", "decline":
+		return true
+	default:
+		return false
+	}
 }
 
 func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) bool {

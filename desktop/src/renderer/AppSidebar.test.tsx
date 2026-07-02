@@ -103,6 +103,8 @@ function renderSidebar({
         onSelectThread={() => {}}
         onSelectParticipant={() => {}}
         onCreateParticipant={() => {}}
+        onImportParticipants={() => {}}
+        onExportParticipants={() => {}}
         onTogglePinned={onTogglePinned}
         onArchiveThread={() => {}}
         onClearArchiveConfirm={() => {}}

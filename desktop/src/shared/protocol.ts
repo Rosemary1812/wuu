@@ -649,12 +649,14 @@ export type TaskCard = {
 
 export type ParticipantStartParams = {
   thread_id: string;
+  participant_id?: string;
   task_name?: string;
   description?: string;
   prompt: string;
   subagent_type?: string;
   agent_profile?: string;
   isolation?: string;
+  record_user_message?: boolean;
 };
 
 export type ParticipantStartResult = {
@@ -1311,6 +1313,7 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   startThread: () => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
+  startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;
   forkThread: (
     threadId: string,
     turnId?: string,

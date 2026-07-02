@@ -6922,7 +6922,12 @@ func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T)
 	if !defs["post_message"] {
 		t.Fatalf("conversation-native participant request must directly include post_message, got %v", defs)
 	}
+	if !defs["decline"] {
+		t.Fatalf("conversation-native participant request must directly include decline, got %v", defs)
+	}
 	waitForAgentStatus(t, th.execRuntime.AgentControl, result.Agent.ID, subagent.StatusCompleted)
+	waitForMethod(t, out, NotificationAgentMailbox)
+	waitForMethod(t, out, NotificationItemCompleted)
 }
 
 func TestServerParticipantProfileLifecycle(t *testing.T) {
@@ -6963,6 +6968,25 @@ func TestServerParticipantProfileLifecycle(t *testing.T) {
 	list := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
 	if len(list.Participants) != 1 || list.Participants[0].ID != save.Participant.ID {
 		t.Fatalf("unexpected participant list: %+v", list.Participants)
+	}
+	if err := session.UpsertParticipantRun(rt.SessionDir, session.ParticipantRun{
+		ID:            "run-1",
+		ParticipantID: save.Participant.ID,
+		AgentID:       "agent-1",
+		TaskID:        "task-1",
+		SessionID:     "session-1",
+		Summary:       "Reviewed auth diff.",
+		Outcome:       "completed",
+	}); err != nil {
+		t.Fatalf("upsert participant run: %v", err)
+	}
+	rawListWithRun := []byte(fmt.Sprintf(`{"id":"list-with-run","method":%q}`, MethodParticipantList))
+	if err := srv.handleLine(context.Background(), rawListWithRun); err != nil {
+		t.Fatalf("participant/list with run: %v", err)
+	}
+	listWithRun := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list-with-run")["result"])
+	if len(listWithRun.Participants[0].TrackRecord) != 1 || listWithRun.Participants[0].TrackRecord[0].Summary != "Reviewed auth diff." {
+		t.Fatalf("unexpected participant track record: %+v", listWithRun.Participants[0].TrackRecord)
 	}
 
 	feedbackPayload := map[string]any{

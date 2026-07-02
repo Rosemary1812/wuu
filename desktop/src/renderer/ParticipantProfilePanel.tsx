@@ -276,6 +276,41 @@ export function ParticipantProfilePanel({
             {mode === "edit" ? (
               <section
                 className="participant-profile-section"
+                aria-labelledby="participant-profile-changelog"
+              >
+                <h3 id="participant-profile-changelog">Changelog</h3>
+                <ol className="participant-profile-track-list">
+                  <li>
+                    <div className="participant-profile-track-title">
+                      当前角色：{form.role || "未设置"}
+                    </div>
+                    <div className="participant-profile-track-meta">
+                      {form.model ? `模型：${form.model}` : "模型：跟随全局"}
+                    </div>
+                  </li>
+                  {participant?.updated_at ? (
+                    <li>
+                      <div className="participant-profile-track-title">已更新</div>
+                      <div className="participant-profile-track-meta">
+                        {timestampLabel(participant.updated_at)}
+                      </div>
+                    </li>
+                  ) : null}
+                  {participant?.created_at ? (
+                    <li>
+                      <div className="participant-profile-track-title">已创建</div>
+                      <div className="participant-profile-track-meta">
+                        {timestampLabel(participant.created_at)}
+                      </div>
+                    </li>
+                  ) : null}
+                </ol>
+              </section>
+            ) : null}
+
+            {mode === "edit" ? (
+              <section
+                className="participant-profile-section"
                 aria-labelledby="participant-profile-feedback"
               >
                 <h3 id="participant-profile-feedback">Feedback</h3>

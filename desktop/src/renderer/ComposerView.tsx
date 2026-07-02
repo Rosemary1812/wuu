@@ -1,4 +1,5 @@
 import {
+  AtSign,
   Bug,
   ChevronDown,
   ChevronRight,
@@ -42,6 +43,7 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
+  ParticipantProfile,
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
@@ -176,7 +178,8 @@ export function Composer({
   tokenSpeedSource,
   contextUsage,
   queryHistorySessionID,
-  queryHistory = []
+  queryHistory = [],
+  participants = []
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -247,6 +250,7 @@ export function Composer({
   contextUsage?: TurnContextUsage | null;
   queryHistorySessionID?: string;
   queryHistory?: string[];
+  participants?: ParticipantProfile[];
 }): JSX.Element {
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
@@ -263,6 +267,8 @@ export function Composer({
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [mentionDismissedValue, setMentionDismissedValue] = useState("");
   const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
   const collapsedPromptPrefix = useMemo(
     () => collapsedPromptBlocks.map((block) => block.text).join(""),
@@ -312,6 +318,23 @@ export function Composer({
   const slashMenuOpen = Boolean(!readOnly && slashDraft && slashDismissedValue !== prompt);
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
+  const mentionDraft = parseComposerMentionDraft(visiblePromptValue);
+  const mentionQuery = mentionDraft?.query ?? "";
+  const visibleMentionParticipants = useMemo(
+    () => filterMentionParticipants(participants, mentionQuery),
+    [mentionQuery, participants]
+  );
+  const mentionMenuOpen = Boolean(
+    !readOnly &&
+      !slashMenuOpen &&
+      mentionDraft &&
+      mentionDismissedValue !== prompt &&
+      visibleMentionParticipants.length > 0
+  );
+  const selectedMentionParticipant = mentionMenuOpen
+    ? visibleMentionParticipants[selectedMentionIndex]
+    : undefined;
+  const mentionMenuID = `composer-mentions-${variant}`;
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
     disabled: readOnly || hasAttachments || hasCollapsedPromptBlocks,
     prompt,
@@ -324,6 +347,10 @@ export function Composer({
   useEffect(() => {
     setSelectedSlashIndex(firstEnabledSlashCommandIndex(visibleSlashCommands));
   }, [visibleSlashCommands]);
+
+  useEffect(() => {
+    setSelectedMentionIndex(0);
+  }, [visibleMentionParticipants]);
 
   useEffect(() => {
     if (!slashRuntimeReady || readOnly) {
@@ -432,6 +459,7 @@ export function Composer({
   function updateVisiblePrompt(value: string): void {
     resetQueryHistoryNavigation();
     setSlashDismissedValue("");
+    setMentionDismissedValue("");
     setPrompt(hasCollapsedPromptBlocks ? `${collapsedPromptPrefix}${value}` : value);
   }
 
@@ -563,6 +591,20 @@ export function Composer({
     focusComposerSoon();
   }
 
+  function applyMentionParticipant(participant: ParticipantProfile | undefined): void {
+    if (!participant || !mentionDraft) {
+      return;
+    }
+    setMentionDismissedValue("");
+    const nextVisiblePrompt = `${visiblePromptValue.slice(0, mentionDraft.start)}@${participant.name} `;
+    setPrompt(
+      hasCollapsedPromptBlocks
+        ? `${collapsedPromptPrefix}${nextVisiblePrompt}`
+        : nextVisiblePrompt
+    );
+    focusComposerSoon();
+  }
+
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (readOnly) {
       return;
@@ -595,6 +637,33 @@ export function Composer({
       if (event.key === "Escape") {
         event.preventDefault();
         setSlashDismissedValue(prompt);
+        return;
+      }
+    }
+    if (mentionMenuOpen) {
+      if (event.key === "ArrowDown" && visibleMentionParticipants.length > 0) {
+        event.preventDefault();
+        setSelectedMentionIndex((current) =>
+          (current + 1) % visibleMentionParticipants.length
+        );
+        return;
+      }
+      if (event.key === "ArrowUp" && visibleMentionParticipants.length > 0) {
+        event.preventDefault();
+        setSelectedMentionIndex((current) =>
+          (current - 1 + visibleMentionParticipants.length) %
+          visibleMentionParticipants.length
+        );
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && selectedMentionParticipant) {
+        event.preventDefault();
+        applyMentionParticipant(selectedMentionParticipant);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMentionDismissedValue(prompt);
         return;
       }
     }
@@ -649,6 +718,38 @@ export function Composer({
             ) : (
               <div className="slash-command-empty">没有匹配 “/{slashQuery}” 的命令</div>
             )}
+          </div>
+        ) : null}
+        {mentionMenuOpen ? (
+          <div className="mention-menu" id={mentionMenuID} role="listbox" aria-label="提及 Agent">
+            <div className="mention-list scrollbar-hidden">
+              {visibleMentionParticipants.map((participant, index) => {
+                const selected = index === selectedMentionIndex;
+                const optionID = `${mentionMenuID}-${participant.id}`;
+                return (
+                  <button
+                    className={`mention-item${selected ? " selected" : ""}`}
+                    id={optionID}
+                    key={participant.id}
+                    role="option"
+                    type="button"
+                    aria-selected={selected}
+                    onMouseEnter={() => setSelectedMentionIndex(index)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyMentionParticipant(participant)}
+                  >
+                    <span className="mention-avatar" aria-hidden="true">
+                      {participant.avatar || <AtSign className="icon" />}
+                    </span>
+                    <span className="mention-copy">
+                      <strong>{participant.name}</strong>
+                      <small>{participant.tagline || participant.role || "named"}</small>
+                    </span>
+                    <span className="mention-name">@{participant.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : null}
         <div className="composer-frame" ref={composerFrameRef}>
@@ -724,9 +825,17 @@ export function Composer({
               placeholder={composerPlaceholder}
               disabled={readOnly}
               aria-readonly={readOnly}
-              aria-controls={slashMenuOpen ? slashMenuID : undefined}
-              aria-activedescendant={selectedSlashCommand ? `${slashMenuID}-${selectedSlashCommand.id}` : undefined}
-              aria-expanded={slashMenuOpen || undefined}
+              aria-controls={
+                slashMenuOpen ? slashMenuID : mentionMenuOpen ? mentionMenuID : undefined
+              }
+              aria-activedescendant={
+                selectedSlashCommand
+                  ? `${slashMenuID}-${selectedSlashCommand.id}`
+                  : selectedMentionParticipant
+                    ? `${mentionMenuID}-${selectedMentionParticipant.id}`
+                    : undefined
+              }
+              aria-expanded={slashMenuOpen || mentionMenuOpen || undefined}
               onChange={(event) => {
                 updateVisiblePrompt(event.target.value);
               }}
@@ -734,6 +843,9 @@ export function Composer({
               onBlur={() => {
                 if (slashMenuOpen) {
                   setSlashDismissedValue(prompt);
+                }
+                if (mentionMenuOpen) {
+                  setMentionDismissedValue(prompt);
                 }
               }}
               onKeyDown={handleComposerKeyDown}
@@ -1000,6 +1112,41 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     default:
       return <Wrench className="icon" />;
   }
+}
+
+type ComposerMentionDraft = {
+  query: string;
+  start: number;
+};
+
+function parseComposerMentionDraft(value: string): ComposerMentionDraft | undefined {
+  const match = /(^|\s)@([^\s@]*)$/.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  return {
+    query: match[2] ?? "",
+    start: match.index + (match[1]?.length ?? 0),
+  };
+}
+
+function filterMentionParticipants(
+  participants: ParticipantProfile[],
+  query: string,
+): ParticipantProfile[] {
+  const normalized = query.trim().toLowerCase();
+  const named = participants.filter((participant) => participant.name.trim() !== "");
+  if (normalized === "") {
+    return named.slice(0, 8);
+  }
+  return named
+    .filter((participant) =>
+      [participant.name, participant.role ?? "", participant.tagline ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized),
+    )
+    .slice(0, 8);
 }
 
 function composerRuntimeContextKey(context: RuntimeContext): string {

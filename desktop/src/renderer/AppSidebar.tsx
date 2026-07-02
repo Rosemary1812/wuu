@@ -5,15 +5,17 @@ import {
   FileText,
   FolderOpen,
   FolderPlus,
+  Download,
   LayoutGrid,
   List as ListIcon,
   MessageSquarePlus,
   Plus,
   Search,
   Settings,
+  Upload,
   Wrench,
 } from "lucide-react";
-import type { RefObject } from "react";
+import { type RefObject, useRef } from "react";
 import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
@@ -47,6 +49,8 @@ export function AppSidebar({
   onSelectThread,
   onSelectParticipant,
   onCreateParticipant,
+  onImportParticipants,
+  onExportParticipants,
   onTogglePinned,
   onArchiveThread,
   onClearArchiveConfirm,
@@ -89,6 +93,8 @@ export function AppSidebar({
   onSelectThread: (id: string) => void;
   onSelectParticipant: (participant: ParticipantProfile) => void;
   onCreateParticipant: () => void;
+  onImportParticipants: (file: File) => void;
+  onExportParticipants: () => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
@@ -102,6 +108,7 @@ export function AppSidebar({
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
+  const participantTemplateInputRef = useRef<HTMLInputElement>(null);
   // The scratch pseudo project is "active" when the runtime context is in
   // no-project mode (i.e. the user is viewing a scratch conversation).
   // Active state is passed into ProjectList so the row highlights even though
@@ -223,16 +230,52 @@ export function AppSidebar({
           <section className="participant-roster-section" aria-label="Agents">
             <div className="section-label participant-roster-label">
               <span>Agents</span>
-              <button
-                type="button"
-                className="participant-roster-add"
-                aria-label="新建 Agent"
-                title="新建 Agent"
-                disabled={!state.initialized}
-                onClick={onCreateParticipant}
-              >
-                <Plus aria-hidden="true" />
-              </button>
+              <div className="participant-roster-actions">
+                <input
+                  ref={participantTemplateInputRef}
+                  className="participant-roster-file-input"
+                  type="file"
+                  accept="application/json,.json"
+                  tabIndex={-1}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) {
+                      onImportParticipants(file);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="participant-roster-add"
+                  aria-label="导入团队模板"
+                  title="导入团队模板"
+                  disabled={!state.initialized}
+                  onClick={() => participantTemplateInputRef.current?.click()}
+                >
+                  <Upload aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="participant-roster-add"
+                  aria-label="导出团队模板"
+                  title="导出团队模板"
+                  disabled={!state.initialized || participants.length === 0}
+                  onClick={onExportParticipants}
+                >
+                  <Download aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="participant-roster-add"
+                  aria-label="新建 Agent"
+                  title="新建 Agent"
+                  disabled={!state.initialized}
+                  onClick={onCreateParticipant}
+                >
+                  <Plus aria-hidden="true" />
+                </button>
+              </div>
             </div>
             <div className="participant-roster-list">
               {participants.length === 0 ? (

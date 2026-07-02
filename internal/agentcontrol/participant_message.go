@@ -103,7 +103,7 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 		kind = "result"
 	}
 	switch kind {
-	case "result", "question", "update":
+	case "result", "question", "update", "decline":
 	default:
 		return ParticipantMessage{}, fmt.Errorf("post_message: kind %q is not supported", kind)
 	}
@@ -121,7 +121,7 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 		return ParticipantMessage{}, fmt.Errorf("post_message: unknown agent %q", agentID)
 	}
 	snap := worker.Snapshot()
-	if !canParticipantPost(snap.Status) {
+	if !canParticipantPost(kind, snap.Status) {
 		return ParticipantMessage{}, fmt.Errorf("post_message: agent %q is %s", agentID, snap.Status)
 	}
 	if !c.ParticipantSpeechEnabled(agentID) {
@@ -144,6 +144,9 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 	if c.participantResultPosts == nil {
 		c.participantResultPosts = make(map[string]struct{})
 	}
+	if c.participantResponses == nil {
+		c.participantResponses = make(map[string]struct{})
+	}
 	if kind == "result" {
 		if _, exists := c.participantResultPosts[agentID]; exists {
 			c.participantMessagesMu.Unlock()
@@ -158,6 +161,7 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 	if kind == "result" {
 		c.participantResultPosts[agentID] = struct{}{}
 	}
+	c.participantResponses[agentID] = struct{}{}
 	c.participantMessagesMu.Unlock()
 
 	for _, listener := range listeners {
@@ -170,10 +174,26 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 	return msg, nil
 }
 
-func canParticipantPost(status subagent.Status) bool {
+func (c *AgentControl) ParticipantResponded(agentID string) bool {
+	if c == nil {
+		return false
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false
+	}
+	c.participantMessagesMu.Lock()
+	defer c.participantMessagesMu.Unlock()
+	_, ok := c.participantResponses[agentID]
+	return ok
+}
+
+func canParticipantPost(kind string, status subagent.Status) bool {
 	switch status {
 	case subagent.StatusPending, subagent.StatusQueued, subagent.StatusRunning:
 		return true
+	case subagent.StatusCompleted:
+		return kind == "decline"
 	default:
 		return false
 	}

@@ -108,7 +108,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if t.isToolDisabled(name) {
 		return ToolExposureHidden
 	}
-	if name == "post_message" && !t.participantSpeechEnabled() {
+	if isParticipantSpeechTool(name) && !t.participantSpeechEnabled() {
 		return ToolExposureHidden
 	}
 	// The bash-first surface collapses every legacy command entry
@@ -249,7 +249,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindPlan
 	case "inception":
 		return ToolKindContext
-	case "spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "agent_report", "post_message":
+	case "spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "agent_report", "post_message", "decline":
 		return ToolKindAgent
 	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin", "report_listening_ports":
 		return ToolKindProcess

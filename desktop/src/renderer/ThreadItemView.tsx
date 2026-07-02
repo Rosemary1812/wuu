@@ -234,11 +234,20 @@ export function ThreadItemView({
       return <ToolActivityRow items={[item]} />;
     case "participant_message": {
       const text = item.text ?? "";
+      const postKind = item.post_kind ?? "result";
+      if (postKind === "decline") {
+        const participantName = item.participant?.name || "参与者";
+        return (
+          <div className="participant-decline-line">
+            {participantName} 认为无需回应{text.trim() ? `：${text.trim()}` : ""}
+          </div>
+        );
+      }
       const agentID = item.agent_id?.trim() ?? "";
       const canOpenAgent = agentID !== "" && Boolean(onOpenAgent);
       const hasText = text.trim() !== "";
       return (
-        <article className={`participant-message-card participant-message-card--${item.post_kind ?? "result"}`}>
+        <article className={`participant-message-card participant-message-card--${postKind}`}>
           <header className="participant-message-card-header">
             {item.participant ? (
               <ParticipantChip participant={item.participant} size="sm" />

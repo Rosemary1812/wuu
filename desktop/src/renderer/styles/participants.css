@@ -119,6 +119,13 @@
   text-decoration: underline;
 }
 
+.participant-decline-line {
+  margin: 4px 0 18px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+}
+
 .participant-roster-section {
   display: grid;
   gap: 6px;
@@ -130,6 +137,16 @@
   align-items: center;
   justify-content: space-between;
   padding-inline: var(--sidebar-row-pad-x);
+}
+
+.participant-roster-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.participant-roster-file-input {
+  display: none;
 }
 
 .participant-roster-add {

@@ -40,6 +40,25 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 			switch n.Status {
 			case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
 				s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
+				if strings.TrimSpace(n.Snapshot.ParticipantID) != "" {
+					summary := participantRunSummary(n.Snapshot.Result, n.Snapshot.Description)
+					if n.Snapshot.Error != nil {
+						summary = participantRunSummary(n.Snapshot.Error.Error(), n.Snapshot.Description)
+					}
+					_ = session.CompleteParticipantRun(
+						s.rt.SessionDir,
+						n.Snapshot.ParticipantID,
+						n.Snapshot.ID,
+						string(n.Status),
+						summary,
+					)
+				}
+				if n.Status == subagent.StatusCompleted &&
+					control != nil &&
+					control.ParticipantSpeechEnabled(n.Snapshot.ID) &&
+					!control.ParticipantResponded(n.Snapshot.ID) {
+					_, _ = control.PostParticipantMessage(context.Background(), n.Snapshot.ID, "decline", "没有需要占用主对话的回应。", "")
+				}
 				if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
 					mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
 					if control != nil {
@@ -49,7 +68,7 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 						ThreadID: threadID,
 						Message:  mailboxMessage,
 					})
-					if control != nil {
+					if control != nil && !control.ParticipantSpeechEnabled(n.Snapshot.ID) {
 						resultID := control.AgentResultDeliveryID(n.Snapshot)
 						s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
 					}

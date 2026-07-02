@@ -203,6 +203,7 @@ import {
   turnStreamStatusForThread,
   updateThreadByID,
   upsertManagedProcess,
+  upsertThreadChildAgent,
   upsertThread,
   upsertTurn,
   withLoadedRuntimeSessionTab,
@@ -457,6 +458,11 @@ type ParticipantPanelState = {
   resettingScope?: ParticipantResetScope;
 };
 
+type ParticipantTeamTemplate = {
+  version: 1;
+  participants: ParticipantSaveParams[];
+};
+
 function replaceParticipantProfile(
   participants: ParticipantProfile[],
   participant: ParticipantProfile,
@@ -470,6 +476,60 @@ function replaceParticipantProfile(
   const next = [...participants];
   next[index] = participant;
   return next;
+}
+
+function mentionedParticipantsFromText(
+  text: string,
+  participants: ParticipantProfile[],
+): ParticipantProfile[] {
+  const unique = new Map<string, ParticipantProfile>();
+  const source = text.trim();
+  if (source === "") {
+    return [];
+  }
+  const candidates = [...participants]
+    .filter((participant) => participant.name.trim() !== "")
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const participant of candidates) {
+    const escaped = escapeRegExp(participant.name.trim());
+    const pattern = new RegExp(`(^|\\s)@${escaped}(?=$|\\s|[,.!?，。；：、])`);
+    if (pattern.test(source)) {
+      unique.set(participant.id, participant);
+    }
+  }
+  return [...unique.values()];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function participantTemplateEntries(value: unknown): ParticipantSaveParams[] {
+  if (!value || typeof value !== "object" || !("participants" in value)) {
+    throw new Error("template is missing participants");
+  }
+  const participantsValue = (value as { participants?: unknown }).participants;
+  if (!Array.isArray(participantsValue)) {
+    throw new Error("template participants must be an array");
+  }
+  return participantsValue.map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      throw new Error("template participant must be an object");
+    }
+    const record = entry as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    if (name === "") {
+      throw new Error("template participant name is required");
+    }
+    return {
+      name,
+      role: typeof record.role === "string" ? record.role : undefined,
+      avatar: typeof record.avatar === "string" ? record.avatar : undefined,
+      tagline: typeof record.tagline === "string" ? record.tagline : undefined,
+      model: typeof record.model === "string" ? record.model : undefined,
+      memory: typeof record.memory === "string" ? record.memory : undefined,
+    };
+  });
 }
 
 type QueuedMessageEditTarget = {
@@ -2831,6 +2891,75 @@ export function App(): JSX.Element {
     })();
   }
 
+  function exportParticipantTemplate(): void {
+    if (participants.length === 0) {
+      return;
+    }
+    const template: ParticipantTeamTemplate = {
+      version: 1,
+      participants: participants.map((participant) => ({
+        name: participant.name,
+        role: participant.role,
+        avatar: participant.avatar,
+        tagline: participant.tagline,
+        model: participant.model,
+        memory: participant.memory,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(template, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "wuu-team-template.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function importParticipantTemplate(file: File): void {
+    void (async () => {
+      try {
+        const parsed = JSON.parse(await file.text()) as unknown;
+        const entries = participantTemplateEntries(parsed);
+        const existingByName = new Map(
+          participants.map((participant) => [
+            participant.name.trim().toLowerCase(),
+            participant,
+          ]),
+        );
+        const saved: ParticipantProfile[] = [];
+        for (const entry of entries) {
+          const existing = existingByName.get(entry.name.trim().toLowerCase());
+          const result = await window.wuu.saveParticipant({
+            ...entry,
+            id: existing?.id,
+          });
+          saved.push(result.participant);
+          existingByName.set(
+            result.participant.name.trim().toLowerCase(),
+            result.participant,
+          );
+        }
+        setParticipants((current) =>
+          saved.reduce(replaceParticipantProfile, current),
+        );
+        setState((current) => ({
+          ...current,
+          status: `已导入 ${saved.length} 个 Agent`,
+        }));
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          status:
+            error instanceof Error ? error.message : "导入团队模板失败",
+        }));
+      }
+    })();
+  }
+
   function openConversationSubthread(thread: Thread, item: ThreadItem): void {
     const subthreadID = item.task?.subthread_id;
     setEnvironmentPanelOpen(false);
@@ -3022,6 +3151,7 @@ export function App(): JSX.Element {
         onClearGoal={clearCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
+        participants={participants}
       />
     );
   }
@@ -5428,6 +5558,109 @@ export function App(): JSX.Element {
     }
   }
 
+  async function sendMentionedParticipants(
+    message: QueuedComposerMessage,
+    targets: ParticipantProfile[],
+  ): Promise<boolean> {
+    const currentState = appStateRef.current;
+    const targetThread = activeThreadForState(currentState);
+    const targetPane: ConversationPaneID =
+      currentState.activePane === "secondary" && currentState.secondaryThread
+        ? "secondary"
+        : "primary";
+    const text = message.text.trim();
+    if (
+      text === "" ||
+      targets.length === 0 ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      targetThread?.read_only ||
+      viewSwitchPending
+    ) {
+      return false;
+    }
+    const activeContext = currentState.activeContext;
+    try {
+      const thread =
+        targetThread ??
+        requireThread(
+          await window.wuu.startThread(),
+          "thread/start did not return a thread",
+        );
+      appStateRef.current = {
+        ...setThreadForPane(appStateRef.current, targetPane, thread),
+        activePane: targetPane,
+        allowThreadAutoActivation: true,
+        sessionTabs:
+          targetPane === "primary"
+            ? bindActiveSessionTabToThread(
+                appStateRef.current.sessionTabs,
+                appStateRef.current.activeSessionTabID,
+                thread,
+                activeContext,
+              )
+            : appStateRef.current.sessionTabs,
+        activeSessionTabID:
+          targetPane === "primary"
+            ? threadSessionTabID(thread.id)
+            : appStateRef.current.activeSessionTabID,
+        threads: upsertThread(appStateRef.current.threads, thread),
+      };
+      setState((current) => ({
+        ...setThreadForPane(current, targetPane, thread),
+        activePane: targetPane,
+        allowThreadAutoActivation: true,
+        sessionTabs:
+          targetPane === "primary"
+            ? bindActiveSessionTabToThread(
+                current.sessionTabs,
+                current.activeSessionTabID,
+                thread,
+                activeContext,
+              )
+            : current.sessionTabs,
+        activeSessionTabID:
+          targetPane === "primary"
+            ? threadSessionTabID(thread.id)
+            : current.activeSessionTabID,
+        threads: upsertThread(current.threads, thread),
+        status: `正在路由给 ${targets.map((target) => target.name).join("、")}`,
+      }));
+      const results = await Promise.all(
+        targets.map((target, index) =>
+          window.wuu.startParticipant({
+            thread_id: thread.id,
+            participant_id: target.id,
+            task_name: target.name,
+            description: target.tagline || target.role || target.name,
+            prompt: text,
+            subagent_type: target.role,
+            record_user_message: index === 0,
+          }),
+        ),
+      );
+      setState((current) => {
+        let next = current;
+        for (const result of results) {
+          next = updateThreadByID(next, thread.id, (currentThread) =>
+            upsertThreadChildAgent(currentThread, result.agent),
+          );
+        }
+        return {
+          ...next,
+          status: `已路由给 ${targets.map((target) => target.name).join("、")}`,
+        };
+      });
+      return true;
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "mention routing failed",
+      }));
+      return false;
+    }
+  }
+
   async function sendPrompt(): Promise<void> {
     if (viewSwitchPending) {
       return;
@@ -5447,9 +5680,23 @@ export function App(): JSX.Element {
       await updateQueuedComposerMessage(message, queuedEditTarget);
       return;
     }
+    const files = inputFilesFromComposer(message.files);
+    const mentionTargets =
+      message.images.length === 0 && files.length === 0
+        ? mentionedParticipantsFromText(message.text, participants)
+        : [];
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
+    if (mentionTargets.length > 0) {
+      const routed = await sendMentionedParticipants(message, mentionTargets);
+      if (!routed) {
+        setPrompt(message.text);
+        setComposerImages(message.images);
+        setComposerFiles(message.files);
+      }
+      return;
+    }
     if (isStateActiveThreadRunning(currentState)) {
       const queued = await queueComposerMessage(message, targetThread);
       if (!queued) {
@@ -6550,6 +6797,8 @@ export function App(): JSX.Element {
         onSelectThread={(id) => void activateThread(id)}
         onSelectParticipant={openParticipantProfile}
         onCreateParticipant={openNewParticipantProfile}
+        onImportParticipants={importParticipantTemplate}
+        onExportParticipants={exportParticipantTemplate}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}
         onArchiveThread={(thread) => void archiveThread(thread)}
         onClearArchiveConfirm={(id) =>

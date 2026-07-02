@@ -775,13 +775,15 @@ type ThreadResolveSubResult struct {
 }
 
 type ParticipantStartParams struct {
-	ThreadID     string `json:"thread_id"`
-	TaskName     string `json:"task_name,omitempty"`
-	Description  string `json:"description,omitempty"`
-	Prompt       string `json:"prompt"`
-	SubagentType string `json:"subagent_type,omitempty"`
-	AgentProfile string `json:"agent_profile,omitempty"`
-	Isolation    string `json:"isolation,omitempty"`
+	ThreadID          string `json:"thread_id"`
+	ParticipantID     string `json:"participant_id,omitempty"`
+	TaskName          string `json:"task_name,omitempty"`
+	Description       string `json:"description,omitempty"`
+	Prompt            string `json:"prompt"`
+	SubagentType      string `json:"subagent_type,omitempty"`
+	AgentProfile      string `json:"agent_profile,omitempty"`
+	Isolation         string `json:"isolation,omitempty"`
+	RecordUserMessage bool   `json:"record_user_message,omitempty"`
 }
 
 type ParticipantStartResult struct {

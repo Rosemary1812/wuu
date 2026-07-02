@@ -669,6 +669,18 @@ func migrateSchema(db *sql.DB) error {
 			retired_at TEXT
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_named_name ON participants(name) WHERE retired_at IS NULL AND kind = 'named'`,
+		`CREATE TABLE IF NOT EXISTS participant_runs (
+			id             TEXT PRIMARY KEY,
+			participant_id TEXT NOT NULL,
+			agent_id       TEXT NOT NULL DEFAULT '',
+			task_id        TEXT NOT NULL DEFAULT '',
+			session_id      TEXT NOT NULL DEFAULT '',
+			summary        TEXT NOT NULL DEFAULT '',
+			outcome        TEXT NOT NULL DEFAULT '',
+			created_at     TEXT NOT NULL,
+			updated_at     TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_participant_runs_participant ON participant_runs(participant_id, created_at, id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {

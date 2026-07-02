@@ -89,6 +89,7 @@ type AgentControl struct {
 	participantMessages    []chan<- ParticipantMessage
 	participantSpeech      map[string]struct{}
 	participantResultPosts map[string]struct{}
+	participantResponses   map[string]struct{}
 }
 
 // Config holds the dependencies needed to build an AgentControl.
@@ -279,18 +280,19 @@ func (c *AgentControl) SessionID() string {
 // SpawnRequest is the internal shape of a spawn_agent tool invocation
 // after argument validation.
 type SpawnRequest struct {
-	Type         string
-	TaskName     string
-	AgentProfile string // optional durable memory profile to wake for this worker
-	Description  string
-	Prompt       string
-	ParentID     string
-	ParentPath   string
-	GoalID       string
-	GoalDir      string
-	BaseRepo     string // optional: chain off another worktree (worktree mode only)
-	Synchronous  bool
-	Timeout      time.Duration
+	Type          string
+	TaskName      string
+	ParticipantID string
+	AgentProfile  string // optional durable memory profile to wake for this worker
+	Description   string
+	Prompt        string
+	ParentID      string
+	ParentPath    string
+	GoalID        string
+	GoalDir       string
+	BaseRepo      string // optional: chain off another worktree (worktree mode only)
+	Synchronous   bool
+	Timeout       time.Duration
 	// SpeechCapability is internal-only. It is set by conversation-native
 	// app-server paths, never by the LLM-facing spawn_agent tool.
 	SpeechCapability bool
@@ -395,10 +397,13 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		if err != nil {
 			return nil, err
 		}
-		prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
+		participantID := strings.TrimSpace(req.ParticipantID)
+		if participantID == "" {
+			participantID = c.newEphemeralParticipant(threadMeta.TaskName, wt).ID
+		}
 		prepared := preparedSpawn{
 			WorkerID:         workerID,
-			ParticipantID:    prt.ID,
+			ParticipantID:    participantID,
 			WorkerType:       wt,
 			ThreadMeta:       threadMeta,
 			Description:      req.Description,
@@ -459,7 +464,10 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 
 	// Create the worker's conversation participant identity. Failure to
 	// persist never blocks the spawn.
-	prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
+	participantID := strings.TrimSpace(req.ParticipantID)
+	if participantID == "" {
+		participantID = c.newEphemeralParticipant(threadMeta.TaskName, wt).ID
+	}
 	if req.SpeechCapability {
 		c.EnableParticipantSpeech(workerID)
 	}
@@ -512,7 +520,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
 		ID:            workerID,
-		ParticipantID: prt.ID,
+		ParticipantID: participantID,
 		Type:          wtype,
 		TaskName:      threadMeta.TaskName,
 		AgentProfile:  threadMeta.AgentProfile,

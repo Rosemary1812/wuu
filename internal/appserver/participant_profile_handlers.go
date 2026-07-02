@@ -191,18 +191,32 @@ func (s *Server) participantProfile(p participant.Participant) (ParticipantProfi
 			return ParticipantProfile{}, fmt.Errorf("read participant memory: %w", err)
 		}
 	}
+	runs, err := session.ListParticipantRuns(s.rt.SessionDir, p.ID, 10)
+	if err != nil {
+		return ParticipantProfile{}, err
+	}
+	trackRecord := make([]ParticipantRunEntry, 0, len(runs))
+	for _, run := range runs {
+		trackRecord = append(trackRecord, ParticipantRunEntry{
+			TaskID:    run.TaskID,
+			Summary:   run.Summary,
+			Outcome:   run.Outcome,
+			CreatedAt: run.CreatedAt,
+		})
+	}
 	return ParticipantProfile{
-		ID:        p.ID,
-		Kind:      string(p.Kind),
-		Name:      p.Name,
-		Role:      p.Role,
-		Avatar:    p.Avatar,
-		Tagline:   p.Tagline,
-		Workspace: p.Workspace,
-		Model:     p.Model,
-		Memory:    memory,
-		CreatedAt: p.CreatedAt,
-		UpdatedAt: p.UpdatedAt,
+		ID:          p.ID,
+		Kind:        string(p.Kind),
+		Name:        p.Name,
+		Role:        p.Role,
+		Avatar:      p.Avatar,
+		Tagline:     p.Tagline,
+		Workspace:   p.Workspace,
+		Model:       p.Model,
+		Memory:      memory,
+		TrackRecord: trackRecord,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
 	}, nil
 }
 
