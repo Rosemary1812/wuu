@@ -291,6 +291,9 @@ type SpawnRequest struct {
 	BaseRepo     string // optional: chain off another worktree (worktree mode only)
 	Synchronous  bool
 	Timeout      time.Duration
+	// SpeechCapability is internal-only. It is set by conversation-native
+	// app-server paths, never by the LLM-facing spawn_agent tool.
+	SpeechCapability bool
 	// Isolation overrides the worker type's DefaultIsolation when set.
 	// Empty string means "use the type default". Use this from
 	// spawn_agent to opt a normally-inplace worker into a worktree
@@ -321,35 +324,37 @@ type SpawnResult struct {
 }
 
 type preparedSpawn struct {
-	WorkerID      string
-	ParticipantID string
-	WorkerType    WorkerType
-	ThreadMeta    agentthread.Metadata
-	Description   string
-	Prompt        string
-	GoalID        string
-	GoalDir       string
-	Isolation     IsolationMode
-	BaseRepo      string
-	IsFork        bool
-	ForkMode      string
-	ParentHistory []providers.ChatMessage
+	WorkerID         string
+	ParticipantID    string
+	WorkerType       WorkerType
+	ThreadMeta       agentthread.Metadata
+	Description      string
+	Prompt           string
+	GoalID           string
+	GoalDir          string
+	Isolation        IsolationMode
+	SpeechCapability bool
+	BaseRepo         string
+	IsFork           bool
+	ForkMode         string
+	ParentHistory    []providers.ChatMessage
 }
 
 type queuedSpawnPayload struct {
-	WorkerID      string                  `json:"worker_id"`
-	ParticipantID string                  `json:"participant_id,omitempty"`
-	WorkerType    string                  `json:"worker_type"`
-	ThreadMeta    agentthread.Metadata    `json:"thread_meta"`
-	Description   string                  `json:"description,omitempty"`
-	Prompt        string                  `json:"prompt"`
-	GoalID        string                  `json:"goal_id,omitempty"`
-	GoalDir       string                  `json:"goal_dir,omitempty"`
-	Isolation     string                  `json:"isolation"`
-	BaseRepo      string                  `json:"base_repo,omitempty"`
-	IsFork        bool                    `json:"is_fork,omitempty"`
-	ForkMode      string                  `json:"fork_mode,omitempty"`
-	ParentHistory []providers.ChatMessage `json:"parent_history,omitempty"`
+	WorkerID         string                  `json:"worker_id"`
+	ParticipantID    string                  `json:"participant_id,omitempty"`
+	WorkerType       string                  `json:"worker_type"`
+	ThreadMeta       agentthread.Metadata    `json:"thread_meta"`
+	Description      string                  `json:"description,omitempty"`
+	Prompt           string                  `json:"prompt"`
+	GoalID           string                  `json:"goal_id,omitempty"`
+	GoalDir          string                  `json:"goal_dir,omitempty"`
+	Isolation        string                  `json:"isolation"`
+	SpeechCapability bool                    `json:"speech_capability,omitempty"`
+	BaseRepo         string                  `json:"base_repo,omitempty"`
+	IsFork           bool                    `json:"is_fork,omitempty"`
+	ForkMode         string                  `json:"fork_mode,omitempty"`
+	ParentHistory    []providers.ChatMessage `json:"parent_history,omitempty"`
 }
 
 // Spawn launches a sub-agent. In synchronous mode it waits until the child
@@ -392,16 +397,17 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		}
 		prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
 		prepared := preparedSpawn{
-			WorkerID:      workerID,
-			ParticipantID: prt.ID,
-			WorkerType:    wt,
-			ThreadMeta:    threadMeta,
-			Description:   req.Description,
-			Prompt:        req.Prompt,
-			GoalID:        strings.TrimSpace(req.GoalID),
-			GoalDir:       strings.TrimSpace(req.GoalDir),
-			Isolation:     isolation,
-			BaseRepo:      req.BaseRepo,
+			WorkerID:         workerID,
+			ParticipantID:    prt.ID,
+			WorkerType:       wt,
+			ThreadMeta:       threadMeta,
+			Description:      req.Description,
+			Prompt:           req.Prompt,
+			GoalID:           strings.TrimSpace(req.GoalID),
+			GoalDir:          strings.TrimSpace(req.GoalDir),
+			Isolation:        isolation,
+			SpeechCapability: req.SpeechCapability,
+			BaseRepo:         req.BaseRepo,
 		}
 		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
@@ -454,6 +460,9 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	// Create the worker's conversation participant identity. Failure to
 	// persist never blocks the spawn.
 	prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
+	if req.SpeechCapability {
+		c.EnableParticipantSpeech(workerID)
+	}
 
 	// 3. Build worker's toolkit rooted at the chosen working directory.
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
@@ -1536,19 +1545,20 @@ func (c *AgentControl) deleteQueuedSpawn(workerID string) {
 
 func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 	return queuedSpawnPayload{
-		WorkerID:      prepared.WorkerID,
-		ParticipantID: prepared.ParticipantID,
-		WorkerType:    prepared.WorkerType.Name,
-		ThreadMeta:    prepared.ThreadMeta,
-		Description:   prepared.Description,
-		Prompt:        prepared.Prompt,
-		GoalID:        prepared.GoalID,
-		GoalDir:       prepared.GoalDir,
-		Isolation:     string(prepared.Isolation),
-		BaseRepo:      prepared.BaseRepo,
-		IsFork:        prepared.IsFork,
-		ForkMode:      prepared.ForkMode,
-		ParentHistory: providers.CloneChatMessages(prepared.ParentHistory),
+		WorkerID:         prepared.WorkerID,
+		ParticipantID:    prepared.ParticipantID,
+		WorkerType:       prepared.WorkerType.Name,
+		ThreadMeta:       prepared.ThreadMeta,
+		Description:      prepared.Description,
+		Prompt:           prepared.Prompt,
+		GoalID:           prepared.GoalID,
+		GoalDir:          prepared.GoalDir,
+		Isolation:        string(prepared.Isolation),
+		SpeechCapability: prepared.SpeechCapability,
+		BaseRepo:         prepared.BaseRepo,
+		IsFork:           prepared.IsFork,
+		ForkMode:         prepared.ForkMode,
+		ParentHistory:    providers.CloneChatMessages(prepared.ParentHistory),
 	}
 }
 
@@ -1572,19 +1582,20 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		payload.ThreadMeta.ID = workerID
 	}
 	return preparedSpawn{
-		WorkerID:      workerID,
-		ParticipantID: payload.ParticipantID,
-		WorkerType:    wt,
-		ThreadMeta:    payload.ThreadMeta,
-		Description:   payload.Description,
-		Prompt:        payload.Prompt,
-		GoalID:        payload.GoalID,
-		GoalDir:       payload.GoalDir,
-		Isolation:     isolation,
-		BaseRepo:      payload.BaseRepo,
-		IsFork:        payload.IsFork,
-		ForkMode:      payload.ForkMode,
-		ParentHistory: providers.CloneChatMessages(payload.ParentHistory),
+		WorkerID:         workerID,
+		ParticipantID:    payload.ParticipantID,
+		WorkerType:       wt,
+		ThreadMeta:       payload.ThreadMeta,
+		Description:      payload.Description,
+		Prompt:           payload.Prompt,
+		GoalID:           payload.GoalID,
+		GoalDir:          payload.GoalDir,
+		Isolation:        isolation,
+		SpeechCapability: payload.SpeechCapability,
+		BaseRepo:         payload.BaseRepo,
+		IsFork:           payload.IsFork,
+		ForkMode:         payload.ForkMode,
+		ParentHistory:    providers.CloneChatMessages(payload.ParentHistory),
 	}, nil
 }
 
@@ -1638,6 +1649,9 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		_ = c.threadStore.RecordStatus(running)
 	}
 	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo, prepared.GoalID, prepared.GoalDir)
+	if prepared.SpeechCapability {
+		c.EnableParticipantSpeech(prepared.WorkerID)
+	}
 	workerKit, err := c.workerFact(workerRoot, prepared.WorkerType, prepared.ThreadMeta)
 	if err != nil {
 		if worktreeRef != nil {

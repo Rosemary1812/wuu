@@ -5648,7 +5648,7 @@ func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
 			}
 		}
-		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo"} {
+		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability"} {
 			if _, ok := props[old]; ok {
 				t.Fatalf("spawn_agent schema should not expose old field %s: %#v", old, d.InputSchema)
 			}

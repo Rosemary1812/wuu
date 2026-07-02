@@ -335,6 +335,9 @@ func NewSession(opts Options) (*Session, error) {
 					wkit.SetMemory(nil)
 				}
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
+				if agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID) {
+					wkit.SetParticipantSpeechEnabled(true)
+				}
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
 			},
@@ -792,6 +795,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 						workerKit.SetMemory(nil)
 					}
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
+					if control != nil && control.ParticipantSpeechEnabled(meta.ID) {
+						workerKit.SetParticipantSpeechEnabled(true)
+					}
 					applyWorkerToolFilter(workerKit, wt)
 					return workerKit, nil
 				},

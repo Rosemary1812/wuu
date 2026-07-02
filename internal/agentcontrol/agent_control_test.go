@@ -308,6 +308,44 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	}
 }
 
+func TestSpawnInternalSpeechCapabilityMarksAgentBeforeWorkerFactory(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	var c *AgentControl
+	var sawSpeech bool
+	var err error
+	c, err = New(Config{
+		Client:       &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel: "fake-model",
+		ParentRepo:   dir,
+		WorktreeRoot: filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:    "sess-1",
+		WorkerFactory: func(_ string, _ WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
+			sawSpeech = c.ParticipantSpeechEnabled(meta.ID)
+			return fakeToolkit{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:             "reviewer",
+		TaskName:         "review_result",
+		Description:      "review",
+		Prompt:           "review",
+		Synchronous:      true,
+		SpeechCapability: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if !sawSpeech || !c.ParticipantSpeechEnabled(res.AgentID) {
+		t.Fatalf("expected speech capability before worker factory, saw=%t enabled=%t", sawSpeech, c.ParticipantSpeechEnabled(res.AgentID))
+	}
+}
+
 func TestSpawn_RegistersThreadMetadata(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
