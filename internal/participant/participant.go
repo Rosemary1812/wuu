@@ -5,6 +5,7 @@ package participant
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"time"
 )
 
@@ -75,8 +76,9 @@ func DeriveEphemeralName(taskName, workerType string) string {
 }
 
 // DefaultAvatar returns the default emoji glyph for a worker role.
+// Role input is normalized (trimmed and lowercased) before matching.
 func DefaultAvatar(role string) string {
-	switch role {
+	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "general-purpose":
 		return "🧭"
 	case "verification":

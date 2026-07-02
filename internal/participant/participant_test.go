@@ -26,4 +26,16 @@ func TestDefaultAvatar(t *testing.T) {
 	if DefaultAvatar("reviewer") == "" || DefaultAvatar("unknown-role") == "" {
 		t.Error("DefaultAvatar must always return a non-empty glyph")
 	}
+	cases := []struct{ role, want string }{
+		{"reviewer", "🧐"},
+		{"Reviewer", "🧐"},
+		{" qa ", "🧪"},
+		{"PLANNER", "🗺️"},
+		{"unknown-role", "🤖"},
+	}
+	for _, c := range cases {
+		if got := DefaultAvatar(c.role); got != c.want {
+			t.Errorf("DefaultAvatar(%q) = %q, want %q", c.role, got, c.want)
+		}
+	}
 }
