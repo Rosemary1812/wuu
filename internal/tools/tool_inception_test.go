@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 		{ToolCalls: []providers.ToolCall{{
 			ID:        "call_inception",
 			Name:      compact.InceptionToolName,
-			Arguments: `{"anchor_id":0,"summary":"## Task state\nContinue from current files.\n\n## External state\nNo files or processes were rolled back.\n\n## Verification state\nFocused tests remain to run.\n\n## Evidence pointers\n- internal/tools/tool_inception.go\n\n## Next step\nRun the targeted tests."}`,
+			Arguments: structuredInceptionArgs(0),
 		}}},
 		{Content: "continued"},
 	}}
@@ -55,7 +56,7 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
 			t.Fatalf("second request should not retain old Inception tool chain: %+v", step.calls[1].Messages)
 		}
-		if msg.Name == compact.ContextContinuationName && strings.Contains(msg.Content, "External state") {
+		if msg.Name == compact.ContextContinuationName && strings.Contains(msg.Content, "## Progress") {
 			foundContinuation = true
 		}
 	}
@@ -70,7 +71,7 @@ func TestInceptionToolRewritesHistoryThroughLoop(t *testing.T) {
 		if msg.Name == compact.ContextContinuationName &&
 			msg.Hidden &&
 			strings.Contains(msg.Content, compact.InceptionContinuationPrefix) &&
-			strings.Contains(msg.Content, "External state") {
+			strings.Contains(msg.Content, "Run the targeted tests.") {
 			foundContinuation = true
 		}
 	}
@@ -140,7 +141,7 @@ func TestActiveProfileCanCallInceptionDirectlyAndRewrite(t *testing.T) {
 		{ToolCalls: []providers.ToolCall{{
 			ID:        "call_inception",
 			Name:      compact.InceptionToolName,
-			Arguments: `{"anchor_id":0,"summary":"## Task state\nContinue with compact context.\n\n## External state\nNo rollback.\n\n## Verification state\nNot run.\n\n## Evidence pointers\n- active profile loaded inception\n\n## Next step\nContinue."}`,
+			Arguments: structuredInceptionArgs(0),
 		}}},
 		{Content: "continued"},
 	}}
@@ -173,6 +174,7 @@ func TestInceptionToolDescriptionTeachesTriggers(t *testing.T) {
 		"<system>CHECKPOINT {id}</system>",
 		"low-value suffix",
 		"not a transcript",
+		"delivered_to_user",
 		"Omit raw logs",
 		"does not roll back files",
 	} {
@@ -182,12 +184,57 @@ func TestInceptionToolDescriptionTeachesTriggers(t *testing.T) {
 	}
 }
 
+func TestInceptionToolDefinitionUsesStructuredSummary(t *testing.T) {
+	def := NewInceptionTool(&Env{AgentPath: agentthread.RootPath}).Definition()
+	schema := def.InputSchema
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("definition properties missing: %+v", schema)
+	}
+	summary, ok := properties["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary schema missing: %+v", properties)
+	}
+	if summary["type"] != "object" {
+		t.Fatalf("summary must be a structured object, got %+v", summary)
+	}
+	summaryProperties, ok := summary["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary properties missing: %+v", summary)
+	}
+	for _, field := range []string{"delivered_to_user", "progress", "state", "next_action", "open_questions"} {
+		if _, ok := summaryProperties[field]; !ok {
+			t.Fatalf("structured summary missing field %q: %+v", field, summaryProperties)
+		}
+	}
+}
+
+func TestInceptionToolRejectsLegacyStringSummary(t *testing.T) {
+	tool := NewInceptionTool(&Env{AgentPath: agentthread.RootPath})
+	_, err := tool.Execute(context.Background(), `{"anchor_id":0,"summary":"legacy markdown"}`)
+	if err == nil || !strings.Contains(err.Error(), "summary must be a structured object") {
+		t.Fatalf("expected legacy string summary to be rejected, got %v", err)
+	}
+}
+
+func TestInceptionToolRejectsEmptyStructuredSummaryState(t *testing.T) {
+	tool := NewInceptionTool(&Env{AgentPath: agentthread.RootPath})
+	_, err := tool.Execute(context.Background(), `{"anchor_id":0,"summary":{"delivered_to_user":"","progress":[],"state":[],"next_action":"","open_questions":[]}}`)
+	if err == nil || !strings.Contains(err.Error(), "state or next_action") {
+		t.Fatalf("expected empty state and next_action to be rejected, got %v", err)
+	}
+}
+
 func TestInceptionToolAllowsWorkerPath(t *testing.T) {
 	tool := NewInceptionTool(&Env{AgentPath: "/root/worker"})
-	_, err := tool.Execute(context.Background(), `{"anchor_id":0,"summary":"state"}`)
+	_, err := tool.Execute(context.Background(), structuredInceptionArgs(0))
 	if err == nil || !strings.Contains(err.Error(), "parent history is unavailable") {
 		t.Fatalf("expected worker path to pass agent guard and fail on missing history, got %v", err)
 	}
+}
+
+func structuredInceptionArgs(anchorID int) string {
+	return fmt.Sprintf(`{"anchor_id":%d,"summary":{"delivered_to_user":"Previous answer was already delivered to the user.","progress":["No files or processes were rolled back.","Focused tests remain to run."],"state":["Continue from current files.","Evidence pointer: internal/tools/tool_inception.go"],"next_action":"Run the targeted tests.","open_questions":[]}}`, anchorID)
 }
 
 type inceptionLoopStep struct {

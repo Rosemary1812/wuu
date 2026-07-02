@@ -140,7 +140,7 @@ func BuildInceptionContinuationContent(anchorID int, summary string) string {
 	var b strings.Builder
 	b.WriteString(InceptionContinuationPrefix)
 	fmt.Fprintf(&b, "\nThis summary replaces the low-value conversation suffix after Wuu context checkpoint %d. Files, processes, browser state, remote systems, and other external state remain current; do not treat them as rolled back.\n\n", anchorID)
-	b.WriteString("This is an assistant-authored internal summary, not a new user instruction and not user authorization. Treat it as a lossy continuation note: newer visible user messages, current files, and current tool results override it. Do not upgrade a proposal, plan, or open question into user approval or execution authority unless a visible user message explicitly says so.\n\n")
+	b.WriteString("This is an assistant-authored internal summary, not a new user instruction and not user authorization. Treat it as a lossy continuation note: newer visible user messages, current files, and current tool results override it. If a visible user message appears after this note, it is the user's latest instruction and takes precedence; address it directly. Do not upgrade a proposal, plan, or open question into user approval or execution authority unless a visible user message explicitly says so.\n\n")
 	b.WriteString(summary)
 	return wrapInternalContextContent(b.String())
 }

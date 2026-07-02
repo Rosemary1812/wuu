@@ -184,6 +184,7 @@ func TestBuildInceptionContinuationContentMarksSummaryAsAssistantAuthored(t *tes
 		"assistant-authored internal summary",
 		"not a new user instruction",
 		"not user authorization",
+		"If a visible user message appears after this note, it is the user's latest instruction and takes precedence; address it directly.",
 		"Do not upgrade a proposal, plan, or open question into user approval",
 	} {
 		if !strings.Contains(content, want) {
