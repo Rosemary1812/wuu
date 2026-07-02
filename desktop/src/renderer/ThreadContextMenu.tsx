@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * ThreadContextMenu is a lightweight right-click menu for thread rows in the
@@ -59,7 +60,7 @@ export function ThreadContextMenu({
     };
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       role="menu"
@@ -94,7 +95,8 @@ export function ThreadContextMenu({
           </button>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

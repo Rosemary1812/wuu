@@ -20,6 +20,9 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  document.body
+    .querySelectorAll(".thread-row-context-menu")
+    .forEach((menu) => menu.remove());
 });
 
 function render(props: { title: string }): { span: HTMLSpanElement | null; getKey: () => string | null } {
@@ -111,8 +114,8 @@ describe("ThreadContextMenu", () => {
 
   it("renders a menu with one item per entry", () => {
     renderMenu();
-    const menu = container.querySelector('[role="menu"]');
-    const items = container.querySelectorAll('[role="menuitem"]');
+    const menu = document.body.querySelector('[role="menu"]');
+    const items = document.body.querySelectorAll('[role="menuitem"]');
     expect(menu).not.toBeNull();
     expect(items.length).toBe(1);
     expect(items[0]?.textContent).toBe("复制 thread ID");
@@ -120,7 +123,9 @@ describe("ThreadContextMenu", () => {
 
   it("invokes onSelect and onClose when an item is clicked", () => {
     const { onSelect, onClose } = renderMenu();
-    const button = container.querySelector("button") as HTMLButtonElement | null;
+    const button = document.body.querySelector(
+      ".thread-row-context-menu button",
+    ) as HTMLButtonElement | null;
     expect(button).not.toBeNull();
     act(() => {
       button!.click();
@@ -154,7 +159,7 @@ describe("ThreadContextMenu", () => {
         />
       );
     });
-    const items = container.querySelectorAll('[role="menuitem"]');
+    const items = document.body.querySelectorAll('[role="menuitem"]');
     expect(items.length).toBe(2);
     expect(items[0]?.textContent).toBe("A");
     expect(items[1]?.textContent).toBe("B");
@@ -177,7 +182,9 @@ describe("ThreadContextMenu", () => {
         />
       );
     });
-    const firstButton = container.querySelectorAll('[role="menuitem"]')[0] as HTMLButtonElement;
+    const firstButton = document.body.querySelectorAll(
+      '[role="menuitem"]',
+    )[0] as HTMLButtonElement;
     act(() => {
       firstButton.click();
     });

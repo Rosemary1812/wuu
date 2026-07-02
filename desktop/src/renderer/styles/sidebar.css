@@ -1171,7 +1171,7 @@
    
 .thread-row-context-menu {
   position: fixed;
-  z-index: 160;
+  z-index: 2147482000;
   min-width: 180px;
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);

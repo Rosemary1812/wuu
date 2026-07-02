@@ -42,6 +42,9 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  document.body
+    .querySelectorAll(".thread-row-context-menu")
+    .forEach((menu) => menu.remove());
 });
 
 function makeThread(id: string, preview: string): Thread {
@@ -311,7 +314,7 @@ describe("SessionTabStrip right-click menu", () => {
 
   function getMenuItems(): HTMLButtonElement[] {
     return Array.from(
-      container.querySelectorAll("[role='menuitem']"),
+      document.body.querySelectorAll("[role='menuitem']"),
     ) as HTMLButtonElement[];
   }
 
@@ -352,7 +355,7 @@ describe("SessionTabStrip right-click menu", () => {
 
     rightClickTab(0);
 
-    const menu = container.querySelector(".thread-row-context-menu");
+    const menu = document.body.querySelector(".thread-row-context-menu");
     expect(menu).not.toBeNull();
     expect(
       menu?.querySelector("[role='separator']"),
@@ -390,7 +393,7 @@ describe("SessionTabStrip right-click menu", () => {
 
     expect(captured.closed).toEqual([threadSessionTabID(threadB.id)]);
     expect(captured.closedBatches).toEqual([]);
-    expect(container.querySelector(".thread-row-context-menu")).toBeNull();
+    expect(document.body.querySelector(".thread-row-context-menu")).toBeNull();
   });
 
   it("calls onCloseTabs with every tab for 'close all'", () => {
