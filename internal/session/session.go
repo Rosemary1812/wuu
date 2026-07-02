@@ -87,6 +87,7 @@ type HistoryRecord struct {
 	Name                string          `json:"name,omitempty"`
 	ParticipantID       string          `json:"participant_id,omitempty"`
 	PostKind            string          `json:"post_kind,omitempty"`
+	ThreadID            string          `json:"thread_id,omitempty"`
 	At                  time.Time       `json:"at,omitempty"`
 	InputTokens         int             `json:"input_tokens,omitempty"`
 	OutputTokens        int             `json:"output_tokens,omitempty"`
@@ -637,10 +638,23 @@ func migrateSchema(db *sql.DB) error {
 			model TEXT NOT NULL DEFAULT '',
 			participant_id TEXT NOT NULL DEFAULT '',
 			post_kind TEXT NOT NULL DEFAULT '',
+			thread_id TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY(session_id, seq),
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_messages_thread ON session_messages(session_id, thread_id, seq)`,
+		`CREATE TABLE IF NOT EXISTS conversation_threads (
+			id             TEXT PRIMARY KEY,
+			session_id     TEXT NOT NULL,
+			anchor_item_id TEXT NOT NULL,
+			title          TEXT NOT NULL DEFAULT '',
+			status         TEXT NOT NULL,
+			created_by     TEXT NOT NULL DEFAULT '',
+			created_at     TEXT NOT NULL,
+			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_conversation_threads_session ON conversation_threads(session_id, created_at, id)`,
 		`CREATE TABLE IF NOT EXISTS participants (
 			id         TEXT PRIMARY KEY,
 			kind       TEXT NOT NULL,
@@ -701,6 +715,9 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "post_kind", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "sessions", "worktree_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
@@ -903,12 +920,12 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 				session_id, seq, role, content, display_content, phase, provider_item_id, provider_item_model, client_id, hidden, steered, reasoning_content,
 				reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 				tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-				provider, model, participant_id, post_kind
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				provider, model, participant_id, post_kind, thread_id
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), strings.TrimSpace(rec.ProviderItemID), strings.TrimSpace(rec.ProviderItemModel), rec.ClientID, boolInt(rec.Hidden), boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.ContextTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
-		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind),
+		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID),
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
@@ -919,10 +936,10 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
 	query := `
 		SELECT role, content, display_content, phase, client_id, hidden, steered, reasoning_content,
-		       provider_item_id, provider_item_model,
+	       provider_item_id, provider_item_model,
 		       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-	       provider, model, participant_id, post_kind
+	       provider, model, participant_id, post_kind, thread_id
 	FROM session_messages
 WHERE session_id = ?`
 	args := []any{id}
@@ -948,7 +965,7 @@ WHERE session_id = ?`
 			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.ContextTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
-			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind,
+			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
 		}

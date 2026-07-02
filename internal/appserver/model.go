@@ -857,6 +857,9 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 		current = &turns[len(turns)-1]
 	}
 	for _, rec := range history {
+		if strings.TrimSpace(rec.ThreadID) != "" {
+			continue
+		}
 		if rec.Hidden {
 			continue
 		}

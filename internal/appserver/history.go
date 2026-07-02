@@ -76,6 +76,7 @@ type persistedMessage struct {
 	// request history unless the role is a normal provider role.
 	ParticipantID string `json:"participant_id,omitempty"`
 	PostKind      string `json:"post_kind,omitempty"`
+	ThreadID      string `json:"thread_id,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -109,6 +110,9 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 
 	var messages []providers.ChatMessage
 	for _, rec := range records {
+		if strings.TrimSpace(rec.ThreadID) != "" {
+			continue
+		}
 		role := strings.ToLower(strings.TrimSpace(rec.Role))
 		if role == "" || role == "meta" {
 			continue
@@ -206,11 +210,11 @@ func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error 
 	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" {
 		return nil
 	}
-	metas, err := loadMetaMessages(sessDir, id)
+	preserved, err := loadRewritePreservedMessages(sessDir, id)
 	if err != nil {
-		return fmt.Errorf("load session metadata: %w", err)
+		return fmt.Errorf("load preserved session history: %w", err)
 	}
-	records := make([]sessionstore.HistoryRecord, 0, len(msgs)+len(metas))
+	records := make([]sessionstore.HistoryRecord, 0, len(msgs)+len(preserved))
 	for _, msg := range msgs {
 		if rec, ok := participantPersistedMessageFromModelContext(msg); ok {
 			records = append(records, historyRecordFromPersistedMessage(rec))
@@ -221,7 +225,7 @@ func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error 
 		}
 		records = append(records, historyRecordFromPersistedMessage(persistedMessageFromChatMessage(msg)))
 	}
-	for _, rec := range metas {
+	for _, rec := range preserved {
 		records = append(records, historyRecordFromPersistedMessage(rec))
 	}
 	return sessionstore.RewriteHistoryRecords(sessDir, id, records)
@@ -378,6 +382,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		Model:               rec.Model,
 		ParticipantID:       rec.ParticipantID,
 		PostKind:            rec.PostKind,
+		ThreadID:            rec.ThreadID,
 	}
 }
 
@@ -409,6 +414,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		Model:               rec.Model,
 		ParticipantID:       rec.ParticipantID,
 		PostKind:            rec.PostKind,
+		ThreadID:            rec.ThreadID,
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err
@@ -427,6 +433,27 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 	}
 	out.DiscoveredTools = providers.CloneLoadableToolDefinitions(out.DiscoveredTools)
 	return out, nil
+}
+
+func loadRewritePreservedMessages(sessDir, id string) ([]persistedMessage, error) {
+	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" {
+		return nil, nil
+	}
+	records, err := loadPersistedMessages(sessDir, id, true)
+	if err != nil {
+		return nil, err
+	}
+	preserved := make([]persistedMessage, 0)
+	for _, rec := range records {
+		if strings.TrimSpace(rec.ThreadID) != "" {
+			preserved = append(preserved, rec)
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+			preserved = append(preserved, rec)
+		}
+	}
+	return preserved, nil
 }
 
 func mustJSON(v any) json.RawMessage {

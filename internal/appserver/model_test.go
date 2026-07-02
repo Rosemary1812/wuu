@@ -277,6 +277,27 @@ func TestTurnsFromPersistedHistoryRestoresParticipantMessage(t *testing.T) {
 	}
 }
 
+func TestTurnsFromPersistedHistorySkipsConversationThreadRows(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	turns := turnsFromPersistedHistory("thread", []persistedMessage{
+		{Role: "user", Content: "main request"},
+		{Role: "assistant", Content: "private investigation", ThreadID: "cth-review"},
+		{Role: "participant", Content: "private result", ParticipantID: "prt-reviewer", PostKind: "result", ThreadID: "cth-review"},
+		{Role: "assistant", Content: "main response"},
+	}, now, nil)
+
+	if len(turns) != 1 {
+		t.Fatalf("expected one main turn, got %+v", turns)
+	}
+	items := turns[0].Items
+	if len(items) != 2 {
+		t.Fatalf("subthread rows should not be visible in main turn list: %+v", items)
+	}
+	if items[0].Text != "main request" || items[1].Text != "main response" {
+		t.Fatalf("unexpected main items: %+v", items)
+	}
+}
+
 func TestAppendParticipantMessageLockedAddsCurrentTurnItem(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
