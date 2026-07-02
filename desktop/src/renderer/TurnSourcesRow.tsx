@@ -2,13 +2,12 @@ import { useState, type MouseEvent } from "react";
 import type { TurnSource } from "./ToolActivityHelpers";
 
 /**
- * "来源 N" pill rendered at the bottom of an assistant turn. It
- * stacks one favicon per unique host the turn consulted through
- * `web_search` or `web_fetch` and hands the chosen URL to the OS
- * default browser on click. Mirrors the ChatGPT / Claude sources
- * treatment: one slot per host (not per URL), only after at least
- * one web tool resolved, with a first-letter avatar as a fallback
- * for hosts whose favicon can't be fetched.
+ * "来源 N" pill rendered beside an assistant turn's process header.
+ * It stacks one favicon per unique host the turn consulted through
+ * `web_search` or `web_fetch` and hands the chosen URL to the OS default
+ * browser on click. One slot per host (not per URL), only after at least
+ * one web tool resolved, with a first-letter avatar as a fallback for
+ * hosts whose favicon can't be fetched.
  *
  * The component never decides policy on its own. `sources` is fed by
  * `collectTurnSources` and the open-URL responsibility belongs to the

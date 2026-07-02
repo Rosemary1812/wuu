@@ -86,14 +86,13 @@ export function AssistantTurnShell({
   const answerEntries = display.entries.filter(
     (entry) => entry.position === "answer",
   );
-  // Sources pill derives from the full turn — web_search and
-  // web_fetch happen in the process region, but the user sees the
-  // pill at the very end of the answer so it doesn't make the
-  // process fold feel longer. Dedupe by host is handled inside
-  // collectTurnSources so a burst of hits on docs.anthropic.com
-  // still produces a single icon. process_group entries wrap
-  // several raw items under one .items array, so we flatten
-  // entries.items ?? [entry.item] before feeding the helper.
+  // Sources derive from the full turn — web_search and web_fetch happen
+  // in the process region, but the source affordance belongs beside the
+  // process header so it reads as turn metadata instead of extra answer
+  // content. Dedupe by host is handled inside collectTurnSources so a
+  // burst of hits on docs.anthropic.com still produces a single icon.
+  // process_group entries wrap several raw items under one .items array,
+  // so we flatten entries.items ?? [entry.item] before feeding the helper.
   const turnSources = useMemo(
     () =>
       collectTurnSources(
@@ -149,6 +148,8 @@ export function AssistantTurnShell({
           entries={processEntries}
           defaultCollapsed={defaultCollapsed}
           latestPreview={display.latestProcessPreview}
+          sources={turnSources}
+          onOpenSource={handleOpenSource}
           {...entryProps}
         />
       ) : null}
@@ -175,17 +176,6 @@ export function AssistantTurnShell({
         </div>
       ) : null}
       {/*
-        Sources pill lives at the very bottom of the turn, just like
-        ChatGPT / Claude. collectTurnSources filters out non-web
-        tool calls and dedupes by host, so a long docs.* crawl still
-        shows one stacked icon rather than 8. The pill is also
-        rendered when the turn had only process activity (no final
-        answer) but still consulted web tools — turning the pill on
-        only after hasAnswer would silently drop sources from
-        interrupted turns, which is the moment users most want them.
-      */}
-      <TurnSourcesRow sources={turnSources} onOpen={handleOpenSource} />
-      {/*
         No inline "missing reply" notice here. The hand-rolled legacy
         aside used to live here, but it bypassed the chip pipeline
         (TurnEvents → TurnEventNotice) that every other turn-level
@@ -205,6 +195,8 @@ function TurnProcessFold({
   entries,
   defaultCollapsed,
   latestPreview,
+  sources,
+  onOpenSource,
   cwd,
   onOpenFile,
   actionableAgentMessageID,
@@ -218,6 +210,8 @@ function TurnProcessFold({
   entries: TurnEntry[];
   defaultCollapsed: boolean;
   latestPreview?: TurnProcessPreview;
+  sources: ReturnType<typeof collectTurnSources>;
+  onOpenSource?: (url: string) => void;
   cwd?: string;
   onOpenFile?: (path: string) => void;
   actionableAgentMessageID?: string;
@@ -385,21 +379,24 @@ return (
       }${hasPreview ? " has-preview" : ""}`}
       id={detailsID}
     >
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        aria-controls={`${detailsID}-body`}
-        onClick={handleToggle}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            handleToggle();
-          }
-        }}
-        className="turn-process-toggle"
-      >
-        {toggleContent}
+      <div className="turn-process-topline">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+          aria-controls={`${detailsID}-body`}
+          onClick={handleToggle}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleToggle();
+            }
+          }}
+          className="turn-process-toggle"
+        >
+          {toggleContent}
+        </div>
+        <TurnSourcesRow sources={sources} onOpen={onOpenSource} />
       </div>
       {hasDetails || hasPreview ? (
         <CollapsibleDetails

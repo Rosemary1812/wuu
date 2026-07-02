@@ -1100,7 +1100,7 @@ function makeWebSearch(
 }
 
 describe("AssistantTurnShell — turn sources pill end-to-end", () => {
-  it("renders the sources pill at the bottom of a turn that ran a single web_fetch", () => {
+  it("renders the sources pill beside the process header for a turn that ran a single web_fetch", () => {
     const turn = makeTurn("completed", [
       makeFinalAnswer("this turn read the docs page"),
       makeWebFetch("https://docs.anthropic.com/api"),
@@ -1124,12 +1124,14 @@ describe("AssistantTurnShell — turn sources pill end-to-end", () => {
     expect(img?.getAttribute("src")).toContain(
       "google.com/s2/favicons?domain=docs.anthropic.com",
     );
-    // Pill sits at the bottom of the assistant turn, after the answer
-    // body — not before it.
+    // Pill sits in the process header line, before the answer body — not
+    // down in the answer footer.
+    const topline = container.querySelector(".turn-process-topline");
+    expect(topline?.contains(pill)).toBe(true);
     const answerBody = container.querySelector(".turn-answer-body");
     expect(answerBody).not.toBeNull();
     expect(
-      answerBody?.compareDocumentPosition(pill as Node) ?? 0,
+      pill?.compareDocumentPosition(answerBody as Node) ?? 0,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 

@@ -3068,6 +3068,14 @@
   font-size: var(--font-ui);
 }
 
+.turn-process-topline {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+
 .turn-process-toggle {
   display: flex;
   width: 100%;
@@ -3084,6 +3092,12 @@
   line-height: var(--conversation-meta-line-height);
   padding: 0;
   text-align: left;
+}
+
+.turn-process-topline > .turn-process-toggle {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 
 .turn-process-toggle:hover,
@@ -6945,10 +6959,10 @@ pre {
 /*
  * Assistant-turn sources pill (ChatGPT / Claude "来源 N" treatment).
  *
- * Lives at the very bottom of an assistant turn. One stacked favicon
- * per unique host the turn consulted through web_search /
- * web_fetch. Each icon is a real button that hands its URL to the
- * OS default browser via window.wuu.openExternal.
+ * Lives as assistant-turn metadata. One stacked favicon per unique host
+ * the turn consulted through web_search / web_fetch. Each icon is a real
+ * button that hands its URL to the OS default browser via
+ * window.wuu.openExternal.
  *
  * Layout: flex row of overlapping icon buttons + trailing label.
  * The icons overlap so 5 hosts read as a compact stack rather than
@@ -6958,15 +6972,14 @@ pre {
  * Token reuse: turns.css already has --font-xs / --font-sm /
  * --ink-strong / --ink-muted / --bg-soft and friends via the
  * shared design tokens; the pill should keep its palette aligned
- * with `.message-actions` (the like / dislike row that already
- * lives at the bottom of an assistant message) so the two read as
- * the same footer surface.
+ * with `.message-actions` (the like / dislike row) so the source control
+ * still reads as quiet assistant chrome.
  */
 .turn-sources-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 0;
   padding: 4px 10px 4px 6px;
   border-radius: 999px;
   background: var(--bg-soft, rgba(127, 127, 127, 0.08));
@@ -6974,10 +6987,12 @@ pre {
   font-size: var(--font-sm, 13px);
   line-height: 1;
   color: var(--ink-muted, rgba(127, 127, 127, 0.85));
-  /* Align with the answer body, not the message rail, so the pill
-   * reads as part of the answer surface the user just finished
-   * reading. */
+  flex: 0 0 auto;
   align-self: flex-start;
+}
+
+.turn-process-topline .turn-sources-pill {
+  margin-top: -2px;
 }
 
 .turn-sources-icons {
