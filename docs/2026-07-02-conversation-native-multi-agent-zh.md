@@ -431,7 +431,7 @@ decline(reason)
 - **用户体验**：用户（或 primary 建议）把某个高频 role "固化"为 named agent：起名、选 avatar、写一句 tagline。此后 spawn 该角色的任务默认路由给它。participant card 打开后是完整档案：track record（最近任务 + 结果）、memory 摘要（可编辑/纠正）、模型与 role、changelog、reset 按钮（三层）。反馈入口挂在它的每条 result card 上。
 - **数据模型**：participants 表启用 kind=named + workspace 字段；新增 `participant_runs`（participant_id, task_id, session_id, outcome, feedback, at——track record 的原始数据，可从 harness AgentRun 派生）；workspace 目录布局：`~/.wuu/participants/<id>/{MEMORY.md, notes/}`。
 - **后端**：spawn 路径支持 `participant_id`（加载其 workspace 与 memory 进 system prompt）；任务结束写 run 记录；feedback RPC（写 memory + run 记录）；track record 摘要生成（廉价模型定期或惰性生成）。
-- **前端**：participant 档案面板；roster 入口（sidebar 一节，列常驻 agents 及状态点——借 Raft 的 status dots）；"固化为常驻"入口。
+- **前端**：participant 档案面板；roster 入口——**改造现有 sidebar 会话下方的 session 树**：树节点成为群组与 named-agent DM 的入口（含状态点——借 Raft 的 status dots），点击进入的是复用同一会话壳的群聊/DM 视图（设计规格见 7.4）；"固化为常驻"入口。
 - **风险**：高，但主要是产品风险而非技术风险。(a) memory 质量——写入垃圾会让 named agent 越用越差，需要 memory 写入的克制策略（借 wuu 自身 auto-memory 的规则）；(b) 用户根本不想管一支 roster——所以入口必须是"从用过的 role 里长出来"（用了 3 次 reviewer 后提示"要不要固化成一个常驻 reviewer？"），而不是先建团队再干活；(c) name cache 过期问题从这里开始真实存在，2.5 节机制必须同步上线，不能后补。
 - **验证**：同一 named agent 跨 3 个 session 执行同类任务，第 3 次的输出体现前两次的反馈；full reset 后行为回到基线；track record 与实际历史一致。
 
@@ -470,6 +470,128 @@ decline(reason)
 - primary agent 的主对话体验一个字节都不降级——所有新机制是它的外延，不是它的替代；
 - 发言权限默认从紧（4.3 矩阵），对话流的信噪比是不可退让的底线；
 - named agents 的价值必须表现为**代码产出质量**（review 更准、QA 更严），而不是"聊天更热闹"——Phase 4 的验证标准写的是"第 3 次输出体现前两次反馈"，就是这个意思。
+
+---
+
+## 7. 前端设计规范（执行约束）
+
+> 本章是给实施者的**强制规范**，不是建议。所有值均核实自当前代码（`desktop/src/renderer/styles/base.css` 与 `ConversationDesignTokens.ts`）。判断任何设计决策时，唯一标准是：**新组件截图放进现有对话流里，不能被认出是"后加的"**。wuu 的视觉语言是纸面编辑风（paper / ink / hairline）：白纸、墨字、发丝线，克制、留白、零装饰。所有新 UI 是这个语言的延伸，不是新语言。
+
+### 7.1 技术栈硬约束（违反即返工）
+
+1. **纯 CSS custom properties。** 禁止引入 Tailwind、CSS Modules、Sass/Less、styled-components 或任何 CSS-in-JS。
+2. **禁止新增 npm 依赖。** 不装组件库（radix / shadcn / mui）、动画库（framer-motion）、颜色/日期/工具库。现有依赖足够。
+3. **图标只用已有的 `lucide-react`**，尺寸走 `--icon-size` 系列 token（16px 默认 / 14 / 12 / 18 / 20），`stroke-width: var(--icon-stroke)`（=2）。禁止 emoji 当图标、禁止内联 SVG 新图标、禁止图标字体。participant avatar 是唯一允许 emoji 的位置。
+4. **新样式文件放 `desktop/src/renderer/styles/` 下**，按组件域命名（如 `participants.css`），组织方式参照 `turns.css`。在样式入口聚合，不在 TSX 里写 style 对象（动态定位类的行内样式除外）。
+5. **所有颜色、字号、字重、行高、圆角、阴影必须引用 token。** 新 CSS 中出现色值字面量（hex/rgb/oklch）或 `border-radius: 6px` 这类字面量即为违规。确实需要新 token 时，在 `base.css` 的 `:root` 中按现有命名法定义后引用。
+6. **仅浅色主题。** 当前代码没有暗色模式，禁止顺手加 `prefers-color-scheme: dark`。
+
+### 7.2 Token 速查表（封闭色板，禁止新增色相）
+
+**墨色（文字）**
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `--ink-strong` | `#111315` | 标题、用户消息正文 |
+| `--ink` | `#1f2328` | 正文默认 |
+| `--ink-soft` | `#5b6066` | 次要文字（meta 行、role 小字） |
+| `--ink-muted` | `#8a8f94` | 弱化文字（时间戳、decline 灰字、占位） |
+| `--ink-faint` | `#b0b6bb` | 最弱（禁用态、分隔符号） |
+
+**纸面（背景）**：`--paper: #ffffff`（内容容器）、`--surface-1: #f7f7f5`（应用底色）、`--surface-2: #f1f2ef`（hover / 芯片底）、`--surface-3: #ececea`（active）、`--surface-4: #e5e5e1`（最深，少用）。
+
+**线（边框）**：`--hairline: #e4e4df`（默认，1px）、`--hairline-strong: #d9d9d5`（需要更实的分隔时）、`--hairline-soft`（= 6% 墨色叠加，用于大面积内的弱分隔）。**所有边框 1px**，禁止 2px 及以上的彩色边框。
+
+**语义色（仅用于状态，禁止用作装饰）**：`--success: #1f9d55` / `--success-soft: #eaf4e8`；`--warning: #8a5b10` / `--warning-soft: #fff3dc` / `--warning-border: #f3dfb7`；`--danger: #b42318` / `--danger-soft: #fff0ef` / `--danger-border: #f1c2bf`；`--info: #0969da`（链接/跳转）；`--accent-warm: #ef5b18`（品牌点缀，全屏同时出现不超过一处）。
+
+**排版**：字号只有 8 档——`--font-xs: 11px`、`--font-sm: 12px`、`--font-ui: 13px`、`--font-body/--font-content: 14px`、`--font-title: 15px`、`--font-heading: 18px`、`--font-display: 24px`。字重三档：`--weight-medium: 560`、`--weight-semibold: 620`、`--weight-bold: 700`（bold 几乎不用）。行高：`--line-ui: 1.35`（单行 UI）、`--line-body: 1.55`（UI 内多行文本）、对话正文 1.75、reasoning 1.58、meta 块 1.6。字体栈不动（Inter + PingFang SC 等 CJK fallback），禁止引入新字体，禁止用 monospace 表达"技术感"（等宽只属于代码块）。
+
+**圆角**：`--radius-xs: 4px`（小徽章）、`--radius-sm: 8px`（芯片、小容器）、`--radius-md: 12px`（卡片、菜单）、`--radius-lg: 16px`（大面板）、`--radius-pill: 999px`（胶囊）。
+
+**阴影**：`--shadow-soft`（贴纸级）、`--shadow-card`（卡片，慎用）、`--shadow-pop`（仅浮层：菜单/popover）。对话流内的元素**默认无阴影**，用 hairline 边框分隔；阴影只属于浮起的东西。
+
+### 7.3 排版与间距节奏
+
+**三层文本层级**（对话流内任何新元素必须归入其一）：
+
+1. **正文层** 14px / 1.75 —— participant_message 的 markdown 正文与 primary 正文同级；
+2. **meta 层** `--font-ui` 13px / 1.6 —— 工具行、状态行、署名行、decline 灰字；
+3. **caption 层** `--font-xs/sm` 11–12px / `--line-ui` —— 时间戳、role 小字、徽章、计数。
+
+层级靠**字号 + 墨色深浅**建立，不靠加粗。正文内禁止用 bold 制造层级；`--weight-medium/semibold` 只用于 UI chrome（名字、按钮、标题）。
+
+**间距是 8px 基线上的四档节奏**（与 commit 51cedc3b 对齐）：组内紧 **8–9px**（连续工具行 9px、署名行与正文 8px）→ 段落 **14px**（`--conversation-prose-block-gap`）→ turn 内大块 **18px**（`--conversation-process-gap`，卡片与相邻 item 的距离）→ turn 间 **28px**。规则：**同组紧、异组松**。禁止给所有东西同一个 padding；禁止发明这四档之外的垂直间距。容器内边距沿用现有惯例：`12px 14px`（小容器）、`14px 16px`（卡片）。
+
+### 7.4 可复用会话壳（Conversation Shell）与入口改造
+
+**产品方向（2026-07-02 补充）**：左侧 sidebar 中当前会话下方的 session 树，改造为**群组与 named-agent DM 的入口**。从这些入口进入的不再是传统 session 消息流，而是同一设计语言下的群聊前端。
+
+**核心约束：只有一个会话壳。** 主 session、群聊、DM、未来任何会话形态，共用 `conversation-shell.css` + `session.css` 这一套壳，它是可复用组件，不是每个入口一套布局。以下宽度锚点是**全局唯一真理**，任何会话形态禁止另行定义：
+
+| Token | 值 | 含义 |
+|---|---|---|
+| `--session-outer-width` | `928px` | 会话列外层最大宽度 |
+| `--session-outer-padding-inline` | `48px` | 会话列水平内边距 |
+| `--conversation-message-max-width` | `720px` | 消息内容最大宽度（单栏） |
+| `--conversation-message-max-inline` | `90%` | 窄容器下的流体上限 |
+| `--conversation-split-message-max-width` | `760px` / `86%` | 分栏视图下的对应值 |
+
+- **响应式 = token 驱动，不是重新排版。** 窄窗口下由 `max-inline` 百分比与现有断点（`responsive-design.css` 的 920/1040/1060/1120px）自然收缩；禁止为群聊写新的 `@media` 布局分支。新会话形态若需要容器级响应，用 `@container` 且挂在壳的既有容器名下。
+- **渲染管线复用，不 fork。** 群聊消息流复用 `ThreadItemView` 管线渲染 `participant_message` / task card / 折叠项，群聊与主 session 的区别只在**数据**（participants、路由）不在**组件**。发现需要复制粘贴一个 "GroupThreadItemView" 就是走错了。
+- **composer 同理**：群聊 composer 复用现有 composer（宽度 `--session-composer-width` = 外宽减两侧 padding），只增量加 @mention 补全，不另做输入框。
+
+**Sidebar 入口规格**：群组/DM 入口行复用现有 sidebar 树的网格系统——`--sidebar-tree-toggle-col: 16px`、`--sidebar-tree-icon-col: 18px`、`--sidebar-tree-column-gap: 6px`，行内容 = 状态点（6px，语义色）+ 名字（`--font-sm`）+ 未读/状态小字（`--font-xs`、`--ink-muted`）。与现有 session 行同高同缩进，视觉上是同一棵树的成员，不是外挂面板。禁止给入口行加图标底色块、头像大图或分组卡片。
+
+### 7.5 各新组件设计规格
+
+**ParticipantChip（Phase 1）**——行内身份芯片，两种形态：
+
+- *行内形态*（用于 capsule / rail / 署名行）：emoji avatar（14px）+ 名字（`--font-sm`、`--weight-medium`、`--ink`）+ role 小字（`--font-xs`、`--ink-muted`），元素 gap 5px，无底色无边框。role 与名字之间用 `·` 分隔（`--ink-faint`）。
+- *胶囊形态*（可点击处，如 roster、mention 补全项）：padding `2px 8px`、背景 `--surface-2`、`--radius-pill`；hover `--surface-3`。禁止给 avatar 加彩色圆环或状态徽章叠角。
+
+**Result card / ParticipantMessageView（Phase 2）**——它是"署名的一段话"，不是仪表盘卡片：
+
+- 容器：`--paper` 底、1px `--hairline` 边框、`--radius-md`、padding `14px 16px`、**无阴影**；与相邻 item 间距 18px。
+- 结构三行：署名行（ParticipantChip + kind 标签 `--font-xs` `--ink-muted` + 时间戳）→ 正文（复用 `.rich-content` 的 markdown 渲染，14px/1.75）→ 动作行（"查看完整过程" / report 链接，`--font-sm`、`--info`，纯文字链接，禁止做成按钮）。
+- `kind=question`：整卡换 `--warning-soft` 底 + `--warning-border` 边框（四边等宽 1px）。**禁止**左侧粗彩条（thick left border 是明确红线）。
+- `kind=update`（折叠态）：不渲染为卡，渲染为 meta 层单行 + 展开箭头。
+
+**Decline 灰字（Phase 5）**：meta 层单行，`--font-sm`、`--ink-muted`、`--line-ui`，无容器、无图标、无背景。格式："Noel 认为无需回应：{原因}"。
+
+**Task card（Phase 3）**：与 result card 同容器规格。状态指示 = 6px 实心圆点（`--success/--warning/--danger/--ink-faint`）+ 状态词（meta 层），禁止大面积彩色状态徽章。回复计数徽章：`--font-xs`、`--surface-2` 底、`--radius-pill`、padding `1px 6px`。
+
+**Thread 侧栏（Phase 3）**：复用现有 subagent session 查看器的壳与宽度，左缘 1px `--hairline-strong` 分隔，**不用 modal，不用抽屉阴影浮层**（阴影只属于菜单级浮层）。
+
+**Roster / participant 档案（Phase 4）**：sidebar 内一节，行样式对齐 `sidebar.css` 现有 session 行；状态点 6px（online `--success` / busy `--warning` / error `--danger` / offline `--ink-faint`）。档案面板是文档不是仪表盘：track record 用普通列表排版，**禁止 sparkline、图表、大数字 hero metric 布局**。
+
+**Progress capsule 身份化（Phase 1）**：现有 capsule 样式一个字节不改，只在文本前加行内形态 ParticipantChip。
+
+### 7.6 动效约束
+
+- 只动 `transform` 与 `opacity`；展开/折叠用 `grid-template-rows: 0fr → 1fr`，禁止直接动 height/padding/margin。
+- 时长对齐现有惯例：**120ms ease**（hover/按压）、**160ms ease**（展开/浮层入场）；新入场元素（card 流入）上限 180ms `cubic-bezier(0.22, 1, 0.36, 1)`。禁止 bounce/elastic，禁止超过 200ms 的常规交互动效。
+- 所有动效包在 `@media (prefers-reduced-motion: reduce)` 降级下。
+
+### 7.7 红线清单（出现任意一条即返工）
+
+1. 任何渐变（背景、文字、边框）；
+2. glassmorphism / backdrop-blur / glow / 霓虹描边；
+3. 暗色底 + 亮色发光的"科技感"面板；
+4. 封闭色板之外的新色相，或 hex 字面量散落在组件 CSS 里；
+5. 圆角矩形 + 通用 drop shadow 的默认卡片脸（对话流内元素靠 hairline，不靠阴影）；
+6. 左侧粗彩条强调、彩色 2px+ 边框、avatar 彩色圆环；
+7. 标题上方的大图标、装饰性 sparkline、大数字 hero metric 布局；
+8. modal（一律用侧栏或 inline 展开替代）；
+9. 卡片套卡片（card 内不再出现带边框的子容器，代码块除外）；
+10. 全部居中的布局（对话流是左对齐的编辑排版）。
+
+### 7.8 完工自查（提交前逐条执行）
+
+- [ ] `grep -rn "#[0-9a-fA-F]\{3,8\}" desktop/src/renderer/styles/<新文件>.css` 无输出（色值全部走 token）；
+- [ ] 新增字号/圆角/阴影全部是 `var(--...)` 引用；
+- [ ] 截图新组件置于真实对话流中，与相邻 turn 的间距节奏（8/14/18/28）逐一核对；
+- [ ] 连续 3 个 participant message 堆叠时主流仍然可扫读（署名行不喧宾夺主）；
+- [ ] 旧 session（无 participant 数据）渲染与现状逐像素一致。
 
 ---
 
