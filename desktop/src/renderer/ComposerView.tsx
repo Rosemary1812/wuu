@@ -654,7 +654,7 @@ export function Composer({
         <div className="composer-frame" ref={composerFrameRef}>
           <ComposerGoalStrip
             summary={goalSummary ?? null}
-            disabled={readOnly || running}
+            disabled={readOnly}
             onEdit={(nextText) => {
               if (onEditGoal) {
                 return onEditGoal(nextText);

@@ -16,6 +16,7 @@ import { ImagePreviewProvider } from "./ImagePreview";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import type {
   DesktopProject,
+  ComposerGoalSummary,
   InitializeResult,
   PermissionSummary,
   RuntimeContext,
@@ -105,6 +106,11 @@ function renderComposer(props: {
   tokensPerSecond?: number;
   tokenSpeedSampledAt?: number;
   tokenSpeedSource?: "real" | "estimated" | "none";
+  goalSummary?: ComposerGoalSummary | null;
+  onEditGoal?: (text: string) => void | Promise<void>;
+  onPauseGoal?: () => void | Promise<void>;
+  onResumeGoal?: () => void | Promise<void>;
+  onClearGoal?: () => void | Promise<void>;
   activeProject?: DesktopProject;
   projects?: DesktopProject[];
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
@@ -172,6 +178,11 @@ function renderComposer(props: {
           onEditGuideMessage={props.onEditGuideMessage ?? (() => {})}
           onSend={props.onSend ?? (() => {})}
           onInterrupt={props.onInterrupt ?? (() => {})}
+          goalSummary={props.goalSummary}
+          onEditGoal={props.onEditGoal}
+          onPauseGoal={props.onPauseGoal}
+          onResumeGoal={props.onResumeGoal}
+          onClearGoal={props.onClearGoal}
           tokensPerSecond={props.tokensPerSecond ?? 0}
           tokenSpeedSampledAt={props.tokenSpeedSampledAt}
           tokenSpeedSource={props.tokenSpeedSource}
@@ -319,6 +330,16 @@ function longPastedPrompt(title = "# 交接提示词(直接粘贴)", label = "�
   ].join("\n");
 }
 
+function activeGoalSummary(text = "Ship the active goal"): ComposerGoalSummary {
+  return {
+    id: "goal-1",
+    text,
+    status: "active",
+    can_pause: true,
+    can_clear: true,
+  };
+}
+
 function pastePlainText(textarea: HTMLTextAreaElement, text: string): void {
   const event = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", {
@@ -362,6 +383,77 @@ describe("Composer send control", () => {
 
     expect(onInterrupt).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps active goal controls enabled while a request is running", async () => {
+    const onPauseGoal = vi.fn().mockResolvedValue(undefined);
+    const onClearGoal = vi.fn().mockResolvedValue(undefined);
+    renderComposer({
+      running: true,
+      goalSummary: activeGoalSummary(),
+      onPauseGoal,
+      onClearGoal,
+    });
+
+    const editButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"编辑目标\"]",
+    );
+    const pauseButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"暂停目标\"]",
+    );
+    const clearButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"清除目标\"]",
+    );
+
+    expect(editButton?.disabled).toBe(false);
+    expect(pauseButton?.disabled).toBe(false);
+    expect(clearButton?.disabled).toBe(false);
+
+    act(() => {
+      editButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(container.querySelector(".composer-goal-strip-input")).not.toBeNull();
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>("button[aria-label=\"取消编辑\"]")
+        ?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+    });
+
+    const resumedPauseButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"暂停目标\"]",
+    );
+    await act(async () => {
+      resumedPauseButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+    expect(onPauseGoal).toHaveBeenCalledTimes(1);
+
+    const resumedClearButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"清除目标\"]",
+    );
+    act(() => {
+      resumedClearButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          "button[aria-label=\"再次点击确认清除目标\"]",
+        )
+        ?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+      await Promise.resolve();
+    });
+    expect(onClearGoal).toHaveBeenCalledTimes(1);
   });
 
   it("returns focus to the textarea after clicking send", async () => {
