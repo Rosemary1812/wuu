@@ -759,9 +759,13 @@
   right: var(--conversation-visible-inset-right);
   display: inline-flex;
   width: fit-content;
-  max-width: calc(
-    100% - var(--conversation-visible-inset-left) -
-      var(--conversation-visible-inset-right) - 32px
+  max-width: min(
+    calc(
+      100% - var(--conversation-visible-inset-left) -
+        var(--conversation-visible-inset-right) - 32px
+    ),
+    var(--conversation-message-max-width),
+    var(--conversation-message-max-inline)
   );
   align-items: center;
   gap: 6px;
@@ -805,14 +809,16 @@
 }
 
 .jump-to-latest-progress {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   justify-content: center;
   gap: 0;
-  min-width: 92px;
-  max-width: min(520px, calc(100vw - 220px));
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   padding: 0 14px;
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .jump-to-latest-pill:hover,
@@ -852,7 +858,7 @@
 .jump-to-latest-progress:hover .jump-to-latest-progress-detail,
 .jump-to-latest-progress:focus-within .jump-to-latest-progress-detail {
   margin-left: 6px;
-  max-width: min(360px, calc(100vw - 320px));
+  max-width: min(360px, calc(100% - 98px));
   max-height: 24px;
   opacity: 1;
 }
