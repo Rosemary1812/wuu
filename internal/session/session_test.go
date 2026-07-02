@@ -1,6 +1,7 @@
 package session
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -425,6 +426,91 @@ func TestHistoryRecordsPersistInSQLite(t *testing.T) {
 	}
 	if len(all) != 2 || all[1].Role != "meta" || all[1].InputTokens != 12 || all[1].OutputTokens != 4 || all[1].ContextTokens != 14 || all[1].CacheCreationTokens != 6 || all[1].CacheReadTokens != 2 {
 		t.Fatalf("unexpected full history: %+v", all)
+	}
+}
+
+func TestMigrateLegacySessionMessagesAddsThreadIDBeforeIndex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", sqliteDSN(DBPath(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureDB(db); err != nil {
+		t.Fatal(err)
+	}
+	stmts := []string{
+		`CREATE TABLE sessions (
+			id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			title TEXT NOT NULL DEFAULT '',
+			summary TEXT NOT NULL DEFAULT '',
+			entries INTEGER NOT NULL DEFAULT 0,
+			cwd TEXT NOT NULL DEFAULT '',
+			forked_from_id TEXT NOT NULL DEFAULT '',
+			forked_from_turn_id TEXT NOT NULL DEFAULT '',
+			forked_from_item_id TEXT NOT NULL DEFAULT '',
+			pinned_at TEXT,
+			archived_at TEXT,
+			worktree_path TEXT NOT NULL DEFAULT '',
+			worktree_base_head TEXT NOT NULL DEFAULT '',
+			worktree_base_repo TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE session_messages (
+			session_id TEXT NOT NULL,
+			seq INTEGER NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL DEFAULT '',
+			display_content TEXT NOT NULL DEFAULT '',
+			phase TEXT NOT NULL DEFAULT '',
+			provider_item_id TEXT NOT NULL DEFAULT '',
+			provider_item_model TEXT NOT NULL DEFAULT '',
+			client_id TEXT NOT NULL DEFAULT '',
+			hidden INTEGER NOT NULL DEFAULT 0,
+			steered INTEGER NOT NULL DEFAULT 0,
+			reasoning_content TEXT NOT NULL DEFAULT '',
+			reasoning_blocks_json TEXT NOT NULL DEFAULT '',
+			images_json TEXT NOT NULL DEFAULT '',
+			files_json TEXT NOT NULL DEFAULT '',
+			tool_calls_json TEXT NOT NULL DEFAULT '',
+			discovered_tools_json TEXT NOT NULL DEFAULT '',
+			tool_call_id TEXT NOT NULL DEFAULT '',
+			tool_result_kind TEXT NOT NULL DEFAULT '',
+			name TEXT NOT NULL DEFAULT '',
+			at TEXT,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			context_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			participant_id TEXT NOT NULL DEFAULT '',
+			post_kind TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY(session_id, seq),
+			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO sessions (id, created_at, updated_at, cwd) VALUES ('thread-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '/tmp/project')`,
+		`INSERT INTO session_messages (session_id, seq, role, content) VALUES ('thread-1', 1, 'user', 'hello')`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Content != "hello" || history[0].ThreadID != "" {
+		t.Fatalf("unexpected migrated history: %+v", history)
 	}
 }
 

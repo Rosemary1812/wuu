@@ -643,7 +643,6 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
-		`CREATE INDEX IF NOT EXISTS idx_session_messages_thread ON session_messages(session_id, thread_id, seq)`,
 		`CREATE TABLE IF NOT EXISTS conversation_threads (
 			id             TEXT PRIMARY KEY,
 			session_id     TEXT NOT NULL,
@@ -731,6 +730,9 @@ func migrateSchema(db *sql.DB) error {
 	}
 	if err := addColumnIfMissing(db, "session_messages", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_session_messages_thread ON session_messages(session_id, thread_id, seq)`); err != nil {
+		return fmt.Errorf("migrate sessions database: %w", err)
 	}
 	if err := addColumnIfMissing(db, "sessions", "worktree_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
