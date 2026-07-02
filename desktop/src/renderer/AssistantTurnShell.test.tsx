@@ -579,13 +579,14 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(processFoldOpen(container)).toBe(true);
     expect(container.textContent).toContain("Done from the specialist.");
 
-    const openButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="查看完整过程"]',
+    const openLink = container.querySelector<HTMLAnchorElement>(
+      'a[aria-label="查看完整过程"]',
     );
-    expect(openButton).not.toBeNull();
+    expect(openLink).not.toBeNull();
+    expect(openLink?.textContent).toBe("查看完整过程");
 
     act(() => {
-      openButton?.click();
+      openLink?.click();
     });
 
     expect(onOpenAgent).toHaveBeenCalledWith("agent-42");

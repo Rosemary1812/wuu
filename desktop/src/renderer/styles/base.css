@@ -122,6 +122,7 @@
   --weight-bold: 700;
   --line-ui: 1.35;
   --line-body: 1.55;
+  --line-meta: 1.6;
   --menu-bg: rgba(255, 255, 255, 0.98);
   --menu-border: var(--ink-overlay-12);
   --menu-hover: #f2f3f0;

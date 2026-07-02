@@ -47,7 +47,14 @@ export function ParticipantChip({
         </span>
       ) : null}
       <span className="participant-chip-name">{name}</span>
-      {role ? <span className="participant-chip-role">{role}</span> : null}
+      {role ? (
+        <>
+          <span className="participant-chip-separator" aria-hidden="true">
+            ·
+          </span>
+          <span className="participant-chip-role">{role}</span>
+        </>
+      ) : null}
     </span>
   );
 }

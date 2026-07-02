@@ -26,7 +26,7 @@ describe("conversation shell visible center", () => {
     expect(cssRuleBody(".conversation-pane.environment-panel-reserved")).toMatch(
       /--conversation-visible-inset-right:\s*var\(--environment-panel-reserved-width\);/,
     );
-    expect(cssRuleBody(".jump-to-latest-pill")).toMatch(
+    expect(cssRuleBody(".jump-to-latest-cluster")).toMatch(
       /right:\s*var\(--conversation-visible-inset-right\);/,
     );
   });

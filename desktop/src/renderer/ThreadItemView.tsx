@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { ChevronDown, ChevronUp, ExternalLink, Paperclip, Send } from "lucide-react";
+import { ChevronDown, ChevronUp, Paperclip, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import {
@@ -249,26 +249,19 @@ export function ThreadItemView({
               <RichContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
             </div>
           ) : null}
-          {hasText || canOpenAgent ? (
-            <div className="message-actions participant-message-actions">
-              {canOpenAgent ? (
-                <button
-                  type="button"
-                  className="message-action-button"
-                  aria-label="查看完整过程"
-                  title="查看完整过程"
-                  onClick={() => onOpenAgent?.(agentID)}
-                >
-                  <ExternalLink className="icon" />
-                </button>
-              ) : null}
-              {hasText ? (
-                <MessageCopyButton
-                  getText={() => text}
-                  className="message-action-button"
-                  iconSize={15}
-                />
-              ) : null}
+          {canOpenAgent ? (
+            <div className="participant-message-actions">
+              <a
+                href={`#${agentID}`}
+                className="participant-message-link"
+                aria-label="查看完整过程"
+                onClick={(event) => {
+                  event.preventDefault();
+                  onOpenAgent?.(agentID);
+                }}
+              >
+                查看完整过程
+              </a>
             </div>
           ) : null}
         </article>

@@ -1,0 +1,120 @@
+.participant-chip {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+  vertical-align: baseline;
+}
+
+.participant-chip-avatar {
+  flex: 0 0 auto;
+  font-size: var(--icon-size-sm);
+  line-height: 1;
+}
+
+.participant-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.participant-chip-separator {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+}
+
+.participant-chip-role {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+  white-space: nowrap;
+}
+
+.participant-chip--sm .participant-chip-avatar {
+  font-size: var(--font-ui);
+}
+
+.participant-message-card {
+  position: relative;
+  display: grid;
+  width: min(100%, 760px);
+  min-width: 0;
+  gap: 8px;
+  margin: 4px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--font-body);
+  line-height: var(--conversation-reading-line-height);
+}
+
+.participant-message-card--question {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.participant-message-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: var(--font-ui);
+  line-height: var(--line-meta);
+}
+
+.participant-message-card-fallback {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.participant-message-card-body {
+  min-width: 0;
+}
+
+.participant-message-card-body > :first-child {
+  margin-top: 0;
+}
+
+.participant-message-card-body > :last-child {
+  margin-bottom: 0;
+}
+
+.participant-message-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  color: var(--info);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+}
+
+.participant-message-link {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--info);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.participant-message-link:hover,
+.participant-message-link:focus-visible {
+  text-decoration: underline;
+}
