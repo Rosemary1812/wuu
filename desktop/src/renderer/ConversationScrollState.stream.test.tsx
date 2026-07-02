@@ -803,6 +803,41 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
+  it("does not re-enable follow when layout shrink clamps an already-away viewport to the new bottom", () => {
+    mount({ scrollHeight: 2200, clientHeight: 600 });
+    if (!layout || !handle || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1600);
+
+    act(() => {
+      layout!.scrollTop = 1200;
+    });
+    fireUserScroll();
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      // The process fold can collapse after final text settles. If the
+      // user was already reading above the bottom, Chromium may still clamp
+      // scrollTop to the new max and emit a scroll event. That layout clamp
+      // must not mean the user asked to resume following latest content.
+      layout!.scrollHeight = 1700;
+      layout!.scrollTop = 1100;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(layout.scrollTop).toBe(1100);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      layout!.scrollHeight += 120;
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(1100);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
   it("pins the visual bottom via transform during live window resize, then commits the real scrollTop when the resize settles", () => {
     // User parked at the bottom of a tall conversation. We want the
     // visual to keep tracking the new bottom while the window is being

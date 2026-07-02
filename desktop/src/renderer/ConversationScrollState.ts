@@ -533,9 +533,22 @@ export function useConversationScrollState({
       nextAutoFollow = conversationAutoFollowRef.current;
     } else if (atLatestView) {
       suppressAutoFollowRearmRef.current = false;
-      nextAutoFollow = true;
-      setAutoFollow(true);
-      setAutoFollowOverflowAnchor(node, true);
+      if (
+        conversationAutoFollowRef.current ||
+        scrolledDown ||
+        node.scrollHeight <= node.clientHeight
+      ) {
+        nextAutoFollow = true;
+        setAutoFollow(true);
+        setAutoFollowOverflowAnchor(node, true);
+      } else {
+        // A layout shrink can clamp an already-away viewport to the new max
+        // scrollTop without user intent. Keep the user's away state unless
+        // they actively scroll down to latest or content no longer scrolls.
+        nextAutoFollow = false;
+        setAutoFollow(false);
+        setAutoFollowOverflowAnchor(node, false);
+      }
     } else if (conversationAutoFollowRef.current && !userScrollAwayIntent) {
       suppressAutoFollowRearmRef.current = false;
       if (isWindowResizing()) {
