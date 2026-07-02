@@ -1206,6 +1206,8 @@ function SettingsGeneralPage({
   const [appendSystemPromptDraft, setAppendSystemPromptDraft] = useState(generalSettings?.append_system_prompt ?? "");
   const [memoryDisabledDraft, setMemoryDisabledDraft] = useState(generalSettings?.memory_disabled ?? false);
   const [mcpEnabledDraft, setMCPEnabledDraft] = useState<Record<string, boolean>>(() => ({ ...configuredMCPEnabled }));
+  const [mcpToggleBusy, setMCPToggleBusy] = useState("");
+  const [mcpToggleError, setMCPToggleError] = useState("");
   const [generalError, setGeneralError] = useState("");
   const [generalSaved, setGeneralSaved] = useState(false);
 
@@ -1225,7 +1227,6 @@ function SettingsGeneralPage({
       await onGeneralSave({
         append_system_prompt: appendSystemPromptDraft.trim(),
         memory_disable: memoryDisabledDraft,
-        mcp_enabled_toggles: mcpEnabledDraft,
       });
       setGeneralSaved(true);
     } catch (saveError) {
@@ -1233,7 +1234,26 @@ function SettingsGeneralPage({
     }
   }
 
-  const mcpToggleNames = Object.keys(mcpEnabledDraft).sort((a, b) => a.localeCompare(b));
+  async function toggleMCPServer(name: string, enabled: boolean): Promise<void> {
+    const previous = mcpEnabledDraft;
+    const next = { ...previous, [name]: enabled };
+    setMCPEnabledDraft(next);
+    setMCPToggleBusy(name);
+    setMCPToggleError("");
+    try {
+      await onGeneralSave({ mcp_enabled_toggles: next });
+    } catch (toggleError) {
+      setMCPEnabledDraft(previous);
+      setMCPToggleError(toggleError instanceof Error ? toggleError.message : "保存失败");
+    } finally {
+      setMCPToggleBusy("");
+    }
+  }
+
+  const mcpServerByName = new Map(mcpServers.map((server) => [server.name, server]));
+  const mcpRowNames = Array.from(
+    new Set([...mcpServers.map((server) => server.name), ...Object.keys(mcpEnabledDraft)]),
+  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <>
@@ -1279,41 +1299,6 @@ function SettingsGeneralPage({
               <span className="sr-only">{memoryDisabledDraft ? "打开记忆" : "关闭记忆"}</span>
             </button>
           </SettingsRow>
-          {mcpToggleNames.length > 0 ? (
-            mcpToggleNames.map((name) => {
-              const enabled = mcpEnabledDraft[name] ?? true;
-              return (
-                <SettingsRow
-                  key={name}
-                  title={name}
-                  description={enabled ? "启动时允许连接这个 MCP 服务器" : "保持关闭，不加载这个 MCP 服务器"}
-                >
-                  <button
-                    className="settings-switch"
-                    type="button"
-                    role="switch"
-                    aria-checked={enabled}
-                    data-testid={`settings-mcp-enabled-${name}`}
-                    disabled={running || !initialized}
-                    onClick={() => {
-                      setMCPEnabledDraft((draft) => ({ ...draft, [name]: !enabled }));
-                      setGeneralSaved(false);
-                    }}
-                  >
-                    <span className="settings-switch-thumb" aria-hidden="true" />
-                    <span className="sr-only">{enabled ? `关闭 ${name}` : `打开 ${name}`}</span>
-                  </button>
-                </SettingsRow>
-              );
-            })
-          ) : (
-            <SettingsRow
-              title="MCP 服务器"
-              description="当前配置里没有可切换的 MCP 服务器"
-            >
-              <span className="settings-row-control-value">—</span>
-            </SettingsRow>
-          )}
           <SettingsCardFooter
             error={generalError}
             saved={generalSaved}
@@ -1321,6 +1306,90 @@ function SettingsGeneralPage({
             disabled={running || !initialized}
           />
         </form>
+      </SettingsSection>
+
+      <SettingsSection
+        title="MCP 服务器"
+        description="控制每个 MCP 服务器是否启用，并管理连接状态。"
+        testID="settings-mcp"
+      >
+        <SettingsCard>
+          {mcpLoading && mcpRowNames.length === 0 ? (
+            <div className="settings-mcp-empty">加载中…</div>
+          ) : mcpRowNames.length > 0 ? (
+            mcpRowNames.map((name) => {
+              const server = mcpServerByName.get(name);
+              const busy = mcpBusyServer === name || mcpToggleBusy === name;
+              const connected = server ? server.connected || server.state === "connected" : false;
+              const disabledByConfig = server?.state === "disabled";
+              const enabled = mcpEnabledDraft[name] ?? !disabledByConfig;
+              return (
+                <SettingsRow
+                  key={name}
+                  title={name}
+                  description={
+                    server
+                      ? formatMCPServerMeta(server)
+                      : enabled
+                        ? "启动时允许连接这个 MCP 服务器"
+                        : "保持关闭，不加载这个 MCP 服务器"
+                  }
+                >
+                  {server ? (
+                    <span className="settings-row-control-value">
+                      <span className={`settings-status-pill ${mcpStateTone(server.state)}`}>
+                        {mcpStateLabel(server.state)}
+                      </span>
+                    </span>
+                  ) : null}
+                  {server ? (
+                    <>
+                      <button
+                        className="settings-button settings-icon-button"
+                        type="button"
+                        title="刷新"
+                        aria-label={`刷新 ${name}`}
+                        disabled={busy || disabledByConfig}
+                        onClick={() => void onMCPAction(name, "refresh")}
+                      >
+                        <RefreshCw size={15} aria-hidden="true" />
+                      </button>
+                      <button
+                        className="settings-button settings-icon-button"
+                        type="button"
+                        title={disabledByConfig ? "已在配置中关闭" : connected ? "断开" : "连接"}
+                        aria-label={`${connected ? "断开" : "连接"} ${name}`}
+                        disabled={busy || disabledByConfig}
+                        onClick={() => void onMCPAction(name, connected ? "disconnect" : "connect")}
+                      >
+                        {connected ? <PlugZap size={15} aria-hidden="true" /> : <Plug size={15} aria-hidden="true" />}
+                      </button>
+                    </>
+                  ) : null}
+                  <button
+                    className="settings-switch"
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    data-testid={`settings-mcp-enabled-${name}`}
+                    disabled={running || !initialized || busy}
+                    onClick={() => void toggleMCPServer(name, !enabled)}
+                  >
+                    <span className="settings-switch-thumb" aria-hidden="true" />
+                    <span className="sr-only">{enabled ? `关闭 ${name}` : `打开 ${name}`}</span>
+                  </button>
+                  {server?.error ? (
+                    <small className="settings-mcp-error">{server.error}</small>
+                  ) : null}
+                </SettingsRow>
+              );
+            })
+          ) : (
+            <div className="settings-mcp-empty">暂无 MCP 服务器</div>
+          )}
+          {mcpError ? <div className="settings-mcp-empty settings-mcp-error">{mcpError}</div> : null}
+          {mcpToggleError ? <div className="settings-mcp-empty settings-mcp-error">{mcpToggleError}</div> : null}
+        </SettingsCard>
       </SettingsSection>
 
       {showDebugControlsSetting ? (
@@ -1383,63 +1452,6 @@ function SettingsGeneralPage({
           </SettingsCard>
         </SettingsSection>
       ) : null}
-
-      <SettingsSection
-        title="MCP"
-        description="外部 MCP 服务器的连接状态。"
-        testID="settings-mcp"
-      >
-        <SettingsCard>
-          {mcpLoading ? (
-            <div className="settings-mcp-empty">加载中…</div>
-          ) : mcpServers.length > 0 ? (
-            mcpServers.map((server) => {
-              const busy = mcpBusyServer === server.name;
-              const connected = server.connected || server.state === "connected";
-              const disabledByConfig = server.state === "disabled";
-              return (
-                <SettingsRow
-                  key={server.name}
-                  title={server.name}
-                  description={formatMCPServerMeta(server)}
-                >
-                  <span className="settings-row-control-value">
-                    <span className={`settings-status-pill ${mcpStateTone(server.state)}`}>
-                      {mcpStateLabel(server.state)}
-                    </span>
-                  </span>
-                  <button
-                    className="settings-button settings-icon-button"
-                    type="button"
-                    title="刷新"
-                    aria-label={`刷新 ${server.name}`}
-                    disabled={busy || disabledByConfig}
-                    onClick={() => void onMCPAction(server.name, "refresh")}
-                  >
-                    <RefreshCw size={15} aria-hidden="true" />
-                  </button>
-                  <button
-                    className="settings-button settings-icon-button"
-                    type="button"
-                    title={disabledByConfig ? "已在配置中关闭" : connected ? "断开" : "连接"}
-                    aria-label={`${connected ? "断开" : "连接"} ${server.name}`}
-                    disabled={busy || disabledByConfig}
-                    onClick={() => void onMCPAction(server.name, connected ? "disconnect" : "connect")}
-                  >
-                    {connected ? <PlugZap size={15} aria-hidden="true" /> : <Plug size={15} aria-hidden="true" />}
-                  </button>
-                  {server.error ? (
-                    <small className="settings-mcp-error">{server.error}</small>
-                  ) : null}
-                </SettingsRow>
-              );
-            })
-          ) : (
-            <div className="settings-mcp-empty">暂无 MCP 服务器</div>
-          )}
-          {mcpError ? <div className="settings-mcp-empty settings-mcp-error">{mcpError}</div> : null}
-        </SettingsCard>
-      </SettingsSection>
 
       <SettingsSection
         title="关于"

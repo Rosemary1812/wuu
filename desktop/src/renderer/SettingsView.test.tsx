@@ -485,10 +485,18 @@ describe("SettingsView general settings", () => {
       memorySwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
+    // MCP toggles now save immediately on switch, sending only the toggle map.
     const docsSwitch = container.querySelector("[data-testid=\"settings-mcp-enabled-docs\"]") as HTMLButtonElement | null;
     expect(docsSwitch).not.toBeNull();
     await act(async () => {
       docsSwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onGeneralSave).toHaveBeenCalledWith({
+      mcp_enabled_toggles: {
+        docs: false,
+        search: false,
+      },
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
@@ -503,10 +511,6 @@ describe("SettingsView general settings", () => {
     expect(onGeneralSave).toHaveBeenCalledWith({
       append_system_prompt: "默认用中文回答。",
       memory_disable: true,
-      mcp_enabled_toggles: {
-        docs: false,
-        search: false,
-      },
     });
   });
 });
