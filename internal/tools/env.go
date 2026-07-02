@@ -252,10 +252,11 @@ type Env struct {
 	// Zero uses the built-in default.
 	UserMemoryCharLimit int
 
-	readState *readFileState
-	testState testRunState
-	planState planState
-	webState  webEvidenceState
+	readState      *readFileState
+	testState      testRunState
+	planState      planState
+	webState       webEvidenceState
+	inceptionState inceptionFailureState
 
 	toolTelemetry toolTelemetry
 }

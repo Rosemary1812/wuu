@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/compact"
@@ -13,6 +14,17 @@ import (
 )
 
 type InceptionTool struct{ env *Env }
+
+const (
+	maxConsecutiveInceptionFailures = 3
+	inceptionTemporarilyDisabled    = "inception is temporarily disabled for this session due to repeated failures; continue without compressing"
+)
+
+type inceptionFailureState struct {
+	mu          sync.Mutex
+	consecutive int
+	disabled    bool
+}
 
 func NewInceptionTool(env *Env) *InceptionTool { return &InceptionTool{env: env} }
 
@@ -75,27 +87,30 @@ func (t *InceptionTool) Definition() providers.ToolDefinition {
 }
 
 func (t *InceptionTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	if t.isTemporarilyDisabled() {
+		return "", errors.New(inceptionTemporarilyDisabled)
+	}
 	var args inceptionArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
+		return t.fail(err)
 	}
 	if args.AnchorID == nil {
-		return "", errors.New("inception: anchor_id is required")
+		return t.fail(errors.New("inception: anchor_id is required"))
 	}
 	anchorID := *args.AnchorID
 	if anchorID < 0 {
-		return "", errors.New("inception: anchor_id must be non-negative")
+		return t.fail(errors.New("inception: anchor_id must be non-negative"))
 	}
 	summary, err := parseInceptionSummary(args.Summary)
 	if err != nil {
-		return "", err
+		return t.fail(err)
 	}
 	history := agent.HistoryFromContext(ctx)
 	if len(history) == 0 {
-		return "", errors.New("inception: parent history is unavailable")
+		return t.fail(errors.New("inception: parent history is unavailable"))
 	}
 	if _, ok := compact.FindContextAnchorIndex(history, anchorID); !ok {
-		return "", fmt.Errorf("inception: anchor %d not found", anchorID)
+		return t.fail(fmt.Errorf("inception: anchor %d not found", anchorID))
 	}
 
 	content := compact.BuildInceptionContinuationContent(anchorID, summary)
@@ -109,8 +124,9 @@ func (t *InceptionTool) Execute(ctx context.Context, argsJSON string) (string, e
 		},
 	})
 	if err != nil {
-		return "", err
+		return t.fail(err)
 	}
+	t.recordSuccess()
 	return string(out), nil
 }
 
@@ -210,4 +226,48 @@ func writeInceptionSummaryListSection(b *strings.Builder, title string, values [
 	for _, value := range values {
 		fmt.Fprintf(b, "- %s\n", value)
 	}
+}
+
+func (t *InceptionTool) isTemporarilyDisabled() bool {
+	if t == nil || t.env == nil {
+		return false
+	}
+	return t.env.inceptionState.isDisabled()
+}
+
+func (t *InceptionTool) fail(err error) (string, error) {
+	if t != nil && t.env != nil {
+		t.env.inceptionState.recordFailure()
+	}
+	return "", err
+}
+
+func (t *InceptionTool) recordSuccess() {
+	if t != nil && t.env != nil {
+		t.env.inceptionState.recordSuccess()
+	}
+}
+
+func (s *inceptionFailureState) isDisabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.disabled
+}
+
+func (s *inceptionFailureState) recordFailure() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disabled {
+		return
+	}
+	s.consecutive++
+	if s.consecutive >= maxConsecutiveInceptionFailures {
+		s.disabled = true
+	}
+}
+
+func (s *inceptionFailureState) recordSuccess() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consecutive = 0
 }

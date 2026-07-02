@@ -225,6 +225,26 @@ func TestInceptionToolRejectsEmptyStructuredSummaryState(t *testing.T) {
 	}
 }
 
+func TestInceptionToolTemporarilyDisablesAfterRepeatedFailures(t *testing.T) {
+	tool := NewInceptionTool(&Env{AgentPath: agentthread.RootPath})
+	args := structuredInceptionArgs(99)
+
+	for i := 0; i < maxConsecutiveInceptionFailures; i++ {
+		_, err := tool.Execute(context.Background(), args)
+		if err == nil || !strings.Contains(err.Error(), "parent history is unavailable") {
+			t.Fatalf("failure %d should report the real execution error before disabling, got %v", i+1, err)
+		}
+	}
+
+	_, err := tool.Execute(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "inception is temporarily disabled for this session due to repeated failures") {
+		t.Fatalf("expected temporary disablement after repeated failures, got %v", err)
+	}
+	if def := tool.Definition(); def.Name != compact.InceptionToolName {
+		t.Fatalf("temporary execution disablement must not remove the tool definition: %+v", def)
+	}
+}
+
 func TestInceptionToolAllowsWorkerPath(t *testing.T) {
 	tool := NewInceptionTool(&Env{AgentPath: "/root/worker"})
 	_, err := tool.Execute(context.Background(), structuredInceptionArgs(0))
