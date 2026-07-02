@@ -1093,6 +1093,34 @@ func TestPruneToolResults_TurnProtection(t *testing.T) {
 	}
 }
 
+func TestPruneToolResults_DoesNotCountHiddenContextAnchorAsUserTurn(t *testing.T) {
+	large := largePrunableToolOutput("a")
+	messages := []providers.ChatMessage{
+		// Visible turn 1: old enough to prune.
+		{Role: "user", Content: "old question"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "c1", Content: large},
+		{Role: "assistant", Content: "old answer"},
+		// Visible turn 2: should remain protected.
+		{Role: "user", Content: "recent question"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c2", Name: "bash", Arguments: "{}"}}},
+		{Role: "tool", Name: "bash", ToolCallID: "c2", Content: large},
+		{Role: "assistant", Content: "recent answer"},
+		// Visible turn 3: latest user request, followed by an internal anchor.
+		{Role: "user", Content: "latest question"},
+		BuildContextAnchorMessage(0),
+	}
+
+	pruned := PruneToolResults(messages)
+
+	if pruned[2].Content == large {
+		t.Fatal("expected old visible turn tool result to be pruned")
+	}
+	if pruned[6].Content != large {
+		t.Fatal("hidden context anchor must not consume a protected visible user turn")
+	}
+}
+
 func TestPruneToolResults_ProtectsSkillTool(t *testing.T) {
 	large := largePrunableToolOutput("s")
 	messages := []providers.ChatMessage{
@@ -1151,7 +1179,7 @@ func TestPruneToolResults_BelowMinimumNotPruned(t *testing.T) {
 	// protect threshold; older result pushes total over 40K but the prunable
 	// amount is under the 20K minimum, so nothing is pruned.
 	recentOld := strings.Repeat("b", 150_000) // ~37.5K tokens, under 40K protect
-	farOld := strings.Repeat("a", 50_000)    // ~12.5K tokens, prunable < 20K minimum
+	farOld := strings.Repeat("a", 50_000)     // ~12.5K tokens, prunable < 20K minimum
 
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "q1"},

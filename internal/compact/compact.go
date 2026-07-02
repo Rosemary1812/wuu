@@ -878,7 +878,7 @@ func PruneToolResults(messages []providers.ChatMessage) []providers.ChatMessage 
 	var indexes []int
 	for i := len(messages) - 1; i >= 0; i-- {
 		// Count user messages as turn boundaries going backwards.
-		if strings.EqualFold(messages[i].Role, "user") {
+		if isPruneUserTurnBoundary(messages[i]) {
 			turnsSeen++
 		}
 		// Skip tool results in the last pruneProtectedTurns turns.
@@ -912,6 +912,10 @@ func PruneToolResults(messages []providers.ChatMessage) []providers.ChatMessage 
 		pruned[i].Content = summarizePrunedToolResult(pruned[i])
 	}
 	return pruned
+}
+
+func isPruneUserTurnBoundary(msg providers.ChatMessage) bool {
+	return strings.EqualFold(msg.Role, "user") && !msg.Hidden && !IsInternalContextMessage(msg)
 }
 
 func summarizePrunedToolResult(msg providers.ChatMessage) string {
