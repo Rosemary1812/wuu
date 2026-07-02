@@ -2754,7 +2754,6 @@ export function App(): JSX.Element {
           void submitEditedThreadMessageFromHistory(thread, turnID, item, text, images, files, pane)
         }
         onStreamFrame={scheduleStreamScroll}
-        processAutoCollapsePaused={state.activePane === pane && userScrolledAway}
         onNoticeAction={handleNoticeAction}
         pendingToolApproval={state.pendingToolApproval}
         onResolveToolApproval={(approval, decision) =>
@@ -6563,7 +6562,6 @@ export function App(): JSX.Element {
                 contextCompositionEntries={contextCompositionEntries}
                 historyMessageEdit={historyMessageEdit}
                 onStreamFrame={scheduleStreamScroll}
-                processAutoCollapsePaused={userScrolledAway}
                 onCollapseComplete={handleTurnCollapseComplete}
                 onDismissContextComposition={dismissContextCompositionEntry}
                 canEditThreadMessage={canEditCachedThreadMessage}
@@ -6748,7 +6746,6 @@ type CachedConversationPanesProps = {
   contextCompositionEntries: ContextCompositionEntry[];
   historyMessageEdit?: HistoryMessageEditState;
   onStreamFrame: () => void;
-  processAutoCollapsePaused?: boolean;
   onCollapseComplete: () => void;
   onDismissContextComposition: (id: string) => void;
   canEditThreadMessage: (thread: Thread) => boolean;
@@ -6792,7 +6789,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   contextCompositionEntries,
   historyMessageEdit,
   onStreamFrame,
-  processAutoCollapsePaused,
   onCollapseComplete,
   onDismissContextComposition,
   canEditThreadMessage,
@@ -6892,9 +6888,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                       thread.turns[thread.turns.length - 1]?.id === turn.id
                     }
                     onStreamFrame={onStreamFrame}
-                    processAutoCollapsePaused={
-                      isActive && processAutoCollapsePaused
-                    }
                     onCollapseComplete={onCollapseComplete}
                     onForkMessage={(turnID, itemID) =>
                       onForkMessage(thread, turnID, itemID)

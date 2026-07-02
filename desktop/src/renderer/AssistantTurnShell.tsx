@@ -59,7 +59,6 @@ export function AssistantTurnShell({
   onStreamFrame,
   onForkMessage,
   onCollapseComplete,
-  processAutoCollapsePaused = false,
   onNoticeAction,
   pendingApproval,
   onApproveTool,
@@ -75,7 +74,6 @@ export function AssistantTurnShell({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onCollapseComplete?: () => void;
-  processAutoCollapsePaused?: boolean;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   pendingApproval?: PendingToolApproval;
   onApproveTool?: () => void;
@@ -117,9 +115,7 @@ export function AssistantTurnShell({
   // The collapse transition itself is handled separately (rule 8 keeps
   // the fold reachable so the user can re-expand it).
   const defaultCollapsed =
-    turn.status === "completed" &&
-    answerEntries.length > 0 &&
-    !processAutoCollapsePaused;
+    turn.status === "completed" && answerEntries.length > 0;
 
   const hasProcess =
     processEntries.length > 0 || Boolean(display.latestProcessPreview);
@@ -153,7 +149,6 @@ export function AssistantTurnShell({
           entries={processEntries}
           defaultCollapsed={defaultCollapsed}
           latestPreview={display.latestProcessPreview}
-          processAutoCollapsePaused={processAutoCollapsePaused}
           {...entryProps}
         />
       ) : null}
@@ -210,7 +205,6 @@ function TurnProcessFold({
   entries,
   defaultCollapsed,
   latestPreview,
-  processAutoCollapsePaused,
   cwd,
   onOpenFile,
   actionableAgentMessageID,
@@ -224,7 +218,6 @@ function TurnProcessFold({
   entries: TurnEntry[];
   defaultCollapsed: boolean;
   latestPreview?: TurnProcessPreview;
-  processAutoCollapsePaused: boolean;
   cwd?: string;
   onOpenFile?: (path: string) => void;
   actionableAgentMessageID?: string;
@@ -243,9 +236,7 @@ function TurnProcessFold({
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
-  const settledRef = useRef(
-    turn.status !== "in_progress" && !processAutoCollapsePaused,
-  );
+  const settledRef = useRef(turn.status !== "in_progress");
   // Tracks whether the user has manually toggled the fold during the
   // current turn. If so, the auto-collapse on turn completion is
   // suppressed — the user has expressed their own intent for the
@@ -292,17 +283,6 @@ function TurnProcessFold({
       autoCollapsePendingRef.current = false;
       return;
     }
-    if (!expanded) {
-      settledRef.current = true;
-      return;
-    }
-    if (processAutoCollapsePaused) {
-      autoCollapsePendingRef.current = false;
-      if (!userToggledRef.current) {
-        settledRef.current = false;
-      }
-      return;
-    }
     if (settledRef.current || userToggledRef.current) {
       return;
     }
@@ -315,7 +295,7 @@ function TurnProcessFold({
       setExpanded(false);
     }, PROCESS_FOLD_SETTLING_DELAY_MS);
     return () => window.clearTimeout(collapseTimer);
-  }, [expanded, processAutoCollapsePaused, turn.status]);
+  }, [turn.status]);
 
   // Watch the expanded → collapsed transition and fire the callback
   // once the CSS transition has settled (slightly longer than
