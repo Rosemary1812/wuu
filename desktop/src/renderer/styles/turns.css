@@ -280,6 +280,12 @@
   gap: var(--conversation-message-element-gap, 20px);
 }
 
+.turn-process-fold-preserved-space {
+  display: block;
+  pointer-events: none;
+  flex: 0 0 auto;
+}
+
 .turn-process-entry {
   display: block;
   min-width: 0;

@@ -1,14 +1,16 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 export function CollapsibleDetails({
   children,
   className,
+  containerRef,
   expanded,
   id,
   innerClassName,
 }: {
   children: ReactNode;
   className?: string;
+  containerRef?: Ref<HTMLDivElement>;
   expanded: boolean;
   id?: string;
   innerClassName?: string;
@@ -25,7 +27,12 @@ export function CollapsibleDetails({
     .join(" ");
 
   return (
-    <div className={detailsClassName} id={id} aria-hidden={!expanded}>
+    <div
+      className={detailsClassName}
+      id={id}
+      aria-hidden={!expanded}
+      ref={containerRef}
+    >
       <div className={innerClassNames}>{children}</div>
     </div>
   );

@@ -59,7 +59,7 @@ export function AssistantTurnShell({
   onStreamFrame,
   onForkMessage,
   onCollapseComplete,
-  processAutoCollapsePaused = false,
+  preserveProcessAutoCollapseSpace = false,
   onNoticeAction,
   pendingApproval,
   onApproveTool,
@@ -75,7 +75,7 @@ export function AssistantTurnShell({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onCollapseComplete?: () => void;
-  processAutoCollapsePaused?: boolean;
+  preserveProcessAutoCollapseSpace?: boolean;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   pendingApproval?: PendingToolApproval;
   onApproveTool?: () => void;
@@ -117,9 +117,7 @@ export function AssistantTurnShell({
   // The collapse transition itself is handled separately (rule 8 keeps
   // the fold reachable so the user can re-expand it).
   const defaultCollapsed =
-    turn.status === "completed" &&
-    answerEntries.length > 0 &&
-    !processAutoCollapsePaused;
+    turn.status === "completed" && answerEntries.length > 0;
 
   const hasProcess =
     processEntries.length > 0 || Boolean(display.latestProcessPreview);
@@ -153,7 +151,7 @@ export function AssistantTurnShell({
           entries={processEntries}
           defaultCollapsed={defaultCollapsed}
           latestPreview={display.latestProcessPreview}
-          processAutoCollapsePaused={processAutoCollapsePaused}
+          preserveProcessAutoCollapseSpace={preserveProcessAutoCollapseSpace}
           {...entryProps}
         />
       ) : null}
@@ -210,7 +208,7 @@ function TurnProcessFold({
   entries,
   defaultCollapsed,
   latestPreview,
-  processAutoCollapsePaused,
+  preserveProcessAutoCollapseSpace,
   cwd,
   onOpenFile,
   actionableAgentMessageID,
@@ -224,7 +222,7 @@ function TurnProcessFold({
   entries: TurnEntry[];
   defaultCollapsed: boolean;
   latestPreview?: TurnProcessPreview;
-  processAutoCollapsePaused: boolean;
+  preserveProcessAutoCollapseSpace: boolean;
   cwd?: string;
   onOpenFile?: (path: string) => void;
   actionableAgentMessageID?: string;
@@ -232,20 +230,22 @@ function TurnProcessFold({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   /**
-   * Fires once the fold has finished collapsing so the conversation
-   * scroll container can re-anchor `scrollTop = scrollHeight`. The
-   * fold collapse drops scrollHeight by the fold body's height, and
-   * without this callback the browser silently clamps `scrollTop`
-   * to the new max, which the user perceives as the scroll bar
-   * jumping upward at turn-settle.
+   * Fires once the automatic fold collapse has finished. When the
+   * conversation is following the bottom, the scroll container uses
+   * this to re-anchor after the fold height drops. When the user is
+   * reading above the bottom, the fold keeps temporary space instead.
    */
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!defaultCollapsed);
-  const settledRef = useRef(
-    turn.status !== "in_progress" && !processAutoCollapsePaused,
+  const [preservedAutoCollapseHeight, setPreservedAutoCollapseHeight] =
+    useState(0);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
+  const preserveProcessAutoCollapseSpaceRef = useRef(
+    preserveProcessAutoCollapseSpace,
   );
+  const settledRef = useRef(turn.status !== "in_progress");
   // Tracks whether the user has manually toggled the fold during the
   // current turn. If so, the auto-collapse on turn completion is
   // suppressed — the user has expressed their own intent for the
@@ -276,6 +276,14 @@ function TurnProcessFold({
   ).label;
   const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
 
+  useEffect(() => {
+    preserveProcessAutoCollapseSpaceRef.current =
+      preserveProcessAutoCollapseSpace;
+    if (!preserveProcessAutoCollapseSpace) {
+      setPreservedAutoCollapseHeight(0);
+    }
+  }, [preserveProcessAutoCollapseSpace]);
+
   // Two-stage auto-collapse on turn completion. The fold's "settle"
   // (label / timer / preview update) and "collapse" (body shrinks)
   // are decoupled so the user sees one motion at a time instead of
@@ -290,17 +298,11 @@ function TurnProcessFold({
       settledRef.current = false;
       userToggledRef.current = false;
       autoCollapsePendingRef.current = false;
+      setPreservedAutoCollapseHeight(0);
       return;
     }
     if (!expanded) {
       settledRef.current = true;
-      return;
-    }
-    if (processAutoCollapsePaused) {
-      autoCollapsePendingRef.current = false;
-      if (!userToggledRef.current) {
-        settledRef.current = false;
-      }
       return;
     }
     if (settledRef.current || userToggledRef.current) {
@@ -311,11 +313,22 @@ function TurnProcessFold({
       if (userToggledRef.current) {
         return;
       }
+      const details = detailsRef.current;
+      const measuredHeight =
+        details && preserveProcessAutoCollapseSpaceRef.current
+          ? Math.max(
+              details.getBoundingClientRect().height,
+              details.scrollHeight,
+            )
+          : 0;
+      setPreservedAutoCollapseHeight(
+        measuredHeight > 0 ? Math.ceil(measuredHeight) : 0,
+      );
       autoCollapsePendingRef.current = true;
       setExpanded(false);
     }, PROCESS_FOLD_SETTLING_DELAY_MS);
     return () => window.clearTimeout(collapseTimer);
-  }, [expanded, processAutoCollapsePaused, turn.status]);
+  }, [expanded, turn.status]);
 
   // Watch the expanded → collapsed transition and fire the callback
   // once the CSS transition has settled (slightly longer than
@@ -347,6 +360,7 @@ function TurnProcessFold({
   const handleToggle = useCallback(() => {
     userToggledRef.current = true;
     autoCollapsePendingRef.current = false;
+    setPreservedAutoCollapseHeight(0);
     setExpanded((prev) => !prev);
   }, []);
 
@@ -391,14 +405,14 @@ function TurnProcessFold({
   );
 
   // The outer element is a plain <div> instead of a native <details>.
-// Native <details> closes instantly with no height transition, so the
-// moment the turn settles the fold body snaps from full height to zero
-// and the message bubble reflows visibly. We drive the open/closed
-// state ourselves and animate it through CollapsibleDetails
-// (grid-template-rows + opacity + transform). a11y is preserved with
-// role="button" + aria-expanded + aria-controls + an Enter/Space
-// keyboard handler, matching what <details>/<summary> gave us for free.
-return (
+  // Native <details> closes instantly with no height transition, so the
+  // moment the turn settles the fold body snaps from full height to zero
+  // and the message bubble reflows visibly. We drive the open/closed
+  // state ourselves and animate it through CollapsibleDetails. a11y is
+  // preserved with role="button" + aria-expanded + aria-controls + an
+  // Enter/Space keyboard handler, matching what <details>/<summary> gave
+  // us for free.
+  return (
     <div
       className={`turn-process-fold${expanded ? " expanded" : " collapsed"}${
         hasDetails ? "" : " no-details"
@@ -424,6 +438,7 @@ return (
       {hasDetails || hasPreview ? (
         <CollapsibleDetails
           id={`${detailsID}-body`}
+          containerRef={detailsRef}
           expanded={expanded}
           innerClassName="turn-process-fold-body"
         >
@@ -452,6 +467,13 @@ return (
             </div>
           ) : null}
         </CollapsibleDetails>
+      ) : null}
+      {preservedAutoCollapseHeight > 0 ? (
+        <div
+          aria-hidden
+          className="turn-process-fold-preserved-space"
+          style={{ height: `${preservedAutoCollapseHeight}px` }}
+        />
       ) : null}
     </div>
   );

@@ -141,7 +141,7 @@ type RenderOptions = {
   // just emit a placeholder so the shell picks the right entry kind.
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
   onCollapseComplete?: () => void;
-  processAutoCollapsePaused?: boolean;
+  preserveProcessAutoCollapseSpace?: boolean;
 };
 
 function defaultItemRenderer(
@@ -179,7 +179,8 @@ function renderShell(
         display,
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
-        processAutoCollapsePaused: options.processAutoCollapsePaused,
+        preserveProcessAutoCollapseSpace:
+          options.preserveProcessAutoCollapseSpace,
         onNoticeAction: () => {},
       }),
     );
@@ -208,7 +209,8 @@ function rerenderShell(
         display,
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
-        processAutoCollapsePaused: options.processAutoCollapsePaused,
+        preserveProcessAutoCollapseSpace:
+          options.preserveProcessAutoCollapseSpace,
         onNoticeAction: () => {},
       }),
     );
@@ -233,6 +235,28 @@ function processEntryList(container: HTMLElement): HTMLElement {
     throw new Error("expected process entry list");
   }
   return list;
+}
+
+function preservedProcessSpace(container: HTMLElement): HTMLDivElement | null {
+  return container.querySelector(".turn-process-fold-preserved-space");
+}
+
+function stubElementHeight(element: Element, height: number): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        x: 0,
+        y: 0,
+        width: 320,
+        height,
+        top: 0,
+        right: 320,
+        bottom: height,
+        left: 0,
+        toJSON: () => ({}),
+      }) as DOMRect,
+  });
 }
 
 function reasoningFolds(container: HTMLElement): HTMLDetailsElement[] {
@@ -553,7 +577,7 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(collapseCompletions).toBe(1);
   });
 
-  it("defers automatic settle collapse while conversation auto-follow is paused", () => {
+  it("collapses automatically while preserving process space when auto-follow is paused", () => {
     vi.useFakeTimers();
     const commentary = makeCommentary("checking");
     const completedTurn = makeTurn("completed", [
@@ -564,29 +588,23 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     const { container, root } = renderShell(
       makeTurn("in_progress", [commentary]),
       {
-        processAutoCollapsePaused: false,
+        preserveProcessAutoCollapseSpace: false,
         onCollapseComplete: () => {
           collapseCompletions += 1;
         },
       },
     );
     expect(processFoldOpen(container)).toBe(true);
+    const processBody = container.querySelector(
+      ".turn-process-fold .collapsible-details",
+    );
+    if (!processBody) {
+      throw new Error("expected process fold body");
+    }
+    stubElementHeight(processBody, 240);
 
     rerenderShell(root, completedTurn, {
-      processAutoCollapsePaused: true,
-      onCollapseComplete: () => {
-        collapseCompletions += 1;
-      },
-    });
-
-    act(() => {
-      vi.advanceTimersByTime(1200);
-    });
-    expect(processFoldOpen(container)).toBe(true);
-    expect(collapseCompletions).toBe(0);
-
-    rerenderShell(root, completedTurn, {
-      processAutoCollapsePaused: false,
+      preserveProcessAutoCollapseSpace: true,
       onCollapseComplete: () => {
         collapseCompletions += 1;
       },
@@ -596,11 +614,20 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
       vi.advanceTimersByTime(600);
     });
     expect(processFoldOpen(container)).toBe(false);
+    expect(preservedProcessSpace(container)?.style.height).toBe("240px");
 
     act(() => {
       vi.advanceTimersByTime(440);
     });
     expect(collapseCompletions).toBe(1);
+
+    rerenderShell(root, completedTurn, {
+      preserveProcessAutoCollapseSpace: false,
+      onCollapseComplete: () => {
+        collapseCompletions += 1;
+      },
+    });
+    expect(preservedProcessSpace(container)).toBeNull();
   });
 });
 

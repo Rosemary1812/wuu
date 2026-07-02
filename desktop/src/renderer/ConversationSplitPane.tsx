@@ -47,7 +47,7 @@ export function ConversationSplitPane({
   onCancelEditMessage,
   onSubmitEditMessage,
   onStreamFrame,
-  processAutoCollapsePaused,
+  preserveProcessAutoCollapseSpace,
   onNoticeAction,
   onOpenFileDiff,
   pendingToolApproval,
@@ -86,7 +86,7 @@ export function ConversationSplitPane({
     files: InputFile[],
   ) => void;
   onStreamFrame: () => void;
-  processAutoCollapsePaused?: boolean;
+  preserveProcessAutoCollapseSpace?: boolean;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
   pendingToolApproval?: PendingToolApproval;
@@ -164,7 +164,9 @@ export function ConversationSplitPane({
                     paneTurns[paneTurns.length - 1]?.id === turn.id
                   }
                   onStreamFrame={onStreamFrame}
-                  processAutoCollapsePaused={processAutoCollapsePaused}
+                  preserveProcessAutoCollapseSpace={
+                    preserveProcessAutoCollapseSpace
+                  }
                   onForkMessage={onForkMessage}
                   onEditMessage={
                     onEditMessage
