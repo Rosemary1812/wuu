@@ -9,6 +9,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -1036,6 +1037,11 @@ type Agent struct {
 	Archived    bool      `json:"archived,omitempty"`
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
+	// Participant identifies which conversation participant this agent
+	// runs as. Always populated on live snapshots: resolved from the
+	// participant store when possible, synthesized from the snapshot's
+	// type/task name otherwise.
+	Participant *participant.Summary `json:"participant,omitempty"`
 }
 
 type AgentUpdatedNotification struct {
@@ -1209,6 +1215,9 @@ type ThreadItem struct {
 	FinishReason string                     `json:"finish_reason,omitempty"`
 	StopReason   string                     `json:"stop_reason,omitempty"`
 	Truncated    bool                       `json:"truncated,omitempty"`
+	// Participant attributes this item to a conversation participant.
+	// Populated for agent-originated items; nil means the thread owner.
+	Participant *participant.Summary `json:"participant,omitempty"`
 }
 
 type ThreadItemImage struct {

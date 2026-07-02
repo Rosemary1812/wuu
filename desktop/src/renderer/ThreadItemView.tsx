@@ -29,6 +29,7 @@ import {
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
 import { streamFieldValue } from "./ThreadItemText";
+import { ParticipantChip } from "./ParticipantChip";
 import { ToolActivityRow } from "./ToolActivity";
 import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
 import { userMessageAnchorID } from "./TurnViewHelpers";
@@ -211,7 +212,21 @@ export function ThreadItemView({
         </article>
       );
     case "tool_call":
+      return <ToolActivityRow items={[item]} />;
     case "collab_agent_tool_call":
+      // Collab tool calls carry the acting participant. Prefix the
+      // activity line with the identity chip so the reader can tell
+      // which subagent the call belongs to. Legacy items without a
+      // participant keep the plain row — the summary text already
+      // names the task, so a fallback chip would only repeat it.
+      if (item.participant) {
+        return (
+          <div className="collab-agent-activity">
+            <ParticipantChip participant={item.participant} size="sm" />
+            <ToolActivityRow items={[item]} />
+          </div>
+        );
+      }
       return <ToolActivityRow items={[item]} />;
     case "context_compaction":
       return (

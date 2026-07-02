@@ -3487,6 +3487,22 @@
   gap: 0;
 }
 
+/*
+ * Collab tool-call rows prefix the activity line with the acting
+ * subagent's identity chip (see ParticipantChip / environment.css).
+ * Baseline alignment keeps the chip name level with the summary prose.
+ */
+.collab-agent-activity {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.collab-agent-activity .participant-chip-name {
+  color: var(--ink-soft);
+}
+
 .activity-row {
                                                                   
                                                                   

@@ -18,6 +18,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/harness"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -2413,4 +2414,116 @@ func spawnStepsContain(steps []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// recordingParticipantStore captures Upsert calls for spawn tests.
+type recordingParticipantStore struct {
+	mu      sync.Mutex
+	upserts []participant.Participant
+}
+
+func (s *recordingParticipantStore) Upsert(p participant.Participant) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.upserts = append(s.upserts, p)
+	return nil
+}
+
+func (s *recordingParticipantStore) list() []participant.Participant {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]participant.Participant(nil), s.upserts...)
+}
+
+func TestSpawn_CreatesEphemeralParticipant(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	store := &recordingParticipantStore{}
+	c, err := New(Config{
+		Client:           &fakeClient{resp: providers.ChatResponse{Content: "task done"}},
+		DefaultModel:     "fake-model",
+		ParentRepo:       dir,
+		WorktreeRoot:     filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:        "sess-participant",
+		HistoryDir:       filepath.Join(dir, ".wuu", "sessions", "sess-participant", "workers"),
+		ParticipantStore: store,
+		WorkerFactory:    func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "scan_auth",
+		Description: "test",
+		Prompt:      "do something",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	snap := c.Manager().Get(res.AgentID).Snapshot()
+	if snap.ParticipantID == "" {
+		t.Fatal("snapshot ParticipantID should be non-empty after spawn")
+	}
+
+	upserts := store.list()
+	if len(upserts) != 1 {
+		t.Fatalf("expected 1 participant upsert, got %d", len(upserts))
+	}
+	p := upserts[0]
+	if p.ID != snap.ParticipantID {
+		t.Fatalf("participant ID %q should match snapshot ParticipantID %q", p.ID, snap.ParticipantID)
+	}
+	if p.Kind != participant.KindEphemeral {
+		t.Fatalf("participant kind = %q, want ephemeral", p.Kind)
+	}
+	wantName := participant.DeriveEphemeralName(snap.TaskName, DefaultSubagentType)
+	if p.Name != wantName {
+		t.Fatalf("participant name = %q, want %q", p.Name, wantName)
+	}
+	if p.Role != DefaultSubagentType {
+		t.Fatalf("participant role = %q, want %q", p.Role, DefaultSubagentType)
+	}
+	if p.Avatar != participant.DefaultAvatar(DefaultSubagentType) {
+		t.Fatalf("participant avatar = %q, want %q", p.Avatar, participant.DefaultAvatar(DefaultSubagentType))
+	}
+	if p.CreatedAt.IsZero() || p.UpdatedAt.IsZero() {
+		t.Fatalf("participant timestamps should be set: %+v", p)
+	}
+}
+
+func TestSpawn_WithoutParticipantStoreStillAssignsParticipantID(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "task done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-no-store",
+		HistoryDir:    filepath.Join(dir, ".wuu", "sessions", "sess-no-store", "workers"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "no_store",
+		Prompt:      "do something",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	snap := c.Manager().Get(res.AgentID).Snapshot()
+	if snap.ParticipantID == "" {
+		t.Fatal("snapshot ParticipantID should be non-empty even without a participant store")
+	}
 }

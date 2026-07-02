@@ -8,7 +8,9 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -33,7 +35,7 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 			}
 			_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
 				ThreadID: threadID,
-				Agent:    agentFromSnapshot(control, n.Snapshot),
+				Agent:    s.agentFromSnapshot(control, n.Snapshot),
 			})
 			switch n.Status {
 			case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
@@ -280,7 +282,7 @@ func firstNonZeroTime(values ...time.Time) time.Time {
 	return time.Time{}
 }
 
-func agentFromSnapshot(control *agentcontrol.AgentControl, snap subagent.SubAgentSnapshot) Agent {
+func (s *Server) agentFromSnapshot(control *agentcontrol.AgentControl, snap subagent.SubAgentSnapshot) Agent {
 	ref := agentcontrol.AgentResultReference{}
 	if control != nil {
 		ref = control.AgentResultReference(snap)
@@ -307,11 +309,62 @@ func agentFromSnapshot(control *agentcontrol.AgentControl, snap subagent.SubAgen
 		CacheReadTokens:     snap.CacheReadTokens,
 		StartedAt:           snap.StartedAt,
 		CompletedAt:         snap.CompletedAt,
+		Participant:         s.participantSummaryForSnapshot(snap),
 	}
 	if snap.Error != nil {
 		out.Error = snap.Error.Error()
 	}
 	return out
+}
+
+// participantSummaryForSnapshot resolves the participant identity for a
+// sub-agent snapshot. Store hits are cached (ephemeral participants are
+// immutable after creation). Any miss — empty ParticipantID on legacy
+// snapshots, missing store row, or lookup error — falls back to a summary
+// synthesized from the snapshot's type/task name so display attribution is
+// never absent.
+func (s *Server) participantSummaryForSnapshot(snap subagent.SubAgentSnapshot) *participant.Summary {
+	if summary, ok := s.resolveParticipantSummary(snap.ParticipantID); ok {
+		return &summary
+	}
+	fallback := participant.Summary{
+		ID:     strings.TrimSpace(snap.ParticipantID),
+		Name:   participant.DeriveEphemeralName(snap.TaskName, snap.Type),
+		Kind:   string(participant.KindEphemeral),
+		Role:   snap.Type,
+		Avatar: participant.DefaultAvatar(snap.Type),
+	}
+	return &fallback
+}
+
+// resolveParticipantSummary looks up a participant summary by ID through
+// the in-memory cache, falling back to the session store on miss.
+func (s *Server) resolveParticipantSummary(id string) (participant.Summary, bool) {
+	id = strings.TrimSpace(id)
+	if id == "" || s == nil || s.rt == nil || strings.TrimSpace(s.rt.SessionDir) == "" {
+		return participant.Summary{}, false
+	}
+
+	s.participantMu.Lock()
+	summary, ok := s.participantSummaryCache[id]
+	s.participantMu.Unlock()
+	if ok {
+		return summary, true
+	}
+
+	p, err := session.GetParticipant(s.rt.SessionDir, id)
+	if err != nil {
+		return participant.Summary{}, false
+	}
+	summary = p.Summary()
+
+	s.participantMu.Lock()
+	if s.participantSummaryCache == nil {
+		s.participantSummaryCache = make(map[string]participant.Summary)
+	}
+	s.participantSummaryCache[id] = summary
+	s.participantMu.Unlock()
+	return summary, true
 }
 
 func agentResultPreview(control *agentcontrol.AgentControl, snap subagent.SubAgentSnapshot) string {

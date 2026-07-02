@@ -30,12 +30,14 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -336,7 +338,8 @@ func NewSession(opts Options) (*Session, error) {
 				applyWorkerToolFilter(wkit, wt)
 				return wkit, nil
 			},
-			MaxParallel: 5,
+			ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
+			MaxParallel:      5,
 		})
 		if cerr == nil {
 			agentControl = c
@@ -792,7 +795,8 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					applyWorkerToolFilter(workerKit, wt)
 					return workerKit, nil
 				},
-				MaxParallel: 5,
+				ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
+				MaxParallel:      5,
 			})
 			agentControl = control
 		}
@@ -881,6 +885,17 @@ func sameRuntimeRoot(left, right string) bool {
 	left = cleanRuntimeRoot(left)
 	right = cleanRuntimeRoot(right)
 	return left != "" && left == right
+}
+
+// sessionParticipantStore adapts the session store to
+// agentcontrol.ParticipantStore so spawned workers get durable
+// participant identities.
+type sessionParticipantStore struct {
+	sessDir string
+}
+
+func (s sessionParticipantStore) Upsert(p participant.Participant) error {
+	return session.UpsertParticipant(s.sessDir, p)
 }
 
 func cleanRuntimeRoot(root string) string {

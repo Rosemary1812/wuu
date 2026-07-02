@@ -14,6 +14,7 @@ type AgentMailboxMessage struct {
 	ResultID        string    `json:"result_id,omitempty"`
 	TaskID          string    `json:"task_id,omitempty"`
 	AgentID         string    `json:"agent_id"`
+	ParticipantID   string    `json:"participant_id,omitempty"`
 	AgentPath       string    `json:"agent_path,omitempty"`
 	ParentID        string    `json:"parent_id,omitempty"`
 	TaskName        string    `json:"task_name,omitempty"`
@@ -59,6 +60,7 @@ func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, r
 		ResultID:        agentResultDeliveryID(snap),
 		TaskID:          snap.ID,
 		AgentID:         snap.ID,
+		ParticipantID:   snap.ParticipantID,
 		AgentPath:       snap.AgentPath,
 		ParentID:        snap.ParentID,
 		TaskName:        snap.TaskName,

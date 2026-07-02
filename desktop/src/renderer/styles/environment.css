@@ -675,6 +675,60 @@
   }
 }
 
+/*
+ * Participant identity chip. Shared across every surface that names a
+ * subagent (environment subagent rows, collab tool-call rows in the
+ * conversation). Display-only: avatar + name + role, no interaction.
+ * md is the default; --sm drops one font step for inline contexts.
+ */
+.participant-chip {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.2;
+}
+
+.participant-chip-avatar {
+  flex: 0 0 auto;
+  font-size: var(--font-ui);
+  line-height: 1;
+}
+
+.participant-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+}
+
+.participant-chip-role {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-6);
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.participant-chip--sm {
+  gap: 6px;
+}
+
+.participant-chip--sm .participant-chip-avatar {
+  font-size: var(--font-sm);
+}
+
+.participant-chip--sm .participant-chip-name {
+  font-size: var(--font-sm);
+}
+
 .environment-footer-row {
   grid-template-columns: minmax(0, 1fr) 18px;
   height: 30px;

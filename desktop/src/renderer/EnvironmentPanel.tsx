@@ -30,6 +30,7 @@ import type {
 } from "../shared/protocol";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 import { sortChildAgents } from "./ThreadAgents";
+import { ParticipantChip } from "./ParticipantChip";
 import { type SubagentRowSummary } from "./EnvironmentSideStack";
 
 export type EnvironmentPanelMenu = "branch" | "file" | null;
@@ -462,7 +463,12 @@ function EnvironmentSubagents({
                 title={agentTooltipFromSummary(agent)}
               >
                 <span className="subagent-row-title">
-                  {agentLabelFromSummary(agent)}
+                  <ParticipantChip
+                    participant={agent.participant}
+                    fallbackType={agent.type}
+                    fallbackTaskName={agentLabelFromSummary(agent)}
+                    size="sm"
+                  />
                 </span>
                 <span className="subagent-row-status">
                   {agentStatusLabel(agent.status)}
@@ -538,6 +544,7 @@ function agentStatusLabel(status: string | undefined): string {
 }
 
 function agentLabelFromSummary(agent: SubagentRowSummary): string {
+  if (agent.participant?.name.trim()) return agent.participant.name.trim();
   if (agent.task_name?.trim()) return agent.task_name.trim();
   if (agent.description?.trim()) return agent.description.trim();
   if (agent.agent_path) {
