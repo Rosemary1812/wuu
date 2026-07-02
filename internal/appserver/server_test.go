@@ -5265,6 +5265,88 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	}
 }
 
+func TestServerConversationSubthreadRPCs(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "parent-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
+		ID:           "cth-review",
+		SessionID:    sess.ID,
+		AnchorItemID: "parent-thread-turn-0001-item-2",
+		Title:        "Review details",
+		CreatedBy:    "prt-reviewer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []session.HistoryRecord{
+		{Role: "assistant", Content: "main response"},
+		{Role: "user", Content: "Need the details", ThreadID: sub.ID},
+		{Role: "participant", Content: "Found one issue", ParticipantID: "prt-reviewer", PostKind: "update", ThreadID: sub.ID},
+	} {
+		if err := session.AppendHistoryRecord(rt.SessionDir, sess.ID, rec); err != nil {
+			t.Fatalf("append history: %v", err)
+		}
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	requests := []map[string]any{
+		{"id": "list", "method": MethodThreadListSub, "params": ThreadListSubParams{ThreadID: sess.ID}},
+		{"id": "open", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, SubthreadID: sub.ID}},
+		{"id": "reuse", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, AnchorItemID: sub.AnchorItemID}},
+		{"id": "resolve", "method": MethodThreadResolveSub, "params": ThreadResolveSubParams{ThreadID: sess.ID, SubthreadID: sub.ID, Resolved: true}},
+	}
+	for _, payload := range requests {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		if err := srv.handleLine(context.Background(), raw); err != nil {
+			t.Fatalf("%s: %v", payload["id"], err)
+		}
+	}
+
+	msgs := parseOutput(t, out.String())
+	listed := remarshal[ThreadListSubResult](t, responseByID(t, msgs, "list")["result"])
+	if len(listed.Subthreads) != 1 {
+		t.Fatalf("expected one listed subthread, got %+v", listed.Subthreads)
+	}
+	if listed.Subthreads[0].ID != sub.ID || listed.Subthreads[0].ReplyCount != 2 || len(listed.Subthreads[0].Turns) != 0 {
+		t.Fatalf("unexpected listed subthread: %+v", listed.Subthreads[0])
+	}
+
+	opened := remarshal[ThreadOpenSubResult](t, responseByID(t, msgs, "open")["result"])
+	if opened.Subthread.ID != sub.ID || opened.Subthread.Title != "Review details" || opened.Subthread.ReplyCount != 2 {
+		t.Fatalf("unexpected opened subthread: %+v", opened.Subthread)
+	}
+	if len(opened.Subthread.Turns) != 1 || len(opened.Subthread.Turns[0].Items) != 2 {
+		t.Fatalf("expected subthread turns with two items, got %+v", opened.Subthread.Turns)
+	}
+	if opened.Subthread.Turns[0].Items[0].Text != "Need the details" || opened.Subthread.Turns[0].Items[1].Text != "Found one issue" {
+		t.Fatalf("unexpected subthread items: %+v", opened.Subthread.Turns[0].Items)
+	}
+
+	reused := remarshal[ThreadOpenSubResult](t, responseByID(t, msgs, "reuse")["result"])
+	if reused.Subthread.ID != sub.ID {
+		t.Fatalf("open by anchor should reuse existing subthread, got %+v", reused.Subthread)
+	}
+	stored, err := session.ListConversationThreads(rt.SessionDir, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("open by anchor created duplicate subthreads: %+v", stored)
+	}
+
+	resolved := remarshal[ThreadResolveSubResult](t, responseByID(t, msgs, "resolve")["result"])
+	if resolved.Subthread.ID != sub.ID || resolved.Subthread.Status != "resolved" {
+		t.Fatalf("unexpected resolved subthread: %+v", resolved.Subthread)
+	}
+}
+
 func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu", "state")

@@ -824,11 +824,24 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 type participantSummaryResolver func(string) (participant.Summary, bool)
 
 func turnsFromPersistedHistory(threadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
+	return turnsFromPersistedHistoryInScope(threadID, "", history, now, resolve)
+}
+
+func turnsFromConversationSubthreadHistory(parentThreadID, subthreadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
+	scopeID := strings.TrimSpace(parentThreadID)
+	if id := strings.TrimSpace(subthreadID); id != "" {
+		scopeID = scopeID + "-" + id
+	}
+	return turnsFromPersistedHistoryInScope(scopeID, subthreadID, history, now, resolve)
+}
+
+func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
 	var turns []Turn
 	var current *Turn
 	itemIndex := 0
 	toolItems := make(map[string]int)
 	var pendingCompactions []ThreadItem
+	subthreadID = strings.TrimSpace(subthreadID)
 	nextItemID := func(turnID string) string {
 		itemIndex++
 		return fmt.Sprintf("%s-item-%d", turnID, itemIndex)
@@ -857,7 +870,7 @@ func turnsFromPersistedHistory(threadID string, history []persistedMessage, now 
 		current = &turns[len(turns)-1]
 	}
 	for _, rec := range history {
-		if strings.TrimSpace(rec.ThreadID) != "" {
+		if strings.TrimSpace(rec.ThreadID) != subthreadID {
 			continue
 		}
 		if rec.Hidden {

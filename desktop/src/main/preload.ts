@@ -93,6 +93,12 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-edit-message", threadId, turnId, itemId),
   getThreadContextComposition: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-context-composition", threadId),
+  listConversationSubthreads: (threadId: string) =>
+    ipcRenderer.invoke("wuu:thread-list-sub", threadId),
+  openConversationSubthread: (threadId: string, options) =>
+    ipcRenderer.invoke("wuu:thread-open-sub", threadId, options),
+  resolveConversationSubthread: (threadId: string, subthreadId: string, resolved: boolean) =>
+    ipcRenderer.invoke("wuu:thread-resolve-sub", threadId, subthreadId, resolved),
   listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),

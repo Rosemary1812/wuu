@@ -39,6 +39,9 @@ import type {
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
   ThreadForkResult,
+  ThreadListSubResult,
+  ThreadOpenSubResult,
+  ThreadResolveSubResult,
   Turn,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
@@ -520,6 +523,35 @@ app.whenReady().then(async () => {
     appServerClientPool.request<ThreadContextCompositionResult>("thread/context-composition", {
       thread_id: threadId,
     }),
+  );
+  ipcMain.handle("wuu:thread-list-sub", (_event, threadId: string) =>
+    appServerClientPool.request<ThreadListSubResult>("thread/listSub", {
+      thread_id: threadId,
+    }),
+  );
+  ipcMain.handle(
+    "wuu:thread-open-sub",
+    (
+      _event,
+      threadId: string,
+      options?: { subthreadId?: string; anchorItemId?: string; title?: string; createdBy?: string },
+    ) =>
+      appServerClientPool.request<ThreadOpenSubResult>("thread/openSub", {
+        thread_id: threadId,
+        subthread_id: options?.subthreadId ?? "",
+        anchor_item_id: options?.anchorItemId ?? "",
+        title: options?.title ?? "",
+        created_by: options?.createdBy ?? "",
+      }),
+  );
+  ipcMain.handle(
+    "wuu:thread-resolve-sub",
+    (_event, threadId: string, subthreadId: string, resolved: boolean) =>
+      appServerClientPool.request<ThreadResolveSubResult>("thread/resolveSub", {
+        thread_id: threadId,
+        subthread_id: subthreadId,
+        resolved,
+      }),
   );
   ipcMain.handle("wuu:thread-list", (_event, cwd?: string) =>
     appServerClientPool.request<{ threads: Thread[] }>(

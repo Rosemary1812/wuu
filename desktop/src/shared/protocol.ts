@@ -762,6 +762,32 @@ export type ThreadContextCompositionResult = {
   segment_counts?: ContextSegmentCountSummary;
 };
 
+export type ConversationSubthreadStatus = "open" | "resolved";
+
+export type ConversationSubthread = {
+  id: string;
+  thread_id: string;
+  anchor_item_id: string;
+  title?: string;
+  status: ConversationSubthreadStatus;
+  created_by?: string;
+  created_at: string;
+  reply_count: number;
+  turns?: Turn[];
+};
+
+export type ThreadOpenSubResult = {
+  subthread: ConversationSubthread;
+};
+
+export type ThreadListSubResult = {
+  subthreads: ConversationSubthread[];
+};
+
+export type ThreadResolveSubResult = {
+  subthread: ConversationSubthread;
+};
+
 export type ContextCompositionCategory = {
   id: string;
   label: string;
@@ -1226,6 +1252,16 @@ export type WuuDesktopApi = {
   ) => Promise<ThreadForkResult>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
+  listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
+  openConversationSubthread: (
+    threadId: string,
+    options: { subthreadId?: string; anchorItemId?: string; title?: string; createdBy?: string }
+  ) => Promise<ThreadOpenSubResult>;
+  resolveConversationSubthread: (
+    threadId: string,
+    subthreadId: string,
+    resolved: boolean
+  ) => Promise<ThreadResolveSubResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;

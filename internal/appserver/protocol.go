@@ -44,6 +44,9 @@ const (
 	MethodThreadFork               = "thread/fork"
 	MethodThreadEditMessage        = "thread/edit-message"
 	MethodThreadContextComposition = "thread/context-composition"
+	MethodThreadOpenSub            = "thread/openSub"
+	MethodThreadListSub            = "thread/listSub"
+	MethodThreadResolveSub         = "thread/resolveSub"
 	MethodThreadList               = "thread/list"
 	MethodThreadSearch             = "thread/search"
 	MethodThreadPin                = "thread/pin"
@@ -723,6 +726,48 @@ type ThreadContextCompositionResult struct {
 	SystemSections         []ContextCompositionSection  `json:"system_sections,omitempty"`
 	BlockKindBytes         map[string]int               `json:"block_kind_bytes,omitempty"`
 	SegmentCounts          ContextSegmentCountSummary   `json:"segment_counts,omitempty"`
+}
+
+type ConversationSubthread struct {
+	ID           string    `json:"id"`
+	ThreadID     string    `json:"thread_id"`
+	AnchorItemID string    `json:"anchor_item_id"`
+	Title        string    `json:"title,omitempty"`
+	Status       string    `json:"status"`
+	CreatedBy    string    `json:"created_by,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	ReplyCount   int       `json:"reply_count"`
+	Turns        []Turn    `json:"turns,omitempty"`
+}
+
+type ThreadOpenSubParams struct {
+	ThreadID     string `json:"thread_id"`
+	SubthreadID  string `json:"subthread_id,omitempty"`
+	AnchorItemID string `json:"anchor_item_id,omitempty"`
+	Title        string `json:"title,omitempty"`
+	CreatedBy    string `json:"created_by,omitempty"`
+}
+
+type ThreadOpenSubResult struct {
+	Subthread ConversationSubthread `json:"subthread"`
+}
+
+type ThreadListSubParams struct {
+	ThreadID string `json:"thread_id"`
+}
+
+type ThreadListSubResult struct {
+	Subthreads []ConversationSubthread `json:"subthreads"`
+}
+
+type ThreadResolveSubParams struct {
+	ThreadID    string `json:"thread_id"`
+	SubthreadID string `json:"subthread_id"`
+	Resolved    bool   `json:"resolved"`
+}
+
+type ThreadResolveSubResult struct {
+	Subthread ConversationSubthread `json:"subthread"`
 }
 
 type ParticipantStartParams struct {
