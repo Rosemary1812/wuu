@@ -232,6 +232,15 @@ func NewSession(opts Options) (*Session, error) {
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
 	profileMemoryEntries := recallProfileMemory(context.Background(), profileMemoryProvider)
 	mainSurface := activeSurface(toolkit)
+	if toolkit != nil {
+		if err := toolkit.ValidateActiveToolSurfaceForProvider(providers.ToolSurfaceValidationTarget{
+			ProviderKind: ruleProviderCfg.Type,
+			ProviderName: resolvedName,
+			Model:        toolModeModel,
+		}); err != nil {
+			return nil, err
+		}
+	}
 	deferredToolCatalogPrompt, err := deferredToolCatalogPromptForToolkit(toolkit)
 	if err != nil {
 		return nil, err

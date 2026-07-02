@@ -55,6 +55,38 @@ func TestChat_TextResponse(t *testing.T) {
 	}
 }
 
+func TestChat_RejectsInvalidToolSurfaceBeforeRequest(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		t.Fatalf("request should not reach provider")
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{{
+			Role:    "user",
+			Content: "hi",
+		}},
+		Tools: []providers.ToolDefinition{{
+			Name:        "bad.tool.name",
+			Description: "Bad tool",
+			InputSchema: map[string]any{"type": "object"},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bad.tool.name") {
+		t.Fatalf("expected local tool surface validation error, got %v", err)
+	}
+	if called {
+		t.Fatal("provider was called")
+	}
+}
+
 func TestChat_ToolSearchNativeAddsBetaHeaderWhenExplicitlyEnabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/messages" {

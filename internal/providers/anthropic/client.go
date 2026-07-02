@@ -38,6 +38,14 @@ const (
 	toolSearchBetaHeader1P  = "advanced-tool-use-2025-11-20"
 )
 
+func anthropicToolSurfaceValidationTarget(model string) providers.ToolSurfaceValidationTarget {
+	return providers.ToolSurfaceValidationTarget{
+		ProviderKind: "anthropic",
+		ProviderName: "anthropic",
+		Model:        model,
+	}
+}
+
 // resolveMaxTokens picks the per-request override if positive,
 // then the client-level configured value, then falls back to a
 // model-aware default from the registry.
@@ -133,6 +141,9 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 	if len(req.Messages) == 0 {
 		return providers.ChatResponse{}, errors.New("messages is required")
+	}
+	if err := providers.ValidateToolDefinitionsForProvider(anthropicToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
+		return providers.ChatResponse{}, err
 	}
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
@@ -235,6 +246,9 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 	if len(req.Messages) == 0 {
 		return nil, errors.New("messages is required")
+	}
+	if err := providers.ValidateToolDefinitionsForProvider(anthropicToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
+		return nil, err
 	}
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)

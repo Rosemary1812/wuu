@@ -73,6 +73,14 @@ func responsesTransportUsesCachedContext(mode providers.StreamTransportMode) boo
 		mode == providers.StreamTransportWebSocketCached
 }
 
+func openAIToolSurfaceValidationTarget(model string) providers.ToolSurfaceValidationTarget {
+	return providers.ToolSurfaceValidationTarget{
+		ProviderKind: "openai-compatible",
+		ProviderName: "openai",
+		Model:        model,
+	}
+}
+
 // ClientConfig configures an OpenAI-compatible endpoint.
 type ClientConfig struct {
 	BaseURL                 string
@@ -152,14 +160,17 @@ func New(cfg ClientConfig) (*Client, error) {
 
 // Chat performs one chat-completions round.
 func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
-	if c.wireAPI == wireAPIResponses {
-		return c.responsesChat(ctx, req)
-	}
 	if strings.TrimSpace(req.Model) == "" {
 		return providers.ChatResponse{}, errors.New("model is required")
 	}
 	if len(req.Messages) == 0 {
 		return providers.ChatResponse{}, errors.New("messages is required")
+	}
+	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
+		return providers.ChatResponse{}, err
+	}
+	if c.wireAPI == wireAPIResponses {
+		return c.responsesChat(ctx, req)
 	}
 
 	payload := chatCompletionsRequest{
@@ -275,14 +286,17 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 
 // StreamChat opens an SSE stream and returns a channel of streaming events.
 func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
-	if c.wireAPI == wireAPIResponses {
-		return c.responsesStreamChat(ctx, req)
-	}
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, errors.New("model is required")
 	}
 	if len(req.Messages) == 0 {
 		return nil, errors.New("messages is required")
+	}
+	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
+		return nil, err
+	}
+	if c.wireAPI == wireAPIResponses {
+		return c.responsesStreamChat(ctx, req)
 	}
 
 	payload := chatCompletionsRequest{
