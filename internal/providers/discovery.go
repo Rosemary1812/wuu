@@ -10,9 +10,13 @@ import (
 func LoadableToolsFromToolSearchResult(content string) []LoadableToolDefinition {
 	var parsed struct {
 		LoadableTools []LoadableToolDefinition `json:"loadable_tools"`
+		Tools         []LoadableToolDefinition `json:"tools"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &parsed); err != nil {
 		return nil
+	}
+	if len(parsed.LoadableTools) == 0 {
+		return CloneLoadableToolDefinitions(parsed.Tools)
 	}
 	return CloneLoadableToolDefinitions(parsed.LoadableTools)
 }

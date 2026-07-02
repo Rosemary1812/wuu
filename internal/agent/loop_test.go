@@ -502,6 +502,25 @@ func TestRequestContextInfoReportsLoadableToolSchemasSeparately(t *testing.T) {
 	}
 }
 
+func TestRequestContextInfoReadsNativeToolSearchToolsShape(t *testing.T) {
+	assembly := RequestAssembly{
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "find docs"},
+			{
+				Role:           "tool",
+				Name:           "tool_search",
+				ToolResultKind: providers.ToolCallKindToolSearch,
+				Content:        `{"tools":[{"type":"function","name":"mcp_docs_search","description":"Search docs","input_schema":{"type":"object","properties":{"query":{"type":"string"}}},"defer_loading":true}]}`,
+			},
+		},
+	}
+	info := requestContextInfo(0, assembly, nil, nil, nil)
+	if info.LoadableToolCount != 1 || info.LoadableToolSchemaBytes == 0 || info.LoadableToolSurfaceHash == "" {
+		t.Fatalf("missing native loadable tool request metrics: %+v", info)
+	}
+}
+
 func TestRunToolLoop_CompactRewritePromotesSummaryIntoCacheHint(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{{ID: "c1", Name: "t", Arguments: `{}`}}, Usage: &providers.TokenUsage{InputTokens: 1300}},
