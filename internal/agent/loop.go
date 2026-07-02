@@ -431,6 +431,7 @@ func RunToolLoop(
 					if stats, ok, serr := compact.InceptionRewriteStatsFromToolMessages(messages, orderedToolMessages); serr == nil && ok {
 						attempt.AnchorID = intPtr(stats.AnchorID)
 						attempt.MessagesRemoved = stats.MessagesRemoved
+						attempt.AnchorDistance = stats.AnchorDistance
 						attempt.PreservedUserMessages = stats.PreservedUserMessages
 						attempt.PreservedUserMessageBytes = stats.PreservedUserMessageBytes
 						attempt.PreservedUserSuffixStartIndex = stats.PreservedUserSuffixStartIndex

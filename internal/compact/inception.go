@@ -33,6 +33,7 @@ type InceptionHistoryRewrite struct {
 type InceptionRewriteStats struct {
 	AnchorID                      int
 	MessagesRemoved               int
+	AnchorDistance                int
 	PreservedUserMessages         int
 	PreservedUserMessageBytes     int
 	PreservedUserSuffixStartIndex int
@@ -273,6 +274,7 @@ func InceptionRewriteStatsForRewrite(messages []providers.ChatMessage, anchorID 
 	stats := InceptionRewriteStats{
 		AnchorID:                      anchorID,
 		MessagesRemoved:               len(suffix),
+		AnchorDistance:                len(suffix),
 		PreservedUserMessages:         len(preserved),
 		PreservedUserSuffixStartIndex: preservedUserSuffixStartIndex(suffix),
 		SummaryBytes:                  len(strings.TrimSpace(content)),

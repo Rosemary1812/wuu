@@ -662,6 +662,9 @@ func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing
 	if attempts[0].MessagesRemoved != 2 {
 		t.Fatalf("expected rewrite to remove assistant tool call and tool result, got %+v", attempts[0])
 	}
+	if attempts[0].AnchorDistance != 2 {
+		t.Fatalf("expected anchor distance 2, got %+v", attempts[0])
+	}
 	if attempts[0].PreservedUserMessages != 0 {
 		t.Fatalf("did not expect preserved user suffix in this test, got %+v", attempts[0])
 	}

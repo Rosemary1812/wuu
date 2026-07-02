@@ -233,6 +233,7 @@ type CompactRecord struct {
 	MessagesAfter                 int    `json:"messages_after,omitempty"`
 	AnchorID                      *int   `json:"anchor_id,omitempty"`
 	MessagesRemoved               int    `json:"messages_removed,omitempty"`
+	AnchorDistance                int    `json:"anchor_distance,omitempty"`
 	PreservedUserMessages         int    `json:"preserved_user_messages,omitempty"`
 	PreservedUserMessageBytes     int    `json:"preserved_user_message_bytes,omitempty"`
 	PreservedUserSuffixStartIndex int    `json:"preserved_user_suffix_start_index,omitempty"`

@@ -124,6 +124,7 @@ type CompactAttemptInfo struct {
 	MessagesAfter                 int
 	AnchorID                      *int
 	MessagesRemoved               int
+	AnchorDistance                int
 	PreservedUserMessages         int
 	PreservedUserMessageBytes     int
 	PreservedUserSuffixStartIndex int

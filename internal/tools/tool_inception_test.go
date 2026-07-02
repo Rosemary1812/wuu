@@ -175,6 +175,7 @@ func TestInceptionToolDescriptionTeachesTriggers(t *testing.T) {
 		"low-value suffix",
 		"not a transcript",
 		"delivered_to_user",
+		"Choosing an earlier checkpoint is riskier",
 		"Omit raw logs",
 		"does not roll back files",
 	} {

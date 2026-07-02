@@ -1152,6 +1152,7 @@ func compactRecord(info agent.CompactAttemptInfo) sessiontrace.CompactRecord {
 		MessagesAfter:                 info.MessagesAfter,
 		AnchorID:                      info.AnchorID,
 		MessagesRemoved:               info.MessagesRemoved,
+		AnchorDistance:                info.AnchorDistance,
 		PreservedUserMessages:         info.PreservedUserMessages,
 		PreservedUserMessageBytes:     info.PreservedUserMessageBytes,
 		PreservedUserSuffixStartIndex: info.PreservedUserSuffixStartIndex,
