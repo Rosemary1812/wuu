@@ -440,138 +440,141 @@ export function SettingsView({
         onKeyDown={onSidebarSeparatorKey}
       />
       <main className="settings-main">
-        <div className="settings-page">
-          <header className="settings-page-header">
-            <div>
-              <h1 className="settings-page-title">{pageMeta.title}</h1>
-              <p className="settings-page-description">{pageMeta.description}</p>
-            </div>
-          </header>
-
-          {activePage === "providers" ? (
-            <SettingsProvidersPage
-              providers={providers}
-              providerLabels={providerLabels}
-              running={running}
-              providerDraft={providerDraft}
-              providerTypeDraft={providerTypeDraft}
-              modelDraft={modelDraft}
-              variantDraft={variantDraft}
-              baseURLDraft={baseURLDraft}
-              apiKeyDraft={apiKeyDraft}
-              addingProvider={addingProvider}
-              error={error}
-              saved={saved}
-              selectedProvider={selectedProvider}
-              connectionLocked={connectionLocked}
-              variantOptions={variantOptions}
-              providerNameTaken={Boolean(providerNameTaken)}
-              onProviderChange={changeProvider}
-              onStartAddingProvider={startAddingProvider}
-              onCancelAddingProvider={cancelAddingProvider}
-              onProviderDraftChange={(value) => {
-                setProviderDraft(value);
-                setSaved(false);
-              }}
-              onProviderTypeDraftChange={(value) => {
-                setProviderTypeDraft(value);
-                setSaved(false);
-              }}
-              onModelDraftChange={(value) => {
-                setModelDraft(value);
-                setVariantDraft("");
-                setSaved(false);
-              }}
-              onVariantDraftChange={(value) => {
-                setVariantDraft(value);
-                setSaved(false);
-              }}
-              onBaseURLDraftChange={(value) => {
-                setBaseURLDraft(value);
-                setSaved(false);
-              }}
-              onAPIKeyDraftChange={(value) => {
-                setAPIKeyDraft(value);
-                setSaved(false);
-              }}
-              onSubmit={submit}
-              onRemoveProvider={requestRemoveProvider}
-              runningProviderNames={runningProviderNameSet}
-              disabled={disabled}
-            />
-          ) : activePage === "advanced" ? (
-            <SettingsAdvancedPage
-              initialized={initialized}
-              running={running}
-              autoCompact={autoCompactDraft}
-              compactThreshold={compactThresholdDraft}
-              compactKeepRecent={compactKeepRecentDraft}
-              providerContextWindow={providerContextWindowDraft}
-              providerContextWindowCurrent={formatOptionalTokenCount(
-                initialized?.advanced_settings?.context_window_tokens,
-              )}
-              providerContextWindowSource={advancedContextSourceLabel(
-                initialized?.advanced_settings?.context_window_source,
-              )}
-              maxContextTokens={maxContextTokensDraft}
-              maxSteps={maxStepsDraft}
-              temperature={temperatureDraft}
-              error={advancedError}
-              saved={advancedSaved}
-              onAutoCompactToggle={() => {
-                setAutoCompactDraft((value) => !value);
-                setAdvancedSaved(false);
-              }}
-              onCompactThresholdChange={(value) => {
-                setCompactThresholdDraft(value);
-                setAdvancedSaved(false);
-              }}
-              onCompactKeepRecentChange={(value) => {
-                setCompactKeepRecentDraft(value);
-                setAdvancedSaved(false);
-              }}
-              onProviderContextWindowChange={(value) => {
-                setProviderContextWindowDraft(value);
-                setAdvancedSaved(false);
-              }}
-              onMaxContextTokensChange={(value) => {
-                setMaxContextTokensDraft(value);
-                setAdvancedSaved(false);
-              }}
-              onMaxStepsChange={(value) => {
-                setMaxStepsDraft(value);
-                setAdvancedSaved(false);
-              }}
-              onTemperatureChange={(value) => {
-                setTemperatureDraft(value);
-                setAdvancedSaved(false);
-              }}
-              onSubmit={submitAdvanced}
-            />
-          ) : activePage === "general" ? (
-            <SettingsGeneralPage
-              initialized={initialized}
-              running={running}
-              desktopBuild={desktopBuild}
-              showDebugControlsSetting={showDebugControlsSetting}
-              debugControlsEnabled={debugControlsEnabled}
-              mcpServers={mcpServers}
-              mcpLoading={mcpLoading}
-              mcpError={mcpError}
-              mcpBusyServer={mcpBusyServer}
-              onDebugControlsChange={onDebugControlsChange}
-              onGeneralSave={onGeneralSave}
-              onMCPAction={runMCPAction}
-              copyState={copyState}
-              onCopyVersion={copyVersionInfo}
-            />
-          ) : (
-            <SettingsUsagePage
-              usage={usage}
-              usageRange={usageRange}
-              setUsageRange={setUsageRange}
-            />
-          )}
+        <div className="settings-titlebar" aria-hidden="true" />
+        <div className="settings-scroll">
+          <div className="settings-page">
+            <header className="settings-page-header">
+              <div>
+                <h1 className="settings-page-title">{pageMeta.title}</h1>
+                <p className="settings-page-description">{pageMeta.description}</p>
+              </div>
+            </header>
+  
+            {activePage === "providers" ? (
+              <SettingsProvidersPage
+                providers={providers}
+                providerLabels={providerLabels}
+                running={running}
+                providerDraft={providerDraft}
+                providerTypeDraft={providerTypeDraft}
+                modelDraft={modelDraft}
+                variantDraft={variantDraft}
+                baseURLDraft={baseURLDraft}
+                apiKeyDraft={apiKeyDraft}
+                addingProvider={addingProvider}
+                error={error}
+                saved={saved}
+                selectedProvider={selectedProvider}
+                connectionLocked={connectionLocked}
+                variantOptions={variantOptions}
+                providerNameTaken={Boolean(providerNameTaken)}
+                onProviderChange={changeProvider}
+                onStartAddingProvider={startAddingProvider}
+                onCancelAddingProvider={cancelAddingProvider}
+                onProviderDraftChange={(value) => {
+                  setProviderDraft(value);
+                  setSaved(false);
+                }}
+                onProviderTypeDraftChange={(value) => {
+                  setProviderTypeDraft(value);
+                  setSaved(false);
+                }}
+                onModelDraftChange={(value) => {
+                  setModelDraft(value);
+                  setVariantDraft("");
+                  setSaved(false);
+                }}
+                onVariantDraftChange={(value) => {
+                  setVariantDraft(value);
+                  setSaved(false);
+                }}
+                onBaseURLDraftChange={(value) => {
+                  setBaseURLDraft(value);
+                  setSaved(false);
+                }}
+                onAPIKeyDraftChange={(value) => {
+                  setAPIKeyDraft(value);
+                  setSaved(false);
+                }}
+                onSubmit={submit}
+                onRemoveProvider={requestRemoveProvider}
+                runningProviderNames={runningProviderNameSet}
+                disabled={disabled}
+              />
+            ) : activePage === "advanced" ? (
+              <SettingsAdvancedPage
+                initialized={initialized}
+                running={running}
+                autoCompact={autoCompactDraft}
+                compactThreshold={compactThresholdDraft}
+                compactKeepRecent={compactKeepRecentDraft}
+                providerContextWindow={providerContextWindowDraft}
+                providerContextWindowCurrent={formatOptionalTokenCount(
+                  initialized?.advanced_settings?.context_window_tokens,
+                )}
+                providerContextWindowSource={advancedContextSourceLabel(
+                  initialized?.advanced_settings?.context_window_source,
+                )}
+                maxContextTokens={maxContextTokensDraft}
+                maxSteps={maxStepsDraft}
+                temperature={temperatureDraft}
+                error={advancedError}
+                saved={advancedSaved}
+                onAutoCompactToggle={() => {
+                  setAutoCompactDraft((value) => !value);
+                  setAdvancedSaved(false);
+                }}
+                onCompactThresholdChange={(value) => {
+                  setCompactThresholdDraft(value);
+                  setAdvancedSaved(false);
+                }}
+                onCompactKeepRecentChange={(value) => {
+                  setCompactKeepRecentDraft(value);
+                  setAdvancedSaved(false);
+                }}
+                onProviderContextWindowChange={(value) => {
+                  setProviderContextWindowDraft(value);
+                  setAdvancedSaved(false);
+                }}
+                onMaxContextTokensChange={(value) => {
+                  setMaxContextTokensDraft(value);
+                  setAdvancedSaved(false);
+                }}
+                onMaxStepsChange={(value) => {
+                  setMaxStepsDraft(value);
+                  setAdvancedSaved(false);
+                }}
+                onTemperatureChange={(value) => {
+                  setTemperatureDraft(value);
+                  setAdvancedSaved(false);
+                }}
+                onSubmit={submitAdvanced}
+              />
+            ) : activePage === "general" ? (
+              <SettingsGeneralPage
+                initialized={initialized}
+                running={running}
+                desktopBuild={desktopBuild}
+                showDebugControlsSetting={showDebugControlsSetting}
+                debugControlsEnabled={debugControlsEnabled}
+                mcpServers={mcpServers}
+                mcpLoading={mcpLoading}
+                mcpError={mcpError}
+                mcpBusyServer={mcpBusyServer}
+                onDebugControlsChange={onDebugControlsChange}
+                onGeneralSave={onGeneralSave}
+                onMCPAction={runMCPAction}
+                copyState={copyState}
+                onCopyVersion={copyVersionInfo}
+              />
+            ) : (
+              <SettingsUsagePage
+                usage={usage}
+                usageRange={usageRange}
+                setUsageRange={setUsageRange}
+              />
+            )}
+          </div>
         </div>
       </main>
     </div>
