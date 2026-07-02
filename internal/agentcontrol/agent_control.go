@@ -87,6 +87,7 @@ type AgentControl struct {
 
 	participantMessagesMu  sync.Mutex
 	participantMessages    []chan<- ParticipantMessage
+	participantSpeech      map[string]struct{}
 	participantResultPosts map[string]struct{}
 }
 

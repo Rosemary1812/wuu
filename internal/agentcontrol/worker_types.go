@@ -149,7 +149,7 @@ Response style:
 		Name:         "reviewer",
 		Role:         "Reviewer",
 		Description:  "Review diffs for real bugs, regressions, missing tests, and unsafe behavior without editing.",
-		SystemPrompt: rolePrompt("Reviewer", "Review the diff as an independent checker. Report only real bugs, security issues, logic errors, or missing verification.", visibleResultRule()),
+		SystemPrompt: rolePrompt("Reviewer", "Review the diff as an independent checker. Report only real bugs, security issues, logic errors, or missing verification."),
 		AllowedTools: readOnlyVerificationTools(),
 		ContextScope: "Final diff, changed files, acceptance criteria, and verification evidence.",
 		OutputSchema: "Review report with findings ordered by severity, open questions, and verification gaps.",
@@ -165,7 +165,7 @@ Response style:
 		Name:         "qa",
 		Role:         "QA / Verifier",
 		Description:  "Run product-facing verification, smoke tests, browser checks, and regression checks without editing.",
-		SystemPrompt: rolePrompt("QA / Verifier", "Verify the behavior from the user's point of view. Run checks and capture evidence. Do not edit files.", visibleResultRule()),
+		SystemPrompt: rolePrompt("QA / Verifier", "Verify the behavior from the user's point of view. Run checks and capture evidence. Do not edit files."),
 		AllowedTools: readOnlyVerificationTools(),
 		ContextScope: "Expected behavior, target route or command, verification policy, changed files, and failure history.",
 		OutputSchema: "QA report with checks run, PASS/FAIL/PARTIAL verdict, failures, screenshots or command evidence when available.",
@@ -181,7 +181,7 @@ Response style:
 		Name:         "debugger",
 		Role:         "Debugger",
 		Description:  "Analyze failure logs, reproduce narrow failures, and propose a root-cause fix without editing.",
-		SystemPrompt: rolePrompt("Debugger", "Start from failure evidence, reproduce narrowly, identify root cause, and recommend the smallest fix. Do not edit files.", visibleResultRule()),
+		SystemPrompt: rolePrompt("Debugger", "Start from failure evidence, reproduce narrowly, identify root cause, and recommend the smallest fix. Do not edit files."),
 		AllowedTools: readOnlyVerificationTools(),
 		ContextScope: "Failure log, failing command, stack trace, recent diff, and implicated files.",
 		OutputSchema: "Debug report with reproduction command, root cause, implicated files, and proposed fix.",
@@ -197,7 +197,7 @@ Response style:
 		Name:         "integrator",
 		Role:         "Integrator",
 		Description:  "Combine worker outputs, verification evidence, and review feedback into a final integration report without editing.",
-		SystemPrompt: rolePrompt("Integrator", "Synthesize worker, reviewer, and verifier outputs. Check consistency and produce the final handoff. Do not edit files.", visibleResultRule()),
+		SystemPrompt: rolePrompt("Integrator", "Synthesize worker, reviewer, and verifier outputs. Check consistency and produce the final handoff. Do not edit files."),
 		AllowedTools: readOnlyVerificationTools(),
 		ContextScope: "Approved worker reports, review report, verification results, worktree review, and durable state.",
 		OutputSchema: "Integration report with accepted changes, rejected changes, final verification, limits, and next steps.",
@@ -216,29 +216,17 @@ func readOnlyPlanningTools() []string {
 }
 
 func readOnlyVerificationTools() []string {
-	return []string{"read_file", "grep", "glob", "bash", "inception", "agent_report", "post_message"}
+	return []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"}
 }
 
-func rolePrompt(role, instruction string, extraRules ...string) string {
-	rules := "- Stay inside the assigned scope.\n" +
-		"- Preserve unrelated user work.\n" +
-		"- Report blockers with exact evidence.\n" +
-		"- Use agent_report before the final message.\n"
-	for _, rule := range extraRules {
-		rule = strings.TrimSpace(rule)
-		if rule == "" {
-			continue
-		}
-		rules += "- " + rule + "\n"
-	}
+func rolePrompt(role, instruction string) string {
 	return "You are the " + role + " sub-agent in a goal-driven agent team.\n\n" +
 		instruction + "\n\n" +
 		"Rules:\n" +
-		rules
-}
-
-func visibleResultRule() string {
-	return "If post_message is available and your final result is worth showing directly to the user, call post_message with kind=\"result\" once after agent_report. Silence is valid; do not post routine progress or duplicate the full report."
+		"- Stay inside the assigned scope.\n" +
+		"- Preserve unrelated user work.\n" +
+		"- Report blockers with exact evidence.\n" +
+		"- Use agent_report before the final message.\n"
 }
 
 // AvailableWorkerTypes returns all built-in worker roles sorted by name.
@@ -326,7 +314,7 @@ func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 		if _, denied := denySet[name]; denied {
 			continue
 		}
-		if name == "post_message" && len(wt.AllowedTools) == 0 && !workerAllowsVisibleResultPost(wt) {
+		if name == "post_message" && len(wt.AllowedTools) == 0 {
 			continue
 		}
 		if len(wt.AllowedTools) == 0 {
@@ -339,10 +327,6 @@ func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 		}
 	}
 	return out
-}
-
-func workerAllowsVisibleResultPost(wt WorkerType) bool {
-	return wt.Name == "verification"
 }
 
 // NormalizeIsolation resolves the effective isolation mode for a spawn request.

@@ -153,6 +153,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		GoalRuntime:                 t.env.GoalRuntime,
 		AgentID:                     t.env.AgentID,
 		AgentPath:                   t.env.AgentPath,
+		ParticipantSpeechEnabled:    t.env.ParticipantSpeechEnabled,
 		ToolSearchEnabled:           t.env.ToolSearchEnabled,
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
 		ProcessMgr:                  t.env.ProcessMgr,
@@ -681,6 +682,39 @@ func (t *Toolkit) SupportsTool(name string) bool {
 	}
 }
 
+// SetParticipantSpeechEnabled exposes participant speech tools for an
+// internally-authorized conversation-native participant run.
+func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ParticipantSpeechEnabled = enabled
+	t.activeProfileMu.Lock()
+	defer t.activeProfileMu.Unlock()
+	if t.activeSurface.ProfileName == "" {
+		return
+	}
+	if enabled {
+		enableParticipantSpeechSurface(&t.activeSurface)
+	} else {
+		delete(t.activeSurface.Tools, "post_message")
+	}
+	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
+}
+
+func enableParticipantSpeechSurface(surface *capability.Surface) {
+	if surface == nil || surface.ProfileName == "" {
+		return
+	}
+	if surface.Tools == nil {
+		surface.Tools = map[string]capability.Capability{}
+	}
+	surface.Tools["post_message"] = capability.CapabilityTaskCommunicate
+	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
+		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
+	}
+}
+
 // SurfaceToolNames returns the registered built-in tools available to the
 // active model surface, including deferred tools before they are loaded.
 func (t *Toolkit) SurfaceToolNames() []string {
@@ -743,6 +777,9 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 		return
 	}
 	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, forMainAgent)
+	if t.env != nil && t.env.ParticipantSpeechEnabled {
+		enableParticipantSpeechSurface(&t.activeSurface)
+	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
 
@@ -873,6 +910,9 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 }
 
 func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
+	if name == "post_message" && !t.participantSpeechEnabled() {
+		return fmt.Errorf("tool %q is not available without participant speech capability", name)
+	}
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {

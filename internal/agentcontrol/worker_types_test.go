@@ -110,10 +110,13 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 			t.Errorf("verification agent should not receive write tool %s", blocked)
 		}
 	}
-	for _, expected := range []string{"read_file", "bash", "agent_report", "post_message"} {
+	for _, expected := range []string{"read_file", "bash", "agent_report"} {
 		if !allowed[expected] {
 			t.Errorf("verification agent missing %s", expected)
 		}
+	}
+	if allowed["post_message"] {
+		t.Error("verification agent should not receive participant speech tool")
 	}
 }
 

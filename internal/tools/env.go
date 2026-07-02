@@ -207,6 +207,9 @@ type Env struct {
 	GoalRuntime *goalruntime.Runtime
 	AgentID     string
 	AgentPath   string
+	// ParticipantSpeechEnabled is an internal app-server authorization for
+	// conversation-native participant runs. Ordinary subagents keep this false.
+	ParticipantSpeechEnabled bool
 	// ToolSearchEnabled means deferred tools are loaded through the
 	// model-visible tool_search entrypoint. When false, the active surface is
 	// flattened and tool_search guidance must not be emitted.

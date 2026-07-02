@@ -283,6 +283,11 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	}
 	<-client.started
 
+	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Not allowed yet."); err == nil {
+		t.Fatal("expected participant speech capability error")
+	}
+	c.EnableParticipantSpeech("agent-1")
+
 	posted, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Found one bug.")
 	if err != nil {
 		t.Fatalf("PostParticipantMessage: %v", err)

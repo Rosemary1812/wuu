@@ -609,6 +609,50 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 	}
 }
 
+func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), false)
+	kit.SetAgentIdentity("worker-1", "/root/worker-1")
+
+	if containsProfileDef(kit.Definitions(), "post_message") {
+		t.Fatalf("ordinary worker surface must not advertise post_message: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if info, ok := kit.ToolInfo("post_message"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "post_message")
+	} else if info.Exposure != ToolExposureHidden {
+		t.Fatalf("ordinary worker post_message exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
+		t.Fatalf("ordinary worker post_message should be blocked by speech capability, got %v", err)
+	}
+
+	kit.SetParticipantSpeechEnabled(true)
+	if !containsProfileDef(kit.Definitions(), "post_message") {
+		t.Fatalf("authorized participant surface should advertise post_message: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if info, ok := kit.ToolInfo("post_message"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "post_message")
+	} else if info.Exposure != ToolExposureDirect || info.Risk != ToolRiskLow {
+		t.Fatalf("authorized post_message info = %+v, want direct low-risk", info)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("authorized post_message should reach tool validation, got %v", err)
+	}
+
+	earlyAuthorized, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New earlyAuthorized: %v", err)
+	}
+	earlyAuthorized.SetParticipantSpeechEnabled(true)
+	earlyAuthorized.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), false)
+	if !containsProfileDef(earlyAuthorized.Definitions(), "post_message") {
+		t.Fatalf("participant speech authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
+	}
+}
+
 func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {

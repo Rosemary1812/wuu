@@ -51,6 +51,39 @@ func (c *AgentControl) UnsubscribeParticipantMessages(ch chan<- ParticipantMessa
 	}
 }
 
+// EnableParticipantSpeech grants one agent run permission to call
+// conversation-native participant speech tools. Ordinary subagents never call
+// this path.
+func (c *AgentControl) EnableParticipantSpeech(agentID string) {
+	if c == nil {
+		return
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return
+	}
+	c.participantMessagesMu.Lock()
+	defer c.participantMessagesMu.Unlock()
+	if c.participantSpeech == nil {
+		c.participantSpeech = make(map[string]struct{})
+	}
+	c.participantSpeech[agentID] = struct{}{}
+}
+
+func (c *AgentControl) ParticipantSpeechEnabled(agentID string) bool {
+	if c == nil {
+		return false
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false
+	}
+	c.participantMessagesMu.Lock()
+	defer c.participantMessagesMu.Unlock()
+	_, ok := c.participantSpeech[agentID]
+	return ok
+}
+
 // PostParticipantMessage records that a worker explicitly chose to occupy the
 // visible conversation stream. Phase 2 only supports result posts.
 func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind, text string) (ParticipantMessage, error) {
@@ -83,6 +116,9 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 	snap := worker.Snapshot()
 	if !canParticipantPost(snap.Status) {
 		return ParticipantMessage{}, fmt.Errorf("post_message: agent %q is %s", agentID, snap.Status)
+	}
+	if !c.ParticipantSpeechEnabled(agentID) {
+		return ParticipantMessage{}, fmt.Errorf("post_message: agent %q does not have participant speech capability", agentID)
 	}
 	msg := ParticipantMessage{
 		AgentID:       snap.ID,

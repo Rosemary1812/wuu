@@ -77,7 +77,6 @@ func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface 
 		addHelpmeTool(b)
 	} else {
 		addWorkerReportTool(b)
-		addWorkerPostMessageTool(b)
 	}
 	b.sortCaps()
 	return b.surface
@@ -338,10 +337,6 @@ func addInceptionTool(b *surfaceBuilder) {
 
 func addWorkerReportTool(b *surfaceBuilder) {
 	b.addVisible("agent_report", capability.CapabilityTaskManage)
-}
-
-func addWorkerPostMessageTool(b *surfaceBuilder) {
-	b.addVisible("post_message", capability.CapabilityTaskCommunicate)
 }
 
 func addMemoryTools(b *surfaceBuilder) {

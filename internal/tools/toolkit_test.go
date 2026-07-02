@@ -2150,7 +2150,6 @@ func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 		"await_agents":  false,
 		"close_agent":   false,
 		"agent_report":  false,
-		"post_message":  false,
 	}
 	defs := kit.Definitions()
 	for _, d := range defs {
@@ -2473,7 +2472,7 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "await_agents", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
 		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "post_message", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
+		{name: "post_message", kind: ToolKindAgent, exposure: ToolExposureHidden, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "session_memory", kind: ToolKindMemory, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: false, concurrencySafe: false},

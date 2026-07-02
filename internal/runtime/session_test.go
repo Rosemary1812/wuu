@@ -2480,10 +2480,13 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, allowed := range []string{"read_file", "grep", "glob", "bash", "agent_report", "post_message"} {
+	for _, allowed := range []string{"read_file", "grep", "glob", "bash", "agent_report"} {
 		if !defs[allowed] {
 			t.Fatalf("verification worker toolkit should keep %s; defs=%v", allowed, defs)
 		}
+	}
+	if defs["post_message"] {
+		t.Fatalf("verification worker toolkit should not expose participant speech tool; defs=%v", defs)
 	}
 	for _, hidden := range []string{"run_shell", "run_test", "start_process", "git", "apply_patch", "edit_file", "write_file"} {
 		if defs[hidden] {

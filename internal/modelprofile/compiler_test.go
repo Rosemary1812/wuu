@@ -514,8 +514,11 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := workerSurface.Tools["agent_report"]; !ok {
 			t.Errorf("%s/%s worker surface must directly include agent_report", tt.provider, tt.model)
 		}
-		if workerSurface.Tools["post_message"] != capability.CapabilityTaskCommunicate {
-			t.Errorf("%s/%s worker direct post_message capability = %s, want %s", tt.provider, tt.model, workerSurface.Tools["post_message"], capability.CapabilityTaskCommunicate)
+		if _, ok := workerSurface.Tools["post_message"]; ok {
+			t.Errorf("%s/%s ordinary worker surface must NOT directly include post_message", tt.provider, tt.model)
+		}
+		if _, ok := workerSurface.DeferredTools["post_message"]; ok {
+			t.Errorf("%s/%s ordinary worker surface must NOT defer post_message", tt.provider, tt.model)
 		}
 	}
 }
