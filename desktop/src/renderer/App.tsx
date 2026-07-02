@@ -554,8 +554,10 @@ export function App(): JSX.Element {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
+  const settingsShellRef = useRef<HTMLDivElement>(null);
   const {
     sidebarWidth,
+    settingsSidebarWidth,
     sidebarCollapsed,
     resizingSidebar,
     sidebarAnimating,
@@ -576,6 +578,7 @@ export function App(): JSX.Element {
     resetSettingsSidebarWidth,
   } = useAppLayoutState({
     layoutRootRef: appShellRef,
+    settingsLayoutRootRef: settingsShellRef,
     onCloseProjectMenu: closeProjectMenu,
   });
   const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
@@ -6170,10 +6173,11 @@ export function App(): JSX.Element {
         setUsageRange={setUsageRange}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
-        sidebarWidth={sidebarWidth}
+        sidebarWidth={settingsSidebarWidth}
         sidebarMinWidth={SIDEBAR_MIN_WIDTH}
         sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
         resizingSidebar={resizingSidebar}
+        shellRef={settingsShellRef}
         onBack={() => setSettingsOpen(false)}
         onSave={updateRuntimeSettings}
         onRemoveProvider={removeProvider}

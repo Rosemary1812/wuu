@@ -17,6 +17,8 @@ export const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
+export const SETTINGS_SIDEBAR_DEFAULT_WIDTH = 280;
+const SETTINGS_SIDEBAR_WIDTH_KEY = "wuu.desktop.settingsSidebarWidth";
 export const WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH = 360;
 export const WORKSPACE_RIGHT_PANEL_MIN_WIDTH = 300;
 export const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
@@ -28,7 +30,10 @@ type SidebarResizeSession = {
   startX: number;
   startWidth: number;
   currentWidth: number;
-  allowCollapse: boolean;
+  // "app" drags the main sidebar (collapsible, rAF live path); "settings"
+  // drags the settings sidebar, which has its own width state and never
+  // collapses.
+  target: "app" | "settings";
   // Tracks whether the sidebar collapsed during the current drag (either at
   // pointerdown or by crossing below SIDEBAR_MIN_WIDTH mid-drag). When true
   // and the user drags back above the threshold without releasing, the move
@@ -66,6 +71,14 @@ function initialSidebarWidth(): number {
 
 function initialSidebarCollapsed(): boolean {
   return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+}
+
+function initialSettingsSidebarWidth(): number {
+  const stored = Number(window.localStorage.getItem(SETTINGS_SIDEBAR_WIDTH_KEY));
+  if (!Number.isFinite(stored)) {
+    return SETTINGS_SIDEBAR_DEFAULT_WIDTH;
+  }
+  return clamp(stored, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
 }
 
 function initialWorkspaceRightPanelWidth(): number {
@@ -124,14 +137,70 @@ function useWindowPointerResize<Session>({
   }, [onEnd, onMove, resizing, sessionRef]);
 }
 
+type LiveWidthWriter = {
+  schedule: (width: number) => void;
+  cancel: () => void;
+  flush: () => void;
+};
+
+// Coalesces per-pointermove width updates into one write per animation frame
+// so drags mutate a CSS variable instead of re-rendering the React tree.
+function useLiveWidthWriter(write: (width: number) => void): LiveWidthWriter {
+  const frameRef = useRef<number | undefined>(undefined);
+  const pendingRef = useRef<number | undefined>(undefined);
+
+  const cancel = useCallback((): void => {
+    if (frameRef.current !== undefined) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = undefined;
+    }
+    pendingRef.current = undefined;
+  }, []);
+
+  const flush = useCallback((): void => {
+    if (frameRef.current !== undefined) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = undefined;
+    }
+    const pendingWidth = pendingRef.current;
+    pendingRef.current = undefined;
+    if (pendingWidth !== undefined) {
+      write(pendingWidth);
+    }
+  }, [write]);
+
+  const schedule = useCallback(
+    (nextWidth: number): void => {
+      pendingRef.current = nextWidth;
+      if (frameRef.current !== undefined) {
+        return;
+      }
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = undefined;
+        const pendingWidth = pendingRef.current;
+        pendingRef.current = undefined;
+        if (pendingWidth !== undefined) {
+          write(pendingWidth);
+        }
+      });
+    },
+    [write]
+  );
+
+  return { schedule, cancel, flush };
+}
+
 export function useAppLayoutState({
   layoutRootRef,
+  settingsLayoutRootRef,
   onCloseProjectMenu
 }: {
   layoutRootRef?: RefObject<HTMLElement | null>;
+  settingsLayoutRootRef?: RefObject<HTMLElement | null>;
   onCloseProjectMenu: () => void;
 }): {
   sidebarWidth: number;
+  settingsSidebarWidth: number;
   sidebarCollapsed: boolean;
   resizingSidebar: boolean;
   sidebarAnimating: boolean;
@@ -153,6 +222,7 @@ export function useAppLayoutState({
   resetSettingsSidebarWidth: () => void;
 } {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(initialSettingsSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [sidebarAnimating, setSidebarAnimating] = useState(false);
@@ -164,10 +234,6 @@ export function useAppLayoutState({
   const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
-  const sidebarLiveFrameRef = useRef<number | undefined>(undefined);
-  const pendingLiveSidebarWidthRef = useRef<number | undefined>(undefined);
-  const rightPanelLiveFrameRef = useRef<number | undefined>(undefined);
-  const pendingLiveWorkspaceRightPanelWidthRef = useRef<number | undefined>(undefined);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
@@ -197,7 +263,7 @@ export function useAppLayoutState({
   }, []);
 
   const applySettingsSidebarWidth = useCallback((nextWidth: number): void => {
-    setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+    setSettingsSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
   }, []);
 
   const writeLiveSidebarWidth = useCallback(
@@ -213,42 +279,16 @@ export function useAppLayoutState({
     [layoutRootRef]
   );
 
-  const cancelPendingLiveSidebarWidth = useCallback((): void => {
-    if (sidebarLiveFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(sidebarLiveFrameRef.current);
-      sidebarLiveFrameRef.current = undefined;
-    }
-    pendingLiveSidebarWidthRef.current = undefined;
-  }, []);
-
-  const flushPendingLiveSidebarWidth = useCallback((): void => {
-    if (sidebarLiveFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(sidebarLiveFrameRef.current);
-      sidebarLiveFrameRef.current = undefined;
-    }
-    const nextWidth = pendingLiveSidebarWidthRef.current;
-    pendingLiveSidebarWidthRef.current = undefined;
-    if (nextWidth !== undefined) {
-      writeLiveSidebarWidth(nextWidth);
-    }
-  }, [writeLiveSidebarWidth]);
-
-  const applyLiveSidebarWidth = useCallback(
+  const writeLiveSettingsSidebarWidth = useCallback(
     (nextWidth: number): void => {
-      pendingLiveSidebarWidthRef.current = nextWidth;
-      if (sidebarLiveFrameRef.current !== undefined) {
+      const root = settingsLayoutRootRef?.current;
+      if (!root) {
         return;
       }
-      sidebarLiveFrameRef.current = window.requestAnimationFrame(() => {
-        sidebarLiveFrameRef.current = undefined;
-        const pendingWidth = pendingLiveSidebarWidthRef.current;
-        pendingLiveSidebarWidthRef.current = undefined;
-        if (pendingWidth !== undefined) {
-          writeLiveSidebarWidth(pendingWidth);
-        }
-      });
+      const clampedWidth = clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      root.style.setProperty("--settings-sidebar-width", `${clampedWidth}px`);
     },
-    [writeLiveSidebarWidth]
+    [settingsLayoutRootRef]
   );
 
   const writeLiveWorkspaceRightPanelWidth = useCallback(
@@ -266,43 +306,9 @@ export function useAppLayoutState({
     [effectiveSidebarWidth, layoutRootRef]
   );
 
-  const cancelPendingLiveWorkspaceRightPanelWidth = useCallback((): void => {
-    if (rightPanelLiveFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(rightPanelLiveFrameRef.current);
-      rightPanelLiveFrameRef.current = undefined;
-    }
-    pendingLiveWorkspaceRightPanelWidthRef.current = undefined;
-  }, []);
-
-  const flushPendingLiveWorkspaceRightPanelWidth = useCallback((): void => {
-    if (rightPanelLiveFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(rightPanelLiveFrameRef.current);
-      rightPanelLiveFrameRef.current = undefined;
-    }
-    const nextWidth = pendingLiveWorkspaceRightPanelWidthRef.current;
-    pendingLiveWorkspaceRightPanelWidthRef.current = undefined;
-    if (nextWidth !== undefined) {
-      writeLiveWorkspaceRightPanelWidth(nextWidth);
-    }
-  }, [writeLiveWorkspaceRightPanelWidth]);
-
-  const applyLiveWorkspaceRightPanelWidth = useCallback(
-    (nextWidth: number): void => {
-      pendingLiveWorkspaceRightPanelWidthRef.current = nextWidth;
-      if (rightPanelLiveFrameRef.current !== undefined) {
-        return;
-      }
-      rightPanelLiveFrameRef.current = window.requestAnimationFrame(() => {
-        rightPanelLiveFrameRef.current = undefined;
-        const pendingWidth = pendingLiveWorkspaceRightPanelWidthRef.current;
-        pendingLiveWorkspaceRightPanelWidthRef.current = undefined;
-        if (pendingWidth !== undefined) {
-          writeLiveWorkspaceRightPanelWidth(pendingWidth);
-        }
-      });
-    },
-    [writeLiveWorkspaceRightPanelWidth]
-  );
+  const sidebarLive = useLiveWidthWriter(writeLiveSidebarWidth);
+  const settingsSidebarLive = useLiveWidthWriter(writeLiveSettingsSidebarWidth);
+  const rightPanelLive = useLiveWidthWriter(writeLiveWorkspaceRightPanelWidth);
 
   const applySidebarWidth = useCallback(
     (nextWidth: number): void => {
@@ -346,6 +352,10 @@ export function useAppLayoutState({
   }, [sidebarWidth, sidebarCollapsed]);
 
   useEffect(() => {
+    window.localStorage.setItem(SETTINGS_SIDEBAR_WIDTH_KEY, String(settingsSidebarWidth));
+  }, [settingsSidebarWidth]);
+
+  useEffect(() => {
     window.localStorage.setItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY, String(workspaceRightPanelWidth));
   }, [workspaceRightPanelWidth]);
 
@@ -357,58 +367,57 @@ export function useAppLayoutState({
       if (rightPanelMotionTimerRef.current !== undefined) {
         window.clearTimeout(rightPanelMotionTimerRef.current);
       }
-      cancelPendingLiveSidebarWidth();
-      cancelPendingLiveWorkspaceRightPanelWidth();
+      sidebarLive.cancel();
+      settingsSidebarLive.cancel();
+      rightPanelLive.cancel();
     };
-  }, [cancelPendingLiveSidebarWidth, cancelPendingLiveWorkspaceRightPanelWidth]);
+  }, [sidebarLive, settingsSidebarLive, rightPanelLive]);
 
   const handleSidebarResizeMove = useCallback(
     (event: PointerEvent, session: SidebarResizeSession): void => {
       const nextWidth = session.startWidth + event.clientX - session.startX;
       session.currentWidth = nextWidth;
-      if (session.allowCollapse) {
-        if (nextWidth <= SIDEBAR_MIN_WIDTH) {
-          cancelPendingLiveSidebarWidth();
-          applySidebarWidth(nextWidth);
-          session.collapsedDuringDrag = true;
-          return;
-        }
-        if (session.collapsedDuringDrag) {
-          // We crossed below SIDEBAR_MIN_WIDTH earlier in this drag and never
-          // released. Route through applySidebarWidth so setSidebarCollapsed
-          // (false) clears the .sidebar-collapsed class; otherwise the live
-          // inline --sidebar-width would expand the sidebar while its content
-          // stayed opacity: 0, leaving a white glass slab.
-          applySidebarWidth(nextWidth);
-          session.collapsedDuringDrag = false;
-          return;
-        }
-        applyLiveSidebarWidth(nextWidth);
+      if (session.target === "settings") {
+        settingsSidebarLive.schedule(nextWidth);
         return;
       }
-      applySettingsSidebarWidth(nextWidth);
+      if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+        sidebarLive.cancel();
+        applySidebarWidth(nextWidth);
+        session.collapsedDuringDrag = true;
+        return;
+      }
+      if (session.collapsedDuringDrag) {
+        // We crossed below SIDEBAR_MIN_WIDTH earlier in this drag and never
+        // released. Route through applySidebarWidth so setSidebarCollapsed
+        // (false) clears the .sidebar-collapsed class; otherwise the live
+        // inline --sidebar-width would expand the sidebar while its content
+        // stayed opacity: 0, leaving a white glass slab.
+        applySidebarWidth(nextWidth);
+        session.collapsedDuringDrag = false;
+        return;
+      }
+      sidebarLive.schedule(nextWidth);
     },
-    [
-      applyLiveSidebarWidth,
-      applySettingsSidebarWidth,
-      applySidebarWidth,
-      cancelPendingLiveSidebarWidth,
-    ]
+    [applySidebarWidth, settingsSidebarLive, sidebarLive]
   );
 
   const handleSidebarResizeEnd = useCallback(
     (session: SidebarResizeSession | null): void => {
-      if (session?.allowCollapse) {
+      if (session?.target === "settings") {
+        settingsSidebarLive.cancel();
+        applySettingsSidebarWidth(session.currentWidth);
+      } else if (session) {
         if (session.currentWidth > SIDEBAR_MIN_WIDTH) {
-          flushPendingLiveSidebarWidth();
+          sidebarLive.flush();
         } else {
-          cancelPendingLiveSidebarWidth();
+          sidebarLive.cancel();
         }
         applySidebarWidth(session.currentWidth);
       }
       setResizingSidebar(false);
     },
-    [applySidebarWidth, cancelPendingLiveSidebarWidth, flushPendingLiveSidebarWidth]
+    [applySettingsSidebarWidth, applySidebarWidth, settingsSidebarLive, sidebarLive]
   );
 
   useWindowPointerResize({
@@ -422,24 +431,20 @@ export function useAppLayoutState({
     (event: PointerEvent, session: RightPanelResizeSession): void => {
       const nextWidth = session.startWidth - (event.clientX - session.startX);
       session.currentWidth = nextWidth;
-      applyLiveWorkspaceRightPanelWidth(nextWidth);
+      rightPanelLive.schedule(nextWidth);
     },
-    [applyLiveWorkspaceRightPanelWidth]
+    [rightPanelLive]
   );
 
   const handleRightPanelResizeEnd = useCallback((session: RightPanelResizeSession | null): void => {
     if (session) {
-      flushPendingLiveWorkspaceRightPanelWidth();
+      rightPanelLive.flush();
       applyWorkspaceRightPanelWidth(session.currentWidth);
     } else {
-      cancelPendingLiveWorkspaceRightPanelWidth();
+      rightPanelLive.cancel();
     }
     setResizingRightPanel(false);
-  }, [
-    applyWorkspaceRightPanelWidth,
-    cancelPendingLiveWorkspaceRightPanelWidth,
-    flushPendingLiveWorkspaceRightPanelWidth,
-  ]);
+  }, [applyWorkspaceRightPanelWidth, rightPanelLive]);
 
   useWindowPointerResize({
     resizing: resizingRightPanel,
@@ -468,7 +473,7 @@ export function useAppLayoutState({
       startX: event.clientX,
       startWidth: sidebarCollapsed ? 0 : sidebarWidth,
       currentWidth: sidebarCollapsed ? 0 : sidebarWidth,
-      allowCollapse: true,
+      target: "app",
       collapsedDuringDrag: sidebarCollapsed
     };
     onCloseProjectMenu();
@@ -482,12 +487,9 @@ export function useAppLayoutState({
     event.preventDefault();
     resizeSessionRef.current = {
       startX: event.clientX,
-      startWidth: sidebarWidth,
-      currentWidth: sidebarWidth,
-      allowCollapse: false,
-      // Settings sidebar resizer never collapses, so this flag is never read
-      // — handlePointerMove short-circuits on !allowCollapse. Set to false
-      // for type clarity.
+      startWidth: settingsSidebarWidth,
+      currentWidth: settingsSidebarWidth,
+      target: "settings",
       collapsedDuringDrag: false
     };
     onCloseProjectMenu();
@@ -563,12 +565,12 @@ export function useAppLayoutState({
   function handleSettingsSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      applySettingsSidebarWidth(sidebarWidth - SIDEBAR_STEP);
+      applySettingsSidebarWidth(settingsSidebarWidth - SIDEBAR_STEP);
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      applySettingsSidebarWidth(sidebarWidth + SIDEBAR_STEP);
+      applySettingsSidebarWidth(settingsSidebarWidth + SIDEBAR_STEP);
       return;
     }
     if (event.key === "Home") {
@@ -583,11 +585,12 @@ export function useAppLayoutState({
   }
 
   function resetSettingsSidebarWidth(): void {
-    applySettingsSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+    applySettingsSidebarWidth(SETTINGS_SIDEBAR_DEFAULT_WIDTH);
   }
 
   return {
     sidebarWidth,
+    settingsSidebarWidth,
     sidebarCollapsed,
     resizingSidebar,
     sidebarAnimating,

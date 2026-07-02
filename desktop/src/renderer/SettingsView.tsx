@@ -17,6 +17,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useMemo,
   useRef,
@@ -51,6 +52,7 @@ export function SettingsView({
   sidebarMinWidth,
   sidebarMaxWidth,
   resizingSidebar,
+  shellRef,
   onBack,
   onSave,
   onRemoveProvider,
@@ -76,6 +78,7 @@ export function SettingsView({
   sidebarMinWidth: number;
   sidebarMaxWidth: number;
   resizingSidebar: boolean;
+  shellRef?: RefObject<HTMLDivElement | null>;
   onBack: () => void;
   onSave: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onRemoveProvider: (provider: string) => Promise<void>;
@@ -391,7 +394,7 @@ export function SettingsView({
       (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
       (connectionLocked || !apiKeyDraft.trim()));
   const shellStyle = {
-    "--sidebar-width": `${sidebarWidth}px`
+    "--settings-sidebar-width": `${sidebarWidth}px`
   } as CSSProperties;
 
   const pageMeta = settingsPageMeta(
@@ -401,7 +404,7 @@ export function SettingsView({
   );
 
   return (
-    <div className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
+    <div ref={shellRef} className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
       <aside className="settings-sidebar">
         <div className="traffic-spacer" />
         <button className="settings-back-button" type="button" onClick={onBack}>

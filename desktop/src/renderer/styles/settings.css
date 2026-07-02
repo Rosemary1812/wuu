@@ -25,12 +25,16 @@
 .settings-shell {
   display: grid;
   position: relative;
-  grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr);
+  grid-template-columns: var(--settings-sidebar-width, 280px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   height: 100%;
   overflow: hidden;
   background: var(--surface-1);
+}
+
+.settings-shell .settings-sidebar-resizer {
+  left: calc(var(--settings-sidebar-width, 280px) - 5px);
 }
 
 .settings-sidebar {
