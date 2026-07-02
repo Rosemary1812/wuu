@@ -44,12 +44,13 @@ func (f *fakeStep) Execute(_ context.Context, req providers.ChatRequest) (StepRe
 
 // fakeLoopTools is a no-op ToolExecutor that records every call.
 type fakeLoopTools struct {
-	mu      sync.Mutex
-	defs    []providers.ToolDefinition
-	results map[string]string // call.ID → JSON result
-	calls   []providers.ToolCall
-	steps   []int
-	err     error
+	mu         sync.Mutex
+	defs       []providers.ToolDefinition
+	results    map[string]string // call.ID → JSON result
+	discovered map[string][]providers.LoadableToolDefinition
+	calls      []providers.ToolCall
+	steps      []int
+	err        error
 }
 
 func (f *fakeLoopTools) Definitions() []providers.ToolDefinition { return f.defs }
@@ -67,6 +68,13 @@ func (f *fakeLoopTools) Execute(ctx context.Context, call providers.ToolCall) (s
 		return r, nil
 	}
 	return `{"ok":true}`, nil
+}
+
+func (f *fakeLoopTools) DiscoveredTools(call providers.ToolCall) []providers.LoadableToolDefinition {
+	if f == nil || len(f.discovered) == 0 {
+		return nil
+	}
+	return providers.CloneLoadableToolDefinitions(f.discovered[call.ID])
 }
 
 func (f *fakeLoopTools) recordedCalls() []providers.ToolCall {
@@ -696,6 +704,206 @@ func TestRunToolLoop_InceptionRewriteAfterToolResultKeepsValidHistory(t *testing
 	if res.Content != "continued after context rewrite" {
 		t.Fatalf("unexpected final content %q", res.Content)
 	}
+}
+
+func TestRunToolLoop_ProactiveCompactThenInceptionRewrite(t *testing.T) {
+	rawResult := mustInceptionToolResult(t, 0, "Continue after proactive compact.")
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["after proactive"],"next_action":"continue"}}`}}},
+		{Content: "done after proactive and inception"},
+	}}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 950})
+	compactCalled := 0
+	var attempts []CompactAttemptInfo
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: compact.InceptionToolName}},
+			results: map[string]string{"inception_1": rawResult},
+		},
+		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactCalled++
+			if _, ok := compact.FindContextAnchorIndex(msgs, 0); ok {
+				t.Fatalf("proactive compact should run before step anchor injection: %+v", msgs)
+			}
+			return []providers.ChatMessage{
+				{Role: "system", Content: compact.BuildSummaryContent("proactive summary")},
+				userMsg("latest after proactive compact"),
+			}, nil
+		},
+		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
+		UsageTracker:     tracker,
+		PostToolRewrite:  compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		userMsg("old ask"),
+		{Role: "assistant", Content: "old answer"},
+		userMsg("please continue"),
+	}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compactCalled != 1 {
+		t.Fatalf("expected one proactive compact, got %d", compactCalled)
+	}
+	if len(attempts) != 2 ||
+		attempts[0].Reason != CompactReasonProactive ||
+		attempts[1].Reason != CompactReasonInception ||
+		attempts[1].AnchorID == nil ||
+		*attempts[1].AnchorID != 0 {
+		t.Fatalf("expected proactive then inception attempts, got %+v", attempts)
+	}
+	if _, ok := compact.FindContextAnchorIndex(step.calls[0].Messages, 0); !ok {
+		t.Fatalf("first model request after proactive compact should include anchor 0: %+v", step.calls[0].Messages)
+	}
+	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
+		t.Fatalf("final history must stay provider-valid: %v\n%+v", err, res.NewMessages)
+	}
+	if res.Content != "done after proactive and inception" || !res.HistoryRewritten {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+func TestRunToolLoop_InceptionThenOverflowCompactPreservesDiscoveredTools(t *testing.T) {
+	discovered := []providers.LoadableToolDefinition{{
+		Type:         "function",
+		Name:         "mcp_docs_search",
+		Description:  "Search docs",
+		InputSchema:  map[string]any{"type": "object"},
+		DeferLoading: true,
+	}}
+	rawResult := mustInceptionToolResult(t, 0, "Continue after inception before overflow.")
+	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
+	step := &fakeStep{
+		results: []StepResult{
+			{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["after inception"],"next_action":"continue"}}`}}},
+			{},
+			{Content: "done after overflow retry"},
+		},
+		errs: []error{nil, overflow, nil},
+	}
+	var attempts []CompactAttemptInfo
+	overflowCompacts := 0
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs:       []providers.ToolDefinition{{Name: compact.InceptionToolName}},
+			results:    map[string]string{"inception_1": rawResult},
+			discovered: map[string][]providers.LoadableToolDefinition{"inception_1": discovered},
+		},
+		Compact: func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			overflowCompacts++
+			if tools := providers.DiscoveredToolsFromMessages(msgs); len(tools) != 1 || tools[0].Name != "mcp_docs_search" {
+				t.Fatalf("overflow compact input should retain discovered tools after inception: %+v", tools)
+			}
+			return []providers.ChatMessage{{
+				Role:            "system",
+				Content:         compact.BuildSummaryContent("overflow summary"),
+				DiscoveredTools: providers.CloneLoadableToolDefinitions(discovered),
+			}}, nil
+		},
+		PostToolRewrite:  compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
+	}
+
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		userMsg("please continue"),
+	}, cfg, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overflowCompacts != 1 {
+		t.Fatalf("expected one overflow compact, got %d", overflowCompacts)
+	}
+	if len(attempts) != 2 ||
+		attempts[0].Reason != CompactReasonInception ||
+		attempts[1].Reason != CompactReasonOverflow ||
+		attempts[1].Status != CompactAttemptSucceeded {
+		t.Fatalf("expected inception then overflow attempts, got %+v", attempts)
+	}
+	if len(step.calls) != 3 {
+		t.Fatalf("expected initial, overflow, and retry requests, got %d", len(step.calls))
+	}
+	if tools := providers.CompactedDiscoveredToolsFromMessages(step.calls[2].Messages); len(tools) != 1 || tools[0].Name != "mcp_docs_search" {
+		t.Fatalf("overflow retry request should keep compacted discovered tools: %+v", step.calls[2].Messages)
+	}
+	if res.Content != "done after overflow retry" || !res.HistoryRewritten {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+func TestRunToolLoop_InceptionStillWorksAfterPriorOverflowCompactFailure(t *testing.T) {
+	overflow := &providers.HTTPError{StatusCode: 400, Body: "context_length_exceeded", ContextOverflow: true}
+	failingStep := &fakeStep{results: []StepResult{{}}, errs: []error{overflow}}
+	var failedAttempts []CompactAttemptInfo
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("too large")}, LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{defs: []providers.ToolDefinition{{Name: compact.InceptionToolName}}},
+		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			return nil, errors.New("compact unavailable")
+		},
+		OnCompactAttempt: func(info CompactAttemptInfo) { failedAttempts = append(failedAttempts, info) },
+	}, failingStep)
+	if err == nil || !providers.IsContextOverflow(err) {
+		t.Fatalf("expected overflow after failed compact, got %v", err)
+	}
+	if len(failedAttempts) != 1 || failedAttempts[0].Reason != CompactReasonOverflow || failedAttempts[0].Status != CompactAttemptFailed {
+		t.Fatalf("expected failed overflow compact attempt, got %+v", failedAttempts)
+	}
+
+	rawResult := mustInceptionToolResult(t, 0, "Continue after later inception.")
+	nextStep := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["later"],"next_action":"continue"}}`}}},
+		{Content: "later inception worked"},
+	}}
+	var laterAttempts []CompactAttemptInfo
+	res, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("recover with inception")}, LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: compact.InceptionToolName}},
+			results: map[string]string{"inception_1": rawResult},
+		},
+		Compact: func(context.Context, []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			return nil, errors.New("should not compact")
+		},
+		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		OnCompactAttempt: func(info CompactAttemptInfo) {
+			laterAttempts = append(laterAttempts, info)
+		},
+	}, nextStep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(laterAttempts) != 1 || laterAttempts[0].Reason != CompactReasonInception {
+		t.Fatalf("expected later inception attempt, got %+v", laterAttempts)
+	}
+	if res.Content != "later inception worked" || !res.HistoryRewritten {
+		t.Fatalf("unexpected later result: %+v", res)
+	}
+}
+
+func mustInceptionToolResult(t *testing.T, anchorID int, nextAction string) string {
+	t.Helper()
+	content := compact.BuildInceptionContinuationContent(anchorID, "## Task state\nState preserved.\n\n## External state\nNo external changes.\n\n## Verification state\nPending.\n\n## Evidence pointers\n- internal/agent/loop.go\n\n## Next step\n"+nextAction)
+	raw, err := json.Marshal(map[string]any{
+		"action": "inception",
+		"status": "completed",
+		"history_rewrite": map[string]any{
+			"kind":      compact.InceptionHistoryRewriteKind,
+			"anchor_id": anchorID,
+			"content":   content,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
 
 func TestRunToolLoop_RejectsInceptionBatchBeforeSiblingExecution(t *testing.T) {
