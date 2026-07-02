@@ -757,16 +757,16 @@
   bottom: calc(var(--dock-composer-height, 0px) + 12px);
   left: var(--conversation-visible-inset-left);
   right: var(--conversation-visible-inset-right);
+  --jump-to-latest-max-width: min(
+    var(--session-composer-width),
+    calc(
+      100% - var(--session-outer-padding-inline) -
+        var(--session-outer-padding-inline) - var(--conversation-scrollbar-gutter)
+    )
+  );
   display: inline-flex;
   width: fit-content;
-  max-width: min(
-    calc(
-      100% - var(--conversation-visible-inset-left) -
-        var(--conversation-visible-inset-right) - 32px
-    ),
-    var(--conversation-message-max-width),
-    var(--conversation-message-max-inline)
-  );
+  max-width: var(--jump-to-latest-max-width);
   align-items: center;
   gap: 6px;
   margin-inline: auto;
