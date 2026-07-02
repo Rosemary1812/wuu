@@ -38,6 +38,7 @@ export function TurnView({
   onCancelEditMessage,
   onSubmitEditMessage,
   onCollapseComplete,
+  processAutoCollapsePaused,
   onNoticeAction,
   onOpenFileDiff,
   pendingApproval,
@@ -63,6 +64,7 @@ export function TurnView({
     files: InputFile[],
   ) => void;
   onCollapseComplete?: () => void;
+  processAutoCollapsePaused?: boolean;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
   pendingApproval?: PendingToolApproval;
@@ -152,6 +154,7 @@ export function TurnView({
           onStreamFrame={onStreamFrame}
           onForkMessage={onForkMessage}
           onCollapseComplete={onCollapseComplete}
+          processAutoCollapsePaused={processAutoCollapsePaused}
           onNoticeAction={onNoticeAction}
           pendingApproval={pendingApproval}
           onApproveTool={onApproveTool}

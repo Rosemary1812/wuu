@@ -141,6 +141,7 @@ type RenderOptions = {
   // just emit a placeholder so the shell picks the right entry kind.
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
   onCollapseComplete?: () => void;
+  processAutoCollapsePaused?: boolean;
 };
 
 function defaultItemRenderer(
@@ -178,6 +179,7 @@ function renderShell(
         display,
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
+        processAutoCollapsePaused: options.processAutoCollapsePaused,
         onNoticeAction: () => {},
       }),
     );
@@ -206,6 +208,7 @@ function rerenderShell(
         display,
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
+        processAutoCollapsePaused: options.processAutoCollapsePaused,
         onNoticeAction: () => {},
       }),
     );
@@ -547,6 +550,56 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
       vi.advanceTimersByTime(440);
     });
 
+    expect(collapseCompletions).toBe(1);
+  });
+
+  it("defers automatic settle collapse while conversation auto-follow is paused", () => {
+    vi.useFakeTimers();
+    const commentary = makeCommentary("checking");
+    const completedTurn = makeTurn("completed", [
+      commentary,
+      makeFinalAnswer("done"),
+    ]);
+    let collapseCompletions = 0;
+    const { container, root } = renderShell(
+      makeTurn("in_progress", [commentary]),
+      {
+        processAutoCollapsePaused: false,
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+    expect(processFoldOpen(container)).toBe(true);
+
+    rerenderShell(root, completedTurn, {
+      processAutoCollapsePaused: true,
+      onCollapseComplete: () => {
+        collapseCompletions += 1;
+      },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+    expect(processFoldOpen(container)).toBe(true);
+    expect(collapseCompletions).toBe(0);
+
+    rerenderShell(root, completedTurn, {
+      processAutoCollapsePaused: false,
+      onCollapseComplete: () => {
+        collapseCompletions += 1;
+      },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(processFoldOpen(container)).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(440);
+    });
     expect(collapseCompletions).toBe(1);
   });
 });
