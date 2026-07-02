@@ -14,6 +14,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/guardian"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/subagent"
@@ -122,6 +123,14 @@ type Server struct {
 
 	codexModelsMu   sync.Mutex
 	codexModelCache map[string]map[string]config.ProviderModelConfig
+
+	// participantSummaryCache memoizes participant store lookups keyed
+	// by participant ID. Ephemeral participants are immutable after
+	// creation, so entries never need invalidation; failed lookups are
+	// not cached, so a late store write is picked up on the next
+	// resolve.
+	participantMu           sync.Mutex
+	participantSummaryCache map[string]participant.Summary
 
 	// guardianBreaker tracks recent auto-review denials so a runaway
 	// rejection loop can interrupt the host turn instead of burning LLM

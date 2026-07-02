@@ -590,6 +590,17 @@ export type ToolCallDisplay = {
   capability?: string;
 };
 
+// ParticipantSummary is the wire shape of a conversation participant
+// (human, primary agent, named agent, or ephemeral task worker) embedded
+// in agents and thread items for display attribution.
+export type ParticipantSummary = {
+  id: string;
+  name: string;
+  kind: string;
+  role?: string;
+  avatar?: string;
+};
+
 export type Agent = {
   id: string;
   type?: string;
@@ -614,6 +625,7 @@ export type Agent = {
   // actions without an extra round-trip.
   pinned?: boolean;
   archived?: boolean;
+  participant?: ParticipantSummary;
 };
 
 export type WorktreeInfo = {
@@ -940,6 +952,7 @@ export type ThreadItem = {
   result?: string;
   error?: string;
   reason?: string;
+  participant?: ParticipantSummary;
 };
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
