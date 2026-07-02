@@ -13,8 +13,9 @@ import { AssistantTurnShell } from "./AssistantTurnShell";
 import { ThreadItemView } from "./ThreadItemView";
 import { TurnEditSummaryCard } from "./TurnEditSummaryCard";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
-import { TurnEventNotice } from "./TurnNotice";
+import { TurnEventNotice, StreamReconnectNotice } from "./TurnNotice";
 import { turnEventForTurn } from "./TurnEvents";
+import type { TurnStreamStatus } from "./AppState";
 import {
   latestAgentMessageItemID,
   messageFlowAgentMessageItemID,
@@ -40,6 +41,7 @@ export function TurnView({
   onCollapseComplete,
   onNoticeAction,
   onOpenFileDiff,
+  streamStatus,
   pendingApproval,
   onApproveTool,
   onApproveToolForSession,
@@ -65,6 +67,7 @@ export function TurnView({
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
+  streamStatus?: TurnStreamStatus;
   pendingApproval?: PendingToolApproval;
   onApproveTool?: () => void;
   onApproveToolForSession?: () => void;
@@ -165,6 +168,9 @@ export function TurnView({
           cwd={cwd}
           onOpenFileDiff={onOpenFileDiff}
         />
+      ) : null}
+      {isLatestTurn && turn.status === "in_progress" && streamStatus?.liveProgress ? (
+        <StreamReconnectNotice text={streamStatus.text} />
       ) : null}
       {event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null}
     </section>

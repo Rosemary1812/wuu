@@ -324,7 +324,8 @@ func summarizeCompact(ctx context.Context, client providers.Client, req provider
 }
 
 func streamCompactSummary(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (providers.ChatResponse, error) {
-	ch, err := client.StreamChat(ctx, req)
+	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 3}, nil)
+	ch, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}

@@ -203,6 +203,7 @@ import {
   type ConversationPaneID,
   type SessionTab,
   type ThreadSummary,
+  type TurnStreamStatus,
 } from "./AppState";
 import {
   RIGHT_PANEL_MOTION_MS,
@@ -6586,6 +6587,7 @@ export function App(): JSX.Element {
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
                 pendingToolApproval={state.pendingToolApproval}
+                turnStreamStatus={state.turnStreamStatus}
                 onResolveToolApproval={(approval, decision) =>
                   void resolveToolApproval(approval, decision)
                 }
@@ -6798,6 +6800,7 @@ type CachedConversationPanesProps = {
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
+  turnStreamStatus: Record<string, TurnStreamStatus>;
   /**
    * Tool approval waiting for a decision. The matching turn is found
    * inside this component by `call_id` lookup, so the card only renders
@@ -6834,6 +6837,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onSubmitEditMessage,
   onNoticeAction,
   onOpenFileDiff,
+  turnStreamStatus,
   pendingToolApproval,
   onResolveToolApproval,
 }: CachedConversationPanesProps): JSX.Element {
@@ -6951,6 +6955,11 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     onNoticeAction={onNoticeAction}
                     onOpenFileDiff={(selection) =>
                       onOpenFileDiff(thread, selection)
+                    }
+                    streamStatus={
+                      thread.turns[thread.turns.length - 1]?.id === turn.id
+                        ? turnStreamStatus[turn.id]
+                        : undefined
                     }
                     pendingApproval={approval}
                     onApproveTool={

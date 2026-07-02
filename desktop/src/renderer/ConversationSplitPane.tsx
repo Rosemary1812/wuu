@@ -178,6 +178,11 @@ export function ConversationSplitPane({
                   }
                   onNoticeAction={onNoticeAction}
                   onOpenFileDiff={onOpenFileDiff}
+                  streamStatus={
+                    paneTurns[paneTurns.length - 1]?.id === turn.id
+                      ? streamStatus
+                      : undefined
+                  }
                   pendingApproval={approval}
                   onApproveTool={
                     approval && onResolveToolApproval

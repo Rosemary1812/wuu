@@ -339,7 +339,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			}
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
-				Error: providers.NewNonRetryableStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err)),
+				Error: providers.NewIncompleteStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err)),
 			}
 			return
 		}

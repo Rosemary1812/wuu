@@ -263,8 +263,8 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	sseClient := providers.BuildStreamingHTTPClient(c.httpClient, c.streamConfig)
-	// Use the single-attempt request — the stream runner's
-	// runStreamWithReconnect handles retries with proper UI feedback.
+	// Use the single-attempt request — ReliableStreamClient handles retries
+	// with proper UI feedback at the caller layer.
 	providers.DebugLogf("StreamChat: sending %d bytes to %s/v1/messages (max_tokens=%d, model=%s, msgs=%d)",
 		len(body), c.baseURL, maxTok, req.Model, len(req.Messages))
 	// Dump request body for debugging 503 issues.

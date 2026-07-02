@@ -70,6 +70,24 @@ export function TurnNotice({
   );
 }
 
+export function StreamReconnectNotice({
+  text,
+}: {
+  text: string;
+}): JSX.Element {
+  return (
+    <aside
+      className="turn-notice turn-event-notice context-compaction-notice is-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="turn-event-content">
+        <strong className="turn-event-title live-progress-chip">{text}</strong>
+      </span>
+    </aside>
+  );
+}
+
 export function ContextCompactionNotice({
   text,
   reason,

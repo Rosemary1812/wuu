@@ -1603,8 +1603,8 @@ func TestResponsesStreamChatWebSocket_DoesNotAutoRetryAfterProviderEvent(t *test
 	if streamErr == nil {
 		t.Fatal("second stream should fail after provider event")
 	}
-	if providers.IsRetryable(streamErr) {
-		t.Fatalf("stream error after provider event must not be retryable: %v", streamErr)
+	if !providers.IsRetryable(streamErr) {
+		t.Fatalf("stream error after provider event should be retryable: %v", streamErr)
 	}
 	if len(states) != 2 ||
 		states[0].Transport != "websocket" ||

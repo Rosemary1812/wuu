@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -120,10 +118,9 @@ type StreamRunner struct {
 	// to providers that support explicit prompt-cache routing.
 	PromptCacheKey string
 
-	// Stream reconnect policy. Zero values use Wuu defaults.
-	StreamReconnectBudget   time.Duration // total time for reconnection (default: 0)
-	StreamRetryInitialDelay time.Duration // backoff start (default: 1s)
-	StreamRetryMaxDelay     time.Duration // backoff cap (default: 60s)
+	// ReconnectConfig controls stream reconnect behavior.
+	// Zero value disables reconnect. Normalized on first use.
+	ReconnectConfig providers.RetryConfig
 
 	usageMu           sync.Mutex
 	conversationUsage *UsageTracker
@@ -207,7 +204,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	step := &streamStep{
 		client:                  r.Client,
 		onEvent:                 effectiveOnEvent,
-		retry:                   r.streamReconnectCfg(),
+		retryCfg:                providers.NormalizeRetryConfig(r.ReconnectConfig),
 		tools:                   r.Tools,
 		enableStreamingToolExec: r.StreamingToolExecution,
 	}
@@ -579,9 +576,9 @@ func systemPromptSectionSummaries(sections []SystemPromptSectionInfo) []provider
 // early disconnects), accumulates the assistant content + tool calls
 // + usage, and returns a normalized StepResult.
 type streamStep struct {
-	client  providers.StreamClient
-	onEvent StreamCallback
-	retry   streamReconnectConfig
+	client   providers.StreamClient
+	onEvent  StreamCallback
+	retryCfg providers.RetryConfig
 	// Streaming tool execution: when set, read-only tools start
 	// executing as soon as their arguments are fully received,
 	// overlapping with continued model output.
@@ -629,7 +626,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			toolRuntime.SetStepIndex(req.StepIndex)
 		}
 	}
-	if err := s.runStreamWithReconnect(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {
+	if err := s.runReliableStream(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
@@ -780,7 +777,7 @@ func formatTokenCount(n int) string {
 	}
 }
 
-func (s *streamStep) runStreamWithReconnect(
+func (s *streamStep) runReliableStream(
 	ctx context.Context,
 	req providers.ChatRequest,
 	contentBuf *strings.Builder,
@@ -796,17 +793,9 @@ func (s *streamStep) runStreamWithReconnect(
 	truncated *bool,
 	onAttemptStart func(),
 ) error {
-	cfg := s.retry
+	cfg := s.retryCfg
 	onEvent := s.onEvent
 	attempt := 0
-	var reconnectStart time.Time
-
-	elapsed := func() time.Duration {
-		if reconnectStart.IsZero() {
-			return 0
-		}
-		return time.Since(reconnectStart)
-	}
 
 	emitLifecycle := func(phase providers.StreamLifecyclePhase, retryCount int, reason error, retryIn time.Duration) {
 		if onEvent == nil {
@@ -816,9 +805,8 @@ func (s *streamStep) runStreamWithReconnect(
 			Phase:      phase,
 			Attempt:    retryCount + 1,
 			RetryCount: retryCount,
+			MaxRetries: cfg.MaxRetries,
 			RetryIn:    retryIn,
-			Elapsed:    elapsed(),
-			Budget:     cfg.Budget,
 		}
 		if reason != nil {
 			details.Reason = providers.StreamErrorSummary(reason)
@@ -860,22 +848,9 @@ func (s *streamStep) runStreamWithReconnect(
 		}
 	}
 
-	reconnect := func(err error) (delay time.Duration, ok bool) {
-		if reconnectStart.IsZero() {
-			reconnectStart = time.Now()
-		}
-		el := elapsed()
-		if !shouldRetryStreamError(err, el, cfg.Budget) {
-			return 0, false
-		}
-		delay = streamRetryDelay(attempt, cfg.InitialDelay, cfg.MaxDelay)
-		// Clamp delay so we don't overshoot the budget.
-		if remaining := cfg.Budget - el; delay > remaining {
-			delay = remaining
-		}
-		attempt++
-		providers.DebugLogf("stream reconnecting (%d, %s/%s) in %s: %v",
-			attempt, el.Round(time.Second), cfg.Budget, delay, err)
+	onRetry := func(attempt, maxRetries int, err error, delay time.Duration) {
+		providers.DebugLogf("stream reconnecting (%d/%d) in %s: %v",
+			attempt, maxRetries, delay, err)
 		// Log full error details for post-mortem analysis.
 		var httpErr *providers.HTTPError
 		if errors.As(err, &httpErr) {
@@ -889,10 +864,9 @@ func (s *streamStep) runStreamWithReconnect(
 		if onEvent != nil {
 			onEvent(providers.StreamEvent{
 				Type:    providers.EventReconnect,
-				Content: fmt.Sprintf("Reconnecting... %s / %s", el.Round(time.Second), cfg.Budget),
+				Content: fmt.Sprintf("Reconnecting... %d/%d", attempt, maxRetries),
 			})
 		}
-		return delay, true
 	}
 
 	for {
@@ -914,28 +888,13 @@ func (s *streamStep) runStreamWithReconnect(
 
 		emitLifecycle(providers.StreamPhaseConnecting, attempt, nil, 0)
 
-		// Connection-stage timeouts (dial, TLS, response-header) are
-		// already set on the HTTP transport by BuildStreamingHTTPClient.
-		// Do NOT wrap ctx in a per-attempt WithTimeout here — the HTTP
-		// request is created with the context passed to StreamChat, and
-		// canceling that context kills resp.Body reads (especially on
-		// HTTP/2), aborting the SSE stream immediately after connect.
-		ch, err := s.client.StreamChat(ctx, req)
+		client := providers.NewReliableStreamClient(s.client, cfg, onRetry)
+		ch, err := client.StreamChat(ctx, req)
 		if err != nil {
-			if ctx.Err() == nil {
-				if delay, ok := reconnect(err); ok {
-					if waitErr := waitWithContext(ctx, delay); waitErr != nil {
-						return waitErr
-					}
-					resetPartialOutput()
-					continue
-				}
-			}
 			emitLifecycle(providers.StreamPhaseFailed, attempt, err, 0)
 			return err
 		}
-		// Successful connect resets the reconnect clock.
-		reconnectStart = time.Time{}
+		// Successful connect resets the retry counter.
 		attempt = 0
 		emitLifecycle(providers.StreamPhaseConnected, attempt, nil, 0)
 
@@ -1038,6 +997,18 @@ func (s *streamStep) runStreamWithReconnect(
 					event.ProviderState.StepIndex = req.StepIndex
 				}
 
+			case providers.EventReconnect:
+				if event.Error != nil {
+					resetPartialOutput()
+					for k := range pendingTools {
+						delete(pendingTools, k)
+					}
+					if onAttemptStart != nil {
+						onAttemptStart()
+					}
+					continue
+				}
+
 			case providers.EventError:
 				if event.Error != nil {
 					streamErr = event.Error
@@ -1067,24 +1038,14 @@ func (s *streamStep) runStreamWithReconnect(
 			}
 		}
 
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if streamErr == nil && !sawDone {
 			streamErr = providers.NewIncompleteStreamError("stream closed before done")
 		}
 		if streamErr == nil {
 			return nil
-		}
-
-		// Retry on any retryable error while the parent context is still alive.
-		// The retry replays the whole turn with a new provider request, regardless
-		// of whether output was already seen.
-		if ctx.Err() == nil {
-			if delay, ok := reconnect(streamErr); ok {
-				if waitErr := waitWithContext(ctx, delay); waitErr != nil {
-					return waitErr
-				}
-				resetPartialOutput()
-				continue
-			}
 		}
 
 		emitLifecycle(providers.StreamPhaseFailed, attempt, streamErr, 0)
@@ -1118,66 +1079,4 @@ func enrichToolCallDisplay(executor ToolExecutor, call providers.ToolCall) provi
 	}
 	call.Display = &display
 	return call
-}
-
-// streamReconnectConfig holds time-budget reconnection parameters.
-type streamReconnectConfig struct {
-	Budget       time.Duration
-	InitialDelay time.Duration
-	MaxDelay     time.Duration
-}
-
-const (
-	defaultReconnectBudget = 0
-	defaultReconnectDelay  = 1 * time.Second
-	defaultReconnectMax    = 60 * time.Second
-)
-
-func (r *StreamRunner) streamReconnectCfg() streamReconnectConfig {
-	cfg := streamReconnectConfig{
-		Budget:       defaultReconnectBudget,
-		InitialDelay: defaultReconnectDelay,
-		MaxDelay:     defaultReconnectMax,
-	}
-	if r.StreamReconnectBudget > 0 {
-		cfg.Budget = r.StreamReconnectBudget
-	}
-	if r.StreamRetryInitialDelay > 0 {
-		cfg.InitialDelay = r.StreamRetryInitialDelay
-	}
-	if r.StreamRetryMaxDelay > 0 {
-		cfg.MaxDelay = r.StreamRetryMaxDelay
-	}
-	if cfg.InitialDelay > cfg.MaxDelay {
-		cfg.InitialDelay = cfg.MaxDelay
-	}
-	return cfg
-}
-
-func shouldRetryStreamError(err error, elapsed, budget time.Duration) bool {
-	if elapsed >= budget {
-		return false
-	}
-	return providers.IsRetryable(err)
-}
-
-func streamRetryDelay(attempt int, initial, maxDelay time.Duration) time.Duration {
-	base := float64(initial) * math.Pow(2, float64(attempt))
-	if base > float64(maxDelay) {
-		base = float64(maxDelay)
-	}
-	// +/-25% jitter to avoid thundering herd.
-	jitter := 0.25 * base * (2*rand.Float64() - 1)
-	return time.Duration(base + jitter)
-}
-
-func waitWithContext(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }

@@ -373,16 +373,14 @@ type ProviderStateSummary struct {
 
 // StreamLifecycle carries retry metadata for one streaming connection attempt.
 // Attempt is 1-based and includes the initial connect.
+// RetryCount is the number of retries so far; MaxRetries is the configured cap.
 type StreamLifecycle struct {
-	Phase       StreamLifecyclePhase
-	Attempt     int
-	MaxAttempts int
-	RetryCount  int
-	MaxRetries  int
-	RetryIn     time.Duration
-	Elapsed     time.Duration // time since first reconnect attempt
-	Budget      time.Duration // total reconnection time budget
-	Reason      string
+	Phase      StreamLifecyclePhase
+	Attempt    int
+	RetryCount int
+	MaxRetries int
+	RetryIn    time.Duration
+	Reason     string
 }
 
 // TokenUsage reports token consumption for a single API call. Cache

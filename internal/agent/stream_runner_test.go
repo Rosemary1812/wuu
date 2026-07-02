@@ -92,9 +92,9 @@ func isCompactSummaryRequest(req providers.ChatRequest) bool {
 }
 
 func TestStreamRunner_DefaultReconnectConfigUsesProviderDefaults(t *testing.T) {
-	cfg := (&StreamRunner{}).streamReconnectCfg()
-	if cfg.Budget != 0 {
-		t.Fatalf("expected no reconnect budget by default, got %s", cfg.Budget)
+	cfg := providers.NormalizeRetryConfig((&StreamRunner{}).ReconnectConfig)
+	if cfg.MaxRetries != 0 {
+		t.Fatalf("expected no reconnect retries by default, got %d", cfg.MaxRetries)
 	}
 	if cfg.InitialDelay != 1*time.Second {
 		t.Fatalf("expected 1s initial delay, got %s", cfg.InitialDelay)
@@ -583,37 +583,22 @@ func TestStreamRunner_StreamError(t *testing.T) {
 	}
 }
 
+func testReconnectConfig() providers.RetryConfig {
+	return providers.RetryConfig{MaxRetries: 3, InitialDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond}
+}
+
 func TestStreamRunner_RetryOnMidStreamError(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "partial"},
-					{Type: providers.EventError, Error: context.DeadlineExceeded},
-				},
-			},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "recovered"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "partial"}, {Type: providers.EventError, Error: context.DeadlineExceeded}}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "recovered"}, {Type: providers.EventDone}}},
+	}}
 
 	var reconnectMsgs []string
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-		OnEvent: func(ev providers.StreamEvent) {
-			if ev.Type == providers.EventReconnect {
-				reconnectMsgs = append(reconnectMsgs, ev.Content)
-			}
-		},
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig(), OnEvent: func(ev providers.StreamEvent) {
+		if ev.Type == providers.EventReconnect {
+			reconnectMsgs = append(reconnectMsgs, ev.Content)
+		}
+	}}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
@@ -628,31 +613,17 @@ func TestStreamRunner_RetryOnMidStreamError(t *testing.T) {
 }
 
 func TestStreamRunner_RetryOnInitialConnectError(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{err: errors.New("Post https://example.com/v1/chat/completions: EOF")},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "recovered"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{err: errors.New("Post https://example.com/v1/chat/completions: EOF")},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "recovered"}, {Type: providers.EventDone}}},
+	}}
 
 	var reconnectMsgs []string
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-		OnEvent: func(ev providers.StreamEvent) {
-			if ev.Type == providers.EventReconnect {
-				reconnectMsgs = append(reconnectMsgs, ev.Content)
-			}
-		},
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig(), OnEvent: func(ev providers.StreamEvent) {
+		if ev.Type == providers.EventReconnect {
+			reconnectMsgs = append(reconnectMsgs, ev.Content)
+		}
+	}}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
@@ -670,31 +641,17 @@ func TestStreamRunner_RetryOnInitialConnectError(t *testing.T) {
 }
 
 func TestStreamRunner_RetriesOnIncompleteStreamBeforeOutput(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{events: nil},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "recovered"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: nil},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "recovered"}, {Type: providers.EventDone}}},
+	}}
 
 	var reconnectMsgs []string
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-		OnEvent: func(ev providers.StreamEvent) {
-			if ev.Type == providers.EventReconnect {
-				reconnectMsgs = append(reconnectMsgs, ev.Content)
-			}
-		},
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig(), OnEvent: func(ev providers.StreamEvent) {
+		if ev.Type == providers.EventReconnect {
+			reconnectMsgs = append(reconnectMsgs, ev.Content)
+		}
+	}}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
@@ -712,31 +669,17 @@ func TestStreamRunner_RetriesOnIncompleteStreamBeforeOutput(t *testing.T) {
 }
 
 func TestStreamRunner_EmitsStructuredLifecycleEvents(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{err: errors.New("EOF")},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "ok"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{err: errors.New("EOF")},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "ok"}, {Type: providers.EventDone}}},
+	}}
 
 	var lifecycle []*providers.StreamLifecycle
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-		OnEvent: func(ev providers.StreamEvent) {
-			if ev.Type == providers.EventLifecycle && ev.Lifecycle != nil {
-				lifecycle = append(lifecycle, ev.Lifecycle)
-			}
-		},
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig(), OnEvent: func(ev providers.StreamEvent) {
+		if ev.Type == providers.EventLifecycle && ev.Lifecycle != nil {
+			lifecycle = append(lifecycle, ev.Lifecycle)
+		}
+	}}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
@@ -745,46 +688,30 @@ func TestStreamRunner_EmitsStructuredLifecycleEvents(t *testing.T) {
 	if result != "ok" {
 		t.Fatalf("unexpected result: %q", result)
 	}
-	if len(lifecycle) < 4 {
-		t.Fatalf("expected >= 4 lifecycle events, got %d", len(lifecycle))
+	if len(lifecycle) < 3 {
+		t.Fatalf("expected >= 3 lifecycle events, got %d", len(lifecycle))
 	}
 	if lifecycle[0].Phase != providers.StreamPhaseConnecting || lifecycle[0].Attempt != 1 {
 		t.Fatalf("unexpected first lifecycle event: %+v", lifecycle[0])
 	}
-	if lifecycle[1].Phase != providers.StreamPhaseReconnecting || lifecycle[1].RetryCount != 1 {
-		t.Fatalf("unexpected reconnect lifecycle event: %+v", lifecycle[1])
+	if lifecycle[1].Phase != providers.StreamPhaseConnected {
+		t.Fatalf("unexpected connected lifecycle event: %+v", lifecycle[1])
 	}
-	if lifecycle[1].Budget <= 0 {
-		t.Fatalf("expected positive budget in reconnect event, got %s", lifecycle[1].Budget)
+	if lifecycle[2].Phase != providers.StreamPhaseReconnecting || lifecycle[2].RetryCount != 1 {
+		t.Fatalf("unexpected reconnect lifecycle event: %+v", lifecycle[2])
 	}
-	if lifecycle[2].Phase != providers.StreamPhaseConnecting {
-		t.Fatalf("unexpected second connecting event: %+v", lifecycle[2])
-	}
-	if lifecycle[3].Phase != providers.StreamPhaseConnected {
-		t.Fatalf("unexpected connected lifecycle event: %+v", lifecycle[3])
+	if lifecycle[2].MaxRetries <= 0 {
+		t.Fatalf("expected positive max_retries in reconnect event, got %d", lifecycle[2].MaxRetries)
 	}
 }
 
 func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{err: &providers.HTTPError{StatusCode: 500, Body: "upstream error"}},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "recovered"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{err: &providers.HTTPError{StatusCode: 500, Body: "upstream error"}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "recovered"}, {Type: providers.EventDone}}},
+	}}
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
@@ -799,29 +726,12 @@ func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
 }
 
 func TestStreamRunner_DoesNotRetryTerminalUsageLimit(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventError, Error: providers.NewProviderStreamError("usage_limit_reached", "The usage limit has been reached")},
-				},
-			},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "should not run"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{{Type: providers.EventError, Error: providers.NewProviderStreamError("usage_limit_reached", "The usage limit has been reached")}}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "should not run"}, {Type: providers.EventDone}}},
+	}}
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 
 	_, err := runner.Run(context.Background(), "hi")
 	if err == nil {
@@ -833,29 +743,12 @@ func TestStreamRunner_DoesNotRetryTerminalUsageLimit(t *testing.T) {
 }
 
 func TestStreamRunner_RetryOnEarlyStreamErrorEvent(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventError, Error: errors.New("connection reset by peer")},
-				},
-			},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "ok"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{{Type: providers.EventError, Error: errors.New("connection reset by peer")}}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "ok"}, {Type: providers.EventDone}}},
+	}}
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
@@ -870,30 +763,12 @@ func TestStreamRunner_RetryOnEarlyStreamErrorEvent(t *testing.T) {
 }
 
 func TestStreamRunner_RetryAfterPartialOutput(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "partial"},
-					{Type: providers.EventError, Error: errors.New("EOF")},
-				},
-			},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "second"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "partial"}, {Type: providers.EventError, Error: errors.New("EOF")}}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "second"}, {Type: providers.EventDone}}},
+	}}
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 	var contentEvents []providers.StreamEvent
 	runner.OnEvent = func(event providers.StreamEvent) {
 		if event.Type == providers.EventContentDelta || event.Type == providers.EventContentReplace {
@@ -917,29 +792,12 @@ func TestStreamRunner_RetryAfterPartialOutput(t *testing.T) {
 }
 
 func TestStreamRunner_RetryIncompleteStreamAfterPartialOutput(t *testing.T) {
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "partial"},
-				},
-			},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "second"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "partial"}}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "second"}, {Type: providers.EventDone}}},
+	}}
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 	var contentEvents []providers.StreamEvent
 	runner.OnEvent = func(event providers.StreamEvent) {
 		if event.Type == providers.EventContentDelta || event.Type == providers.EventContentReplace {
@@ -1459,31 +1317,15 @@ func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testin
 }
 
 func TestStreamRunner_CancelledCtxStopsRetry(t *testing.T) {
-	// When the parent context is already cancelled, the stream runner
-	// should bail immediately instead of retrying retryable errors.
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{err: context.DeadlineExceeded},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "should not reach"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{err: context.DeadlineExceeded},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "should not reach"}, {Type: providers.EventDone}}},
+	}}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel before Run
+	cancel()
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
-
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 	_, err := runner.Run(ctx, "hi")
 	if err == nil {
 		t.Fatal("expected error on cancelled context")
@@ -1494,27 +1336,12 @@ func TestStreamRunner_CancelledCtxStopsRetry(t *testing.T) {
 }
 
 func TestStreamRunner_RetryOnDeadlineExceeded(t *testing.T) {
-	// context.DeadlineExceeded should be retried when the parent ctx is alive.
-	client := &mockStreamClient{
-		attempts: []mockStreamAttempt{
-			{err: context.DeadlineExceeded},
-			{
-				events: []providers.StreamEvent{
-					{Type: providers.EventContentDelta, Content: "recovered"},
-					{Type: providers.EventDone},
-				},
-			},
-		},
-	}
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{err: context.DeadlineExceeded},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "recovered"}, {Type: providers.EventDone}}},
+	}}
 
-	runner := StreamRunner{
-		Client:                  client,
-		Model:                   "m",
-		StreamReconnectBudget:   time.Second,
-		StreamRetryInitialDelay: time.Millisecond,
-		StreamRetryMaxDelay:     2 * time.Millisecond,
-	}
-
+	runner := StreamRunner{Client: client, Model: "m", ReconnectConfig: testReconnectConfig()}
 	result, err := runner.Run(context.Background(), "hi")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1734,11 +1561,7 @@ func TestStreamRunner_NonStreamingFallbackOnEmptyStream(t *testing.T) {
 			{Content: "fallback answer", StopReason: "stop"},
 		},
 	}
-	runner := &StreamRunner{
-		Client:              client,
-		Model:               "test",
-		StreamRetryMaxDelay: time.Millisecond,
-	}
+	runner := &StreamRunner{Client: client, Model: "test"}
 	result, err := runner.Run(context.Background(), "hello")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1761,11 +1584,7 @@ func TestStreamRunner_NoFallbackOnNormalStop(t *testing.T) {
 			}},
 		},
 	}
-	runner := &StreamRunner{
-		Client:              client,
-		Model:               "test",
-		StreamRetryMaxDelay: time.Millisecond,
-	}
+	runner := &StreamRunner{Client: client, Model: "test"}
 	_, err := runner.Run(context.Background(), "hello")
 	// Should produce an EmptyAnswerError (from the loop), not trigger fallback.
 	if err == nil {
@@ -1790,11 +1609,7 @@ func TestStreamRunner_NoFallbackOnEmptyLengthFinish(t *testing.T) {
 			{Content: "fallback should not run", StopReason: "stop"},
 		},
 	}
-	runner := &StreamRunner{
-		Client:              client,
-		Model:               "test",
-		StreamRetryMaxDelay: time.Millisecond,
-	}
+	runner := &StreamRunner{Client: client, Model: "test"}
 	res, err := runner.RunWithCallback(context.Background(), []providers.ChatMessage{userMsg("hello")}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -388,6 +388,7 @@ func NewSession(opts Options) (*Session, error) {
 		DisableAutoCompact:          cfg.Agent.DisableAutoCompact,
 		BeforeRequestContext:        RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		AfterTurn:                   afterTurn,
+		ReconnectConfig:             providers.RetryConfig{MaxRetries: 5},
 	}
 
 	return &Session{
@@ -872,9 +873,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		ProviderOptions:             provideroptions.Clone(base.ProviderOptions),
 		NativeDeferredToolDiscovery: base.NativeDeferredToolDiscovery,
 		PromptCacheKey:              base.PromptCacheKey,
-		StreamReconnectBudget:       base.StreamReconnectBudget,
-		StreamRetryInitialDelay:     base.StreamRetryInitialDelay,
-		StreamRetryMaxDelay:         base.StreamRetryMaxDelay,
+		ReconnectConfig:             base.ReconnectConfig,
 	}
 }
 

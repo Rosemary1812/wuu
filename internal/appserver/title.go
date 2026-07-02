@@ -357,7 +357,8 @@ func streamTitleText(ctx context.Context, client providers.StreamClient, req pro
 // the streaming behavior — useful when the model returns a non-monotonic
 // sequence (replace / message events reset the buffer).
 func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (string, []string, error) {
-	events, err := client.StreamChat(ctx, req)
+	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 3}, nil)
+	events, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
 		return "", nil, err
 	}

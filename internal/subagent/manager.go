@@ -318,6 +318,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		DisableAutoCompact:      defaults.disableCompact,
 		Effort:                  defaults.effort,
 		ProviderOptions:         provideroptions.Clone(defaults.options),
+		ReconnectConfig:         providers.RetryConfig{MaxRetries: 5},
 		OnUsage:                 onUsage,
 		OnTokenUsage:            onTokenUsage,
 	}

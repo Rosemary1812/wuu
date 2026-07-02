@@ -347,8 +347,8 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 
 	// Streaming turns can legitimately outlive the buffered request timeout.
 	// Let the caller's ctx and the idle watchdog own cancellation instead.
-	// Use the single-attempt request — the stream runner's
-	// runStreamWithReconnect handles retries with proper UI feedback.
+	// Use the single-attempt request — ReliableStreamClient handles retries
+	// with proper UI feedback at the caller layer.
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
 	resp, err := c.doSingleChatCompletionsRequest(ctx, streamClient, body, true)
 	if err != nil {
