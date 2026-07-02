@@ -42,7 +42,15 @@ func TestAgentFromSnapshotResolvesParticipantSummary(t *testing.T) {
 		t.Fatalf("participant summary = %+v, want %+v", *agent.Participant, want)
 	}
 
-	// Second resolve should hit the cache and return the same summary.
+	// Overwrite the store row so a store lookup would now return different
+	// data; the second resolve returning the original summary proves the
+	// in-memory cache was hit rather than the store re-queried.
+	mutated := p
+	mutated.Name = "Mutated·should-not-appear"
+	mutated.Avatar = "🤖"
+	if err := session.UpsertParticipant(sessDir, mutated); err != nil {
+		t.Fatalf("UpsertParticipant (mutate): %v", err)
+	}
 	again := s.agentFromSnapshot(nil, snap)
 	if again.Participant == nil || *again.Participant != want {
 		t.Fatalf("cached participant summary = %+v, want %+v", again.Participant, want)
