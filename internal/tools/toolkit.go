@@ -265,6 +265,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewCloseAgentTool(e),
 		NewListAgentsTool(e),
 		NewAgentReportTool(e),
+		NewPostMessageTool(e),
 		// Process management
 		NewStartProcessTool(e),
 		NewListProcessesTool(e),
@@ -678,6 +679,34 @@ func (t *Toolkit) SupportsTool(name string) bool {
 	default:
 		return false
 	}
+}
+
+// SurfaceToolNames returns the registered built-in tools available to the
+// active model surface, including deferred tools before they are loaded.
+func (t *Toolkit) SurfaceToolNames() []string {
+	if t == nil || t.registry == nil {
+		return nil
+	}
+	surface := t.activeCompiledSurface()
+	out := make([]string, 0)
+	for _, tool := range t.registry.All() {
+		if tool == nil {
+			continue
+		}
+		name := tool.Name()
+		if t.isToolDisabled(name) {
+			continue
+		}
+		if surface.ProfileName != "" {
+			if !activeSurfaceAllowsKnownTool(surface, tool) {
+				continue
+			}
+		} else if t.toolExposure(name) == ToolExposureHidden {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 // SetActiveProfile installs the model profile that drives

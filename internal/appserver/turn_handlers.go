@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
@@ -380,15 +381,19 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		return nil
 	}
 	sub := &threadRuntimeSubscription{
-		statusCh: make(chan subagent.Notification, 64),
-		streamCh: make(chan subagent.StreamNotification, 256),
-		done:     make(chan struct{}),
+		statusCh:             make(chan subagent.Notification, 64),
+		streamCh:             make(chan subagent.StreamNotification, 256),
+		participantMessageCh: make(chan agentcontrol.ParticipantMessage, 64),
+		done:                 make(chan struct{}),
 	}
 	threadRuntime.AgentControl.Subscribe(sub.statusCh)
 	go s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, sub.statusCh, sub.done)
 
 	threadRuntime.AgentControl.SubscribeStream(sub.streamCh)
 	go s.forwardAgentStreamNotifications(threadID, threadRuntime.AgentControl, sub.streamCh, sub.done)
+
+	threadRuntime.AgentControl.SubscribeParticipantMessages(sub.participantMessageCh)
+	go s.forwardParticipantMessages(threadID, threadRuntime.AgentControl, sub.participantMessageCh, sub.done)
 	return sub
 }
 
@@ -410,6 +415,7 @@ func releaseThreadRuntimeSubscription(threadRuntime *runtime.ThreadRuntime, sub 
 	if threadRuntime != nil && threadRuntime.AgentControl != nil && sub != nil {
 		threadRuntime.AgentControl.Unsubscribe(sub.statusCh)
 		threadRuntime.AgentControl.UnsubscribeStream(sub.streamCh)
+		threadRuntime.AgentControl.UnsubscribeParticipantMessages(sub.participantMessageCh)
 	}
 	if sub != nil {
 		sub.stop()

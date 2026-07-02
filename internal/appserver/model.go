@@ -758,6 +758,29 @@ func (th *threadState) upsertItemLocked(turnID string, item ThreadItem, now time
 	th.UpdatedAt = now
 }
 
+func (th *threadState) appendParticipantMessageLocked(rec persistedMessage, now time.Time, resolve participantSummaryResolver) (Turn, ThreadItem, bool) {
+	turnID := strings.TrimSpace(th.currentTurn)
+	createdTurn := false
+	if turnID == "" {
+		if len(th.Turns) > 0 {
+			turnID = th.Turns[len(th.Turns)-1].ID
+		} else {
+			turnID = fmt.Sprintf("%s-turn-%04d", th.ID, 1)
+			createdTurn = true
+		}
+	}
+	turn := th.ensureTurnLocked(turnID, now)
+	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
+	item := participantMessageItem(th.nextItemIDLocked(turnID), rec, resolve)
+	turn.Items = append(turn.Items, item)
+	if createdTurn && !th.running {
+		turn.Status = TurnStatusCompleted
+	}
+	th.replaceTurnLocked(turn)
+	th.UpdatedAt = now
+	return turn, item, createdTurn
+}
+
 func (th *threadState) nextItemIDLocked(turnID string) string {
 	th.nextItemIndex++
 	return fmt.Sprintf("%s-item-%d", turnID, th.nextItemIndex)

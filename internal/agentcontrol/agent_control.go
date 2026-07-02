@@ -84,6 +84,10 @@ type AgentControl struct {
 
 	resultDeliveriesMu sync.Mutex
 	resultDeliveries   map[string]agentResultDelivery
+
+	participantMessagesMu  sync.Mutex
+	participantMessages    []chan<- ParticipantMessage
+	participantResultPosts map[string]struct{}
 }
 
 // Config holds the dependencies needed to build an AgentControl.

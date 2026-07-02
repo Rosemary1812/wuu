@@ -965,11 +965,7 @@ func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {
 	if kit == nil {
 		return
 	}
-	full := kit.Definitions()
-	fullNames := make([]string, 0, len(full))
-	for _, def := range full {
-		fullNames = append(fullNames, def.Name)
-	}
+	fullNames := kit.SurfaceToolNames()
 
 	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames)
 	allowedSet := make(map[string]struct{}, len(allowed))

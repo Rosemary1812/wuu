@@ -228,6 +228,34 @@ export function ThreadItemView({
         );
       }
       return <ToolActivityRow items={[item]} />;
+    case "participant_message": {
+      const text = item.text ?? "";
+      return (
+        <article className={`participant-message-card participant-message-card--${item.post_kind ?? "result"}`}>
+          <header className="participant-message-card-header">
+            {item.participant ? (
+              <ParticipantChip participant={item.participant} size="sm" />
+            ) : (
+              <span className="participant-message-card-fallback">参与者</span>
+            )}
+          </header>
+          {text.trim() !== "" ? (
+            <div className="participant-message-card-body">
+              <RichContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
+            </div>
+          ) : null}
+          {text.trim() !== "" ? (
+            <div className="message-actions participant-message-actions">
+              <MessageCopyButton
+                getText={() => text}
+                className="message-action-button"
+                iconSize={15}
+              />
+            </div>
+          ) : null}
+        </article>
+      );
+    }
     case "context_compaction":
       return (
         <ContextCompactionNotice

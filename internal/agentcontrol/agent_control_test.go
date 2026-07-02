@@ -28,6 +28,33 @@ type fakeClient struct {
 	resp providers.ChatResponse
 }
 
+type blockingStreamClient struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingStreamClient) Chat(_ context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{Content: "done"}, nil
+}
+
+func (b *blockingStreamClient) StreamChat(ctx context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	ch := make(chan providers.StreamEvent, 2)
+	go func() {
+		if b.started != nil {
+			close(b.started)
+		}
+		select {
+		case <-ctx.Done():
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+		case <-b.release:
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "done"}
+			ch <- providers.StreamEvent{Type: providers.EventDone}
+		}
+		close(ch)
+	}()
+	return ch, nil
+}
+
 func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
 	out := make([]providers.ChatMessage, 0, len(msgs))
 	for _, msg := range msgs {
@@ -212,6 +239,67 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 	}
 	if res.WorktreePath != "" {
 		t.Fatalf("inplace spawn should not produce a worktree path, got %q", res.WorktreePath)
+	}
+}
+
+func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
+	dir := t.TempDir()
+	client := &blockingStreamClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	c, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-1",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	defer close(client.release)
+
+	events := make(chan ParticipantMessage, 1)
+	c.SubscribeParticipantMessages(events)
+	defer c.UnsubscribeParticipantMessages(events)
+
+	_, err = c.manager.Spawn(context.Background(), subagent.SpawnOptions{
+		ID:            "agent-1",
+		ParticipantID: "prt-1",
+		Type:          "reviewer",
+		TaskName:      "diff-review",
+		AgentPath:     "root/agent-1",
+		ParentID:      c.SessionID(),
+		Description:   "review",
+		Prompt:        "review",
+		SystemPrompt:  "system",
+		Toolkit:       fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	<-client.started
+
+	posted, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Found one bug.")
+	if err != nil {
+		t.Fatalf("PostParticipantMessage: %v", err)
+	}
+	if posted.ParticipantID != "prt-1" || posted.Kind != "result" || posted.Text != "Found one bug." {
+		t.Fatalf("unexpected posted message: %+v", posted)
+	}
+	select {
+	case got := <-events:
+		if got.AgentID != "agent-1" || got.ParticipantID != "prt-1" || got.Text != "Found one bug." {
+			t.Fatalf("unexpected event: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for participant message event")
+	}
+	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Second result."); err == nil {
+		t.Fatal("expected duplicate result error")
 	}
 }
 

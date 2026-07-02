@@ -866,6 +866,62 @@
   line-height: var(--conversation-reading-line-height);
 }
 
+.participant-message-card {
+  position: relative;
+  display: grid;
+  width: min(100%, 760px);
+  min-width: 0;
+  gap: 10px;
+  margin: 4px 0 18px;
+  padding: 14px 16px 15px;
+  border: 1px solid var(--ink-overlay-12);
+  border-left: 3px solid var(--accent-warm);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--ink);
+  font-size: var(--conversation-message-font-size);
+  line-height: var(--conversation-reading-line-height);
+}
+
+.participant-message-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.participant-message-card-fallback {
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.participant-message-card-body {
+  min-width: 0;
+}
+
+.participant-message-card-body > :first-child {
+  margin-top: 0;
+}
+
+.participant-message-card-body > :last-child {
+  margin-bottom: 0;
+}
+
+.participant-message-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  opacity: 0;
+  transition: opacity var(--motion-fast);
+}
+
+.participant-message-card:hover .participant-message-actions,
+.participant-message-card:focus-within .participant-message-actions {
+  opacity: 1;
+}
+
 .context-composition-card {
   width: 100%;
   max-width: none;

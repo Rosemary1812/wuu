@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -90,6 +91,76 @@ func (s *Server) forwardAgentStreamNotifications(threadID string, control *agent
 				TurnID:   turn.ID,
 				Event:    sanitizeStreamEvent(n.Event),
 			})
+		}
+	}
+}
+
+func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.AgentControl, ch <-chan agentcontrol.ParticipantMessage, done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			now := msg.CreatedAt
+			if now.IsZero() {
+				now = time.Now().UTC()
+			}
+			rec := persistedMessage{
+				Role:          "participant",
+				Content:       msg.Text,
+				ClientID:      fmt.Sprintf("%s-%d", strings.TrimSpace(msg.AgentID), now.UnixNano()),
+				Name:          firstNonEmpty(msg.TaskName, msg.AgentType, msg.AgentID),
+				ParticipantID: msg.ParticipantID,
+				PostKind:      msg.Kind,
+				At:            now,
+			}
+			if strings.TrimSpace(s.rt.SessionDir) != "" {
+				err := session.AppendHistoryRecord(s.rt.SessionDir, threadID, session.HistoryRecord{
+					Role:          rec.Role,
+					Content:       rec.Content,
+					ClientID:      rec.ClientID,
+					Name:          rec.Name,
+					ParticipantID: rec.ParticipantID,
+					PostKind:      rec.PostKind,
+					At:            rec.At,
+				})
+				if err == nil {
+					if meta, ok, findErr := session.Find(s.rt.SessionDir, threadID); findErr == nil && ok {
+						_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
+					}
+				}
+			}
+
+			th := s.thread(threadID)
+			if th == nil {
+				continue
+			}
+			th.mu.Lock()
+			turn, item, createdTurn := th.appendParticipantMessageLocked(rec, now, s.resolveParticipantSummary)
+			thread := th.snapshotLocked()
+			th.mu.Unlock()
+			if createdTurn {
+				_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+					ThreadID: threadID,
+					Turn:     turn,
+				})
+			}
+			_ = s.writeNotification(NotificationItemStarted, ItemStartedNotification{
+				ThreadID:    threadID,
+				TurnID:      turn.ID,
+				Item:        item,
+				StartedAtMS: now.UnixMilli(),
+			})
+			_ = s.writeNotification(NotificationItemCompleted, ItemCompletedNotification{
+				ThreadID:      threadID,
+				TurnID:        turn.ID,
+				Item:          item,
+				CompletedAtMS: now.UnixMilli(),
+			})
+			_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
 		}
 	}
 }

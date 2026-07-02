@@ -276,6 +276,48 @@ func TestTurnsFromPersistedHistoryRestoresParticipantMessage(t *testing.T) {
 	}
 }
 
+func TestAppendParticipantMessageLockedAddsCurrentTurnItem(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "review"}, now)
+
+	turn, item, created := th.appendParticipantMessageLocked(persistedMessage{
+		Role:          "participant",
+		Content:       "Found a missing nil check.",
+		ClientID:      "agent-1-result",
+		Name:          "reviewer",
+		ParticipantID: "prt-reviewer",
+		PostKind:      "result",
+	}, now, func(id string) (participant.Summary, bool) {
+		if id != "prt-reviewer" {
+			return participant.Summary{}, false
+		}
+		return participant.Summary{
+			ID:     id,
+			Name:   "Noel",
+			Kind:   string(participant.KindEphemeral),
+			Role:   "reviewer",
+			Avatar: participant.DefaultAvatar("reviewer"),
+		}, true
+	})
+
+	if created {
+		t.Fatal("participant message should use the current turn")
+	}
+	if turn.ID != "turn" || len(turn.Items) != 2 {
+		t.Fatalf("expected participant item appended to current turn, got %+v", turn)
+	}
+	if item.Type != ThreadItemParticipantMsg || item.Status != ThreadItemStatusCompleted || item.PostKind != "result" {
+		t.Fatalf("unexpected participant item: %+v", item)
+	}
+	if item.Text != "Found a missing nil check." || item.SourceID != "agent-1-result" {
+		t.Fatalf("unexpected participant text/source: %+v", item)
+	}
+	if item.Participant == nil || item.Participant.Name != "Noel" || item.Participant.Role != "reviewer" {
+		t.Fatalf("expected participant summary on item, got %+v", item.Participant)
+	}
+}
+
 func TestTurnsFromHistorySurfacesInceptionArtifact(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{

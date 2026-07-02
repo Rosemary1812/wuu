@@ -214,6 +214,8 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("agent", "查看子任务")
 	case "agent_report":
 		return toolDisplay("agent", "读取子任务报告 "+displayTarget(displayString(args, "target", "task_name"), ""))
+	case "post_message":
+		return toolDisplay("agent", "发布参与者结果")
 	case "start_process":
 		command := displayString(args, "command")
 		if command == "" {

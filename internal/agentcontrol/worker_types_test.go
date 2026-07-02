@@ -75,7 +75,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	full := []string{
 		"read_file", "write_file", "edit_file", "bash",
 		"grep", "glob", "spawn_agent", "helpme", "inception", "send_message", "followup_task",
-		"await_agents", "close_agent", "list_agents", "agent_report",
+		"await_agents", "close_agent", "list_agents", "agent_report", "post_message",
 	}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
@@ -87,7 +87,7 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 			t.Errorf("general-purpose agent missing %s", expected)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+	for _, blocked := range []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message"} {
 		if allowed[blocked] {
 			t.Errorf("general-purpose agent should not receive recursive control tool %s", blocked)
 		}
@@ -99,7 +99,7 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 	if !wt.Background {
 		t.Fatal("verification agent should run in the background")
 	}
-	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "agent_report"}
+	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "agent_report", "post_message"}
 	filtered := FilterToolsForWorker(wt, full)
 	allowed := map[string]bool{}
 	for _, n := range filtered {
@@ -110,7 +110,7 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 			t.Errorf("verification agent should not receive write tool %s", blocked)
 		}
 	}
-	for _, expected := range []string{"read_file", "bash", "agent_report"} {
+	for _, expected := range []string{"read_file", "bash", "agent_report", "post_message"} {
 		if !allowed[expected] {
 			t.Errorf("verification agent missing %s", expected)
 		}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/participant"
@@ -75,10 +76,11 @@ type threadState struct {
 }
 
 type threadRuntimeSubscription struct {
-	statusCh chan subagent.Notification
-	streamCh chan subagent.StreamNotification
-	done     chan struct{}
-	once     sync.Once
+	statusCh             chan subagent.Notification
+	streamCh             chan subagent.StreamNotification
+	participantMessageCh chan agentcontrol.ParticipantMessage
+	done                 chan struct{}
+	once                 sync.Once
 }
 
 func (sub *threadRuntimeSubscription) stop() {

@@ -2455,7 +2455,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message"} {
 		if defs[blocked] {
 			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
 		}
@@ -2480,7 +2480,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	for _, def := range kit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, allowed := range []string{"read_file", "grep", "glob", "bash", "agent_report"} {
+	for _, allowed := range []string{"read_file", "grep", "glob", "bash", "agent_report", "post_message"} {
 		if !defs[allowed] {
 			t.Fatalf("verification worker toolkit should keep %s; defs=%v", allowed, defs)
 		}
