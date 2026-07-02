@@ -637,6 +637,20 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
+		`CREATE TABLE IF NOT EXISTS participants (
+			id         TEXT PRIMARY KEY,
+			kind       TEXT NOT NULL,
+			name       TEXT NOT NULL,
+			role       TEXT NOT NULL DEFAULT '',
+			avatar     TEXT NOT NULL DEFAULT '',
+			tagline    TEXT NOT NULL DEFAULT '',
+			workspace  TEXT NOT NULL DEFAULT '',
+			model      TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			retired_at TEXT
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_named_name ON participants(name) WHERE retired_at IS NULL AND kind = 'named'`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
