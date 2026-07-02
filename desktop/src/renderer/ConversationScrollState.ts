@@ -538,15 +538,21 @@ export function useConversationScrollState({
       setAutoFollowOverflowAnchor(node, true);
     } else if (conversationAutoFollowRef.current && !userScrollAwayIntent) {
       suppressAutoFollowRearmRef.current = false;
-      nextAutoFollow = true;
       if (isWindowResizing()) {
+        nextAutoFollow = true;
         scheduleStreamScroll();
         rememberActiveThreadScrollSnapshot(node, nextAutoFollow);
         return;
       }
-      applyProgrammaticScroll(node, node.scrollHeight, true, {
-        revealScrollbar: true
-      });
+      // A raw scroll event that leaves the latest view is ambiguous: it can
+      // be a scrollbar drag, a platform scroll path without wheel/key/touch
+      // preflight, or a stale baseline after the conversation remounts. The
+      // durable auto-follow signals already call scrollConversationToBottom
+      // directly (stream frames, turn snapshots, resize observers, fold
+      // collapse), so do not yank the viewport back from this fallback path.
+      nextAutoFollow = false;
+      setAutoFollow(false);
+      setAutoFollowOverflowAnchor(node, false);
     } else {
       suppressAutoFollowRearmRef.current = false;
     }

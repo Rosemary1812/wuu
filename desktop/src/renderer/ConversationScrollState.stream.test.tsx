@@ -559,6 +559,58 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
+  it("disengages scroll-only upward movement after remounting with a stale bottom baseline", () => {
+    mount({
+      scrollHeight: 2000,
+      clientHeight: 600,
+      turns: makeLongTurnsSnapshot(0),
+    });
+    if (!layout || !node || !handle) throw new Error("not mounted");
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(1400);
+
+    rerenderProbe({
+      turns: makeLongTurnsSnapshot(1),
+      showConversation: false,
+    });
+    expect(
+      container.querySelector("[data-testid='settings-placeholder']"),
+    ).not.toBeNull();
+
+    rerenderProbe({
+      turns: makeLongTurnsSnapshot(1),
+      showConversation: true,
+    });
+    node = container.querySelector(
+      "[data-testid='scroll-container']",
+    ) as HTMLDivElement | null;
+    if (!node) throw new Error("conversation did not remount");
+    layout = stubLayout(node, {
+      scrollHeight: 2400,
+      clientHeight: 600,
+      scrollTop: 2400 - 600,
+    });
+
+    act(() => {
+      // The old baseline is below the remounted bottom. A bare scroll event
+      // can still be a real upward user move even when current scrollTop is
+      // numerically larger than the stale last scrollTop.
+      layout!.scrollTop = 1700;
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(layout.scrollTop).toBe(1700);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+
+    expect(layout.scrollTop).toBe(1700);
+    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
+  });
+
   it("disengages auto-follow the moment the user scrolls up — no 16px dead zone", () => {
     // Regression gate for the scroll-up "resistance" bug: any wheel-up
     // from the bottom must take auto-follow off immediately, including
