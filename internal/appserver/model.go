@@ -1123,6 +1123,7 @@ func participantMessageItem(id string, rec persistedMessage, resolve participant
 	item := ThreadItem{
 		ID:       id,
 		SourceID: rec.ClientID,
+		AgentID:  participantMessageAgentID(rec),
 		Type:     ThreadItemParticipantMsg,
 		Status:   ThreadItemStatusCompleted,
 		Role:     "participant",
@@ -1145,6 +1146,32 @@ func participantMessageItem(id string, rec persistedMessage, resolve participant
 		item.Participant = &summary
 	}
 	return item
+}
+
+func participantMessageAgentID(rec persistedMessage) string {
+	id := strings.TrimSpace(rec.ClientID)
+	if id == "" {
+		return ""
+	}
+	if dash := strings.LastIndex(id, "-"); dash >= 0 {
+		suffix := id[dash+1:]
+		if len(suffix) >= 12 && allASCIIDigits(suffix) {
+			return ""
+		}
+	}
+	return id
+}
+
+func allASCIIDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func isToolResultMessage(msg providers.ChatMessage) bool {

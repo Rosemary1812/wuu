@@ -125,6 +125,22 @@ function makeToolCall(name = "lookup"): ThreadItem {
   };
 }
 
+function makeParticipantMessage(text: string): ThreadItem {
+  return {
+    id: nextID("participant"),
+    type: "participant_message",
+    status: "completed",
+    text,
+    agent_id: "agent-42",
+    post_kind: "result",
+    participant: {
+      id: "agent-42",
+      name: "Reviewer",
+      kind: "agent",
+    },
+  };
+}
+
 function makeReadFileTool(path: string): ThreadItem {
   return {
     id: nextID("tool"),
@@ -141,6 +157,7 @@ type RenderOptions = {
   // just emit a placeholder so the shell picks the right entry kind.
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
   onCollapseComplete?: () => void;
+  onOpenAgent?: (agentID: string) => void;
 };
 
 function defaultItemRenderer(
@@ -178,6 +195,7 @@ function renderShell(
         display,
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
+        onOpenAgent: options.onOpenAgent,
         onNoticeAction: () => {},
       }),
     );
@@ -206,6 +224,7 @@ function rerenderShell(
         display,
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
+        onOpenAgent: options.onOpenAgent,
         onNoticeAction: () => {},
       }),
     );
@@ -548,6 +567,28 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     });
 
     expect(collapseCompletions).toBe(1);
+  });
+
+  it("renders participant result cards and opens their source agent", () => {
+    const onOpenAgent = vi.fn();
+    const turn = makeTurn("completed", [
+      makeParticipantMessage("Done from the specialist."),
+    ]);
+    const { container } = renderShell(turn, { onOpenAgent });
+
+    expect(processFoldOpen(container)).toBe(true);
+    expect(container.textContent).toContain("Done from the specialist.");
+
+    const openButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="查看完整过程"]',
+    );
+    expect(openButton).not.toBeNull();
+
+    act(() => {
+      openButton?.click();
+    });
+
+    expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
   });
 });
 

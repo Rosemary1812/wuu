@@ -43,6 +43,7 @@ export function ConversationSplitPane({
   onInterrupt,
   onForkMessage,
   onOpenFile,
+  onOpenAgent,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
@@ -75,6 +76,7 @@ export function ConversationSplitPane({
   onInterrupt: () => void;
   onForkMessage: (turnID: string, itemID: string) => void;
   onOpenFile?: (path: string) => void;
+  onOpenAgent?: (agentID: string) => void;
   onEditMessage?: (turnID: string, item: ThreadItem) => void;
   onCancelEditMessage?: () => void;
   onSubmitEditMessage?: (
@@ -157,6 +159,7 @@ export function ConversationSplitPane({
                   turn={turn}
                   cwd={thread.cwd ?? activeContextCwd}
                   onOpenFile={onOpenFile}
+                  onOpenAgent={onOpenAgent}
                   latestAgentMessageID={paneLatestAgentMessageID}
                   isLatestTurn={
                     paneTurns[paneTurns.length - 1]?.id === turn.id

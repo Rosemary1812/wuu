@@ -31,6 +31,7 @@ export function TurnView({
   turn,
   cwd,
   onOpenFile,
+  onOpenAgent,
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
@@ -51,6 +52,7 @@ export function TurnView({
   turn: Turn;
   cwd?: string;
   onOpenFile?: (path: string) => void;
+  onOpenAgent?: (agentID: string) => void;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
@@ -110,6 +112,7 @@ export function TurnView({
         onCancelEditMessage={onCancelEditMessage}
         onSubmitEditMessage={onSubmitEditMessage}
         onNoticeAction={onNoticeAction}
+        onOpenAgent={onOpenAgent}
       />
     );
   }
@@ -156,6 +159,7 @@ export function TurnView({
           onForkMessage={onForkMessage}
           onCollapseComplete={onCollapseComplete}
           onNoticeAction={onNoticeAction}
+          onOpenAgent={onOpenAgent}
           pendingApproval={pendingApproval}
           onApproveTool={onApproveTool}
           onApproveToolForSession={onApproveToolForSession}

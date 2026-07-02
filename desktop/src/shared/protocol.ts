@@ -954,6 +954,7 @@ export type TurnEventNotification = {
 export type ThreadItem = {
   id: string;
   source_id?: string;
+  agent_id?: string;
   type: ThreadItemType;
   status?: ThreadItemStatus;
   phase?: ThreadItemPhase;

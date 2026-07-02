@@ -2758,6 +2758,14 @@ export function App(): JSX.Element {
           void forkThreadFromMessage(thread, turnID, itemID)
         }
         onOpenFile={openWorkspaceFile}
+        onOpenAgent={(agentID) => {
+          const agent = thread.child_agents?.find(
+            (candidate) => candidate.id === agentID,
+          );
+          if (agent) {
+            void selectChildAgent(agent);
+          }
+        }}
         onEditMessage={
           canShowHistoryEditButton(thread)
             ? (turnID, item) =>
@@ -6583,6 +6591,9 @@ export function App(): JSX.Element {
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
                 onOpenFile={openWorkspaceFile}
+                onOpenAgent={(agent) => {
+                  void selectChildAgent(agent);
+                }}
                 onEditMessage={handleCachedPaneEditMessage}
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
@@ -6789,6 +6800,7 @@ type CachedConversationPanesProps = {
   canEditThreadMessage: (thread: Thread) => boolean;
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
   onOpenFile?: (path: string) => void;
+  onOpenAgent: (agent: Agent) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
   onCancelEditMessage: () => void;
   onSubmitEditMessage: (
@@ -6833,6 +6845,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   canEditThreadMessage,
   onForkMessage,
   onOpenFile,
+  onOpenAgent,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
@@ -6923,6 +6936,14 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     turn={turn}
                     cwd={thread.cwd ?? activeContextCwd}
                     onOpenFile={onOpenFile}
+                    onOpenAgent={(agentID) => {
+                      const agent = thread.child_agents?.find(
+                        (candidate) => candidate.id === agentID,
+                      );
+                      if (agent) {
+                        void onOpenAgent(agent);
+                      }
+                    }}
                     latestAgentMessageID={threadLatestAgentMessageID}
                     isLatestTurn={
                       thread.turns[thread.turns.length - 1]?.id === turn.id

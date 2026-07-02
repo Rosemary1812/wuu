@@ -54,6 +54,7 @@ export function AssistantTurnShell({
   display,
   cwd,
   onOpenFile,
+  onOpenAgent,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -69,6 +70,7 @@ export function AssistantTurnShell({
   display: AssistantTurnDisplay;
   cwd?: string;
   onOpenFile?: (path: string) => void;
+  onOpenAgent?: (agentID: string) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -133,6 +135,7 @@ export function AssistantTurnShell({
     turn,
     cwd,
     onOpenFile,
+    onOpenAgent,
     actionableAgentMessageID,
     latestAgentMessageID,
     onStreamFrame,
@@ -199,6 +202,7 @@ function TurnProcessFold({
   onOpenSource,
   cwd,
   onOpenFile,
+  onOpenAgent,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -214,6 +218,7 @@ function TurnProcessFold({
   onOpenSource?: (url: string) => void;
   cwd?: string;
   onOpenFile?: (path: string) => void;
+  onOpenAgent?: (agentID: string) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -418,6 +423,7 @@ return (
                     turn={turn}
                     cwd={cwd}
                     onOpenFile={onOpenFile}
+                    onOpenAgent={onOpenAgent}
                     actionableAgentMessageID={actionableAgentMessageID}
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
@@ -455,6 +461,7 @@ function EntryRenderer({
   turn,
   cwd,
   onOpenFile,
+  onOpenAgent,
   actionableAgentMessageID,
   latestAgentMessageID,
   onStreamFrame,
@@ -466,6 +473,7 @@ function EntryRenderer({
   turn: Turn;
   cwd?: string;
   onOpenFile?: (path: string) => void;
+  onOpenAgent?: (agentID: string) => void;
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
@@ -486,6 +494,7 @@ function EntryRenderer({
             item={processItem}
             cwd={cwd}
             onOpenFile={onOpenFile}
+            onOpenAgent={onOpenAgent}
             streaming={isStreaming}
             onStreamFrame={onStreamFrame}
             onNoticeAction={onNoticeAction}
@@ -510,6 +519,7 @@ function EntryRenderer({
         turnStatus={turn.status}
         cwd={cwd}
         onOpenFile={onOpenFile}
+        onOpenAgent={onOpenAgent}
         onStreamFrame={onStreamFrame}
         onNoticeAction={onNoticeAction}
       />
@@ -523,11 +533,27 @@ function EntryRenderer({
         item={item}
         cwd={cwd}
         onOpenFile={onOpenFile}
+        onOpenAgent={onOpenAgent}
         streaming={streaming}
         actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
+        onNoticeAction={onNoticeAction}
+      />
+    );
+  }
+  if (item.type === "participant_message") {
+    return (
+      <ThreadItemView
+        turnID={turn.id}
+        turnStatus={turn.status}
+        item={item}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
+        onOpenAgent={onOpenAgent}
+        streaming={streaming}
+        onStreamFrame={onStreamFrame}
         onNoticeAction={onNoticeAction}
       />
     );
@@ -547,6 +573,7 @@ function ReasoningFold({
   turnStatus,
   cwd,
   onOpenFile,
+  onOpenAgent,
   onStreamFrame,
   onNoticeAction,
 }: {
@@ -557,6 +584,7 @@ function ReasoningFold({
   turnStatus: Turn["status"];
   cwd?: string;
   onOpenFile?: (path: string) => void;
+  onOpenAgent?: (agentID: string) => void;
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
@@ -629,6 +657,7 @@ function ReasoningFold({
               item={item}
               cwd={cwd}
               onOpenFile={onOpenFile}
+              onOpenAgent={onOpenAgent}
               streaming={streaming}
               onStreamFrame={handleReasoningStreamFrame}
               onNoticeAction={onNoticeAction}

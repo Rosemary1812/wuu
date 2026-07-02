@@ -321,11 +321,28 @@ func TestAppendParticipantMessageLockedAddsCurrentTurnItem(t *testing.T) {
 	if item.Type != ThreadItemParticipantMsg || item.Status != ThreadItemStatusCompleted || item.PostKind != "result" {
 		t.Fatalf("unexpected participant item: %+v", item)
 	}
-	if item.Text != "Found a missing nil check." || item.SourceID != "agent-1-result" {
+	if item.Text != "Found a missing nil check." || item.SourceID != "agent-1-result" || item.AgentID != "agent-1-result" {
 		t.Fatalf("unexpected participant text/source: %+v", item)
 	}
 	if item.Participant == nil || item.Participant.Name != "Noel" || item.Participant.Role != "reviewer" {
 		t.Fatalf("expected participant summary on item, got %+v", item.Participant)
+	}
+}
+
+func TestParticipantMessageItemDoesNotInferLegacyTimestampSourceAsAgentID(t *testing.T) {
+	item := participantMessageItem("item", persistedMessage{
+		Role:          "participant",
+		Content:       "legacy result",
+		ClientID:      "reviewer-1a2b3c4d-1783000000000000000",
+		ParticipantID: "prt-reviewer",
+		PostKind:      "result",
+	}, nil)
+
+	if item.SourceID == "" {
+		t.Fatal("expected legacy source_id to be preserved")
+	}
+	if item.AgentID != "" {
+		t.Fatalf("legacy timestamp source should not become agent_id, got %+v", item)
 	}
 }
 

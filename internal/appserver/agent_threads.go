@@ -3,7 +3,6 @@ package appserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -115,7 +114,7 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 			rec := persistedMessage{
 				Role:          "participant",
 				Content:       msg.Text,
-				ClientID:      fmt.Sprintf("%s-%d", strings.TrimSpace(msg.AgentID), now.UnixNano()),
+				ClientID:      strings.TrimSpace(msg.AgentID),
 				Name:          name,
 				ParticipantID: msg.ParticipantID,
 				PostKind:      msg.Kind,

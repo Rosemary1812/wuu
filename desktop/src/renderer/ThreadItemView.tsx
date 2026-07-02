@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { ChevronDown, ChevronUp, Paperclip, Send } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, Paperclip, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
 import {
@@ -61,6 +61,7 @@ export function ThreadItemView({
   onCancelEditMessage,
   onSubmitEditMessage,
   onNoticeAction,
+  onOpenAgent,
 }: {
   turnID: string;
   turnStatus: Turn["status"];
@@ -85,6 +86,7 @@ export function ThreadItemView({
     files: InputFile[],
   ) => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
+  onOpenAgent?: (agentID: string) => void;
 }): JSX.Element | null {
   switch (item.type) {
     case "user_message": {
@@ -230,6 +232,9 @@ export function ThreadItemView({
       return <ToolActivityRow items={[item]} />;
     case "participant_message": {
       const text = item.text ?? "";
+      const agentID = item.agent_id?.trim() ?? "";
+      const canOpenAgent = agentID !== "" && Boolean(onOpenAgent);
+      const hasText = text.trim() !== "";
       return (
         <article className={`participant-message-card participant-message-card--${item.post_kind ?? "result"}`}>
           <header className="participant-message-card-header">
@@ -239,18 +244,31 @@ export function ThreadItemView({
               <span className="participant-message-card-fallback">参与者</span>
             )}
           </header>
-          {text.trim() !== "" ? (
+          {hasText ? (
             <div className="participant-message-card-body">
               <RichContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
             </div>
           ) : null}
-          {text.trim() !== "" ? (
+          {hasText || canOpenAgent ? (
             <div className="message-actions participant-message-actions">
-              <MessageCopyButton
-                getText={() => text}
-                className="message-action-button"
-                iconSize={15}
-              />
+              {canOpenAgent ? (
+                <button
+                  type="button"
+                  className="message-action-button"
+                  aria-label="查看完整过程"
+                  title="查看完整过程"
+                  onClick={() => onOpenAgent?.(agentID)}
+                >
+                  <ExternalLink className="icon" />
+                </button>
+              ) : null}
+              {hasText ? (
+                <MessageCopyButton
+                  getText={() => text}
+                  className="message-action-button"
+                  iconSize={15}
+                />
+              ) : null}
             </div>
           ) : null}
         </article>

@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { streamTextKey, streamTextStore } from "./StreamText";
 import { ThreadItemView } from "./ThreadItemView";
@@ -27,18 +27,36 @@ function makeUserMessage(text: string, id = "user-1"): ThreadItem {
   };
 }
 
+function makeParticipantMessage(): ThreadItem {
+  return {
+    id: "participant-1",
+    type: "participant_message",
+    status: "completed",
+    text: "Done from the specialist.",
+    agent_id: "agent-42",
+    post_kind: "result",
+    participant: {
+      id: "agent-42",
+      name: "Reviewer",
+      kind: "agent",
+    },
+  };
+}
+
 function render({
   item,
   turnStatus,
   actionableAgentMessageID,
   latestAgentMessageID,
   streaming,
+  onOpenAgent,
 }: {
   item: ThreadItem;
   turnStatus: Turn["status"];
   actionableAgentMessageID?: string;
   latestAgentMessageID?: string;
   streaming: boolean;
+  onOpenAgent?: (agentID: string) => void;
 }): void {
   if (!container) {
     container = document.createElement("div");
@@ -56,6 +74,7 @@ function render({
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={() => {}}
         onNoticeAction={() => {}}
+        onOpenAgent={onOpenAgent}
       />,
     );
   });
@@ -281,5 +300,27 @@ describe("ThreadItemView", () => {
 
     expect(container?.textContent).toContain("Final answer text.");
     expect(streamTextStore.has(key)).toBe(false);
+  });
+
+  it("opens the source agent from a participant result card", () => {
+    const onOpenAgent = vi.fn();
+
+    render({
+      item: makeParticipantMessage(),
+      turnStatus: "completed",
+      streaming: false,
+      onOpenAgent,
+    });
+
+    const openButton = container?.querySelector<HTMLButtonElement>(
+      'button[aria-label="查看完整过程"]',
+    );
+    expect(openButton).not.toBeNull();
+
+    act(() => {
+      openButton?.click();
+    });
+
+    expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
   });
 });

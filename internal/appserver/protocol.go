@@ -1215,6 +1215,7 @@ const (
 type ThreadItem struct {
 	ID           string                     `json:"id"`
 	SourceID     string                     `json:"source_id,omitempty"`
+	AgentID      string                     `json:"agent_id,omitempty"`
 	Type         ThreadItemType             `json:"type"`
 	Status       ThreadItemStatus           `json:"status,omitempty"`
 	Phase        ThreadItemPhase            `json:"phase,omitempty"`
