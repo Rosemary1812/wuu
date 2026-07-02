@@ -35,6 +35,12 @@ type SpawnOptions struct {
 	// thread metadata, and visible agent IDs aligned.
 	ID string
 
+	// ParticipantID is the conversation participant identity created
+	// for this worker. The subagent package carries it through to
+	// snapshots so history records and notifications can attribute
+	// output to the right participant.
+	ParticipantID string
+
 	// Type is a label like "explorer", "worker", "verifier" that the
 	// caller uses to track agent roles. The subagent package itself
 	// doesn't interpret it — type-specific tool whitelists and prompts
@@ -108,6 +114,7 @@ type SpawnOptions struct {
 // SubAgent is an isolated agent instance managed by Manager.
 type SubAgent struct {
 	ID                  string
+	ParticipantID       string
 	Type                string
 	TaskName            string
 	AgentProfile        string
@@ -183,6 +190,7 @@ func (s *SubAgent) HistorySnapshot() []providers.ChatMessage {
 // point in time.
 type SubAgentSnapshot struct {
 	ID                  string
+	ParticipantID       string
 	Type                string
 	TaskName            string
 	AgentProfile        string

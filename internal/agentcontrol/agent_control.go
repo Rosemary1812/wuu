@@ -30,6 +30,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/harness"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/worktree"
@@ -44,6 +45,13 @@ type WorkerToolkitFactory func(rootDir string, wt WorkerType, meta agentthread.M
 // AgentControl still wraps it with the worker role and working-directory
 // instructions.
 type WorkerSystemPromptFactory func(rootDir string, wt WorkerType, meta agentthread.Metadata, isolation IsolationMode) (string, error)
+
+// ParticipantStore persists conversation participant identities. It is
+// defined here (instead of importing internal/session) so agentcontrol
+// stays decoupled from the session storage layer.
+type ParticipantStore interface {
+	Upsert(participant.Participant) error
+}
 
 // AgentControl owns the orchestration runtime for one wuu session.
 type AgentControl struct {
@@ -64,7 +72,8 @@ type AgentControl struct {
 	rootThreadDir string
 	workerFact    WorkerToolkitFactory
 	workerPrompt  WorkerSystemPromptFactory
-	defaultSys    string // base system prompt prefix added to every worker
+	defaultSys    string           // base system prompt prefix added to every worker
+	participants  ParticipantStore // optional; nil disables participant persistence
 	maxParallel   int
 	queueMu       sync.Mutex
 	queued        []preparedSpawn
@@ -104,7 +113,11 @@ type Config struct {
 	WorkerSysPrompt                string
 	WorkerFactory                  WorkerToolkitFactory
 	WorkerPrompt                   WorkerSystemPromptFactory
-	MaxParallel                    int
+	// ParticipantStore, when set, persists the ephemeral participant
+	// identity created for each spawned worker. Optional: when nil,
+	// participant IDs are still generated in-memory but not persisted.
+	ParticipantStore ParticipantStore
+	MaxParallel      int
 }
 
 // New constructs an AgentControl. Worktree isolation is only available
@@ -167,6 +180,7 @@ func New(cfg Config) (*AgentControl, error) {
 		workerFact:   cfg.WorkerFactory,
 		workerPrompt: cfg.WorkerPrompt,
 		defaultSys:   cfg.WorkerSysPrompt,
+		participants: cfg.ParticipantStore,
 		maxParallel:  maxP,
 	}
 	c.restoreAgentResultDeliveries()
@@ -303,6 +317,7 @@ type SpawnResult struct {
 
 type preparedSpawn struct {
 	WorkerID      string
+	ParticipantID string
 	WorkerType    WorkerType
 	ThreadMeta    agentthread.Metadata
 	Description   string
@@ -318,6 +333,7 @@ type preparedSpawn struct {
 
 type queuedSpawnPayload struct {
 	WorkerID      string                  `json:"worker_id"`
+	ParticipantID string                  `json:"participant_id,omitempty"`
 	WorkerType    string                  `json:"worker_type"`
 	ThreadMeta    agentthread.Metadata    `json:"thread_meta"`
 	Description   string                  `json:"description,omitempty"`
@@ -369,16 +385,18 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		if err != nil {
 			return nil, err
 		}
+		prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
 		prepared := preparedSpawn{
-			WorkerID:    workerID,
-			WorkerType:  wt,
-			ThreadMeta:  threadMeta,
-			Description: req.Description,
-			Prompt:      req.Prompt,
-			GoalID:      strings.TrimSpace(req.GoalID),
-			GoalDir:     strings.TrimSpace(req.GoalDir),
-			Isolation:   isolation,
-			BaseRepo:    req.BaseRepo,
+			WorkerID:      workerID,
+			ParticipantID: prt.ID,
+			WorkerType:    wt,
+			ThreadMeta:    threadMeta,
+			Description:   req.Description,
+			Prompt:        req.Prompt,
+			GoalID:        strings.TrimSpace(req.GoalID),
+			GoalDir:       strings.TrimSpace(req.GoalDir),
+			Isolation:     isolation,
+			BaseRepo:      req.BaseRepo,
 		}
 		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
@@ -428,6 +446,10 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	}
 	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 
+	// Create the worker's conversation participant identity. Failure to
+	// persist never blocks the spawn.
+	prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
+
 	// 3. Build worker's toolkit rooted at the chosen working directory.
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
 	if err != nil {
@@ -475,17 +497,18 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	}
 
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
-		ID:           workerID,
-		Type:         wtype,
-		TaskName:     threadMeta.TaskName,
-		AgentProfile: threadMeta.AgentProfile,
-		AgentPath:    threadMeta.Path,
-		ParentID:     threadMeta.ParentID,
-		Description:  req.Description,
-		Prompt:       req.Prompt,
-		SystemPrompt: sys,
-		Toolkit:      workerKit,
-		HistoryPath:  historyPath,
+		ID:            workerID,
+		ParticipantID: prt.ID,
+		Type:          wtype,
+		TaskName:      threadMeta.TaskName,
+		AgentProfile:  threadMeta.AgentProfile,
+		AgentPath:     threadMeta.Path,
+		ParentID:      threadMeta.ParentID,
+		Description:   req.Description,
+		Prompt:        req.Prompt,
+		SystemPrompt:  sys,
+		Toolkit:       workerKit,
+		HistoryPath:   historyPath,
 	})
 	if err != nil {
 		if worktreeRef != nil {
@@ -548,6 +571,29 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	result.NextSteps = spawnResultNextSteps(result.Status, true, result.Isolation, result.AgentPath)
 
 	return result, nil
+}
+
+// newEphemeralParticipant creates the participant identity for a
+// freshly spawned worker and persists it through the configured
+// ParticipantStore. Persistence failures are logged but never block a
+// spawn; the in-memory identity is returned regardless.
+func (c *AgentControl) newEphemeralParticipant(taskName string, wt WorkerType) participant.Participant {
+	now := time.Now().UTC()
+	p := participant.Participant{
+		ID:        participant.NewID(),
+		Kind:      participant.KindEphemeral,
+		Name:      participant.DeriveEphemeralName(taskName, wt.Name),
+		Role:      wt.Name,
+		Avatar:    participant.DefaultAvatar(wt.Name),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if c != nil && c.participants != nil {
+		if err := c.participants.Upsert(p); err != nil {
+			providers.DebugLogf("agentcontrol: persist participant %s: %v", p.ID, err)
+		}
+	}
+	return p
 }
 
 func spawnResultNextSteps(status string, synchronous bool, isolation string, agentPath string) []string {
@@ -659,8 +705,10 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		if err != nil {
 			return nil, err
 		}
+		prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
 		prepared := preparedSpawn{
 			WorkerID:      workerID,
+			ParticipantID: prt.ID,
 			WorkerType:    wt,
 			ThreadMeta:    threadMeta,
 			Description:   req.Description,
@@ -719,6 +767,10 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	}
 	c.recordHarnessTaskStart(threadMeta, wt.Name, req.Prompt, workerRoot, isolation, req.BaseRepo, "", "")
 
+	// Create the worker's conversation participant identity. Failure to
+	// persist never blocks the spawn.
+	prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
+
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
 	if err != nil {
 		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
@@ -766,6 +818,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
 		ID:             workerID,
+		ParticipantID:  prt.ID,
 		Type:           wt.Name,
 		TaskName:       threadMeta.TaskName,
 		AgentProfile:   threadMeta.AgentProfile,
@@ -1479,6 +1532,7 @@ func (c *AgentControl) deleteQueuedSpawn(workerID string) {
 func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 	return queuedSpawnPayload{
 		WorkerID:      prepared.WorkerID,
+		ParticipantID: prepared.ParticipantID,
 		WorkerType:    prepared.WorkerType.Name,
 		ThreadMeta:    prepared.ThreadMeta,
 		Description:   prepared.Description,
@@ -1514,6 +1568,7 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 	}
 	return preparedSpawn{
 		WorkerID:      workerID,
+		ParticipantID: payload.ParticipantID,
 		WorkerType:    wt,
 		ThreadMeta:    payload.ThreadMeta,
 		Description:   payload.Description,
@@ -1606,8 +1661,15 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	if c.historyDir != "" {
 		historyPath = filepath.Join(c.historyDir, prepared.WorkerID+".json")
 	}
+	participantID := prepared.ParticipantID
+	if strings.TrimSpace(participantID) == "" {
+		// Legacy queued payloads (persisted before participant identity
+		// existed) get a fresh participant at start time.
+		participantID = c.newEphemeralParticipant(prepared.ThreadMeta.TaskName, prepared.WorkerType).ID
+	}
 	_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
 		ID:             prepared.WorkerID,
+		ParticipantID:  participantID,
 		Type:           prepared.WorkerType.Name,
 		TaskName:       prepared.ThreadMeta.TaskName,
 		AgentProfile:   prepared.ThreadMeta.AgentProfile,

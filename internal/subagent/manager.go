@@ -204,6 +204,7 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 
 	sa := &SubAgent{
 		ID:              id,
+		ParticipantID:   opts.ParticipantID,
 		Type:            opts.Type,
 		TaskName:        opts.TaskName,
 		AgentProfile:    opts.AgentProfile,
@@ -736,6 +737,7 @@ func cloneToolCall(call providers.ToolCall) providers.ToolCall {
 func snapshotLocked(s *SubAgent) SubAgentSnapshot {
 	return SubAgentSnapshot{
 		ID:                  s.ID,
+		ParticipantID:       s.ParticipantID,
 		Type:                s.Type,
 		TaskName:            s.TaskName,
 		AgentProfile:        s.AgentProfile,
