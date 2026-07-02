@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -787,6 +788,16 @@ func itemCompleted(threadID, turnID string, item ThreadItem, at time.Time) outbo
 }
 
 func turnsFromHistory(threadID string, history []providers.ChatMessage, now time.Time) []Turn {
+	persisted := make([]persistedMessage, 0, len(history))
+	for _, msg := range history {
+		persisted = append(persisted, persistedMessageFromChatMessage(msg))
+	}
+	return turnsFromPersistedHistory(threadID, persisted, now, nil)
+}
+
+type participantSummaryResolver func(string) (participant.Summary, bool)
+
+func turnsFromPersistedHistory(threadID string, history []persistedMessage, now time.Time, resolve participantSummaryResolver) []Turn {
 	var turns []Turn
 	var current *Turn
 	itemIndex := 0
@@ -802,10 +813,35 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 		}
 		current.Items = append(current.Items, item)
 	}
-	for _, msg := range history {
-		if msg.Hidden {
+	startSyntheticTurn := func() {
+		turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
+		itemIndex = 0
+		toolItems = make(map[string]int)
+		turn := Turn{
+			ID:        turnID,
+			ItemsView: TurnItemsViewFull,
+			Status:    TurnStatusCompleted,
+		}
+		for _, item := range pendingCompactions {
+			item.ID = nextItemID(turnID)
+			turn.Items = append(turn.Items, item)
+		}
+		pendingCompactions = nil
+		turns = append(turns, turn)
+		current = &turns[len(turns)-1]
+	}
+	for _, rec := range history {
+		if rec.Hidden {
 			continue
 		}
+		if isParticipantPersistedMessage(rec) {
+			if current == nil {
+				startSyntheticTurn()
+			}
+			appendItem(participantMessageItem(nextItemID(current.ID), rec, resolve))
+			continue
+		}
+		msg := chatMessageFromPersistedMessage(rec)
 		if compact.IsInternalContextMessage(msg) {
 			continue
 		}
@@ -843,21 +879,7 @@ func turnsFromHistory(threadID string, history []providers.ChatMessage, now time
 			continue
 		}
 		if current == nil && msg.Role == "assistant" && pendingCompactionsContainReason(pendingCompactions, compact.HelpMeToolName) {
-			turnID := fmt.Sprintf("%s-turn-%04d", threadID, len(turns)+1)
-			itemIndex = 0
-			toolItems = make(map[string]int)
-			turn := Turn{
-				ID:        turnID,
-				ItemsView: TurnItemsViewFull,
-				Status:    TurnStatusCompleted,
-			}
-			for _, item := range pendingCompactions {
-				item.ID = nextItemID(turnID)
-				turn.Items = append(turn.Items, item)
-			}
-			pendingCompactions = nil
-			turns = append(turns, turn)
-			current = &turns[len(turns)-1]
+			startSyntheticTurn()
 		}
 		if current == nil {
 			continue
@@ -1000,6 +1022,103 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 		}
 	}
 	return ThreadItem{}
+}
+
+func chatMessageFromPersistedMessage(rec persistedMessage) providers.ChatMessage {
+	msg := providers.ChatMessage{
+		Role:              strings.ToLower(strings.TrimSpace(rec.Role)),
+		Name:              rec.Name,
+		ClientID:          rec.ClientID,
+		Content:           rec.Content,
+		DisplayContent:    rec.DisplayContent,
+		Phase:             providers.NormalizeMessagePhase(rec.Phase),
+		Hidden:            rec.Hidden,
+		ProviderItemID:    rec.ProviderItemID,
+		ProviderItemModel: rec.ProviderItemModel,
+		Steered:           rec.Steered,
+		ReasoningContent:  rec.ReasoningContent,
+		ReasoningBlocks:   append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
+		ToolCallID:        rec.ToolCallID,
+		ToolResultKind:    providers.NormalizeToolCallKind(rec.ToolResultKind),
+		FinishReason:      providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
+		StopReason:        strings.ToLower(strings.TrimSpace(rec.StopReason)),
+		Truncated:         rec.Truncated,
+		DiscoveredTools:   providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
+	}
+	for _, image := range rec.Images {
+		if strings.TrimSpace(image.Data) == "" {
+			continue
+		}
+		msg.Images = append(msg.Images, providers.InputImage{
+			MediaType: image.MediaType,
+			Data:      image.Data,
+			Width:     image.Width,
+			Height:    image.Height,
+		})
+	}
+	for _, file := range rec.Files {
+		if strings.TrimSpace(file.Data) == "" {
+			continue
+		}
+		msg.Files = append(msg.Files, providers.InputFile{
+			MediaType: file.MediaType,
+			Data:      file.Data,
+			Filename:  file.Filename,
+		})
+	}
+	for _, tc := range rec.ToolCalls {
+		msg.ToolCalls = append(msg.ToolCalls, providers.ToolCall{
+			ID:                tc.ID,
+			ProviderItemID:    tc.ProviderItemID,
+			ProviderItemModel: tc.ProviderItemModel,
+			Name:              tc.Name,
+			Arguments:         tc.Arguments,
+			Kind:              providers.NormalizeToolCallKind(tc.Kind),
+			Display:           cloneToolCallDisplay(tc.Display),
+		})
+	}
+	return msg
+}
+
+func isParticipantPersistedMessage(rec persistedMessage) bool {
+	role := strings.ToLower(strings.TrimSpace(rec.Role))
+	return role == "participant" || (strings.TrimSpace(rec.ParticipantID) != "" && strings.TrimSpace(rec.PostKind) != "")
+}
+
+func participantMessageItem(id string, rec persistedMessage, resolve participantSummaryResolver) ThreadItem {
+	text := rec.DisplayContent
+	if strings.TrimSpace(text) == "" {
+		text = rec.Content
+	}
+	postKind := strings.ToLower(strings.TrimSpace(rec.PostKind))
+	if postKind == "" {
+		postKind = "result"
+	}
+	item := ThreadItem{
+		ID:       id,
+		SourceID: rec.ClientID,
+		Type:     ThreadItemParticipantMsg,
+		Status:   ThreadItemStatusCompleted,
+		Role:     "participant",
+		Text:     text,
+		PostKind: postKind,
+	}
+	if id := strings.TrimSpace(rec.ParticipantID); id != "" {
+		if resolve != nil {
+			if summary, ok := resolve(id); ok {
+				item.Participant = &summary
+				return item
+			}
+		}
+		summary := participant.Summary{
+			ID:     id,
+			Name:   firstNonEmpty(strings.TrimSpace(rec.Name), "Participant"),
+			Kind:   string(participant.KindEphemeral),
+			Avatar: participant.DefaultAvatar(""),
+		}
+		item.Participant = &summary
+	}
+	return item
 }
 
 func isToolResultMessage(msg providers.ChatMessage) bool {

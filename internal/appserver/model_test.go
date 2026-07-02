@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -232,6 +233,46 @@ func TestTurnsFromHistorySkipsHiddenMessages(t *testing.T) {
 	}
 	if items[1].Type != ThreadItemAgentMessage || items[1].Text != "done" {
 		t.Fatalf("expected visible assistant item, got %+v", items[1])
+	}
+}
+
+func TestTurnsFromPersistedHistoryRestoresParticipantMessage(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	turns := turnsFromPersistedHistory("thread", []persistedMessage{
+		{Role: "user", Content: "review this diff"},
+		{
+			Role:          "participant",
+			Content:       "Found one regression in the reconnect loop.",
+			ParticipantID: "prt-reviewer",
+			PostKind:      "result",
+		},
+		{Role: "assistant", Content: "I will use Noel's result."},
+	}, now, func(id string) (participant.Summary, bool) {
+		if id != "prt-reviewer" {
+			return participant.Summary{}, false
+		}
+		return participant.Summary{
+			ID:     id,
+			Name:   "Noel",
+			Kind:   string(participant.KindEphemeral),
+			Role:   "reviewer",
+			Avatar: participant.DefaultAvatar("reviewer"),
+		}, true
+	})
+
+	if len(turns) != 1 {
+		t.Fatalf("expected one visible turn, got %+v", turns)
+	}
+	items := turns[0].Items
+	if len(items) != 3 {
+		t.Fatalf("expected user, participant result, and assistant items, got %+v", items)
+	}
+	result := items[1]
+	if result.Type != ThreadItemParticipantMsg || result.PostKind != "result" || result.Text != "Found one regression in the reconnect loop." {
+		t.Fatalf("expected participant result item, got %+v", result)
+	}
+	if result.Participant == nil || result.Participant.Name != "Noel" || result.Participant.Role != "reviewer" {
+		t.Fatalf("expected participant summary on result item, got %+v", result.Participant)
 	}
 }
 

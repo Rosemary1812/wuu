@@ -574,6 +574,7 @@ export type ThreadItemType =
   | "reasoning"
   | "tool_call"
   | "collab_agent_tool_call"
+  | "participant_message"
   | "context_compaction"
   | "error";
 export type ThreadItemStatus = "in_progress" | "completed" | "failed";
@@ -944,6 +945,7 @@ export type ThreadItem = {
   phase?: ThreadItemPhase;
   role?: string;
   text?: string;
+  post_kind?: string;
   images?: InputImage[];
   files?: InputFile[];
   name?: string;

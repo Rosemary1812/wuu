@@ -1175,6 +1175,7 @@ const (
 	ThreadItemReasoning         ThreadItemType = "reasoning"
 	ThreadItemToolCall          ThreadItemType = "tool_call"
 	ThreadItemCollabAgentTool   ThreadItemType = "collab_agent_tool_call"
+	ThreadItemParticipantMsg    ThreadItemType = "participant_message"
 	ThreadItemContextCompaction ThreadItemType = "context_compaction"
 	ThreadItemError             ThreadItemType = "error"
 )
@@ -1204,6 +1205,7 @@ type ThreadItem struct {
 	Phase        ThreadItemPhase            `json:"phase,omitempty"`
 	Role         string                     `json:"role,omitempty"`
 	Text         string                     `json:"text,omitempty"`
+	PostKind     string                     `json:"post_kind,omitempty"`
 	Images       []ThreadItemImage          `json:"images,omitempty"`
 	Files        []ThreadItemFile           `json:"files,omitempty"`
 	Name         string                     `json:"name,omitempty"`

@@ -70,6 +70,12 @@ type persistedMessage struct {
 	// this field was added.
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
+
+	// ParticipantID/PostKind are conversation-display metadata. They are
+	// persisted with session history but intentionally skipped from model
+	// request history unless the role is a normal provider role.
+	ParticipantID string `json:"participant_id,omitempty"`
+	PostKind      string `json:"post_kind,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -102,7 +108,7 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 	var messages []providers.ChatMessage
 	for _, rec := range records {
 		role := strings.ToLower(strings.TrimSpace(rec.Role))
-		if role == "" || role == "meta" {
+		if role == "" || role == "meta" || role == "participant" {
 			continue
 		}
 		msg := providers.ChatMessage{
@@ -353,6 +359,8 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		CacheReadTokens:     rec.CacheReadTokens,
 		Provider:            rec.Provider,
 		Model:               rec.Model,
+		ParticipantID:       rec.ParticipantID,
+		PostKind:            rec.PostKind,
 	}
 }
 
@@ -382,6 +390,8 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		CacheReadTokens:     rec.CacheReadTokens,
 		Provider:            rec.Provider,
 		Model:               rec.Model,
+		ParticipantID:       rec.ParticipantID,
+		PostKind:            rec.PostKind,
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err

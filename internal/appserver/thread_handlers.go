@@ -204,6 +204,11 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 	}
 	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
+	displayHistory, err := loadPersistedMessages(s.rt.SessionDir, id, false)
+	if err != nil {
+		return nil, err
+	}
+	th.Turns = turnsFromPersistedHistory(id, displayHistory, now, s.resolveParticipantSummary)
 	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
 		return nil, err
 	} else {
