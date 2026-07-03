@@ -18,6 +18,7 @@ import {
   inputImagesFromComposer,
   isSupportedComposerAttachment
 } from "./ComposerMessages";
+import { EnvelopeNotice } from "./EnvelopeNotice";
 import { RichContent } from "./RichContent";
 import {
   AgentMessageActions,
@@ -93,6 +94,12 @@ export function ThreadItemView({
   switch (item.type) {
     case "user_message": {
       const text = item.text ?? "";
+      // Envelope-routed messages (group chat → resident DM) render as a
+      // collapsed meta row, never as a user bubble — a bubble would read
+      // as if the user typed the forwarded content themselves.
+      if (item.envelope_meta) {
+        return <EnvelopeNotice meta={item.envelope_meta} text={text} />;
+      }
       const handoff = agentHandoffDisplay(text);
       if (handoff) {
         return (

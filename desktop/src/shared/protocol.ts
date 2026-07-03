@@ -1041,6 +1041,25 @@ export type TurnEventNotification = {
   event: StreamEventPayload;
 };
 
+// Structured metadata for user messages that were injected into a
+// resident agent's DM thread by the envelope router rather than typed
+// by the user. Mirrors the session_messages.envelope_meta JSON column
+// (docs/plans/2026-07-03-resident-named-agents.md §3.3). Presence of
+// this field switches the DM view from a user bubble to a collapsed
+// meta row (§7.3). All fields optional so partial backend payloads
+// still render.
+export type EnvelopeMeta = {
+  source_thread_id?: string;
+  // Snapshot of the source thread's title at write time; the source
+  // thread may be archived or renamed later.
+  source_thread_title?: string;
+  addressed?: boolean;
+  hop?: number;
+  sender_participant_id?: string;
+  // Number of coalesced envelopes rendered into this one message.
+  message_count?: number;
+};
+
 export type ThreadItem = {
   id: string;
   source_id?: string;
@@ -1061,6 +1080,7 @@ export type ThreadItem = {
   reason?: string;
   task?: TaskCard;
   participant?: ParticipantSummary;
+  envelope_meta?: EnvelopeMeta;
 };
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";

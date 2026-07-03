@@ -107,7 +107,11 @@ CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending
 
 ### 3.3 History 记录扩展
 
-`session_messages` 增加可空列 `envelope_meta TEXT`（JSON）：信封渲染成 user message 落库时，同时存结构化元数据 `{source_thread_id, addressed, hop, sender_participant_id}`。用途：(a) addressed 未回应的 telemetry 统计（§4.5）；(b) DM UI 把群聊来源的信封渲染为折叠 meta 行而非用户气泡（§7.3）。
+`session_messages` 增加可空列 `envelope_meta TEXT`（JSON）：信封渲染成 user message 落库时，同时存结构化元数据 `{source_thread_id, source_thread_title, addressed, hop, sender_participant_id, message_count}`。用途：(a) addressed 未回应的 telemetry 统计（§4.5）；(b) DM UI 把群聊来源的信封渲染为折叠 meta 行而非用户气泡（§7.3）。
+
+- `source_thread_title`：落库时快照源 thread 标题，前端直接渲染"收到来自「{title}」的消息"，不需要在渲染层反查 thread 列表（源 thread 可能已归档/改名）。
+- `message_count`：本条 user message 合批（§4.1 coalesce）吸收的信封条数；单条时为 1。前端据此渲染"{n} 条消息"。
+- ThreadItem 透传：history → protocol 映射时把该 JSON 反序列化为 ThreadItem 的可选字段 `envelope_meta`，字段缺失时前端按无信封的普通 user message 渲染。
 
 ---
 

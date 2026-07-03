@@ -693,6 +693,61 @@
   text-align: center;
 }
 
+/* Envelope-routed messages in a resident agent's DM thread render as a
+ * collapsed meta row on the meta layer, never as a user bubble. */
+.envelope-notice {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  margin: 4px 0 18px;
+}
+
+.envelope-notice-toggle {
+  appearance: none;
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.envelope-notice-toggle:hover,
+.envelope-notice-toggle:focus-visible {
+  color: var(--ink-soft);
+  outline: 0;
+}
+
+.envelope-notice-icon,
+.envelope-notice-chevron {
+  flex: 0 0 auto;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  stroke-width: var(--icon-stroke);
+}
+
+.envelope-notice-body {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+  line-height: var(--line-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .message-copy-button {
   --message-copy-rest-transform: translate3d(0, 2px, 0) scale(0.98);
   --message-copy-visible-transform: translate3d(0, 0, 0) scale(1);
