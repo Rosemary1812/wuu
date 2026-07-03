@@ -23,10 +23,23 @@ type runState struct {
 	commandItems        map[string]appserver.ThreadItem
 	toolOutputs         map[string]string
 	seenSubagents       map[string]bool
+	approvalRequests    map[string]appserver.ToolApprovalRequest
+	blockedApprovals    []blockedApproval
 	permissionDenied    bool
 	permissionError     string
 	structuredResult    any
 	structuredResultSet bool
+}
+
+// blockedApproval summarizes one approval request this run could not
+// grant. It rides on the final result event so machine callers can
+// decide (and rerun with --approve) without parsing reason text.
+type blockedApproval struct {
+	ApprovalKey      string `json:"approval_key,omitempty"`
+	RequestID        string `json:"request_id,omitempty"`
+	ToolName         string `json:"tool_name,omitempty"`
+	ArgumentsPreview string `json:"arguments_preview,omitempty"`
+	Reason           string `json:"reason,omitempty"`
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -556,6 +569,10 @@ func emitSubagentUpdated(opts Options, params appserver.AgentUpdatedNotification
 }
 
 func emitApprovalRequested(opts Options, state *runState, params approvalRequestedNotification) {
+	if state.approvalRequests == nil {
+		state.approvalRequests = map[string]appserver.ToolApprovalRequest{}
+	}
+	state.approvalRequests[params.RequestID] = params.Request
 	payload := map[string]any{
 		"type":       "approval_requested",
 		"thread_id":  state.threadID,
@@ -588,7 +605,28 @@ func emitApprovalResolved(opts Options, state *runState, params approvalResolved
 		} else {
 			state.permissionError = "approval denied"
 		}
+		request := state.approvalRequests[params.RequestID]
+		blocked := blockedApproval{
+			ApprovalKey:      request.ApprovalKey,
+			RequestID:        params.RequestID,
+			ToolName:         request.ToolName,
+			ArgumentsPreview: request.ArgumentsPreview,
+			Reason:           firstNonEmpty(params.Error, params.Reason),
+		}
+		state.blockedApprovals = append(state.blockedApprovals, blocked)
+		if !opts.JSON && opts.Stderr != nil {
+			fmt.Fprintf(opts.Stderr, "approval_denied: %s key=%s\n", request.ToolName, request.ApprovalKey)
+		}
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func emitTurnInterrupted(opts Options, state runState, reason string) {
@@ -968,6 +1006,9 @@ func emitResult(opts Options, state runState, status, errorText string) {
 	}
 	if errorText != "" {
 		payload["error"] = errorText
+	}
+	if len(state.blockedApprovals) > 0 {
+		payload["blocked_approvals"] = state.blockedApprovals
 	}
 	if state.structuredResultSet {
 		payload["structured_result"] = state.structuredResult

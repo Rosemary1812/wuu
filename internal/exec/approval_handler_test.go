@@ -130,9 +130,9 @@ func approvalChainTestRequest(t *testing.T) ServerRequest {
 }
 
 func TestDefaultRequestHandlerDeniesApprovalsWithReason(t *testing.T) {
-	// NoApprovalPrompt keeps the test deterministic when the test
-	// process itself has a controlling terminal.
-	handler, err := newServerRequestHandler(Options{NoApprovalPrompt: true})
+	// The prompt is opt-in, so the default handler never blocks even when
+	// the test process has a controlling terminal.
+	handler, err := newServerRequestHandler(Options{})
 	if err != nil {
 		t.Fatalf("newServerRequestHandler: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestApprovalGrantsApproveMatchingRequestForSession(t *testing.T) {
 		"ref":  {[]string{"approval-1.json"}, "approved_for_session"},
 		"miss": {[]string{"bash:other"}, "denied"},
 	} {
-		handler, err := newServerRequestHandler(Options{NoApprovalPrompt: true, Approvals: tc.grants})
+		handler, err := newServerRequestHandler(Options{Approvals: tc.grants})
 		if err != nil {
 			t.Fatalf("%s: newServerRequestHandler: %v", name, err)
 		}

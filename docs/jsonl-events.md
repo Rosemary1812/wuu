@@ -456,12 +456,26 @@ The final event in a run.
   "turn_id": "turn-id",
   "final_message": "final answer",
   "structured_result": {"summary": "valid JSON when --output-schema is used"},
+  "blocked_approvals": [
+    {
+      "approval_key": "bash:2fd4e1c6...",
+      "request_id": "server-1",
+      "tool_name": "bash",
+      "arguments_preview": "{\"command\": \"go vet ./...\"}",
+      "reason": "approval prompts are unavailable in this unattended run; ..."
+    }
+  ],
   "trace_path": "/path/to/session-trace.jsonl"
 }
 ```
 
 `structured_result` is present only when `wuu exec --output-schema` is used and
 the final answer validates against the requested JSON Schema.
+
+`blocked_approvals` is present when one or more tool calls needed approval and
+nothing in the run could grant it. Each entry's `approval_key` is the exact
+token a rerun can pass as `wuu exec resume --last --approve <key>` to
+pre-grant that call.
 
 Allowed `status` values include:
 

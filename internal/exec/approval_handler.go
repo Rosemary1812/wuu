@@ -37,15 +37,20 @@ func newServerRequestHandler(opts Options) (ServerRequestHandler, error) {
 	//  1. --approve grants: pre-approve exactly the named calls
 	//     (matched by stable approval key, request id, or arguments
 	//     hash), which is how a caller re-runs after a headless denial.
-	//  2. a controlling terminal: prompt the human inline - a run
-	//     attached to a TTY is not actually unattended.
+	//  2. --approval-prompt: ask the human on the controlling terminal.
+	//     Opt-in only - exec is mostly driven by other agents, whose
+	//     shells may hold a pty; an unanswered prompt would hang their
+	//     run, so nothing ever blocks by default.
 	//  3. otherwise deny with a decision (not a protocol error) whose
 	//     reason tells the model to report the blocked call and tells
 	//     the caller how to grant it on the next run.
 	grants := newApprovalGrants(opts.Approvals)
 	var prompter *ttyApprovalPrompter
-	if !opts.NoApprovalPrompt {
+	if opts.ApprovalPrompt {
 		prompter = newTTYApprovalPrompter()
+		if prompter == nil && opts.Stderr != nil {
+			fmt.Fprintln(opts.Stderr, "warning: --approval-prompt requested but no controlling terminal; approvals without a matching --approve grant will be denied")
+		}
 	}
 	return func(ctx context.Context, req ServerRequest) ServerRequestResult {
 		if req.Method != appserver.MethodToolApprovalRequest {

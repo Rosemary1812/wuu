@@ -84,7 +84,7 @@ stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
 `strict_config`, `env`, `allow_tools`, `deny_tools`, `approval_handler`,
-`approval_socket`, `approve`, `no_approval_prompt`, `max_turns`,
+`approval_socket`, `approve`, `approval_prompt`, `max_turns`,
 `output_schema`, `no_tools`, `timeout`, and `output_last_message`.
 
 ## Resume
@@ -188,7 +188,7 @@ Current implemented flags:
 --approval-handler <command>
 --approval-socket <path>
 --approve <approval-key>
---no-approval-prompt
+--approval-prompt
 --file <path>
 --image <path>
 --no-tools
@@ -256,29 +256,33 @@ approval requests itself, from most to least specific:
    the approval artifact filename. Because the key hashes the tool name and
    arguments, it stays the same when the model retries the same command in a
    resumed session.
-2. **Terminal prompt.** If the process has a controlling terminal
-   (`/dev/tty`), exec asks inline — `[y]es once / [a]lways this session /
-   [N]o` — and forwards the human's decision. CI, cron, and detached runs have
-   no terminal and skip this step; `--no-approval-prompt` disables it
-   explicitly.
-3. **Deny with a grant recipe.** The call is denied with a reason that tells
-   the model to stop and report the blocked action, and tells the caller how
-   to grant it on the next run.
+2. **`--approval-prompt` terminal prompt (opt-in).** For a human debugging
+   interactively: exec asks on the controlling terminal — `[y]es once /
+   [a]lways this session / [N]o` — and forwards the answer. This is never on
+   by default because exec's primary callers are other agents, and an agent's
+   shell may hold a pty: an unanswered prompt would hang its run. Without a
+   terminal the flag warns on stderr and falls through to denial.
+3. **Deny with a grant recipe (the default).** The call is denied with a
+   reason that tells the model to stop and report the blocked action, and
+   tells the caller how to grant it on the next run. Nothing ever blocks
+   waiting for input.
 
-The unattended retry loop looks like:
+The intended loop for an agent driving `wuu exec` is:
 
 ```bash
 wuu exec --json "run go vet and fix what it reports"
-# → result status "permission_denied"; the denial reason and the
-#   approval_requested JSONL event both carry the approval_key
+# → result event: status "permission_denied" plus
+#   blocked_approvals: [{approval_key, tool_name, arguments_preview, reason}]
 
 wuu exec resume --last --approve bash:2fd4e1c6... "vet is approved now, continue"
 ```
 
-Machine callers can automate this loop: the `approval_requested` event's
-`request.approval_key` field is the exact token `--approve` expects. Broad
-alternatives remain `--allow-tool <name>` (allow a whole tool for the run) and
-`--permission-mode full_access`.
+The calling agent reads `blocked_approvals` from the final `result` event (or
+`request.approval_key` from the `approval_requested` event), decides whether
+the command is acceptable, and reruns with `--approve`. Because the key hashes
+only the binding fields of the call, the inner model's rephrased retry still
+matches the grant. Broad alternatives remain `--allow-tool <name>` (allow a
+whole tool for the run) and `--permission-mode full_access`.
 
 ## Session Inspection
 
