@@ -8,9 +8,10 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
-func residentParticipantSystemPrompt(p participant.Participant, memory string) string {
+func residentParticipantSystemPrompt(p participant.Participant, memory string, registered []workspaces.Workspace) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %s, a resident named agent in this workspace. You are a\n", strings.TrimSpace(p.Name))
 	b.WriteString("continuous identity: one brain, one ongoing session. Direct messages\n")
@@ -52,6 +53,24 @@ func residentParticipantSystemPrompt(p participant.Participant, memory string) s
 	b.WriteString("  silent, and relayed agent-to-agent messages only reach agents who are\n")
 	b.WriteString("  explicitly @mentioned. Do not @mention someone just to be polite; an\n")
 	b.WriteString("  @mention is a request for their time.\n\n")
+	// The two sections below are contractual text from
+	// docs/plans/2026-07-03-resident-named-agents.md §5 (red line 6: that
+	// document is authoritative; edit it before editing this code).
+	b.WriteString("## Building teams and groups\n")
+	b.WriteString("You can create group threads (create_group) and add named teammates to\n")
+	b.WriteString("groups you belong to (add_group_member). Create a group only for an\n")
+	b.WriteString("ongoing purpose — a project, a standing topic — never for a one-off\n")
+	b.WriteString("question; prefer reusing an existing group. When the user asks for a\n")
+	b.WriteString("team, you may also create new named teammates with manage_participant.\n\n")
+	b.WriteString("## Workspaces and file scope\n")
+	b.WriteString("The user's registered workspaces (name — root path):\n")
+	b.WriteString(renderWorkspaceManifest(registered))
+	b.WriteString("Your home directory is where you live; workspaces are where you work.\n")
+	b.WriteString("You may read and edit files only inside your home directory and these\n")
+	b.WriteString("workspace roots — the file tools enforce this. Everything else on this\n")
+	b.WriteString("machine is out of bounds; do not try to route around the limit via\n")
+	b.WriteString("bash. If a task needs a directory outside this list, say so and ask\n")
+	b.WriteString("the user to add it as a workspace.\n\n")
 	b.WriteString("## Context discipline\n")
 	b.WriteString("- Each envelope carries one message, not room history. When you need\n")
 	b.WriteString("  surrounding context from a group thread, call fetch_thread_messages\n")
@@ -66,9 +85,24 @@ func residentParticipantSystemPrompt(p participant.Participant, memory string) s
 	return b.String()
 }
 
-func namedParticipantPrompt(p participant.Participant, memory, prompt string) string {
+// renderWorkspaceManifest renders the registered workspace list for the
+// "Workspaces and file scope" prompt section: one "- {Name} — {Root}" line
+// per workspace, or "(none yet)" when the list is empty.
+func renderWorkspaceManifest(registered []workspaces.Workspace) string {
+	if len(registered) == 0 {
+		return "(none yet)\n"
+	}
 	var b strings.Builder
-	b.WriteString(residentParticipantSystemPrompt(p, memory))
+	for _, ws := range registered {
+		name := firstNonEmpty(ws.Name, ws.Root)
+		fmt.Fprintf(&b, "- %s — %s\n", name, strings.TrimSpace(ws.Root))
+	}
+	return b.String()
+}
+
+func namedParticipantPrompt(p participant.Participant, memory, prompt string, registered []workspaces.Workspace) string {
+	var b strings.Builder
+	b.WriteString(residentParticipantSystemPrompt(p, memory, registered))
 	b.WriteString("\n\n## Request\n")
 	b.WriteString(strings.TrimSpace(prompt))
 	return b.String()
@@ -92,7 +126,24 @@ func (s *Server) residentPromptForParticipant(p participant.Participant) (string
 	if err != nil {
 		return "", err
 	}
-	return residentParticipantSystemPrompt(p, memory), nil
+	return residentParticipantSystemPrompt(p, memory, s.registeredWorkspaces()), nil
+}
+
+// registeredWorkspaces reads the user's workspace roster from the desktop's
+// projects store. Read fresh on every prompt rebuild: the list changes
+// rarely (adding/removing a workspace) and each change is an accepted
+// one-time prompt-cache invalidation, same as MEMORY.md edits (resident
+// doc §5 cache discipline).
+func (s *Server) registeredWorkspaces() []workspaces.Workspace {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	list, err := workspaces.List(s.rt.WuuHome)
+	if err != nil {
+		providers.DebugLogf("read registered workspaces: %v", err)
+		return nil
+	}
+	return list
 }
 
 func (s *Server) readParticipantMemory(p participant.Participant) (string, error) {

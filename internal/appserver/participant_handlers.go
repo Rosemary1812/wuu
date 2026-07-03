@@ -160,7 +160,7 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		prompt = namedParticipantPrompt(p, memory, prompt)
+		prompt = namedParticipantPrompt(p, memory, prompt, s.registeredWorkspaces())
 	}
 	if subagentType == "" {
 		subagentType = agentcontrol.DefaultSubagentType

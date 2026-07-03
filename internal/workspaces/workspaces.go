@@ -1,0 +1,72 @@
+// Package workspaces reads the user's registered workspace roots — the
+// projects added through the desktop sidebar's 添加工作区 entry. The desktop
+// main process persists them to <wuuHome>/projects.json; the Go core reads
+// the same file as its source of truth for the resident prompt manifest and
+// the file-tool scope whitelist.
+package workspaces
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Workspace is one registered workspace root.
+type Workspace struct {
+	Name string `json:"name"`
+	Root string `json:"path"`
+}
+
+type projectStore struct {
+	Projects []Workspace `json:"projects"`
+}
+
+// projectsFileName matches the desktop ProjectManager's store file
+// (desktop/src/main/projects.ts).
+const projectsFileName = "projects.json"
+
+// List returns the registered workspaces from <wuuHome>/projects.json.
+// A missing store file means no workspaces yet (nil, nil). Entries with an
+// empty path are dropped.
+func List(wuuHome string) ([]Workspace, error) {
+	wuuHome = strings.TrimSpace(wuuHome)
+	if wuuHome == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(filepath.Join(wuuHome, projectsFileName))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var store projectStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil, err
+	}
+	out := make([]Workspace, 0, len(store.Projects))
+	for _, project := range store.Projects {
+		root := strings.TrimSpace(project.Root)
+		if root == "" {
+			continue
+		}
+		out = append(out, Workspace{
+			Name: strings.TrimSpace(project.Name),
+			Root: root,
+		})
+	}
+	return out, nil
+}
+
+// Roots returns just the root paths of the registered workspaces.
+func Roots(list []Workspace) []string {
+	out := make([]string, 0, len(list))
+	for _, ws := range list {
+		if root := strings.TrimSpace(ws.Root); root != "" {
+			out = append(out, root)
+		}
+	}
+	return out
+}

@@ -1,10 +1,14 @@
 package appserver
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
 func TestResidentParticipantSystemPromptFull(t *testing.T) {
@@ -13,7 +17,10 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		Role:    "general-purpose",
 		Tagline: "随时开工的常驻搭档",
 	}
-	got := residentParticipantSystemPrompt(p, "remembered: always quote first.\n")
+	got := residentParticipantSystemPrompt(p, "remembered: always quote first.\n", []workspaces.Workspace{
+		{Name: "wuu", Root: "/repos/wuu"},
+		{Name: "", Root: "/repos/unnamed"},
+	})
 	want := strings.Join([]string{
 		"You are Andy, a resident named agent in this workspace. You are a",
 		"continuous identity: one brain, one ongoing session. Direct messages",
@@ -60,6 +67,24 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"  explicitly @mentioned. Do not @mention someone just to be polite; an",
 		"  @mention is a request for their time.",
 		"",
+		"## Building teams and groups",
+		"You can create group threads (create_group) and add named teammates to",
+		"groups you belong to (add_group_member). Create a group only for an",
+		"ongoing purpose — a project, a standing topic — never for a one-off",
+		"question; prefer reusing an existing group. When the user asks for a",
+		"team, you may also create new named teammates with manage_participant.",
+		"",
+		"## Workspaces and file scope",
+		"The user's registered workspaces (name — root path):",
+		"- wuu — /repos/wuu",
+		"- /repos/unnamed — /repos/unnamed",
+		"Your home directory is where you live; workspaces are where you work.",
+		"You may read and edit files only inside your home directory and these",
+		"workspace roots — the file tools enforce this. Everything else on this",
+		"machine is out of bounds; do not try to route around the limit via",
+		"bash. If a task needs a directory outside this list, say so and ask",
+		"the user to add it as a workspace.",
+		"",
 		"## Context discipline",
 		"- Each envelope carries one message, not room history. When you need",
 		"  surrounding context from a group thread, call fetch_thread_messages",
@@ -78,7 +103,7 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 
 func TestResidentParticipantSystemPromptOmitsEmptyMemory(t *testing.T) {
 	p := participant.Participant{Name: "Noel", Role: "reviewer", Tagline: "find regressions"}
-	got := residentParticipantSystemPrompt(p, "   \n  ")
+	got := residentParticipantSystemPrompt(p, "   \n  ", nil)
 	if strings.Contains(got, "## Memory") {
 		t.Errorf("prompt must not include memory section when memory is empty:\n%s", got)
 	}
@@ -88,11 +113,37 @@ func TestResidentParticipantSystemPromptOmitsEmptyMemory(t *testing.T) {
 	if !strings.Contains(got, "Your role: reviewer. How teammates describe you: find regressions.") {
 		t.Errorf("prompt must include role/tagline line:\n%s", got)
 	}
+	if !strings.Contains(got, "The user's registered workspaces (name — root path):\n(none yet)\n") {
+		t.Errorf("empty workspace roster must render (none yet):\n%s", got)
+	}
+}
+
+func TestResidentPromptForParticipantReadsProjectsStore(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = t.TempDir()
+	store := `{"projects":[{"id":"a","name":"demo","path":"/repos/demo"}]}`
+	if err := os.WriteFile(filepath.Join(rt.WuuHome, "projects.json"), []byte(store), 0o644); err != nil {
+		t.Fatalf("write projects.json: %v", err)
+	}
+	srv := New(rt, &lockedBuffer{})
+	participantID := saveNamedParticipant(t, rt, "Noel", "reviewer", "")
+
+	p, err := session.GetParticipant(rt.SessionDir, participantID)
+	if err != nil {
+		t.Fatalf("load participant: %v", err)
+	}
+	prompt, err := srv.residentPromptForParticipant(p)
+	if err != nil {
+		t.Fatalf("residentPromptForParticipant: %v", err)
+	}
+	if !strings.Contains(prompt, "- demo — /repos/demo") {
+		t.Errorf("prompt must list the registered workspace:\n%s", prompt)
+	}
 }
 
 func TestNamedParticipantPromptAppendsRequestToResidentPrompt(t *testing.T) {
 	p := participant.Participant{Name: "Pip", Role: "general-purpose"}
-	got := namedParticipantPrompt(p, "", "  do the thing  ")
+	got := namedParticipantPrompt(p, "", "  do the thing  ", nil)
 	if !strings.Contains(got, "continuous identity: one brain, one ongoing session") {
 		t.Errorf("task prompt must reuse resident rules:\n%s", got)
 	}
