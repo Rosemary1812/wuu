@@ -1403,3 +1403,39 @@
     minmax(0, 1fr);
   column-gap: var(--sidebar-nav-column-gap);
 }
+
+/* Sidebar section drag-to-reorder (T7).
+ *
+ * - `.sidebar-section-row.can-reorder` mirrors SessionTabs: the header
+ *   turns into a grab cursor and disables touch panning / native text
+ *   selection while the user is starting a drag.
+ * - `.dragging` on the in-list original fades the source to ~22% so
+ *   the user can read the floating DragOverlay cleanly. The overlay
+ *   itself sits at near-full opacity with a soft elevation shadow.
+ * - The DragOverlay wrapper keeps pointer-events off so it doesn't
+ *   intercept the drop target.
+ */
+.sidebar-section-row.can-reorder {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.sidebar-section-row.can-reorder:active,
+.sidebar-section-row.dragging {
+  cursor: grabbing;
+}
+
+.sidebar-section-row.dragging {
+  opacity: 0.22;
+}
+
+.sidebar-section-drag-overlay {
+  cursor: grabbing;
+  opacity: 0.98;
+  pointer-events: none;
+  transform: scale(1.025);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 9px 24px var(--ink-overlay-12);
+}

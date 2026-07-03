@@ -2,15 +2,19 @@ import {
   Archive,
   Bot,
   BotMessageSquare,
+  ChevronRight,
   Clock,
   CornerDownRight,
   Download,
   FileText,
+  Folder,
   FolderOpen,
   FolderPlus,
   LayoutGrid,
   List as ListIcon,
+  MessageSquare,
   MessageSquarePlus,
+  MessagesSquare,
   MoreHorizontal,
   Pin,
   Plus,
@@ -20,13 +24,39 @@ import {
   Upload,
   Wrench,
 } from "lucide-react";
-import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
-import { SidebarSection } from "./SidebarSection";
+import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 
 /**
@@ -105,6 +135,143 @@ export function reconcileSidebarSectionOrder(
   return out;
 }
 
+/**
+ * Pure reorder helper: returns the order with `activeId` moved to the
+ * position of `overId`. Pure so the drag-end logic is testable without
+ * mounting the DOM or stubbing dnd-kit. Behavior contract:
+ *   - overId is null / empty / equal to activeId → returns the input
+ *     unchanged. dnd-kit occasionally emits "no over" when the pointer
+ *     releases outside any droppable; we treat that as a no-op.
+ *   - Either id absent from the order → returns the input unchanged.
+ *     This preserves the persisted order when something exotic happens
+ *     (e.g. the active section was removed from the reconcile result
+ *     while the drag was in flight).
+ */
+export function reorderSidebarSections(
+  order: string[],
+  activeId: string,
+  overId: string | null | undefined,
+): string[] {
+  if (!overId || activeId === overId) return order;
+  const from = order.indexOf(activeId);
+  const to = order.indexOf(overId);
+  if (from === -1 || to === -1) return order;
+  return arrayMove(order, from, to);
+}
+
+// Context that lets SidebarSection — a shared component used by both
+// the non-sortable pinned section and the sortable Agents / 对话 / 项目
+// sections — pick up the dnd-kit activator listeners when it's inside a
+// SortableSection. Default value is null so non-sortable callsites
+// (the pinned section) fall through to the no-drag-handle path and the
+// header still works as a plain toggle.
+//
+// The context itself lives in SidebarSection so the consumer side
+// (SidebarSection) and provider side (SortableSection, below) share a
+// single import without a circular type dependency. SidebarSection
+// also exports the hook SidebarSection uses to read the handle.
+
+type SectionHeaderInfo = {
+  label: string;
+  iconKind: string;
+  CollapsedIcon: React.ComponentType<{ className?: string }>;
+  ExpandedIcon: React.ComponentType<{ className?: string }>;
+};
+
+function SectionDragPreview({
+  info,
+}: {
+  info: SectionHeaderInfo;
+}): JSX.Element {
+  // Header-only preview rendered inside <DragOverlay>. Mirrors the
+  // SidebarSection anatomy (icon pair + label + chevron) so the floating
+  // preview reads as the same row the user grabbed. No toggle button —
+  // DragOverlay should be inert while dragging.
+  return (
+    <div className="sidebar-section-drag-overlay">
+      <div className="sidebar-section-row project-row expanded">
+        <span className="project-row-icon">
+          <info.CollapsedIcon
+            className="icon-lg project-row-icon-state collapsed"
+            data-project-icon-kind={info.iconKind}
+            data-project-icon-state="collapsed"
+            aria-hidden="true"
+          />
+          <info.ExpandedIcon
+            className="icon-lg project-row-icon-state expanded"
+            data-project-icon-kind={info.iconKind}
+            aria-hidden="true"
+          />
+        </span>
+        <span className="project-row-label">
+          <span className="project-row-name">{info.label}</span>
+          <ChevronRight
+            className="project-row-chevron icon"
+            aria-hidden="true"
+          />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SortableSection({
+  id,
+  className,
+  ariaLabel,
+  headerInfo,
+  registerHeaderInfo,
+  children,
+}: {
+  id: string;
+  className: string;
+  ariaLabel: string;
+  headerInfo: SectionHeaderInfo;
+  // Called on every render with the current id → info mapping so the
+  // DragOverlay can render the right header while a drag is in flight.
+  // Kept as a callback rather than a side-effect of mounting because
+  // sectionOrder is reconciled on every project-list change and stale
+  // ids must drop out of the lookup cleanly.
+  registerHeaderInfo: (id: string, info: SectionHeaderInfo | null) => void;
+  children: ReactNode;
+}): JSX.Element {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  useEffect(() => {
+    registerHeaderInfo(id, headerInfo);
+    return () => {
+      registerHeaderInfo(id, null);
+    };
+  }, [id, headerInfo, registerHeaderInfo]);
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  const dragHandleProps: HTMLAttributes<HTMLButtonElement> = {
+    ...attributes,
+    ...listeners,
+  };
+  return (
+    <section
+      ref={setNodeRef}
+      className={className}
+      aria-label={ariaLabel}
+      data-section-id={id}
+      style={style}
+    >
+      <SidebarSectionDragHandleContext.Provider value={{ dragHandleProps, isDragging }}>
+        {children}
+      </SidebarSectionDragHandleContext.Provider>
+    </section>
+  );
+}
+
 export function AppSidebar({
   state,
   sidebarProjects,
@@ -149,6 +316,7 @@ export function AppSidebar({
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
   onSelectProjectThread,
+  onReorderSections,
   onPointerEnter,
   onPointerLeave,
   onOpenSettings,
@@ -223,6 +391,13 @@ export function AppSidebar({
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
+  // Fires when the user drops a reorderable sidebar section in a new
+  // position. The next array is the FULL sectionOrder with the moved
+  // entry swapped into place. App.tsx persists this via the same
+  // sidebarSectionOrder effect that already exists. Optional so test
+  // harnesses and other consumers can render the sidebar without
+  // wiring persistence — production callers (App.tsx) always provide it.
+  onReorderSections?: (nextOrder: string[]) => void;
   onPointerEnter?: () => void;
   onPointerLeave?: () => void;
   onOpenSettings: () => void;
@@ -274,6 +449,49 @@ export function AppSidebar({
   // Active state is passed into ProjectList so the row highlights even though
   // it has no DesktopProject entry in state.projects.
   const sidebarScratchPseudoActive = state.activeContext?.kind === "no_project";
+
+  // Drag-and-drop reorder wiring for the reorderable sections. The 6px
+  // activation distance lets plain clicks on the header (collapse toggle)
+  // and on threads inside the section pass through without triggering a
+  // drag — matches SessionTabs so the two surfaces share a feel.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+  const [draggingSectionID, setDraggingSectionID] = useState<string | undefined>();
+  function handleDragStart(event: DragStartEvent): void {
+    setDraggingSectionID(String(event.active.id));
+  }
+  function handleDragEnd(event: DragEndEvent): void {
+    const activeID = String(event.active.id);
+    const overID = event.over ? String(event.over.id) : undefined;
+    const next = reorderSidebarSections(sectionOrder, activeID, overID);
+    if (next !== sectionOrder) {
+      onReorderSections?.(next);
+    }
+    setDraggingSectionID(undefined);
+  }
+  function handleDragCancel(): void {
+    setDraggingSectionID(undefined);
+  }
+  // Each SortableSection calls back into this registry on every render
+  // with its id → header info. The DragOverlay reads from this map to
+  // render the right header for the currently dragged section. Using a
+  // ref (not state) avoids an extra render when a child mounts and
+  // keeps the lookup cheap during high-frequency drag pointer moves.
+  const sectionHeaderInfoByIDRef = useRef<Map<string, SectionHeaderInfo>>(new Map());
+  const registerSectionHeaderInfo = (
+    id: string,
+    info: SectionHeaderInfo | null,
+  ): void => {
+    if (info === null) {
+      sectionHeaderInfoByIDRef.current.delete(id);
+    } else {
+      sectionHeaderInfoByIDRef.current.set(id, info);
+    }
+  };
+  const draggingSectionInfo = draggingSectionID
+    ? sectionHeaderInfoByIDRef.current.get(draggingSectionID)
+    : undefined;
 
   return (
     <aside
@@ -439,7 +657,20 @@ export function AppSidebar({
               </section>
             );
           })()}
-          {sectionOrder.map((key) => {
+          {sectionOrder.length > 0 ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <SortableContext
+                items={sectionOrder}
+                strategy={verticalListSortingStrategy}
+              >
+                {sectionOrder.map((key) => {
             if (key === SIDEBAR_SECTION_AGENTS) {
               const collapsed = collapsedProjectIDs.has(SIDEBAR_SECTION_AGENTS);
               const rosterMenu = rosterContextMenu ? (
@@ -545,108 +776,114 @@ export function AppSidebar({
                 </div>
               );
               return (
-                <Fragment key={SIDEBAR_SECTION_AGENTS}>
-                  <section
-                    className="participant-roster-section"
-                    aria-label="Agents"
-                    data-section-id={SIDEBAR_SECTION_AGENTS}
+                <SortableSection
+                  key={SIDEBAR_SECTION_AGENTS}
+                  id={SIDEBAR_SECTION_AGENTS}
+                  className="participant-roster-section"
+                  ariaLabel="Agents"
+                  headerInfo={{
+                    label: "Agents",
+                    iconKind: "agents",
+                    CollapsedIcon: Bot,
+                    ExpandedIcon: BotMessageSquare,
+                  }}
+                  registerHeaderInfo={registerSectionHeaderInfo}
+                >
+                  <SidebarSection
+                    expanded={!collapsed}
+                    iconKind="agents"
+                    CollapsedIcon={Bot}
+                    ExpandedIcon={BotMessageSquare}
+                    label="Agents"
+                    ariaLabel={`${collapsed ? "展开" : "收起"} Agents`}
+                    title={collapsed ? "展开 Agents" : "收起 Agents"}
+                    onToggle={() =>
+                      onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)
+                    }
+                    actions={rosterActions}
                   >
-                    <SidebarSection
-                      expanded={!collapsed}
-                      iconKind="agents"
-                      CollapsedIcon={Bot}
-                      ExpandedIcon={BotMessageSquare}
-                      label="Agents"
-                      ariaLabel={`${collapsed ? "展开" : "收起"} Agents`}
-                      title={collapsed ? "展开 Agents" : "收起 Agents"}
-                      onToggle={() =>
-                        onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)
-                      }
-                      actions={rosterActions}
-                    >
-                      <div className="participant-roster-list">
-                        {participants.length === 0 ? (
-                          <button
-                            type="button"
-                            className="participant-roster-row empty"
-                            disabled={!state.initialized}
-                            onClick={onCreateParticipant}
-                          >
-                            <span
-                              className="participant-roster-status"
-                              data-status="offline"
-                            />
-                            <span className="participant-roster-name">添加 Agent</span>
-                            <span className="participant-roster-meta">常驻身份</span>
-                          </button>
-                        ) : (
-                          participants.map((participant) => {
-                            const isBusy = busyParticipantIDs.has(participant.id);
-                            const isActiveDM =
-                              activeDMParticipantID === participant.id;
-                            const isUnread = unreadDMParticipantIDs.has(participant.id);
-                            const status = isBusy ? "busy" : "online";
-                            const avatar = (
-                              <span className="participant-roster-avatar" aria-hidden="true">
-                                {participant.avatar_image ? (
-                                  <img
-                                    className="participant-roster-avatar-image"
-                                    src={participant.avatar_image}
-                                    alt=""
-                                    loading="lazy"
-                                  />
-                                ) : participant.avatar ? (
-                                  participant.avatar
-                                ) : (
-                                  "•"
-                                )}
-                              </span>
-                            );
-                            const className = [
-                              "participant-roster-row",
-                              isActiveDM ? "active" : "",
-                              isUnread ? "has-unread" : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ");
-                            return (
-                              <button
-                                key={participant.id}
-                                type="button"
-                                className={className}
-                                onClick={() => onSelectParticipant(participant)}
-                                onContextMenu={(event) => {
-                                  event.preventDefault();
-                                  setRosterContextMenu({
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                    participant,
-                                  });
-                                }}
-                              >
-                                <span
-                                  className="participant-roster-status"
-                                  data-status={status}
-                                  title={isBusy ? "运行中" : "在线"}
+                    <div className="participant-roster-list">
+                      {participants.length === 0 ? (
+                        <button
+                          type="button"
+                          className="participant-roster-row empty"
+                          disabled={!state.initialized}
+                          onClick={onCreateParticipant}
+                        >
+                          <span
+                            className="participant-roster-status"
+                            data-status="offline"
+                          />
+                          <span className="participant-roster-name">添加 Agent</span>
+                          <span className="participant-roster-meta">常驻身份</span>
+                        </button>
+                      ) : (
+                        participants.map((participant) => {
+                          const isBusy = busyParticipantIDs.has(participant.id);
+                          const isActiveDM =
+                            activeDMParticipantID === participant.id;
+                          const isUnread = unreadDMParticipantIDs.has(participant.id);
+                          const status = isBusy ? "busy" : "online";
+                          const avatar = (
+                            <span className="participant-roster-avatar" aria-hidden="true">
+                              {participant.avatar_image ? (
+                                <img
+                                  className="participant-roster-avatar-image"
+                                  src={participant.avatar_image}
+                                  alt=""
+                                  loading="lazy"
                                 />
-                                {avatar}
-                                <span className="participant-roster-copy">
-                                  <span className="participant-roster-name">
-                                    {participant.name}
-                                  </span>
-                                  <span className="participant-roster-meta">
-                                    {participant.tagline || participant.role || "named"}
-                                  </span>
+                              ) : participant.avatar ? (
+                                participant.avatar
+                              ) : (
+                                "•"
+                              )}
+                            </span>
+                          );
+                          const className = [
+                            "participant-roster-row",
+                            isActiveDM ? "active" : "",
+                            isUnread ? "has-unread" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ");
+                          return (
+                            <button
+                              key={participant.id}
+                              type="button"
+                              className={className}
+                              onClick={() => onSelectParticipant(participant)}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                setRosterContextMenu({
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                  participant,
+                                });
+                              }}
+                            >
+                              <span
+                                className="participant-roster-status"
+                                data-status={status}
+                                title={isBusy ? "运行中" : "在线"}
+                              />
+                              {avatar}
+                              <span className="participant-roster-copy">
+                                <span className="participant-roster-name">
+                                  {participant.name}
                                 </span>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </SidebarSection>
-                  </section>
+                                <span className="participant-roster-meta">
+                                  {participant.tagline || participant.role || "named"}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </SidebarSection>
                   {rosterMenu}
-                </Fragment>
+                </SortableSection>
               );
             }
             // For SCRATCH_PSEUDO_PROJECT_ID or any real project id, look up
@@ -666,11 +903,18 @@ export function AppSidebar({
               ? "项目"
               : `项目 ${project.name}`;
             return (
-              <section
+              <SortableSection
                 key={key}
+                id={key}
                 className="project-section"
-                aria-label={sectionAriaLabel}
-                data-section-id={key}
+                ariaLabel={sectionAriaLabel}
+                headerInfo={{
+                  label: isScratchPseudo ? "对话" : project.name,
+                  iconKind: isScratchPseudo ? "conversation" : "project",
+                  CollapsedIcon: isScratchPseudo ? MessageSquare : Folder,
+                  ExpandedIcon: isScratchPseudo ? MessagesSquare : FolderOpen,
+                }}
+                registerHeaderInfo={registerSectionHeaderInfo}
               >
                 <ProjectGroup
                   project={project}
@@ -693,9 +937,22 @@ export function AppSidebar({
                   onArchiveThread={onArchiveThread}
                   onClearArchiveConfirm={onClearArchiveConfirm}
                 />
-              </section>
+              </SortableSection>
             );
           })}
+              </SortableContext>
+              <DragOverlay
+                dropAnimation={{
+                  duration: 150,
+                  easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+                }}
+              >
+                {draggingSectionInfo ? (
+                  <SectionDragPreview info={draggingSectionInfo} />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          ) : null}
         </div>
         <div className="sidebar-settings">
           <button

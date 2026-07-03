@@ -6926,6 +6926,7 @@ export function App(): JSX.Element {
         onSelectProjectThread={(projectID, threadID) =>
           void selectProjectThread(projectID, threadID)
         }
+        onReorderSections={setSidebarSectionOrder}
         onPointerEnter={() => setSidebarDrawerOpen(true)}
         onPointerLeave={() => setSidebarDrawerOpen(false)}
         onOpenSettings={() => {

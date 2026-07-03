@@ -1,6 +1,26 @@
 import { ChevronRight } from "lucide-react";
-import { type ReactNode } from "react";
+import { createContext, type HTMLAttributes, type ReactNode, useContext } from "react";
 import { SectionRowIcon } from "./ThreadSidebar";
+
+/**
+ * dnd-kit activator context shared between SortableSection (AppSidebar)
+ * and SidebarSection. The default value is `null`, so callsites that
+ * are NOT inside a SortableSection (notably the pinned 置顶 section,
+ * which is fixed-position and never reorderable) read null and render
+ * the header as a plain toggle — no drag listeners leak into pinned.
+ */
+export type SidebarSectionDragHandle = {
+  dragHandleProps: HTMLAttributes<HTMLButtonElement>;
+  isDragging: boolean;
+};
+
+export const SidebarSectionDragHandleContext = createContext<SidebarSectionDragHandle | null>(
+  null,
+);
+
+export function useSidebarSectionDragHandle(): SidebarSectionDragHandle | null {
+  return useContext(SidebarSectionDragHandleContext);
+}
 
 /**
  * Shared section header + collapse-body component.
@@ -78,6 +98,13 @@ export function SidebarSection({
   onToggle: () => void;
   children?: ReactNode;
 }): JSX.Element {
+  // Pulled from the SortableSection provider so the header <button>
+  // becomes the dnd-kit activator and the reduced-opacity visual lands
+  // on the dragged source. Null when this section isn't sortable (置顶
+  // — fixed-position and never inside a SortableContext).
+  const dragHandle = useSidebarSectionDragHandle();
+  const dragHandleProps = dragHandle?.dragHandleProps;
+  const isDragging = dragHandle?.isDragging ?? false;
   const headerClassName = [
     "project-row",
     "sidebar-section-row",
@@ -85,6 +112,8 @@ export function SidebarSection({
     expanded ? "expanded" : "",
     pending ? "pending-switch" : "",
     unread ? "has-unread" : "",
+    isDragging ? "dragging" : "",
+    dragHandleProps ? "can-reorder" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -100,6 +129,7 @@ export function SidebarSection({
           aria-current={active ? "page" : undefined}
           title={title}
           onClick={onToggle}
+          {...dragHandleProps}
         >
           <SectionRowIcon
             collapsed={!expanded}
