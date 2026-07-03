@@ -464,6 +464,15 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		threadRuntime.StreamRunner.APIModel = apiModel
 		threadRuntime.StreamRunner.UpdateSystemPrompt(prompt)
 	}
+	if threadRuntime.Toolkit != nil {
+		threadRuntime.Toolkit.SetParticipantIdentity(participantID)
+		threadRuntime.Toolkit.SetParticipantSpeechEnabled(true)
+		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
+	}
+	if threadRuntime.AgentControl != nil {
+		threadRuntime.AgentControl.EnableParticipantSpeech(participantID)
+		threadRuntime.AgentControl.SetAgentParticipantID(participantID, participantID)
+	}
 	th.mu.Lock()
 	if !th.running {
 		th.ModelProvider = providerName

@@ -30,6 +30,10 @@ func (t *DeclineTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "One short reason shown as muted text in the conversation.",
 				},
+				"thread_id": map[string]any{
+					"type":        "string",
+					"description": "Target conversation thread id. Required when the addressed batch came from multiple threads.",
+				},
 			},
 			"required": []string{"reason"},
 		},
@@ -37,11 +41,12 @@ func (t *DeclineTool) Definition() providers.ToolDefinition {
 }
 
 func (t *DeclineTool) Execute(ctx context.Context, args string) (string, error) {
-	if t == nil || t.env == nil || t.env.AgentControl == nil {
-		return "", errors.New("decline: agent control not configured")
+	if t == nil || t.env == nil {
+		return "", errors.New("decline: participant speech not configured")
 	}
 	var params struct {
-		Reason string `json:"reason"`
+		Reason   string `json:"reason"`
+		ThreadID string `json:"thread_id"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", err
@@ -50,15 +55,18 @@ func (t *DeclineTool) Execute(ctx context.Context, args string) (string, error) 
 	if reason == "" {
 		return "", errors.New("decline: reason is required")
 	}
-	msg, err := t.env.AgentControl.PostParticipantMessage(ctx, t.env.AgentID, "decline", reason, "")
+	speech := participantSpeech(t.env)
+	if speech == nil {
+		return "", errors.New("decline: participant speech not configured")
+	}
+	err := speech.Decline(ctx, reason, params.ThreadID)
 	if err != nil {
 		return "", err
 	}
 	result := map[string]any{
-		"action":         "decline",
-		"status":         "declined",
-		"agent_id":       msg.AgentID,
-		"participant_id": msg.ParticipantID,
+		"action":    "decline",
+		"status":    "declined",
+		"thread_id": strings.TrimSpace(params.ThreadID),
 	}
 	data, err := json.Marshal(result)
 	if err != nil {

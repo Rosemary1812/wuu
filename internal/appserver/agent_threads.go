@@ -122,74 +122,85 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 			if !ok {
 				return
 			}
-			now := msg.CreatedAt
-			if now.IsZero() {
-				now = time.Now().UTC()
+			if err := s.publishParticipantMessage(threadID, msg); err != nil {
+				providers.DebugLogf("publish participant message for thread %q: %v", threadID, err)
 			}
-			name := firstNonEmpty(msg.TaskName, msg.AgentType, msg.AgentID)
-			if summary, ok := s.resolveParticipantSummary(msg.ParticipantID); ok && strings.TrimSpace(summary.Name) != "" {
-				name = summary.Name
-			}
-			rec := persistedMessage{
-				Role:          "participant",
-				Content:       msg.Text,
-				ClientID:      strings.TrimSpace(msg.AgentID),
-				Name:          name,
-				ParticipantID: msg.ParticipantID,
-				PostKind:      msg.Kind,
-				ThreadID:      msg.ThreadID,
-				At:            now,
-			}
-			if strings.TrimSpace(s.rt.SessionDir) != "" {
-				err := session.AppendHistoryRecord(s.rt.SessionDir, threadID, session.HistoryRecord{
-					Role:          rec.Role,
-					Content:       rec.Content,
-					ClientID:      rec.ClientID,
-					Name:          rec.Name,
-					ParticipantID: rec.ParticipantID,
-					PostKind:      rec.PostKind,
-					ThreadID:      rec.ThreadID,
-					At:            rec.At,
-				})
-				if err == nil {
-					if meta, ok, findErr := session.Find(s.rt.SessionDir, threadID); findErr == nil && ok {
-						_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
-					}
-				}
-			}
-			if strings.TrimSpace(rec.ThreadID) != "" {
-				continue
-			}
-
-			th := s.thread(threadID)
-			if th == nil {
-				continue
-			}
-			th.mu.Lock()
-			turn, item, createdTurn := th.appendParticipantMessageLocked(rec, now, s.resolveParticipantSummary)
-			thread := th.snapshotLocked()
-			th.mu.Unlock()
-			if createdTurn {
-				_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
-					ThreadID: threadID,
-					Turn:     turn,
-				})
-			}
-			_ = s.writeNotification(NotificationItemStarted, ItemStartedNotification{
-				ThreadID:    threadID,
-				TurnID:      turn.ID,
-				Item:        item,
-				StartedAtMS: now.UnixMilli(),
-			})
-			_ = s.writeNotification(NotificationItemCompleted, ItemCompletedNotification{
-				ThreadID:      threadID,
-				TurnID:        turn.ID,
-				Item:          item,
-				CompletedAtMS: now.UnixMilli(),
-			})
-			_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
 		}
 	}
+}
+
+func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.ParticipantMessage) error {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return errors.New("thread_id is required")
+	}
+	now := msg.CreatedAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	name := firstNonEmpty(msg.TaskName, msg.AgentType, msg.AgentID)
+	if summary, ok := s.resolveParticipantSummary(msg.ParticipantID); ok && strings.TrimSpace(summary.Name) != "" {
+		name = summary.Name
+	}
+	rec := persistedMessage{
+		Role:          "participant",
+		Content:       msg.Text,
+		ClientID:      strings.TrimSpace(msg.AgentID),
+		Name:          name,
+		ParticipantID: msg.ParticipantID,
+		PostKind:      msg.Kind,
+		ThreadID:      msg.ThreadID,
+		At:            now,
+	}
+	if strings.TrimSpace(s.rt.SessionDir) != "" {
+		if err := session.AppendHistoryRecord(s.rt.SessionDir, threadID, session.HistoryRecord{
+			Role:          rec.Role,
+			Content:       rec.Content,
+			ClientID:      rec.ClientID,
+			Name:          rec.Name,
+			ParticipantID: rec.ParticipantID,
+			PostKind:      rec.PostKind,
+			ThreadID:      rec.ThreadID,
+			At:            rec.At,
+		}); err != nil {
+			return err
+		}
+		if meta, ok, findErr := session.Find(s.rt.SessionDir, threadID); findErr == nil && ok {
+			_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
+		}
+	}
+	if strings.TrimSpace(rec.ThreadID) != "" {
+		return nil
+	}
+
+	th := s.thread(threadID)
+	if th == nil {
+		return nil
+	}
+	th.mu.Lock()
+	turn, item, createdTurn := th.appendParticipantMessageLocked(rec, now, s.resolveParticipantSummary)
+	thread := th.snapshotLocked()
+	th.mu.Unlock()
+	if createdTurn {
+		_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+			ThreadID: threadID,
+			Turn:     turn,
+		})
+	}
+	_ = s.writeNotification(NotificationItemStarted, ItemStartedNotification{
+		ThreadID:    threadID,
+		TurnID:      turn.ID,
+		Item:        item,
+		StartedAtMS: now.UnixMilli(),
+	})
+	_ = s.writeNotification(NotificationItemCompleted, ItemCompletedNotification{
+		ThreadID:      threadID,
+		TurnID:        turn.ID,
+		Item:          item,
+		CompletedAtMS: now.UnixMilli(),
+	})
+	_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+	return nil
 }
 
 func (s *Server) isRootAgentSnapshot(control *agentcontrol.AgentControl, threadID string, snap subagent.SubAgentSnapshot) bool {

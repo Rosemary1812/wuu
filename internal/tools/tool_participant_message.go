@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
@@ -21,7 +22,7 @@ func (t *PostMessageTool) Name() string { return "post_message" }
 func (t *PostMessageTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "post_message",
-		Description: "Post one signed message from this worker into the visible conversation or a task thread. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only with thread_id for important task-thread progress. Silence is valid; do not post routine status.",
+		Description: "Post one signed message from this participant into a visible conversation thread. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only for important progress. Silence is valid; do not post routine status.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -37,7 +38,7 @@ func (t *PostMessageTool) Definition() providers.ToolDefinition {
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
-					"description": "Conversation subthread id for task-thread updates or scoped questions. Required for update.",
+					"description": "Target conversation thread id. Resident named agents may post to threads they belong to or their own DM thread.",
 				},
 			},
 			"required": []string{"kind", "text"},
@@ -46,8 +47,8 @@ func (t *PostMessageTool) Definition() providers.ToolDefinition {
 }
 
 func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, error) {
-	if t == nil || t.env == nil || t.env.AgentControl == nil {
-		return "", errors.New("post_message: agent control not configured")
+	if t == nil || t.env == nil {
+		return "", errors.New("post_message: participant speech not configured")
 	}
 	var params struct {
 		Kind     string `json:"kind"`
@@ -61,7 +62,11 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 	if kind == "" {
 		kind = "result"
 	}
-	msg, err := t.env.AgentControl.PostParticipantMessage(ctx, t.env.AgentID, kind, params.Text, params.ThreadID)
+	speech := participantSpeech(t.env)
+	if speech == nil {
+		return "", errors.New("post_message: participant speech not configured")
+	}
+	msg, err := speech.PostMessage(ctx, kind, params.Text, params.ThreadID)
 	if err != nil {
 		return "", err
 	}
@@ -95,4 +100,50 @@ func (t *PostMessageTool) Classify(string) ToolClassification {
 
 func (t *PostMessageTool) DeclaredCapability() (capability.Capability, bool) {
 	return capability.CapabilityTaskCommunicate, true
+}
+
+func participantSpeech(env *Env) ParticipantSpeech {
+	if env == nil {
+		return nil
+	}
+	if env.ParticipantSpeech != nil {
+		return env.ParticipantSpeech
+	}
+	if env.AgentControl == nil {
+		return nil
+	}
+	return agentControlParticipantSpeech{env: env}
+}
+
+type agentControlParticipantSpeech struct {
+	env *Env
+}
+
+func (s agentControlParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string) (PostedMessage, error) {
+	if s.env == nil || s.env.AgentControl == nil {
+		return PostedMessage{}, errors.New("post_message: agent control not configured")
+	}
+	msg, err := s.env.AgentControl.PostParticipantMessage(ctx, s.env.AgentID, kind, text, targetThreadID)
+	if err != nil {
+		return PostedMessage{}, err
+	}
+	return PostedMessage{
+		AgentID:       msg.AgentID,
+		ParticipantID: msg.ParticipantID,
+		Kind:          msg.Kind,
+		ThreadID:      msg.ThreadID,
+		Text:          msg.Text,
+		CreatedAt:     msg.CreatedAt,
+	}, nil
+}
+
+func (s agentControlParticipantSpeech) Decline(ctx context.Context, reason, targetThreadID string) error {
+	if strings.TrimSpace(reason) == "" {
+		return errors.New("decline: reason is required")
+	}
+	_, err := s.PostMessage(ctx, "decline", reason, targetThreadID)
+	if err != nil {
+		return fmt.Errorf("decline: %w", err)
+	}
+	return nil
 }

@@ -207,6 +207,10 @@ type Env struct {
 	GoalRuntime *goalruntime.Runtime
 	AgentID     string
 	AgentPath   string
+	// ParticipantID is set for conversation-native named-agent runtimes.
+	// It lets participant tools act under the stable participant identity
+	// without changing the thread/root agent identity used by other tools.
+	ParticipantID string
 	// ParticipantSpeechEnabled is an internal app-server authorization for
 	// conversation-native participant runs. Ordinary subagents keep this false.
 	ParticipantSpeechEnabled bool
@@ -220,6 +224,7 @@ type Env struct {
 	NativeDeferredToolDiscovery bool
 	ProcessMgr                  *proc.Manager
 	AgentControl                *agentcontrol.AgentControl
+	ParticipantSpeech           ParticipantSpeech
 	Skills                      []skills.Skill
 	Workflows                   []workflow.Definition
 	// ActiveSurface is the compiled model profile surface currently
@@ -262,6 +267,20 @@ type Env struct {
 	inceptionState inceptionFailureState
 
 	toolTelemetry toolTelemetry
+}
+
+type PostedMessage struct {
+	AgentID       string    `json:"agent_id,omitempty"`
+	ParticipantID string    `json:"participant_id,omitempty"`
+	Kind          string    `json:"kind"`
+	ThreadID      string    `json:"thread_id"`
+	Text          string    `json:"text,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitempty"`
+}
+
+type ParticipantSpeech interface {
+	PostMessage(ctx context.Context, kind, text, targetThreadID string) (PostedMessage, error)
+	Decline(ctx context.Context, reason, targetThreadID string) error
 }
 
 // RecordRead records a successful read_file invocation.

@@ -153,11 +153,13 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		GoalRuntime:                 t.env.GoalRuntime,
 		AgentID:                     t.env.AgentID,
 		AgentPath:                   t.env.AgentPath,
+		ParticipantID:               t.env.ParticipantID,
 		ParticipantSpeechEnabled:    t.env.ParticipantSpeechEnabled,
 		ToolSearchEnabled:           t.env.ToolSearchEnabled,
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
 		ProcessMgr:                  t.env.ProcessMgr,
 		AgentControl:                t.env.AgentControl,
+		ParticipantSpeech:           t.env.ParticipantSpeech,
 		Skills:                      t.env.Skills,
 		Workflows:                   t.env.Workflows,
 		OnFileChanged:               t.env.OnFileChanged,
@@ -452,6 +454,13 @@ func (t *Toolkit) SetAgentIdentity(id, path string) {
 	t.env.AgentPath = strings.TrimSpace(path)
 }
 
+func (t *Toolkit) SetParticipantIdentity(id string) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ParticipantID = strings.TrimSpace(id)
+}
+
 // SetOnFileChanged sets the callback fired after write_file/edit_file
 // successfully modifies a file. Used to dispatch FileChanged hooks.
 func (t *Toolkit) SetOnFileChanged(fn func(absPath string)) {
@@ -704,6 +713,13 @@ func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
 		delete(t.activeSurface.Tools, "manage_participant")
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
+}
+
+func (t *Toolkit) SetParticipantSpeech(speech ParticipantSpeech) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ParticipantSpeech = speech
 }
 
 func enableParticipantSpeechSurface(surface *capability.Surface) {

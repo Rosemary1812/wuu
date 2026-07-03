@@ -848,6 +848,62 @@ func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
 	}
 }
 
+func TestNewThreadRuntimeWorkerDoesNotInheritParticipantSpeech(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-5-codex",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &sessionRecordingClient{}
+	rt.WorkerClient = client
+	threadRT, err := rt.NewThreadRuntime("thread-resident-parent")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	defer func() {
+		threadRT.AgentControl.StopAll()
+		time.Sleep(100 * time.Millisecond)
+	}()
+	threadRT.Toolkit.SetParticipantIdentity("prt-resident")
+	threadRT.Toolkit.SetParticipantSpeechEnabled(true)
+
+	if _, err := threadRT.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "inspect_repo",
+		Prompt:      "inspect the repo",
+		Synchronous: true,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	req := client.LastRequest()
+	for _, def := range req.Tools {
+		switch def.Name {
+		case "post_message", "decline", "manage_participant":
+			t.Fatalf("ordinary worker inherited participant speech tool %q", def.Name)
+		}
+	}
+}
+
 func TestNewThreadRuntimeWorkerUsesWorkerProfileToolSurface(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

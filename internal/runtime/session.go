@@ -798,6 +798,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					applyWorkerToolFilter(workerKit, wt)
 					if control != nil && control.ParticipantSpeechEnabled(meta.ID) {
 						workerKit.SetParticipantSpeechEnabled(true)
+					} else {
+						workerKit.SetParticipantIdentity("")
+						workerKit.SetParticipantSpeech(nil)
+						workerKit.SetParticipantSpeechEnabled(false)
 					}
 					return workerKit, nil
 				},

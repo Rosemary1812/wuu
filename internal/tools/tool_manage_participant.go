@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -14,7 +15,9 @@ type ManageParticipantTool struct {
 	env *Env
 }
 
-func NewManageParticipantTool(env *Env) *ManageParticipantTool { return &ManageParticipantTool{env: env} }
+func NewManageParticipantTool(env *Env) *ManageParticipantTool {
+	return &ManageParticipantTool{env: env}
+}
 
 func (t *ManageParticipantTool) Name() string { return "manage_participant" }
 
@@ -65,7 +68,11 @@ func (t *ManageParticipantTool) Execute(ctx context.Context, args string) (strin
 	if t == nil || t.env == nil || t.env.AgentControl == nil {
 		return "", errors.New("manage_participant: agent control not configured")
 	}
-	result, err := t.env.AgentControl.ManageParticipant(ctx, t.env.AgentID, args)
+	agentID := strings.TrimSpace(t.env.ParticipantID)
+	if agentID == "" {
+		agentID = strings.TrimSpace(t.env.AgentID)
+	}
+	result, err := t.env.AgentControl.ManageParticipant(ctx, agentID, args)
 	if err != nil {
 		return "", err
 	}
