@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS thread_members (
 
 - `Thread` 增加可选字段 `members: ParticipantSummary[]`——成员表的 participant 快照（named only）。无成员的 thread 与 DM thread 该字段缺失或为空，前端不渲染 chips 行。
 - 新 RPC `thread/members/remove`，params `{thread_id, participant_id}`，result `{thread}`（成员更新后的完整 Thread，前端按 pin/archive 同款 upsert 回 state）。显式添加走 composer @（T6 自动入群），本期不做单独的 add RPC。
+- `turn/start` 增加可选字段 `mentions: string[]`（participant_id，对应 §4.2 的 `TurnStartParams.Mentions`）。前端从 prompt 文本解析 roster 名字的 `@Name` 全词匹配得到 ID 列表，**仅在非空时附带该字段**——server 端 JSON 解码 DisallowUnknownFields，空 mentions 省略字段保证后端未落地前普通发送不受影响。
 
 ### 3.2 新表：持久收件箱
 

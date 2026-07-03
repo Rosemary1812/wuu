@@ -14,6 +14,7 @@ import {
   latestCompletedTurnID,
   latestContextUsageForThread,
   markThreadTurnsViewed,
+  mentionedParticipantIDsFromText,
   openForkThreadAsPrimary,
   queryTextsForThread,
   reduceServerEvent,
@@ -1896,5 +1897,51 @@ describe("latestContextUsageForThread", () => {
     });
     const result = latestContextUsageForThread(state, t);
     expect(result).toBeUndefined();
+  });
+});
+
+describe("mentionedParticipantIDsFromText", () => {
+  const roster = [
+    { id: "prt-noel", name: "Noel" },
+    { id: "prt-noe", name: "Noe" },
+    { id: "prt-qing", name: "小青" },
+    { id: "prt-blank", name: "  " },
+  ];
+
+  it("matches whole-word @Name mentions", () => {
+    expect(mentionedParticipantIDsFromText("@Noel 看下这个 PR", roster)).toEqual([
+      "prt-noel",
+    ]);
+  });
+
+  it("prefers the longest name when one is a prefix of another", () => {
+    expect(mentionedParticipantIDsFromText("@Noel hi", roster)).toEqual([
+      "prt-noel",
+    ]);
+    expect(mentionedParticipantIDsFromText("@Noe hi", roster)).toEqual([
+      "prt-noe",
+    ]);
+  });
+
+  it("matches CJK names followed by punctuation", () => {
+    expect(mentionedParticipantIDsFromText("@小青，帮忙评审", roster)).toEqual([
+      "prt-qing",
+    ]);
+  });
+
+  it("collects multiple distinct mentions without duplicates", () => {
+    expect(
+      mentionedParticipantIDsFromText("@Noel @小青 @Noel 一起看看", roster),
+    ).toEqual(["prt-noel", "prt-qing"]);
+  });
+
+  it("returns empty for text without mentions or blank text", () => {
+    expect(mentionedParticipantIDsFromText("没有提及任何人", roster)).toEqual([]);
+    expect(mentionedParticipantIDsFromText("   ", roster)).toEqual([]);
+    expect(mentionedParticipantIDsFromText("mail@Noel.com", roster)).toEqual([]);
+  });
+
+  it("ignores blank-named participants", () => {
+    expect(mentionedParticipantIDsFromText("@   hello", roster)).toEqual([]);
   });
 });

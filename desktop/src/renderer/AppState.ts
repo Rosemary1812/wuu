@@ -1609,6 +1609,39 @@ export function busyDMParticipantIDs(
   return ids;
 }
 
+/**
+ * Resolve @Name mentions in a prompt to participant IDs for the
+ * turn/start `mentions` param (docs/plans/2026-07-03-resident-named-
+ * agents.md §3.1). Whole-word matching: "@Noel" never resolves to a
+ * roster entry named "Noe" because the lookahead requires the name to
+ * end at whitespace, end-of-text, or CJK/latin punctuation.
+ */
+export function mentionedParticipantIDsFromText(
+  text: string,
+  participants: ReadonlyArray<{ id: string; name: string }>,
+): string[] {
+  const source = text.trim();
+  if (source === "") {
+    return [];
+  }
+  const ids = new Set<string>();
+  const candidates = [...participants]
+    .filter((participant) => participant.name.trim() !== "")
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const participant of candidates) {
+    const escaped = escapeRegExp(participant.name.trim());
+    const pattern = new RegExp(`(^|\\s)@${escaped}(?=$|\\s|[,.!?，。；：、])`);
+    if (pattern.test(source)) {
+      ids.add(participant.id);
+    }
+  }
+  return [...ids];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function createDraftSessionTab(
   id: string,
   context: RuntimeContext,
