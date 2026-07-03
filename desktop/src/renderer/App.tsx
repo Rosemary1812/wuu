@@ -174,6 +174,7 @@ import {
   latestPlanUpdateForThread,
   mergeListedThreads,
   markThreadTurnsViewed,
+  mentionedParticipantIDsFromText,
   notificationTargetsActiveThread,
   openForkThreadAsPrimary,
   persistActiveSessionTabDraft,
@@ -6021,6 +6022,7 @@ export function App(): JSX.Element {
         images,
         files,
         selectedPermissionMode,
+        mentionedParticipantIDsFromText(text, participants),
       );
       setState((current) =>
         updateThreadByID(
@@ -6209,6 +6211,7 @@ export function App(): JSX.Element {
         images,
         files,
         selectedPermissionMode,
+        mentionedParticipantIDsFromText(text, participants),
       );
       setState((current) =>
         updateThreadByID(
@@ -6339,6 +6342,7 @@ export function App(): JSX.Element {
         images,
         files,
         selectedPermissionMode,
+        mentionedParticipantIDsFromText(text, participants),
       );
       setState((current) =>
         updateThreadByID(

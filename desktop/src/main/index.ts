@@ -650,6 +650,7 @@ app.whenReady().then(async () => {
       images?: InputImage[],
       files?: InputFile[],
       permissionMode?: string,
+      mentions?: string[],
     ) =>
       appServerClientPool.request<{ turn: Turn }>("turn/start", {
         thread_id: threadId,
@@ -657,6 +658,10 @@ app.whenReady().then(async () => {
         images: images ?? [],
         files: files ?? [],
         ...(permissionMode === undefined ? {} : { permission_mode: permissionMode }),
+        // Attached only when non-empty: the server rejects unknown params
+        // fields, so plain sends stay compatible with backends that have
+        // not landed mentions support yet.
+        ...(mentions && mentions.length > 0 ? { mentions } : {}),
       }),
   );
   ipcMain.handle(

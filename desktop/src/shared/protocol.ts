@@ -1377,6 +1377,11 @@ export type WuuDesktopApi = {
     images?: InputImage[],
     files?: InputFile[],
     permissionMode?: string,
+    // mentions carries @-mentioned participant IDs. Only attached to the
+    // turn/start request when non-empty: the server decodes params with
+    // DisallowUnknownFields, so plain sends must not carry the field
+    // before the backend supports it.
+    mentions?: string[],
   ) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,
