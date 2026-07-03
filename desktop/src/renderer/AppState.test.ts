@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeContext, Thread } from "../shared/protocol";
+import type { RuntimeContext, Thread, ThreadItem, Turn } from "../shared/protocol";
 import {
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
+  chatMessagesFromTurns,
   conversationPaneThreadsByID,
   createThreadSessionTab,
   handleStreamingNotification,
@@ -1943,5 +1944,92 @@ describe("mentionedParticipantIDsFromText", () => {
 
   it("ignores blank-named participants", () => {
     expect(mentionedParticipantIDsFromText("@   hello", roster)).toEqual([]);
+  });
+});
+
+describe("chatMessagesFromTurns", () => {
+  function turn(id: string, items: ThreadItem[]): Pick<Turn, "id" | "items"> {
+    return { id, items };
+  }
+
+  it("maps a plain user_message to a user row", () => {
+    const item: ThreadItem = { id: "item-1", type: "user_message", text: "hi" };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "user", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
+
+  it("maps a user_message with non-empty envelope_meta to an envelope row", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      text: "hi",
+      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 1 }],
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "envelope", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
+
+  it("keeps a user_message with an empty envelope_meta array as a user row", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      text: "hi",
+      envelope_meta: [],
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "user", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
+
+  it("maps a participant_message to a participant row", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "participant_message",
+      text: "看这里",
+      post_kind: "result",
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "participant", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
+
+  it("keeps a decline participant_message as a participant row", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "participant_message",
+      text: "无需回应",
+      post_kind: "decline",
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "participant", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
+
+  it("drops agent_message, tool_call, reasoning, and other non-whitelisted items", () => {
+    const items: ThreadItem[] = [
+      { id: "item-1", type: "agent_message", text: "final answer" },
+      { id: "item-2", type: "tool_call", name: "bash" },
+      { id: "item-3", type: "reasoning", text: "thinking..." },
+      { id: "item-4", type: "task_card" },
+      { id: "item-5", type: "context_compaction" },
+      { id: "item-6", type: "error" },
+    ];
+    const rows = chatMessagesFromTurns([turn("turn-1", items)]);
+    expect(rows).toEqual([]);
+  });
+
+  it("uses stable `${turn.id}:${item.id}` row ids across multiple turns", () => {
+    const rows = chatMessagesFromTurns([
+      turn("turn-1", [{ id: "item-1", type: "user_message", text: "a" }]),
+      turn("turn-2", [{ id: "item-1", type: "user_message", text: "b" }]),
+    ]);
+    expect(rows.map((row) => row.id)).toEqual(["turn-1:item-1", "turn-2:item-1"]);
   });
 });

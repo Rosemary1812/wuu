@@ -1609,6 +1609,38 @@ export function busyDMParticipantIDs(
   return ids;
 }
 
+export type ChatMessageRow =
+  | { kind: "user"; id: string; turnID: string; item: ThreadItem }
+  | { kind: "envelope"; id: string; turnID: string; item: ThreadItem }
+  | { kind: "participant"; id: string; turnID: string; item: ThreadItem };
+
+/**
+ * Flatten a thread's turns into the chat-view message stream. Whitelist
+ * semantics (chat-style-threads-design.md §2): only user messages,
+ * envelope meta rows, and tool-posted participant messages are chat
+ * messages; the agent's working transcript never reaches the DOM.
+ */
+export function chatMessagesFromTurns(
+  turns: ReadonlyArray<Pick<Turn, "id" | "items">>,
+): ChatMessageRow[] {
+  const rows: ChatMessageRow[] = [];
+  for (const turn of turns) {
+    for (const item of turn.items ?? []) {
+      const id = `${turn.id}:${item.id}`;
+      if (item.type === "user_message") {
+        if (item.envelope_meta && item.envelope_meta.length > 0) {
+          rows.push({ kind: "envelope", id, turnID: turn.id, item });
+        } else {
+          rows.push({ kind: "user", id, turnID: turn.id, item });
+        }
+      } else if (item.type === "participant_message") {
+        rows.push({ kind: "participant", id, turnID: turn.id, item });
+      }
+    }
+  }
+  return rows;
+}
+
 /**
  * Resolve @Name mentions in a prompt to participant IDs for the
  * turn/start `mentions` param (docs/plans/2026-07-03-resident-named-
