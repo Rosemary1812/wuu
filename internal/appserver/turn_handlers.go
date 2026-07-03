@@ -404,13 +404,25 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		done:                 make(chan struct{}),
 	}
 	threadRuntime.AgentControl.Subscribe(sub.statusCh)
-	go s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, sub.statusCh, sub.done)
+	sub.wg.Add(1)
+	go func() {
+		defer sub.wg.Done()
+		s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, sub.statusCh, sub.done)
+	}()
 
 	threadRuntime.AgentControl.SubscribeStream(sub.streamCh)
-	go s.forwardAgentStreamNotifications(threadID, threadRuntime.AgentControl, sub.streamCh, sub.done)
+	sub.wg.Add(1)
+	go func() {
+		defer sub.wg.Done()
+		s.forwardAgentStreamNotifications(threadID, threadRuntime.AgentControl, sub.streamCh, sub.done)
+	}()
 
 	threadRuntime.AgentControl.SubscribeParticipantMessages(sub.participantMessageCh)
-	go s.forwardParticipantMessages(threadID, threadRuntime.AgentControl, sub.participantMessageCh, sub.done)
+	sub.wg.Add(1)
+	go func() {
+		defer sub.wg.Done()
+		s.forwardParticipantMessages(threadID, threadRuntime.AgentControl, sub.participantMessageCh, sub.done)
+	}()
 	return sub
 }
 

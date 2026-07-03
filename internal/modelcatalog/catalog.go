@@ -82,6 +82,75 @@ func Providers() ([]Provider, error) {
 	return loaded.Providers, nil
 }
 
+func ProviderByID(id string) (Provider, bool) {
+	id = normalizeID(id)
+	if id == "" {
+		return Provider{}, false
+	}
+	providers, err := Providers()
+	if err != nil {
+		return Provider{}, false
+	}
+	for _, provider := range providers {
+		if normalizeID(provider.ID) == id {
+			return provider, true
+		}
+	}
+	return Provider{}, false
+}
+
+// CodexSubscriptionCatalogProvider returns the OpenAI catalog metadata that is
+// safe to reuse for ChatGPT/Codex subscription models. It intentionally does
+// not make MatchProvider treat the Codex backend as the public OpenAI API or as
+// an OpenAI-compatible gateway; callers opt into this narrow model-alias layer.
+func CodexSubscriptionCatalogProvider(modelIDs ...string) (Provider, bool) {
+	openai, ok := ProviderByID("openai")
+	if !ok {
+		return Provider{}, false
+	}
+	requested := make(map[string]bool, len(modelIDs))
+	for _, modelID := range modelIDs {
+		modelID = strings.TrimSpace(modelID)
+		if modelID != "" {
+			requested[modelID] = true
+		}
+	}
+	if len(requested) == 0 {
+		return Provider{}, false
+	}
+	filtered := openai
+	filtered.Models = nil
+	for _, model := range openai.Models {
+		id := strings.TrimSpace(model.ID)
+		apiID := strings.TrimSpace(model.APIID)
+		if requested[id] || (apiID != "" && requested[apiID]) {
+			filtered.Models = append(filtered.Models, model)
+		}
+	}
+	if len(filtered.Models) == 0 {
+		return Provider{}, false
+	}
+	return filtered, true
+}
+
+func CodexSubscriptionModelAliases(modelID string) []Model {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return nil
+	}
+	provider, ok := CodexSubscriptionCatalogProvider(modelID)
+	if !ok {
+		return nil
+	}
+	out := make([]Model, 0, len(provider.Models))
+	for _, model := range provider.Models {
+		if strings.TrimSpace(model.ID) != modelID && strings.TrimSpace(model.APIID) == modelID {
+			out = append(out, model)
+		}
+	}
+	return out
+}
+
 func MatchProvider(providerName string, provider config.ProviderConfig) (Provider, bool) {
 	providers, err := Providers()
 	if err != nil {
@@ -130,6 +199,11 @@ func bestProviderMatch(providers []Provider, providerName string, provider confi
 func EnrichProvider(providerName string, provider config.ProviderConfig, modelIDs ...string) (string, config.ProviderConfig) {
 	catalogProvider, ok := MatchProvider(providerName, provider)
 	if !ok {
+		if isCodexSubscriptionProviderType(provider.Type) {
+			if catalogProvider, ok := CodexSubscriptionCatalogProvider(modelIDs...); ok {
+				return providerName, MergeProvider(provider, catalogProvider)
+			}
+		}
 		return providerName, provider
 	}
 	return catalogProvider.ID, MergeProvider(provider, catalogProvider, modelIDs...)
@@ -146,7 +220,9 @@ func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, mod
 	if strings.TrimSpace(out.BaseURL) == "" && strings.TrimSpace(out.API) != "" {
 		out.BaseURL = out.API
 	}
-	if strings.TrimSpace(out.APIKeyEnv) == "" && strings.TrimSpace(out.APIKey) == "" {
+	if strings.TrimSpace(out.APIKeyEnv) == "" &&
+		strings.TrimSpace(out.APIKey) == "" &&
+		!isCodexSubscriptionProviderType(out.Type) {
 		out.APIKeyEnv = firstCatalogEnv(catalogProvider.Env)
 	}
 
@@ -488,6 +564,15 @@ func allowProviderIdentityCatalogMatch(provider config.ProviderConfig) bool {
 		}
 	}
 	return false
+}
+
+func isCodexSubscriptionProviderType(providerType string) bool {
+	switch normalizeID(providerType) {
+	case "openai-codex", "codex-subscription", "chatgpt-codex":
+		return true
+	default:
+		return false
+	}
 }
 
 func isOfficialEndpointForType(providerType, endpoint string) bool {

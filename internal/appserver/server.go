@@ -81,6 +81,7 @@ type threadRuntimeSubscription struct {
 	streamCh             chan subagent.StreamNotification
 	participantMessageCh chan agentcontrol.ParticipantMessage
 	done                 chan struct{}
+	wg                   sync.WaitGroup
 	once                 sync.Once
 }
 
@@ -91,6 +92,7 @@ func (sub *threadRuntimeSubscription) stop() {
 	sub.once.Do(func() {
 		close(sub.done)
 	})
+	sub.wg.Wait()
 }
 
 type threadRuntimeUpdate struct {
@@ -162,7 +164,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingGoalContinuation:     make(map[string]bool),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 
-		guardianBreaker:        guardian.NewRejectionCircuitBreaker(),
+		guardianBreaker: guardian.NewRejectionCircuitBreaker(),
 	}
 	if rt != nil {
 		s.installToolApprovalReviewer(rt.Toolkit)

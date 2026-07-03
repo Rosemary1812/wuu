@@ -591,7 +591,7 @@ func TestProviderSummariesDoNotShowOfficialModelsForCustomAnthropicEndpoint(t *t
 	}
 }
 
-func TestProviderSummariesDoNotShowOpenCodeModelsForCodexSubscription(t *testing.T) {
+func TestProviderSummariesExposeCodexSubscriptionAliasesOnly(t *testing.T) {
 	cfg := config.Config{
 		DefaultProvider: "openai-codex",
 		Providers: map[string]config.ProviderConfig{
@@ -607,8 +607,15 @@ func TestProviderSummariesDoNotShowOpenCodeModelsForCodexSubscription(t *testing
 	if len(summaries) != 1 {
 		t.Fatalf("unexpected summaries: %+v", summaries)
 	}
-	if len(summaries[0].Models) != 1 || summaries[0].Models[0].ID != "gpt-5.5" {
-		t.Fatalf("Codex subscription should only expose selected model before live load, got %+v", summaries[0].Models)
+	if len(summaries[0].Models) != 2 {
+		t.Fatalf("Codex subscription should expose selected model and safe aliases before live load, got %+v", summaries[0].Models)
+	}
+	if providerModelByID(t, summaries[0], "gpt-5.5").ID != "gpt-5.5" {
+		t.Fatalf("selected Codex model missing: %+v", summaries[0].Models)
+	}
+	fast := providerModelByID(t, summaries[0], "gpt-5.5-fast")
+	if fast.DisplayName != "GPT-5.5 Fast" || fast.Source != "models.dev" {
+		t.Fatalf("unexpected Codex fast alias summary: %+v", fast)
 	}
 }
 
@@ -1901,11 +1908,14 @@ func TestServerConfigCodexModels(t *testing.T) {
 	if result.Provider != "openai-codex" || result.Model != "gpt-5.5" || result.Effort != "xhigh" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if len(result.Models) != 3 || result.Models[0].Slug != "gpt-5.5" || result.Models[1].Slug != "gpt-5.4" || result.Models[2].Slug != "spark" {
+	if len(result.Models) != 5 || result.Models[0].Slug != "gpt-5.5" || result.Models[1].Slug != "gpt-5.5-fast" || result.Models[2].Slug != "gpt-5.4" || result.Models[3].Slug != "gpt-5.4-fast" || result.Models[4].Slug != "spark" {
 		t.Fatalf("unexpected models: %+v", result.Models)
 	}
 	if got := result.Models[0].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "xhigh" {
 		t.Fatalf("unexpected reasoning levels: %+v", got)
+	}
+	if got := result.Models[1].SupportedReasoning; len(got) != 2 || got[0] != "low" || got[1] != "xhigh" {
+		t.Fatalf("unexpected fast alias reasoning levels: %+v", got)
 	}
 
 	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"config/model/update","params":{"provider":"openai-codex","model":"gpt-5.5","variant":"xhigh"}}`)); err != nil {
@@ -1925,6 +1935,23 @@ func TestServerConfigCodexModels(t *testing.T) {
 			rt.StreamRunner.ContextWindowOverride,
 			rt.StreamRunner.MaxInputTokens,
 			rt.StreamRunner.OutputReserveTokens)
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"3","method":"config/model/update","params":{"provider":"openai-codex","model":"gpt-5.5-fast","variant":"xhigh"}}`)); err != nil {
+		t.Fatalf("config/model/update fast: %v", err)
+	}
+	fastUpdate := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "3")["result"])
+	if fastUpdate.Provider != "openai-codex" || fastUpdate.Model != "gpt-5.5-fast" || fastUpdate.Variant != "xhigh" {
+		t.Fatalf("unexpected fast update: %+v", fastUpdate)
+	}
+	if rt.StreamRunner.Model != "gpt-5.5-fast" || rt.StreamRunner.APIModel != "gpt-5.5" {
+		t.Fatalf("fast runtime model mismatch: model=%q api=%q", rt.StreamRunner.Model, rt.StreamRunner.APIModel)
+	}
+	if got := rt.StreamRunner.ProviderOptions["serviceTier"]; got != "priority" {
+		t.Fatalf("fast runtime service tier = %#v in %#v", got, rt.StreamRunner.ProviderOptions)
+	}
+	if got := rt.StreamRunner.ProviderOptions["reasoningEffort"]; got != "xhigh" {
+		t.Fatalf("fast runtime reasoning effort = %#v in %#v", got, rt.StreamRunner.ProviderOptions)
 	}
 }
 
@@ -6615,7 +6642,8 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
 		Type:        agentcontrol.DefaultSubagentType,
@@ -6703,7 +6731,8 @@ func TestServerQueuesAgentCompletionWhileRootTurnIsRunning(t *testing.T) {
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	req := fmt.Sprintf(`{"id":"1","method":"turn/start","params":{"thread_id":%q,"prompt":"keep working"}}`, threadID)
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
@@ -6774,7 +6803,8 @@ func TestServerSkipsDuplicateAgentCompletionNotificationsAfterAutoResume(t *test
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	res, err := coord.Spawn(context.Background(), agentcontrol.SpawnRequest{
 		Type:        agentcontrol.DefaultSubagentType,
@@ -6833,7 +6863,8 @@ func TestServerSkipsAutoResumeWhenAwaitAgentsAlreadyReturnedResult(t *testing.T)
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	req := fmt.Sprintf(`{"id":"1","method":"turn/start","params":{"thread_id":%q,"prompt":"keep working"}}`, threadID)
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {

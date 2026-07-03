@@ -748,16 +748,7 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 		return s.writeResponse(req.ID, nil, err)
 	}
 	s.cacheCodexModels(resolvedName, models)
-	out := make([]CodexModelSummary, 0, len(models))
-	for _, model := range models {
-		out = append(out, CodexModelSummary{
-			Slug:                  model.Slug,
-			DisplayName:           model.DisplayName,
-			DefaultReasoningLevel: model.DefaultReasoningLevel,
-			SupportedReasoning:    append([]string(nil), model.SupportedReasoning...),
-			SupportedInAPI:        model.SupportedInAPI,
-		})
-	}
+	out := codexModelSummaries(models)
 	providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
 	ruleProviderName, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, providerCfg.Model)
 	selection := modelvariant.ResolveForProvider(ruleProviderName, ruleProviderCfg, providerCfg.Model, cfg.Agent.Variant, cfg.Agent.Effort)
@@ -1194,6 +1185,12 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 		hasCatalog = true
 		ruleProviderName = matched.ID
 		ruleProvider = modelcatalog.MergeProvider(provider, matched)
+	} else if isCodexProviderType(provider.Type) {
+		if matched, ok := modelcatalog.CodexSubscriptionCatalogProvider(codexCatalogModelIDs(provider)...); ok {
+			catalogProvider = matched
+			hasCatalog = true
+			ruleProvider = modelcatalog.MergeProvider(provider, matched)
+		}
 	}
 
 	models := make(map[string]ProviderModelSummary, len(ruleProvider.Models)+1)
@@ -1368,28 +1365,128 @@ func codexLiveModelConfigs(models []codex.ModelInfo) map[string]config.ProviderM
 		if id == "" {
 			continue
 		}
-		cfg := codexCatalogFallbackModelConfig(id)
-		cfg.ID = id
-		if name := strings.TrimSpace(model.DisplayName); name != "" {
-			cfg.Name = name
+		out[id] = codexLiveModelConfig(model)
+		for _, alias := range modelcatalog.CodexSubscriptionModelAliases(id) {
+			aliasID := strings.TrimSpace(alias.ID)
+			if aliasID == "" {
+				continue
+			}
+			cfg := modelcatalog.MergeModelConfig(modelcatalog.ModelConfig(alias), out[id])
+			applyCodexSubscriptionLimit(aliasID, &cfg)
+			out[aliasID] = cfg
 		}
-		efforts := normalizedCodexEfforts(model.SupportedReasoning)
-		if len(efforts) > 0 || strings.TrimSpace(model.DefaultReasoningLevel) != "" {
-			reasoning := true
-			cfg.Reasoning = &reasoning
-		}
-		if len(efforts) > 0 {
-			cfg.SupportedEfforts = efforts
-			cfg.Variants = codexReasoningVariants(efforts)
-		}
-		if effort := strings.TrimSpace(model.DefaultReasoningLevel); effort != "" {
-			cfg.DefaultEffort = effort
-			cfg.DefaultVariant = effort
-		}
-		applyCodexSubscriptionLimit(id, &cfg)
-		out[id] = cfg
 	}
 	return out
+}
+
+func codexLiveModelConfig(model codex.ModelInfo) config.ProviderModelConfig {
+	id := strings.TrimSpace(model.Slug)
+	cfg := codexCatalogFallbackModelConfig(id)
+	cfg.ID = id
+	if name := strings.TrimSpace(model.DisplayName); name != "" {
+		cfg.Name = name
+	}
+	efforts := normalizedCodexEfforts(model.SupportedReasoning)
+	if len(efforts) > 0 || strings.TrimSpace(model.DefaultReasoningLevel) != "" {
+		reasoning := true
+		cfg.Reasoning = &reasoning
+	}
+	if len(efforts) > 0 {
+		cfg.SupportedEfforts = efforts
+		cfg.Variants = codexReasoningVariants(efforts)
+	}
+	if effort := strings.TrimSpace(model.DefaultReasoningLevel); effort != "" {
+		cfg.DefaultEffort = effort
+		cfg.DefaultVariant = effort
+	}
+	applyCodexSubscriptionLimit(id, &cfg)
+	return cfg
+}
+
+func codexCatalogModelIDs(provider config.ProviderConfig) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(provider.Models)+1)
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	add(provider.Model)
+	for id, model := range provider.Models {
+		add(id)
+		add(model.ID)
+	}
+	return out
+}
+
+func codexModelSummaries(models []codex.ModelInfo) []CodexModelSummary {
+	out := make([]CodexModelSummary, 0, len(models))
+	seen := map[string]bool{}
+	for _, model := range models {
+		id := strings.TrimSpace(model.Slug)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, codexModelSummaryFromLive(model))
+		for _, alias := range modelcatalog.CodexSubscriptionModelAliases(id) {
+			aliasID := strings.TrimSpace(alias.ID)
+			if aliasID == "" || seen[aliasID] {
+				continue
+			}
+			seen[aliasID] = true
+			out = append(out, codexModelSummaryFromCatalogAlias(alias, model))
+		}
+	}
+	return out
+}
+
+func codexModelSummaryFromLive(model codex.ModelInfo) CodexModelSummary {
+	return CodexModelSummary{
+		Slug:                  model.Slug,
+		DisplayName:           model.DisplayName,
+		DefaultReasoningLevel: model.DefaultReasoningLevel,
+		SupportedReasoning:    append([]string(nil), model.SupportedReasoning...),
+		SupportedInAPI:        model.SupportedInAPI,
+	}
+}
+
+func codexModelSummaryFromCatalogAlias(alias modelcatalog.Model, base codex.ModelInfo) CodexModelSummary {
+	efforts := normalizedCodexEfforts(base.SupportedReasoning)
+	if len(efforts) == 0 {
+		efforts = codexReasoningEffortsFromCatalog(alias)
+	}
+	return CodexModelSummary{
+		Slug:                  strings.TrimSpace(alias.ID),
+		DisplayName:           strings.TrimSpace(alias.Name),
+		DefaultReasoningLevel: base.DefaultReasoningLevel,
+		SupportedReasoning:    efforts,
+		SupportedInAPI:        base.SupportedInAPI,
+	}
+}
+
+func codexReasoningEffortsFromCatalog(model modelcatalog.Model) []string {
+	for _, option := range model.ReasoningOptions {
+		if kind, _ := option["type"].(string); strings.TrimSpace(kind) != "effort" {
+			continue
+		}
+		switch values := option["values"].(type) {
+		case []any:
+			out := make([]string, 0, len(values))
+			for _, value := range values {
+				if effort, ok := value.(string); ok {
+					out = append(out, effort)
+				}
+			}
+			return normalizedCodexEfforts(out)
+		case []string:
+			return normalizedCodexEfforts(values)
+		}
+	}
+	return nil
 }
 
 func codexCatalogFallbackModelConfig(modelID string) config.ProviderModelConfig {

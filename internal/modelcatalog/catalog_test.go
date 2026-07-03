@@ -207,6 +207,29 @@ func TestMatchProviderDoesNotTreatCodexSubscriptionAsOpenCodeZen(t *testing.T) {
 		t.Fatalf("Codex subscription provider matched %q", provider.ID)
 	}
 
+	codexProvider, ok := CodexSubscriptionCatalogProvider("gpt-5.5")
+	if !ok {
+		t.Fatal("expected Codex subscription catalog metadata")
+	}
+	var hasFast bool
+	for _, model := range codexProvider.Models {
+		if model.ID == "gpt-5.5-fast" && model.APIID == "gpt-5.5" {
+			hasFast = true
+		}
+	}
+	if !hasFast {
+		t.Fatalf("Codex subscription catalog did not expose gpt-5.5-fast alias: %+v", codexProvider.Models)
+	}
+
+	_, enriched := EnrichProvider("openai-codex", config.ProviderConfig{
+		Type:    "openai-codex",
+		BaseURL: "https://chatgpt.com/backend-api/codex",
+		Model:   "gpt-5.5",
+	}, "gpt-5.5")
+	if enriched.APIKeyEnv != "" {
+		t.Fatalf("Codex subscription provider inherited API key env %q", enriched.APIKeyEnv)
+	}
+
 	provider, ok := MatchProvider("opencode", config.ProviderConfig{
 		Type:    "openai-compatible",
 		BaseURL: "https://opencode.ai/zen/v1",

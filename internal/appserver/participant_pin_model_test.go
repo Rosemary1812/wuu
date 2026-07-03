@@ -112,15 +112,15 @@ func buildParticipantPinRuntime(t *testing.T, workerClient providers.StreamClien
 	}
 
 	rt := &runtime.Session{
-		ProviderName: workerProviderName,
-		Model:        providerCfg.Model,
-		RootDir:      root,
-		ConfigPath:   cfgPath,
-		SessionDir:   filepath.Join(root, ".wuu-state", "sessions"),
-		StreamRunner: &agent.StreamRunner{Client: providers.AdaptStreamClient(&recordingClient{id: "main"}), Model: providerCfg.Model},
+		ProviderName:   workerProviderName,
+		Model:          providerCfg.Model,
+		RootDir:        root,
+		ConfigPath:     cfgPath,
+		SessionDir:     filepath.Join(root, ".wuu-state", "sessions"),
+		StreamRunner:   &agent.StreamRunner{Client: providers.AdaptStreamClient(&recordingClient{id: "main"}), Model: providerCfg.Model},
 		HookDispatcher: hooks.NewDispatcher(nil),
-		WorkerClient: workerClient,
-		ModelRoles:   roleSelections,
+		WorkerClient:   workerClient,
+		ModelRoles:     roleSelections,
 	}
 	return rt
 }
@@ -206,6 +206,7 @@ func TestParticipantStartHonorsModelPinOnConfiguredProvider(t *testing.T) {
 		"alt-provider": {
 			Type:    "anthropic",
 			BaseURL: server.URL,
+			APIKey:  "test-key",
 			Model:   "alt-default",
 		},
 	})
@@ -229,7 +230,8 @@ func TestParticipantStartHonorsModelPinOnConfiguredProvider(t *testing.T) {
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"participant_id":%q,"prompt":"do review"}}`, threadID, participantID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
@@ -287,7 +289,8 @@ func TestParticipantStartModelPinBareModelNameOverridesWorkerDefault(t *testing.
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"participant_id":%q,"prompt":"do review"}}`, threadID, participantID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
@@ -335,7 +338,8 @@ func TestParticipantStartModelPinRejectsUnconfiguredProvider(t *testing.T) {
 	srv.mu.Lock()
 	srv.threads[threadID] = rootThread
 	srv.mu.Unlock()
-	srv.subscribeThreadRuntime(threadID, threadRuntime)
+	rootThread.runtimeSubscription = srv.subscribeThreadRuntime(threadID, threadRuntime)
+	t.Cleanup(func() { releaseThreadRuntime(rootThread) })
 
 	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"participant_id":%q,"prompt":"do review"}}`, threadID, participantID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
