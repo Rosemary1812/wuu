@@ -84,8 +84,8 @@ stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
 `strict_config`, `env`, `allow_tools`, `deny_tools`, `approval_handler`,
-`approval_socket`, `max_turns`, `output_schema`, `no_tools`, `timeout`, and
-`output_last_message`.
+`approval_socket`, `approve`, `no_approval_prompt`, `max_turns`,
+`output_schema`, `no_tools`, `timeout`, and `output_last_message`.
 
 ## Resume
 
