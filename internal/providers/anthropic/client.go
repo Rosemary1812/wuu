@@ -303,8 +303,23 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 	req.Messages = prepared
 	toolSearchEnabled := shouldEnableAnthropicToolSearch(req, support)
 
-	// Parse cache TTL from provider options. Accepted values: "5m", "1h".
-	// Empty or invalid values default to no TTL (5m server default).
+	// Parse cache control options from provider options.
+	// anthropicCache: "auto" (default) or "off" (disable all cache_control markers)
+	// cacheTTL: "5m" (default) or "1h"
+	cacheDisabled := false
+	if cacheVal, ok := req.ProviderOptions["anthropicCache"].(string); ok {
+		cacheVal = strings.TrimSpace(strings.ToLower(cacheVal))
+		switch cacheVal {
+		case "off":
+			cacheDisabled = true
+		case "auto", "":
+			// Default: cache enabled
+		default:
+			// Invalid value, log and use default
+			providers.DebugLogf("buildAnthropicRequest: invalid anthropicCache %q, using default", cacheVal)
+		}
+	}
+
 	cacheTTL := ""
 	if ttlVal, ok := req.ProviderOptions["cacheTTL"].(string); ok {
 		ttlVal = strings.TrimSpace(ttlVal)
@@ -358,7 +373,9 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		}
 	}
 	providers.DebugLogf("buildAnthropicRequest: %d input msgs → %d merged msgs", len(req.Messages), len(payload.Messages))
-	applyAnthropicCacheHint(&payload, req.CacheHint, cacheTTL)
+	if !cacheDisabled {
+		applyAnthropicCacheHint(&payload, req.CacheHint, cacheTTL)
+	}
 	for i := range payload.Messages {
 		payload.Messages[i] = smooshSystemReminderBlocks(payload.Messages[i])
 	}
@@ -373,7 +390,7 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		}
 		providers.DebugLogf("buildAnthropicRequest: role sequence: [%s]", roles.String())
 	}
-	payload.System = buildAnthropicSystem(systemTexts, req.CacheHint, cacheTTL)
+	payload.System = buildAnthropicSystem(systemTexts, req.CacheHint, cacheTTL, cacheDisabled)
 
 	if len(req.Tools) > 0 {
 		payload.Tools = buildAnthropicTools(
@@ -592,11 +609,11 @@ func isFirstPartyAnthropicBaseURL(raw string) bool {
 	return u == "https://api.anthropic.com" || u == "https://api.anthropic.com/v1"
 }
 
-func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint, cacheTTL string) any {
+func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint, cacheTTL string, cacheDisabled bool) any {
 	if len(systemTexts) == 0 {
 		return nil
 	}
-	if !shouldCacheAnthropicSystem(hint) {
+	if !shouldCacheAnthropicSystem(hint) || cacheDisabled {
 		return strings.Join(systemTexts, "\n")
 	}
 	blocks := make([]anthropicSystemBlock, 0, len(systemTexts))

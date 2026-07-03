@@ -2466,3 +2466,92 @@ func TestChat_CacheTTLOption(t *testing.T) {
 		})
 	}
 }
+
+// TestChat_AnthropicCacheKillSwitch verifies that the anthropicCache=off
+// option disables all cache_control markers in the request payload.
+func TestChat_AnthropicCacheKillSwitch(t *testing.T) {
+	testCases := []struct {
+		name     string
+		cache    any
+		expected bool // whether cache_control should be present
+	}{
+		{"cache=auto enables markers", "auto", true},
+		{"cache=off disables markers", "off", false},
+		{"default enables markers", nil, true},
+		{"empty string uses default", "", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request body: %v", err)
+				}
+
+				// Check if system block has cache_control
+				system, ok := body["system"].([]any)
+				if ok && len(system) > 0 {
+					sysBlock, ok := system[0].(map[string]any)
+					if ok {
+						_, hasCacheControl := sysBlock["cache_control"]
+						if tc.expected && !hasCacheControl {
+							t.Fatalf("expected cache_control in system, got none")
+						}
+						if !tc.expected && hasCacheControl {
+							t.Fatalf("did not expect cache_control in system, got %v", sysBlock["cache_control"])
+						}
+					}
+				}
+
+				// Check if message blocks have cache_control
+				msgs, ok := body["messages"].([]any)
+				if ok && len(msgs) > 0 {
+					lastMsg, ok := msgs[len(msgs)-1].(map[string]any)
+					if ok {
+						content, ok := lastMsg["content"].([]any)
+						if ok && len(content) > 0 {
+							lastBlock, ok := content[len(content)-1].(map[string]any)
+							if ok {
+								_, hasCacheControl := lastBlock["cache_control"]
+								if tc.expected && !hasCacheControl {
+									t.Fatalf("expected cache_control in message, got none")
+								}
+								if !tc.expected && hasCacheControl {
+									t.Fatalf("did not expect cache_control in message, got %v", lastBlock["cache_control"])
+								}
+							}
+						}
+					}
+				}
+
+				w.Header().Set("content-type", "application/json")
+				_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+			}))
+			defer server.Close()
+
+			client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+
+			opts := map[string]any{}
+			if tc.cache != nil {
+				opts["anthropicCache"] = tc.cache
+			}
+
+			_, err = client.Chat(context.Background(), providers.ChatRequest{
+				Model: "claude-test",
+				Messages: []providers.ChatMessage{
+					{Role: "system", Content: "sys"},
+					{Role: "user", Content: "hello"},
+				},
+				CacheHint: &providers.CacheHint{StableSystem: true},
+				ProviderOptions: opts,
+			})
+			if err != nil {
+				t.Fatalf("chat error: %v", err)
+			}
+		})
+	}
+}
