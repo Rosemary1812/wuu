@@ -152,6 +152,7 @@ import {
   appendStreamingTokenSample,
   bindActiveSessionTabToThread,
   busyDMParticipantIDs,
+  chatFocusValueForThread,
   cloneSessionTabDraft,
   cloneComposerDraft,
   composerSubmissionDetail,
@@ -164,6 +165,7 @@ import {
   ensureSessionTab,
   fileNameFromPath,
   findDMThread,
+  focusWorkspaceSendValue,
   handleStreamingNotification,
   initialSplitComposerDrafts,
   initialState,
@@ -722,6 +724,13 @@ export function App(): JSX.Element {
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const [selectedPermissionMode, setSelectedPermissionMode] =
     useState<PermissionMode | undefined>(undefined);
+  // Per-thread chat-style "work focus" chip selections made this session.
+  // Keyed by thread ID; absence means the chip was never touched, so the
+  // composer echoes Thread.focus_workspace and turn/start carries no
+  // focus_workspace param (see focusWorkspaceSendValue in AppState.ts).
+  const [chatFocusOverrides, setChatFocusOverrides] = useState<
+    Record<string, string>
+  >({});
   const [codexRuntimeMenu, setCodexRuntimeMenu] =
     useState<CodexRuntimeMenu>(null);
   const [codexModels, setCodexModels] = useState<CodexModelLoadState>({
@@ -3654,6 +3663,21 @@ export function App(): JSX.Element {
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
         participants={participants}
+        chatFocusValue={
+          activeThread && (isDMThread(activeThread) || isGroupThread(activeThread))
+            ? chatFocusValueForThread(activeThread, chatFocusOverrides)
+            : undefined
+        }
+        onSelectChatFocus={(value) => {
+          const threadID = activeThread?.id;
+          if (!threadID) {
+            return;
+          }
+          setChatFocusOverrides((current) => ({
+            ...current,
+            [threadID]: value,
+          }));
+        }}
       />
     );
   }
@@ -6270,6 +6294,10 @@ export function App(): JSX.Element {
         files,
         selectedPermissionMode,
         mentionedParticipantIDsFromText(text, participants),
+        // Only defined when the chat-focus chip changed this session and
+        // differs from the thread's last-known focus_workspace; plain
+        // sends carry nothing extra.
+        focusWorkspaceSendValue(thread, chatFocusOverrides[thread.id]),
       );
       setState((current) =>
         updateThreadByID(
@@ -6459,6 +6487,10 @@ export function App(): JSX.Element {
         files,
         selectedPermissionMode,
         mentionedParticipantIDsFromText(text, participants),
+        focusWorkspaceSendValue(
+          targetThread,
+          chatFocusOverrides[targetThread.id],
+        ),
       );
       setState((current) =>
         updateThreadByID(
@@ -6590,6 +6622,10 @@ export function App(): JSX.Element {
         files,
         selectedPermissionMode,
         mentionedParticipantIDsFromText(text, participants),
+        focusWorkspaceSendValue(
+          targetThread,
+          chatFocusOverrides[targetThread.id],
+        ),
       );
       setState((current) =>
         updateThreadByID(

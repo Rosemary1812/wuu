@@ -58,7 +58,9 @@ afterEach(() => {
   delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   container.remove();
   document.body
-    .querySelectorAll("[data-floating-menu-owner=\"composer-access\"]")
+    .querySelectorAll(
+      "[data-floating-menu-owner=\"composer-access\"], [data-floating-menu-owner=\"composer-focus\"]",
+    )
     .forEach((element) => element.remove());
 });
 
@@ -115,6 +117,8 @@ function renderComposer(props: {
   activeProject?: DesktopProject;
   projects?: DesktopProject[];
   participants?: ParticipantProfile[];
+  chatFocusValue?: string;
+  onSelectChatFocus?: (value: string) => void;
 }): { onSelectPermissionMode: (mode: PermissionMode) => void } {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -189,6 +193,8 @@ function renderComposer(props: {
           tokenSpeedSampledAt={props.tokenSpeedSampledAt}
           tokenSpeedSource={props.tokenSpeedSource}
           participants={props.participants}
+          chatFocusValue={props.chatFocusValue}
+          onSelectChatFocus={props.onSelectChatFocus}
         />
       </ImagePreviewProvider>,
     );
@@ -1385,6 +1391,165 @@ describe("Composer permission menu", () => {
 
     expect(container.textContent).toContain("自定义权限");
     expect(document.body.textContent).toContain("选择任一模式会改为该预设");
+  });
+});
+
+describe("Composer chat focus chip", () => {
+  const projects: DesktopProject[] = [
+    {
+      id: "proj-wuu",
+      name: "wuu",
+      path: "/home/user/wuu",
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    },
+    {
+      id: "proj-blog",
+      name: "blog",
+      path: "/home/user/blog",
+      created_at: "2026-07-01T00:00:00Z",
+      updated_at: "2026-07-01T00:00:00Z",
+    },
+  ];
+
+  function click(element: Element | null | undefined): void {
+    expect(element).not.toBeNull();
+    expect(element).not.toBeUndefined();
+    act(() => {
+      element?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+  }
+
+  it("does not render at all for non-chat threads (chatFocusValue undefined)", () => {
+    renderComposer({ projects });
+    expect(container.querySelector(".chat-focus-chip")).toBeNull();
+  });
+
+  it("renders the default (全部工作区) state as a bare icon with no visible label", () => {
+    renderComposer({ projects, chatFocusValue: "", onSelectChatFocus: vi.fn() });
+    const chip = container.querySelector<HTMLButtonElement>(".chat-focus-chip");
+    expect(chip).not.toBeNull();
+    expect(chip?.classList.contains("is-default")).toBe(true);
+    expect(chip?.querySelector("span")).toBeNull();
+    expect(chip?.getAttribute("aria-label")).toBe("工作焦点：全部工作区");
+    expect(chip?.getAttribute("title")).toBe("全部工作区");
+  });
+
+  it("shows the workspace name (with full name in title) when a project is focused", () => {
+    renderComposer({
+      projects,
+      chatFocusValue: "wuu",
+      onSelectChatFocus: vi.fn(),
+    });
+    const chip = container.querySelector<HTMLButtonElement>(".chat-focus-chip");
+    expect(chip).not.toBeNull();
+    expect(chip?.classList.contains("is-default")).toBe(false);
+    expect(chip?.querySelector("span")?.textContent).toBe("wuu");
+    expect(chip?.getAttribute("title")).toBe("wuu");
+  });
+
+  it("shows ⌂ 个人 for the personal-space focus", () => {
+    renderComposer({
+      projects,
+      chatFocusValue: "~",
+      onSelectChatFocus: vi.fn(),
+    });
+    const chip = container.querySelector<HTMLButtonElement>(".chat-focus-chip");
+    expect(chip?.querySelector("span")?.textContent).toBe("⌂ 个人");
+    expect(chip?.getAttribute("aria-label")).toBe("工作焦点：仅个人空间");
+  });
+
+  it("opens a three-section menu and reports selections through onSelectChatFocus", () => {
+    const onSelectChatFocus = vi.fn();
+    renderComposer({ projects, chatFocusValue: "", onSelectChatFocus });
+
+    click(container.querySelector(".chat-focus-chip"));
+    const menu = document.body.querySelector(
+      "[data-floating-menu-owner=\"composer-focus\"] .chat-focus-menu",
+    );
+    expect(menu).not.toBeNull();
+
+    // Section 1: 全部工作区 (checked, since value is ""); section 2: the
+    // searchable project list; section 3: 仅个人空间.
+    const options = Array.from(
+      menu!.querySelectorAll<HTMLButtonElement>("button[role=\"menuitemradio\"]"),
+    );
+    expect(options.map((option) => option.textContent)).toEqual([
+      "全部工作区",
+      "wuu",
+      "blog",
+      "仅个人空间",
+    ]);
+    expect(
+      options.find((option) => option.textContent === "全部工作区")
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(menu!.querySelector(".project-search input")).not.toBeNull();
+
+    click(options.find((option) => option.textContent === "仅个人空间"));
+    expect(onSelectChatFocus).toHaveBeenCalledWith("~");
+    // Selecting closes the menu.
+    expect(
+      document.body.querySelector("[data-floating-menu-owner=\"composer-focus\"]"),
+    ).toBeNull();
+  });
+
+  it("selects a project by name and can reset back to 全部工作区", () => {
+    const onSelectChatFocus = vi.fn();
+    renderComposer({ projects, chatFocusValue: "~", onSelectChatFocus });
+
+    click(container.querySelector(".chat-focus-chip"));
+    let options = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "[data-floating-menu-owner=\"composer-focus\"] button[role=\"menuitemradio\"]",
+      ),
+    );
+    expect(
+      options.find((option) => option.textContent === "仅个人空间")
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
+    click(options.find((option) => option.textContent === "wuu"));
+    expect(onSelectChatFocus).toHaveBeenCalledWith("wuu");
+
+    click(container.querySelector(".chat-focus-chip"));
+    options = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "[data-floating-menu-owner=\"composer-focus\"] button[role=\"menuitemradio\"]",
+      ),
+    );
+    click(options.find((option) => option.textContent === "全部工作区"));
+    expect(onSelectChatFocus).toHaveBeenCalledWith("");
+  });
+
+  it("filters the project list by the search query without hiding the fixed sections", () => {
+    renderComposer({ projects, chatFocusValue: "", onSelectChatFocus: vi.fn() });
+
+    click(container.querySelector(".chat-focus-chip"));
+    const input = document.body.querySelector<HTMLInputElement>(
+      "[data-floating-menu-owner=\"composer-focus\"] .project-search input",
+    );
+    expect(input).not.toBeNull();
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(input, "blo");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const options = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        "[data-floating-menu-owner=\"composer-focus\"] button[role=\"menuitemradio\"]",
+      ),
+    );
+    expect(options.map((option) => option.textContent)).toEqual([
+      "全部工作区",
+      "blog",
+      "仅个人空间",
+    ]);
   });
 });
 

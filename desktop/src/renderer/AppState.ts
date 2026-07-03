@@ -1759,6 +1759,45 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Resolve the chat-style composer's "work focus" chip value for a
+ * thread: the in-session override (once the user has touched the menu
+ * for this thread) if present, otherwise the thread's own echoed
+ * `focus_workspace` from the last resume, defaulting to "" (全部工作区)
+ * when the thread has never set one.
+ */
+export function chatFocusValueForThread(
+  thread: Pick<Thread, "id" | "focus_workspace"> | undefined,
+  overrides: Readonly<Record<string, string>>,
+): string {
+  if (!thread) {
+    return "";
+  }
+  return overrides[thread.id] ?? thread.focus_workspace ?? "";
+}
+
+/**
+ * Compute the value to send as turn/start's optional `focus_workspace`
+ * param. `overrideValue` is the composer's current in-session chip
+ * selection for the target thread — undefined means the user never
+ * touched the chip this session, so nothing is sent (the thread keeps
+ * whatever focus it already has). When the user did pick a value, it is
+ * only sent if it actually differs from the thread's own last-known
+ * `focus_workspace`; re-selecting the same option (or a value that has
+ * since caught up via a resume) sends nothing, keeping ordinary chat
+ * turns free of the extra param.
+ */
+export function focusWorkspaceSendValue(
+  thread: Pick<Thread, "focus_workspace"> | undefined,
+  overrideValue: string | undefined,
+): string | undefined {
+  if (overrideValue === undefined) {
+    return undefined;
+  }
+  const current = thread?.focus_workspace ?? "";
+  return overrideValue === current ? undefined : overrideValue;
+}
+
 function createDraftSessionTab(
   id: string,
   context: RuntimeContext,

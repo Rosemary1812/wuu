@@ -975,6 +975,28 @@
   opacity: 0.55;
 }
 
+/*
+ * Chat-style (DM/group) composer "work focus" chip. Mirrors
+ * permission-menu-anchor's width cap so a long project name still
+ * truncates via .permission-chip span's existing ellipsis rule instead
+ * of pushing the rest of composer-bar-left around. The default "全部
+ * 工作区" state instead renders through .composer-tool-button (fixed
+ * 32x32, icon only) so it reads as inert as the Paperclip/Slash buttons
+ * beside it until the user actually narrows the focus.
+ */
+.chat-focus-menu-anchor {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 160px;
+  flex: 0 1 auto;
+}
+
+.chat-focus-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .composer-spacer {
   min-width: 0;
   flex: 1 1 8px;

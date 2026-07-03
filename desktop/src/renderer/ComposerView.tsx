@@ -70,6 +70,7 @@ import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSect
 import { ComposerGoalStrip } from "./ComposerGoalStrip";
 import {
   AccessMenu,
+  ChatFocusChip,
   ProjectPickerMenu,
   RuntimePicker,
   permissionModeFromSummary,
@@ -179,7 +180,9 @@ export function Composer({
   contextUsage,
   queryHistorySessionID,
   queryHistory = [],
-  participants = []
+  participants = [],
+  chatFocusValue,
+  onSelectChatFocus
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -251,6 +254,14 @@ export function Composer({
   queryHistorySessionID?: string;
   queryHistory?: string[];
   participants?: ParticipantProfile[];
+  // Chat-style (DM/group) thread "work focus" chip. `chatFocusValue`
+  // doubles as the visibility switch: undefined means the active thread
+  // is not chat-style and the chip is not rendered at all; "" renders
+  // the de-emphasized default (全部工作区), "~" the personal space, any
+  // other string a workspace name. The host owns the per-thread sticky
+  // state (App.tsx chatFocusOverrides + Thread.focus_workspace echo).
+  chatFocusValue?: string;
+  onSelectChatFocus?: (value: string) => void;
 }): JSX.Element {
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
@@ -963,6 +974,14 @@ export function Composer({
                     </FloatingMenuPortal>
                   ) : null}
                 </div>
+                {chatFocusValue !== undefined && onSelectChatFocus ? (
+                  <ChatFocusChip
+                    value={chatFocusValue}
+                    projects={projects}
+                    disabled={readOnly}
+                    onChange={onSelectChatFocus}
+                  />
+                ) : null}
               </div>
               <div className="composer-bar-right">
                 <ComposerTokenGauge

@@ -6,11 +6,13 @@ import {
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   appendTurnTokenSample,
+  chatFocusValueForThread,
   chatMessagesFromTurns,
   conversationPaneThreadsByID,
   groupThreadSummaries,
   pinnedThreadSummaries,
   createThreadSessionTab,
+  focusWorkspaceSendValue,
   handleStreamingNotification,
   initialState,
   isGroupThread,
@@ -2123,6 +2125,69 @@ describe("chatMessagesFromTurns", () => {
     expect(rows).toEqual([
       { kind: "focus", id: "turn-1:item-1", turnID: "turn-1", item },
     ]);
+  });
+});
+
+describe("chatFocusValueForThread", () => {
+  it("returns the empty string (全部工作区) when there is no active thread", () => {
+    expect(chatFocusValueForThread(undefined, {})).toBe("");
+  });
+
+  it("falls back to the thread's own focus_workspace when unset in this session", () => {
+    expect(
+      chatFocusValueForThread({ id: "thread-1", focus_workspace: "~" }, {}),
+    ).toBe("~");
+    expect(
+      chatFocusValueForThread({ id: "thread-1", focus_workspace: "wuu" }, {}),
+    ).toBe("wuu");
+  });
+
+  it("defaults to the empty string when the thread has never set a focus", () => {
+    expect(chatFocusValueForThread({ id: "thread-1" }, {})).toBe("");
+  });
+
+  it("prefers the in-session override for the thread over the thread's own value", () => {
+    expect(
+      chatFocusValueForThread(
+        { id: "thread-1", focus_workspace: "wuu" },
+        { "thread-1": "~" },
+      ),
+    ).toBe("~");
+  });
+
+  it("ignores overrides keyed to a different thread", () => {
+    expect(
+      chatFocusValueForThread(
+        { id: "thread-1", focus_workspace: "wuu" },
+        { "thread-2": "~" },
+      ),
+    ).toBe("wuu");
+  });
+});
+
+describe("focusWorkspaceSendValue", () => {
+  it("sends nothing when the chip was never touched this session", () => {
+    expect(
+      focusWorkspaceSendValue({ focus_workspace: "wuu" }, undefined),
+    ).toBeUndefined();
+    expect(focusWorkspaceSendValue(undefined, undefined)).toBeUndefined();
+  });
+
+  it("sends nothing when the override matches the thread's own value", () => {
+    expect(
+      focusWorkspaceSendValue({ focus_workspace: "wuu" }, "wuu"),
+    ).toBeUndefined();
+    // Undefined/absent focus_workspace on the thread is equivalent to "".
+    expect(focusWorkspaceSendValue({}, "")).toBeUndefined();
+    expect(focusWorkspaceSendValue(undefined, "")).toBeUndefined();
+  });
+
+  it("sends the override when it differs from the thread's own value", () => {
+    expect(focusWorkspaceSendValue({ focus_workspace: "wuu" }, "~")).toBe("~");
+    expect(focusWorkspaceSendValue({}, "~")).toBe("~");
+    // Resetting back to "全部工作区" from something else must still send
+    // the empty string explicitly — it is a real, intentional change.
+    expect(focusWorkspaceSendValue({ focus_workspace: "wuu" }, "")).toBe("");
   });
 });
 

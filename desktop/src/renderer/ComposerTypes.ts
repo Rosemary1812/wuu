@@ -13,6 +13,7 @@ export type FloatingMenuOwner =
   | "composer-runtime"
   | "composer-access"
   | "composer-context-meter"
+  | "composer-focus"
   | "codex-runtime"
   | "composer-query-history";
 export type FloatingMenuPlacement = "above" | "below" | "middle";

@@ -746,6 +746,14 @@ export type Thread = {
   // of the thread_members table (docs/plans/2026-07-03-resident-named-agents.md
   // §3.1). Absent or empty for DM threads and threads without members.
   members?: ParticipantSummary[];
+  // focus_workspace is the sticky "work focus" for a chat-style (DM or
+  // group) thread's composer: "" or absent means the full workspace set
+  // (the default), "~" scopes the resident agent to its personal home
+  // directory only, and any other value names one workspace/project.
+  // The composer echoes this on thread/resume so the focus chip reflects
+  // the thread's last-known state instead of always resetting to
+  // default.
+  focus_workspace?: string;
   archived?: boolean;
   forked_from_id?: string;
   forked_from_turn_id?: string;
@@ -1422,6 +1430,13 @@ export type WuuDesktopApi = {
     // DisallowUnknownFields, so plain sends must not carry the field
     // before the backend supports it.
     mentions?: string[],
+    // focusWorkspace carries the chat-style composer's "work focus" chip
+    // selection ("" all workspaces, "~" personal space, otherwise a
+    // workspace name). Only attached when the caller has computed that
+    // the in-session selection differs from Thread.focus_workspace — see
+    // focusWorkspaceSendValue in AppState.ts — so a plain send that never
+    // touched the chip carries nothing extra.
+    focusWorkspace?: string,
   ) => Promise<{ turn: Turn }>;
   queueTurn: (
     threadId: string,

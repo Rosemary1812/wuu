@@ -652,6 +652,7 @@ app.whenReady().then(async () => {
       files?: InputFile[],
       permissionMode?: string,
       mentions?: string[],
+      focusWorkspace?: string,
     ) =>
       appServerClientPool.request<{ turn: Turn }>("turn/start", {
         thread_id: threadId,
@@ -663,6 +664,11 @@ app.whenReady().then(async () => {
         // fields, so plain sends stay compatible with backends that have
         // not landed mentions support yet.
         ...(mentions && mentions.length > 0 ? { mentions } : {}),
+        // Attached only when the renderer computed an explicit chat-focus
+        // change for this send (see focusWorkspaceSendValue in
+        // AppState.ts) — omitted entirely otherwise, same compatibility
+        // reasoning as mentions above.
+        ...(focusWorkspace === undefined ? {} : { focus_workspace: focusWorkspace }),
       }),
   );
   ipcMain.handle(
