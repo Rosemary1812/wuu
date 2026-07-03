@@ -35,6 +35,9 @@ CLAUDE.md
 !/docs/2026-06-18-message-display-policy-zh.md
 !/docs/configuration-model-zh.md
 !/docs/goal-runtime-v2.md
+!/docs/plans/
+/docs/plans/*
+!/docs/plans/2026-07-03-resident-named-agents.md
 
 # Worktrees
 .worktrees/
