@@ -233,8 +233,17 @@ type Env struct {
 	// GroupManager backs the resident-only create_group / add_group_member
 	// tools. Nil means group management is unavailable in this environment.
 	GroupManager GroupManager
-	Skills       []skills.Skill
-	Workflows    []workflow.Definition
+	// FileScopeRoots, when non-empty, replaces the single-RootDir file
+	// boundary with a whitelist: file tools (read/write/edit/glob/grep/…)
+	// may only touch paths inside one of these roots — the agent home,
+	// the user's registered workspaces, and the system temp directory.
+	// Reads are rejected the same as writes. Empty keeps the ordinary
+	// workspace-confinement behavior; assembled only for resident turns
+	// and participant task runs
+	// (2026-07-03-sidebar-groups-andy-workspaces.md §5.2).
+	FileScopeRoots []string
+	Skills         []skills.Skill
+	Workflows      []workflow.Definition
 	// ActiveSurface is the compiled model profile surface currently
 	// governing this tool environment. Tools with secondary catalogs
 	// such as load_skill use it to avoid exposing instructions that
@@ -420,6 +429,14 @@ func (e *Env) ResolvePath(input string) (string, error) {
 	}
 	if e.BypassToolHardProtections() {
 		return resolved, nil
+	}
+	if len(e.FileScopeRoots) > 0 {
+		for _, root := range e.FileScopeRoots {
+			if pathWithinRoot(root, resolved) {
+				return resolved, nil
+			}
+		}
+		return "", fmt.Errorf("path %q is outside the allowed file scope (agent home directory, registered workspaces, and the system temp directory): 该路径不在工作区内，请用户在侧栏添加该目录为工作区后重试", input)
 	}
 
 	evalRoot := e.RootDir

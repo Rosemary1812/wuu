@@ -42,6 +42,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workflow"
+	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
 // Options describes the shared agent runtime needed by interactive clients.
@@ -341,6 +342,9 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetGroupManager(nil)
 				if agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID) {
 					wkit.SetParticipantSpeechEnabled(true)
+					// Participant task runs share the resident file scope:
+					// worker home + registered workspaces + system temp.
+					wkit.SetFileScopeRoots(workspaces.FileScopeRoots(workerRoot, wuuHome))
 				}
 				return wkit, nil
 			},
@@ -804,6 +808,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetGroupManager(nil)
 					if control != nil && control.ParticipantSpeechEnabled(meta.ID) {
 						workerKit.SetParticipantSpeechEnabled(true)
+						// Participant task runs share the resident file scope:
+						// worker home + registered workspaces + system temp
+						// (sidebar-groups-andy-workspaces.md §5.2).
+						workerKit.SetFileScopeRoots(workspaces.FileScopeRoots(workerRoot, wuuHome))
 					} else {
 						workerKit.SetParticipantIdentity("")
 						workerKit.SetParticipantSpeech(nil)

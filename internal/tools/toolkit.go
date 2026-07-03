@@ -163,6 +163,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		AgentControl:                t.env.AgentControl,
 		ParticipantSpeech:           t.env.ParticipantSpeech,
 		GroupManager:                t.env.GroupManager,
+		FileScopeRoots:              append([]string(nil), t.env.FileScopeRoots...),
 		Skills:                      t.env.Skills,
 		Workflows:                   t.env.Workflows,
 		OnFileChanged:               t.env.OnFileChanged,
@@ -744,6 +745,27 @@ func (t *Toolkit) SetGroupManager(manager GroupManager) {
 		return
 	}
 	t.env.GroupManager = manager
+}
+
+// SetFileScopeRoots installs (or clears, with an empty slice) the file-tool
+// whitelist for resident turns and participant task runs: agent home,
+// registered workspace roots, and the system temp directory. Empty roots
+// keep the ordinary single-RootDir confinement.
+func (t *Toolkit) SetFileScopeRoots(roots []string) {
+	if t == nil || t.env == nil {
+		return
+	}
+	cleaned := make([]string, 0, len(roots))
+	for _, root := range roots {
+		if trimmed := strings.TrimSpace(root); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) == 0 {
+		t.env.FileScopeRoots = nil
+		return
+	}
+	t.env.FileScopeRoots = cleaned
 }
 
 func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {

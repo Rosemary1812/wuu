@@ -27,6 +27,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/subagent"
+	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
 type queuedTurn struct {
@@ -412,6 +413,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 	}
 	th.mu.Lock()
 	participantID := strings.TrimSpace(th.DMParticipantID)
+	threadCWD := th.CWD
 	running := th.running
 	th.mu.Unlock()
 	if participantID == "" || running {
@@ -481,6 +483,9 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		threadRuntime.Toolkit.SetResidentParticipantEnabled(true)
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
+		// Resident file tools work inside the home + registered workspaces
+		// + temp whitelist (design doc §5.2); reads and writes alike.
+		threadRuntime.Toolkit.SetFileScopeRoots(workspaces.FileScopeRoots(threadCWD, s.rt.WuuHome))
 	}
 	if threadRuntime.AgentControl != nil {
 		threadRuntime.AgentControl.EnableParticipantSpeech(participantID)

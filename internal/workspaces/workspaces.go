@@ -70,3 +70,22 @@ func Roots(list []Workspace) []string {
 	}
 	return out
 }
+
+// FileScopeRoots assembles the file-tool whitelist for resident turns and
+// participant task runs (2026-07-03-sidebar-groups-andy-workspaces.md §5.2):
+// the agent home (the runtime root), every registered workspace root, and
+// the system temp directory. A missing or unreadable projects store simply
+// contributes no workspace roots.
+func FileScopeRoots(homeRoot, wuuHome string) []string {
+	roots := make([]string, 0, 4)
+	if home := strings.TrimSpace(homeRoot); home != "" {
+		roots = append(roots, home)
+	}
+	if list, err := List(wuuHome); err == nil {
+		roots = append(roots, Roots(list)...)
+	}
+	if tmp := strings.TrimSpace(os.TempDir()); tmp != "" {
+		roots = append(roots, tmp)
+	}
+	return roots
+}
