@@ -139,4 +139,11 @@ func TestEnsureDefaultParticipantSkipsWhenRetired(t *testing.T) {
 	if err := srv.ensureDefaultParticipant(); err != nil {
 		t.Fatalf("ensureDefaultParticipant (re-run) should still skip: %v", err)
 	}
+
+	after := listParticipantsForTest(t, srv)
+	for _, p := range after.Participants {
+		if p.Name == andyName && string(p.Kind) == string(participant.KindNamed) {
+			t.Errorf("retired named participant must block Andy seed, got %+v", p)
+		}
+	}
 }
