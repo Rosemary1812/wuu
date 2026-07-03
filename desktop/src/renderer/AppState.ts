@@ -2144,6 +2144,23 @@ function latestPlanUpdateForThread(
   return undefined;
 }
 
+// Gates `latestPlanUpdateForThread` on the thread still running a turn.
+// The floating "跳到最新" pill cluster's progress chip should track only a
+// plan that is actively in flight — once the turn completes, the message
+// flow's own completed-turn action row takes over that vertical space, and
+// a stale plan chip would sit on top of it. `latestPlanUpdateForThread`
+// itself stays turn-status-agnostic: the environment side panel (opened
+// explicitly by the user) intentionally keeps showing the most recent plan
+// as a completed checklist after the turn finishes.
+function activePlanUpdateForThread(
+  thread: Thread | undefined,
+): PlanUpdate | undefined {
+  if (!isThreadRunning(thread)) {
+    return undefined;
+  }
+  return latestPlanUpdateForThread(thread);
+}
+
 function parsePlanUpdateArguments(
   argumentsJSON: string,
 ): PlanUpdate | undefined {
@@ -2877,6 +2894,7 @@ function normalizeModelID(model: string | undefined): string {
 }
 
 export {
+  activePlanUpdateForThread,
   activeProjectID,
   activeSessionTab,
   activeThreadForState,

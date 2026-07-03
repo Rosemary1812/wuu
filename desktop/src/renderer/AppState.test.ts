@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext, Thread, ThreadItem, Turn } from "../shared/protocol";
 import {
+  activePlanUpdateForThread,
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
@@ -1903,6 +1904,67 @@ describe("latestContextUsageForThread", () => {
     });
     const result = latestContextUsageForThread(state, t);
     expect(result).toBeUndefined();
+  });
+});
+
+describe("activePlanUpdateForThread", () => {
+  // The floating "跳到最新" pill cluster's progress chip must disappear
+  // once its turn completes — otherwise it lingers on top of the same
+  // turn's now-persistent action row (issue #7). `latestPlanUpdateForThread`
+  // itself (used by the environment side panel) stays turn-status-agnostic;
+  // this wrapper is the one the pill actually reads.
+  function threadWithPlan(turnStatus: Turn["status"]): Thread {
+    const planItem: ThreadItem = {
+      id: "turn-1-item-1",
+      type: "tool_call",
+      status: "completed",
+      name: "update_plan",
+      arguments: JSON.stringify({
+        plan: [
+          { step: "定位问题", status: "completed" },
+          { step: "实现修复", status: "in_progress" },
+        ],
+      }),
+    };
+    return {
+      id: "thread-1",
+      preview: "preview",
+      model_provider: "fake",
+      model: "fake-model",
+      cwd: "/repo",
+      status: "idle",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: turnStatus,
+          items: [planItem],
+        },
+      ],
+    };
+  }
+
+  it("returns the plan while its turn is still running", () => {
+    const thread = threadWithPlan("in_progress");
+    expect(activePlanUpdateForThread(thread)?.plan).toEqual([
+      { step: "定位问题", status: "completed" },
+      { step: "实现修复", status: "in_progress" },
+    ]);
+  });
+
+  it("hides the plan once the turn completes", () => {
+    expect(activePlanUpdateForThread(threadWithPlan("completed"))).toBeUndefined();
+  });
+
+  it("hides the plan for a failed or interrupted turn", () => {
+    expect(activePlanUpdateForThread(threadWithPlan("failed"))).toBeUndefined();
+    expect(activePlanUpdateForThread(threadWithPlan("interrupted"))).toBeUndefined();
+  });
+
+  it("returns undefined when there is no thread", () => {
+    expect(activePlanUpdateForThread(undefined)).toBeUndefined();
   });
 });
 

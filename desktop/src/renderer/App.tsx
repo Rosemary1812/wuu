@@ -141,6 +141,7 @@ import {
 } from "./EnvironmentPanel";
 import { EnvironmentSideStack } from "./EnvironmentSideStack";
 import {
+  activePlanUpdateForThread,
   activeProjectID,
   activeSessionTab,
   activeThreadForState,
@@ -1124,6 +1125,12 @@ export function App(): JSX.Element {
     onOpenBrowser: () => openWorkspaceTool("browser"),
   });
   const activePlanUpdate = latestPlanUpdateForThread(activeThread);
+  // Distinct from `activePlanUpdate` above: the floating "jump to latest /
+  // progress" pill cluster only tracks a plan while its turn is still
+  // running (see `activePlanUpdateForThread`), whereas the environment
+  // side panel keeps showing the most recent plan — running or completed —
+  // as a persistent checklist once the user opens it.
+  const activePlanPillUpdate = activePlanUpdateForThread(activeThread);
   const activeContextKey = state.activeContext
     ? runtimeContextKey(state.activeContext)
     : "";
@@ -1148,14 +1155,14 @@ export function App(): JSX.Element {
     });
     return nextParticipants;
   });
-  const activePlanTotal = activePlanUpdate?.plan.length ?? 0;
+  const activePlanTotal = activePlanPillUpdate?.plan.length ?? 0;
   const activePlanCompleted =
-    activePlanUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
-  const activePlanVisible = Boolean(activePlanUpdate && activePlanTotal > 0);
-  const activePlanCurrentItem = activePlanUpdate?.plan.find(
+    activePlanPillUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
+  const activePlanVisible = Boolean(activePlanPillUpdate && activePlanTotal > 0);
+  const activePlanCurrentItem = activePlanPillUpdate?.plan.find(
     (item) => item.status === "in_progress",
   );
-  const activePlanNextItem = activePlanUpdate?.plan.find(
+  const activePlanNextItem = activePlanPillUpdate?.plan.find(
     (item) => item.status === "pending",
   );
   const activePlanDetailItems = [activePlanCurrentItem, activePlanNextItem].flatMap(
