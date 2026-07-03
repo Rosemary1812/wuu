@@ -270,6 +270,22 @@ func (c *AgentControl) restoreAgentResultDeliveries() {
 	c.resultDeliveriesMu.Unlock()
 }
 
+// agentResultDeliveryConsumed reports whether a terminal result has already
+// been handed to the model through one of the delivery paths.
+func (c *AgentControl) agentResultDeliveryConsumed(resultID string) bool {
+	if c == nil {
+		return false
+	}
+	resultID = strings.TrimSpace(resultID)
+	if resultID == "" {
+		return false
+	}
+	c.resultDeliveriesMu.Lock()
+	delivery, ok := c.resultDeliveries[resultID]
+	c.resultDeliveriesMu.Unlock()
+	return ok && delivery.ConsumedBy != ""
+}
+
 func firstNonEmptyString(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

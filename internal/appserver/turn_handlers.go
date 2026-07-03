@@ -875,6 +875,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	const usageNotifyInterval = 100 * time.Millisecond
 	var usagePushMu sync.Mutex
 	var lastUsagePushAt time.Time
+	var lastUsagePushed providers.TokenUsage
 	var completedUsage providers.TokenUsage
 	var liveUsage providers.TokenUsage
 	baseOnUsage := runner.OnUsage
@@ -890,9 +891,17 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	notifyUsage := func(snapshot providers.TokenUsage, force bool) {
 		now := time.Now()
 		usagePushMu.Lock()
+		// The stream's final EventUsage and the loop's per-call
+		// OnTokenUsage both report the same cumulative totals; pushing
+		// an unchanged snapshot again is pure noise for consumers.
+		if snapshot == lastUsagePushed && !lastUsagePushAt.IsZero() {
+			usagePushMu.Unlock()
+			return
+		}
 		shouldPush := force || lastUsagePushAt.IsZero() || now.Sub(lastUsagePushAt) >= usageNotifyInterval
 		if shouldPush {
 			lastUsagePushAt = now
+			lastUsagePushed = snapshot
 		}
 		usagePushMu.Unlock()
 		if !shouldPush {

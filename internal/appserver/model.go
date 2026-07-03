@@ -588,6 +588,16 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 				Status: ThreadItemStatusInProgress,
 			}
 			th.toolItems[msg.ToolCallID] = item.ID
+		} else if item.Status == ThreadItemStatusCompleted {
+			// EventToolUseEnd already finalized this item with a
+			// truncated copy of the same result. Upgrade to the
+			// full-fidelity message content, but do not append or
+			// announce a second completion.
+			if len(msg.Content) > len(item.Result) {
+				item.Result = msg.Content
+				th.upsertItemLocked(turnID, item, now)
+			}
+			return nil
 		}
 		item.Result += msg.Content
 		item.Status = ThreadItemStatusCompleted

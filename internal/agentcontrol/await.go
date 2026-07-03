@@ -167,7 +167,7 @@ func (c *AgentControl) ActiveTaskReminder(currentPath string) string {
 		b.WriteString(" more\n")
 	}
 	b.WriteString("\nUse await_agents with explicit targets when your next step depends on these outputs. ")
-	b.WriteString("If a task is awaiting_report, treat its handoff as incomplete until you follow up or verify the raw result.\n")
+	b.WriteString("If a task is awaiting_report, verify its raw result once; after that the result is yours to use - do not keep re-awaiting a terminal task.\n")
 	b.WriteString("</subagent_status>")
 	return b.String()
 }
@@ -214,7 +214,17 @@ func (c *AgentControl) activeDescendantTargets(currentPath string) []awaitTarget
 			continue
 		}
 		result := c.awaitResultForTarget(awaitTarget{Meta: meta, Found: true})
-		if isAwaitActiveStatus(result.Status) || result.Status == string(harness.TaskStatusAwaitingReport) {
+		if isAwaitActiveStatus(result.Status) {
+			out = append(out, awaitTarget{Meta: meta, Found: true})
+			continue
+		}
+		// Surface awaiting_report tasks until their raw result has been
+		// delivered once. After that, re-joining them from a no-target
+		// await only produces an empty, already-consumed row and traps
+		// parents in an await -> awaiting_report -> await polling loop:
+		// the child is terminal, so the status will never change on its
+		// own.
+		if result.Status == string(harness.TaskStatusAwaitingReport) && !c.agentResultDeliveryConsumed(result.ResultID) {
 			out = append(out, awaitTarget{Meta: meta, Found: true})
 		}
 	}
@@ -254,7 +264,7 @@ func awaitAgentsNextSteps(result AwaitAgentsResult) []string {
 
 	steps := make([]string, 0, 4)
 	if awaitResultsHaveStatus(result.Results, string(harness.TaskStatusAwaitingReport)) {
-		steps = append(steps, "Follow up with agents in awaiting_report or verify their raw result before relying on the handoff; require agent_report for durable evidence.")
+		steps = append(steps, "Verify the raw result of awaiting_report agents before relying on it; if you need durable evidence, follow up once asking for agent_report - otherwise proceed. The task is terminal, so re-awaiting will not change its status.")
 	}
 	if awaitResultsHaveStatus(result.Results, string(harness.TaskStatusFailed)) || awaitResultsHaveStatus(result.Results, string(subagent.StatusFailed)) {
 		steps = append(steps, "Inspect failed agent errors and artifacts, then decide whether to retry with a narrower brief, rollback, or ask the user.")

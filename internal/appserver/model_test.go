@@ -117,6 +117,77 @@ func TestThreadStateUsesProviderPhaseOnStreamingText(t *testing.T) {
 	}
 }
 
+func TestThreadStateToolResultMessageDoesNotDuplicateCompletion(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:     providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{ID: "call_1", Name: "read_file"},
+	}, now)
+	// The agent loop first streams the (display-truncated) tool result...
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:       providers.EventToolUseEnd,
+		ToolCall:   &providers.ToolCall{ID: "call_1", Name: "read_file"},
+		ToolResult: "package appserver",
+	}, now)
+	if got := countNotifications(out, NotificationItemCompleted); got != 1 {
+		t.Fatalf("tool-use end should complete the item once, got %d", got)
+	}
+	// ...then forwards the recorded history message for the same call.
+	out = th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventMessage,
+		Message: &providers.ChatMessage{Role: "tool", ToolCallID: "call_1", Content: "package appserver\n\nfunc more() {}"},
+	}, now)
+	if got := countNotifications(out, NotificationItemCompleted); got != 0 {
+		t.Fatalf("tool history message must not re-announce completion, got %d notifications: %#v", got, out)
+	}
+
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 {
+		t.Fatalf("expected user and tool items, got %+v", turn.Items)
+	}
+	toolItem := turn.Items[1]
+	if toolItem.Result != "package appserver\n\nfunc more() {}" {
+		t.Fatalf("tool result should be upgraded to full message content without doubling, got %q", toolItem.Result)
+	}
+	if toolItem.Status != ThreadItemStatusCompleted {
+		t.Fatalf("tool item should stay completed, got %+v", toolItem)
+	}
+}
+
+func TestThreadStateToolResultMessageAloneCompletesItem(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+
+	// No streamed tool-result event (e.g. replayed or non-streaming path):
+	// the history message must still create and complete the item.
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:    providers.EventMessage,
+		Message: &providers.ChatMessage{Role: "tool", ToolCallID: "call_9", Content: "done"},
+	}, now)
+	if got := countNotifications(out, NotificationItemCompleted); got != 1 {
+		t.Fatalf("tool message without prior stream event should complete the item once, got %d", got)
+	}
+	turn := th.ensureTurnLocked("turn", now)
+	toolItem := turn.Items[len(turn.Items)-1]
+	if toolItem.Result != "done" || toolItem.Status != ThreadItemStatusCompleted {
+		t.Fatalf("unexpected tool item %+v", toolItem)
+	}
+}
+
+func countNotifications(out []outboundNotification, method string) int {
+	count := 0
+	for _, n := range out {
+		if n.method == method {
+			count++
+		}
+	}
+	return count
+}
+
 func TestThreadStateCarriesToolCallDisplay(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)

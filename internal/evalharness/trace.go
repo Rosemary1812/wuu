@@ -627,7 +627,6 @@ func isValidationToolObservation(record ToolObservation) bool {
 	default:
 		return false
 	}
-	return false
 }
 
 func (summary *TraceReplaySummary) ensureValidationSummary() {

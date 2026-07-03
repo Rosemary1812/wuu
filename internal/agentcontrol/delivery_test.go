@@ -95,3 +95,38 @@ func TestAgentResultDeliveryClaimRestoresFromThreadEvents(t *testing.T) {
 		t.Fatalf("restored claim = %v consumedBy=%q, want already consumed by await_agents", ok, consumedBy)
 	}
 }
+
+// TestAgentResultDeliveryConsumed covers the guard used by no-target
+// await_agents: an awaiting_report task is only re-joined while its raw
+// result has not yet been handed to the model.
+func TestAgentResultDeliveryConsumed(t *testing.T) {
+	threadDir := t.TempDir()
+	c := &AgentControl{
+		rootThreadID: "root-thread",
+		threadStore:  agentthread.NewStore(threadDir),
+	}
+	snap := subagent.SubAgentSnapshot{
+		ID:          "worker-consumed",
+		AgentPath:   "/root/worker",
+		ParentID:    "root-thread",
+		Status:      subagent.StatusCompleted,
+		Result:      "raw result",
+		CompletedAt: time.Now().UTC(),
+	}
+	resultID := c.ensureAgentResultDelivery(snap).ResultID
+	if resultID == "" {
+		t.Fatal("expected a delivery id for the completed run")
+	}
+	if c.agentResultDeliveryConsumed(resultID) {
+		t.Fatal("fresh delivery must not read as consumed")
+	}
+	if c.agentResultDeliveryConsumed("") {
+		t.Fatal("empty result id must not read as consumed")
+	}
+	if ok, _ := c.ClaimAgentResultDeliveryID(resultID, agentResultConsumerAwaitAgents); !ok {
+		t.Fatal("first claim should succeed")
+	}
+	if !c.agentResultDeliveryConsumed(resultID) {
+		t.Fatal("claimed delivery should read as consumed")
+	}
+}

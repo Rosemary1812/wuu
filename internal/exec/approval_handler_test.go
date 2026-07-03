@@ -108,3 +108,33 @@ func decodeApprovalHandlerResult(t *testing.T, result any) appserver.ToolApprova
 	}
 	return response
 }
+
+func TestDefaultRequestHandlerDeniesApprovalsWithReason(t *testing.T) {
+	handler, err := newServerRequestHandler(Options{})
+	if err != nil {
+		t.Fatalf("newServerRequestHandler: %v", err)
+	}
+	if handler == nil {
+		t.Fatal("exec without approval handler should still answer approval requests")
+	}
+
+	result := handler(context.Background(), approvalHandlerTestRequest(t))
+	if result.Error != nil {
+		t.Fatalf("approval request should get a decision, not a protocol error: %+v", result.Error)
+	}
+	response := decodeApprovalHandlerResult(t, result.Result)
+	if response.Decision != "denied" {
+		t.Fatalf("decision = %q, want denied", response.Decision)
+	}
+	if response.Reason == "" {
+		t.Fatal("denied decision must carry a model-facing reason")
+	}
+
+	other := handler(context.Background(), ServerRequest{
+		ID:     json.RawMessage(`"server-2"`),
+		Method: "some/other/request",
+	})
+	if other.Error == nil || other.Error.Code != "non_interactive_unavailable" {
+		t.Fatalf("non-approval requests should keep the protocol error, got %+v", other)
+	}
+}

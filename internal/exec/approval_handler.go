@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 func newServerRequestHandler(opts Options) (ServerRequestHandler, error) {
@@ -29,8 +30,29 @@ func newServerRequestHandler(opts Options) (ServerRequestHandler, error) {
 			return runApprovalSocketRequest(ctx, socket, req)
 		}, nil
 	default:
-		return nil, nil
+		return denyApprovalsRequestHandler, nil
 	}
+}
+
+// denyApprovalsRequestHandler answers approval requests when exec runs
+// without --approval-handler/--approval-socket. It returns an explicit
+// denied decision instead of a protocol error: the error path tells the
+// model to "ask the user", which is impossible mid-run in a
+// non-interactive exec and sends it chasing approval mechanisms that do
+// not exist here.
+func denyApprovalsRequestHandler(_ context.Context, req ServerRequest) ServerRequestResult {
+	if req.Method == appserver.MethodToolApprovalRequest {
+		return ServerRequestResult{Result: appserver.ToolApprovalResponse{
+			Decision: string(tools.ToolApprovalDecisionDenied),
+			Reason: "approval prompts are unavailable in this non-interactive run; " +
+				"do not retry this call or look for an approval mechanism - " +
+				"use an alternative allowed by the current permissions, or finish and report the exact blocked action so the caller can rerun with --approval-handler",
+		}}
+	}
+	return ServerRequestResult{Error: &appserver.ResponseError{
+		Code:    "non_interactive_unavailable",
+		Message: fmt.Sprintf("non-interactive exec cannot handle app-server request %q", req.Method),
+	}}
 }
 
 func runApprovalHandlerCommand(ctx context.Context, command string, req ServerRequest) ServerRequestResult {
