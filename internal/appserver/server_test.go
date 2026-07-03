@@ -847,7 +847,7 @@ func TestRunningTurnUsesModelSnapshotAfterConfigUpdate(t *testing.T) {
 	rt.StreamRunner.APIModel = "new-model"
 	srv.updateThreadRuntimeForModelUpdate(rt.ProviderName, rt.ProviderName, "new-model", "new-model", "new system prompt")
 
-	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil)
+	srv.runTurnWithRequestContext(context.Background(), th, threadRuntime, turnID, turnRuntime, []providers.ChatMessage{userMsg}, nil, nil)
 
 	th.mu.Lock()
 	if len(th.Turns) != 1 || th.Turns[0].UsageModel != "fake-model" {

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -212,9 +213,14 @@ type ChatMessage struct {
 	DiscoveredTools []LoadableToolDefinition
 	// Participant metadata is app-level attribution for conversation-native
 	// result cards. Provider adapters ignore it.
-	ParticipantID   string `json:"participant_id,omitempty"`
-	ParticipantName string `json:"participant_name,omitempty"`
-	PostKind        string `json:"post_kind,omitempty"`
+	ParticipantID   string          `json:"participant_id,omitempty"`
+	ParticipantName string          `json:"participant_name,omitempty"`
+	PostKind        string          `json:"post_kind,omitempty"`
+	EnvelopeMeta    json.RawMessage `json:"envelope_meta,omitempty"`
+	// ConsumeResidentEnvelopeIDs is app-server durable bookkeeping. When set
+	// on a user message, the session store appends that message and marks the
+	// listed resident inbox envelopes consumed in the same transaction.
+	ConsumeResidentEnvelopeIDs []string `json:"-"`
 }
 
 // CacheHint carries provider-agnostic prompt-cache guidance.

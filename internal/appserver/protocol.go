@@ -956,6 +956,7 @@ type TurnStartParams struct {
 	Prompt         string           `json:"prompt"`
 	Images         []TurnStartImage `json:"images,omitempty"`
 	Files          []TurnStartFile  `json:"files,omitempty"`
+	Mentions       []string         `json:"mentions,omitempty"`
 	PermissionMode *string          `json:"permission_mode,omitempty"`
 }
 

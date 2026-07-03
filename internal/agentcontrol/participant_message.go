@@ -22,6 +22,7 @@ type ParticipantMessage struct {
 	AgentType     string
 	Kind          string
 	ThreadID      string
+	Hop           int
 	Text          string
 	CreatedAt     time.Time
 }

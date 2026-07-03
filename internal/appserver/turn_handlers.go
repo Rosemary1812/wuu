@@ -97,6 +97,13 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	th.mu.Lock()
+	isResidentDM := strings.TrimSpace(th.DMParticipantID) != ""
+	th.mu.Unlock()
+	mentioned, err := s.prepareThreadMentions(th, params.Mentions)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	threadRuntime, err := s.ensureThreadRuntime(th)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -106,9 +113,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
 	snapshot.PermissionExplicit = params.PermissionMode != nil
 	startTurn := s.startThreadUserTurn
-	th.mu.Lock()
-	isResidentDM := strings.TrimSpace(th.DMParticipantID) != ""
-	th.mu.Unlock()
 	if isResidentDM {
 		startTurn = s.startResidentTurn
 	}
@@ -133,6 +137,9 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	}
 
 	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	if !isResidentDM {
+		s.routeUserMessageToResidents(th, userMsg, mentioned)
+	}
 	return nil
 }
 
@@ -721,7 +728,7 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
-	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, nil)
+	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, nil, nil)
 }
 
 func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
@@ -806,7 +813,7 @@ func usageContextWindowTokens(runner *agent.StreamRunner) int {
 	return 0
 }
 
-func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, requestContext []agent.ContextSegment) {
+func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, requestContext []agent.ContextSegment, residentEnvelopes []MessageEnvelope) {
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
@@ -818,6 +825,12 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	runner := s.rt.StreamRunner
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner
+	}
+	residentParticipantID := ""
+	if th != nil {
+		th.mu.Lock()
+		residentParticipantID = strings.TrimSpace(th.DMParticipantID)
+		th.mu.Unlock()
 	}
 	turnPermissions := turnRuntime.permissions()
 	turnRuntime = turnRuntime.withPermissions(turnPermissions)
@@ -1151,6 +1164,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			Action:     structured.Action,
 			Turn:       turn,
 		})
+		s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
 		s.kickAgentCompletionDrain(th.ID)
 		s.kickQueuedTurnDrain(th.ID)
 		return
@@ -1170,6 +1184,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		TracePath:           tracePath,
 	})
 	go s.generateThreadTitle(th.ID, titleHistory)
+	s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
 	s.kickGoalContinuation(th.ID)
@@ -1975,7 +1990,7 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal))
+	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal), nil)
 	return true, nil
 }
 

@@ -288,6 +288,59 @@ WHERE id = ?`, consumedAt.UnixMilli(), id); err != nil {
 	return nil
 }
 
+func AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, sessionID string, rec HistoryRecord, ids []string, consumedAt time.Time) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return errors.New("session_id is required")
+	}
+	cleanIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" {
+			cleanIDs = append(cleanIDs, id)
+		}
+	}
+	if consumedAt.IsZero() {
+		consumedAt = time.Now().UTC()
+	} else {
+		consumedAt = consumedAt.UTC()
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin history append resident consume: %w", err)
+	}
+	defer tx.Rollback()
+	if ok, err := sessionExistsTx(tx, sessionID); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: %q", ErrSessionNotFound, sessionID)
+	}
+	if err := appendHistoryRecordTx(tx, sessionID, rec); err != nil {
+		return err
+	}
+	for _, id := range cleanIDs {
+		if _, err := tx.Exec(`
+UPDATE resident_inbox
+SET consumed_at = COALESCE(consumed_at, ?)
+WHERE id = ?`, consumedAt.UnixMilli(), id); err != nil {
+			return fmt.Errorf("mark resident envelope consumed: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit history append resident consume: %w", err)
+	}
+	return nil
+}
+
 func requireActiveNamedParticipant(q sqlRowQuerier, participantID string) error {
 	var kind string
 	var retiredAt sql.NullString

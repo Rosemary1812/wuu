@@ -1108,6 +1108,7 @@ func chatMessageFromPersistedMessage(rec persistedMessage) providers.ChatMessage
 		StopReason:        strings.ToLower(strings.TrimSpace(rec.StopReason)),
 		Truncated:         rec.Truncated,
 		DiscoveredTools:   providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
+		EnvelopeMeta:      append(json.RawMessage(nil), rec.EnvelopeMeta...),
 	}
 	for _, image := range rec.Images {
 		if strings.TrimSpace(image.Data) == "" {

@@ -200,6 +200,7 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		CompletedAtMS: now.UnixMilli(),
 	})
 	_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+	s.routeParticipantMessageToResidents(th, msg, name)
 	return nil
 }
 

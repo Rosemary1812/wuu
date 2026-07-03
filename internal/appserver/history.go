@@ -74,9 +74,10 @@ type persistedMessage struct {
 	// ParticipantID/PostKind are conversation-display metadata. They are
 	// persisted with session history but intentionally skipped from model
 	// request history unless the role is a normal provider role.
-	ParticipantID string `json:"participant_id,omitempty"`
-	PostKind      string `json:"post_kind,omitempty"`
-	ThreadID      string `json:"thread_id,omitempty"`
+	ParticipantID string          `json:"participant_id,omitempty"`
+	PostKind      string          `json:"post_kind,omitempty"`
+	ThreadID      string          `json:"thread_id,omitempty"`
+	EnvelopeMeta  json.RawMessage `json:"envelope_meta,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -145,6 +146,7 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 			ParticipantID:     rec.ParticipantID,
 			ParticipantName:   rec.Name,
 			PostKind:          rec.PostKind,
+			EnvelopeMeta:      append(json.RawMessage(nil), rec.EnvelopeMeta...),
 		}
 		for _, image := range rec.Images {
 			if strings.TrimSpace(image.Data) == "" {
@@ -203,6 +205,9 @@ func appendChatMessage(sessDir, id string, msg providers.ChatMessage) error {
 		return nil
 	}
 	rec := persistedMessageFromChatMessage(msg)
+	if len(msg.ConsumeResidentEnvelopeIDs) > 0 {
+		return sessionstore.AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, id, historyRecordFromPersistedMessage(rec), msg.ConsumeResidentEnvelopeIDs, rec.At)
+	}
 	return sessionstore.AppendHistoryRecord(sessDir, id, historyRecordFromPersistedMessage(rec))
 }
 
@@ -276,6 +281,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		Name:              msg.Name,
 		ParticipantID:     msg.ParticipantID,
 		PostKind:          msg.PostKind,
+		EnvelopeMeta:      append(json.RawMessage(nil), msg.EnvelopeMeta...),
 		At:                time.Now().UTC(),
 	}
 	for _, image := range msg.Images {
@@ -383,6 +389,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		ParticipantID:       rec.ParticipantID,
 		PostKind:            rec.PostKind,
 		ThreadID:            rec.ThreadID,
+		EnvelopeMeta:        append(json.RawMessage(nil), rec.EnvelopeMeta...),
 	}
 }
 
@@ -415,6 +422,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		ParticipantID:       rec.ParticipantID,
 		PostKind:            rec.PostKind,
 		ThreadID:            rec.ThreadID,
+		EnvelopeMeta:        append(json.RawMessage(nil), rec.EnvelopeMeta...),
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err
@@ -529,6 +537,7 @@ func participantModelContextMessage(rec persistedMessage) (providers.ChatMessage
 		ParticipantID:   participantID,
 		ParticipantName: name,
 		PostKind:        postKind,
+		EnvelopeMeta:    append(json.RawMessage(nil), rec.EnvelopeMeta...),
 	}, true
 }
 

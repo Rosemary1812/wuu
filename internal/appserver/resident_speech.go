@@ -17,6 +17,7 @@ type residentParticipantSpeech struct {
 	server        *Server
 	participantID string
 	limiter       *residentSpeechLimiter
+	hopByThread   map[string]int
 }
 
 type residentSpeechLimiter struct {
@@ -25,10 +26,22 @@ type residentSpeechLimiter struct {
 }
 
 func (s *Server) residentParticipantSpeech(participantID string) tools.ParticipantSpeech {
+	return s.residentParticipantSpeechWithHops(participantID, nil)
+}
+
+func (s *Server) residentParticipantSpeechWithHops(participantID string, hopByThread map[string]int) tools.ParticipantSpeech {
+	hops := make(map[string]int, len(hopByThread))
+	for threadID, hop := range hopByThread {
+		threadID = strings.TrimSpace(threadID)
+		if threadID != "" && hop > 0 {
+			hops[threadID] = hop
+		}
+	}
 	return residentParticipantSpeech{
 		server:        s,
 		participantID: strings.TrimSpace(participantID),
 		limiter:       &residentSpeechLimiter{},
+		hopByThread:   hops,
 	}
 }
 
@@ -69,6 +82,7 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		AgentID:       participantID,
 		ParticipantID: participantID,
 		Kind:          kind,
+		Hop:           r.messageHop(targetThreadID),
 		Text:          text,
 		CreatedAt:     now,
 	}
@@ -103,6 +117,7 @@ func (r residentParticipantSpeech) Decline(ctx context.Context, reason, targetTh
 		AgentID:       strings.TrimSpace(r.participantID),
 		ParticipantID: strings.TrimSpace(r.participantID),
 		Kind:          "decline",
+		Hop:           r.messageHop(targetThreadID),
 		Text:          reason,
 		CreatedAt:     now,
 	}
@@ -165,4 +180,14 @@ func (r residentParticipantSpeech) reservePost(targetThreadID string) error {
 	}
 	r.limiter.postsByThread[targetThreadID]++
 	return nil
+}
+
+func (r residentParticipantSpeech) messageHop(targetThreadID string) int {
+	targetThreadID = strings.TrimSpace(targetThreadID)
+	if targetThreadID != "" {
+		if hop := r.hopByThread[targetThreadID]; hop > 0 {
+			return hop
+		}
+	}
+	return 1
 }

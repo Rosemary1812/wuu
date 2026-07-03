@@ -151,6 +151,46 @@ func TestHistoryRecordEnvelopeMetaRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAppendHistoryRecordAndConsumeResidentEnvelopes(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	noel := participant.Participant{ID: "prt-noel", Kind: participant.KindNamed, Name: "Noel"}
+	if err := UpsertParticipant(dir, noel); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnqueueResidentEnvelope(dir, ResidentEnvelope{
+		ID:            "env-1",
+		ParticipantID: noel.ID,
+		EnvelopeJSON:  json.RawMessage(`{"text":"first"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	meta := json.RawMessage(`[{"source_thread_id":"group-1","addressed":true,"hop":0}]`)
+	if err := AppendHistoryRecordAndConsumeResidentEnvelopes(dir, "thread-1", HistoryRecord{
+		Role:         "user",
+		Content:      "incoming",
+		EnvelopeMeta: meta,
+	}, []string{"env-1"}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	history, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || string(history[0].EnvelopeMeta) != string(meta) {
+		t.Fatalf("loaded history = %+v, want envelope meta %s", history, meta)
+	}
+	pending, err := PendingResidentEnvelopes(dir, noel.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending after atomic append = %+v, want empty", pending)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
