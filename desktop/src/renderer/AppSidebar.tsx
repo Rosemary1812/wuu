@@ -62,6 +62,8 @@ export function AppSidebar({
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
   onSelectProjectThread,
+  onPointerEnter,
+  onPointerLeave,
   onOpenSettings,
 }: {
   state: AppState;
@@ -107,6 +109,8 @@ export function AppSidebar({
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
+  onPointerEnter?: () => void;
+  onPointerLeave?: () => void;
   onOpenSettings: () => void;
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
@@ -119,7 +123,11 @@ export function AppSidebar({
   const sidebarScratchPseudoActive = state.activeContext?.kind === "no_project";
 
   return (
-    <aside className="sidebar">
+    <aside
+      className="sidebar"
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
       <div className="sidebar-content">
         <div className="traffic-spacer" />
         <nav className="primary-nav" aria-label="主导航">

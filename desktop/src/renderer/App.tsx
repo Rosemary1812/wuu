@@ -642,6 +642,7 @@ export function App(): JSX.Element {
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
   const settingsShellRef = useRef<HTMLDivElement>(null);
+  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
   const {
     sidebarWidth,
     settingsSidebarWidth,
@@ -1863,6 +1864,8 @@ export function App(): JSX.Element {
     environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+    sidebarCollapsed && sidebarDrawerOpen ? " sidebar-drawer-open" : ""
+  }${
     sidebarAnimating ? " sidebar-animating" : ""
   }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
     resizingRightPanel ? " resizing-right-panel" : ""
@@ -1882,6 +1885,12 @@ export function App(): JSX.Element {
     state.gitStatus,
   );
   const runDebugPhase = runDebugPhaseForState(state);
+
+  useLayoutEffect(() => {
+    if (!sidebarCollapsed && sidebarDrawerOpen) {
+      setSidebarDrawerOpen(false);
+    }
+  }, [sidebarCollapsed, sidebarDrawerOpen]);
 
   useLayoutEffect(() => {
     if (environmentPanelVisible) {
@@ -6617,6 +6626,11 @@ export function App(): JSX.Element {
   return (
     <ImagePreviewProvider>
       <div ref={appShellRef} className={shellClassName} style={shellStyle}>
+      <div
+        className="sidebar-hover-zone"
+        aria-hidden="true"
+        onPointerEnter={() => setSidebarDrawerOpen(true)}
+      />
       <AppSidebar
         state={state}
         sidebarProjects={sidebarProjects}
@@ -6670,6 +6684,8 @@ export function App(): JSX.Element {
         onSelectProjectThread={(projectID, threadID) =>
           void selectProjectThread(projectID, threadID)
         }
+        onPointerEnter={() => setSidebarDrawerOpen(true)}
+        onPointerLeave={() => setSidebarDrawerOpen(false)}
         onOpenSettings={() => {
           setProjectMenuOpen(false);
           setRuntimeMenuOpen(false);

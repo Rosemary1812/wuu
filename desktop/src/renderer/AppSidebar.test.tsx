@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,6 +9,10 @@ import { initialState, type AppState, type ThreadSummary } from "./AppState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
+const sidebarCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/sidebar.css"),
+  "utf8",
+);
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -122,6 +128,16 @@ function renderSidebar({
 }
 
 describe("AppSidebar layout", () => {
+  it("defines a hover edge drawer for the collapsed sidebar", () => {
+    expect(sidebarCSS).toContain(".sidebar-hover-zone");
+    expect(sidebarCSS).toContain(
+      ".sidebar-collapsed.sidebar-drawer-open .sidebar",
+    );
+    expect(sidebarCSS).toContain(
+      ".sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content",
+    );
+  });
+
   it("keeps primary actions outside the scrollable sidebar list", () => {
     renderSidebar();
 

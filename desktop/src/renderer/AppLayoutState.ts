@@ -12,7 +12,7 @@ import {
 export const SIDEBAR_MOTION_MS = 280;
 export const RIGHT_PANEL_MOTION_MS = 280;
 export const SIDEBAR_DEFAULT_WIDTH = 326;
-export const SIDEBAR_MIN_WIDTH = 240;
+export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
