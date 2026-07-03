@@ -91,6 +91,7 @@ type HistoryRecord struct {
 	ParticipantID       string          `json:"participant_id,omitempty"`
 	PostKind            string          `json:"post_kind,omitempty"`
 	ThreadID            string          `json:"thread_id,omitempty"`
+	EnvelopeMeta        json.RawMessage `json:"envelope_meta,omitempty"`
 	At                  time.Time       `json:"at,omitempty"`
 	InputTokens         int             `json:"input_tokens,omitempty"`
 	OutputTokens        int             `json:"output_tokens,omitempty"`
@@ -671,6 +672,7 @@ func migrateSchema(db *sql.DB) error {
 			participant_id TEXT NOT NULL DEFAULT '',
 			post_kind TEXT NOT NULL DEFAULT '',
 			thread_id TEXT NOT NULL DEFAULT '',
+			envelope_meta TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY(session_id, seq),
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
@@ -712,6 +714,23 @@ func migrateSchema(db *sql.DB) error {
 			updated_at     TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_participant_runs_participant ON participant_runs(participant_id, created_at, id)`,
+		`CREATE TABLE IF NOT EXISTS thread_members (
+			session_id     TEXT NOT NULL,
+			participant_id TEXT NOT NULL,
+			joined_at      INTEGER NOT NULL,
+			PRIMARY KEY (session_id, participant_id),
+			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS resident_inbox (
+			id             TEXT PRIMARY KEY,
+			participant_id TEXT NOT NULL,
+			envelope_json  TEXT NOT NULL,
+			created_at     INTEGER NOT NULL,
+			consumed_at    INTEGER,
+			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending ON resident_inbox(participant_id, created_at) WHERE consumed_at IS NULL`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
@@ -761,6 +780,9 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "envelope_meta", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_session_messages_thread ON session_messages(session_id, thread_id, seq)`); err != nil {
@@ -977,12 +999,12 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 				session_id, seq, role, content, display_content, phase, provider_item_id, provider_item_model, client_id, hidden, steered, reasoning_content,
 				reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 				tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-				provider, model, participant_id, post_kind, thread_id
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				provider, model, participant_id, post_kind, thread_id, envelope_meta
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), strings.TrimSpace(rec.ProviderItemID), strings.TrimSpace(rec.ProviderItemModel), rec.ClientID, boolInt(rec.Hidden), boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.ContextTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
-		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID),
+		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID), rawJSONText(rec.EnvelopeMeta),
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
@@ -996,7 +1018,7 @@ func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRec
 	       provider_item_id, provider_item_model,
 		       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-	       provider, model, participant_id, post_kind, thread_id
+	       provider, model, participant_id, post_kind, thread_id, envelope_meta
 	FROM session_messages
 WHERE session_id = ?`
 	args := []any{id}
@@ -1015,14 +1037,14 @@ WHERE session_id = ?`
 	for rows.Next() {
 		var rec HistoryRecord
 		var hidden, steered int
-		var reasoningBlocks, images, files, toolCalls, discoveredTools string
+		var reasoningBlocks, images, files, toolCalls, discoveredTools, envelopeMeta string
 		var at sql.NullString
 		if err := rows.Scan(
 			&rec.Role, &rec.Content, &rec.DisplayContent, &rec.Phase, &rec.ClientID, &hidden, &steered, &rec.ReasoningContent,
 			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.ContextTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
-			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID,
+			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID, &envelopeMeta,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
 		}
@@ -1033,6 +1055,7 @@ WHERE session_id = ?`
 		rec.Files = rawMessage(files)
 		rec.ToolCalls = rawMessage(toolCalls)
 		rec.DiscoveredTools = rawMessage(discoveredTools)
+		rec.EnvelopeMeta = rawMessage(envelopeMeta)
 		if at.Valid {
 			rec.At = parseTime(at.String)
 		}
