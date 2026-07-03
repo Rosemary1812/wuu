@@ -371,10 +371,57 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	if participantID == "" {
 		return
 	}
+	s.fallbackDMReplyFromFinalAnswer(th, participantID, turn, completedAt)
 	if len(envs) > 0 {
 		s.recordUnansweredAddressedEnvelopes(th, participantID, envs, turn, completedAt)
 	}
 	s.kickResidentAgent(participantID)
+}
+
+// fallbackDMReplyFromFinalAnswer keeps DMs alive with models that ignore
+// the post_message contract. The chat view renders tool-posted messages
+// only (chat-style-threads-design.md §2); a resident that answers a DM in
+// plain assistant text would be invisible to the user. When a completed DM
+// turn produced a final answer but no participant_message (post_message or
+// decline), republish the final answer as the resident's message. Models
+// that follow the contract never hit this path.
+func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID string, turn Turn, completedAt time.Time) {
+	if s == nil || th == nil || turn.Status != TurnStatusCompleted {
+		return
+	}
+	th.mu.Lock()
+	threadID := th.ID
+	isOwnDM := strings.TrimSpace(th.DMParticipantID) == participantID
+	th.mu.Unlock()
+	if !isOwnDM {
+		return
+	}
+	finalAnswer := ""
+	for _, item := range turn.Items {
+		switch item.Type {
+		case ThreadItemParticipantMsg:
+			// The resident already spoke through the tool channel
+			// (post_message anywhere, or decline).
+			return
+		case ThreadItemAgentMessage:
+			if text := strings.TrimSpace(item.Text); text != "" {
+				finalAnswer = text
+			}
+		}
+	}
+	if finalAnswer == "" {
+		return
+	}
+	msg := agentcontrol.ParticipantMessage{
+		AgentID:       participantID,
+		ParticipantID: participantID,
+		Kind:          "result",
+		Text:          finalAnswer,
+		CreatedAt:     completedAt,
+	}
+	if err := s.publishParticipantMessage(threadID, msg); err != nil {
+		providers.DebugLogf("fallback DM reply for %s: %v", participantID, err)
+	}
 }
 
 func (s *Server) recordUnansweredAddressedEnvelopes(th *threadState, participantID string, envs []MessageEnvelope, turn Turn, completedAt time.Time) {

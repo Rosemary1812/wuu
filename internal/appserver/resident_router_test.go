@@ -252,3 +252,74 @@ func TestResidentPostMessageToAllChannelWithoutExplicitMembership(t *testing.T) 
 		t.Fatalf("post_message to #all without explicit membership: %v", err)
 	}
 }
+
+func TestFallbackDMReplyPublishesFinalAnswerWhenNoToolPost(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	th, err := srv.ensureResidentDMThread(ada)
+	if err != nil {
+		t.Fatalf("ensureResidentDMThread: %v", err)
+	}
+	turn := Turn{
+		ID:     "turn-1",
+		Status: TurnStatusCompleted,
+		Items: []ThreadItem{
+			{ID: "i1", Type: ThreadItemUserMessage, Text: "hi"},
+			{ID: "i2", Type: ThreadItemAgentMessage, Text: "你好，我是 Ada。"},
+		},
+	}
+	srv.fallbackDMReplyFromFinalAnswer(th, ada, turn, time.Now().UTC())
+
+	th.mu.Lock()
+	snapshot := th.snapshotLocked()
+	th.mu.Unlock()
+	found := false
+	for _, tn := range snapshot.Turns {
+		for _, item := range tn.Items {
+			if item.Type == ThreadItemParticipantMsg && item.Text == "你好，我是 Ada。" && item.PostKind == "result" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected fallback participant_message in DM thread, turns=%+v", snapshot.Turns)
+	}
+}
+
+func TestFallbackDMReplySkipsWhenResidentUsedTools(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	th, err := srv.ensureResidentDMThread(ada)
+	if err != nil {
+		t.Fatalf("ensureResidentDMThread: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		turn Turn
+	}{
+		{"already posted", Turn{ID: "t1", Status: TurnStatusCompleted, Items: []ThreadItem{
+			{ID: "i1", Type: ThreadItemParticipantMsg, Text: "posted"},
+			{ID: "i2", Type: ThreadItemAgentMessage, Text: "final"},
+		}}},
+		{"failed turn", Turn{ID: "t2", Status: TurnStatusFailed, Items: []ThreadItem{
+			{ID: "i1", Type: ThreadItemAgentMessage, Text: "final"},
+		}}},
+		{"no final answer", Turn{ID: "t3", Status: TurnStatusCompleted, Items: []ThreadItem{
+			{ID: "i1", Type: ThreadItemUserMessage, Text: "hi"},
+		}}},
+	} {
+		srv.fallbackDMReplyFromFinalAnswer(th, ada, tc.turn, time.Now().UTC())
+		th.mu.Lock()
+		snapshot := th.snapshotLocked()
+		th.mu.Unlock()
+		for _, tn := range snapshot.Turns {
+			for _, item := range tn.Items {
+				if item.Type == ThreadItemParticipantMsg {
+					t.Fatalf("%s: unexpected fallback message published", tc.name)
+				}
+			}
+		}
+	}
+}
