@@ -3077,6 +3077,68 @@ export function App(): JSX.Element {
     }
   }
 
+  /**
+   * Create a chat-style group thread (chat-style-threads-design.md §3)
+   * from the sidebar's 群聊 inline creator and select it. Mirrors the
+   * fresh-thread branch of openParticipantDM: the created thread is
+   * upserted into state, bound to a session tab, and made primary.
+   */
+  async function createGroupThread(title: string): Promise<void> {
+    const currentState = appStateRef.current;
+    if (!currentState.activeContext || !currentState.initialized) {
+      return;
+    }
+    cancelViewSwitch();
+    setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
+    setPrompt("");
+    setComposerImages([]);
+    setComposerFiles([]);
+    try {
+      const { thread } = await window.wuu.startThread({ group: true, title });
+      if (
+        !sameRuntimeContext(
+          appStateRef.current.activeContext,
+          currentState.activeContext,
+        )
+      ) {
+        return;
+      }
+      const activeContext = appStateRef.current.activeContext;
+      if (!activeContext) {
+        return;
+      }
+      const targetDraft = sessionTabDraftForThread(appStateRef.current, thread.id);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setState((current) => {
+        const withDraft = persistActiveSessionTabDraft(
+          current,
+          currentPrimaryComposerDraft(),
+        );
+        return {
+          ...withDraft,
+          thread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(thread, activeContext, targetDraft),
+          ),
+          activeSessionTabID: threadSessionTabID(thread.id),
+          threads: upsertThread(current.threads, thread),
+          running: isThreadRunning(thread),
+          status: "ready",
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "无法创建群聊",
+      }));
+    }
+  }
+
   function handleParticipantSave(params: ParticipantSaveParams): void {
     setParticipantPanel((current) =>
       current
@@ -6983,6 +7045,7 @@ export function App(): JSX.Element {
         onSelectParticipant={(participant) => void openParticipantDM(participant)}
         onEditParticipant={openParticipantProfile}
         onCreateParticipant={openNewParticipantProfile}
+        onCreateGroupThread={(title) => void createGroupThread(title)}
         onImportParticipants={importParticipantTemplate}
         onExportParticipants={exportParticipantTemplate}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}

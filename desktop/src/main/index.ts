@@ -48,6 +48,7 @@ import type {
   ThreadListSubResult,
   ThreadOpenSubResult,
   ThreadResolveSubResult,
+  ThreadStartParams,
   Turn,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
@@ -486,7 +487,7 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "wuu:thread-start",
-    (_event, params?: { dm_participant_id?: string }) =>
+    (_event, params?: ThreadStartParams) =>
       appServerClientPool.request<{ thread: Thread }>("thread/start", params ?? {}),
   );
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>

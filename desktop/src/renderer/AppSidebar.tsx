@@ -316,6 +316,7 @@ export function AppSidebar({
   onSelectParticipant,
   onEditParticipant,
   onCreateParticipant,
+  onCreateGroupThread,
   onImportParticipants,
   onExportParticipants,
   onTogglePinned,
@@ -341,9 +342,10 @@ export function AppSidebar({
   sidebarProjects: DesktopProject[];
   pinnedThreads: ThreadSummary[];
   // Group (chat-style) threads for the sidebar's 群聊 section, between
-  // 置顶 and 对话 (chat-style-threads-design.md §1, §3). Always empty
-  // until the backend serializes Thread.group — the section then
-  // renders the inert "# all" placeholder instead.
+  // 置顶 and 对话 (chat-style-threads-design.md §1, §3). Empty when the
+  // roster has no named agents yet (the backend auto-creates the # all
+  // channel once one exists) — the section then renders the inert
+  // "# all" placeholder instead.
   groupThreads: ThreadSummary[];
   activeThreadID?: string;
   // The active thread's dm_participant_id (when the active thread is a
@@ -396,6 +398,11 @@ export function AppSidebar({
   // right-click menu. Opens the profile editing side panel.
   onEditParticipant: (participant: ParticipantProfile) => void;
   onCreateParticipant: () => void;
+  // Fires when the user submits a name in the 群聊 section's inline
+  // creator. App.tsx starts the group thread via
+  // startThread({ group: true, title }) and selects it. Optional so test
+  // harnesses can render the sidebar without wiring thread creation.
+  onCreateGroupThread?: (title: string) => void;
   onImportParticipants: (file: File) => void;
   onExportParticipants: () => void;
   onTogglePinned: (thread: ThreadSummary) => void;
@@ -423,6 +430,11 @@ export function AppSidebar({
   const participantTemplateInputRef = useRef<HTMLInputElement>(null);
   const rosterMenuRef = useRef<HTMLDivElement>(null);
   const [rosterMenuOpen, setRosterMenuOpen] = useState(false);
+  // Inline creator for the 群聊 section: the + button reveals a name
+  // input that submits on Enter and cancels on Escape. Uncontrolled
+  // (ref-read on submit) — the value only matters at commit time.
+  const [creatingGroupThread, setCreatingGroupThread] = useState(false);
+  const groupNameInputRef = useRef<HTMLInputElement>(null);
   // Right-click menu on an individual agent row. The menu hosts the
   // profile-editing entry plus a pin/unpin DM affordance that drives off
   // the latest DM thread for that participant. The roster header's own
@@ -675,10 +687,10 @@ export function AppSidebar({
           })()}
           {(() => {
             // 群聊 sits between 置顶 and 对话 (chat-style-threads-
-            // design.md §1). Fixed position like 置顶 — group threads
-            // are data-gated on the backend, so today the section is
-            // always visible but its body is the inert "# all"
-            // placeholder until Thread.group starts arriving.
+            // design.md §1). Fixed position like 置顶. The backend
+            // auto-creates the # all channel once the named-agent
+            // roster is non-empty, so an empty list means "no agents
+            // yet" and the section shows the inert "# all" placeholder.
             const groupCollapsed = collapsedProjectIDs.has(
               SIDEBAR_SECTION_GROUP,
             );
@@ -686,6 +698,28 @@ export function AppSidebar({
               ...thread,
               title: `#${baseThreadTitle(thread, groupThreads)}`,
             }));
+            const commitGroupName = (): void => {
+              const title = groupNameInputRef.current?.value.trim() ?? "";
+              if (title === "") {
+                return;
+              }
+              setCreatingGroupThread(false);
+              onCreateGroupThread?.(title);
+            };
+            const groupActions = (
+              <div className="sidebar-section-actions group-thread-actions">
+                <button
+                  type="button"
+                  className="participant-roster-add"
+                  aria-label="新建群聊"
+                  title="新建群聊"
+                  disabled={!state.initialized}
+                  onClick={() => setCreatingGroupThread(true)}
+                >
+                  <Plus aria-hidden="true" />
+                </button>
+              </div>
+            );
             return (
               <section className="group-thread-section" aria-label="群聊">
                 <SidebarSection
@@ -699,8 +733,31 @@ export function AppSidebar({
                   onToggle={() =>
                     onToggleProjectCollapsed(SIDEBAR_SECTION_GROUP)
                   }
+                  actions={groupActions}
                   emptyNote="还没有群聊"
                 >
+                  {creatingGroupThread ? (
+                    <div className="group-thread-name-editor">
+                      <input
+                        ref={groupNameInputRef}
+                        className="group-thread-name-input"
+                        type="text"
+                        placeholder="群聊名称"
+                        aria-label="群聊名称"
+                        autoFocus
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitGroupName();
+                          } else if (event.key === "Escape") {
+                            event.preventDefault();
+                            setCreatingGroupThread(false);
+                          }
+                        }}
+                        onBlur={() => setCreatingGroupThread(false)}
+                      />
+                    </div>
+                  ) : null}
                   {groupRows.length === 0 ? (
                     <div className="thread-list">
                       <div className="thread-row group-thread-row-placeholder disabled">
@@ -708,7 +765,7 @@ export function AppSidebar({
                           className="thread-row-main"
                           type="button"
                           disabled
-                          title="等待后端支持群聊"
+                          title="创建具名 Agent 后自动开启"
                         >
                           <ThreadRowTitle title="# all" />
                         </button>

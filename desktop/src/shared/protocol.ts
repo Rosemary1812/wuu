@@ -763,6 +763,16 @@ export type Thread = {
   browser_state?: ThreadBrowserState;
 };
 
+// Params for thread/start. Mutually exclusive kinds: dm_participant_id
+// starts (or reuses) a DM thread with a named participant; group starts a
+// chat-style group channel with an optional title
+// (chat-style-threads-design.md §3.1). Omit both for a plain work session.
+export type ThreadStartParams = {
+  dm_participant_id?: string;
+  group?: boolean;
+  title?: string;
+};
+
 export type ThreadBrowserState = {
   current_url?: string;
   primary_preview_url?: string;
@@ -1341,7 +1351,7 @@ export type WuuDesktopApi = {
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   refreshMCPServer: (name: string) => Promise<MCPServerActionResult>;
   listSkills: () => Promise<SkillListResult>;
-  startThread: (params?: { dm_participant_id?: string }) => Promise<{ thread: Thread }>;
+  startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;
   forkThread: (

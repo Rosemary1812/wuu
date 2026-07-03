@@ -89,6 +89,7 @@ interface RenderOptions {
   collapsedProjectIDs?: Set<string>;
   participants?: ParticipantProfile[];
   pinnedThreads?: ThreadSummary[];
+  groupThreads?: ThreadSummary[];
   busyParticipantIDs?: Set<string>;
   sidebarProjects?: DesktopProject[];
   activeDMParticipantID?: string;
@@ -97,6 +98,8 @@ interface RenderOptions {
   onSelectParticipant?: (participant: ParticipantProfile) => void;
   onEditParticipant?: (participant: ParticipantProfile) => void;
   onTogglePinned?: (thread: ThreadSummary) => void;
+  onCreateGroupThread?: (title: string) => void;
+  onSelectThread?: (id: string) => void;
 }
 
 function renderSidebar(options: RenderOptions): void {
@@ -105,6 +108,7 @@ function renderSidebar(options: RenderOptions): void {
     collapsedProjectIDs = new Set<string>(),
     participants = [],
     pinnedThreads = [],
+    groupThreads = [],
     busyParticipantIDs = new Set<string>(),
     sidebarProjects = [
       makeProject(SCRATCH_PSEUDO_PROJECT_ID, "对话", ""),
@@ -117,6 +121,8 @@ function renderSidebar(options: RenderOptions): void {
     onSelectParticipant = () => {},
     onEditParticipant = () => {},
     onTogglePinned = () => {},
+    onCreateGroupThread = () => {},
+    onSelectThread = () => {},
   } = options;
 
   const state: AppState = {
@@ -136,7 +142,7 @@ function renderSidebar(options: RenderOptions): void {
         state={state}
         sidebarProjects={sidebarProjects}
         pinnedThreads={pinnedThreads}
-        groupThreads={[]}
+        groupThreads={groupThreads}
         activeThreadID={undefined}
         activeDMParticipantID={activeDMParticipantID}
         dmThreadByParticipantID={dmThreadByParticipantID}
@@ -162,8 +168,9 @@ function renderSidebar(options: RenderOptions): void {
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
         onOpenApprovalGallery={() => {}}
-        onSelectThread={() => {}}
+        onSelectThread={onSelectThread}
         onSelectParticipant={onSelectParticipant}
+        onCreateGroupThread={onCreateGroupThread}
         onEditParticipant={onEditParticipant}
         onCreateParticipant={() => {}}
         onImportParticipants={() => {}}
@@ -990,5 +997,137 @@ describe("sidebar section spacing rhythm", () => {
     // shared section layout (this happened: a stale grid/gap/margin-block
     // block gave the Agents section 2px/26px neighbor gaps instead of 14px).
     expect(participantsCSS).not.toMatch(/^\.participant-roster-section \{/m);
+  });
+});
+
+describe("group chat section", () => {
+  const order = [SIDEBAR_SECTION_AGENTS, "project-1"];
+
+  function groupSection(): HTMLElement | null {
+    return container.querySelector('section[aria-label="群聊"]');
+  }
+
+  it("explains on the # all placeholder that groups open once agents exist", () => {
+    renderSidebar({ sectionOrder: order });
+    const placeholder = groupSection()?.querySelector<HTMLButtonElement>(
+      ".group-thread-row-placeholder .thread-row-main",
+    );
+    expect(placeholder).not.toBeNull();
+    expect(placeholder?.getAttribute("title")).toBe("创建具名 Agent 后自动开启");
+    expect(placeholder?.disabled).toBe(true);
+  });
+
+  it("reveals an inline name input from the 新建群聊 button and submits on Enter", () => {
+    const created: string[] = [];
+    renderSidebar({
+      sectionOrder: order,
+      onCreateGroupThread: (title) => created.push(title),
+    });
+    const addButton = groupSection()?.querySelector<HTMLButtonElement>(
+      'button[aria-label="新建群聊"]',
+    );
+    expect(addButton).not.toBeNull();
+    expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
+    act(() => {
+      addButton?.click();
+    });
+    const input = groupSection()?.querySelector<HTMLInputElement>(
+      ".group-thread-name-input",
+    );
+    expect(input).not.toBeNull();
+    expect(input?.getAttribute("placeholder")).toBe("群聊名称");
+    if (input) {
+      input.value = "  发布协调  ";
+    }
+    act(() => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(created).toEqual(["发布协调"]);
+    expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
+  });
+
+  it("does not create a group for a blank title", () => {
+    const created: string[] = [];
+    renderSidebar({
+      sectionOrder: order,
+      onCreateGroupThread: (title) => created.push(title),
+    });
+    act(() => {
+      groupSection()
+        ?.querySelector<HTMLButtonElement>('button[aria-label="新建群聊"]')
+        ?.click();
+    });
+    const input = groupSection()?.querySelector<HTMLInputElement>(
+      ".group-thread-name-input",
+    );
+    if (input) {
+      input.value = "   ";
+    }
+    act(() => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(created).toEqual([]);
+  });
+
+  it("cancels the inline name input on Escape without creating", () => {
+    const created: string[] = [];
+    renderSidebar({
+      sectionOrder: order,
+      onCreateGroupThread: (title) => created.push(title),
+    });
+    act(() => {
+      groupSection()
+        ?.querySelector<HTMLButtonElement>('button[aria-label="新建群聊"]')
+        ?.click();
+    });
+    const input = groupSection()?.querySelector<HTMLInputElement>(
+      ".group-thread-name-input",
+    );
+    expect(input).not.toBeNull();
+    if (input) {
+      input.value = "半途而废";
+    }
+    act(() => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(created).toEqual([]);
+    expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
+  });
+
+  it("renders group threads with a # title prefix and selects on click", () => {
+    const selected: string[] = [];
+    renderSidebar({
+      sectionOrder: order,
+      groupThreads: [
+        makeThreadSummary("thread-group-1", "发布协调", { group: true }),
+      ],
+      onSelectThread: (id) => selected.push(id),
+    });
+    const section = groupSection();
+    expect(section?.querySelector(".group-thread-row-placeholder")).toBeNull();
+    const row = section?.querySelector<HTMLButtonElement>(".thread-row-main");
+    expect(row?.textContent).toContain("#发布协调");
+    act(() => {
+      row?.click();
+    });
+    expect(selected).toEqual(["thread-group-1"]);
   });
 });

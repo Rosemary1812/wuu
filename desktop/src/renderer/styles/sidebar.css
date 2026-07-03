@@ -1464,3 +1464,32 @@
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
     0 9px 24px var(--ink-overlay-12);
 }
+
+/* 群聊 section (chat-style-threads-design.md §1). The placeholder "# all"
+   row is inert until the backend auto-creates the channel (roster
+   non-empty); the inline name editor appears from the header's 新建群聊
+   button and commits on Enter / cancels on Escape. */
+.group-thread-row-placeholder .thread-row-main {
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.group-thread-name-editor {
+  padding: 2px 8px;
+}
+
+.group-thread-name-input {
+  width: 100%;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.group-thread-name-input:focus {
+  outline: none;
+  border-color: var(--ink-overlay-18);
+}

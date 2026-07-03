@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ServerEvent,
   SettingsUsageRange,
+  ThreadStartParams,
   WindowResizeState,
   WuuDesktopApi,
 } from "../shared/protocol";
@@ -77,7 +78,7 @@ const api: WuuDesktopApi = {
   disconnectMCPServer: (name: string) =>
     ipcRenderer.invoke("wuu:mcp-disconnect", name),
   refreshMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-refresh", name),
-  startThread: (params?: { dm_participant_id?: string }) =>
+  startThread: (params?: ThreadStartParams) =>
     ipcRenderer.invoke("wuu:thread-start", params),
   resumeThread: (sessionId?: string) =>
     ipcRenderer.invoke("wuu:thread-resume", sessionId),
