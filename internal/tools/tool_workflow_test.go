@@ -867,8 +867,8 @@ phase("Workers", () => {
     throw new Error("spawnAgent did not return the completed worker result");
   }
   const awaited = awaitAgents();
-  if (!awaited.results || awaited.results.length !== 1 || !awaited.results[0].result_consumed || awaited.results[0].consumed_by !== "spawn_agent" || awaited.results[0].result) {
-    throw new Error("awaitAgents should report the foreground spawn result as already consumed");
+  if (!awaited.results || awaited.results.length !== 1 || !awaited.results[0].result_consumed || awaited.results[0].consumed_by !== "spawn_agent" || awaited.results[0].result !== "agent done") {
+    throw new Error("awaitAgents should report the foreground spawn result as consumed but still carry its text");
   }
   synthesize("# Final\n\n" + spawned.result);
 });

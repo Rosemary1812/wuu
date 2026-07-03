@@ -105,9 +105,12 @@ func (c *AgentControl) claimAwaitedAgentResults(results []AwaitAgentResult) {
 		if claimed {
 			continue
 		}
+		// The delivery ledger dedupes automatic injection into the parent's
+		// context, not availability: an explicit await always returns the
+		// result text. Annotate that a prior path already consumed it, but
+		// never blank the text a parent asked for by name.
 		result.ResultConsumed = true
 		result.ConsumedBy = consumedBy
-		result.Result = ""
 	}
 }
 

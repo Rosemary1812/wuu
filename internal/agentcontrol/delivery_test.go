@@ -97,8 +97,8 @@ func TestAgentResultDeliveryClaimRestoresFromThreadEvents(t *testing.T) {
 }
 
 // TestAgentResultDeliveryConsumed covers the guard used by no-target
-// await_agents: an awaiting_report task is only re-joined while its raw
-// result has not yet been handed to the model.
+// await_agents: a completed task that filed no structured report is only
+// re-joined while its raw result has not yet been handed to the model.
 func TestAgentResultDeliveryConsumed(t *testing.T) {
 	threadDir := t.TempDir()
 	c := &AgentControl{

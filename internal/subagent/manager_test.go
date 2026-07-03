@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -228,6 +229,126 @@ func TestSpawn_UsesManagerDefaultRequestOptions(t *testing.T) {
 	}
 	if got := req.ProviderOptions["reasoningEffort"]; got != "high" {
 		t.Fatalf("ProviderOptions = %#v", req.ProviderOptions)
+	}
+}
+
+// scriptedStreamClient returns a queued sequence of responses, one per model
+// round-trip, so a test can distinguish the main turn from a re-entry nudge
+// turn. Once the queue is exhausted it returns an empty end_turn completion.
+type scriptedStreamClient struct {
+	mu        sync.Mutex
+	responses []providers.ChatResponse
+	calls     int
+}
+
+func (c *scriptedStreamClient) next() providers.ChatResponse {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var resp providers.ChatResponse
+	if c.calls < len(c.responses) {
+		resp = c.responses[c.calls]
+	} else {
+		resp = providers.ChatResponse{StopReason: "end_turn"}
+	}
+	c.calls++
+	if strings.TrimSpace(resp.StopReason) == "" {
+		resp.StopReason = "end_turn"
+	}
+	return resp
+}
+
+func (c *scriptedStreamClient) callCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func (c *scriptedStreamClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	return c.next(), nil
+}
+
+func (c *scriptedStreamClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	resp := c.next()
+	ch := make(chan providers.StreamEvent, 4)
+	go func() {
+		defer close(ch)
+		if resp.Content != "" {
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: resp.Content}
+		}
+		ch <- providers.StreamEvent{Type: providers.EventDone, StopReason: resp.StopReason, Truncated: resp.Truncated}
+	}()
+	return ch, nil
+}
+
+func TestLastAssistantText_WalksBackToMostRecentText(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "do it"},
+		{Role: "assistant", Content: "the real answer"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{Name: "read_file"}}},
+		{Role: "tool", Content: "file contents"},
+		{Role: "assistant", Content: "   "},
+	}
+	if got := lastAssistantText(history); got != "the real answer" {
+		t.Fatalf("tail-fallback walk = %q, want %q", got, "the real answer")
+	}
+	if got := lastAssistantText(nil); got != "" {
+		t.Fatalf("empty history should yield empty text, got %q", got)
+	}
+}
+
+func TestRunTurn_EmptyOutputNudgeRecoversFinalSummary(t *testing.T) {
+	// Main turn ends with no text; the single re-entry nudge then produces the
+	// summary, which becomes the delivered result.
+	client := &scriptedStreamClient{responses: []providers.ChatResponse{
+		{Content: "", StopReason: "end_turn"},
+		{Content: "final summary after nudge", StopReason: "end_turn"},
+	}}
+	mgr := NewManager(client, "fake-model")
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{Type: "worker", Prompt: "do thing", Toolkit: fakeToolkit{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if snap.Status != StatusCompleted {
+		t.Fatalf("expected completed, got %s", snap.Status)
+	}
+	if snap.Result != "final summary after nudge" {
+		t.Fatalf("nudge result = %q, want the nudged summary", snap.Result)
+	}
+	if client.callCount() != 2 {
+		t.Fatalf("expected exactly one main turn plus one nudge turn, got %d model calls", client.callCount())
+	}
+}
+
+func TestRunTurn_EmptyOutputFallsBackToPlaceholder(t *testing.T) {
+	// The worker produces nothing on the main turn and nothing on the nudge:
+	// the result settles on the clearly-labelled placeholder, and the run is
+	// still completed (empty output is not a runtime failure).
+	client := &scriptedStreamClient{responses: []providers.ChatResponse{
+		{Content: "", StopReason: "end_turn"},
+		{Content: "", StopReason: "end_turn"},
+	}}
+	mgr := NewManager(client, "fake-model")
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{Type: "worker", Prompt: "do thing", Toolkit: fakeToolkit{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if snap.Status != StatusCompleted {
+		t.Fatalf("empty output must stay completed, got %s", snap.Status)
+	}
+	if snap.Result != emptyWorkerResultPlaceholder {
+		t.Fatalf("empty result = %q, want placeholder %q", snap.Result, emptyWorkerResultPlaceholder)
+	}
+	if client.callCount() != 2 {
+		t.Fatalf("expected exactly one nudge (2 model calls), got %d", client.callCount())
 	}
 }
 

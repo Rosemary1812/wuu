@@ -349,11 +349,36 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	runner.BeforeStep = beforeStep
 	res, err := runner.RunWithCallback(ctx, history, onEvent)
 	content := res.Content
-	nextHistory := providers.CloneChatMessages(history)
-	if res.HistoryRewritten {
-		nextHistory = providers.CloneChatMessages(res.NewMessages)
-	} else if len(res.NewMessages) > 0 {
-		nextHistory = append(nextHistory, providers.CloneChatMessages(res.NewMessages)...)
+	nextHistory := mergeTurnHistory(history, res)
+
+	if err == nil {
+		// Result delivery is unconditional: the parent always receives the
+		// worker's final text. Recover it through a layered, gently degrading
+		// fallback so an empty final turn never yields an empty handoff.
+		//
+		//  1. Tail fallback walk (Claude Code pattern): if the final assistant
+		//     turn carried no text (e.g. it was pure tool_use), walk back to
+		//     the most recent assistant message that did.
+		if strings.TrimSpace(content) == "" {
+			content = lastAssistantText(nextHistory)
+		}
+		//  2. One mechanical re-entry nudge: still empty means the worker
+		//     stopped without saying anything. Ask once for a final summary,
+		//     reusing the same turn machinery in place (no parallel loop).
+		if strings.TrimSpace(content) == "" && ctx.Err() == nil {
+			if nudged, nudgedHistory, ok := m.runFinalSummaryNudge(ctx, runner, sa, nextHistory, onEvent); ok {
+				nextHistory = nudgedHistory
+				if strings.TrimSpace(nudged) != "" {
+					content = nudged
+				}
+			}
+		}
+		//  3. Clearly labelled placeholder: only if the worker genuinely
+		//     produced nothing. A placeholder is not a fabricated statement,
+		//     so it does not violate "the runtime never answers for the model".
+		if strings.TrimSpace(content) == "" {
+			content = emptyWorkerResultPlaceholder
+		}
 	}
 
 	sa.mu.Lock()
@@ -382,6 +407,64 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 
 	m.notify(sa, finalStatus)
+}
+
+// emptyWorkerResultPlaceholder is the clearly-labelled stand-in delivered when
+// a worker completes without producing any final text, even after a nudge. It
+// records the runtime fact ("no output") rather than inventing an answer.
+const emptyWorkerResultPlaceholder = "(Subagent completed but returned no output.)"
+
+// mergeTurnHistory extends the pre-turn history with the messages a turn
+// produced, honoring an auto-compaction rewrite.
+func mergeTurnHistory(history []providers.ChatMessage, res agent.LoopResult) []providers.ChatMessage {
+	if res.HistoryRewritten {
+		return providers.CloneChatMessages(res.NewMessages)
+	}
+	next := providers.CloneChatMessages(history)
+	if len(res.NewMessages) > 0 {
+		next = append(next, providers.CloneChatMessages(res.NewMessages)...)
+	}
+	return next
+}
+
+// lastAssistantText walks history backward and returns the most recent
+// assistant message that carries visible text. This is the Claude Code
+// tail-fallback: when the final assistant turn is empty or pure tool_use, the
+// deliverable is the last thing the model actually said.
+func lastAssistantText(history []providers.ChatMessage) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		msg := history[i]
+		if msg.Role != "assistant" {
+			continue
+		}
+		if strings.TrimSpace(msg.Content) != "" {
+			return msg.Content
+		}
+	}
+	return ""
+}
+
+// runFinalSummaryNudge runs exactly one additional turn asking a completed
+// worker that produced no text for a final summary. It reuses the same runner
+// and turn loop in place (no parallel goroutine) and reports the recovered
+// text plus the extended history. Best-effort: a nudge that errors leaves the
+// worker's completed result and history untouched.
+func (m *Manager) runFinalSummaryNudge(ctx context.Context, runner *agent.StreamRunner, sa *SubAgent, history []providers.ChatMessage, onEvent agent.StreamCallback) (string, []providers.ChatMessage, bool) {
+	nudge := providers.ChatMessage{
+		Role:    "user",
+		Content: "You have finished the task but returned no final message. Provide your final summary now: state what you did, what you found or changed, and anything left undone.",
+	}
+	turnHistory := append(providers.CloneChatMessages(history), nudge)
+	res, err := runner.RunWithCallback(ctx, turnHistory, onEvent)
+	if err != nil {
+		return "", history, false
+	}
+	nextHistory := mergeTurnHistory(turnHistory, res)
+	content := res.Content
+	if strings.TrimSpace(content) == "" {
+		content = lastAssistantText(nextHistory)
+	}
+	return content, nextHistory, true
 }
 
 // notify pushes a notification to all listeners. Drops on full channels.

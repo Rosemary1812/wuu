@@ -12,6 +12,59 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+// TestAwaitAlwaysCarriesResultTextAfterConsumption verifies the delivery
+// ledger dedupes injection only: once a worker's result has been claimed, an
+// explicit re-await still returns the full result text so a parent that asks
+// again is never handed an empty row.
+func TestAwaitAlwaysCarriesResultTextAfterConsumption(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "durable worker answer"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-await-carry",
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-await-carry", "threads"),
+		HarnessDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-await-carry", "harness"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "carry_result",
+		Prompt:      "finish the task",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	first, err := c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("first AwaitFrom: %v", err)
+	}
+	if len(first.Results) != 1 || strings.TrimSpace(first.Results[0].Result) == "" {
+		t.Fatalf("first await should carry the result text, got %+v", first.Results)
+	}
+
+	second, err := c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("second AwaitFrom: %v", err)
+	}
+	if len(second.Results) != 1 {
+		t.Fatalf("explicit re-await should still return the task, got %+v", second.Results)
+	}
+	if strings.TrimSpace(second.Results[0].Result) == "" {
+		t.Fatalf("explicit re-await must still carry the result text after the delivery was consumed, got %+v", second.Results[0])
+	}
+}
+
 func TestAwaitAgentsNextStepsDoNotMentionWorkflowForPlainResults(t *testing.T) {
 	result := AwaitAgentsResult{
 		Results: []AwaitAgentResult{{Status: string(harness.TaskStatusCompleted)}},
