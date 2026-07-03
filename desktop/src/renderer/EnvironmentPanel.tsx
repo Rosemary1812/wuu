@@ -1,5 +1,4 @@
 import {
-  Activity,
   AlertCircle,
   Archive,
   Check,
@@ -10,12 +9,9 @@ import {
   FolderPlus,
   Github,
   GitBranch,
-  Globe,
   Pin,
   Plus,
   Search,
-  Square,
-  Terminal,
   X
 } from "lucide-react";
 import { type FormEvent as ReactFormEvent, type RefObject, useEffect, useState } from "react";
@@ -23,9 +19,7 @@ import type {
   Agent,
   GitStatusResult,
   InitializeResult,
-  ManagedProcess,
   PlanUpdate,
-  Thread,
   WorkspaceFileReadResult
 } from "../shared/protocol";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
@@ -36,79 +30,12 @@ import { type SubagentRowSummary } from "./EnvironmentSideStack";
 export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
 
-export type BackgroundProcessItem = {
-  id: string;
-  ownerID?: string;
-  command: string;
-  cwd?: string;
-  lifecycle?: string;
-  status: string;
-  previewURLs?: string[];
-  primaryPreviewURL?: string;
-  startedAt?: string;
-  updatedAt?: string;
-  lastError?: string;
-};
-
-type JsonRecord = Record<string, unknown>;
-export function buildBackgroundProcessItems(
-  thread?: Thread,
-  managedProcesses: ManagedProcess[] = []
-): BackgroundProcessItem[] {
-  const byID = new Map<string, BackgroundProcessItem>();
-  if (thread) {
-    for (const turn of thread.turns) {
-      for (const item of turn.items) {
-        if (item.type !== "tool_call" && item.type !== "collab_agent_tool_call") {
-          continue;
-        }
-        const capability = item.display?.capability?.trim();
-        if (capability === "command.background" && item.status === "in_progress") {
-          const args = parseJsonRecord(item.arguments);
-          const command = stringValue(args, "command");
-          if (command) {
-            byID.set(item.id, {
-              id: item.id,
-              command,
-              cwd: stringValue(args, "cwd"),
-              lifecycle: stringValue(args, "lifecycle") || "session",
-              status: "starting"
-            });
-          }
-        }
-        for (const process of processItemsFromToolResult(item.result)) {
-          byID.delete(item.id);
-          byID.set(process.id, process);
-        }
-      }
-    }
-  }
-  for (const process of managedProcesses) {
-    byID.set(process.id, processItemFromManagedProcess(process));
-  }
-  return [...byID.values()].filter(backgroundProcessShouldDisplay).sort(compareBackgroundProcesses);
-}
-
-export function backgroundProcessIsLive(process: BackgroundProcessItem): boolean {
-  return process.status === "starting" || process.status === "running" || process.status === "stopping";
-}
-
-export function backgroundProcessNeedsAttention(process: BackgroundProcessItem): boolean {
-  return process.status === "failed";
-}
-
-function backgroundProcessShouldDisplay(process: BackgroundProcessItem): boolean {
-  return backgroundProcessIsLive(process) || backgroundProcessNeedsAttention(process);
-}
-
 export function EnvironmentPanel({
   panelRef,
   motionState,
   initialized,
   gitStatus,
   planUpdate,
-  backgroundProcesses,
-  stoppingProcessIDs,
   activeMenu,
   running,
   pullRequestDisabledReason,
@@ -119,8 +46,6 @@ export function EnvironmentPanel({
   onOpenReview,
   onOpenCommit,
   onOpenPullRequest,
-  onStopBackgroundProcess,
-  onOpenBackgroundPreview,
   rightPanelFilePath,
   onCloseFilePreview,
   subagentSessions,
@@ -135,8 +60,6 @@ export function EnvironmentPanel({
   initialized: InitializeResult;
   gitStatus?: GitStatusResult;
   planUpdate?: PlanUpdate;
-  backgroundProcesses: BackgroundProcessItem[];
-  stoppingProcessIDs: Set<string>;
   activeMenu: EnvironmentPanelMenu;
   running: boolean;
   pullRequestDisabledReason: string;
@@ -147,8 +70,6 @@ export function EnvironmentPanel({
   onOpenReview: () => void;
   onOpenCommit: () => void;
   onOpenPullRequest: () => void;
-  onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
-  onOpenBackgroundPreview: (process: BackgroundProcessItem) => void;
   /**
    * Absolute path to a workspace file the right panel should preview. When
    * present together with `activeMenu === "file"`, the panel swaps its
@@ -301,15 +222,6 @@ export function EnvironmentPanel({
             onClearArchiveConfirm={onClearSubagentArchiveConfirm}
           />
         ) : null}
-
-        {backgroundProcesses.length > 0 ? (
-          <EnvironmentBackgroundProcesses
-            processes={backgroundProcesses.slice(0, 5)}
-            stoppingProcessIDs={stoppingProcessIDs}
-            onStopProcess={onStopBackgroundProcess}
-            onOpenPreview={onOpenBackgroundPreview}
-          />
-        ) : null}
       </div>
 
       {activeMenu === "branch" && gitStatus?.is_repo ? (
@@ -320,75 +232,6 @@ export function EnvironmentPanel({
         />
       ) : null}
     </aside>
-  );
-}
-
-function EnvironmentBackgroundProcesses({
-  processes,
-  stoppingProcessIDs,
-  onStopProcess,
-  onOpenPreview
-}: {
-  processes: BackgroundProcessItem[];
-  stoppingProcessIDs: Set<string>;
-  onStopProcess: (process: BackgroundProcessItem) => void;
-  onOpenPreview: (process: BackgroundProcessItem) => void;
-}): JSX.Element {
-  const activeCount = processes.filter(backgroundProcessIsLive).length;
-  const failedCount = processes.filter(backgroundProcessNeedsAttention).length;
-  const countLabel =
-    activeCount > 0
-      ? `${activeCount} 个活跃`
-      : failedCount > 0
-        ? `${failedCount} 个失败`
-        : `${processes.length} 个任务`;
-  return (
-    <section className="environment-process-section" aria-label="后台任务">
-      <div className="environment-process-heading">
-        <span>
-          <Activity className="icon" />
-          后台任务
-        </span>
-        <span>{countLabel}</span>
-      </div>
-      <div className="environment-process-list">
-        {processes.map((process) => (
-          <div className="environment-process-row" key={process.id}>
-            <Terminal className="icon" />
-            <div>
-              <strong title={process.command}>{process.command}</strong>
-              <span>{processDetail(process)}</span>
-            </div>
-            <span className={`environment-process-status ${processStatusTone(process.status)}`}>
-              {processStatusLabel(process.status)}
-            </span>
-            {process.primaryPreviewURL ? (
-              <button
-                className="environment-process-action"
-                type="button"
-                aria-label={`打开预览 ${process.primaryPreviewURL}`}
-                title={process.primaryPreviewURL}
-                onClick={() => onOpenPreview(process)}
-              >
-                <Globe className="icon-xs" />
-              </button>
-            ) : null}
-            {processCanStop(process) ? (
-              <button
-                className="environment-process-action"
-                type="button"
-                aria-label={`停止 ${process.command}`}
-                disabled={stoppingProcessIDs.has(process.id)}
-                title="停止后台任务"
-                onClick={() => onStopProcess(process)}
-              >
-                <Square className="icon-xs" />
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -429,7 +272,7 @@ function EnvironmentSubagents({
   );
   return (
     <section className="environment-subagent-section" aria-label="子任务">
-      <div className="environment-process-heading">
+      <div className="environment-section-heading">
         <span>
           <CornerDownRight className="icon" />
           子任务
@@ -558,180 +401,6 @@ function agentLabelFromSummary(agent: SubagentRowSummary): string {
 function agentTooltipFromSummary(agent: SubagentRowSummary): string {
   const path = agent.agent_path ? ` · ${agent.agent_path}` : "";
   return `${agentLabelFromSummary(agent)} · ${agentStatusLabel(agent.status)}${path}`;
-}
-
-function processItemsFromToolResult(result: string | undefined): BackgroundProcessItem[] {
-  const record = parseJsonRecord(result);
-  if (!record) {
-    return [];
-  }
-  const action = stringValue(record, "action");
-  if (action === "list_background") {
-    const processes = Array.isArray(record.processes) ? record.processes : [];
-    return processes.flatMap((item) => {
-      const process = asRecord(item);
-      return process ? processItemFromRecord(process) : [];
-    });
-  }
-  if (
-    action === "read_background" ||
-    action === "write_background"
-  ) {
-    const process = asRecord(record.process);
-    return process ? processItemFromRecord(process) : [];
-  }
-  if (
-    action === "start_background" ||
-    action === "stop_background"
-  ) {
-    return processItemFromRecord(record);
-  }
-  const process = asRecord(record.process);
-  if (process) {
-    return processItemFromRecord(process);
-  }
-  return [];
-}
-
-function processItemFromRecord(record: JsonRecord): BackgroundProcessItem[] {
-  const id = stringValue(record, "id");
-  if (!id) {
-    return [];
-  }
-  return [
-    {
-      id,
-      ownerID: stringValue(record, "owner_id"),
-      command: stringValue(record, "command") || id,
-      cwd: stringValue(record, "cwd"),
-      lifecycle: stringValue(record, "lifecycle"),
-      status: stringValue(record, "status") || "running",
-      previewURLs: stringArrayValue(record, "preview_urls"),
-      primaryPreviewURL: stringValue(record, "primary_preview_url"),
-      startedAt: stringValue(record, "started_at"),
-      updatedAt: stringValue(record, "updated_at"),
-      lastError: stringValue(record, "last_error")
-    }
-  ];
-}
-
-function processItemFromManagedProcess(process: ManagedProcess): BackgroundProcessItem {
-  return {
-    id: process.id,
-    ownerID: process.owner_id,
-    command: process.command || process.id,
-    cwd: process.cwd,
-    lifecycle: process.lifecycle,
-    status: process.status || "running",
-    previewURLs: process.preview_urls,
-    primaryPreviewURL: process.primary_preview_url,
-    startedAt: process.started_at,
-    updatedAt: process.updated_at,
-    lastError: process.last_error
-  };
-}
-
-function processCanStop(process: BackgroundProcessItem): boolean {
-  return process.id.startsWith("proc-") && (process.status === "starting" || process.status === "running");
-}
-
-function compareBackgroundProcesses(a: BackgroundProcessItem, b: BackgroundProcessItem): number {
-  const status = processStatusRank(a.status) - processStatusRank(b.status);
-  if (status !== 0) {
-    return status;
-  }
-  return processTimestamp(b) - processTimestamp(a);
-}
-
-function processTimestamp(process: BackgroundProcessItem): number {
-  const value = Date.parse(process.updatedAt || process.startedAt || "");
-  return Number.isFinite(value) ? value : 0;
-}
-
-function processStatusRank(status: string): number {
-  switch (processStatusTone(status)) {
-    case "running":
-      return 0;
-    case "stopping":
-      return 1;
-    case "failed":
-      return 2;
-    case "stopped":
-      return 3;
-    default:
-      return 4;
-  }
-}
-
-function processStatusTone(status: string): "running" | "stopping" | "failed" | "stopped" {
-  switch (status) {
-    case "starting":
-    case "running":
-      return "running";
-    case "stopping":
-      return "stopping";
-    case "failed":
-      return "failed";
-    case "stopped":
-    default:
-      return "stopped";
-  }
-}
-
-function processStatusLabel(status: string): string {
-  switch (status) {
-    case "starting":
-      return "启动中";
-    case "running":
-      return "运行中";
-    case "stopping":
-      return "停止中";
-    case "failed":
-      return "失败";
-    case "stopped":
-      return "已停止";
-    default:
-      return status || "未知";
-  }
-}
-
-function processDetail(process: BackgroundProcessItem): string {
-  if (process.status === "failed" && process.lastError) {
-    return process.lastError;
-  }
-  const lifecycle =
-    process.lifecycle === "managed" ? "需手动清理" : process.lifecycle === "session" ? "随会话清理" : "";
-  const parts = [process.cwd, lifecycle].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : process.id;
-}
-
-function parseJsonRecord(value: string | undefined): JsonRecord | undefined {
-  if (!value) {
-    return undefined;
-  }
-  try {
-    return asRecord(JSON.parse(value));
-  } catch {
-    return undefined;
-  }
-}
-
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonRecord) : undefined;
-}
-
-function stringValue(record: JsonRecord | undefined, key: string): string {
-  const value = record?.[key];
-  return typeof value === "string" ? value : "";
-}
-
-function stringArrayValue(record: JsonRecord | undefined, key: string): string[] | undefined {
-  const value = record?.[key];
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const items = value.filter((item): item is string => typeof item === "string" && item.length > 0);
-  return items.length > 0 ? items : undefined;
 }
 
 function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {

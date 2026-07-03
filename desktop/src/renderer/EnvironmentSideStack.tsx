@@ -3,7 +3,6 @@ import type { Agent, PlanUpdate } from "../shared/protocol";
 import type { AppState } from "./AppState";
 import {
   EnvironmentPanel,
-  type BackgroundProcessItem,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
@@ -33,8 +32,6 @@ export function EnvironmentSideStack({
   closing,
   motionState,
   planUpdate,
-  backgroundProcesses,
-  stoppingProcessIDs,
   activeMenu,
   running,
   pullRequestDisabledReason,
@@ -47,8 +44,6 @@ export function EnvironmentSideStack({
   onOpenReview,
   onOpenCommit,
   onOpenPullRequest,
-  onStopBackgroundProcess,
-  onOpenBackgroundPreview,
   subagentSessions,
   archiveConfirmSubagentID,
   onSelectSubagent,
@@ -63,8 +58,6 @@ export function EnvironmentSideStack({
   closing: boolean;
   motionState: EnvironmentPanelMotionState;
   planUpdate?: PlanUpdate;
-  backgroundProcesses: BackgroundProcessItem[];
-  stoppingProcessIDs: Set<string>;
   activeMenu: EnvironmentPanelMenu;
   running: boolean;
   pullRequestDisabledReason: string;
@@ -82,14 +75,11 @@ export function EnvironmentSideStack({
   onOpenReview: () => void;
   onOpenCommit: () => void;
   onOpenPullRequest: () => void;
-  onStopBackgroundProcess: (process: BackgroundProcessItem) => void;
-  onOpenBackgroundPreview: (process: BackgroundProcessItem) => void;
   /**
    * Subagent sessions owned by the active thread. Rendered in the
-   * environment panel as a "子任务" section above the background-process
-   * list. When undefined/empty the section is hidden, matching the user
-   * intent that no row appears unless the main session actually has
-   * subagents.
+   * environment panel as a "子任务" section. When undefined/empty the
+   * section is hidden, matching the user intent that no row appears unless
+   * the main session actually has subagents.
    */
   subagentSessions?: SubagentRowSummary[];
   /**
@@ -115,8 +105,6 @@ export function EnvironmentSideStack({
         initialized={state.initialized}
         gitStatus={state.gitStatus}
         planUpdate={planUpdate}
-        backgroundProcesses={backgroundProcesses}
-        stoppingProcessIDs={stoppingProcessIDs}
         activeMenu={activeMenu}
         running={running}
         pullRequestDisabledReason={pullRequestDisabledReason}
@@ -129,8 +117,6 @@ export function EnvironmentSideStack({
         onOpenReview={onOpenReview}
         onOpenCommit={onOpenCommit}
         onOpenPullRequest={onOpenPullRequest}
-        onStopBackgroundProcess={onStopBackgroundProcess}
-        onOpenBackgroundPreview={onOpenBackgroundPreview}
         subagentSessions={subagentSessions}
         archiveConfirmSubagentID={archiveConfirmSubagentID}
         onSelectSubagent={onSelectSubagent}

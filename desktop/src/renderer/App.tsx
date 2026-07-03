@@ -1,7 +1,6 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
 import {
-  AlertCircle,
   Bug,
   ChevronRight,
   Film,
@@ -45,7 +44,6 @@ import type {
   InitializeResult,
   InputFile,
   InputImage,
-  ManagedProcess,
   ParticipantProfile,
   ParticipantSaveParams,
   PendingToolApproval,
@@ -130,10 +128,6 @@ import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { lastUserMessageAnchor } from "./TurnViewHelpers";
 import { AppSidebar } from "./AppSidebar";
 import {
-  backgroundProcessIsLive,
-  backgroundProcessNeedsAttention,
-  buildBackgroundProcessItems,
-  type BackgroundProcessItem,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
@@ -184,7 +178,6 @@ import {
   requireThread,
   runtimeContextKey,
   sameRuntimeContext,
-  serverEventMayAffectProcesses,
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
   sessionTabForLoadedRuntime,
@@ -202,7 +195,6 @@ import {
   turnFromRecord,
   turnStreamStatusForThread,
   updateThreadByID,
-  upsertManagedProcess,
   upsertThreadChildAgent,
   upsertThread,
   upsertTurn,
@@ -763,12 +755,6 @@ export function App(): JSX.Element {
   const [participantPanel, setParticipantPanel] = useState<
     ParticipantPanelState | undefined
   >(undefined);
-  const [managedProcesses, setManagedProcesses] = useState<ManagedProcess[]>(
-    [],
-  );
-  const [stoppingProcessIDs, setStoppingProcessIDs] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
     string | undefined
   >(undefined);
@@ -834,9 +820,6 @@ export function App(): JSX.Element {
   const gitRefreshTimerRef = useRef<number | undefined>(undefined);
   const gitRefreshInFlightRef = useRef(false);
   const gitRefreshQueuedRef = useRef(false);
-  const managedProcessRefreshTimerRef = useRef<number | undefined>(undefined);
-  const managedProcessRefreshInFlightRef = useRef(false);
-  const managedProcessRefreshQueuedRef = useRef(false);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
@@ -1096,28 +1079,6 @@ export function App(): JSX.Element {
     });
     return nextParticipants;
   });
-  const backgroundProcesses = useMemo(
-    () => buildBackgroundProcessItems(activeThread, managedProcesses),
-    [activeThread, managedProcesses],
-  );
-  const liveBackgroundProcesses = backgroundProcesses.filter(backgroundProcessIsLive);
-  const failedBackgroundProcesses = backgroundProcesses.filter(backgroundProcessNeedsAttention);
-  const backgroundProcessCapsuleVisible =
-    liveBackgroundProcesses.length > 0 || failedBackgroundProcesses.length > 0;
-  const backgroundProcessCapsuleLabel =
-    failedBackgroundProcesses.length > 0
-      ? `后台 ${failedBackgroundProcesses.length} 失败`
-      : liveBackgroundProcesses.length === 1
-        ? liveBackgroundProcesses[0].command
-        : `后台 ${liveBackgroundProcesses.length}`;
-  const backgroundProcessCapsuleTone =
-    failedBackgroundProcesses.length > 0 ? "failed" : "running";
-  const backgroundProcessCapsuleTitle =
-    failedBackgroundProcesses.length > 0
-      ? "后台任务失败"
-      : liveBackgroundProcesses.some((process) => process.lifecycle === "managed")
-        ? "后台任务运行中，包含需手动清理任务"
-        : "后台任务运行中";
   const activePlanTotal = activePlanUpdate?.plan.length ?? 0;
   const activePlanCompleted =
     activePlanUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
@@ -1348,9 +1309,6 @@ export function App(): JSX.Element {
       if (serverEventShouldRefreshGit(event)) {
         scheduleGitStatusRefresh(600);
       }
-      if (serverEventMayAffectProcesses(event)) {
-        scheduleManagedProcessRefresh(500);
-      }
       syncPendingComposerMessagesFromServerEvent(event);
       setState((current) => reduceServerEvent(current, event));
     });
@@ -1386,21 +1344,8 @@ export function App(): JSX.Element {
         window.clearTimeout(gitRefreshTimerRef.current);
         gitRefreshTimerRef.current = undefined;
       }
-      if (managedProcessRefreshTimerRef.current !== undefined) {
-        window.clearTimeout(managedProcessRefreshTimerRef.current);
-        managedProcessRefreshTimerRef.current = undefined;
-      }
     };
   }, []);
-
-  useEffect(() => {
-    if (!state.initialized || !state.activeContext) {
-      setManagedProcesses([]);
-      return;
-    }
-    setManagedProcesses([]);
-    scheduleManagedProcessRefresh(0);
-  }, [state.initialized, activeContextKey]);
 
   useEffect(() => {
     if (!state.initialized || !state.activeContext) {
@@ -1420,16 +1365,6 @@ export function App(): JSX.Element {
       );
     });
   }, [state.initialized, activeContextKey, refreshParticipants]);
-
-  useEffect(() => {
-    if (liveBackgroundProcesses.length === 0) {
-      return;
-    }
-    const id = window.setInterval(() => {
-      void refreshManagedProcesses();
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [liveBackgroundProcesses.length, activeContextKey]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent): void {
@@ -3827,84 +3762,6 @@ export function App(): JSX.Element {
     }, delayMs);
   }
 
-  async function refreshManagedProcesses(): Promise<void> {
-    const context = appStateRef.current.activeContext;
-    if (!context || !appStateRef.current.initialized) {
-      return;
-    }
-    if (managedProcessRefreshInFlightRef.current) {
-      managedProcessRefreshQueuedRef.current = true;
-      return;
-    }
-    managedProcessRefreshInFlightRef.current = true;
-    try {
-      const result = await window.wuu.listManagedProcesses();
-      if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
-        return;
-      }
-      setManagedProcesses(result.processes ?? []);
-    } catch {
-      if (sameRuntimeContext(appStateRef.current.activeContext, context)) {
-        setManagedProcesses([]);
-      }
-    } finally {
-      managedProcessRefreshInFlightRef.current = false;
-      if (managedProcessRefreshQueuedRef.current) {
-        managedProcessRefreshQueuedRef.current = false;
-        scheduleManagedProcessRefresh(200);
-      }
-    }
-  }
-
-  function scheduleManagedProcessRefresh(delayMs: number): void {
-    if (!appStateRef.current.activeContext || !appStateRef.current.initialized) {
-      return;
-    }
-    if (managedProcessRefreshTimerRef.current !== undefined) {
-      window.clearTimeout(managedProcessRefreshTimerRef.current);
-    }
-    managedProcessRefreshTimerRef.current = window.setTimeout(() => {
-      managedProcessRefreshTimerRef.current = undefined;
-      void refreshManagedProcesses();
-    }, delayMs);
-  }
-
-  async function stopBackgroundProcess(process: BackgroundProcessItem): Promise<void> {
-    if (!process.id.startsWith("proc-") || stoppingProcessIDs.has(process.id)) {
-      return;
-    }
-    setStoppingProcessIDs((current) => {
-      const next = new Set(current);
-      next.add(process.id);
-      return next;
-    });
-    try {
-      const result = await window.wuu.stopManagedProcess(process.id);
-      setManagedProcesses((current) => upsertManagedProcess(current, result.process));
-      scheduleManagedProcessRefresh(300);
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "stop process failed",
-      }));
-    } finally {
-      setStoppingProcessIDs((current) => {
-        const next = new Set(current);
-        next.delete(process.id);
-        return next;
-      });
-    }
-  }
-
-  function openBackgroundProcessPreview(process: BackgroundProcessItem): void {
-    const target = process.primaryPreviewURL || process.previewURLs?.[0];
-    if (!target) {
-      return;
-    }
-    openBrowserURL(target);
-    closeEnvironmentPanel({ dismissed: true });
-  }
-
   async function createAndCheckoutBranch(branch: string): Promise<void> {
     if (!branch || anyThreadIsRunning) {
       return;
@@ -3993,17 +3850,6 @@ export function App(): JSX.Element {
     ) {
       environmentToggleRef.current?.focus({ preventScroll: true });
     }
-  }
-
-  function openBackgroundProcessPanel(): void {
-    setEnvironmentPanelOpen(true);
-    setEnvironmentPanelDismissed(false);
-    setEnvironmentPanelMenu(null);
-    setRunDebugOpen(false);
-    setRuntimeMenuOpen(false);
-    setAccessMenuOpen(false);
-    setBranchMenuOpen(false);
-    setCodexRuntimeMenu(null);
   }
 
   function currentPrimaryComposerDraft(): ComposerDraftState {
@@ -6985,24 +6831,6 @@ export function App(): JSX.Element {
               open={chipGalleryOpen}
               onClose={() => setChipGalleryOpen(false)}
             />
-            {backgroundProcessCapsuleVisible ? (
-              <button
-                className={`background-process-capsule ${backgroundProcessCapsuleTone}${
-                  environmentPanelVisible ? " active" : ""
-                }`}
-                type="button"
-                aria-label={backgroundProcessCapsuleTitle}
-                title={backgroundProcessCapsuleTitle}
-                onClick={openBackgroundProcessPanel}
-              >
-                {backgroundProcessCapsuleTone === "failed" ? (
-                  <AlertCircle className="icon-sm" />
-                ) : (
-                  <Terminal className="icon-sm" />
-                )}
-                <span>{backgroundProcessCapsuleLabel}</span>
-              </button>
-            ) : null}
             <button
               ref={environmentToggleRef}
               className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
@@ -7053,8 +6881,6 @@ export function App(): JSX.Element {
           closing={environmentPanelClosing}
           motionState={environmentPanelMotionState}
           planUpdate={activePlanUpdate}
-          backgroundProcesses={backgroundProcesses}
-          stoppingProcessIDs={stoppingProcessIDs}
           activeMenu={environmentPanelMenu}
           running={anyThreadIsRunning}
           pullRequestDisabledReason={pullRequestDisabledReason}
@@ -7071,8 +6897,6 @@ export function App(): JSX.Element {
           }}
           onOpenCommit={() => openEnvironmentDialog("commit")}
           onOpenPullRequest={() => openEnvironmentDialog("pull-request")}
-          onStopBackgroundProcess={(process) => void stopBackgroundProcess(process)}
-          onOpenBackgroundPreview={openBackgroundProcessPreview}
           rightPanelFilePath={rightPanelFilePath}
           onCloseFilePreview={handleCloseFilePreview}
           subagentSessions={activeThread?.child_agents}

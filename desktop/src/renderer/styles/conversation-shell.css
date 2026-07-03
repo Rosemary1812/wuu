@@ -453,50 +453,6 @@
   white-space: nowrap;
 }
 
-.background-process-capsule {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 210px;
-  height: 30px;
-  align-items: center;
-  gap: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--success-soft);
-  color: var(--success);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-  padding: 0 10px;
-  -webkit-app-region: no-drag;
-}
-
-.background-process-capsule:hover,
-.background-process-capsule.active {
-  background: var(--success-soft);
-  color: #1f5535;
-}
-
-.background-process-capsule.failed {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.background-process-capsule.failed:hover,
-.background-process-capsule.failed.active {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.background-process-capsule svg {
-  flex: 0 0 auto;
-}
-
-.background-process-capsule span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .run-debug-anchor {
   position: relative;
   display: inline-flex;

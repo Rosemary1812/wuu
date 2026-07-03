@@ -64,8 +64,6 @@ function renderStack(): void {
         panelRef={createRef<HTMLDivElement>()}
         closing={false}
         motionState="open"
-        backgroundProcesses={[]}
-        stoppingProcessIDs={new Set()}
         activeMenu={null}
         running={false}
         pullRequestDisabledReason=""
@@ -76,8 +74,6 @@ function renderStack(): void {
         onOpenReview={() => {}}
         onOpenCommit={() => {}}
         onOpenPullRequest={() => {}}
-        onStopBackgroundProcess={() => {}}
-        onOpenBackgroundPreview={() => {}}
       />,
     );
   });

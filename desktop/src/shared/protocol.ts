@@ -287,34 +287,6 @@ export type SkillListResult = {
   skills: SkillSummary[];
 };
 
-export type ManagedProcess = {
-  action?: string;
-  id: string;
-  owner_kind: string;
-  owner_id: string;
-  lifecycle: string;
-  status: string;
-  pid: number;
-  tty?: boolean;
-  command: string;
-  cwd: string;
-  preview_urls?: string[];
-  primary_preview_url?: string;
-  started_at: string;
-  updated_at: string;
-  stopped_at?: string;
-  exit_code?: number;
-  last_error?: string;
-};
-
-export type ManagedProcessListResult = {
-  processes: ManagedProcess[];
-};
-
-export type ManagedProcessStopResult = {
-  process: ManagedProcess;
-};
-
 export type MCPServerStatus = {
   name: string;
   state: string;
@@ -1304,8 +1276,6 @@ export type WuuDesktopApi = {
   updateGeneralSettings: (
     settings: RuntimeGeneralSettingsUpdate
   ) => Promise<ConfigGeneralUpdateResult>;
-  listManagedProcesses: () => Promise<ManagedProcessListResult>;
-  stopManagedProcess: (processId: string) => Promise<ManagedProcessStopResult>;
   listMCPServers: () => Promise<MCPListResult>;
   connectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;

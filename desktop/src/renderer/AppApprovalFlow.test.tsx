@@ -133,7 +133,6 @@ function installWuuApi(options: { threads?: Thread[] } = {}): {
       }),
     ),
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
-    listManagedProcesses: vi.fn().mockResolvedValue({ processes: [] }),
     gitStatus: vi.fn().mockResolvedValue({
       is_repo: false,
       dirty_count: 0,

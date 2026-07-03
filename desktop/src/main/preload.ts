@@ -72,9 +72,6 @@ const api: WuuDesktopApi = {
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
   getSettingsUsage: (range?: SettingsUsageRange) =>
     ipcRenderer.invoke("wuu:settings-usage", range),
-  listManagedProcesses: () => ipcRenderer.invoke("wuu:process-list"),
-  stopManagedProcess: (processId: string) =>
-    ipcRenderer.invoke("wuu:process-stop", processId),
   listMCPServers: () => ipcRenderer.invoke("wuu:mcp-list"),
   connectMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-connect", name),
   disconnectMCPServer: (name: string) =>

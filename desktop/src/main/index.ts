@@ -26,8 +26,6 @@ import type {
   InitializeResult,
   MCPListResult,
   MCPServerActionResult,
-  ManagedProcessListResult,
-  ManagedProcessStopResult,
   ParticipantFeedbackResult,
   ParticipantListResult,
   ParticipantResetResult,
@@ -472,14 +470,6 @@ app.whenReady().then(async () => {
         "settings/usage",
         { range } satisfies SettingsUsageQuery,
       ),
-  );
-  ipcMain.handle("wuu:process-list", () =>
-    appServerClientPool.request<ManagedProcessListResult>("process/list"),
-  );
-  ipcMain.handle("wuu:process-stop", (_event, processID: string) =>
-    appServerClientPool.request<ManagedProcessStopResult>("process/stop", {
-      process_id: processID,
-    }),
   );
   ipcMain.handle("wuu:mcp-list", () =>
     appServerClientPool.request<MCPListResult>("mcp/list"),

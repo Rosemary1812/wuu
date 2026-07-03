@@ -5,7 +5,6 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
-  ManagedProcess,
   ParticipantSummary,
   PendingToolApproval,
   PlanUpdate,
@@ -490,26 +489,6 @@ function serverEventShouldRefreshGit(event: ServerEvent): boolean {
     event.message.method === "turn/completed" ||
     event.message.method === "turn/error"
   );
-}
-
-function serverEventMayAffectProcesses(event: ServerEvent): boolean {
-  if (event.kind !== "notification") {
-    return false;
-  }
-  return (
-    event.message.method === "item/completed" ||
-    event.message.method === "turn/completed" ||
-    event.message.method === "turn/error"
-  );
-}
-
-function upsertManagedProcess(
-  processes: ManagedProcess[],
-  process: ManagedProcess,
-): ManagedProcess[] {
-  const next = processes.filter((item) => item.id !== process.id);
-  next.push(process);
-  return next;
 }
 
 function notificationTargetsActiveThread(
@@ -2712,7 +2691,6 @@ export {
   requireThread,
   runtimeContextKey,
   sameRuntimeContext,
-  serverEventMayAffectProcesses,
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
   sessionTabDraftForThread,
@@ -2736,7 +2714,6 @@ export {
   updateThread,
   updateThreadByID,
   updateTurnItem,
-  upsertManagedProcess,
   upsertThread,
   upsertThreadChildAgent,
   upsertTurn,
