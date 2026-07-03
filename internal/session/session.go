@@ -47,6 +47,9 @@ type Session struct {
 	WorktreePath     string     `json:"worktree_path,omitempty"`
 	WorktreeBaseHEAD string     `json:"worktree_base_head,omitempty"`
 	WorktreeBaseRepo string     `json:"worktree_base_repo,omitempty"`
+	// DMParticipantID pins the named participant this thread is a direct-message
+	// conversation with. Set once at thread creation; never mutated afterward.
+	DMParticipantID string `json:"dm_participant_id,omitempty"`
 }
 
 type ForkMetadata struct {
@@ -196,7 +199,8 @@ func List(sessDir string, limit int) ([]Session, error) {
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
-       worktree_path, worktree_base_head, worktree_base_repo
+       worktree_path, worktree_base_head, worktree_base_repo,
+       dm_participant_id
 FROM sessions`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -307,6 +311,17 @@ func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 		} else {
 			s.PinnedAt = nil
 		}
+	})
+}
+
+// BindDMParticipant permanently tags a session as the direct-message
+// conversation with a named participant. The tag is set once at creation;
+// callers should not invoke this for arbitrary session IDs in normal flows.
+// Empty participant IDs are stored as empty strings; callers must validate
+// the participant before calling.
+func BindDMParticipant(sessDir, id, participantID string) (Session, error) {
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.DMParticipantID = strings.TrimSpace(participantID)
 	})
 }
 
@@ -743,6 +758,9 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "sessions", "worktree_base_repo", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "sessions", "dm_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -798,8 +816,9 @@ func insertSessionSQL(conflict string) string {
 	return `INSERT` + conflict + ` INTO sessions (
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
-		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo,
+		dm_participant_id
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 }
 
 func updateSessionTx(tx *sql.Tx, sess Session) error {
@@ -807,12 +826,15 @@ func updateSessionTx(tx *sql.Tx, sess Session) error {
 UPDATE sessions
 SET created_at = ?, updated_at = ?, title = ?, summary = ?, entries = ?, cwd = ?,
     forked_from_id = ?, forked_from_turn_id = ?, forked_from_item_id = ?,
-    pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?
+    pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?,
+    dm_participant_id = ?
 WHERE id = ?`,
 		timeText(sess.CreatedAt), timeText(sess.UpdatedAt), sess.Title, sess.Summary, sess.Entries, normalizeCWD(sess.CWD),
 		sess.ForkedFromID, sess.ForkedFromTurnID, sess.ForkedFromItemID,
 		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt),
-		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo), sess.ID,
+		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo),
+		strings.TrimSpace(sess.DMParticipantID),
+		sess.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update session: %w", err)
@@ -837,6 +859,7 @@ func sessionArgs(sess Session) []any {
 		normalizeCWD(sess.WorktreePath),
 		sess.WorktreeBaseHEAD,
 		normalizeCWD(sess.WorktreeBaseRepo),
+		strings.TrimSpace(sess.DMParticipantID),
 	}
 }
 
@@ -845,7 +868,8 @@ func findSessionDB(db *sql.DB, id string) (Session, bool, error) {
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
-       worktree_path, worktree_base_head, worktree_base_repo
+       worktree_path, worktree_base_head, worktree_base_repo,
+       dm_participant_id
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -856,7 +880,8 @@ func findSessionTx(tx *sql.Tx, id string) (Session, bool, error) {
 SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
-       worktree_path, worktree_base_head, worktree_base_repo
+       worktree_path, worktree_base_head, worktree_base_repo,
+       dm_participant_id
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -886,6 +911,7 @@ func scanSession(scanner interface {
 		&s.ForkedFromID, &s.ForkedFromTurnID, &s.ForkedFromItemID,
 		&pinnedAt, &archivedAt,
 		&s.WorktreePath, &s.WorktreeBaseHEAD, &s.WorktreeBaseRepo,
+		&s.DMParticipantID,
 	); err != nil {
 		return Session{}, err
 	}

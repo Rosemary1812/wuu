@@ -62,6 +62,7 @@ func (th *threadState) snapshotLocked() Thread {
 		Turns:            cloneTurns(th.Turns),
 		ListeningPorts:   cloneListeningPorts(th.ListeningPorts),
 		BrowserState:     cloneThreadBrowserState(th.BrowserState),
+		DMParticipantID:  th.DMParticipantID,
 	}
 }
 

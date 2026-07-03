@@ -45,11 +45,34 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	dmParticipantID := strings.TrimSpace(params.DMParticipantID)
+	if dmParticipantID != "" && params.Ephemeral {
+		return s.writeResponse(req.ID, nil, errors.New("dm threads cannot be ephemeral"))
+	}
+	var dmParticipantName string
+	if dmParticipantID != "" {
+		p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q: %w", dmParticipantID, err))
+		}
+		if p.Kind != participant.KindNamed {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q is not a named agent", dmParticipantID))
+		}
+		dmParticipantName = p.Name
+	}
 	id := session.NewID()
 	persistHistory := !params.Ephemeral
 	if !params.Ephemeral {
 		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir); err != nil {
 			return s.writeResponse(req.ID, nil, err)
+		}
+		if dmParticipantID != "" {
+			if _, err := session.BindDMParticipant(s.rt.SessionDir, id, dmParticipantID); err != nil {
+				return s.writeResponse(req.ID, nil, err)
+			}
+			if _, err := session.UpdateTitle(s.rt.SessionDir, id, dmParticipantName); err != nil {
+				return s.writeResponse(req.ID, nil, err)
+			}
 		}
 	} else {
 		id = "ephemeral-" + id
@@ -61,6 +84,8 @@ func (s *Server) handleThreadStart(req Request) error {
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, persistHistory, time.Now().UTC())
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	th.Ephemeral = params.Ephemeral
+	th.DMParticipantID = dmParticipantID
+	th.Title = dmParticipantName
 
 	s.mu.Lock()
 	s.threads[id] = th
@@ -617,6 +642,7 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.WorktreeBaseRepo = metadata.WorktreeBaseRepo
 	th.PinnedAt = metadata.PinnedAt
 	th.ArchivedAt = metadata.ArchivedAt
+	th.DMParticipantID = metadata.DMParticipantID
 }
 
 func threadEntryFromSession(sess session.Session, provider, model string) threadListEntry {
@@ -642,6 +668,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 			CreatedAt:        sess.CreatedAt,
 			UpdatedAt:        updatedAt,
 			Turns:            []Turn{},
+			DMParticipantID:  sess.DMParticipantID,
 		},
 		pinnedAt: sess.PinnedAt,
 	}

@@ -44,6 +44,7 @@ type threadState struct {
 	WorktreeBaseRepo string
 	PinnedAt         *time.Time
 	ArchivedAt       *time.Time
+	DMParticipantID  string
 	Turns            []Turn
 	PersistHistory   bool
 	ReadOnly         bool
