@@ -11,6 +11,7 @@ import {
   reconcileSidebarSectionOrder,
   reorderSidebarSections,
   SIDEBAR_SECTION_AGENTS,
+  SIDEBAR_SECTION_GROUP,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
 import { initialState, SCRATCH_PSEUDO_PROJECT_ID, type AppState, type ThreadSummary } from "./AppState";
@@ -197,6 +198,7 @@ describe("reconcileSidebarSectionOrder", () => {
     expect(
       reconcileSidebarSectionOrder(undefined, ["project-1", "project-2"]),
     ).toEqual([
+      SIDEBAR_SECTION_GROUP,
       SIDEBAR_SECTION_AGENTS,
       SCRATCH_PSEUDO_PROJECT_ID,
       "project-1",
@@ -210,6 +212,7 @@ describe("reconcileSidebarSectionOrder", () => {
       ["project-1", "project-2"],
     );
     expect(order).toEqual([
+      SIDEBAR_SECTION_GROUP,
       SIDEBAR_SECTION_AGENTS,
       SCRATCH_PSEUDO_PROJECT_ID,
       "project-2",
@@ -223,6 +226,7 @@ describe("reconcileSidebarSectionOrder", () => {
       ["project-1", "project-2", "project-3"],
     );
     expect(order).toEqual([
+      SIDEBAR_SECTION_GROUP,
       SIDEBAR_SECTION_AGENTS,
       "project-1",
       SCRATCH_PSEUDO_PROJECT_ID,
@@ -237,18 +241,35 @@ describe("reconcileSidebarSectionOrder", () => {
       ["project-1"],
     );
     expect(order).toEqual([
+      SIDEBAR_SECTION_GROUP,
       SIDEBAR_SECTION_AGENTS,
       SCRATCH_PSEUDO_PROJECT_ID,
       "project-1",
     ]);
   });
+
+  it("preserves a stored 群聊 position instead of re-anchoring it", () => {
+    // sidebar-groups-andy-workspaces.md §2: 群聊 is a first-class
+    // reorderable section; a user-chosen position must survive reconcile.
+    const order = reconcileSidebarSectionOrder(
+      ["project-1", SIDEBAR_SECTION_GROUP],
+      ["project-1"],
+    );
+    expect(order).toEqual([
+      SIDEBAR_SECTION_AGENTS,
+      SCRATCH_PSEUDO_PROJECT_ID,
+      "project-1",
+      SIDEBAR_SECTION_GROUP,
+    ]);
+  });
 });
 
 describe("AppSidebar sections", () => {
-  it("renders sections in the provided sectionOrder", () => {
+  it("renders sections in the provided sectionOrder, including 群聊", () => {
     renderSidebar({
       sectionOrder: [
         SIDEBAR_SECTION_AGENTS,
+        SIDEBAR_SECTION_GROUP,
         "project-2",
         "project-1",
       ],
@@ -259,12 +280,12 @@ describe("AppSidebar sections", () => {
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
     expect(ariaLabels).toEqual([
-      // 置顶 and 群聊 are fixed-position and always render first so the
-      // panel reads as five stable sections (置顶 / 群聊 / Agents / 对话 /
-      // 项目) — chat-style-threads-design.md §1.
+      // 置顶 is the only fixed-position section; everything below it —
+      // including 群聊 — follows sectionOrder
+      // (sidebar-groups-andy-workspaces.md §2).
       "置顶",
-      "群聊",
       "Agents",
+      "群聊",
       "项目 interview",
       "项目 wuu",
     ]);
@@ -283,7 +304,7 @@ describe("AppSidebar sections", () => {
       container.querySelectorAll(".sidebar-main > section"),
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["置顶", "群聊", "Agents", "项目 wuu"]);
+    expect(ariaLabels).toEqual(["置顶", "Agents", "项目 wuu"]);
   });
 
   it("renders the 对话 scratch section in the order list", () => {
@@ -299,7 +320,7 @@ describe("AppSidebar sections", () => {
       container.querySelectorAll(".sidebar-main > section"),
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["置顶", "群聊", "Agents", "项目", "项目 wuu"]);
+    expect(ariaLabels).toEqual(["置顶", "Agents", "项目", "项目 wuu"]);
   });
 
   it("renders the pinned section above all reorderable sections", () => {
@@ -309,6 +330,7 @@ describe("AppSidebar sections", () => {
     renderSidebar({
       pinnedThreads: [pinned],
       sectionOrder: [
+        SIDEBAR_SECTION_GROUP,
         SIDEBAR_SECTION_AGENTS,
         "project-1",
       ],
@@ -617,6 +639,7 @@ describe("AppSidebar sections", () => {
     renderSidebar({
       pinnedThreads: [pinned],
       sectionOrder: [
+        SIDEBAR_SECTION_GROUP,
         SIDEBAR_SECTION_AGENTS,
         SCRATCH_PSEUDO_PROJECT_ID,
         "project-1",
@@ -709,6 +732,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
     renderSidebar({
       pinnedThreads: [pinned],
       sectionOrder: [
+        SIDEBAR_SECTION_GROUP,
         SIDEBAR_SECTION_AGENTS,
         SCRATCH_PSEUDO_PROJECT_ID,
         "project-1",
@@ -725,17 +749,19 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
     expect(pinnedHeader?.hasAttribute("aria-roledescription")).toBe(false);
     expect(pinnedHeader?.classList.contains("can-reorder")).toBe(false);
 
-    // Every reorderable section header carries the can-reorder class
-    // and the dnd-kit aria-roledescription attribute that marks it as
-    // a draggable sortable item.
+    // Every reorderable section header — 群聊 included
+    // (sidebar-groups-andy-workspaces.md §2) — carries the can-reorder
+    // class and the dnd-kit aria-roledescription attribute that marks
+    // it as a draggable sortable item.
     const reorderableHeaders = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
-        'section[aria-label="Agents"] .sidebar-section-row, ' +
+        'section[aria-label="群聊"] .sidebar-section-row, ' +
+          'section[aria-label="Agents"] .sidebar-section-row, ' +
           'section[aria-label="项目"] .sidebar-section-row, ' +
           'section[aria-label="项目 wuu"] .sidebar-section-row',
       ),
     );
-    expect(reorderableHeaders.length).toBe(3);
+    expect(reorderableHeaders.length).toBe(4);
     for (const header of reorderableHeaders) {
       expect(header.classList.contains("can-reorder")).toBe(true);
       expect(header.getAttribute("aria-roledescription")).toBe(
@@ -969,12 +995,12 @@ describe("SidebarSection collapse animation", () => {
 
 describe("sidebar section spacing rhythm", () => {
   it("section containers carry no flex gap — the offset lives on .thread-list-collapse", () => {
-    // Header → body distance must be identical across 置顶 / Agents /
-    // 对话 / 项目. Project bodies sit one .project-group wrapper deeper,
-    // so any gap on the shared section containers would double-count
-    // for the sections whose body is a direct child.
+    // Header → body distance must be identical across 置顶 / 群聊 /
+    // Agents / 对话 / 项目. Project bodies sit one .project-group wrapper
+    // deeper, so any gap on the shared section containers would
+    // double-count for the sections whose body is a direct child.
     const sectionRule = sidebarCSS.match(
-      /\.project-section,\s*\.pinned-thread-section,\s*\.participant-roster-section \{[^}]*\}/,
+      /\.project-section,\s*\.pinned-thread-section,\s*\.group-thread-section,\s*\.participant-roster-section \{[^}]*\}/,
     )?.[0];
     expect(sectionRule).toBeTruthy();
     expect(sectionRule).not.toMatch(/\bgap:/);
@@ -1114,20 +1140,35 @@ describe("unified DM/thread row spec (S1)", () => {
 });
 
 describe("group chat section", () => {
-  const order = [SIDEBAR_SECTION_AGENTS, "project-1"];
+  const order = [SIDEBAR_SECTION_GROUP, SIDEBAR_SECTION_AGENTS, "project-1"];
 
   function groupSection(): HTMLElement | null {
     return container.querySelector('section[aria-label="群聊"]');
   }
 
-  it("explains on the # all placeholder that groups open once agents exist", () => {
+  it("renders no placeholder row when empty — the backend guarantees # all", () => {
+    // sidebar-groups-andy-workspaces.md §2: the disabled "# all"
+    // placeholder is gone; an empty section just shows its empty note.
     renderSidebar({ sectionOrder: order });
-    const placeholder = groupSection()?.querySelector<HTMLButtonElement>(
-      ".group-thread-row-placeholder .thread-row-main",
+    expect(groupSection()?.querySelector(".group-thread-row-placeholder")).toBeNull();
+    expect(
+      groupSection()?.querySelector(".sidebar-section-empty-note")?.textContent,
+    ).toBe("还没有群聊");
+  });
+
+  it("shares the hover-reveal actions and section-container CSS families", () => {
+    // The + 建群 affordance must reveal on section hover like the
+    // Agents/置顶 actions overlay, and the section must join the shared
+    // section-container spacing group.
+    expect(sidebarCSS).toMatch(
+      /\.group-thread-section:hover \.sidebar-section-actions/,
     );
-    expect(placeholder).not.toBeNull();
-    expect(placeholder?.getAttribute("title")).toBe("创建具名 Agent 后自动开启");
-    expect(placeholder?.disabled).toBe(true);
+    expect(sidebarCSS).toMatch(
+      /\.group-thread-section:focus-within \.sidebar-section-actions/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.project-section,\s*\.pinned-thread-section,\s*\.group-thread-section,\s*\.participant-roster-section \{/,
+    );
   });
 
   it("reveals an inline name input from the 新建群聊 button and submits on Enter", () => {

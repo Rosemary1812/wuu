@@ -57,7 +57,7 @@ import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
-import { PinnedThreadList, ProjectGroup, ThreadRowTitle } from "./ThreadSidebar";
+import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
 import { baseThreadTitle } from "./ThreadTitles";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
 import { ThreadContextMenu } from "./ThreadContextMenu";
@@ -78,9 +78,9 @@ import { ThreadContextMenu } from "./ThreadContextMenu";
  */
 export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
 export const SIDEBAR_SECTION_AGENTS = "__wuu_agents__";
-// Fixed-position (like SIDEBAR_SECTION_PINNED), rendered right after 置顶
-// and before the reorderable Agents / 对话 / 项目 list
-// (chat-style-threads-design.md §1). Not part of sectionOrder.
+// 群聊 section key. A first-class reorderable section like Agents / 对话 /
+// projects — part of sectionOrder (sidebar-groups-andy-workspaces.md §2:
+// everything below the fixed 置顶 block is reorderable).
 export const SIDEBAR_SECTION_GROUP = "__wuu_group__";
 
 const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
@@ -94,12 +94,15 @@ const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
  *      `SCRATCH_PSEUDO_PROJECT_ID` (unknown pseudo ids; the pinned section
  *      is fixed-position so it never appears in the stored list, and we
  *      also defensively strip `SIDEBAR_SECTION_PINNED` if a stale write
- *      included it). AGENTS is allowed through — it is part of the
- *      reorderable list.
+ *      included it). AGENTS and GROUP are allowed through — both are
+ *      part of the reorderable list
+ *      (sidebar-groups-andy-workspaces.md §2).
  *   2. Append any newly-seen project ids at the END in `projectIDs` order,
  *      preserving the stored prefix for everything else.
  *   3. When no stored value is present, return the default:
- *      `[AGENTS, SCRATCH_PSEUDO_PROJECT_ID, ...projectIDs]`.
+ *      `[GROUP, AGENTS, SCRATCH_PSEUDO_PROJECT_ID, ...projectIDs]` —
+ *      群聊 keeps its historical spot right below 置顶 until the user
+ *      drags it elsewhere.
  */
 export function reconcileSidebarSectionOrder(
   stored: string[] | undefined,
@@ -108,6 +111,7 @@ export function reconcileSidebarSectionOrder(
   const knownIDs = new Set<string>([
     SCRATCH_PSEUDO_PROJECT_ID,
     SIDEBAR_SECTION_AGENTS,
+    SIDEBAR_SECTION_GROUP,
     ...projectIDs,
   ]);
   const out: string[] = [];
@@ -138,6 +142,12 @@ export function reconcileSidebarSectionOrder(
   }
   if (!out.includes(SIDEBAR_SECTION_AGENTS)) {
     out.unshift(SIDEBAR_SECTION_AGENTS);
+  }
+  if (!out.includes(SIDEBAR_SECTION_GROUP)) {
+    // Migration for orders persisted before 群聊 joined the reorderable
+    // list: seed it at the head, matching its previous fixed spot right
+    // below 置顶. A stored GROUP position is preserved above.
+    out.unshift(SIDEBAR_SECTION_GROUP);
   }
   return out;
 }
@@ -685,109 +695,6 @@ export function AppSidebar({
               </section>
             );
           })()}
-          {(() => {
-            // 群聊 sits between 置顶 and 对话 (chat-style-threads-
-            // design.md §1). Fixed position like 置顶. The backend
-            // auto-creates the # all channel once the named-agent
-            // roster is non-empty, so an empty list means "no agents
-            // yet" and the section shows the inert "# all" placeholder.
-            const groupCollapsed = collapsedProjectIDs.has(
-              SIDEBAR_SECTION_GROUP,
-            );
-            const groupRows: ThreadSummary[] = groupThreads.map((thread) => ({
-              ...thread,
-              title: `#${baseThreadTitle(thread, groupThreads)}`,
-            }));
-            const commitGroupName = (): void => {
-              const title = groupNameInputRef.current?.value.trim() ?? "";
-              if (title === "") {
-                return;
-              }
-              setCreatingGroupThread(false);
-              onCreateGroupThread?.(title);
-            };
-            const groupActions = (
-              <div className="sidebar-section-actions group-thread-actions">
-                <button
-                  type="button"
-                  className="participant-roster-add"
-                  aria-label="新建群聊"
-                  title="新建群聊"
-                  disabled={!state.initialized}
-                  onClick={() => setCreatingGroupThread(true)}
-                >
-                  <Plus aria-hidden="true" />
-                </button>
-              </div>
-            );
-            return (
-              <section className="group-thread-section" aria-label="群聊">
-                <SidebarSection
-                  expanded={!groupCollapsed}
-                  iconKind="group"
-                  CollapsedIcon={Hash}
-                  ExpandedIcon={Hash}
-                  label="群聊"
-                  ariaLabel={`${groupCollapsed ? "展开" : "收起"}群聊`}
-                  title={groupCollapsed ? "展开群聊" : "收起群聊"}
-                  onToggle={() =>
-                    onToggleProjectCollapsed(SIDEBAR_SECTION_GROUP)
-                  }
-                  actions={groupActions}
-                  emptyNote="还没有群聊"
-                >
-                  {creatingGroupThread ? (
-                    <div className="group-thread-name-editor">
-                      <input
-                        ref={groupNameInputRef}
-                        className="group-thread-name-input"
-                        type="text"
-                        placeholder="群聊名称"
-                        aria-label="群聊名称"
-                        autoFocus
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            commitGroupName();
-                          } else if (event.key === "Escape") {
-                            event.preventDefault();
-                            setCreatingGroupThread(false);
-                          }
-                        }}
-                        onBlur={() => setCreatingGroupThread(false)}
-                      />
-                    </div>
-                  ) : null}
-                  {groupRows.length === 0 ? (
-                    <div className="thread-list">
-                      <div className="thread-row group-thread-row-placeholder disabled">
-                        <button
-                          className="thread-row-main"
-                          type="button"
-                          disabled
-                          title="创建具名 Agent 后自动开启"
-                        >
-                          <ThreadRowTitle title="# all" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <PinnedThreadList
-                      threads={groupRows}
-                      activeID={activeThreadID}
-                      pendingThreadID={pendingThreadID}
-                      archiveConfirmThreadID={archiveConfirmThreadID}
-                      lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                      onSelect={onSelectThread}
-                      onTogglePinned={onTogglePinned}
-                      onArchive={onArchiveThread}
-                      onClearArchiveConfirm={onClearArchiveConfirm}
-                    />
-                  )}
-                </SidebarSection>
-              </section>
-            );
-          })()}
           {sectionOrder.length > 0 ? (
             <DndContext
               sensors={sensors}
@@ -802,6 +709,112 @@ export function AppSidebar({
                 strategy={verticalListSortingStrategy}
               >
                 {sectionOrder.map((key) => {
+            if (key === SIDEBAR_SECTION_GROUP) {
+              // 群聊 — first-class reorderable section
+              // (sidebar-groups-andy-workspaces.md §2). The backend
+              // guarantees the # all channel exists once the roster is
+              // non-empty, so an empty list just shows the empty note —
+              // no placeholder row.
+              const groupCollapsed = collapsedProjectIDs.has(
+                SIDEBAR_SECTION_GROUP,
+              );
+              const groupRows: ThreadSummary[] = groupThreads.map((thread) => ({
+                ...thread,
+                title: `#${baseThreadTitle(thread, groupThreads)}`,
+              }));
+              const commitGroupName = (): void => {
+                const title = groupNameInputRef.current?.value.trim() ?? "";
+                if (title === "") {
+                  return;
+                }
+                setCreatingGroupThread(false);
+                onCreateGroupThread?.(title);
+              };
+              const groupActions = (
+                <div className="sidebar-section-actions group-thread-actions">
+                  <button
+                    type="button"
+                    className="participant-roster-add"
+                    aria-label="新建群聊"
+                    title="新建群聊"
+                    disabled={!state.initialized}
+                    onClick={() => setCreatingGroupThread(true)}
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
+                </div>
+              );
+              return (
+                <SortableSection
+                  key={SIDEBAR_SECTION_GROUP}
+                  id={SIDEBAR_SECTION_GROUP}
+                  className="group-thread-section"
+                  ariaLabel="群聊"
+                  headerInfo={{
+                    label: "群聊",
+                    iconKind: "group",
+                    CollapsedIcon: Hash,
+                    ExpandedIcon: Hash,
+                  }}
+                  registerHeaderInfo={registerSectionHeaderInfo}
+                >
+                  <SidebarSection
+                    expanded={!groupCollapsed}
+                    iconKind="group"
+                    CollapsedIcon={Hash}
+                    ExpandedIcon={Hash}
+                    label="群聊"
+                    ariaLabel={`${groupCollapsed ? "展开" : "收起"}群聊`}
+                    title={groupCollapsed ? "展开群聊" : "收起群聊"}
+                    onToggle={() =>
+                      onToggleProjectCollapsed(SIDEBAR_SECTION_GROUP)
+                    }
+                    actions={groupActions}
+                    emptyNote="还没有群聊"
+                  >
+                    {creatingGroupThread || groupRows.length > 0 ? (
+                      <>
+                        {creatingGroupThread ? (
+                          <div className="group-thread-name-editor">
+                            <input
+                              ref={groupNameInputRef}
+                              className="group-thread-name-input"
+                              type="text"
+                              placeholder="群聊名称"
+                              aria-label="群聊名称"
+                              autoFocus
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  commitGroupName();
+                                } else if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  setCreatingGroupThread(false);
+                                }
+                              }}
+                              onBlur={() => setCreatingGroupThread(false)}
+                            />
+                          </div>
+                        ) : null}
+                        {groupRows.length > 0 ? (
+                          <PinnedThreadList
+                            threads={groupRows}
+                            activeID={activeThreadID}
+                            pendingThreadID={pendingThreadID}
+                            archiveConfirmThreadID={archiveConfirmThreadID}
+                            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                            onSelect={onSelectThread}
+                            onTogglePinned={onTogglePinned}
+                            onArchive={onArchiveThread}
+                            onClearArchiveConfirm={onClearArchiveConfirm}
+                          />
+                        ) : null}
+                      </>
+                    ) : null}
+                  </SidebarSection>
+                </SortableSection>
+              );
+            }
             if (key === SIDEBAR_SECTION_AGENTS) {
               const collapsed = collapsedProjectIDs.has(SIDEBAR_SECTION_AGENTS);
               const rosterMenu = rosterContextMenu ? (

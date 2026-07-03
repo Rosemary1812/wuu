@@ -423,6 +423,7 @@
  * sections whose body is a direct child). */
 .project-section,
 .pinned-thread-section,
+.group-thread-section,
 .participant-roster-section {
   display: flex;
   min-width: 0;
@@ -1402,6 +1403,8 @@
 
 .pinned-thread-section:hover .sidebar-section-actions,
 .pinned-thread-section:focus-within .sidebar-section-actions,
+.group-thread-section:hover .sidebar-section-actions,
+.group-thread-section:focus-within .sidebar-section-actions,
 .participant-roster-section:hover .sidebar-section-actions,
 .participant-roster-section:focus-within .sidebar-section-actions {
   opacity: 1;
@@ -1478,15 +1481,9 @@
     0 9px 24px var(--ink-overlay-12);
 }
 
-/* 群聊 section (chat-style-threads-design.md §1). The placeholder "# all"
-   row is inert until the backend auto-creates the channel (roster
-   non-empty); the inline name editor appears from the header's 新建群聊
-   button and commits on Enter / cancels on Escape. */
-.group-thread-row-placeholder .thread-row-main {
-  color: var(--ink-muted);
-  cursor: default;
-}
-
+/* 群聊 section (sidebar-groups-andy-workspaces.md §2). The inline name
+   editor appears from the header's 新建群聊 button and commits on Enter /
+   cancels on Escape. */
 .group-thread-name-editor {
   padding: 2px 8px;
 }
