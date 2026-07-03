@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 export type GreetingContext =
   | { kind: "project"; projectName: string }
   | { kind: "group"; title?: string; memberNames: string[] }
+  | { kind: "dm"; agentName: string }
   | { kind: "wuu" };
 
 // Five time-of-day buckets in the user's local time. Boundaries are
@@ -15,6 +16,9 @@ export type GreetingContext =
 export function greetingFor(hour: number, ctx: GreetingContext): string {
   if (ctx.kind === "group") {
     return groupGreeting(hour, ctx);
+  }
+  if (ctx.kind === "dm") {
+    return dmGreeting(hour, ctx);
   }
 
   const project = ctx.kind === "project" ? ctx.projectName : null;
@@ -83,6 +87,30 @@ function groupGreeting(
   return roster
     ? `夜深了，还想让 ${roster} 帮忙推进什么吗？`
     : "夜深了，还想让群里的成员帮忙推进什么吗？";
+}
+
+// DM threads greet as a one-on-one conversation with a named agent —
+// unlike the group framing, the user is talking to exactly one member,
+// so the copy nudges them to hand over the task, context, or goal
+// directly instead of broadcasting or @-mentioning.
+function dmGreeting(
+  hour: number,
+  ctx: Extract<GreetingContext, { kind: "dm" }>,
+): string {
+  if (hour >= 5 && hour < 11) {
+    return `早上好，这里是和 ${ctx.agentName} 的一对一对话。直接把任务、背景或目标交给 TA 吧。`;
+  }
+  if (hour >= 11 && hour < 14) {
+    return `中午好，正在和 ${ctx.agentName} 单独交流。把需求和上下文直接说出来就行。`;
+  }
+  if (hour >= 14 && hour < 18) {
+    return `下午好，这是和 ${ctx.agentName} 的一对一对话。描述任务或问题，TA 会专注帮你。`;
+  }
+  if (hour >= 18 && hour < 22) {
+    return `晚上好，在和 ${ctx.agentName} 一对一讨论。直接交代想法和目标吧。`;
+  }
+  // 22:00 – 04:59 late night.
+  return `夜深了，和 ${ctx.agentName} 的对话还要继续吗？`;
 }
 
 // Renders the member snapshot as a short roster string, or null when the

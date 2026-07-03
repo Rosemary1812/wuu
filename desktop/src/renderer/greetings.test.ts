@@ -122,6 +122,52 @@ describe("greetingFor", () => {
     });
   });
 
+  describe("dm context", () => {
+    it("returns a one-on-one greeting for morning", () => {
+      const ctx: GreetingContext = { kind: "dm", agentName: "Andy" };
+      const greeting = greetingFor(8, ctx);
+      expect(greeting).toBe(
+        "早上好，这里是和 Andy 的一对一对话。直接把任务、背景或目标交给 TA 吧。",
+      );
+    });
+
+    it("returns a one-on-one greeting for afternoon", () => {
+      const ctx: GreetingContext = { kind: "dm", agentName: "Andy" };
+      const greeting = greetingFor(15, ctx);
+      expect(greeting).toBe(
+        "下午好，这是和 Andy 的一对一对话。描述任务或问题，TA 会专注帮你。",
+      );
+    });
+
+    it("covers noon, evening and late-night buckets", () => {
+      const ctx: GreetingContext = { kind: "dm", agentName: "Andy" };
+      expect(greetingFor(12, ctx)).toBe(
+        "中午好，正在和 Andy 单独交流。把需求和上下文直接说出来就行。",
+      );
+      expect(greetingFor(20, ctx)).toBe(
+        "晚上好，在和 Andy 一对一讨论。直接交代想法和目标吧。",
+      );
+      expect(greetingFor(23, ctx)).toBe(
+        "夜深了，和 Andy 的对话还要继续吗？",
+      );
+    });
+
+    it("is clearly distinct from the group greeting", () => {
+      const dmCtx: GreetingContext = { kind: "dm", agentName: "Andy" };
+      const groupCtx: GreetingContext = {
+        kind: "group",
+        memberNames: ["Andy"],
+      };
+      const dmGreeting = greetingFor(8, dmCtx);
+      const groupGreeting = greetingFor(8, groupCtx);
+
+      expect(dmGreeting).toContain("一对一对话");
+      expect(dmGreeting).not.toContain("群聊");
+      expect(groupGreeting).toContain("群聊");
+      expect(dmGreeting).not.toBe(groupGreeting);
+    });
+  });
+
   describe("time-of-day buckets", () => {
     it("uses different greetings for different hours", () => {
       const ctx: GreetingContext = { kind: "wuu" };

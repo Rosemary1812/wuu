@@ -1697,6 +1697,15 @@ export function App(): JSX.Element {
         memberNames: (activeThread.members ?? []).map((m) => m.name),
       };
     }
+    // DM threads greet as a one-on-one conversation with the named agent.
+    if (activeThread?.dm_participant_id) {
+      const agentName =
+        participants.find((p) => p.id === activeThread.dm_participant_id)
+          ?.name ||
+        activeThread.title?.trim() ||
+        "这位成员";
+      return { kind: "dm", agentName };
+    }
     if (state.activeContext?.kind === "project") {
       return {
         kind: "project",
