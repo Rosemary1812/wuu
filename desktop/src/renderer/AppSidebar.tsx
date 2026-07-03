@@ -2,7 +2,6 @@ import {
   Archive,
   Bot,
   BotMessageSquare,
-  ChevronRight,
   Clock,
   CornerDownRight,
   Download,
@@ -26,7 +25,8 @@ import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
-import { PinnedThreadList, ProjectGroup, SectionRowIcon } from "./ThreadSidebar";
+import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
+import { SidebarSection } from "./SidebarSection";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 
 /**
@@ -398,44 +398,47 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-main scrollbar-hidden">
-          {pinnedThreads.length > 0 ? (
-            <section className="pinned-thread-section" aria-label="置顶">
-              <button
-                className={`project-row pinned-row${collapsedProjectIDs.has(SIDEBAR_SECTION_PINNED) ? "" : " expanded"}`}
-                type="button"
-                aria-expanded={!collapsedProjectIDs.has(SIDEBAR_SECTION_PINNED)}
-                aria-label={`${collapsedProjectIDs.has(SIDEBAR_SECTION_PINNED) ? "展开" : "收起"}置顶`}
-                title={collapsedProjectIDs.has(SIDEBAR_SECTION_PINNED) ? "展开置顶" : "收起置顶"}
-                onClick={() => onToggleProjectCollapsed(SIDEBAR_SECTION_PINNED)}
-              >
-                <SectionRowIcon
-                  collapsed={collapsedProjectIDs.has(SIDEBAR_SECTION_PINNED)}
+          {(() => {
+            // 置顶 is always visible — even when there are no pinned
+            // threads — so the section reads as a stable container
+            // alongside Agents / 对话 / projects. An empty body
+            // surfaces a muted 还没有会话 placeholder row so the
+            // collapse animation has real height to animate.
+            const pinnedCollapsed = collapsedProjectIDs.has(
+              SIDEBAR_SECTION_PINNED,
+            );
+            return (
+              <section className="pinned-thread-section" aria-label="置顶">
+                <SidebarSection
+                  expanded={!pinnedCollapsed}
                   iconKind="pinned"
                   CollapsedIcon={Pin}
                   ExpandedIcon={Pin}
-                />
-                <span className="project-row-label">
-                  <span className="project-row-name">置顶</span>
-                  <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
-                </span>
-              </button>
-              {!collapsedProjectIDs.has(SIDEBAR_SECTION_PINNED) ? (
-                <div className="thread-list-collapse">
-                  <PinnedThreadList
-                    threads={pinnedThreads}
-                    activeID={activeThreadID}
-                    pendingThreadID={pendingThreadID}
-                    archiveConfirmThreadID={archiveConfirmThreadID}
-                    lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                    onSelect={onSelectThread}
-                    onTogglePinned={onTogglePinned}
-                    onArchive={onArchiveThread}
-                    onClearArchiveConfirm={onClearArchiveConfirm}
-                  />
-                </div>
-              ) : null}
-            </section>
-          ) : null}
+                  label="置顶"
+                  ariaLabel={`${pinnedCollapsed ? "展开" : "收起"}置顶`}
+                  title={pinnedCollapsed ? "展开置顶" : "收起置顶"}
+                  onToggle={() =>
+                    onToggleProjectCollapsed(SIDEBAR_SECTION_PINNED)
+                  }
+                  emptyNote="还没有会话"
+                >
+                  {pinnedThreads.length === 0 ? null : (
+                    <PinnedThreadList
+                      threads={pinnedThreads}
+                      activeID={activeThreadID}
+                      pendingThreadID={pendingThreadID}
+                      archiveConfirmThreadID={archiveConfirmThreadID}
+                      lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                      onSelect={onSelectThread}
+                      onTogglePinned={onTogglePinned}
+                      onArchive={onArchiveThread}
+                      onClearArchiveConfirm={onClearArchiveConfirm}
+                    />
+                  )}
+                </SidebarSection>
+              </section>
+            );
+          })()}
           {sectionOrder.map((key) => {
             if (key === SIDEBAR_SECTION_AGENTS) {
               const collapsed = collapsedProjectIDs.has(SIDEBAR_SECTION_AGENTS);
@@ -471,6 +474,76 @@ export function AppSidebar({
                   onClose={() => setRosterContextMenu(null)}
                 />
               ) : null;
+              const rosterActions = (
+                <div className="sidebar-section-actions participant-roster-actions">
+                  <input
+                    ref={participantTemplateInputRef}
+                    className="participant-roster-file-input"
+                    type="file"
+                    accept="application/json,.json"
+                    tabIndex={-1}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      event.currentTarget.value = "";
+                      if (file) {
+                        onImportParticipants(file);
+                      }
+                    }}
+                  />
+                  <div className="participant-roster-menu" ref={rosterMenuRef}>
+                    <button
+                      type="button"
+                      className="participant-roster-add"
+                      aria-label="团队模板操作"
+                      aria-haspopup="menu"
+                      aria-expanded={rosterMenuOpen}
+                      title="团队模板操作"
+                      disabled={!state.initialized}
+                      onClick={() => setRosterMenuOpen((open) => !open)}
+                    >
+                      <MoreHorizontal aria-hidden="true" />
+                    </button>
+                    {rosterMenuOpen ? (
+                      <div className="project-add-menu" role="menu">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={!state.initialized}
+                          onClick={() => {
+                            setRosterMenuOpen(false);
+                            participantTemplateInputRef.current?.click();
+                          }}
+                        >
+                          <Upload aria-hidden="true" />
+                          <span>导入团队模板</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={!state.initialized || participants.length === 0}
+                          onClick={() => {
+                            setRosterMenuOpen(false);
+                            onExportParticipants();
+                          }}
+                        >
+                          <Download aria-hidden="true" />
+                          <span>导出团队模板</span>
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="participant-roster-add"
+                    aria-label="新建 Agent"
+                    title="新建 Agent"
+                    disabled={!state.initialized}
+                    onClick={onCreateParticipant}
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
+                </div>
+              );
               return (
                 <Fragment key={SIDEBAR_SECTION_AGENTS}>
                   <section
@@ -478,97 +551,19 @@ export function AppSidebar({
                     aria-label="Agents"
                     data-section-id={SIDEBAR_SECTION_AGENTS}
                   >
-                  <div className="participant-roster-header-group">
-                    <button
-                      className={`project-row agent-row${collapsed ? "" : " expanded"}`}
-                      type="button"
-                      aria-expanded={!collapsed}
-                      aria-label={`${collapsed ? "展开" : "收起"} Agents`}
+                    <SidebarSection
+                      expanded={!collapsed}
+                      iconKind="agents"
+                      CollapsedIcon={Bot}
+                      ExpandedIcon={BotMessageSquare}
+                      label="Agents"
+                      ariaLabel={`${collapsed ? "展开" : "收起"} Agents`}
                       title={collapsed ? "展开 Agents" : "收起 Agents"}
-                      onClick={() => onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)}
+                      onToggle={() =>
+                        onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)
+                      }
+                      actions={rosterActions}
                     >
-                      <SectionRowIcon
-                        collapsed={collapsed}
-                        iconKind="agents"
-                        CollapsedIcon={Bot}
-                        ExpandedIcon={BotMessageSquare}
-                      />
-                      <span className="project-row-label">
-                        <span className="project-row-name">Agents</span>
-                        <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
-                      </span>
-                    </button>
-                    <div className="participant-roster-actions participant-roster-actions-header">
-                      <input
-                        ref={participantTemplateInputRef}
-                        className="participant-roster-file-input"
-                        type="file"
-                        accept="application/json,.json"
-                        tabIndex={-1}
-                        onChange={(event) => {
-                          const file = event.currentTarget.files?.[0];
-                          event.currentTarget.value = "";
-                          if (file) {
-                            onImportParticipants(file);
-                          }
-                        }}
-                      />
-                      <div className="participant-roster-menu" ref={rosterMenuRef}>
-                        <button
-                          type="button"
-                          className="participant-roster-add"
-                          aria-label="团队模板操作"
-                          aria-haspopup="menu"
-                          aria-expanded={rosterMenuOpen}
-                          title="团队模板操作"
-                          disabled={!state.initialized}
-                          onClick={() => setRosterMenuOpen((open) => !open)}
-                        >
-                          <MoreHorizontal aria-hidden="true" />
-                        </button>
-                        {rosterMenuOpen ? (
-                          <div className="project-add-menu" role="menu">
-                            <button
-                              type="button"
-                              role="menuitem"
-                              disabled={!state.initialized}
-                              onClick={() => {
-                                setRosterMenuOpen(false);
-                                participantTemplateInputRef.current?.click();
-                              }}
-                            >
-                              <Upload aria-hidden="true" />
-                              <span>导入团队模板</span>
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              disabled={!state.initialized || participants.length === 0}
-                              onClick={() => {
-                                setRosterMenuOpen(false);
-                                onExportParticipants();
-                              }}
-                            >
-                              <Download aria-hidden="true" />
-                              <span>导出团队模板</span>
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        className="participant-roster-add"
-                        aria-label="新建 Agent"
-                        title="新建 Agent"
-                        disabled={!state.initialized}
-                        onClick={onCreateParticipant}
-                      >
-                        <Plus aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                  {!collapsed ? (
-                    <div className="thread-list-collapse participant-roster-collapse">
                       <div className="participant-roster-list">
                         {participants.length === 0 ? (
                           <button
@@ -648,8 +643,7 @@ export function AppSidebar({
                           })
                         )}
                       </div>
-                    </div>
-                  ) : null}
+                    </SidebarSection>
                   </section>
                   {rosterMenu}
                 </Fragment>

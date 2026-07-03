@@ -389,7 +389,12 @@
   box-shadow: inset 0 0 0 2px rgba(17, 19, 21, 0.18);
 }
 
-.project-section {
+/* Sidebar section containers. All four section types (置顶 / Agents /
+ * 对话 scratch / 项目) share the same flex-column rhythm so the panel
+ * reads as one continuous tree. */
+.project-section,
+.pinned-thread-section,
+.participant-roster-section {
   display: flex;
   min-width: 0;
   flex: 0 0 auto;
@@ -400,22 +405,6 @@
 
 .project-list {
   min-height: 0;
-}
-
-.pinned-thread-section {
-  display: flex;
-  min-width: 0;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
-}
-
-.pinned-thread-label {
-  display: flex;
-  min-height: 24px;
-  align-items: center;
-  padding: 0 12px;
 }
 
 .pinned-thread-list {
@@ -717,21 +706,9 @@
   transform: scale(0.72);
 }
 
-.project-empty-note {
-  color: var(--ink-muted);
-  padding: 2px 12px;
-}
-
-.project-thread-empty-note {
-  color: var(--ink-muted);
-  padding: 4px var(--sidebar-row-pad-x) 4px
-    calc(
-      var(--sidebar-row-pad-x) + var(--sidebar-nav-icon-col) +
-        var(--sidebar-nav-column-gap)
-    );
-  font-size: var(--font-sm);
-  line-height: 1.4;
-}
+/* `.project-thread-empty-note` and `.sidebar-section-empty-note` are
+ * styled together at the bottom of the file so the empty-state placeholder
+ * reads identically across the four section types. */
 
 .thread-list-collapse {
   display: grid;
@@ -1346,34 +1323,21 @@
   pointer-events: none;
 }
 
-/* New sidebar section structure (T5):
- *   .pinned-thread-section, .participant-roster-section, .project-section
- *   each render a `.project-row` header that toggles a
- *   `.thread-list-collapse` body. The pinned header reuses the same
- *   anatomy as project rows so the crossfade + chevron + hover treatment
- *   all stay consistent. */
-
-/* The pinned header icon is the same Pin glyph in both states; rotate it
- * -45deg when expanded so it reads as a "diagonal pin" and visually
- * distinguishes itself from the collapsed dot-on-pin form. */
-.project-row .project-row-icon:has([data-project-icon-kind="pinned"]) {
-  color: var(--ink-tertiary);
-}
-
-.project-row.expanded .project-row-icon:has([data-project-icon-kind="pinned"]) .project-row-icon-state.expanded {
-  transform: rotate(-45deg) scale(1);
-}
-
-/* Agent section: the roster rows already have their own status dot,
- * avatar, and copy layout. The header still uses `.project-row` for
- * parity with project rows but reskins the right-hand grid track to
- * hold the + / … action group instead of the "+ new conversation"
- * overlay. */
-.participant-roster-header-group {
+/* Unified sidebar section header:
+ *   Every section (置顶 / Agents / 对话 / 项目) renders through the same
+ *   SidebarSection component with `.project-row.sidebar-section-row`
+ *   headers. Section-specific decoration (Pin rotate, agents +/…
+ *   actions overlay, project + new-thread button) lives below; the
+ *   header-group container is positioned so absolutely-positioned
+ *   sibling overlays keep their existing right-edge anchor. */
+.sidebar-section-header-group {
   position: relative;
 }
 
-.participant-roster-actions-header {
+/* Right-edge action overlay (Agents section). Same hover/focus reveal
+ * pattern as .project-row-new-thread so the two affordances share
+ * one rhythm. */
+.sidebar-section-actions {
   position: absolute;
   top: 4px;
   right: var(--sidebar-row-pad-x, 8px);
@@ -1390,40 +1354,50 @@
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.participant-roster-section:hover .participant-roster-actions-header,
-.participant-roster-section:focus-within .participant-roster-actions-header {
+.pinned-thread-section:hover .sidebar-section-actions,
+.pinned-thread-section:focus-within .sidebar-section-actions,
+.participant-roster-section:hover .sidebar-section-actions,
+.participant-roster-section:focus-within .sidebar-section-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
 }
 
-/* When the Agents section is collapsed, hide its body via the same
- * grid-template-rows animation the project bodies use. The wrapper has
- * no internal padding so the height transition matches project bodies
- * exactly. */
-.participant-roster-collapse {
-  margin-top: 5px;
+/* Pinned icon: rotate the expanded-state Pin -45deg so it reads as a
+ * "diagonal pin" while keeping a single glyph. */
+.project-row .project-row-icon:has([data-project-icon-kind="pinned"]) {
+  color: var(--ink-tertiary);
 }
 
-.participant-roster-collapse > .participant-roster-list {
-  padding: 2px 0;
+.project-row.expanded .project-row-icon:has([data-project-icon-kind="pinned"]) .project-row-icon-state.expanded {
+  transform: rotate(-45deg) scale(1);
 }
 
-/* Agent roster unread cue. The participant-roster-row already paints a
- * status dot in its first grid column; when the agent's DM thread has an
- * unseen turn we bump the name weight to match the .thread-row.has-unread
- * treatment so the row reads as "needs attention" without inventing a new
- * indicator that would clash with the existing busy dot. */
+/* Agent roster unread cue: bump the name weight (instead of inventing
+ * a new dot) so the row matches .thread-row.has-unread. */
 .participant-roster-row.has-unread .participant-roster-name {
   color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
-/* Section header right-edge spacing: the pinned header reuses
- * `.project-row` but does NOT render `.project-row-unread` or
- * `.project-row-loading`. The default 3-column grid would leave an
- * empty 3rd track, so collapse to 2 cols. */
-.pinned-row {
+/* Unified empty-note row for sections that have no children. */
+.sidebar-section-empty-note,
+.project-thread-empty-note {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+  padding: 4px var(--sidebar-row-pad-x) 4px
+    calc(
+      var(--sidebar-row-pad-x) + var(--sidebar-nav-icon-col) +
+        var(--sidebar-nav-column-gap)
+    );
+}
+
+/* Header right-edge spacing: 置顶 / Agents have no right-side button,
+ * so col 3 stays an empty 24px slot that pushes the label leftward.
+ * Collapse to 2 cols when no .project-row-new-thread button is present
+ * so the label spans the full row width. */
+.sidebar-section-header-group:not(:has(.project-row-new-thread)) .sidebar-section-row {
   grid-template-columns:
     var(--sidebar-nav-icon-col)
     minmax(0, 1fr);

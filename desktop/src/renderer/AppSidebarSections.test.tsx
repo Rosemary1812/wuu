@@ -242,6 +242,9 @@ describe("AppSidebar sections", () => {
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
     expect(ariaLabels).toEqual([
+      // 置顶 is fixed-position and always renders first so the panel
+      // reads as four stable sections (置顶 / Agents / 对话 / 项目).
+      "置顶",
       "Agents",
       "项目 interview",
       "项目 wuu",
@@ -261,7 +264,7 @@ describe("AppSidebar sections", () => {
       container.querySelectorAll(".sidebar-main > section"),
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["Agents", "项目 wuu"]);
+    expect(ariaLabels).toEqual(["置顶", "Agents", "项目 wuu"]);
   });
 
   it("renders the 对话 scratch section in the order list", () => {
@@ -277,7 +280,7 @@ describe("AppSidebar sections", () => {
       container.querySelectorAll(".sidebar-main > section"),
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["Agents", "项目", "项目 wuu"]);
+    expect(ariaLabels).toEqual(["置顶", "Agents", "项目", "项目 wuu"]);
   });
 
   it("renders the pinned section above all reorderable sections", () => {
@@ -554,5 +557,78 @@ describe("AppSidebar sections", () => {
     expect(byName.get("Unread")?.classList.contains("has-unread")).toBe(true);
     expect(byName.get("Quiet")?.classList.contains("active")).toBe(false);
     expect(byName.get("Quiet")?.classList.contains("has-unread")).toBe(false);
+  });
+
+  it("renders the 置顶 section even when there are no pinned threads", () => {
+    // 置顶 is fixed-position and must stay visible even when empty so
+    // the user sees a stable container alongside Agents / 对话 / 项目.
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS, "project-1"],
+    });
+
+    const pinnedSection = container.querySelector(
+      'section[aria-label="置顶"]',
+    );
+    expect(pinnedSection).not.toBeNull();
+  });
+
+  it("shows a muted '还没有会话' placeholder inside an empty 置顶 body", () => {
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS, "project-1"],
+    });
+
+    const pinnedSection = container.querySelector(
+      'section[aria-label="置顶"]',
+    );
+    expect(pinnedSection).not.toBeNull();
+    // Empty pinned shows the unified sidebar-section-empty-note with the
+    // same muted styling as the project empty-note.
+    const empty = pinnedSection?.querySelector(
+      ".sidebar-section-empty-note",
+    );
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).toBe("还没有会话");
+  });
+
+  it("four section headers share the unified project-row anatomy", () => {
+    const pinned = makeThreadSummary("thread-pinned", "Pinned session", {
+      pinned: true,
+    });
+    renderSidebar({
+      pinnedThreads: [pinned],
+      sectionOrder: [
+        SIDEBAR_SECTION_AGENTS,
+        SCRATCH_PSEUDO_PROJECT_ID,
+        "project-1",
+      ],
+    });
+
+    // Every section header is a `.project-row` with the paired icon
+    // states (collapsed + expanded). This is the unification contract:
+    // pinning icon, bot icon, conversation icon, project icon all use
+    // the same `<SectionRowIcon>` markup so the icon column lines up.
+    const headerButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '.sidebar-main > section .project-row',
+      ),
+    );
+    expect(headerButtons.length).toBe(4);
+    for (const header of headerButtons) {
+      expect(header.classList.contains("sidebar-section-row")).toBe(true);
+      expect(
+        header.querySelector(".project-row-icon-state.collapsed"),
+      ).not.toBeNull();
+      expect(
+        header.querySelector(".project-row-icon-state.expanded"),
+      ).not.toBeNull();
+      const collapsedIcon = header.querySelector<HTMLElement>(
+        ".project-row-icon-state.collapsed",
+      );
+      const expandedIcon = header.querySelector<HTMLElement>(
+        ".project-row-icon-state.expanded",
+      );
+      expect(collapsedIcon?.classList.contains("icon-lg")).toBe(true);
+      expect(expandedIcon?.classList.contains("icon-lg")).toBe(true);
+    }
   });
 });

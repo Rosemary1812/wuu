@@ -1,7 +1,8 @@
-import { Archive, Bot, BotMessageSquare, ChevronRight, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
+import { Archive, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
+import { SidebarSection } from "./SidebarSection";
 import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
 import { isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
 
@@ -180,7 +181,6 @@ export function ProjectGroup({
   const expanded =
     (expandedProjectIDs.has(project.id) || (activeProject && !collapsed)) &&
     !collapsing;
-  const threadListMounted = expanded || collapsing;
   // The scratch pseudo project trusts the threadsByProjectID entry
   // directly: App.tsx already filtered scratch threads. Real
   // projects still go through the cwd-path filter so stale entries
@@ -201,49 +201,48 @@ export function ProjectGroup({
       lastViewedTurnByThreadID,
     ),
   );
-  const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
-    pendingProject ? " pending-switch" : ""
-  }${projectHasUnread ? " has-unread" : ""}${isScratchPseudo ? " scratch-pseudo" : ""}`;
+  const CollapsedIcon = isScratchPseudo ? MessageSquare : Folder;
+  const ExpandedIcon = isScratchPseudo ? MessagesSquare : FolderOpen;
   return (
     <div className="project-group" data-section-id={project.id}>
-      <button
-        className={projectRowClassName}
-        aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的会话${
+      <SidebarSection
+        expanded={expanded}
+        iconKind={isScratchPseudo ? "conversation" : "project"}
+        CollapsedIcon={CollapsedIcon}
+        ExpandedIcon={ExpandedIcon}
+        label={project.name}
+        ariaLabel={`${expanded ? "收起" : "展开"} ${project.name} 的会话${
           projectHasUnread ? "，有未读会话" : ""
         }`}
-        aria-current={activeProject ? "page" : undefined}
-        aria-expanded={expanded}
-        aria-busy={pendingProject}
         title={expanded ? "收起会话" : "展开会话"}
-        onClick={() => onToggleProjectCollapsed(project.id)}
-      >
-        <ProjectRowIcon scratch={isScratchPseudo} expanded={expanded} />
-        <span className="project-row-label">
-          <span className="project-row-name">{project.name}</span>
-          <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
-        </span>
-        {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
-        {projectHasUnread && !pendingProject ? (
-          <span className="project-row-unread" aria-hidden="true" />
-        ) : null}
-      </button>
-      <button
-        className="sidebar-row-icon-button project-row-new-thread"
-        type="button"
-        aria-label={`在 ${project.name} 中新建会话`}
-        title="新建会话"
-        onClick={() => onStartNewThread(project.id)}
-      >
-        <MessageSquarePlus className="icon" />
-      </button>
-      {threadListMounted ? (
-        <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
+        active={activeProject}
+        pending={pendingProject}
+        unread={projectHasUnread}
+        loading={pendingProject}
+        onToggle={() => onToggleProjectCollapsed(project.id)}
+        newItemButton={
+          <button
+            className="sidebar-row-icon-button project-row-new-thread"
+            type="button"
+            aria-label={`在 ${project.name} 中新建会话`}
+            title="新建会话"
+            onClick={() => onStartNewThread(project.id)}
+          >
+            <MessageSquarePlus className="icon" />
+          </button>
+        }
+      />
+      {/* The project row's collapse window lives outside the unified
+       * SidebarSection because it tracks its own `collapsing` set to
+       * animate the .closing class during the close transition. The
+       * empty-note fallback uses the same wrapper so the height
+       * animation matches what non-empty projects get. */}
+      {(expanded || collapsing) ? (
+        <div
+          className={`thread-list-collapse${collapsing ? " closing" : ""}`}
+          aria-hidden={collapsing || undefined}
+        >
           {projectThreads.length === 0 ? (
-            // Empty projects would otherwise render a 0-height .thread-list,
-            // which makes grid-template-rows animate 0 → 0 (invisible) and
-            // leaves the user with only a margin/opacity tail. Rendering
-            // a small note gives the wrapper real content to collapse, so
-            // the height animation matches what non-empty projects get.
             <div className="project-thread-empty-note">还没有会话</div>
           ) : (
             <ThreadList
@@ -264,26 +263,6 @@ export function ProjectGroup({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function ProjectRowIcon({
-  scratch,
-  expanded,
-}: {
-  scratch: boolean;
-  expanded: boolean;
-}): JSX.Element {
-  const CollapsedIcon = scratch ? MessageSquare : Folder;
-  const ExpandedIcon = scratch ? MessagesSquare : FolderOpen;
-
-  return (
-    <SectionRowIcon
-      collapsed={!expanded}
-      iconKind={scratch ? "conversation" : "project"}
-      CollapsedIcon={CollapsedIcon}
-      ExpandedIcon={ExpandedIcon}
-    />
   );
 }
 
