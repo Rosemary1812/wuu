@@ -230,8 +230,11 @@ type Env struct {
 	ProcessMgr                  *proc.Manager
 	AgentControl                *agentcontrol.AgentControl
 	ParticipantSpeech           ParticipantSpeech
-	Skills                      []skills.Skill
-	Workflows                   []workflow.Definition
+	// GroupManager backs the resident-only create_group / add_group_member
+	// tools. Nil means group management is unavailable in this environment.
+	GroupManager GroupManager
+	Skills       []skills.Skill
+	Workflows    []workflow.Definition
 	// ActiveSurface is the compiled model profile surface currently
 	// governing this tool environment. Tools with secondary catalogs
 	// such as load_skill use it to avoid exposing instructions that
@@ -286,6 +289,20 @@ type PostedMessage struct {
 type ParticipantSpeech interface {
 	PostMessage(ctx context.Context, kind, text, targetThreadID string) (PostedMessage, error)
 	Decline(ctx context.Context, reason, targetThreadID string) error
+}
+
+// GroupManager lets resident named agents create group threads and add
+// named teammates to groups they belong to. The app server injects an
+// implementation per resident runtime; task runs and ordinary subagents
+// never receive one (the tools are additionally gated on resident
+// participant capability).
+type GroupManager interface {
+	// CreateGroup creates a group thread with the given title and adds the
+	// calling participant as its first member. Returns the new thread ID.
+	CreateGroup(ctx context.Context, title string) (string, error)
+	// AddGroupMember adds a named participant to a group thread the caller
+	// belongs to. Adding an existing member is a no-op success.
+	AddGroupMember(ctx context.Context, threadID, participantID string) error
 }
 
 // RecordRead records a successful read_file invocation.

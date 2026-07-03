@@ -162,6 +162,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		ProcessMgr:                  t.env.ProcessMgr,
 		AgentControl:                t.env.AgentControl,
 		ParticipantSpeech:           t.env.ParticipantSpeech,
+		GroupManager:                t.env.GroupManager,
 		Skills:                      t.env.Skills,
 		Workflows:                   t.env.Workflows,
 		OnFileChanged:               t.env.OnFileChanged,
@@ -243,6 +244,9 @@ func (t *Toolkit) rebuildRegistry() {
 		// back to the full conversation via this tool).
 		NewThreadGetTool(e),
 		NewFetchThreadMessagesTool(e),
+		// Group management (resident named agents only)
+		NewCreateGroupTool(e),
+		NewAddGroupMemberTool(e),
 		// Goals
 		NewCreateGoalTool(e),
 		NewUpdateGoalTool(e),
@@ -732,6 +736,16 @@ func (t *Toolkit) SetParticipantSpeech(speech ParticipantSpeech) {
 	t.env.ParticipantSpeech = speech
 }
 
+// SetGroupManager attaches the resident group-management backend used by
+// create_group / add_group_member. The tools stay unavailable until both a
+// manager is attached and resident participant capability is enabled.
+func (t *Toolkit) SetGroupManager(manager GroupManager) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.GroupManager = manager
+}
+
 func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 	if t == nil || t.env == nil {
 		return
@@ -746,6 +760,8 @@ func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 		enableResidentParticipantSurface(&t.activeSurface)
 	} else {
 		delete(t.activeSurface.Tools, "fetch_thread_messages")
+		delete(t.activeSurface.Tools, createGroupToolName)
+		delete(t.activeSurface.Tools, addGroupMemberToolName)
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -776,8 +792,13 @@ func enableResidentParticipantSurface(surface *capability.Surface) {
 		surface.Tools = map[string]capability.Capability{}
 	}
 	surface.Tools["fetch_thread_messages"] = capability.CapabilityTaskCommunicate
+	surface.Tools[createGroupToolName] = capability.CapabilityTaskManage
+	surface.Tools[addGroupMemberToolName] = capability.CapabilityTaskManage
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
+	}
+	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
+		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
 	}
 }
 
@@ -1014,7 +1035,12 @@ func isParticipantSpeechTool(name string) bool {
 }
 
 func isResidentParticipantTool(name string) bool {
-	return name == "fetch_thread_messages"
+	switch name {
+	case "fetch_thread_messages", createGroupToolName, addGroupMemberToolName:
+		return true
+	default:
+		return false
+	}
 }
 
 func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) bool {

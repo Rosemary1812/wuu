@@ -336,6 +336,9 @@ func NewSession(opts Options) (*Session, error) {
 				}
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
+				// Group management is resident-only; spawned runs never
+				// receive the backend.
+				wkit.SetGroupManager(nil)
 				if agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID) {
 					wkit.SetParticipantSpeechEnabled(true)
 				}
@@ -796,6 +799,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					}
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
 					applyWorkerToolFilter(workerKit, wt)
+					// Group management is resident-only; spawned runs (task
+					// runs and ordinary subagents) never receive the backend.
+					workerKit.SetGroupManager(nil)
 					if control != nil && control.ParticipantSpeechEnabled(meta.ID) {
 						workerKit.SetParticipantSpeechEnabled(true)
 					} else {

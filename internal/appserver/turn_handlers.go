@@ -480,6 +480,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		threadRuntime.Toolkit.SetParticipantSpeechEnabled(true)
 		threadRuntime.Toolkit.SetResidentParticipantEnabled(true)
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
+		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 	}
 	if threadRuntime.AgentControl != nil {
 		threadRuntime.AgentControl.EnableParticipantSpeech(participantID)

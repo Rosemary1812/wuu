@@ -238,6 +238,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 	}
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechWithHops(participantID, residentSpeechHopsByThread(envs)))
+		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 	}
 	userMsg := residentEnvelopeUserMessage(envs, ids)
 	started, ok, err := s.startResidentTurn(context.Background(), th, userMsg, turnRuntimeSnapshot{}, false, turnReadOnlyIgnore)

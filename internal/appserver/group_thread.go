@@ -211,3 +211,21 @@ func (s *Server) threadMemberIDsForGroup(threadID string, group bool, title stri
 	}
 	return session.ListThreadMembers(s.rt.SessionDir, threadID)
 }
+
+// rejectAllChannelMutation guards the system-guaranteed #all channel:
+// neither agents nor users may rename, archive, or dissolve it
+// (2026-07-03-sidebar-groups-andy-workspaces.md §4).
+func (s *Server) rejectAllChannelMutation(threadID, action string) error {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	meta, ok, err := session.Find(s.rt.SessionDir, strings.TrimSpace(threadID))
+	if err != nil || !ok {
+		// Missing metadata falls through to the handler's own lookup error.
+		return nil
+	}
+	if isAllChannelThread(meta.Group, meta.Title) {
+		return fmt.Errorf("cannot %s the built-in all channel", action)
+	}
+	return nil
+}

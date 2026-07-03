@@ -738,6 +738,9 @@ func (s *Server) handleThreadArchive(req Request) error {
 				return s.writeResponse(req.ID, nil, errors.New("cannot archive a running thread"))
 			}
 		}
+		if err := s.rejectAllChannelMutation(id, "archive"); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 	}
 	metadata, err := session.UpdateArchived(s.rt.SessionDir, id, params.Archived)
 	if err != nil {
@@ -758,6 +761,9 @@ func (s *Server) handleThreadRename(req Request) error {
 	id := strings.TrimSpace(params.ThreadID)
 	if id == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if err := s.rejectAllChannelMutation(id, "rename"); err != nil {
+		return s.writeResponse(req.ID, nil, err)
 	}
 	metadata, err := session.UpdateTitle(s.rt.SessionDir, id, params.Title)
 	if err != nil {
