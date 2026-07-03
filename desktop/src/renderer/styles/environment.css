@@ -304,7 +304,7 @@
   color: #c42020;
 }
 
-.environment-section-heading {
+.environment-subagent-heading {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -315,7 +315,7 @@
   font-weight: var(--weight-semibold);
 }
 
-.environment-section-heading span {
+.environment-subagent-heading span {
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -325,7 +325,7 @@
   white-space: nowrap;
 }
 
-.environment-section-heading svg {
+.environment-subagent-heading svg {
   flex: 0 0 auto;
   color: var(--ink-tertiary);
 }

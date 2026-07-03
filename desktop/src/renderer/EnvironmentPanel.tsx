@@ -272,7 +272,7 @@ function EnvironmentSubagents({
   );
   return (
     <section className="environment-subagent-section" aria-label="子任务">
-      <div className="environment-section-heading">
+      <div className="environment-subagent-heading">
         <span>
           <CornerDownRight className="icon" />
           子任务
