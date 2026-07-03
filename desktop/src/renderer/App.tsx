@@ -203,7 +203,6 @@ import {
   turnFromRecord,
   turnStreamStatusForThread,
   updateThreadByID,
-  upsertThreadChildAgent,
   upsertThread,
   upsertTurn,
   withLoadedRuntimeSessionTab,
@@ -5745,30 +5744,9 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
-    // Active thread is a DM with a named participant: route the message to
-    // that participant's child agent. Attachments are unsupported in this
-    // path for v1, so when the composer carries images or files we fall
-    // through to the normal turn-start flow rather than blocking the user.
-    const dmParticipantID = targetThread?.dm_participant_id;
-    if (
-      typeof dmParticipantID === "string" &&
-      dmParticipantID.length > 0 &&
-      message.images.length === 0 &&
-      message.files.length === 0 &&
-      targetThread
-    ) {
-      const routed = await sendPromptToParticipant(
-        targetThread,
-        dmParticipantID,
-        message.text,
-      );
-      if (!routed) {
-        setPrompt(message.text);
-        setComposerImages(message.images);
-        setComposerFiles(message.files);
-      }
-      return;
-    }
+    // DM threads intentionally share this exact path: a resident named
+    // agent's DM is a normal multi-turn thread (turn/start), not a
+    // spawn-per-message shell. See docs/plans/2026-07-03-resident-named-agents.md §7.1.
     if (isStateActiveThreadRunning(currentState)) {
       const queued = await queueComposerMessage(message, targetThread);
       if (!queued) {
@@ -5779,66 +5757,6 @@ export function App(): JSX.Element {
       return;
     }
     await sendComposerMessage(message, true);
-  }
-
-  /**
-   * DM send path: a 1:1 conversation with a named participant is a thin
-   * shell over the participant sub-agent system. The composer prompt
-   * becomes a routed participant/start with the participant's profile
-   * driving task_name/description/subagent_type. The returned child
-   * agent is upserted into the active thread so the conversation tree
-   * mirrors what users see for explicit @mentions in legacy builds.
-   */
-  async function sendPromptToParticipant(
-    targetThread: Thread,
-    participantID: string,
-    text: string,
-  ): Promise<boolean> {
-    const currentState = appStateRef.current;
-    if (
-      text.trim() === "" ||
-      !currentState.activeContext ||
-      !currentState.initialized ||
-      targetThread.read_only ||
-      viewSwitchPending
-    ) {
-      return false;
-    }
-    const participant = participants.find(
-      (candidate) => candidate.id === participantID,
-    );
-    if (!participant) {
-      return false;
-    }
-    setState((current) => ({
-      ...current,
-      status: `正在路由给 ${participant.name}`,
-    }));
-    try {
-      const result = await window.wuu.startParticipant({
-        thread_id: targetThread.id,
-        participant_id: participant.id,
-        task_name: participant.name,
-        description: participant.tagline || participant.role || participant.name,
-        prompt: text,
-        subagent_type: participant.role,
-        record_user_message: true,
-      });
-      setState((current) => ({
-        ...updateThreadByID(current, targetThread.id, (thread) =>
-          upsertThreadChildAgent(thread, result.agent),
-        ),
-        status: `已路由给 ${participant.name}`,
-      }));
-      return true;
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "无法路由给 Agent",
-      }));
-      return false;
-    }
   }
 
   async function updateQueuedComposerMessage(
