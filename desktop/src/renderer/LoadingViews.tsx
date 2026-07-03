@@ -48,15 +48,23 @@ export function ViewSwitchLoading(): JSX.Element {
 
 export function EmptyConversationHome({
   title,
+  belowTitle,
   children
 }: {
   title: string;
+  // Optional element rendered directly under the title in the same
+  // grid cell so it can sit a few pixels below the greeting without
+  // inheriting the very large row-gap reserved for the hero composer.
+  belowTitle?: JSX.Element;
   children: JSX.Element;
 }): JSX.Element {
   return (
     <section className="empty-home">
       <div className="empty-home-inner session-flow">
-        <h2>{title}</h2>
+        <div className="empty-home-header">
+          <h2>{title}</h2>
+          {belowTitle ?? null}
+        </div>
         {children}
       </div>
     </section>

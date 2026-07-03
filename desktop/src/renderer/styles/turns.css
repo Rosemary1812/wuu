@@ -5072,6 +5072,15 @@ pre {
   text-align: center;
 }
 
+.empty-home-header {
+  grid-column: 2 / 12;
+  display: grid;
+  justify-items: center;
+  row-gap: 14px;
+  max-width: 940px;
+  margin: 0;
+}
+
 .empty-home-inner > .hero-composer-wrap {
   /* Span the full content width so the hero composer can hit the dock
      composer's dialog width (740px) without being squeezed by the
@@ -5132,6 +5141,25 @@ pre {
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.35;
+}
+
+.empty-home-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: var(--font-ui);
+  line-height: var(--line-meta);
+}
+
+.empty-home-hints .empty-home-hint-chip {
+  /* meta-layer strip: chips sit on a single line below the greeting.
+     Keep the visual weight of a quiet meta row, not a button bar. */
+  text-align: center;
 }
 
 .project-empty-pane {

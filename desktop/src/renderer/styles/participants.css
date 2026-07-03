@@ -44,6 +44,31 @@
   font-size: var(--font-ui);
 }
 
+.participant-chip--pill {
+  appearance: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: var(--font-ui);
+  line-height: var(--line-ui);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.participant-chip--pill:hover,
+.participant-chip--pill:focus-visible {
+  background: var(--surface-3);
+  color: var(--ink);
+  border-color: var(--hairline);
+  outline: 0;
+}
+
 .participant-message-card {
   position: relative;
   display: grid;

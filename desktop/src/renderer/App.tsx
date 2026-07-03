@@ -223,6 +223,10 @@ import {
 import { DesignTokensPanel } from "./DesignTokensPanel";
 import { useAppDebugState } from "./AppDebugState";
 import {
+  EmptyStateHints,
+  type EmptyStateHintAction,
+} from "./EmptyStateHints";
+import {
   EmptyConversationHome,
   RuntimeLoading,
   ViewSwitchLoading,
@@ -621,6 +625,10 @@ function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
+  // Bumped each time the empty-state hint chip should refocus the hero
+  // composer. A counter (not a boolean) so re-clicking the same chip
+  // still fires the focus effect on the next render.
+  const [heroComposerFocusTick, setHeroComposerFocusTick] = useState(0);
   const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
   const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
   const [goalSummary, setGoalSummary] = useState<ComposerGoalSummary | null>(
@@ -1253,6 +1261,20 @@ export function App(): JSX.Element {
   }, [refreshGoalSummary]);
 
   useEffect(() => {
+    if (heroComposerFocusTick === 0) {
+      return;
+    }
+    // The hero composer only exists while the empty conversation view
+    // is on screen. Query inside the empty-home section so we never
+    // accidentally grab the dock composer's textarea.
+    const root = document.querySelector(".empty-home");
+    const textarea = root?.querySelector(".hero-composer-wrap textarea");
+    if (textarea instanceof HTMLTextAreaElement) {
+      textarea.focus();
+    }
+  }, [heroComposerFocusTick]);
+
+  useEffect(() => {
     const off = window.wuu.onServerEvent((event) => {
       if (event.kind !== "notification") {
         return;
@@ -1593,6 +1615,12 @@ export function App(): JSX.Element {
     !showingSkillsCatalog &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
+
+  // The default named agent (Andy) is the seed of the participant
+  // roster, so it's always the first entry. The greeting already
+  // addresses the user, and the onboarding chip points the user at
+  // the same agent.
+  const onboardingNamedParticipant = participants[0];
 
   // Past user queries for the input-box hover popover. We collect them
   // in turn order, oldest first, so the popover mirrors the order in
@@ -3405,6 +3433,30 @@ export function App(): JSX.Element {
       return window.wuu.selectProject(context.project_id);
     }
     return window.wuu.selectNoProject(false, context.cwd);
+  }
+
+  function handleEmptyStateHint(action: EmptyStateHintAction): void {
+    if (action.kind === "mentionNamed") {
+      // Always overwrite the prompt with a clean "name + trailing space"
+      // insertion. The trailing space lets the user keep typing without
+      // having to backspace past the mention, and keeps the mention
+      // regex in `mentionedParticipantsFromText` matching as soon as
+      // they finish a word.
+      const name = action.participant.name.trim();
+      if (name === "") {
+        return;
+      }
+      setPrompt(`@${name} `);
+      // Refocus on the next render so the just-updated prompt is in
+      // the textarea, with the caret at the end of the inserted text.
+      setHeroComposerFocusTick((tick) => tick + 1);
+      return;
+    }
+    if (action.kind === "openSettings") {
+      closeProjectMenus();
+      setSettingsInitialPage("providers");
+      setSettingsOpen(true);
+    }
   }
 
   function closeProjectMenus(): void {
@@ -7086,7 +7138,16 @@ export function App(): JSX.Element {
                     )}
                   </div>
                 ) : emptyConversation ? (
-              <EmptyConversationHome title={emptyThreadTitle}>
+              <EmptyConversationHome
+                title={emptyThreadTitle}
+                belowTitle={
+                  <EmptyStateHints
+                    namedParticipant={onboardingNamedParticipant}
+                    providers={state.initialized?.providers}
+                    onSelect={handleEmptyStateHint}
+                  />
+                }
+              >
                 {renderComposer("hero")}
               </EmptyConversationHome>
             ) : (
