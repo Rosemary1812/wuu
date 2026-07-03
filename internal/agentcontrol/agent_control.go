@@ -1208,11 +1208,15 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 		return fmt.Errorf("agent %q not found", id)
 	}
 	snap := sa.Snapshot()
-	// A cancelled run is resumable now: user stop followed by a message is
-	// an explicit revive request, so we no longer reject it here.
+	// Queue-or-resume, identical to followup_task: a running target keeps
+	// the message in its mailbox for its next model round without being
+	// interrupted, while a terminal target (completed, failed, cancelled)
+	// is revived in place with its full context plus this message.
+	// send_message carries trigger_turn=false so the child reads it as
+	// interim communication rather than a task hand-off.
 	communication := newInterAgentCommunication(currentPath, snap.AgentPath, msg, false)
-	if ok := c.manager.QueueMessage(id, communication.String()); !ok {
-		return fmt.Errorf("agent %q not found", id)
+	if _, err := c.manager.Followup(context.Background(), id, communication.String()); err != nil {
+		return err
 	}
 	_ = c.threadStore.RecordCommunication(id, communication)
 	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {

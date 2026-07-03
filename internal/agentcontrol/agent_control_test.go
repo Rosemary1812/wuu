@@ -2247,24 +2247,30 @@ func TestSendMessageDoesNotRejectCancelledAgent(t *testing.T) {
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
 
-func TestSendMessage_QueuesCompletedWorker(t *testing.T) {
+// TestSendMessage_RevivesCompletedWorker locks the queue-or-resume upgrade:
+// send_message now shares followup_task's semantics, so a message to a
+// completed worker revives it in place with its full context plus the new
+// message rather than parking the note in a mailbox nobody drains.
+func TestSendMessage_RevivesCompletedWorker(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
+	client := &recordingClient{resp: providers.ChatResponse{Content: "revived result"}}
 	c, err := New(Config{
-		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		Client:        client,
 		DefaultModel:  "fake",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, "wt"),
-		SessionID:     "sess-send-complete",
+		SessionID:     "sess-send-revive",
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(c.Close)
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type: DefaultSubagentType, TaskName: "send_complete", Description: "quick", Prompt: "p", Synchronous: true,
+		Type: DefaultSubagentType, TaskName: "send_revive", Description: "quick", Prompt: "p", Synchronous: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2272,11 +2278,27 @@ func TestSendMessage_QueuesCompletedWorker(t *testing.T) {
 	if res.Status != "completed" {
 		t.Fatalf("expected completed spawn, got %s", res.Status)
 	}
-	if err := c.SendMessage(res.AgentID, "extra instruction"); err != nil {
-		t.Fatalf("SendMessage should queue on completed worker: %v", err)
+
+	if err := c.SendMessage(res.AgentID, "recheck the logs"); err != nil {
+		t.Fatalf("SendMessage revive: %v", err)
 	}
-	if got := c.Manager().PendingMessageCount(res.AgentID); got != 1 {
-		t.Fatalf("expected queued message on completed worker, got %d", got)
+	snap, err := c.Manager().Wait(context.Background(), res.AgentID)
+	if err != nil {
+		t.Fatalf("Wait revive: %v", err)
+	}
+	if snap.Status != subagent.StatusCompleted || snap.Result != "revived result" {
+		t.Fatalf("expected revived completion, got %s result=%q", snap.Status, snap.Result)
+	}
+	if got := c.Manager().PendingMessageCount(res.AgentID); got != 0 {
+		t.Fatalf("revive should drain the queued message into the resume turn, got pending=%d", got)
+	}
+	visible := visibleMessagesForTest(client.LastRequest().Messages)
+	if len(visible) == 0 {
+		t.Fatal("revive turn issued no request")
+	}
+	tail := visible[len(visible)-1]
+	if tail.Role != "user" || !strings.Contains(tail.Content, "recheck the logs") {
+		t.Fatalf("revive request should end with the new message, got %+v", tail)
 	}
 }
 

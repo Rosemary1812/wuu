@@ -891,10 +891,14 @@ func (t *SendAgentMessageTool) IsConcurrencySafe() bool { return true }
 func (t *SendAgentMessageTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "send_message",
-		Description: "Queue a message for an existing child task without waiting for it. " +
-			"Address the target by agent_id, agent_path, or task_name. This is queue-only: " +
-			"it does not trigger a new turn on an idle worker. Running workers receive queued " +
-			"messages before a later model step; idle workers keep the message in their mailbox.",
+		Description: "Send a message to an existing child task (queue-or-resume). Address the " +
+			"target by agent_id, agent_path, or task_name. If the target is still running, the " +
+			"message is queued and delivered before the child's next model round without " +
+			"interrupting its current step. If the target has already finished — completed, " +
+			"failed, or cancelled — it is revived in place with its full prior context plus your " +
+			"new message. send_message and followup_task now share this delivery-and-resume " +
+			"behavior; reach for followup_task when you want the message framed as a task " +
+			"hand-off that drives the target's next turn, and send_message for interim notes.",
 		InputSchema: targetMessageSchema(),
 	}
 }
@@ -921,11 +925,12 @@ func (t *FollowupTaskTool) IsConcurrencySafe() bool { return true }
 func (t *FollowupTaskTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "followup_task",
-		Description: "Send a follow-up task message to an existing non-root child task and " +
-			"trigger that target to continue. Address the target by agent_id, agent_path, or " +
-			"task_name. If the target is mid-turn, the message is queued and starts the " +
-			"target's next turn after the current turn completes. If the target is idle, it " +
-			"starts a new turn from its saved history.",
+		Description: "Send a follow-up task to an existing non-root child task (queue-or-resume). " +
+			"Address the target by agent_id, agent_path, or task_name. If the target is still " +
+			"running, the message is queued and delivered before the child's next model round " +
+			"without interrupting its current step. If the target has already finished — " +
+			"completed, failed, or cancelled — it is revived in place with its full prior context " +
+			"plus your new message so it resumes from where it stopped.",
 		InputSchema: targetMessageSchema(),
 	}
 }
