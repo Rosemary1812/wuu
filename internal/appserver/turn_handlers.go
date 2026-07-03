@@ -474,6 +474,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 	if threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantIdentity(participantID)
 		threadRuntime.Toolkit.SetParticipantSpeechEnabled(true)
+		threadRuntime.Toolkit.SetResidentParticipantEnabled(true)
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
 	}
 	if threadRuntime.AgentControl != nil {

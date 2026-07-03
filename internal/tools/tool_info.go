@@ -111,6 +111,9 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if isParticipantSpeechTool(name) && !t.participantSpeechEnabled() {
 		return ToolExposureHidden
 	}
+	if isResidentParticipantTool(name) && !t.residentParticipantEnabled() {
+		return ToolExposureHidden
+	}
 	// The bash-first surface collapses every legacy command entry
 	// point into a single "bash" tool. The model never has to guess
 	// between run_shell / run_test / start_process / git. The
@@ -175,6 +178,10 @@ func isAdvancedCommandToolHidden(name string) bool {
 
 func (t *Toolkit) participantSpeechEnabled() bool {
 	return t != nil && t.env != nil && t.env.ParticipantSpeechEnabled
+}
+
+func (t *Toolkit) residentParticipantEnabled() bool {
+	return t != nil && t.env != nil && t.env.ResidentParticipantEnabled
 }
 
 func (t *Toolkit) shouldExposeMCPDirectly(name string) bool {

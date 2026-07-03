@@ -626,6 +626,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	if containsProfileDef(kit.Definitions(), "manage_participant") {
 		t.Fatalf("ordinary worker surface must not advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
 	}
+	if containsProfileDef(kit.Definitions(), "fetch_thread_messages") {
+		t.Fatalf("ordinary worker surface must not advertise fetch_thread_messages: %v", sortedProfileDefNames(kit.Definitions()))
+	}
 	if info, ok := kit.ToolInfo("post_message"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "post_message")
 	} else if info.Exposure != ToolExposureHidden {
@@ -641,6 +644,11 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	} else if info.Exposure != ToolExposureHidden {
 		t.Fatalf("ordinary worker manage_participant exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 	}
+	if info, ok := kit.ToolInfo("fetch_thread_messages"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "fetch_thread_messages")
+	} else if info.Exposure != ToolExposureHidden {
+		t.Fatalf("ordinary worker fetch_thread_messages exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker post_message should be blocked by speech capability, got %v", err)
 	}
@@ -649,6 +657,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker manage_participant should be blocked by speech capability, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "fetch_thread_messages", Arguments: `{"thread_id":"thread-1"}`}); err == nil || !strings.Contains(err.Error(), "resident participant capability") {
+		t.Fatalf("ordinary worker fetch_thread_messages should be blocked by resident capability, got %v", err)
 	}
 
 	kit.SetParticipantSpeechEnabled(true)
@@ -660,6 +671,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if !containsProfileDef(kit.Definitions(), "manage_participant") {
 		t.Fatalf("authorized participant surface should advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if containsProfileDef(kit.Definitions(), "fetch_thread_messages") {
+		t.Fatalf("participant speech surface must not advertise resident fetch_thread_messages: %v", sortedProfileDefNames(kit.Definitions()))
 	}
 	if info, ok := kit.ToolInfo("post_message"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "post_message")
@@ -682,6 +696,19 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("authorized manage_participant should reach tool validation, got %v", err)
 	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "fetch_thread_messages", Arguments: `{"thread_id":"thread-1"}`}); err == nil || !strings.Contains(err.Error(), "resident participant capability") {
+		t.Fatalf("participant speech alone should not authorize fetch_thread_messages, got %v", err)
+	}
+
+	kit.SetResidentParticipantEnabled(true)
+	if !containsProfileDef(kit.Definitions(), "fetch_thread_messages") {
+		t.Fatalf("resident participant surface should advertise fetch_thread_messages: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if info, ok := kit.ToolInfo("fetch_thread_messages"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "fetch_thread_messages")
+	} else if info.Exposure != ToolExposureDirect || !info.ReadOnly {
+		t.Fatalf("resident fetch_thread_messages info = %+v, want direct read-only", info)
+	}
 
 	earlyAuthorized, err := New(t.TempDir())
 	if err != nil {
@@ -697,6 +724,15 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if !containsProfileDef(earlyAuthorized.Definitions(), "manage_participant") {
 		t.Fatalf("participant manage_participant authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
+	}
+	earlyResident, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New earlyResident: %v", err)
+	}
+	earlyResident.SetResidentParticipantEnabled(true)
+	earlyResident.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), false)
+	if !containsProfileDef(earlyResident.Definitions(), "fetch_thread_messages") {
+		t.Fatalf("resident authorization should survive later profile setup: %v", sortedProfileDefNames(earlyResident.Definitions()))
 	}
 }
 

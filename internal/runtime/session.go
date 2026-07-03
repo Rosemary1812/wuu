@@ -802,6 +802,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 						workerKit.SetParticipantIdentity("")
 						workerKit.SetParticipantSpeech(nil)
 						workerKit.SetParticipantSpeechEnabled(false)
+						workerKit.SetResidentParticipantEnabled(false)
 					}
 					return workerKit, nil
 				},
@@ -824,6 +825,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		ConfigureToolkitPermissions(kit, s.ToolPolicy, s.Permissions)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
+		kit.SetConversationSessionDir(s.SessionDir)
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", threadRoot)

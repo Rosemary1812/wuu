@@ -155,6 +155,8 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		AgentPath:                   t.env.AgentPath,
 		ParticipantID:               t.env.ParticipantID,
 		ParticipantSpeechEnabled:    t.env.ParticipantSpeechEnabled,
+		ResidentParticipantEnabled:  t.env.ResidentParticipantEnabled,
+		ConversationSessionDir:      t.env.ConversationSessionDir,
 		ToolSearchEnabled:           t.env.ToolSearchEnabled,
 		NativeDeferredToolDiscovery: t.env.NativeDeferredToolDiscovery,
 		ProcessMgr:                  t.env.ProcessMgr,
@@ -240,6 +242,7 @@ func (t *Toolkit) rebuildRegistry() {
 		// desktop session tree — agents receive a thread ID and resolve it
 		// back to the full conversation via this tool).
 		NewThreadGetTool(e),
+		NewFetchThreadMessagesTool(e),
 		// Goals
 		NewCreateGoalTool(e),
 		NewUpdateGoalTool(e),
@@ -459,6 +462,13 @@ func (t *Toolkit) SetParticipantIdentity(id string) {
 		return
 	}
 	t.env.ParticipantID = strings.TrimSpace(id)
+}
+
+func (t *Toolkit) SetConversationSessionDir(dir string) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ConversationSessionDir = strings.TrimSpace(dir)
 }
 
 // SetOnFileChanged sets the callback fired after write_file/edit_file
@@ -722,6 +732,24 @@ func (t *Toolkit) SetParticipantSpeech(speech ParticipantSpeech) {
 	t.env.ParticipantSpeech = speech
 }
 
+func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ResidentParticipantEnabled = enabled
+	t.activeProfileMu.Lock()
+	defer t.activeProfileMu.Unlock()
+	if t.activeSurface.ProfileName == "" {
+		return
+	}
+	if enabled {
+		enableResidentParticipantSurface(&t.activeSurface)
+	} else {
+		delete(t.activeSurface.Tools, "fetch_thread_messages")
+	}
+	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
+}
+
 func enableParticipantSpeechSurface(surface *capability.Surface) {
 	if surface == nil || surface.ProfileName == "" {
 		return
@@ -737,6 +765,19 @@ func enableParticipantSpeechSurface(surface *capability.Surface) {
 	}
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
+	}
+}
+
+func enableResidentParticipantSurface(surface *capability.Surface) {
+	if surface == nil || surface.ProfileName == "" {
+		return
+	}
+	if surface.Tools == nil {
+		surface.Tools = map[string]capability.Capability{}
+	}
+	surface.Tools["fetch_thread_messages"] = capability.CapabilityTaskCommunicate
+	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
+		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
 	}
 }
 
@@ -804,6 +845,9 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, forMainAgent)
 	if t.env != nil && t.env.ParticipantSpeechEnabled {
 		enableParticipantSpeechSurface(&t.activeSurface)
+	}
+	if t.env != nil && t.env.ResidentParticipantEnabled {
+		enableResidentParticipantSurface(&t.activeSurface)
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -938,6 +982,9 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 	if isParticipantSpeechTool(name) && !t.participantSpeechEnabled() {
 		return fmt.Errorf("tool %q is not available without participant speech capability", name)
 	}
+	if isResidentParticipantTool(name) && !t.residentParticipantEnabled() {
+		return fmt.Errorf("tool %q is not available without resident participant capability", name)
+	}
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
@@ -964,6 +1011,10 @@ func isParticipantSpeechTool(name string) bool {
 	default:
 		return false
 	}
+}
+
+func isResidentParticipantTool(name string) bool {
+	return name == "fetch_thread_messages"
 }
 
 func activeSurfaceAllowsDynamicTool(surface capability.Surface, name string) bool {

@@ -214,6 +214,11 @@ type Env struct {
 	// ParticipantSpeechEnabled is an internal app-server authorization for
 	// conversation-native participant runs. Ordinary subagents keep this false.
 	ParticipantSpeechEnabled bool
+	// ResidentParticipantEnabled is true only for long-lived named-agent DM
+	// runtimes. It exposes resident-only conversation tools such as
+	// fetch_thread_messages.
+	ResidentParticipantEnabled bool
+	ConversationSessionDir     string
 	// ToolSearchEnabled means deferred tools are loaded through the
 	// model-visible tool_search entrypoint. When false, the active surface is
 	// flattened and tool_search guidance must not be emitted.
