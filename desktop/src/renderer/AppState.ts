@@ -1581,6 +1581,34 @@ export function findDMThread<T extends DMThreadCandidate>(
   return best;
 }
 
+/**
+ * Collect participant IDs whose resident DM thread is currently running.
+ * A resident named agent's DM thread IS the agent's brain, so the roster's
+ * busy dot follows the thread's running state rather than per-run child
+ * agent events (see docs/plans/2026-07-03-resident-named-agents.md §7.2).
+ * Applies the same qualification as findDMThread: non-archived,
+ * workspace_kind "dm" — legacy mis-homed strays never drive the busy dot.
+ */
+export function busyDMParticipantIDs(
+  threads:
+    | readonly (DMThreadCandidate & {
+        status: Thread["status"];
+        turns: Array<Pick<Turn, "status">>;
+      })[]
+    | undefined,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const thread of threads ?? []) {
+    if (!thread?.dm_participant_id) continue;
+    if (thread.archived) continue;
+    if (thread.workspace_kind !== "dm") continue;
+    if (isThreadRunning(thread)) {
+      ids.add(thread.dm_participant_id);
+    }
+  }
+  return ids;
+}
+
 function createDraftSessionTab(
   id: string,
   context: RuntimeContext,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Thread } from "../shared/protocol";
+import type { Thread, Turn } from "../shared/protocol";
 import {
+  busyDMParticipantIDs,
   findDMThread,
   isDMThread,
   scratchThreadSummaries,
@@ -178,6 +179,98 @@ describe("findDMThread proper-kind fixtures", () => {
       updated_at: "2026-02-01T00:00:00Z",
     });
     expect(findDMThread([proper], "participant-1")?.id).toBe("dm-proper");
+  });
+});
+
+function makeRunningTurn(id = "turn-running"): Turn {
+  return { id, items: [], items_view: "full", status: "in_progress" };
+}
+
+describe("busyDMParticipantIDs", () => {
+  it("marks a participant busy when its DM thread status is in_progress", () => {
+    const dm = makeThread({
+      id: "dm-running",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      status: "in_progress",
+    });
+    expect(busyDMParticipantIDs([dm])).toEqual(new Set(["participant-1"]));
+  });
+
+  it("marks a participant busy when a turn in its DM thread is in_progress", () => {
+    const dm = makeThread({
+      id: "dm-turn-running",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      turns: [makeRunningTurn()],
+    });
+    expect(busyDMParticipantIDs([dm])).toEqual(new Set(["participant-1"]));
+  });
+
+  it("returns an empty set when the DM thread is idle", () => {
+    const dm = makeThread({
+      id: "dm-idle",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+    });
+    expect(busyDMParticipantIDs([dm]).size).toBe(0);
+  });
+
+  it("ignores archived DM threads even when running", () => {
+    const dm = makeThread({
+      id: "dm-archived",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      status: "in_progress",
+      archived: true,
+    });
+    expect(busyDMParticipantIDs([dm]).size).toBe(0);
+  });
+
+  it("ignores legacy project-kind DM threads even when running", () => {
+    const legacy = makeThread({
+      id: "dm-legacy",
+      workspace_kind: "project",
+      dm_participant_id: "participant-1",
+      status: "in_progress",
+    });
+    expect(busyDMParticipantIDs([legacy]).size).toBe(0);
+  });
+
+  it("ignores running threads that are not DMs", () => {
+    const regular = makeThread({
+      id: "regular-running",
+      status: "in_progress",
+    });
+    expect(busyDMParticipantIDs([regular]).size).toBe(0);
+  });
+
+  it("handles undefined thread lists", () => {
+    expect(busyDMParticipantIDs(undefined).size).toBe(0);
+  });
+
+  it("collects each busy participant once across multiple DM threads", () => {
+    const first = makeThread({
+      id: "dm-a",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      status: "in_progress",
+    });
+    const second = makeThread({
+      id: "dm-b",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      turns: [makeRunningTurn("turn-b")],
+    });
+    const other = makeThread({
+      id: "dm-c",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-2",
+      status: "in_progress",
+    });
+    expect(busyDMParticipantIDs([first, second, other])).toEqual(
+      new Set(["participant-1", "participant-2"]),
+    );
   });
 });
 

@@ -147,6 +147,7 @@ import {
   activeTurnTokenSpeedSnapshot,
   appendStreamingTokenSample,
   bindActiveSessionTabToThread,
+  busyDMParticipantIDs,
   cloneSessionTabDraft,
   cloneComposerDraft,
   composerSubmissionDetail,
@@ -1907,14 +1908,20 @@ export function App(): JSX.Element {
     }
     return Array.from(names);
   }, [state.thread, state.secondaryThread, state.threads]);
-  // Aggregate participant IDs that currently own a running run. Walks the
-  // child_agents list on every thread (active, secondary, and sidebar) and
-  // collects participants whose agent status is running, or whose agent
-  // aggregates running descendants via nested_running_count. Named
-  // participants not in the set render as online; the roster is the only
-  // consumer so we keep the aggregation local to App.tsx.
+  // Aggregate participant IDs that are currently busy. Two sources union:
+  //   1. The participant's resident DM thread is running — a resident named
+  //      agent's DM thread is its brain, so a running turn there means the
+  //      agent is thinking (docs/plans/2026-07-03-resident-named-agents.md
+  //      §7.2).
+  //   2. A dispatched task run (child agent) owned by the participant is
+  //      running — participant/start task dispatch stays a separate entry
+  //      point (§4.8), so those runs keep lighting the busy dot too.
+  // Named participants not in the set render as online; the roster is the
+  // only consumer so we keep the aggregation local to App.tsx.
   const busyParticipantIDs = useMemo(() => {
-    const ids = new Set<string>();
+    const threads = [state.thread, state.secondaryThread, ...state.threads]
+      .filter((thread): thread is Thread => Boolean(thread));
+    const ids = busyDMParticipantIDs(threads);
     const collect = (agent: Agent | undefined): void => {
       if (!agent) return;
       if (
@@ -1927,8 +1934,8 @@ export function App(): JSX.Element {
         }
       }
     };
-    for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
-      for (const agent of thread?.child_agents ?? []) {
+    for (const thread of threads) {
+      for (const agent of thread.child_agents ?? []) {
         collect(agent);
       }
     }
