@@ -2502,6 +2502,54 @@ func TestFollowupTaskRehydratePreVersionSnapshotFails(t *testing.T) {
 	}
 }
 
+// TestAgentMailboxMessageResumeHint locks the failure-mailbox resumability
+// hint: failed and cancelled runs advertise that their context is preserved
+// and can be resumed, while completed runs do not. The root-path mailbox
+// carries the same hint because both paths share the mailbox builder.
+func TestAgentMailboxMessageResumeHint(t *testing.T) {
+	now := time.Now().UTC()
+	failed := subagent.SubAgentSnapshot{
+		ID:          "worker-x",
+		AgentPath:   "/root/worker_x",
+		Status:      subagent.StatusFailed,
+		Error:       errors.New("api terminal error"),
+		StartedAt:   now.Add(-time.Second),
+		CompletedAt: now,
+	}
+	msg := NewAgentMailboxMessage(failed)
+	if !msg.Resumable {
+		t.Fatalf("failed mailbox should be marked resumable: %+v", msg)
+	}
+	if !strings.Contains(msg.ResumeHint, "followup_task") || !strings.Contains(msg.ResumeHint, "send_message") {
+		t.Fatalf("resume hint should name the resume tools: %q", msg.ResumeHint)
+	}
+
+	cancelled := failed
+	cancelled.Status = subagent.StatusCancelled
+	cancelled.Error = nil
+	if m := NewAgentMailboxMessage(cancelled); !m.Resumable || m.ResumeHint == "" {
+		t.Fatalf("cancelled mailbox should be resumable with a hint: %+v", m)
+	}
+
+	completed := subagent.SubAgentSnapshot{
+		ID:          "worker-y",
+		Status:      subagent.StatusCompleted,
+		Result:      "done",
+		StartedAt:   now.Add(-time.Second),
+		CompletedAt: now,
+	}
+	if m := NewAgentMailboxMessage(completed); m.Resumable || m.ResumeHint != "" {
+		t.Fatalf("completed mailbox should not advertise resume: %+v", m)
+	}
+
+	// Root-path parity: the root completion communication for a failed run
+	// serializes the same hint field.
+	root := FormatAgentMailboxMessage(failed)
+	if !strings.Contains(root, "resume_hint") || !strings.Contains(root, "followup_task") {
+		t.Fatalf("root-path mailbox should include the resume hint, got %q", root)
+	}
+}
+
 func TestSendMessage_RejectsEmptyFields(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

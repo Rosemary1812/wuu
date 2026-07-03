@@ -27,6 +27,8 @@ type AgentMailboxMessage struct {
 	ResultTruncated bool      `json:"result_truncated,omitempty"`
 	Error           string    `json:"error,omitempty"`
 	ErrorClass      string    `json:"error_class,omitempty"`
+	Resumable       bool      `json:"resumable,omitempty"`
+	ResumeHint      string    `json:"resume_hint,omitempty"`
 	InputTokens     int       `json:"input_tokens,omitempty"`
 	OutputTokens    int       `json:"output_tokens,omitempty"`
 	ReportPath      string    `json:"report_path,omitempty"`
@@ -83,10 +85,31 @@ func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, r
 		msg.Error = snap.Error.Error()
 		msg.ErrorClass = string(ClassifyError(snap.Error))
 	}
+	// A run that failed or was cancelled keeps its full context, so tell the
+	// parent it can be revived in place rather than re-spawned. Both the
+	// nested-parent and root delivery paths build the mailbox through this
+	// function, so the hint reaches every recipient the same way.
+	if isResumableMailboxStatus(snap.Status) {
+		msg.Resumable = true
+		msg.ResumeHint = "This run's full context is preserved. Send it a new message with followup_task or send_message to revive it in place with your correction; it resumes from where it stopped instead of starting over."
+	}
 	if !snap.CompletedAt.IsZero() && !snap.StartedAt.IsZero() {
 		msg.DurationMS = snap.CompletedAt.Sub(snap.StartedAt).Milliseconds()
 	}
 	return msg
+}
+
+// isResumableMailboxStatus reports whether a terminal run should advertise
+// that it can be revived. Completed runs succeeded and do not need the hint;
+// failed and cancelled runs are the abnormal terminals a parent may want to
+// resume with a correction.
+func isResumableMailboxStatus(status subagent.Status) bool {
+	switch status {
+	case subagent.StatusFailed, subagent.StatusCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 func FormatAgentMailboxMessage(snap subagent.SubAgentSnapshot) string {
