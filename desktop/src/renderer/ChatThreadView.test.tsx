@@ -201,6 +201,122 @@ describe("ChatThreadView", () => {
   });
 });
 
+// --- Workspace-focus divider rows ------------------------------------
+
+describe("ChatThreadView focus divider rows", () => {
+  it("renders the all-workspaces divider", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "user_message",
+            focus_meta: { kind: "all" },
+          },
+        ]),
+        typingParticipants: [],
+      }),
+    );
+    const row = container.querySelector(".chat-row--focus");
+    expect(row).not.toBeNull();
+    expect(container.querySelector(".chat-focus-divider-label")?.textContent).toBe(
+      "⬒ 全部工作区",
+    );
+  });
+
+  it("renders the personal-space divider", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "user_message",
+            focus_meta: { kind: "home" },
+          },
+        ]),
+        typingParticipants: [],
+      }),
+    );
+    expect(container.querySelector(".chat-focus-divider-label")?.textContent).toBe(
+      "⌂ 个人",
+    );
+  });
+
+  it("renders the named-workspace divider using the focus_meta name", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "user_message",
+            focus_meta: { kind: "workspace", name: "wuu", root: "/home/user/wuu" },
+          },
+        ]),
+        typingParticipants: [],
+      }),
+    );
+    expect(container.querySelector(".chat-focus-divider-label")?.textContent).toBe(
+      "⬒ wuu",
+    );
+  });
+
+  it("falls back to root, then a generic label, when a workspace focus has no name", () => {
+    const withRoot = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "user_message",
+            focus_meta: { kind: "workspace", root: "/home/user/scratch" },
+          },
+        ]),
+        typingParticipants: [],
+      }),
+    );
+    expect(
+      withRoot.querySelector(".chat-focus-divider-label")?.textContent,
+    ).toBe("⬒ /home/user/scratch");
+
+    const withNeither = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", focus_meta: { kind: "workspace" } },
+        ]),
+        typingParticipants: [],
+      }),
+    );
+    expect(
+      withNeither.querySelector(".chat-focus-divider-label")?.textContent,
+    ).toBe("⬒ 工作区");
+  });
+
+  it("counts focus divider rows toward the chat window like any other row", () => {
+    installIntersectionObserverStub();
+    const items: Turn["items"] = [];
+    for (let i = 0; i < 90; i += 1) {
+      items.push({ id: `item-${i}`, type: "user_message", text: `msg-${i}` });
+    }
+    items.splice(45, 0, {
+      id: "focus-mid",
+      type: "user_message",
+      focus_meta: { kind: "home" },
+    });
+    const { container } = mountRoot(
+      createElement(ChatThreadView, {
+        turns: [{ id: "turn-bulk", items }],
+        typingParticipants: [],
+      }),
+    );
+    // 91 total rows, window 80 -> 11 hidden, 80 rendered — the extra
+    // focus row does not throw off the windowing math or get dropped.
+    expect(container.querySelectorAll(".chat-row").length).toBe(
+      INITIAL_CHAT_WINDOW_ROWS,
+    );
+    expect(container.querySelector(".chat-row--focus")).not.toBeNull();
+    uninstallIntersectionObserverStub();
+  });
+});
+
 // --- Chat-view windowing (open on latest, reveal older on scroll-up,
 // window only grows) -------------------------------------------------
 

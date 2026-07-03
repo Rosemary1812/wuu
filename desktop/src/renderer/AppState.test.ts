@@ -2099,6 +2099,31 @@ describe("chatMessagesFromTurns", () => {
     ]);
     expect(rows.map((row) => row.id)).toEqual(["turn-1:item-1", "turn-2:item-1"]);
   });
+
+  it("maps an item with focus_meta to a focus row regardless of its type", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      focus_meta: { kind: "workspace", name: "wuu", root: "/home/user/wuu" },
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "focus", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
+
+  it("prefers focus_meta over envelope_meta when (implausibly) both are present", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 1 }],
+      focus_meta: { kind: "all" },
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "focus", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
+  });
 });
 
 describe("isGroupThread", () => {

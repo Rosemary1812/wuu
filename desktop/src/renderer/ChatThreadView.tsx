@@ -221,7 +221,34 @@ export function ChatThreadView({
   );
 }
 
+// focusDividerLabel renders the fixed glyph + name convention the
+// desktop design settled on for the workspace-focus divider: a house
+// glyph for the resident's personal space, a generic workspace glyph
+// for everything else (both the "all workspaces" catch-all and any one
+// named project), differentiated only by the trailing label.
+function focusDividerLabel(meta: NonNullable<ChatMessageRow["item"]["focus_meta"]>): string {
+  if (meta.kind === "home") {
+    return "⌂ 个人";
+  }
+  if (meta.kind === "workspace") {
+    const label = meta.name?.trim() || meta.root?.trim() || "工作区";
+    return `⬒ ${label}`;
+  }
+  return "⬒ 全部工作区";
+}
+
 function ChatRow({ row }: { row: ChatMessageRow }): JSX.Element {
+  if (row.kind === "focus") {
+    const meta = row.item.focus_meta;
+    const label = meta ? focusDividerLabel(meta) : "⬒ 全部工作区";
+    return (
+      <div className="chat-row chat-row--focus">
+        <div className="chat-focus-divider" role="separator" aria-label={label}>
+          <span className="chat-focus-divider-label">{label}</span>
+        </div>
+      </div>
+    );
+  }
   if (row.kind === "envelope") {
     return (
       <div className="chat-row chat-row--envelope">

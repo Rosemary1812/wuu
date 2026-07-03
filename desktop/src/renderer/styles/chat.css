@@ -34,6 +34,36 @@
   grid-template-columns: 1fr;
 }
 
+.chat-row--focus {
+  grid-template-columns: 1fr;
+  padding: 2px 0;
+}
+
+/* Workspace-focus divider — same centered, line-flanked form factor as
+ * a date separator: a short label with a hairline rule on either side,
+ * quiet enough not to compete with the surrounding bubbles. */
+.chat-focus-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.chat-focus-divider::before,
+.chat-focus-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--ink-overlay-8);
+}
+
+.chat-focus-divider-label {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .chat-avatar {
   display: flex;
   align-items: center;

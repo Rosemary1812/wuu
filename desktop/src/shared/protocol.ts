@@ -1086,6 +1086,23 @@ export type EnvelopeMetaRecord = {
 };
 export type EnvelopeMeta = EnvelopeMetaRecord[];
 
+// FocusMeta describes a "workspace focus" declaration the backend injects
+// into a DM/group chat-style thread's message stream whenever the
+// thread's active focus changes (composer focus chip — see the desktop
+// chat-style-threads-design.md follow-up on per-thread work focus).
+// "all" = the thread can touch every workspace; "home" = scoped to the
+// resident agent's personal home directory only; "workspace" = scoped to
+// one named project/workspace, identified by `name` (display) and/or
+// `root` (absolute path). Rides on ThreadItem as a sibling to
+// envelope_meta; the renderer treats its mere presence as the signal to
+// render a divider row instead of a normal message, regardless of the
+// item's `type`.
+export type FocusMeta = {
+  kind: "all" | "home" | "workspace";
+  name?: string;
+  root?: string;
+};
+
 export type ThreadItem = {
   id: string;
   source_id?: string;
@@ -1107,6 +1124,7 @@ export type ThreadItem = {
   task?: TaskCard;
   participant?: ParticipantSummary;
   envelope_meta?: EnvelopeMeta;
+  focus_meta?: FocusMeta;
 };
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";

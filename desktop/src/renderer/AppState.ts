@@ -1686,13 +1686,22 @@ export function busyDMParticipantIDs(
 export type ChatMessageRow =
   | { kind: "user"; id: string; turnID: string; item: ThreadItem }
   | { kind: "envelope"; id: string; turnID: string; item: ThreadItem }
-  | { kind: "participant"; id: string; turnID: string; item: ThreadItem };
+  | { kind: "participant"; id: string; turnID: string; item: ThreadItem }
+  | { kind: "focus"; id: string; turnID: string; item: ThreadItem };
 
 /**
  * Flatten a thread's turns into the chat-view message stream. Whitelist
  * semantics (chat-style-threads-design.md §2): only user messages,
- * envelope meta rows, and tool-posted participant messages are chat
- * messages; the agent's working transcript never reaches the DOM.
+ * envelope meta rows, tool-posted participant messages, and workspace-
+ * focus divider rows are chat messages; the agent's working transcript
+ * never reaches the DOM.
+ *
+ * The focus_meta check runs before the `item.type` branches and does
+ * not gate on a particular type value — the wire contract only commits
+ * to focus_meta riding on *some* item in the stream (mirroring how
+ * envelope_meta rides on a user_message), so any item carrying it
+ * becomes a "focus" row regardless of what type the backend tags it
+ * with.
  */
 export function chatMessagesFromTurns(
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>,
@@ -1701,7 +1710,9 @@ export function chatMessagesFromTurns(
   for (const turn of turns) {
     for (const item of turn.items ?? []) {
       const id = `${turn.id}:${item.id}`;
-      if (item.type === "user_message") {
+      if (item.focus_meta) {
+        rows.push({ kind: "focus", id, turnID: turn.id, item });
+      } else if (item.type === "user_message") {
         if (item.envelope_meta && item.envelope_meta.length > 0) {
           rows.push({ kind: "envelope", id, turnID: turn.id, item });
         } else {
