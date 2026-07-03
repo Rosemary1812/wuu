@@ -159,6 +159,9 @@ describe("AppSidebar layout", () => {
       ".sidebar-collapsed.sidebar-drawer-open .sidebar",
     );
     expect(sidebarCSS).toContain(
+      ".sidebar-collapsed.sidebar-drawer-closing .sidebar",
+    );
+    expect(sidebarCSS).toContain(
       ".sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content",
     );
   });

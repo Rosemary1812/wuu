@@ -114,7 +114,7 @@ export function ProjectList({
  * Single project (or scratch pseudo) collapsible group. AppSidebar renders
  * one of these per reorderable section key. Visual/behavioral parity with
  * the legacy `ProjectList` map: the same `project-row` anatomy, the same
- * 190ms `thread-list-collapse` animation, the same unread/active classes.
+ * `thread-list-collapse` unfurl animation, the same unread/active classes.
  */
 export function ProjectGroup({
   project,
@@ -259,7 +259,7 @@ export function ProjectGroup({
  * section header (project, 对话/chat scratch, pinned, agents). The pair is
  * always rendered together; CSS crossfades between them via
  * `.project-row-icon-state` rules in sidebar.css. We render both icons
- * unconditionally rather than swapping them so the 190ms transition stays
+ * unconditionally rather than swapping them so the cross-fade transition stays
  * smooth without a mount/unmount flicker.
  *
  * Every pair follows the same single → many / closed → open metaphor:

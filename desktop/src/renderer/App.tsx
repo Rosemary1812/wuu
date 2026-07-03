@@ -648,7 +648,10 @@ export function App(): JSX.Element {
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
   const settingsShellRef = useRef<HTMLDivElement>(null);
-  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
+  const [sidebarDrawerPhase, setSidebarDrawerPhase] = useState<
+    "closed" | "open" | "closing"
+  >("closed");
+  const sidebarDrawerCloseTimerRef = useRef<number | undefined>(undefined);
   const {
     sidebarWidth,
     settingsSidebarWidth,
@@ -1991,7 +1994,11 @@ export function App(): JSX.Element {
     environmentPanelVisible ? "open" : "closing";
   const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
   const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
-    sidebarCollapsed && sidebarDrawerOpen ? " sidebar-drawer-open" : ""
+    sidebarCollapsed && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
+  }${
+    sidebarCollapsed && sidebarDrawerPhase === "closing"
+      ? " sidebar-drawer-closing"
+      : ""
   }${
     sidebarAnimating ? " sidebar-animating" : ""
   }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
@@ -2013,11 +2020,41 @@ export function App(): JSX.Element {
   );
   const runDebugPhase = runDebugPhaseForState(state);
 
-  useLayoutEffect(() => {
-    if (!sidebarCollapsed && sidebarDrawerOpen) {
-      setSidebarDrawerOpen(false);
+  const clearSidebarDrawerCloseTimer = useCallback((): void => {
+    if (sidebarDrawerCloseTimerRef.current !== undefined) {
+      window.clearTimeout(sidebarDrawerCloseTimerRef.current);
+      sidebarDrawerCloseTimerRef.current = undefined;
     }
-  }, [sidebarCollapsed, sidebarDrawerOpen]);
+  }, []);
+
+  const openSidebarDrawer = useCallback((): void => {
+    clearSidebarDrawerCloseTimer();
+    if (sidebarCollapsed) {
+      setSidebarDrawerPhase("open");
+    }
+  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed]);
+
+  const closeSidebarDrawer = useCallback((): void => {
+    clearSidebarDrawerCloseTimer();
+    if (!sidebarCollapsed) {
+      setSidebarDrawerPhase("closed");
+      return;
+    }
+    setSidebarDrawerPhase("closing");
+    sidebarDrawerCloseTimerRef.current = window.setTimeout(() => {
+      sidebarDrawerCloseTimerRef.current = undefined;
+      setSidebarDrawerPhase("closed");
+    }, SIDEBAR_MOTION_MS);
+  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed]);
+
+  useLayoutEffect(() => {
+    if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
+      clearSidebarDrawerCloseTimer();
+      setSidebarDrawerPhase("closed");
+    }
+  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed, sidebarDrawerPhase]);
+
+  useEffect(() => clearSidebarDrawerCloseTimer, [clearSidebarDrawerCloseTimer]);
 
   useLayoutEffect(() => {
     if (environmentPanelVisible) {
@@ -6866,7 +6903,7 @@ export function App(): JSX.Element {
       <div
         className="sidebar-hover-zone"
         aria-hidden="true"
-        onPointerEnter={() => setSidebarDrawerOpen(true)}
+        onPointerEnter={openSidebarDrawer}
       />
       <AppSidebar
         state={state}
@@ -6927,8 +6964,8 @@ export function App(): JSX.Element {
           void selectProjectThread(projectID, threadID)
         }
         onReorderSections={setSidebarSectionOrder}
-        onPointerEnter={() => setSidebarDrawerOpen(true)}
-        onPointerLeave={() => setSidebarDrawerOpen(false)}
+        onPointerEnter={openSidebarDrawer}
+        onPointerLeave={closeSidebarDrawer}
         onOpenSettings={() => {
           setProjectMenuOpen(false);
           setRuntimeMenuOpen(false);
