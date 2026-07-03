@@ -46,6 +46,7 @@ import type {
   InputImage,
   ParticipantProfile,
   ParticipantSaveParams,
+  ParticipantSummary,
   PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
@@ -117,6 +118,7 @@ import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
+import { ChatThreadView } from "./ChatThreadView";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import {
   ParticipantProfilePanel,
@@ -654,6 +656,12 @@ export function App(): JSX.Element {
     "closed" | "open" | "closing"
   >("closed");
   const sidebarDrawerCloseTimerRef = useRef<number | undefined>(undefined);
+  const sidebarHoverZoneRef = useRef<HTMLDivElement>(null);
+  // Set while a sidebar drag is in flight and kept set after a drag that ends
+  // collapsed, until the pointer moves off the hover zone. Without it, the
+  // hover zone appears under the pointer the instant the drag crosses the
+  // collapse threshold and pointerenter immediately pops the drawer back open.
+  const sidebarDrawerSuppressedRef = useRef(false);
   const {
     sidebarWidth,
     settingsSidebarWidth,
@@ -931,6 +939,29 @@ export function App(): JSX.Element {
       ),
     [state.threads, state.thread, state.secondaryThread],
   );
+  // Participant IDs whose resident DM thread is currently running — the
+  // signal chat-style DM/group panes use to show a typing indicator
+  // (chat-style-threads-design.md §2). Scoped to state.threads (not the
+  // busyParticipantIDs union above) so a dispatched task run alone does
+  // not light up a chat typing row that has nothing to do with the DM.
+  const busyDMThreadParticipantIDs = useMemo(
+    () => busyDMParticipantIDs(state.threads),
+    [state.threads],
+  );
+  const participantSummariesByID = useMemo(() => {
+    const map = new Map<string, ParticipantSummary>();
+    for (const participant of participants) {
+      map.set(participant.id, {
+        id: participant.id,
+        name: participant.name,
+        kind: participant.kind,
+        role: participant.role,
+        avatar: participant.avatar,
+        avatar_image: participant.avatar_image,
+      });
+    }
+    return map;
+  }, [participants]);
   const openTurnFileDiffPanel = useStableCallback(
     (threadID: string, selection: TurnFileDiffSelection) => {
       setTurnFileDiffSelection({ ...selection, threadID });
@@ -2036,11 +2067,14 @@ export function App(): JSX.Element {
   }, []);
 
   const openSidebarDrawer = useCallback((): void => {
+    if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
+      return;
+    }
     clearSidebarDrawerCloseTimer();
     if (sidebarCollapsed) {
       setSidebarDrawerPhase("open");
     }
-  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed]);
+  }, [clearSidebarDrawerCloseTimer, resizingSidebar, sidebarCollapsed]);
 
   const closeSidebarDrawer = useCallback((): void => {
     clearSidebarDrawerCloseTimer();
@@ -2061,6 +2095,32 @@ export function App(): JSX.Element {
       setSidebarDrawerPhase("closed");
     }
   }, [clearSidebarDrawerCloseTimer, sidebarCollapsed, sidebarDrawerPhase]);
+
+  useEffect(() => {
+    if (resizingSidebar) {
+      sidebarDrawerSuppressedRef.current = true;
+      return undefined;
+    }
+    if (!sidebarDrawerSuppressedRef.current) {
+      return undefined;
+    }
+    if (!sidebarCollapsed) {
+      sidebarDrawerSuppressedRef.current = false;
+      return undefined;
+    }
+    // The drag ended collapsed with the pointer likely still on the hover
+    // zone. Keep the drawer suppressed until the pointer moves off the zone
+    // so the sidebar doesn't reopen in place right after being dragged shut.
+    function handlePointerMove(event: PointerEvent): void {
+      const zone = sidebarHoverZoneRef.current?.getBoundingClientRect();
+      if (!zone || event.clientX > zone.right || event.clientX < zone.left) {
+        sidebarDrawerSuppressedRef.current = false;
+        window.removeEventListener("pointermove", handlePointerMove);
+      }
+    }
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, [resizingSidebar, sidebarCollapsed]);
 
   useEffect(() => clearSidebarDrawerCloseTimer, [clearSidebarDrawerCloseTimer]);
 
@@ -6858,6 +6918,7 @@ export function App(): JSX.Element {
     <ImagePreviewProvider>
       <div ref={appShellRef} className={shellClassName} style={shellStyle}>
       <div
+        ref={sidebarHoverZoneRef}
         className="sidebar-hover-zone"
         aria-hidden="true"
         onPointerEnter={openSidebarDrawer}
@@ -7316,6 +7377,8 @@ export function App(): JSX.Element {
                 onOpenFileDiff={(thread, selection) =>
                   openTurnFileDiffPanel(thread.id, selection)
                 }
+                busyDMParticipantIDs={busyDMThreadParticipantIDs}
+                participantSummariesByID={participantSummariesByID}
               />
             )}
               </>
@@ -7540,6 +7603,14 @@ type CachedConversationPanesProps = {
     approval: PendingToolApproval,
     decision: "approved" | "approved_for_session" | "denied",
   ) => void;
+  /**
+   * Participant IDs whose resident DM thread is currently running — drives
+   * the chat-style typing indicator for DM (and group) panes
+   * (chat-style-threads-design.md §2).
+   */
+  busyDMParticipantIDs: ReadonlySet<string>;
+  /** Roster lookup used to resolve chat-view avatars and typing rows. */
+  participantSummariesByID: ReadonlyMap<string, ParticipantSummary>;
 };
 
 const CachedConversationPanes = memo(function CachedConversationPanes({
@@ -7566,6 +7637,8 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   turnStreamStatus,
   pendingToolApproval,
   onResolveToolApproval,
+  busyDMParticipantIDs: busyDMThreadParticipantIDs,
+  participantSummariesByID,
 }: CachedConversationPanesProps): JSX.Element {
   return (
     <div className="cached-conversation-panes">
@@ -7609,6 +7682,16 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
           thread.worktree && thread.forked_from_id ? (
             <ForkWorktreeNotice thread={thread} />
           ) : null;
+        const isChatStyleThread = isDMThread(thread);
+        const dmTypingParticipants: ParticipantSummary[] =
+          isChatStyleThread &&
+          thread.dm_participant_id &&
+          busyDMThreadParticipantIDs.has(thread.dm_participant_id)
+            ? [participantSummariesByID.get(thread.dm_participant_id)].filter(
+                (participant): participant is ParticipantSummary =>
+                  Boolean(participant),
+              )
+            : [];
         return (
           <div
             key={threadID}
@@ -7620,6 +7703,12 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
               {isActive && conversationGridVisible ? (
                 <ConversationGridGuides />
               ) : null}
+              {isChatStyleThread ? (
+                <ChatThreadView
+                  turns={threadTurns}
+                  typingParticipants={dmTypingParticipants}
+                />
+              ) : (
               <ConversationTurnList
                 threadID={thread.id}
                 turns={threadTurns}
@@ -7720,6 +7809,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   );
                 }}
               />
+              )}
             </div>
           </div>
         );
