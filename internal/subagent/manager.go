@@ -569,6 +569,107 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 	return snap, nil
 }
 
+// RestoreOptions rebuilds a terminal sub-agent from a persisted snapshot so
+// it can accept a follow-up after its live run was lost (typically across a
+// process restart). Restore does not run a turn — it re-registers the
+// dormant SubAgent so the normal Followup path resumes it. The caller owns
+// validation (version gate, working-directory existence) and toolkit
+// construction.
+type RestoreOptions struct {
+	Run     PersistedRun
+	Toolkit agent.ToolExecutor
+	// Model, when set, overrides Run.Model (e.g. a re-resolved model pin).
+	Model string
+	// Client, when non-nil, pins the resumed run to a specific stream
+	// client (e.g. a rebuilt cross-provider client). Nil lets the next
+	// turn fall back to the manager defaults.
+	Client      providers.StreamClient
+	HistoryPath string
+	MaxSteps    int
+	MaxLifetime time.Duration
+}
+
+// Restore re-registers a dormant sub-agent rebuilt from a snapshot. The
+// returned SubAgent is in its persisted terminal state with a closed done
+// channel; a subsequent Followup starts a fresh turn from its history.
+func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
+	run := opts.Run
+	id := strings.TrimSpace(run.ID)
+	if id == "" {
+		return nil, errors.New("restore requires a run id")
+	}
+	if opts.Toolkit == nil {
+		return nil, errors.New("toolkit is required")
+	}
+	if len(run.Messages) == 0 {
+		return nil, fmt.Errorf("subagent %q has no history to resume", id)
+	}
+	model := strings.TrimSpace(opts.Model)
+	if model == "" {
+		model = strings.TrimSpace(run.Model)
+	}
+	if model == "" {
+		return nil, fmt.Errorf("subagent %q snapshot has no model to resume with", id)
+	}
+
+	// Inherit the manager's current runtime defaults (context window,
+	// compaction, provider options) and fall back to its default client
+	// when the caller has no per-run override — the resume turn reads
+	// sa.client directly, so it must be non-nil.
+	defaults := m.defaultsSnapshot()
+	client := opts.Client
+	if client == nil {
+		client = defaults.client
+	}
+	if client == nil {
+		return nil, fmt.Errorf("subagent %q cannot resume: no stream client configured", id)
+	}
+
+	// Terminal runs restore with an already-closed done channel so Wait
+	// returns the snapshot immediately until a follow-up starts a turn.
+	doneCh := make(chan struct{})
+	close(doneCh)
+	sa := &SubAgent{
+		ID:              id,
+		ParticipantID:   run.ParticipantID,
+		Type:            run.Type,
+		TaskName:        run.TaskName,
+		AgentProfile:    run.AgentProfile,
+		AgentPath:       run.AgentPath,
+		ParentID:        run.ParentID,
+		Description:     run.Description,
+		Status:          run.Status,
+		StartedAt:       run.StartedAt,
+		CompletedAt:     run.CompletedAt,
+		Result:          run.Result,
+		prompt:          run.Prompt,
+		model:           model,
+		modelPin:        run.ModelPin,
+		workerRoot:      run.CWD,
+		toolkit:         opts.Toolkit,
+		historyPath:     opts.HistoryPath,
+		history:         providers.CloneChatMessages(run.Messages),
+		maxSteps:        opts.MaxSteps,
+		maxLifetime:     opts.MaxLifetime,
+		runtimeDefaults: defaults,
+		client:          client,
+		cancelFunc:      func() {},
+		doneCh:          doneCh,
+	}
+	if strings.TrimSpace(run.Error) != "" {
+		sa.Error = errors.New(run.Error)
+	}
+
+	m.mu.Lock()
+	if _, exists := m.agents[id]; exists {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("subagent %q already exists", id)
+	}
+	m.agents[id] = sa
+	m.mu.Unlock()
+	return sa, nil
+}
+
 // NextPendingMessage returns and removes the oldest queued follow-up
 // message for an agent. Used by tests and diagnostics.
 func (m *Manager) NextPendingMessage(id string) (string, bool) {

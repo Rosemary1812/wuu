@@ -2302,6 +2302,206 @@ func TestSendMessage_RevivesCompletedWorker(t *testing.T) {
 	}
 }
 
+// writeResumeSnapshot writes a raw persisted-run JSON to the history dir,
+// bypassing a live worker so rehydration edge cases (missing worktree,
+// pre-version snapshots) can be exercised deterministically.
+func writeResumeSnapshot(t *testing.T, historyDir, id string, version int, cwd, status string) {
+	t.Helper()
+	if err := os.MkdirAll(historyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := map[string]any{
+		"id":         id,
+		"type":       DefaultSubagentType,
+		"task_name":  "resumed_task",
+		"agent_path": agentthread.RootPath + "/resumed_task",
+		"status":     status,
+		"cwd":        cwd,
+		"model":      "fake-model",
+		"prompt":     "do it",
+		"messages": []map[string]any{
+			{"role": "system", "content": "you are a worker"},
+			{"role": "user", "content": "do it"},
+		},
+	}
+	if version != 0 {
+		rec["version"] = version
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(historyDir, id+".json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestFollowupTaskRehydratesAcrossRestart simulates a process restart: a
+// first AgentControl runs a worker to completion, and a fresh instance
+// pointed at the same history dir resumes that dead run from its snapshot
+// when a follow-up addresses it, without any startup scan.
+func TestFollowupTaskRehydratesAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	historyDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-restart", "workers")
+	threadDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-restart", "threads")
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-restart", "harness")
+
+	first, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "first done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-restart",
+		HistoryDir:    historyDir,
+		ThreadDir:     threadDir,
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := first.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "resume_restart",
+		Description: "resume me",
+		Prompt:      "do the first pass",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("first spawn: %v", err)
+	}
+	if res.Status != "completed" {
+		t.Fatalf("expected completed first run, got %s", res.Status)
+	}
+	if _, err := os.Stat(filepath.Join(historyDir, res.AgentID+".json")); err != nil {
+		t.Fatalf("history snapshot not written: %v", err)
+	}
+	first.Close()
+
+	// Fresh AgentControl over the same history dir stands in for a restart.
+	client := &recordingClient{resp: providers.ChatResponse{Content: "resumed done"}}
+	second, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-restart",
+		HistoryDir:    historyDir,
+		ThreadDir:     threadDir,
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(second.Close)
+	if second.Manager().Get(res.AgentID) != nil {
+		t.Fatal("resumed manager should not track the dead run before rehydration")
+	}
+
+	snap, err := second.FollowupTask(context.Background(), res.AgentID, "now do the second pass")
+	if err != nil {
+		t.Fatalf("FollowupTask across restart: %v", err)
+	}
+	if snap.Status != subagent.StatusRunning {
+		t.Fatalf("expected resumed run running, got %s", snap.Status)
+	}
+	final, err := second.Manager().Wait(context.Background(), res.AgentID)
+	if err != nil {
+		t.Fatalf("Wait resumed: %v", err)
+	}
+	if final.Status != subagent.StatusCompleted || final.Result != "resumed done" {
+		t.Fatalf("expected resumed completion, got %s result=%q", final.Status, final.Result)
+	}
+	visible := visibleMessagesForTest(client.LastRequest().Messages)
+	if len(visible) == 0 {
+		t.Fatal("resumed turn issued no request")
+	}
+	tail := visible[len(visible)-1]
+	if tail.Role != "user" || !strings.Contains(tail.Content, "now do the second pass") {
+		t.Fatalf("resumed request should end with the follow-up, got %+v", tail)
+	}
+	// The prior turn's history must be carried into the resume request.
+	var sawPriorResult bool
+	for _, msg := range visible {
+		if strings.Contains(msg.Content, "first done") {
+			sawPriorResult = true
+		}
+	}
+	if !sawPriorResult {
+		t.Fatalf("resumed request lost the prior turn history: %+v", visible)
+	}
+}
+
+// TestFollowupTaskRehydrateMissingWorktreeFails asserts that a snapshot whose
+// working directory is gone (e.g. a cleaned-up worktree) refuses to resume
+// with a clear error instead of silently rerooting somewhere else.
+func TestFollowupTaskRehydrateMissingWorktreeFails(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	historyDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-gone", "workers")
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-gone",
+		HistoryDir:    historyDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+
+	gone := filepath.Join(dir, "worktrees", "cleaned-up")
+	writeResumeSnapshot(t, historyDir, "worker-gone", subagent.ResumeSnapshotVersion, gone, "failed")
+
+	_, err = c.FollowupTask(context.Background(), "worker-gone", "please resume")
+	if err == nil {
+		t.Fatal("expected resume to fail when the working directory is gone")
+	}
+	if !strings.Contains(err.Error(), "no longer available") {
+		t.Fatalf("error should name the missing working directory, got %v", err)
+	}
+}
+
+// TestFollowupTaskRehydratePreVersionSnapshotFails asserts a snapshot written
+// before resume support refuses to resume with a clear, actionable error.
+func TestFollowupTaskRehydratePreVersionSnapshotFails(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	historyDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-old", "workers")
+	c, err := New(Config{
+		Client:        &fakeClient{resp: providers.ChatResponse{Content: "done"}},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-old",
+		HistoryDir:    historyDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+
+	// version 0 (omitted) + an existing cwd, so only the version gate fires.
+	writeResumeSnapshot(t, historyDir, "worker-old", 0, dir, "failed")
+
+	_, err = c.FollowupTask(context.Background(), "worker-old", "please resume")
+	if err == nil {
+		t.Fatal("expected resume to fail for a pre-version snapshot")
+	}
+	if !strings.Contains(err.Error(), "predates resume support") {
+		t.Fatalf("error should explain the snapshot predates resume support, got %v", err)
+	}
+}
+
 func TestSendMessage_RejectsEmptyFields(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)

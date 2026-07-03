@@ -1208,7 +1208,14 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 	}
 	sa := c.manager.Get(id)
 	if sa == nil {
-		return fmt.Errorf("agent %q not found", id)
+		rehydrated, err := c.rehydrateAgent(id)
+		if err != nil {
+			return err
+		}
+		if rehydrated == nil {
+			return fmt.Errorf("agent %q not found", id)
+		}
+		sa = rehydrated
 	}
 	snap := sa.Snapshot()
 	// Queue-or-resume, identical to followup_task: a running target keeps
@@ -1243,7 +1250,14 @@ func (c *AgentControl) FollowupTaskFrom(currentPath string, ctx context.Context,
 	}
 	sa := c.manager.Get(id)
 	if sa == nil {
-		return subagent.SubAgentSnapshot{}, fmt.Errorf("agent %q not found", id)
+		rehydrated, err := c.rehydrateAgent(id)
+		if err != nil {
+			return subagent.SubAgentSnapshot{}, err
+		}
+		if rehydrated == nil {
+			return subagent.SubAgentSnapshot{}, fmt.Errorf("agent %q not found", id)
+		}
+		sa = rehydrated
 	}
 	current := sa.Snapshot()
 	communication := newInterAgentCommunication(currentPath, current.AgentPath, msg, true)
@@ -1840,6 +1854,41 @@ func (c *AgentControl) restoreQueuedSpawns() error {
 	return nil
 }
 
+// resolveSpawnModelPin turns a raw participant model pin into the concrete
+// (model, client) pair a spawn or resume should run with. It applies the
+// cross-provider safety policy shared by queued-spawn restore and
+// lazy-resume rehydration: an empty pin passes the given override through, a
+// same-provider or bare-model pin only overrides the model, and a pin that
+// targets a different provider MUST resolve to a fresh client via the
+// registered resolver. A missing/erroring resolver, an empty resolved
+// model, or a nil cross-provider client fails explicitly rather than
+// silently using the worker default client. label names the caller for the
+// error text.
+func (c *AgentControl) resolveSpawnModelPin(label, modelOverride, rawPin string, clientOverride providers.StreamClient) (string, providers.StreamClient, error) {
+	rawPin = strings.TrimSpace(rawPin)
+	if rawPin == "" {
+		return modelOverride, clientOverride, nil
+	}
+	resolver := c.currentModelPinResolver()
+	if resolver == nil {
+		return "", nil, fmt.Errorf("%s has model pin %q but no model-pin resolver is installed; refusing to fall back to the worker default client", label, rawPin)
+	}
+	resolvedModel, resolvedClient, resolveErr := resolver(rawPin)
+	if resolveErr != nil {
+		return "", nil, fmt.Errorf("%s model pin %q could not be resolved: %w", label, rawPin, resolveErr)
+	}
+	if strings.TrimSpace(resolvedModel) == "" {
+		return "", nil, fmt.Errorf("%s model pin %q resolved to an empty model", label, rawPin)
+	}
+	if pinTargetsDifferentProvider(rawPin, c.WorkerProviderName()) {
+		if resolvedClient == nil {
+			return "", nil, fmt.Errorf("%s model pin %q targets a different provider but resolver returned no client; refusing to use the worker default client", label, rawPin)
+		}
+		clientOverride = resolvedClient
+	}
+	return resolvedModel, clientOverride, nil
+}
+
 func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSpawn) error {
 	workerRoot := c.parentRepo
 	var worktreeRef *worktree.Worktree
@@ -1896,41 +1945,13 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		participantID = c.newEphemeralParticipant(prepared.ThreadMeta.TaskName, prepared.WorkerType).ID
 	}
 	// Per-participant model pin restore. Queued spawns persist the raw
-	// pin (e.g. "alt-provider:model") but not the stream client. Before
-	// the runner can pick a client we MUST rebuild it for any pin whose
-	// provider differs from the current worker default; otherwise the
-	// subagent.Manager would silently fall back to defaults.client and
-	// route the request to the wrong provider.
-	//
-	// Behavior matrix (raw pin → resolver action):
-	//   ""                                 → no-op, keep ModelOverride
-	//   "model"                            → bare model, keep ModelOverride
-	//   "p:model" p==workerProviderName    → keep ModelOverride
-	//   "p:model" p!=workerProviderName    → resolver must yield a fresh
-	//                                       client; nil client or any
-	//                                       error fails this run
-	//                                       explicitly (never silent).
-	modelOverride := prepared.ModelOverride
-	clientOverride := prepared.ClientOverride
-	if rawPin := strings.TrimSpace(prepared.ModelPin); rawPin != "" {
-		resolver := c.currentModelPinResolver()
-		if resolver == nil {
-			return fmt.Errorf("queued spawn %s has model pin %q but no model-pin resolver is installed; refusing to fall back to the worker default client", prepared.WorkerID, rawPin)
-		}
-		resolvedModel, resolvedClient, resolveErr := resolver(rawPin)
-		if resolveErr != nil {
-			return fmt.Errorf("queued spawn %s model pin %q could not be resolved: %w", prepared.WorkerID, rawPin, resolveErr)
-		}
-		if strings.TrimSpace(resolvedModel) == "" {
-			return fmt.Errorf("queued spawn %s model pin %q resolved to an empty model", prepared.WorkerID, rawPin)
-		}
-		if pinTargetsDifferentProvider(rawPin, c.WorkerProviderName()) {
-			if resolvedClient == nil {
-				return fmt.Errorf("queued spawn %s model pin %q targets a different provider but resolver returned no client; refusing to use the worker default client", prepared.WorkerID, rawPin)
-			}
-			clientOverride = resolvedClient
-		}
-		modelOverride = resolvedModel
+	// pin (e.g. "alt-provider:model") but not the stream client, so we must
+	// rebuild the client for any cross-provider pin before the runner picks
+	// one; otherwise the subagent.Manager would fall back to defaults.client
+	// and route the request to the wrong provider.
+	modelOverride, clientOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("queued spawn %s", prepared.WorkerID), prepared.ModelOverride, prepared.ModelPin, prepared.ClientOverride)
+	if err != nil {
+		return err
 	}
 	_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
 		ID:             prepared.WorkerID,
@@ -2477,6 +2498,102 @@ func (c *AgentControl) resolveAgentIDFrom(currentPath, target string) string {
 		}
 	}
 	return id
+}
+
+// rehydrateAgent lazily rebuilds a dormant sub-agent from its persisted
+// snapshot so a follow-up can resume it after the live run was lost (e.g.
+// across a process restart). It is only reached when a follow-up addresses
+// an id the live manager no longer tracks — there is no startup scan.
+//
+// Returns (nil, nil) when no snapshot exists, so the caller reports the
+// target as not found. A non-nil error means a snapshot exists but cannot
+// be resumed (predates resume support, working directory gone, unknown
+// worker type, model-pin resolution failed, etc.); resume never silently
+// falls back to a different runtime.
+func (c *AgentControl) rehydrateAgent(id string) (*subagent.SubAgent, error) {
+	if c == nil || c.manager == nil || strings.TrimSpace(c.historyDir) == "" {
+		return nil, nil
+	}
+	path := filepath.Join(c.historyDir, id+".json")
+	if _, err := os.Stat(path); err != nil {
+		return nil, nil
+	}
+	run, err := subagent.LoadPersistedRun(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resume agent %q: reading snapshot: %w", id, err)
+	}
+	if run.Version < subagent.ResumeSnapshotVersion {
+		return nil, fmt.Errorf("cannot resume agent %q: this snapshot predates resume support; re-spawn the task instead", id)
+	}
+	if !isFinalSubAgentStatus(run.Status) {
+		return nil, fmt.Errorf("cannot resume agent %q: snapshot status %q is not resumable", id, run.Status)
+	}
+	workerRoot := strings.TrimSpace(run.CWD)
+	if workerRoot == "" {
+		return nil, fmt.Errorf("cannot resume agent %q: snapshot is missing its working directory", id)
+	}
+	if info, statErr := os.Stat(workerRoot); statErr != nil || !info.IsDir() {
+		return nil, fmt.Errorf("cannot resume agent %q: working directory %q is no longer available (worktree cleaned up?); re-spawn the task instead", id, workerRoot)
+	}
+	wt, err := LookupWorkerType(run.Type)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resume agent %q: %w", id, err)
+	}
+	meta := rehydratedThreadMeta(run)
+	workerKit, err := c.workerFact(workerRoot, wt, meta)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resume agent %q: worker toolkit: %w", id, err)
+	}
+	model, clientOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("resumed agent %s", id), run.Model, run.ModelPin, nil)
+	if err != nil {
+		return nil, err
+	}
+	sa, err := c.manager.Restore(subagent.RestoreOptions{
+		Run:         run,
+		Toolkit:     workerKit,
+		Model:       model,
+		Client:      clientOverride,
+		HistoryPath: path,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cannot resume agent %q: %w", id, err)
+	}
+	// Re-register the thread so status notifications and completion
+	// deliveries for the resumed run have somewhere to land. Best-effort:
+	// a missing registry never blocks the resume.
+	if c.threads != nil {
+		_ = c.threads.Restore(meta)
+	}
+	return sa, nil
+}
+
+// rehydratedThreadMeta rebuilds the thread metadata for a resumed run from
+// its persisted snapshot, so the worker toolkit factory and status updates
+// have the same placement the live run had.
+func rehydratedThreadMeta(run subagent.PersistedRun) agentthread.Metadata {
+	path := strings.TrimSpace(run.AgentPath)
+	if path == "" {
+		path = agentthread.RootPath
+	}
+	parentPath := parentPathForSnapshot(subagent.SubAgentSnapshot{AgentPath: run.AgentPath})
+	created := run.StartedAt
+	if created.IsZero() {
+		created = time.Now().UTC()
+	}
+	return agentthread.Metadata{
+		ID:           run.ID,
+		ParentID:     run.ParentID,
+		Path:         path,
+		TaskName:     run.TaskName,
+		AgentProfile: run.AgentProfile,
+		Role:         run.Type,
+		CWD:          run.CWD,
+		Model:        run.Model,
+		Status:       threadStatusFromSubAgent(run.Status),
+		CreatedAt:    created,
+		UpdatedAt:    time.Now().UTC(),
+		Source:       agentthread.Source{Kind: agentthread.SourceThreadSpawn, ParentPath: parentPath},
+	}
 }
 
 func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
