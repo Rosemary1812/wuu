@@ -6,6 +6,13 @@
 
 前置阅读：`docs/2026-07-02-conversation-native-multi-agent-zh.md`（调研与 Phase 1-5 总纲，本文是其 Phase 4/5 的修订与细化）。前端一切视觉规范以该文第 7 章为准，本文不重复。
 
+修订记录（2026-07-03，与 `2026-07-03-chat-style-threads-design.md` 对齐及设计讨论落档）：
+
+- **DM 回复通道裁决**：DM 回复统一走 `post_message`（缺省 thread_id = 本 DM）；assistant 正文只是工作过程，聊天视图不渲染。裁决理由：正文回复必然流式，与聊天视图"完整气泡到达"的模型冲突。§2/§4.4/§4.5/§5/§6/§7.2 已同步。
+- **收敛与落档（提示词层 v1）**：§5 提示词新增"被要求时三段式收敛 + 定案写入 MEMORY.md"的普适技能；发起权单数、归用户，见新增 §5.1。
+- **缓存纪律**：MEMORY.md 内嵌 system prompt 的缓存失效问题记入 §5 实施留意。
+- **§10 修正**：held draft 推迟理由修正（过期场景存在，推迟是频率未知）；effort 挡位搁置；群级 facilitator 角色 v2 占位。
+
 ---
 
 ## 0. 设计理念（不可协商，逐条写进代码与提示词）
@@ -59,7 +66,8 @@ Named participant "Noel" (prt-noel)
     │     b) 群聊信封（来自任何它是成员的 thread；@它 → addressed=true）
     │     c) 其他 agent 的 post_message 产生的信封（hop+1）
     └── 输出通道：
-          a) assistant 正文 = DM 回复（对用户可见于 DM 窗口）
+          a) post_message（缺省 thread_id = 本 DM）= DM 回复（聊天视图只渲染工具消息；
+             assistant 正文是工作过程，不对用户渲染）
           b) post_message(thread_id=群聊) = 群聊发言（署名 participant_message）
           c) decline(thread_id=来源) = 显式不回应（灰字）
           d) 静默结束 turn（仅当本批信封全部 addressed=false 时合法）
@@ -240,7 +248,7 @@ type ParticipantSpeech interface {
 ```
 
 - appserver 为每个 resident runtime 注入实现（闭包携带 participantID）；旧 spawn 路径（过渡期）用 AgentControl 适配同一接口。
-- `post_message` 的 `thread_id` 语义升级：**任意它是成员的 thread 或它自己的 DM thread**。校验成员资格，非成员报错（错误信息指引它先说明理由请用户拉群）。
+- `post_message` 的 `thread_id` 语义升级：**任意它是成员的 thread 或它自己的 DM thread**。缺省（不带 thread_id）= 发到自己的 DM thread——这是 DM 回复的标准通道（`2026-07-03-chat-style-threads-design.md` §2）。校验成员资格，非成员报错（错误信息指引它先说明理由请用户拉群）。
 - `decline` 增加可选 `thread_id`（缺省 = 本批唯一 addressed 来源；多来源时必填）。
 - 速率限制沿用 `AgentControl` 现有参数，搬到实现内。
 
@@ -262,7 +270,7 @@ for _, env := range batch {
 }
 ```
 
-DM 直连消息：assistant 正文即回复；正文为空且无任何工具发言时同样只记 telemetry 事件。这是**内部可观测性**，用于我们调优提示词和路由策略（比如发现某个模型经常漏答就调整 §5 措辞或模型选择），**不做成用户可见的指标**——用户不在意未回应率，不进 profile 面板、不进 track record。
+DM 直连消息：回复 = 对本 DM 的 `post_message`；本批含 DM 消息而 turn 内既无对本 DM 的 `post_message` 也无 `decline` 时，同样只记 telemetry 事件。这是**内部可观测性**，用于我们调优提示词和路由策略（比如发现某个模型经常漏答就调整 §5 措辞或模型选择），**不做成用户可见的指标**——用户不在意未回应率，不进 profile 面板、不进 track record。
 
 ### 4.6 上下文拉取工具（conversation-native bundle 新成员）
 
@@ -299,6 +307,8 @@ DM 直连消息：assistant 正文即回复；正文为空且无任何工具发�
 
 放 `internal/appserver/participant_prompt.go`，函数 `residentParticipantSystemPrompt(p participant.Participant, memory string) string`。每 turn 重建（memory 更新次 turn 生效）。**这份提示词是公理 1-8 的对 agent 表达，修改措辞需回到本文档同步。**
 
+**实施留意——缓存纪律（2026-07-03）**：MEMORY.md 内嵌于 system prompt 且每 turn 重建，意味着每次 memory 写入都会使 resident thread 的整个缓存前缀失效，长历史按全价重读。实施时二选一：(a) 约束 memory 写入的生效时机（批量/低频，接受变更时一次性重建）；(b) 把 MEMORY.md 移出 system prompt，作为上下文靠后的注入块或由 agent 工具自拉。另注意低频群的唤醒间隔常大于缓存 TTL，缓存并非总能兜底——公理 4 的成本可持续性依赖这条纪律。
+
 ```
 You are {{Name}}, a resident named agent in this workspace. You are a
 continuous identity: one brain, one ongoing session. Direct messages
@@ -329,7 +339,10 @@ the user speaking to you directly (DM). DMs are always addressed to you.
    echo, or "+1".
 
 ## How to reply
-- To a DM: write your answer as normal text in this conversation.
+- To a DM: call post_message (omit thread_id — it defaults to this DM).
+  Plain assistant text is your private working transcript; the chat view
+  renders only tool-posted messages, so text outside post_message never
+  reaches the user.
 - To a group thread: call post_message with thread_id set to the source
   thread. Keep group replies short and substantive.
 - One event may deserve replies in different places. If the same
@@ -345,6 +358,17 @@ the user speaking to you directly (DM). DMs are always addressed to you.
   explicitly @mentioned. Do not @mention someone just to be polite; an
   @mention is a request for their time.
 
+## Wrapping up discussions (only when asked)
+- When the user asks you to wrap up or synthesize a discussion, post to
+  the source thread with exactly three parts: Conclusion — the decision
+  as it stands; Open disagreements — unresolved positions, attributed by
+  name, never smoothed over; Suggested next step.
+- Never post an unprompted summary: it repeats what others said, which
+  the rule against echoing forbids.
+- When a discussion you are a member of reaches a decision — whether or
+  not you wrote the summary — record the decision and its reasons in
+  your MEMORY.md.
+
 ## Context discipline
 - Each envelope carries one message, not room history. When you need
   surrounding context from a group thread, call fetch_thread_messages
@@ -359,13 +383,25 @@ the user speaking to you directly (DM). DMs are always addressed to you.
 
 `participant/start` 的任务派发 prompt（保留路径）在此之上仅追加 `## Request` 段，不再重复身份/规则。
 
+### 5.1 收敛与落档（v1 提示词方案，发起权归属）
+
+群聊的目的层定义是**收敛观点**——多 agent 是认知聚合的手段（单用户场景下没有利益协商，纯粹是陪审团式聚合，用户是唯一拍板人）。v1 不建任何新机制，全部落在 §5 提示词：
+
+- **技能普适**：所有 resident 都会三段式收敛（结论 / 保留的分歧 / 建议）和"定案写入 MEMORY.md"（各写各的文件，天然无竞争）。
+- **发起权单数、归用户**：用户 @ 任一成员"收敛一下"即触发（addressed → 硬规则 1 必答）。**禁止主动总结**：主动总结无信息增量，与硬规则 2 直接冲突；且全员持有发起权会导致过度触发（模型的总结癖）、竞速/旁观者效应、以及参与辩论者总结自己辩论的利益冲突。
+- **最佳实践**：优先 @ 未参与争论的成员当综合者——沉默的成员最中立。
+- **落档去处**：收敛输出留在群 thread；各成员把定案写入自己的 MEMORY.md。这同时是刷新"名字缓存"的时机（《Agents Need Names》的 staleness 问题：名字是会过期的缓存，落档即刷新）。群内置顶/决议区为后续产品化方向，本期不做。
+- **观点独立性是被守护的特性**：瘦信封（公理 3）让成员默认看不到彼此的即时发言、除非主动 fetch——这结构性削弱了信息级联（先发言者带偏后续），是收敛质量的隐性支柱，实施与后续演进不得破坏。
+
+**v2 占位**：群级 facilitator 角色 = 把主动收敛的发起权下放给一个明确角色，其提示词必须包含对硬规则 2 的显式豁免，否则规则打架。见 §10。
+
 ---
 
 ## 6. 权限与约束矩阵（增补 2026-07-02 文档 §4.3）
 
 | 能力 | resident named（常驻 turn） | 任务 run（participant/start 派发） | 普通 subagent |
 |---|---|---|---|
-| assistant 正文 = DM 发言 | ✅（唯一） | ❌ | ❌ |
+| DM 发言（`post_message` 缺省目标 = 本 DM；assistant 正文不渲染） | ✅ | ❌ | ❌ |
 | `post_message` 任意成员 thread | ✅ | ⚙️ 仅 ParentID thread（现状） | ❌ |
 | `decline(thread_id)` | ✅ | ✅ | ❌ |
 | `fetch_thread_messages` | ✅ 成员 thread | ❌ | ❌ |
@@ -391,7 +427,7 @@ the user speaking to you directly (DM). DMs are always addressed to you.
 ### 7.2 状态点与未读重接（AppSidebar）
 
 - busy：现在挂在 participant run 事件上 → 改为 resident thread 的 running 状态（现有 thread running 通知已具备）。
-- DM 未读：resident thread 新 assistant 消息且非当前视图（现有未读机制直接适用）。
+- DM 未读：resident thread 新 participant_message（post_message 产物）且非当前视图（现有未读机制直接适用）。
 - 群聊有它的发言 → 群 thread 的现有 unread 逻辑，不需要 per-agent 新机制。
 
 ### 7.3 DM 视图中的信封渲染
@@ -444,7 +480,9 @@ the user speaking to you directly (DM). DMs are always addressed to you.
 
 ## 10. 刻意不做（本期）
 
-- Raft 的 held draft / freshness check：wuu 单用户 + thread 串行 turn，草稿过期场景不存在；多 agent 并发发言观察到问题再评估。
+- Raft 的 held draft / freshness check：推迟。理由修正（2026-07-03）：串行的只是单个 agent 自己的 turn，房间在其分钟级长 turn 期间照样移动，"回复已过时的消息"场景**存在**；推迟是因为单用户下频率未知，先观察。低成本中间态备选：turn 结束要发言前，若收件箱已有同源 thread 的新信封，先注入本 turn 再发言。
+- 未点名信封的低挡位推理（effort tiering：按信封类别降 effort / 换挡）：搁置。默认用户使用前沿模型，先靠 §5 的缓存纪律控制成本，观察实际账单后再评估。
+- 群级 facilitator 角色（主动收敛的发起权 + 对硬规则 2 的显式豁免）：v2 占位，见 §5.1。v1 收敛只由用户 @ 触发。
 - agent 私聊 agent 的独立 DM 通道：v1 一律经群 thread（信封已覆盖 agent↔agent），有真实需求再加。
 - 信封的优先级/打断：忙时一律排队，不打断当前 turn。
 - 成员的自动退群/静音策略；track record 驱动的路由。

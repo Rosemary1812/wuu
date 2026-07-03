@@ -33,7 +33,9 @@ Sidebar gains a 群聊 section between 置顶 and 对话:
   Everything else — agent final answers, thinking, tool calls, plans,
   diffs — is skipped entirely (not hidden via CSS; not in the DOM).
   This applies to DM too: a resident replies in its DM by calling
-  `post_message` with no `thread_id`.
+  `post_message` with no `thread_id`. (Adjudicated 2026-07-03: the
+  resident design doc §2/§4.5/§5/§6 now specifies this same contract —
+  assistant text is never the DM reply channel.)
 - **No process view, no escape hatch.** The chat view offers no way to
   expand the working transcript. Debugging happens elsewhere (reveal
   session file).
