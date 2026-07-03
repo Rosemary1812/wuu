@@ -1799,6 +1799,38 @@ export function App(): JSX.Element {
       handleNoticeAction(action);
     },
   );
+  // Stable identities for every remaining CachedConversationPanes
+  // callback prop. The component is React.memo'd; a single freshly
+  // created arrow prop defeats the bailout and re-renders the full
+  // cached turn lists on EVERY App state change — that full re-render
+  // is the sidebar click lag (collapse a section → conversation pane
+  // re-renders for nothing).
+  const handleCachedPaneDismissContextComposition = useStableCallback(
+    (id: string) => {
+      dismissContextCompositionEntry(id);
+    },
+  );
+  const handleCachedPaneOpenAgent = useStableCallback((agent: Agent) => {
+    void selectChildAgent(agent);
+  });
+  const handleCachedPaneOpenSubthread = useStableCallback(
+    (thread: Thread, item: ThreadItem) => {
+      openConversationSubthread(thread, item);
+    },
+  );
+  const handleCachedPaneResolveToolApproval = useStableCallback(
+    (
+      approval: PendingToolApproval,
+      decision: "approved" | "approved_for_session" | "denied",
+    ) => {
+      void resolveToolApproval(approval, decision);
+    },
+  );
+  const handleCachedPaneOpenFileDiff = useStableCallback(
+    (thread: Thread, selection: TurnFileDiffSelection) => {
+      openTurnFileDiffPanel(thread.id, selection);
+    },
+  );
   const openWorkspaceFile = useStableCallback((path: string): void => {
     const context = appStateRef.current.activeContext;
     if (!context) {
@@ -7450,26 +7482,22 @@ export function App(): JSX.Element {
                 historyMessageEdit={historyMessageEdit}
                 onStreamFrame={scheduleStreamScroll}
                 onCollapseComplete={handleTurnCollapseComplete}
-                onDismissContextComposition={dismissContextCompositionEntry}
+                onDismissContextComposition={
+                  handleCachedPaneDismissContextComposition
+                }
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
                 onOpenFile={openWorkspaceFile}
-                onOpenAgent={(agent) => {
-                  void selectChildAgent(agent);
-                }}
-                onOpenSubthread={openConversationSubthread}
+                onOpenAgent={handleCachedPaneOpenAgent}
+                onOpenSubthread={handleCachedPaneOpenSubthread}
                 onEditMessage={handleCachedPaneEditMessage}
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
                 pendingToolApproval={state.pendingToolApproval}
                 turnStreamStatus={state.turnStreamStatus}
-                onResolveToolApproval={(approval, decision) =>
-                  void resolveToolApproval(approval, decision)
-                }
-                onOpenFileDiff={(thread, selection) =>
-                  openTurnFileDiffPanel(thread.id, selection)
-                }
+                onResolveToolApproval={handleCachedPaneResolveToolApproval}
+                onOpenFileDiff={handleCachedPaneOpenFileDiff}
                 busyDMParticipantIDs={busyDMThreadParticipantIDs}
                 participantSummariesByID={participantSummariesByID}
               />
