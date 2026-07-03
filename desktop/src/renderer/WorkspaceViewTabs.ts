@@ -1,0 +1,200 @@
+import { useCallback, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
+import type { WorkspacePanelView } from "./WorkspacePanels";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+
+/**
+ * A single instance of content shown in the workspace right panel's tab
+ * strip. The four built-in tools (files/review/terminal/browser) are
+ * singletons — their tab `id` is just their `kind` — while a "diff" tab is
+ * one instance per (thread, file path) pair, so diffs for several files
+ * (even across different turns of the same thread) can stay open side by
+ * side instead of sharing a single ephemeral slot.
+ */
+export type WorkspaceToolViewTab = {
+  kind: WorkspacePanelView;
+  id: WorkspacePanelView;
+};
+
+export type WorkspaceDiffViewTab = {
+  kind: "diff";
+  id: string;
+  threadID: string;
+  path: string;
+  title: string;
+  selection: TurnFileDiffSelection;
+};
+
+export type WorkspaceViewTab = WorkspaceToolViewTab | WorkspaceDiffViewTab;
+
+export type WorkspaceViewTabsState = {
+  tabs: WorkspaceViewTab[];
+  activeTabID: string | undefined;
+  // Most-recently-active tab ids, oldest first, excluding the current
+  // activeTabID. Lets closing a tab restore whichever tab was active
+  // immediately before it, instead of always falling back to the tool
+  // picker.
+  activationHistory: string[];
+};
+
+export const initialWorkspaceViewTabsState: WorkspaceViewTabsState = {
+  tabs: [],
+  activeTabID: undefined,
+  activationHistory: [],
+};
+
+export function workspaceToolViewTab(kind: WorkspacePanelView): WorkspaceToolViewTab {
+  return { kind, id: kind };
+}
+
+export function workspaceDiffViewTabID(threadID: string, path: string): string {
+  return `diff:${threadID}:${encodeURIComponent(path)}`;
+}
+
+export function workspaceDiffViewTab({
+  threadID,
+  path,
+  selection,
+}: {
+  threadID: string;
+  path: string;
+  selection: TurnFileDiffSelection;
+}): WorkspaceDiffViewTab {
+  return {
+    kind: "diff",
+    id: workspaceDiffViewTabID(threadID, path),
+    threadID,
+    path,
+    title: workspaceFileBasename(path),
+    selection,
+  };
+}
+
+export function workspaceFileBasename(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  const base = separatorIndex < 0 ? trimmed : trimmed.slice(separatorIndex + 1);
+  return base || path;
+}
+
+/**
+ * Opens `tab`: if a tab with the same id is already present it is replaced
+ * in place (so re-opening a diff for the same file picks up a fresh
+ * selection) and focused; otherwise it is appended and focused. Mirrors the
+ * find-or-append-then-focus pattern used for AppState's session tabs
+ * (ensureSessionTab), extended with focus tracking.
+ */
+export function openViewTab(state: WorkspaceViewTabsState, tab: WorkspaceViewTab): WorkspaceViewTabsState {
+  const index = state.tabs.findIndex((candidate) => candidate.id === tab.id);
+  const tabs =
+    index < 0 ? [...state.tabs, tab] : state.tabs.map((candidate, i) => (i === index ? tab : candidate));
+  return focusViewTab({ ...state, tabs }, tab.id);
+}
+
+/** Focuses the tab with the given id (or the tool picker, when `id` is undefined). */
+export function focusViewTab(state: WorkspaceViewTabsState, id: string | undefined): WorkspaceViewTabsState {
+  if (state.activeTabID === id) {
+    return state;
+  }
+  const activationHistory = state.activeTabID
+    ? [...state.activationHistory.filter((entry) => entry !== state.activeTabID), state.activeTabID]
+    : state.activationHistory;
+  return { ...state, activeTabID: id, activationHistory };
+}
+
+/**
+ * Closes the tab with the given id. If it was the active tab, focuses
+ * whichever tab was active immediately before it (walking back through the
+ * activation history for one that still exists after the close), falling
+ * back to the tool picker (`activeTabID: undefined`) if there is none.
+ */
+export function closeViewTab(state: WorkspaceViewTabsState, id: string): WorkspaceViewTabsState {
+  const tabs = state.tabs.filter((tab) => tab.id !== id);
+  let activationHistory = state.activationHistory.filter((entry) => entry !== id);
+  if (state.activeTabID !== id) {
+    return { ...state, tabs, activationHistory };
+  }
+  let activeTabID: string | undefined;
+  while (activationHistory.length > 0) {
+    const candidate = activationHistory[activationHistory.length - 1];
+    activationHistory = activationHistory.slice(0, -1);
+    if (tabs.some((tab) => tab.id === candidate)) {
+      activeTabID = candidate;
+      break;
+    }
+  }
+  return { tabs, activationHistory, activeTabID };
+}
+
+/** Closes every tab matching `predicate`, one at a time, preserving closeViewTab's fallback-focus behavior. */
+export function closeViewTabsWhere(
+  state: WorkspaceViewTabsState,
+  predicate: (tab: WorkspaceViewTab) => boolean,
+): WorkspaceViewTabsState {
+  let next = state;
+  for (const tab of state.tabs) {
+    if (predicate(tab)) {
+      next = closeViewTab(next, tab.id);
+    }
+  }
+  return next;
+}
+
+export function reorderViewTabs(
+  state: WorkspaceViewTabsState,
+  activeID: string,
+  overID: string,
+): WorkspaceViewTabsState {
+  if (activeID === overID) {
+    return state;
+  }
+  const sourceIndex = state.tabs.findIndex((tab) => tab.id === activeID);
+  const targetIndex = state.tabs.findIndex((tab) => tab.id === overID);
+  if (sourceIndex < 0 || targetIndex < 0) {
+    return state;
+  }
+  return { ...state, tabs: arrayMove(state.tabs, sourceIndex, targetIndex) };
+}
+
+/**
+ * React binding over the pure WorkspaceViewTabs state machine above. Not
+ * yet wired into the app shell — WorkspaceToolState.ts composes this hook
+ * to back the unified right-panel tab strip (tool tabs + diff tabs).
+ */
+export function useWorkspaceViewTabs(): {
+  tabs: WorkspaceViewTab[];
+  activeTabID: string | undefined;
+  openTab: (tab: WorkspaceViewTab) => void;
+  focusTab: (id: string | undefined) => void;
+  closeTab: (id: string) => void;
+  closeTabsWhere: (predicate: (tab: WorkspaceViewTab) => boolean) => void;
+  reorderTabs: (activeID: string, overID: string) => void;
+} {
+  const [state, setState] = useState<WorkspaceViewTabsState>(initialWorkspaceViewTabsState);
+
+  const openTab = useCallback((tab: WorkspaceViewTab) => {
+    setState((current) => openViewTab(current, tab));
+  }, []);
+  const focusTab = useCallback((id: string | undefined) => {
+    setState((current) => focusViewTab(current, id));
+  }, []);
+  const closeTab = useCallback((id: string) => {
+    setState((current) => closeViewTab(current, id));
+  }, []);
+  const closeTabsWhere = useCallback((predicate: (tab: WorkspaceViewTab) => boolean) => {
+    setState((current) => closeViewTabsWhere(current, predicate));
+  }, []);
+  const reorderTabs = useCallback((activeID: string, overID: string) => {
+    setState((current) => reorderViewTabs(current, activeID, overID));
+  }, []);
+
+  return {
+    tabs: state.tabs,
+    activeTabID: state.activeTabID,
+    openTab,
+    focusTab,
+    closeTab,
+    closeTabsWhere,
+    reorderTabs,
+  };
+}
