@@ -269,7 +269,7 @@ func TestFallbackDMReplyPublishesFinalAnswerWhenNoToolPost(t *testing.T) {
 			{ID: "i2", Type: ThreadItemAgentMessage, Text: "你好，我是 Ada。"},
 		},
 	}
-	srv.fallbackDMReplyFromFinalAnswer(th, ada, turn, time.Now().UTC())
+	srv.fallbackDMReplyFromFinalAnswer(th, ada, nil, turn, time.Now().UTC())
 
 	th.mu.Lock()
 	snapshot := th.snapshotLocked()
@@ -310,7 +310,7 @@ func TestFallbackDMReplySkipsWhenResidentUsedTools(t *testing.T) {
 			{ID: "i1", Type: ThreadItemUserMessage, Text: "hi"},
 		}}},
 	} {
-		srv.fallbackDMReplyFromFinalAnswer(th, ada, tc.turn, time.Now().UTC())
+		srv.fallbackDMReplyFromFinalAnswer(th, ada, nil, tc.turn, time.Now().UTC())
 		th.mu.Lock()
 		snapshot := th.snapshotLocked()
 		th.mu.Unlock()
@@ -322,4 +322,145 @@ func TestFallbackDMReplySkipsWhenResidentUsedTools(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestFallbackDMReplyRoutesToGroupEnvelopeSourceThread guards against the
+// regression where a resident's fallback reply (final answer text with no
+// post_message tool call) to a group-chat-triggered turn silently landed in
+// the resident's own DM thread instead of the group thread that sent the
+// MessageEnvelope. The resident's DM thread is its only "brain" (turns for
+// group envelopes still run there), but replies must be routed back to the
+// envelope's SourceThreadID, not hardcoded to th.ID.
+func TestFallbackDMReplyRoutesToGroupEnvelopeSourceThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	dmTh, err := srv.ensureResidentDMThread(ada)
+	if err != nil {
+		t.Fatalf("ensureResidentDMThread: %v", err)
+	}
+	groupID := startGroupThreadForTest(t, srv)
+
+	turn := Turn{
+		ID:     "turn-1",
+		Status: TurnStatusCompleted,
+		Items: []ThreadItem{
+			{ID: "i1", Type: ThreadItemUserMessage, Text: "envelope from group"},
+			{ID: "i2", Type: ThreadItemAgentMessage, Text: "群里的回复"},
+		},
+	}
+	envs := []MessageEnvelope{
+		{ID: "env-1", SourceThreadID: groupID, Addressed: true, SenderKind: "user", Text: "hi Ada"},
+	}
+	srv.fallbackDMReplyFromFinalAnswer(dmTh, ada, envs, turn, time.Now().UTC())
+
+	groupTh, err := srv.ensureResidentThread(groupID)
+	if err != nil {
+		t.Fatalf("ensureResidentThread group: %v", err)
+	}
+	groupTh.mu.Lock()
+	groupSnapshot := groupTh.snapshotLocked()
+	groupTh.mu.Unlock()
+	found := false
+	for _, tn := range groupSnapshot.Turns {
+		for _, item := range tn.Items {
+			if item.Type == ThreadItemParticipantMsg && item.Text == "群里的回复" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected fallback reply in group thread, turns=%+v", groupSnapshot.Turns)
+	}
+
+	dmTh.mu.Lock()
+	dmSnapshot := dmTh.snapshotLocked()
+	dmTh.mu.Unlock()
+	for _, tn := range dmSnapshot.Turns {
+		for _, item := range tn.Items {
+			if item.Type == ThreadItemParticipantMsg {
+				t.Fatalf("unexpected fallback reply leaked into own DM thread: %+v", item)
+			}
+		}
+	}
+}
+
+// TestFallbackDMReplySkipsAmbiguousMultipleEnvelopeSources guards the
+// ambiguous case: when a batch of envelopes triggering one turn names more
+// than one distinct source thread, the fallback must not guess and must not
+// send anywhere. recordUnansweredAddressedEnvelopes telemetry is the
+// existing safety net for that case.
+func TestFallbackDMReplySkipsAmbiguousMultipleEnvelopeSources(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	dmTh, err := srv.ensureResidentDMThread(ada)
+	if err != nil {
+		t.Fatalf("ensureResidentDMThread: %v", err)
+	}
+	groupA := startGroupThreadWithReqIDForTest(t, srv, "group-a")
+	groupB := startGroupThreadWithReqIDForTest(t, srv, "group-b")
+	if groupA == groupB {
+		t.Fatalf("expected two distinct group threads, got the same id %q twice", groupA)
+	}
+
+	turn := Turn{
+		ID:     "turn-1",
+		Status: TurnStatusCompleted,
+		Items: []ThreadItem{
+			{ID: "i1", Type: ThreadItemAgentMessage, Text: "ambiguous reply"},
+		},
+	}
+	envs := []MessageEnvelope{
+		{ID: "env-1", SourceThreadID: groupA, Addressed: true, SenderKind: "user", Text: "hi"},
+		{ID: "env-2", SourceThreadID: groupB, Addressed: true, SenderKind: "user", Text: "hi"},
+	}
+	srv.fallbackDMReplyFromFinalAnswer(dmTh, ada, envs, turn, time.Now().UTC())
+
+	for _, id := range []string{groupA, groupB} {
+		th, err := srv.ensureResidentThread(id)
+		if err != nil {
+			t.Fatalf("ensureResidentThread %s: %v", id, err)
+		}
+		th.mu.Lock()
+		snapshot := th.snapshotLocked()
+		th.mu.Unlock()
+		for _, tn := range snapshot.Turns {
+			for _, item := range tn.Items {
+				if item.Type == ThreadItemParticipantMsg {
+					t.Fatalf("unexpected fallback reply in thread %s: %+v", id, item)
+				}
+			}
+		}
+	}
+
+	dmTh.mu.Lock()
+	dmSnapshot := dmTh.snapshotLocked()
+	dmTh.mu.Unlock()
+	for _, tn := range dmSnapshot.Turns {
+		for _, item := range tn.Items {
+			if item.Type == ThreadItemParticipantMsg {
+				t.Fatalf("unexpected fallback reply in own DM thread: %+v", item)
+			}
+		}
+	}
+}
+
+// startGroupThreadWithReqIDForTest is like startGroupThreadForTest but takes
+// an explicit request id so two group threads can be created against the
+// same server: responseByID matches the first message with the given id in
+// the accumulated output buffer, so reusing startGroupThreadForTest's fixed
+// "group" id for a second call would resolve back to the first thread.
+func startGroupThreadWithReqIDForTest(t *testing.T, srv *Server, reqID string) string {
+	t.Helper()
+	raw := fmt.Sprintf(`{"id":%q,"method":"thread/start","params":{}}`, reqID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/start group: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	resp := responseByID(t, msgs, reqID)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/start group returned error: %v", errMsg)
+	}
+	return remarshal[ThreadStartResult](t, resp["result"]).Thread.ID
 }

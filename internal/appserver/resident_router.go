@@ -371,21 +371,30 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	if participantID == "" {
 		return
 	}
-	s.fallbackDMReplyFromFinalAnswer(th, participantID, turn, completedAt)
+	s.fallbackDMReplyFromFinalAnswer(th, participantID, envs, turn, completedAt)
 	if len(envs) > 0 {
 		s.recordUnansweredAddressedEnvelopes(th, participantID, envs, turn, completedAt)
 	}
 	s.kickResidentAgent(participantID)
 }
 
-// fallbackDMReplyFromFinalAnswer keeps DMs alive with models that ignore
+// fallbackDMReplyFromFinalAnswer keeps replies alive with models that ignore
 // the post_message contract. The chat view renders tool-posted messages
-// only (chat-style-threads-design.md §2); a resident that answers a DM in
-// plain assistant text would be invisible to the user. When a completed DM
-// turn produced a final answer but no participant_message (post_message or
-// decline), republish the final answer as the resident's message. Models
-// that follow the contract never hit this path.
-func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID string, turn Turn, completedAt time.Time) {
+// only (chat-style-threads-design.md §2); a resident that answers in plain
+// assistant text would be invisible. When a completed turn produced a final
+// answer but no participant_message (post_message or decline), republish
+// the final answer as the resident's message. Models that follow the
+// contract never hit this path.
+//
+// A resident agent has a single "brain": its own DM thread. Turns started
+// from a plain user DM carry no envelopes, so the fallback republishes into
+// that same DM thread (th.ID), as before. Turns started to process routed
+// MessageEnvelopes (group chat mentions, hand-offs from other residents,
+// etc.) must instead land back in the envelope's SourceThreadID — otherwise
+// the reply silently lands in the resident's own DM, which the group never
+// sees. See fallbackReplyTargetThreadID for how the target is picked when
+// envelopes are present.
+func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID string, envs []MessageEnvelope, turn Turn, completedAt time.Time) {
 	if s == nil || th == nil || turn.Status != TurnStatusCompleted {
 		return
 	}
@@ -394,6 +403,10 @@ func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID s
 	isOwnDM := strings.TrimSpace(th.DMParticipantID) == participantID
 	th.mu.Unlock()
 	if !isOwnDM {
+		return
+	}
+	targetThreadID, ok := fallbackReplyTargetThreadID(threadID, envs)
+	if !ok {
 		return
 	}
 	finalAnswer := ""
@@ -416,12 +429,52 @@ func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID s
 		AgentID:       participantID,
 		ParticipantID: participantID,
 		Kind:          "result",
+		Hop:           residentSpeechHopsByThread(envs)[targetThreadID],
 		Text:          finalAnswer,
 		CreatedAt:     completedAt,
 	}
-	if err := s.publishParticipantMessage(threadID, msg); err != nil {
+	if err := s.publishParticipantMessage(targetThreadID, msg); err != nil {
 		providers.DebugLogf("fallback DM reply for %s: %v", participantID, err)
 	}
+}
+
+// fallbackReplyTargetThreadID picks where a fallback reply belongs. With no
+// envelopes, this is a plain user DM turn and the reply stays in the
+// resident's own DM thread (ownDMThreadID). With envelopes, the turn was
+// triggered by routed MessageEnvelope(s) — addressed envelopes take
+// priority (falling back to all envelopes if none are addressed) — and the
+// reply must go to their (deduplicated) SourceThreadID instead. If those
+// envelopes disagree on a source thread the target is ambiguous, so no
+// fallback message is sent; recordUnansweredAddressedEnvelopes telemetry
+// covers that case instead of guessing.
+func fallbackReplyTargetThreadID(ownDMThreadID string, envs []MessageEnvelope) (string, bool) {
+	if len(envs) == 0 {
+		return ownDMThreadID, true
+	}
+	candidates := make([]MessageEnvelope, 0, len(envs))
+	for _, env := range envs {
+		if env.Addressed {
+			candidates = append(candidates, env)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = envs
+	}
+	sourceThreadIDs := make(map[string]bool, len(candidates))
+	for _, env := range candidates {
+		id := strings.TrimSpace(env.SourceThreadID)
+		if id == "" {
+			continue
+		}
+		sourceThreadIDs[id] = true
+	}
+	if len(sourceThreadIDs) != 1 {
+		return "", false
+	}
+	for id := range sourceThreadIDs {
+		return id, true
+	}
+	return "", false
 }
 
 func (s *Server) recordUnansweredAddressedEnvelopes(th *threadState, participantID string, envs []MessageEnvelope, turn Turn, completedAt time.Time) {
