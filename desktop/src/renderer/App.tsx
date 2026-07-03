@@ -132,6 +132,7 @@ import {
   AppSidebar,
   reconcileSidebarSectionOrder,
   SIDEBAR_SECTION_AGENTS,
+  SIDEBAR_SECTION_GROUP,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
 import {
@@ -1536,12 +1537,27 @@ export function App(): JSX.Element {
   }, [state.projects]);
 
   useEffect(() => {
-    const validProjectIDs = new Set(state.projects.map((project) => project.id));
+    // Prune collapse/expand state for projects that no longer exist —
+    // but never the pseudo-section keys (置顶 / Agents / 群聊 / 对话).
+    // They are legitimate members of collapsedProjectIDs and are not
+    // project ids, so pruning them here silently re-expanded those
+    // sections on every project-state reload (fresh state.projects
+    // identity), which users saw as 置顶 "passively expanding".
+    const validProjectIDs = new Set(
+      state.projects.map((project) => project.id),
+    );
+    const validSectionIDs = new Set([
+      ...validProjectIDs,
+      SIDEBAR_SECTION_PINNED,
+      SIDEBAR_SECTION_AGENTS,
+      SIDEBAR_SECTION_GROUP,
+      SCRATCH_PSEUDO_PROJECT_ID,
+    ]);
     setCollapsedProjectIDs((current) =>
-      removeMissingIDs(current, validProjectIDs),
+      removeMissingIDs(current, validSectionIDs),
     );
     setExpandedProjectIDs((current) =>
-      removeMissingIDs(current, validProjectIDs),
+      removeMissingIDs(current, validSectionIDs),
     );
     setProjectThreadsByProjectID((current) => {
       const next: Record<string, Thread[]> = {};
@@ -2346,7 +2362,8 @@ export function App(): JSX.Element {
     // these sections).
     if (
       projectID === SIDEBAR_SECTION_PINNED ||
-      projectID === SIDEBAR_SECTION_AGENTS
+      projectID === SIDEBAR_SECTION_AGENTS ||
+      projectID === SIDEBAR_SECTION_GROUP
     ) {
       setCollapsedProjectIDs((current) => {
         if (!current.has(projectID)) {
