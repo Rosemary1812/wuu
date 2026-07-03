@@ -80,9 +80,13 @@ Group threads have **no main agent**. They are envelope routers:
    shape stays an **array** of records; the frontend adapts to the
    array (see §5).
 
-Out of scope (future): agent-driven group management tools
-(`create_group`, `add_member`) so Andy can build groups on request.
-Documented as direction only; no contract yet.
+Update (2026-07-03): agent-driven group management is no longer just
+direction — the tool contract (`create_group` / `add_group_member`,
+granted to all residents) and the default team-builder agent Andy are
+specified in `2026-07-03-sidebar-groups-andy-workspaces.md` §3-§4.
+Sidebar-wise, that doc §2 also revises §1 above: the 群聊 section joins
+`sectionOrder` (reorderable, collapsible, hover-+ to create a group)
+instead of being anchored between 置顶 and 对话.
 
 ## 4. Frontend architecture
 

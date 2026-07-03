@@ -12,6 +12,7 @@
 - **收敛与落档（提示词层 v1）**：§5 提示词新增"被要求时三段式收敛 + 定案写入 MEMORY.md"的普适技能；发起权单数、归用户，见新增 §5.1。
 - **缓存纪律**：MEMORY.md 内嵌 system prompt 的缓存失效问题记入 §5 实施留意。
 - **§10 修正**：held draft 推迟理由修正（过期场景存在，推迟是频率未知）；effort 挡位搁置；群级 facilitator 角色 v2 占位。
+- **2026-07-03 增补二**（`2026-07-03-sidebar-groups-andy-workspaces.md`）：§5 提示词新增 "Building teams and groups" 与 "Workspaces and file scope" 两段；§6 矩阵增补群管理工具与文件范围行。默认组队 agent Andy、`create_group`/`add_group_member` 契约、工作区白名单强制的完整设计见该文档。
 
 ---
 
@@ -295,7 +296,11 @@ DM 直连消息：回复 = 对本 DM 的 `post_message`；本批含 DM 消息而
 3. **去重**：DM thread 里由信封渲染的 user message（`envelope_meta` 非空，§3.3）在搜索候选中跳过——同一条群聊消息的正身在群 thread 里已可命中，DM 侧的信封副本再命中只会产生重复结果。
 4. 快照/摘录/排序逻辑（`threadSearchExcerpt`、`sortThreadSearchResults`）不动。
 
-### 4.8 删除与迁移
+### 4.8 群管理工具与文件范围（2026-07-03 增补，契约在另文）
+
+`create_group` / `add_group_member`（conversation-native bundle，所有 resident）与文件工具的工作区白名单校验（家目录 + 工作区 + temp，读写同权，仅装配 resident turn 与任务 run），完整契约、频率预算与分任务见 `2026-07-03-sidebar-groups-andy-workspaces.md` §4-§5。默认组队 agent Andy（普通 resident，首启预置、零特权）见该文档 §3。
+
+### 4.9 删除与迁移
 
 - **删除**：`sendPromptToParticipant` 的 spawn 语义（前端，§7.1）；`participant/start` 中 DM 逐条孵化的调用方。`participant/start` RPC 本身保留给"显式派发一个任务 run"场景（roster 的"派任务"入口），但 prompt 组装改为只含任务本身（身份已在常驻 session 里的，不再需要每次注入）。
 - **迁移**：已有 DM thread 无需数据迁移（history 本来就在，只是从没被使用——现在直接成为大脑的既有记忆，这正是公理 1 想要的）。旧的孤儿 DM run 无需处理。
@@ -369,6 +374,23 @@ the user speaking to you directly (DM). DMs are always addressed to you.
   not you wrote the summary — record the decision and its reasons in
   your MEMORY.md.
 
+## Building teams and groups
+You can create group threads (create_group) and add named teammates to
+groups you belong to (add_group_member). Create a group only for an
+ongoing purpose — a project, a standing topic — never for a one-off
+question; prefer reusing an existing group. When the user asks for a
+team, you may also create new named teammates with manage_participant.
+
+## Workspaces and file scope
+The user's registered workspaces (name — root path):
+{{每行 "- {{Name}} — {{Root}}"；清单为空时写 "(none yet)"}}
+Your home directory is where you live; workspaces are where you work.
+You may read and edit files only inside your home directory and these
+workspace roots — the file tools enforce this. Everything else on this
+machine is out of bounds; do not try to route around the limit via
+bash. If a task needs a directory outside this list, say so and ask
+the user to add it as a workspace.
+
 ## Context discipline
 - Each envelope carries one message, not room history. When you need
   surrounding context from a group thread, call fetch_thread_messages
@@ -405,6 +427,8 @@ the user speaking to you directly (DM). DMs are always addressed to you.
 | `post_message` 任意成员 thread | ✅ | ⚙️ 仅 ParentID thread（现状） | ❌ |
 | `decline(thread_id)` | ✅ | ✅ | ❌ |
 | `fetch_thread_messages` | ✅ 成员 thread | ❌ | ❌ |
+| `create_group` / `add_group_member` | ✅ | ❌ | ❌ |
+| 文件工具范围白名单（家目录 + 工作区 + temp，读写同权，工具层强制） | ✅ 适用 | ✅ 适用 | —（沿用宿主 session 规则） |
 | `manage_participant` | ✅ | ✅（现状） | ❌ |
 | 收信封 | ✅ | ❌ | ❌ |
 | 必答约束 | ✅ 提示词强约束 + 未回应 telemetry | ✅（现状 post/decline 约束） | — |

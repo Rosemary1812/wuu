@@ -68,3 +68,6 @@ coverage.out
 .env
 .env.local
 .env.*.local
+!/docs/plans/2026-07-03-chat-style-threads-design.md
+!/docs/plans/2026-07-03-chat-style-threads.md
+!/docs/plans/2026-07-03-sidebar-groups-andy-workspaces.md
