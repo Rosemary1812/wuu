@@ -5,7 +5,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
-  AlertTriangle,
   FileEdit,
   FileText,
   Globe,
@@ -90,18 +89,35 @@ function iconForCapability(
 
 function capabilityLabel(capability: string | undefined): string {
   if (!capability) {
-    return "tool call";
+    return "需要批准";
   }
   if (isCommandCapability(capability)) {
-    return "Shell command";
+    return "运行命令";
   }
   if (isNetworkCapability(capability)) {
-    return "Network request";
+    return "访问网络";
   }
   if (isFileCapability(capability)) {
-    return "File operation";
+    return "操作文件";
   }
-  return "Tool call";
+  return "使用工具";
+}
+
+function compactPreviewTarget({
+  preview,
+  object,
+}: {
+  preview: string | undefined;
+  object: string | undefined;
+}): string | undefined {
+  if (object) {
+    return object;
+  }
+  if (!preview) {
+    return undefined;
+  }
+  const firstLine = preview.split("\n").find((line) => line.trim().length > 0);
+  return firstLine?.trim();
 }
 
 /**
@@ -133,14 +149,12 @@ export function ToolApprovalCard({
   const rule = approval.capability_rule?.trim() || approval.permission_rule?.trim();
   const object = approval.capability_object?.trim();
   const capability = approval.capability?.trim();
-  const capabilityAction = approval.capability_action?.trim();
-
   const danger = isDangerApproval(approval);
   const command = isCommandCapability(capability);
   const network = isNetworkCapability(capability);
   const method = network && preview ? networkMethod(preview) : undefined;
-  const readOnly = approval.read_only === true;
   const Icon = iconForCapability(capability, danger);
+  const target = compactPreviewTarget({ preview, object });
 
   const previewLines = preview ? preview.split("\n") : [];
   const isLongPreview = previewLines.length > PREVIEW_LINE_LIMIT;
@@ -166,15 +180,8 @@ export function ToolApprovalCard({
     }
   }
 
-  const className = `tool-approval-card${danger ? " danger" : ""}${
-    readOnly ? " read-only" : ""
-  }`;
-
-  const riskLabel = danger
-    ? readOnly
-      ? "Read-only"
-      : "Destructive"
-    : null;
+  const className = `tool-approval-card${danger ? " danger" : ""}`;
+  const showRawPreview = Boolean(preview && preview !== target);
 
   return (
     <div
@@ -195,93 +202,50 @@ export function ToolApprovalCard({
             <span className="tool-approval-card-title">
               {capabilityLabel(capability)}
             </span>
-            {riskLabel ? (
-              <span
-                className={`tool-approval-card-risk-pill${
-                  danger ? " danger" : ""
-                }`}
-              >
-                {danger ? (
-                  <AlertTriangle
-                    className="icon"
-                    strokeWidth={2}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {riskLabel}
-              </span>
+            {danger ? (
+              <span className="tool-approval-card-risk-pill">高风险</span>
             ) : null}
           </div>
-          <div className="tool-approval-card-subtitle">
-            {capability ? <code className="mono">{capability}</code> : null}
-            {capabilityAction ? (
-              <>
-                <span className="dot" aria-hidden="true">
-                  ·
-                </span>
-                <span>{capabilityAction}</span>
-              </>
-            ) : null}
-            {object ? (
-              <>
-                <span className="dot" aria-hidden="true">
-                  ·
-                </span>
-                <span className="tool-approval-card-subtitle-object" title={object}>
-                  {object}
-                </span>
-              </>
-            ) : null}
-          </div>
+          <p className="tool-approval-card-reason">{reason}</p>
         </div>
       </header>
 
-      <section className="tool-approval-card-section">
-        <div className="tool-approval-card-section-label">Why this is asking</div>
-        <p className="tool-approval-card-reason">{reason}</p>
-      </section>
-
-      {visiblePreview ? (
-        <section className="tool-approval-card-section">
-          <div className="tool-approval-card-section-label">About to run</div>
-          <div className="tool-approval-card-preview">
-            <div className="tool-approval-card-preview-line">
-              {command ? (
-                <span
-                  className="tool-approval-card-preview-prompt"
-                  aria-hidden="true"
-                >
-                  $_
-                </span>
-              ) : null}
-              {network && method ? (
-                <span className={`tool-approval-card-method-badge ${method}`}>
-                  {method}
-                </span>
-              ) : null}
-              <pre className="tool-approval-card-preview-text">
-                {visiblePreview}
-              </pre>
-            </div>
-            {isLongPreview ? (
-              <button
-                type="button"
-                className="tool-approval-card-expand"
-                onClick={() => setExpanded((current) => !current)}
-              >
-                {expanded
-                  ? "收起"
-                  : `展开完整参数 (${previewLines.length} 行)`}
-              </button>
-            ) : null}
-          </div>
-        </section>
+      {target ? (
+        <div className="tool-approval-card-target">
+          {command ? (
+            <span className="tool-approval-card-preview-prompt" aria-hidden="true">
+              $_
+            </span>
+          ) : null}
+          {network && method ? (
+            <span className={`tool-approval-card-method-badge ${method}`}>
+              {method}
+            </span>
+          ) : null}
+          <code title={target}>{target}</code>
+        </div>
       ) : null}
 
-      {rule ? (
+      {showRawPreview || rule ? (
         <details className="tool-approval-card-rule">
-          <summary>Show matched rule</summary>
-          <code>{rule}</code>
+          <summary>查看参数</summary>
+          {showRawPreview ? (
+            <div className="tool-approval-card-preview">
+              <pre className="tool-approval-card-preview-text">{visiblePreview}</pre>
+              {isLongPreview ? (
+                <button
+                  type="button"
+                  className="tool-approval-card-expand"
+                  onClick={() => setExpanded((current) => !current)}
+                >
+                  {expanded
+                    ? "收起"
+                    : `展开完整参数 (${previewLines.length} 行)`}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {rule ? <code>{rule}</code> : null}
         </details>
       ) : null}
 

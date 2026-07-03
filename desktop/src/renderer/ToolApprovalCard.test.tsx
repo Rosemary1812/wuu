@@ -100,7 +100,7 @@ function click(element: HTMLElement): void {
 }
 
 describe("ToolApprovalCard", () => {
-  it("renders the capability line and reason", () => {
+  it("renders the compact approval summary and reason", () => {
     mount({
       approval: baseApproval(),
       onApprove: () => undefined,
@@ -110,8 +110,8 @@ describe("ToolApprovalCard", () => {
 
     const card = container!.querySelector(".tool-approval-card");
     expect(card).not.toBeNull();
-    expect(card?.textContent).toContain("command.bash");
-    expect(card?.textContent).toContain("execute");
+    expect(card?.textContent).toContain("运行命令");
+    expect(card?.textContent).toContain("npm test");
     expect(card?.textContent).toContain("需要审批");
   });
 
