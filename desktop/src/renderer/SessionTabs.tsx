@@ -169,6 +169,7 @@ export function SessionTabStrip({
                     reorderable={state.sessionTabs.length > 1}
                     onSelect={() => onSelect(tab.id)}
                     onClose={() => onClose(tab.id)}
+                    onDoubleClick={() => onClose(tab.id)}
                     onContextMenu={(event) => handleTabContextMenu(tab.id, event)}
                   />
                 );
@@ -255,6 +256,7 @@ type SortableSessionTabProps = {
   reorderable: boolean;
   onSelect: () => void;
   onClose: () => void;
+  onDoubleClick: () => void;
   onContextMenu: (event: ReactMouseEvent) => void;
 };
 
@@ -270,6 +272,7 @@ function SortableSessionTab({
   reorderable,
   onSelect,
   onClose,
+  onDoubleClick,
   onContextMenu,
 }: SortableSessionTabProps): JSX.Element {
   const {
@@ -309,6 +312,7 @@ function SortableSessionTab({
         aria-busy={pendingSwitch}
         title={tabTitle}
         onClick={onSelect}
+        onDoubleClick={onDoubleClick}
         {...attributes}
         {...listeners}
       >

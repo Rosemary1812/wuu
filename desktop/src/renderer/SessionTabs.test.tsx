@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext, Thread } from "../shared/protocol";
 import {
   createThreadSessionTab,
@@ -80,6 +80,10 @@ function makeThreadWithTurn(
 }
 
 function renderTabs(state: AppState): void {
+  renderTabsWith(state, () => {});
+}
+
+function renderTabsWith(state: AppState, onClose: (tabID: string) => void): void {
   act(() => {
     root = createRoot(container);
     root.render(
@@ -93,7 +97,7 @@ function renderTabs(state: AppState): void {
         }}
         canStartNewThread
         onSelect={() => {}}
-        onClose={() => {}}
+        onClose={onClose}
         onCloseTabs={() => {}}
         onNewThread={() => {}}
         onReorder={() => {}}
@@ -129,7 +133,43 @@ describe("SessionTabStrip pending indicators", () => {
     expect(tabs[1]?.querySelector(".session-tab-pending-count")).toBeNull();
   });
 
-  it("applies has-unread to non-active thread tabs whose latest turn is not the last viewed", () => {
+  it("calls onClose with the tab id when the main button is double-clicked", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const threadA = makeThread("thread-a", "Thread A");
+    const threadB = makeThread("thread-b", "Thread B");
+    const onClose = vi.fn();
+    renderTabsWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      onClose,
+    );
+
+    const main = container.querySelectorAll(
+      ".session-tab-main",
+    )[0] as HTMLElement | undefined;
+    expect(main).toBeDefined();
+    act(() => {
+      main?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith(threadSessionTabID(threadA.id));
+  });
+
+  it("does not close the tab on a single click", () => {
     const context: RuntimeContext = {
       kind: "project",
       project_id: "project-1",
