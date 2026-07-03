@@ -53,6 +53,15 @@ type Session struct {
 	// Group marks this session as a chat-style group channel with no primary
 	// agent (chat-style-threads-design.md §3). Set once at thread creation.
 	Group bool `json:"group,omitempty"`
+	// FocusWorkspace pins the workspace-focus a chat-style thread has most
+	// recently declared (2026-07-03-workspace-focus.md §1): "" means every
+	// registered workspace (default, unchanged behavior), "~" means the
+	// agent's home directory only, any other value names a registered
+	// workspace (internal/workspaces.Workspace.Name). Unlike DMParticipantID
+	// this is re-settable across the thread's lifetime via
+	// SetFocusWorkspace — focus is expected to change as the user or the
+	// resident agent switches between projects.
+	FocusWorkspace string `json:"focus_workspace,omitempty"`
 }
 
 type ForkMetadata struct {
@@ -204,7 +213,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group
+       dm_participant_id, is_group, focus_workspace
 FROM sessions`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -353,6 +362,19 @@ func BindDMParticipant(sessDir, id, participantID string) (Session, error) {
 func SetGroupThread(sessDir, id string, group bool) (Session, error) {
 	return updateMetadata(sessDir, id, false, func(s *Session) {
 		s.Group = group
+	})
+}
+
+// SetFocusWorkspace updates the workspace-focus declared for a chat-style
+// thread (2026-07-03-workspace-focus.md §4). Unlike BindDMParticipant this
+// is freely re-settable across the thread's lifetime — focus is expected
+// to change repeatedly as the user or the resident agent switches between
+// projects. Callers are responsible for validating focus against the
+// registered workspace roster before calling; this setter stores whatever
+// it is given (trimmed).
+func SetFocusWorkspace(sessDir, id, focus string) (Session, error) {
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.FocusWorkspace = strings.TrimSpace(focus)
 	})
 }
 
@@ -816,6 +838,9 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "sessions", "is_group", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "sessions", "focus_workspace", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -872,8 +897,8 @@ func insertSessionSQL(conflict string) string {
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
 		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo,
-		dm_participant_id, is_group
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		dm_participant_id, is_group, focus_workspace
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 }
 
 func updateSessionTx(tx *sql.Tx, sess Session) error {
@@ -882,13 +907,13 @@ UPDATE sessions
 SET created_at = ?, updated_at = ?, title = ?, summary = ?, entries = ?, cwd = ?,
     forked_from_id = ?, forked_from_turn_id = ?, forked_from_item_id = ?,
     pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?,
-    dm_participant_id = ?, is_group = ?
+    dm_participant_id = ?, is_group = ?, focus_workspace = ?
 WHERE id = ?`,
 		timeText(sess.CreatedAt), timeText(sess.UpdatedAt), sess.Title, sess.Summary, sess.Entries, normalizeCWD(sess.CWD),
 		sess.ForkedFromID, sess.ForkedFromTurnID, sess.ForkedFromItemID,
 		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt),
 		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo),
-		strings.TrimSpace(sess.DMParticipantID), boolToInt(sess.Group),
+		strings.TrimSpace(sess.DMParticipantID), boolToInt(sess.Group), strings.TrimSpace(sess.FocusWorkspace),
 		sess.ID,
 	)
 	if err != nil {
@@ -916,6 +941,7 @@ func sessionArgs(sess Session) []any {
 		normalizeCWD(sess.WorktreeBaseRepo),
 		strings.TrimSpace(sess.DMParticipantID),
 		boolToInt(sess.Group),
+		strings.TrimSpace(sess.FocusWorkspace),
 	}
 }
 
@@ -932,7 +958,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group
+       dm_participant_id, is_group, focus_workspace
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -944,7 +970,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group
+       dm_participant_id, is_group, focus_workspace
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -975,7 +1001,7 @@ func scanSession(scanner interface {
 		&s.ForkedFromID, &s.ForkedFromTurnID, &s.ForkedFromItemID,
 		&pinnedAt, &archivedAt,
 		&s.WorktreePath, &s.WorktreeBaseHEAD, &s.WorktreeBaseRepo,
-		&s.DMParticipantID, &isGroup,
+		&s.DMParticipantID, &isGroup, &s.FocusWorkspace,
 	); err != nil {
 		return Session{}, err
 	}

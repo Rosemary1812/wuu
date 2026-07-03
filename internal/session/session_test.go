@@ -192,6 +192,82 @@ func TestSetGroupThreadPersistsAndSurfacesRegardlessOfCWD(t *testing.T) {
 	}
 }
 
+func TestSetFocusWorkspacePersistsAndIsResettable(t *testing.T) {
+	dir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "agent-home")
+	if _, err := CreateWithMetadata(dir, "sess-dm", cwd); err != nil {
+		t.Fatal(err)
+	}
+
+	// A freshly created session has no declared focus (all workspaces,
+	// today's default behavior).
+	found, ok, err := Find(dir, "sess-dm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || found.FocusWorkspace != "" {
+		t.Fatalf("expected empty default focus, got %+v (ok=%v)", found, ok)
+	}
+
+	updated, err := SetFocusWorkspace(dir, "sess-dm", "acme")
+	if err != nil {
+		t.Fatalf("SetFocusWorkspace: %v", err)
+	}
+	if updated.FocusWorkspace != "acme" {
+		t.Fatalf("expected returned session to have FocusWorkspace=%q, got %+v", "acme", updated)
+	}
+	found, ok, err = Find(dir, "sess-dm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || found.FocusWorkspace != "acme" {
+		t.Fatalf("expected persisted focus %q, got %+v (ok=%v)", "acme", found, ok)
+	}
+
+	// Unlike BindDMParticipant, focus is re-settable: switch to the home
+	// marker, then back to "all".
+	if _, err := SetFocusWorkspace(dir, "sess-dm", "~"); err != nil {
+		t.Fatalf("SetFocusWorkspace(~): %v", err)
+	}
+	found, _, err = Find(dir, "sess-dm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found.FocusWorkspace != "~" {
+		t.Fatalf("expected persisted focus %q, got %+v", "~", found)
+	}
+
+	if _, err := SetFocusWorkspace(dir, "sess-dm", ""); err != nil {
+		t.Fatalf("SetFocusWorkspace(\"\"): %v", err)
+	}
+	found, _, err = Find(dir, "sess-dm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found.FocusWorkspace != "" {
+		t.Fatalf("expected persisted focus to reset to empty, got %+v", found)
+	}
+}
+
+func TestListSurfacesFocusWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "agent-home")
+	if _, err := CreateWithMetadata(dir, "sess-dm", cwd); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetFocusWorkspace(dir, "sess-dm", "acme"); err != nil {
+		t.Fatalf("SetFocusWorkspace: %v", err)
+	}
+
+	sessions, err := List(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].FocusWorkspace != "acme" {
+		t.Fatalf("List should surface FocusWorkspace, got: %+v", sessions)
+	}
+}
+
 func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
 	dir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "project")
