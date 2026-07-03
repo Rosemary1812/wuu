@@ -722,10 +722,12 @@ export type Thread = {
   // workspace_kind tags the thread with the workspace it was created in.
   // "scratch" threads live in the desktop-managed scratch root
   // (~/.wuu/scratch/<date>) and have no registered project; the sidebar
-  // surfaces them in the standalone "对话" section. Threads loaded from
+  // surfaces them in the standalone "对话" section. "dm" threads are
+  // direct-message conversations with a named agent and live in a per-agent
+  // home directory (~/.wuu/agents/<id>/home). Threads loaded from
   // older builds may omit this field — the renderer falls back to
   // classifying them by cwd against the known project list.
-  workspace_kind?: "project" | "scratch";
+  workspace_kind?: "project" | "scratch" | "dm";
   status: ThreadStatus;
   read_only?: boolean;
   pinned?: boolean;

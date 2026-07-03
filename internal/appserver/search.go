@@ -116,7 +116,7 @@ func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
 			delete(sourcesByID, thread.ID)
 			continue
 		}
-		if thread.CWD == s.rt.RootDir {
+		if thread.CWD == s.rt.RootDir || thread.DMParticipantID != "" {
 			sourcesByID[thread.ID] = threadSearchSource{
 				entry:   entry,
 				history: history,

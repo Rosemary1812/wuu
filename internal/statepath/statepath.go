@@ -72,6 +72,19 @@ func WorkspaceDir(wuuHome, rootDir string) (string, error) {
 	return filepath.Join(wuuHome, "workspaces", slug+"-"+hex.EncodeToString(sum[:])[:16]), nil
 }
 
+// AgentHomeDir returns the per-agent home directory used for direct-message
+// threads with a named participant. The directory lives inside wuu's own state
+// root so DM conversations are anchored to a stable location regardless of the
+// project the user happens to have open. Callers are responsible for creating
+// the directory with os.MkdirAll.
+func AgentHomeDir(wuuHome, participantID string) string {
+	id := strings.TrimSpace(participantID)
+	if id == "" {
+		id = "default"
+	}
+	return filepath.Join(wuuHome, "agents", id, "home")
+}
+
 // ProfileDir returns a stable user-level state directory for one agent profile.
 func ProfileDir(wuuHome, agentName string) (string, error) {
 	if strings.TrimSpace(wuuHome) == "" {

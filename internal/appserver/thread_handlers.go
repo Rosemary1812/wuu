@@ -21,8 +21,9 @@ import (
 
 // workspaceKindForCWD classifies a thread by where its working directory lives.
 // Threads whose cwd sits under <wuuHome>/scratch belong to the scratch
-// (no-project) workspace; everything else is treated as a project thread. The
-// scratch root mirrors the layout produced by the desktop
+// (no-project) workspace; threads whose cwd sits under <wuuHome>/agents/ belong
+// to a per-agent direct-message home; everything else is treated as a project
+// thread. The scratch root mirrors the layout produced by the desktop
 // ProjectManager.selectNoProject helper, so threads created from a scratch
 // chat round-trip with the correct kind after a desktop restart.
 func workspaceKindForCWD(wuuHome, cwd string) WorkspaceKind {
@@ -30,12 +31,19 @@ func workspaceKindForCWD(wuuHome, cwd string) WorkspaceKind {
 		return WorkspaceKindProject
 	}
 	scratchRoot := filepath.Clean(filepath.Join(wuuHome, "scratch"))
+	agentRoot := filepath.Clean(filepath.Join(wuuHome, "agents"))
 	cleanCWD := filepath.Clean(cwd)
 	if cleanCWD == scratchRoot {
 		return WorkspaceKindScratch
 	}
 	if strings.HasPrefix(cleanCWD, scratchRoot+string(filepath.Separator)) {
 		return WorkspaceKindScratch
+	}
+	if cleanCWD == agentRoot {
+		return WorkspaceKindDM
+	}
+	if strings.HasPrefix(cleanCWD, agentRoot+string(filepath.Separator)) {
+		return WorkspaceKindDM
 	}
 	return WorkspaceKindProject
 }
@@ -62,8 +70,31 @@ func (s *Server) handleThreadStart(req Request) error {
 	}
 	id := session.NewID()
 	persistHistory := !params.Ephemeral
+	// DM threads live in a per-agent home directory under wuu's own state
+	// root, never the active project's RootDir. The home dir is created on
+	// demand so list/find have a real path to point at.
+	var threadCWD string
+	var workspaceKind WorkspaceKind
+	if dmParticipantID != "" {
+		wuuHome := strings.TrimSpace(s.rt.WuuHome)
+		if wuuHome == "" {
+			home, err := statepath.Home("")
+			if err != nil {
+				return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q: resolve wuu home: %w", dmParticipantID, err))
+			}
+			wuuHome = home
+		}
+		threadCWD = statepath.AgentHomeDir(wuuHome, dmParticipantID)
+		if err := os.MkdirAll(threadCWD, 0o755); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q: create agent home: %w", dmParticipantID, err))
+		}
+		workspaceKind = WorkspaceKindDM
+	} else {
+		threadCWD = s.rt.RootDir
+		workspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
+	}
 	if !params.Ephemeral {
-		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir); err != nil {
+		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 		if dmParticipantID != "" {
@@ -81,8 +112,8 @@ func (s *Server) handleThreadStart(req Request) error {
 	if prompt := strings.TrimSpace(s.rt.StreamRunner.SystemPrompt); prompt != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: prompt})
 	}
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, persistHistory, time.Now().UTC())
-	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, persistHistory, time.Now().UTC())
+	th.WorkspaceKind = workspaceKind
 	th.Ephemeral = params.Ephemeral
 	th.DMParticipantID = dmParticipantID
 	th.Title = dmParticipantName
@@ -510,7 +541,7 @@ func (s *Server) handleThreadList(req Request) error {
 			delete(entries, thread.ID)
 			continue
 		}
-		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) {
+		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) || thread.DMParticipantID != "" {
 			entries[thread.ID] = entry
 		}
 	}

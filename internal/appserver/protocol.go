@@ -645,7 +645,7 @@ type ProviderModelVariantSummary struct {
 }
 
 type ThreadStartParams struct {
-	Ephemeral      bool   `json:"ephemeral,omitempty"`
+	Ephemeral       bool   `json:"ephemeral,omitempty"`
 	DMParticipantID string `json:"dm_participant_id,omitempty"`
 }
 
@@ -793,11 +793,11 @@ type ParticipantStartResult struct {
 }
 
 type ParticipantProfile struct {
-	ID          string                `json:"id"`
-	Kind        string                `json:"kind"`
-	Name        string                `json:"name"`
-	Role        string                `json:"role,omitempty"`
-	Avatar      string                `json:"avatar,omitempty"`
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	Role   string `json:"role,omitempty"`
+	Avatar string `json:"avatar,omitempty"`
 	// AvatarImage is the participant's uploaded avatar as a data URL
 	// (e.g. "data:image/png;base64,..."). Populated on the profile read
 	// path when the workspace contains an avatar image; omitted on the
@@ -1235,6 +1235,11 @@ const (
 	// WorkspaceKindScratch threads live in the ephemeral scratch root
 	// (typically ~/.wuu/scratch/<date>) and have no registered project.
 	WorkspaceKindScratch WorkspaceKind = "scratch"
+	// WorkspaceKindDM threads are direct-message conversations with a named
+	// agent. They live in a per-agent home directory under ~/.wuu/agents/
+	// and surface in every server's thread list regardless of the active
+	// project.
+	WorkspaceKindDM WorkspaceKind = "dm"
 )
 
 type Thread struct {

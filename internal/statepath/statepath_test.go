@@ -82,6 +82,24 @@ func TestProfileDirIsStableAndUnderProfiles(t *testing.T) {
 	}
 }
 
+func TestAgentHomeDirLivesUnderWuuHome(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".wuu")
+	got := AgentHomeDir(home, "prt-andy")
+	want := filepath.Join(home, "agents", "prt-andy", "home")
+	if got != want {
+		t.Fatalf("AgentHomeDir = %q, want %q", got, want)
+	}
+}
+
+func TestAgentHomeDirStableAcrossCalls(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".wuu")
+	first := AgentHomeDir(home, "prt-bea")
+	second := AgentHomeDir(home, "prt-bea")
+	if first != second {
+		t.Fatalf("AgentHomeDir not stable: %q then %q", first, second)
+	}
+}
+
 func TestProfileDirDefaultsEmptyName(t *testing.T) {
 	home := filepath.Join(t.TempDir(), ".wuu")
 

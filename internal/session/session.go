@@ -226,7 +226,10 @@ FROM sessions`)
 	return sessions, nil
 }
 
-// ListForCWD reads sessions scoped to a workspace cwd.
+// ListForCWD reads sessions scoped to a workspace cwd. Direct-message
+// sessions (DMParticipantID != "") are always included regardless of the
+// requested cwd, so DM threads surface in every server's thread list and
+// search results.
 func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
 	target := normalizeCWD(cwd)
 	if target == "" {
@@ -238,6 +241,10 @@ func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
 	}
 	filtered := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
+		if strings.TrimSpace(s.DMParticipantID) != "" {
+			filtered = append(filtered, s)
+			continue
+		}
 		if normalizeCWD(s.CWD) == target || normalizeCWD(s.WorktreeBaseRepo) == target {
 			filtered = append(filtered, s)
 		}
