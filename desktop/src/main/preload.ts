@@ -117,6 +117,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-search", query, limit),
   pinThread: (threadId: string, pinned: boolean) =>
     ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
+  removeThreadMember: (threadId: string, participantId: string) =>
+    ipcRenderer.invoke("wuu:thread-members-remove", threadId, participantId),
   archiveThread: (threadId: string, archived: boolean) =>
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
   renameThread: (threadId: string, title: string) =>

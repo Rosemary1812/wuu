@@ -734,6 +734,10 @@ export type Thread = {
   // dm_participant_id tags the thread as the DM conversation with a named
   // participant (when started via startThread with a dm_participant_id param).
   dm_participant_id?: string;
+  // Named participants that are members of this (group) thread. Snapshot
+  // of the thread_members table (docs/plans/2026-07-03-resident-named-agents.md
+  // §3.1). Absent or empty for DM threads and threads without members.
+  members?: ParticipantSummary[];
   archived?: boolean;
   forked_from_id?: string;
   forked_from_turn_id?: string;
@@ -1362,6 +1366,10 @@ export type WuuDesktopApi = {
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
+  removeThreadMember: (
+    threadId: string,
+    participantId: string,
+  ) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   startTurn: (
     threadId: string,

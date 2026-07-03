@@ -256,6 +256,7 @@ import {
 import { ApprovalGalleryPanel } from "./ApprovalGalleryPanel";
 import { ChipGalleryPanel } from "./ChipGalleryPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
+import { ThreadMembersBar } from "./ThreadMembersBar";
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
   isRecord,
@@ -5530,6 +5531,32 @@ export function App(): JSX.Element {
     }
   }
 
+  async function removeThreadMemberByID(
+    threadID: string,
+    participantID: string,
+  ): Promise<void> {
+    try {
+      const result = await window.wuu.removeThreadMember(threadID, participantID);
+      updateCachedSidebarThread(result.thread);
+      setState((current) => ({
+        ...current,
+        thread: current.thread?.id === threadID ? result.thread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === threadID
+            ? result.thread
+            : current.secondaryThread,
+        threads: upsertThread(current.threads, result.thread),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "remove thread member failed",
+      }));
+    }
+  }
+
   async function archiveThread(thread: ThreadSummary): Promise<void> {
     const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
     if (
@@ -7083,6 +7110,18 @@ export function App(): JSX.Element {
             </button>
           </div>
         </header>
+
+        {state.thread?.members?.length ? (
+          <ThreadMembersBar
+            members={state.thread.members}
+            onRemove={(participantId) => {
+              const threadID = state.thread?.id;
+              if (threadID) {
+                void removeThreadMemberByID(threadID, participantId);
+              }
+            }}
+          />
+        ) : null}
 
         <ConversationTurnRail
           turns={turns}

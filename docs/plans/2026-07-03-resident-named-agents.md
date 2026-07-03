@@ -88,6 +88,11 @@ CREATE TABLE IF NOT EXISTS thread_members (
 - 加入途径：用户在 composer @了一个尚非成员的 named agent → 自动 join；roster UI 显式添加/移除。
 - DM thread 不写成员表（它由 `dm_participant_id` 定义，成员恒等于该 agent）。
 
+前端 wire 契约（§7.4 的 chips UI 依赖）：
+
+- `Thread` 增加可选字段 `members: ParticipantSummary[]`——成员表的 participant 快照（named only）。无成员的 thread 与 DM thread 该字段缺失或为空，前端不渲染 chips 行。
+- 新 RPC `thread/members/remove`，params `{thread_id, participant_id}`，result `{thread}`（成员更新后的完整 Thread，前端按 pin/archive 同款 upsert 回 state）。显式添加走 composer @（T6 自动入群），本期不做单独的 add RPC。
+
 ### 3.2 新表：持久收件箱
 
 ```sql

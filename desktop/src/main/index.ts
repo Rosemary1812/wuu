@@ -620,6 +620,14 @@ app.whenReady().then(async () => {
       }),
   );
   ipcMain.handle(
+    "wuu:thread-members-remove",
+    (_event, threadId: string, participantId: string) =>
+      appServerClientPool.request<{ thread: Thread }>("thread/members/remove", {
+        thread_id: threadId,
+        participant_id: participantId,
+      }),
+  );
+  ipcMain.handle(
     "wuu:thread-rename",
     (_event, threadId: string, title: string) =>
       appServerClientPool.request<{ thread: Thread }>("thread/rename", {
