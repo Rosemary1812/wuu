@@ -76,6 +76,15 @@ type SpawnOptions struct {
 	// the runner's default is.
 	Model string
 
+	// Client, when non-nil, replaces the stream client the runner
+	// would otherwise inherit from the manager defaults. Callers use
+	// it to honor a per-participant model pin that points at a
+	// different provider — the coordinator builds a dedicated stream
+	// client for that provider and passes it through here. Runtime
+	// fields on the agent control keep the override scoped to this
+	// single spawn; the manager defaults are not modified.
+	Client providers.StreamClient
+
 	// MaxSteps caps how many tool-use rounds the sub-agent can run
 	// before being forced to wrap up. Zero uses the runner default.
 	MaxSteps int

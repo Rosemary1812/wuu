@@ -190,6 +190,13 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	if model == "" {
 		return nil, errors.New("no model configured")
 	}
+	client := opts.Client
+	if client == nil {
+		client = defaults.client
+	}
+	if client == nil {
+		return nil, errors.New("no stream client configured")
+	}
 
 	id := strings.TrimSpace(opts.ID)
 	if id == "" {
@@ -223,7 +230,7 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		maxSteps:        opts.MaxSteps,
 		maxLifetime:     lifetime,
 		runtimeDefaults: defaults,
-		client:          defaults.client,
+		client:          client,
 		cancelFunc:      cancel,
 		doneCh:          make(chan struct{}),
 	}
@@ -545,7 +552,14 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 	defaults := sa.runtimeDefaults
 	if defaults.client == nil {
 		defaults = m.defaultsSnapshot()
+	}
+	// Preserve the spawn-time client override across followup turns
+	// so a per-participant model pin keeps its dedicated provider
+	// even if the manager's defaults move on.
+	if sa.client != nil {
 		defaults.client = sa.client
+	} else if defaults.client == nil {
+		defaults.client = m.defaultsSnapshot().client
 	}
 	sa.mu.Unlock()
 

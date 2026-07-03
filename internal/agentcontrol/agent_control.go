@@ -308,6 +308,17 @@ type SpawnRequest struct {
 	// spawn_agent to opt a normally-inplace worker into a worktree
 	// (e.g. an explorer that needs to run a destructive script).
 	Isolation string
+	// ModelOverride and ClientOverride are internal-only spawn hooks used
+	// when a per-participant model pin diverges from the runtime
+	// worker default. ModelOverride replaces the model string for this
+	// single run; ClientOverride, when non-nil, replaces the stream
+	// client the runner would otherwise inherit from the worker
+	// defaults. Both fields are set together when a named participant
+	// pins a different provider, and ModelOverride alone when it pins
+	// a model on the worker's current provider. The LLM-facing
+	// spawn_agent tool MUST NOT expose either field.
+	ModelOverride  string
+	ClientOverride providers.StreamClient
 }
 
 // SpawnResult is what the spawn_agent tool returns to the model.
@@ -347,6 +358,11 @@ type preparedSpawn struct {
 	IsFork           bool
 	ForkMode         string
 	ParentHistory    []providers.ChatMessage
+	// ModelOverride and ClientOverride carry a per-participant model
+	// pin across the queue boundary so that even queued spawns honor
+	// the pin once they dequeue.
+	ModelOverride  string
+	ClientOverride providers.StreamClient
 }
 
 type queuedSpawnPayload struct {
@@ -364,6 +380,13 @@ type queuedSpawnPayload struct {
 	IsFork           bool                    `json:"is_fork,omitempty"`
 	ForkMode         string                  `json:"fork_mode,omitempty"`
 	ParentHistory    []providers.ChatMessage `json:"parent_history,omitempty"`
+	// ModelOverride is persisted with the queued payload so the
+	// per-participant model pin survives session restart. The
+	// ClientOverride is intentionally NOT persisted — reconstructing a
+	// provider client from the queue on its own is not safe, and a
+	// restart that drops a per-participant pin falls back to the
+	// worker default (matching the empty pin semantics).
+	ModelOverride string `json:"model_override,omitempty"`
 }
 
 // Spawn launches a sub-agent. In synchronous mode it waits until the child
@@ -420,6 +443,8 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			Isolation:        isolation,
 			SpeechCapability: req.SpeechCapability,
 			BaseRepo:         req.BaseRepo,
+			ModelOverride:    strings.TrimSpace(req.ModelOverride),
+			ClientOverride:   req.ClientOverride,
 		}
 		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
@@ -538,6 +563,8 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		SystemPrompt:  sys,
 		Toolkit:       workerKit,
 		HistoryPath:   historyPath,
+		Model:         strings.TrimSpace(req.ModelOverride),
+		Client:        req.ClientOverride,
 	})
 	if err != nil {
 		if worktreeRef != nil {
@@ -1584,6 +1611,7 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		IsFork:           prepared.IsFork,
 		ForkMode:         prepared.ForkMode,
 		ParentHistory:    providers.CloneChatMessages(prepared.ParentHistory),
+		ModelOverride:    prepared.ModelOverride,
 	}
 }
 
@@ -1621,6 +1649,7 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		IsFork:           payload.IsFork,
 		ForkMode:         payload.ForkMode,
 		ParentHistory:    providers.CloneChatMessages(payload.ParentHistory),
+		ModelOverride:    payload.ModelOverride,
 	}, nil
 }
 
@@ -1725,6 +1754,8 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
 		InitialHistory: initialHistory,
+		Model:          prepared.ModelOverride,
+		Client:         prepared.ClientOverride,
 	})
 	if err != nil {
 		if worktreeRef != nil {

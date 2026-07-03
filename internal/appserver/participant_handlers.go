@@ -10,9 +10,99 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/providerfactory"
+	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
+
+// workerProviderName returns the provider name the AgentControl's worker
+// runtime is currently configured for. It prefers the explicit Worker role
+// selection and falls back to the main provider when Worker inherited. A
+// participant pin compared against this name decides whether the override
+// needs a fresh stream client (different provider) or just a model swap
+// (same provider).
+func workerProviderName(rt *runtime.Session) string {
+	if rt == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(rt.ModelRoles.Worker.Provider); name != "" {
+		return name
+	}
+	return strings.TrimSpace(rt.ProviderName)
+}
+
+// parseParticipantModelPin splits a participant Model field of the form
+// "<provider>:<model>" into its provider and model parts. Splitting on the
+// FIRST colon means model names containing further ':' or '/' characters
+// (e.g. openrouter-style "openrouter/openai/gpt-4o-mini" or versioned model
+// IDs like "v1:model") round-trip intact. A value with no colon is treated
+// as a bare model name on the worker's current provider; providerName comes
+// back empty in that case.
+func parseParticipantModelPin(value string) (providerName, modelName string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", ""
+	}
+	idx := strings.Index(value, ":")
+	if idx < 0 {
+		return "", value
+	}
+	return strings.TrimSpace(value[:idx]), strings.TrimSpace(value[idx+1:])
+}
+
+// participantModelOverride resolves a participant Model pin to a model name
+// and an optional stream client override to apply to the next spawn. The
+// helper looks at runtime.Session's worker provider selection rather than
+// reach down into agentcontrol, so this file stays the single place that
+// applies per-participant model pins.
+//
+// behavior:
+//   - empty pin  → no override (follows global worker default)
+//   - "model"    → override Model on the worker's current provider
+//   - "p:model" where p == workerProviderName → override Model only
+//   - "p:model" where p != workerProviderName → fresh stream client + Model
+//   - missing p in config, malformed pin, or provider build failure → error
+//
+// Errors never fall back silently: the caller surfaces them on participant/start.
+func resolveParticipantModelOverride(rt *runtimeSessionReference, participantName, rawPin, workerProviderName string) (modelOverride string, clientOverride providers.StreamClient, err error) {
+	providerName, modelName := parseParticipantModelPin(rawPin)
+	if providerName == "" && modelName == "" {
+		return "", nil, nil
+	}
+	if modelName == "" {
+		return "", nil, fmt.Errorf("participant %q pins model %q but model name is empty", participantName, rawPin)
+	}
+	if providerName == "" || providerName == workerProviderName {
+		return modelName, nil, nil
+	}
+	if rt == nil || strings.TrimSpace(rt.configPath) == "" {
+		return "", nil, fmt.Errorf("participant %q pins model %q but no runtime config is available", participantName, rawPin)
+	}
+	cfg, _, loadErr := config.LoadPath(rt.configPath)
+	if loadErr != nil {
+		return "", nil, fmt.Errorf("participant %q pins model %q but config could not be loaded: %w", participantName, rawPin, loadErr)
+	}
+	providerCfg, found := cfg.Providers[providerName]
+	if !found {
+		return "", nil, fmt.Errorf("participant %q pins model %q but provider %q is not configured", participantName, rawPin, providerName)
+	}
+	client, buildErr := providerfactory.BuildStreamClientWithRetry(providerCfg, providerName, retryConfigPointer(providerfactory.SubAgentRetryConfig()))
+	if buildErr != nil {
+		return "", nil, fmt.Errorf("participant %q pins model %q but provider %q failed to build: %w", participantName, rawPin, providerName, buildErr)
+	}
+	return modelName, client, nil
+}
+
+// runtimeSessionReference is the minimal shape resolveParticipantModelOverride
+// needs from a runtime.Session. It exists so callers can pass either a real
+// runtime.Session (production) or a constructed shape (tests) without a
+// circular dependency on the runtime package.
+type runtimeSessionReference struct {
+	configPath string
+}
 
 func (s *Server) handleParticipantStart(ctx context.Context, req Request) error {
 	var params ParticipantStartParams
@@ -46,6 +136,10 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 	agentProfile := strings.TrimSpace(params.AgentProfile)
 	description := strings.TrimSpace(params.Description)
 	taskName := strings.TrimSpace(params.TaskName)
+	var (
+		modelOverride  string
+		clientOverride providers.StreamClient
+	)
 	if participantID != "" {
 		p, err := session.GetParticipant(s.rt.SessionDir, participantID)
 		if err != nil {
@@ -75,6 +169,26 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 			}
 		}
 		prompt = namedParticipantPrompt(p, memory, prompt)
+
+		// Per-participant model pin (named participants only). Pins
+		// without a colon override just the model on the worker's
+		// current provider; pins with a colon that target a
+		// different provider install a dedicated stream client for
+		// this single run. Errors must not be swallowed: a bad pin
+		// is a config problem the user has to fix.
+		if strings.TrimSpace(p.Model) != "" {
+			workerProvider := workerProviderName(s.rt)
+			var pinErr error
+			modelOverride, clientOverride, pinErr = resolveParticipantModelOverride(
+				&runtimeSessionReference{configPath: s.rt.ConfigPath},
+				p.Name,
+				p.Model,
+				workerProvider,
+			)
+			if pinErr != nil {
+				return s.writeResponse(req.ID, nil, pinErr)
+			}
+		}
 	}
 	if subagentType == "" {
 		subagentType = agentcontrol.DefaultSubagentType
@@ -120,6 +234,8 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		SpeechCapability: true,
 		Isolation:        strings.TrimSpace(params.Isolation),
 		Synchronous:      false,
+		ModelOverride:    modelOverride,
+		ClientOverride:   clientOverride,
 	})
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -235,4 +351,11 @@ func deriveParticipantTaskName(description, prompt, subagentType string) string 
 		}
 	}
 	return "participant_task"
+}
+
+// retryConfigPointer returns a stable pointer to a RetryConfig value so
+// providerfactory.BuildStreamClientWithRetry can take its retry argument
+// by address without forcing a value-type copy at every call site.
+func retryConfigPointer(cfg providers.RetryConfig) *providers.RetryConfig {
+	return &cfg
 }
