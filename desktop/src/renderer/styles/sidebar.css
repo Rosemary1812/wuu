@@ -1369,7 +1369,14 @@
  * parity with project rows but reskins the right-hand grid track to
  * hold the + / … action group instead of the "+ new conversation"
  * overlay. */
+.participant-roster-header-group {
+  position: relative;
+}
+
 .participant-roster-actions-header {
+  position: absolute;
+  top: 4px;
+  right: var(--sidebar-row-pad-x, 8px);
   display: flex;
   height: 24px;
   flex: 0 0 auto;

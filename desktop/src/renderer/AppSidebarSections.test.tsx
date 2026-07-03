@@ -338,6 +338,37 @@ describe("AppSidebar sections", () => {
     }
   });
 
+  it("Agents header does not nest action buttons inside the toggle button", () => {
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+    });
+
+    const agentsSection = container.querySelector(
+      'section[aria-label="Agents"]',
+    );
+    expect(agentsSection).not.toBeNull();
+
+    const headerButton = agentsSection?.querySelector<HTMLButtonElement>(
+      '.project-row[aria-label*="Agents"]',
+    );
+    expect(headerButton).not.toBeNull();
+    // React 18 warns <button> cannot contain a nested <button>; the roster
+    // … trigger and the + new-agent button must live as siblings of the
+    // header button, not inside it.
+    expect(headerButton?.querySelector("button")).toBeNull();
+
+    const rosterTrigger = agentsSection?.querySelector<HTMLButtonElement>(
+      'button[aria-label="团队模板操作"]',
+    );
+    const addButton = agentsSection?.querySelector<HTMLButtonElement>(
+      'button[aria-label="新建 Agent"]',
+    );
+    expect(rosterTrigger).not.toBeNull();
+    expect(addButton).not.toBeNull();
+    expect(headerButton?.contains(rosterTrigger ?? null)).toBe(false);
+    expect(headerButton?.contains(addButton ?? null)).toBe(false);
+  });
+
   it("defines rotate(-45deg) on the pinned icon expanded state in CSS", () => {
     // The pinned section uses Pin for both collapsed and expanded states;
     // the expanded variant is rotated -45deg via CSS so the visual reads as

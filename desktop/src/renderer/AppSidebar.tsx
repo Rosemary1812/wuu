@@ -415,25 +415,27 @@ export function AppSidebar({
                   aria-label="Agents"
                   data-section-id={SIDEBAR_SECTION_AGENTS}
                 >
-                  <button
-                    className={`project-row agent-row${collapsed ? "" : " expanded"}`}
-                    type="button"
-                    aria-expanded={!collapsed}
-                    aria-label={`${collapsed ? "展开" : "收起"} Agents`}
-                    title={collapsed ? "展开 Agents" : "收起 Agents"}
-                    onClick={() => onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)}
-                  >
-                    <SectionRowIcon
-                      collapsed={collapsed}
-                      iconKind="agents"
-                      CollapsedIcon={Bot}
-                      ExpandedIcon={BotMessageSquare}
-                    />
-                    <span className="project-row-label">
-                      <span className="project-row-name">Agents</span>
-                      <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
-                    </span>
-                    <div className="participant-roster-actions participant-roster-actions-header" onClick={(event) => event.stopPropagation()}>
+                  <div className="participant-roster-header-group">
+                    <button
+                      className={`project-row agent-row${collapsed ? "" : " expanded"}`}
+                      type="button"
+                      aria-expanded={!collapsed}
+                      aria-label={`${collapsed ? "展开" : "收起"} Agents`}
+                      title={collapsed ? "展开 Agents" : "收起 Agents"}
+                      onClick={() => onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)}
+                    >
+                      <SectionRowIcon
+                        collapsed={collapsed}
+                        iconKind="agents"
+                        CollapsedIcon={Bot}
+                        ExpandedIcon={BotMessageSquare}
+                      />
+                      <span className="project-row-label">
+                        <span className="project-row-name">Agents</span>
+                        <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
+                      </span>
+                    </button>
+                    <div className="participant-roster-actions participant-roster-actions-header">
                       <input
                         ref={participantTemplateInputRef}
                         className="participant-roster-file-input"
@@ -501,7 +503,7 @@ export function AppSidebar({
                         <Plus aria-hidden="true" />
                       </button>
                     </div>
-                  </button>
+                  </div>
                   {!collapsed ? (
                     <div className="thread-list-collapse participant-roster-collapse">
                       <div className="participant-roster-list">
