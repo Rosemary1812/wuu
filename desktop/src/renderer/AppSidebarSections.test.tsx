@@ -21,6 +21,10 @@ const sidebarCSS = readFileSync(
   resolve(process.cwd(), "src/renderer/styles/sidebar.css"),
   "utf8",
 );
+const participantsCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/participants.css"),
+  "utf8",
+);
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -950,5 +954,13 @@ describe("sidebar section spacing rhythm", () => {
     // No per-row indent override — pinned rows use the shared
     // .thread-row padding.
     expect(sidebarCSS).not.toMatch(/\.pinned-thread-list \.thread-row/);
+  });
+
+  it("participants.css does not redeclare the section container", () => {
+    // participants.css loads after sidebar.css, so a bare
+    // .participant-roster-section rule there would silently override the
+    // shared section layout (this happened: a stale grid/gap/margin-block
+    // block gave the Agents section 2px/26px neighbor gaps instead of 14px).
+    expect(participantsCSS).not.toMatch(/^\.participant-roster-section \{/m);
   });
 });

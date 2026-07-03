@@ -151,18 +151,10 @@
   line-height: var(--line-ui);
 }
 
-.participant-roster-section {
-  display: grid;
-  gap: 6px;
-  margin-block: 2px 12px;
-}
-
-.participant-roster-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-inline: var(--sidebar-row-pad-x);
-}
+/* .participant-roster-section layout lives in sidebar.css alongside
+ * .project-section / .pinned-thread-section so all four sidebar sections
+ * share one spacing rhythm. Do not redeclare it here: this file loads
+ * after sidebar.css and any override desyncs the Agents section. */
 
 .participant-roster-actions {
   display: flex;
