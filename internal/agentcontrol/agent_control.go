@@ -2848,7 +2848,7 @@ Launch independent agents in parallel whenever possible. Read-only or verificati
 
 Fresh subagents run in the foreground by default so you can use their result immediately. Foreground child execution has no model-selected wait duration; it continues until the child finishes or the user/runtime cancels the turn. Set run_in_background=true only when you have genuinely independent or long-running work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not sleep, poll, or loop checking status.
 
-Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks. If await_agents returns awaiting_report, the worker finished without a durable handoff; follow up or verify before relying on the result.
+Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks.
 
 ## Working with Agent Results
 

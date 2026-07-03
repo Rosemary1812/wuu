@@ -57,6 +57,8 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			prompttext.ProfileBriefExtensionSummary() + " " +
 			prompttext.EphemeralBriefExtensionSummary() + " " +
 			"Do not make the child infer missing acceptance criteria from a vague ask. " +
+			"The child's final message is its deliverable: state exactly what it must contain, " +
+			"including verifiable handles (paths, commands, IDs) you can check without trusting prose. " +
 			"By default the agent runs in the user's current repo, so any files it creates or edits " +
 			"land directly in the working tree. Set isolation='worktree' only " +
 			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
@@ -971,9 +973,11 @@ func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
 			"Pass targets to wait for specific agent_ids, task_names, or agent_paths. Omit targets " +
 			"only when you intentionally want to await all active descendant agents under the current " +
 			"agent path. This waits until the selected agents reach a final state, the user stops the turn, or the session ends. " +
-			"Results can include status='awaiting_report' when a worker produced final " +
-			"text without the required agent_report; treat that as an incomplete handoff and follow up " +
-			"or verify before relying on it. Results also include changed_files from structured reports " +
+			"Each result carries the worker's final text plus report_kind: 'structured' when the worker filed " +
+			"agent_report, 'final_text' when the runtime synthesized the handoff from the final message and " +
+			"observed facts. Worker summaries are self-reports, not verified facts - when correctness matters, " +
+			"verify the handles they cite (paths, commands, IDs) or send a follow-up with send_message. " +
+			"Results also include changed_files from structured reports " +
 			"and warnings when multiple awaited agents report overlapping changed files. For HelpMe recovery, " +
 			"use the structured report, result/report paths, and original main_trace_path as bounded handoff material; " +
 			"do not paste or merge raw parent/helper transcripts into the parent context.",
@@ -1236,9 +1240,12 @@ func (t *AgentReportTool) IsConcurrencySafe() bool { return false }
 func (t *AgentReportTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "agent_report",
-		Description: "Submit a structured handoff report for the current child agent. " +
-			"Use this before your final answer so parent and later agents receive a durable " +
-			"summary with constraints, work done, blockers, evidence references, and artifact paths. " +
+		Description: "Submit an optional structured handoff report for the current child agent. " +
+			"Your final message is always the deliverable; filing this report additionally gives parent " +
+			"and later agents a durable structured summary with constraints, work done, blockers, evidence " +
+			"references, and artifact paths. Not filing it never blocks completion — the runtime synthesizes " +
+			"a final_text handoff from your final message and observed facts. Verdict-class workers " +
+			"(verification, reviewer, qa) are asked to file it at close automatically. " +
 			"Do not use this for casual messages; use send_message for interim communication.",
 		InputSchema: map[string]any{
 			"type": "object",

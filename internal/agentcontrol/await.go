@@ -171,7 +171,7 @@ func (c *AgentControl) ActiveTaskReminder(currentPath string) string {
 		b.WriteString(" more\n")
 	}
 	b.WriteString("\nUse await_agents with explicit targets when your next step depends on these outputs. ")
-	b.WriteString("If a task is awaiting_report, verify its raw result once; after that the result is yours to use - do not keep re-awaiting a terminal task.\n")
+	b.WriteString("A terminal task's result is yours to use - do not keep re-awaiting it.\n")
 	b.WriteString("</subagent_status>")
 	return b.String()
 }

@@ -35,8 +35,7 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 		Name: "workflow_control",
 		Description: "Update durable Workflow Run state after planning, spawning agents, awaiting agents, or synthesizing results. " +
 			"Use this to bind spawn_agent / await_agents outputs back to a workflow run. The runtime enforces valid run, phase, " +
-			"and agent-run state transitions; do not invent states. If await_agents reports report_missing=true, record the " +
-			"agent run as awaiting_report instead of completed. Use pause_run / resume_run for blocked workflow recovery and " +
+			"and agent-run state transitions; do not invent states. Use pause_run / resume_run for blocked workflow recovery and " +
 			"retry_agent_run for bounded Agent Run retries. Before complete_run=true, mark every phase completed, failed, or skipped. " +
 			"Use create_file_checkpoint / restore_file_checkpoint for scoped file rollback.",
 		InputSchema: map[string]any{

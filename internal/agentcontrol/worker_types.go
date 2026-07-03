@@ -49,7 +49,7 @@ var builtinWorkerTypes = map[string]WorkerType{
 		OneShot:          false,
 		DefaultIsolation: IsolationInplace,
 		ContextScope:     "Self-contained task prompt plus repository memory and skills.",
-		OutputSchema:     "Use agent_report and the standard VERDICT / WHAT DONE / BLOCKERS / NEXT STEPS / EVIDENCE final format.",
+		OutputSchema:     "Final message is the deliverable: outcome, what was done, what changed, blockers, and verifiable evidence. agent_report is an optional structured handoff on top.",
 		SuccessCriteria: []string{
 			"Task scope is completed or clearly blocked.",
 			"Changed files and verification are reported with evidence.",
@@ -77,9 +77,8 @@ Rules:
 - If command execution is unavailable under the active tool surface, report skipped command-based verification instead of inventing another path. Profile-specific tool-surface guidance tells you which command capability exists and how to use it.
 
 Output format:
-Before your final message, call agent_report with a structured handoff packet. Include the outcome, a concise summary, changed_files when relevant, concrete work_done, blockers when any, risks when any, verification performed or skipped, next_steps when useful, and evidence entries that point to files, commands, or artifacts.
-Use agent_report.artifacts only for existing handoff files such as logs, screenshots, reports, or test output that should be imported into Wuu-managed session storage. Put source files in changed_files or evidence instead, and do not create project-local report files just to satisfy the handoff.
-After agent_report succeeds, return a concise final summary and stop. Do not repeat the full report; mention only the outcome and any blocker or next step the parent must notice.
+Your final message IS the deliverable the parent receives. State the outcome, what you did, what changed (concrete files and paths), anything left undone or blocked, and a verifiable handle (path, command, ID) for every load-bearing claim.
+You may additionally call agent_report to file a structured handoff packet; it is optional and never a substitute for a clear final message. Use agent_report.artifacts only for existing handoff files such as logs, screenshots, or test output that should be imported into Wuu-managed session storage; put source files in changed_files or evidence instead, and do not create project-local report files just to satisfy a handoff.
 
 Response style:
 - Report like an engineer, not a salesperson. No fluff, no hedging, no vague optimism.
@@ -91,11 +90,11 @@ Response style:
 		Name:            "verification",
 		Role:            "Verifier",
 		Description:     "Verification specialist. Use after non-trivial implementation work to run checks, try to break the change, and return a PASS/FAIL/PARTIAL verdict with evidence.",
-		SystemPrompt:    VerificationPreset,
+		SystemPrompt:    VerificationPreset + "\n" + reportClosingRule,
 		AllowedTools:    nil,
 		DisallowedTools: []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "write_file", "edit_file", "apply_patch"},
 		ContextScope:    "Final diff, acceptance criteria, changed files, and declared verification policy.",
-		OutputSchema:    "Use agent_report with outcome, verification, risks, blockers, and evidence; final verdict must be PASS, FAIL, or PARTIAL.",
+		OutputSchema:    "Structured agent_report handoff (outcome, verification, risks, blockers, evidence) — submitted at close, requested automatically if missing; final verdict must be PASS, FAIL, or PARTIAL.",
 		SuccessCriteria: []string{
 			"Verification commands or manual checks are recorded.",
 			"Failures include exact evidence and next debugging step.",
@@ -157,7 +156,7 @@ Response style:
 		Name:         "reviewer",
 		Role:         "Reviewer",
 		Description:  "Review diffs for real bugs, regressions, missing tests, and unsafe behavior without editing.",
-		SystemPrompt: rolePrompt("Reviewer", "Review the diff as an independent checker. Report only real bugs, security issues, logic errors, or missing verification."),
+		SystemPrompt: rolePrompt("Reviewer", "Review the diff as an independent checker. Report only real bugs, security issues, logic errors, or missing verification.") + reportClosingRule,
 		AllowedTools: readOnlyVerificationTools(),
 		ContextScope: "Final diff, changed files, acceptance criteria, and verification evidence.",
 		OutputSchema: "Review report with findings ordered by severity, open questions, and verification gaps.",
@@ -174,7 +173,7 @@ Response style:
 		Name:         "qa",
 		Role:         "QA / Verifier",
 		Description:  "Run product-facing verification, smoke tests, browser checks, and regression checks without editing.",
-		SystemPrompt: rolePrompt("QA / Verifier", "Verify the behavior from the user's point of view. Run checks and capture evidence. Do not edit files."),
+		SystemPrompt: rolePrompt("QA / Verifier", "Verify the behavior from the user's point of view. Run checks and capture evidence. Do not edit files.") + reportClosingRule,
 		AllowedTools: readOnlyVerificationTools(),
 		ContextScope: "Expected behavior, target route or command, verification policy, changed files, and failure history.",
 		OutputSchema: "QA report with checks run, PASS/FAIL/PARTIAL verdict, failures, screenshots or command evidence when available.",
@@ -236,8 +235,14 @@ func rolePrompt(role, instruction string) string {
 		"- Stay inside the assigned scope.\n" +
 		"- Preserve unrelated user work.\n" +
 		"- Report blockers with exact evidence.\n" +
-		"- Use agent_report before the final message.\n"
+		"- Your final message is the deliverable: outcome, what changed, and a verifiable handle for every claim.\n"
 }
+
+// reportClosingRule is appended to requires_report worker prompts. The
+// obligation is phrased as a property of the close ("you will be asked"),
+// not a memory test: if the worker finishes without filing, the runtime
+// issues one closing turn pinned to agent_report.
+const reportClosingRule = "- Close with agent_report: your structured handoff is required and will be requested at close if missing.\n"
 
 // AvailableWorkerTypes returns all built-in worker roles sorted by name.
 func AvailableWorkerTypes() []WorkerType {
