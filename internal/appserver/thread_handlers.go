@@ -95,13 +95,15 @@ func (s *Server) handleThreadStart(req Request) error {
 		if p.Kind != participant.KindNamed {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q is not a named agent", dmParticipantID))
 		}
-		th, err := s.createResidentDMThreadState(p, session.NewID(), time.Now().UTC())
+		// Find-or-create: a resident DM thread for this participant may
+		// already exist in memory or on disk (e.g. created silently by a
+		// background resident reply). Reusing ensureResidentDMThread here
+		// keeps thread/start idempotent so a stale frontend cache can never
+		// spawn a second, indistinguishable "Andy" tab. See issue #3.
+		th, err := s.ensureResidentDMThread(dmParticipantID)
 		if err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
-		s.mu.Lock()
-		s.threads[th.ID] = th
-		s.mu.Unlock()
 
 		th.mu.Lock()
 		thread := th.snapshotLocked()

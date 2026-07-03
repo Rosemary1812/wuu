@@ -54,6 +54,67 @@ func TestThreadStartWithDMParticipantTagsThread(t *testing.T) {
 	}
 }
 
+// TestThreadStartWithDMParticipantIsIdempotent guards against issue #3: a
+// stale frontend cache re-issuing thread/start for a participant that
+// already has a resident DM thread must not spawn a second, indistinguishable
+// thread. The handler should find-or-create, returning the existing thread
+// both times and creating exactly one session on disk.
+func TestThreadStartWithDMParticipantIsIdempotent(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	srv := New(rt, &lockedBuffer{})
+
+	participantID := saveNamedParticipant(t, rt, "Andy", "general-purpose", "")
+
+	dmSessionCount := func() int {
+		sessions, err := session.List(rt.SessionDir, 0)
+		if err != nil {
+			t.Fatalf("session.List: %v", err)
+		}
+		count := 0
+		for _, sess := range sessions {
+			if sess.DMParticipantID == participantID {
+				count++
+			}
+		}
+		return count
+	}
+
+	firstRaw := fmt.Sprintf(`{"id":"start-1","method":"thread/start","params":{"dm_participant_id":%q}}`, participantID)
+	if err := srv.handleLine(context.Background(), []byte(firstRaw)); err != nil {
+		t.Fatalf("first thread/start: %v", err)
+	}
+	firstResp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "start-1")
+	if errMsg, ok := firstResp["error"]; ok {
+		t.Fatalf("first thread/start returned error: %v", errMsg)
+	}
+	first := remarshal[ThreadStartResult](t, firstResp["result"])
+
+	if got := dmSessionCount(); got != 1 {
+		t.Fatalf("sessions for participant after first thread/start = %d, want 1", got)
+	}
+
+	secondRaw := fmt.Sprintf(`{"id":"start-2","method":"thread/start","params":{"dm_participant_id":%q}}`, participantID)
+	if err := srv.handleLine(context.Background(), []byte(secondRaw)); err != nil {
+		t.Fatalf("second thread/start: %v", err)
+	}
+	secondResp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "start-2")
+	if errMsg, ok := secondResp["error"]; ok {
+		t.Fatalf("second thread/start returned error: %v", errMsg)
+	}
+	second := remarshal[ThreadStartResult](t, secondResp["result"])
+
+	if second.Thread.ID != first.Thread.ID {
+		t.Fatalf("thread/start returned different thread IDs for the same participant: first=%q second=%q", first.Thread.ID, second.Thread.ID)
+	}
+	if second.Thread.Title != "Andy" {
+		t.Fatalf("Title = %q, want %q", second.Thread.Title, "Andy")
+	}
+
+	if got := dmSessionCount(); got != 1 {
+		t.Fatalf("sessions for participant after second thread/start = %d, want 1 (no new session should be created)", got)
+	}
+}
+
 func TestThreadStartWithDMParticipantUnknownIDErrors(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	srv := New(rt, &lockedBuffer{})
