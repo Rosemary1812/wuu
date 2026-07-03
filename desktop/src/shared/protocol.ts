@@ -573,6 +573,11 @@ export type ParticipantSummary = {
   kind: string;
   role?: string;
   avatar?: string;
+  // avatar_image is an uploaded image data URL that supersedes the emoji
+  // avatar in the UI (see ParticipantProfile.avatar_image). Optional
+  // because the lightweight wire summary embedded in thread items and
+  // agents does not always carry it.
+  avatar_image?: string;
 };
 
 export type Agent = {

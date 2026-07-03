@@ -5,6 +5,7 @@
 @import "./styles/settings.css";
 @import "./styles/conversation-shell.css";
 @import "./styles/participants.css";
+@import "./styles/chat.css";
 @import "./styles/task-cards.css";
 @import "./styles/subthreads.css";
 @import "./styles/environment.css";
