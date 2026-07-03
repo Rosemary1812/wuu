@@ -204,9 +204,12 @@
   height: var(--icon-size-sm);
 }
 
+/* Same 3px gap / 2px vertical padding rhythm as .thread-list and
+ * .pinned-thread-list so all section bodies start at the same offset. */
 .participant-roster-list {
   display: grid;
-  gap: 2px;
+  gap: 3px;
+  padding: 2px 0;
 }
 
 .participant-roster-row {

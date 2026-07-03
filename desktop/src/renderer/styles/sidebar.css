@@ -391,7 +391,11 @@
 
 /* Sidebar section containers. All four section types (置顶 / Agents /
  * 对话 scratch / 项目) share the same flex-column rhythm so the panel
- * reads as one continuous tree. */
+ * reads as one continuous tree. No gap here: the header → body offset
+ * comes solely from `.thread-list-collapse`'s margin-top so all four
+ * sections measure identically (project bodies sit one `.project-group`
+ * wrapper deeper, and a container gap would double-count for the
+ * sections whose body is a direct child). */
 .project-section,
 .pinned-thread-section,
 .participant-roster-section {
@@ -399,7 +403,6 @@
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 6px;
   margin-top: 14px;
 }
 
@@ -407,16 +410,14 @@
   min-height: 0;
 }
 
+/* Mirrors .thread-list (gap 3px, 2px vertical padding) so pinned rows
+ * sit on the same rhythm as project thread rows. */
 .pinned-thread-list {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
-}
-
-.pinned-thread-list .thread-row {
-  height: 32px;
-  padding-left: 10px;
+  gap: 3px;
+  padding: 2px 0;
 }
 
 .project-add-menu {
@@ -706,9 +707,8 @@
   transform: scale(0.72);
 }
 
-/* `.project-thread-empty-note` and `.sidebar-section-empty-note` are
- * styled together at the bottom of the file so the empty-state placeholder
- * reads identically across the four section types. */
+/* `.sidebar-section-empty-note` (the shared empty-state placeholder) is
+ * styled at the bottom of the file. */
 
 .thread-list-collapse {
   display: grid;
@@ -856,12 +856,6 @@
   transform: scale(1);
 }
 
-                                                                     
-                                                                      
-                                                                
-                                                                    
-                                                                        
-                                                                    
 .thread-row.running::before {
   display: none;
 }
@@ -885,9 +879,6 @@
   animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
 
-                                                                     
-                                                                      
-                                   
 .thread-row.has-unread::before {
   background: var(--info);
   transform: scale(1);
@@ -1066,17 +1057,6 @@
   padding-right: 82px;
 }
 
-  
-                                                                              
-                                                                          
-                                                                            
-                                                                             
-                                                                 
-  
-                                                                        
-                                                                          
-                        
-   
 .thread-row-main > .thread-row-title[data-title-swap] {
   animation: thread-row-title-settle 220ms ease both;
 }
@@ -1257,11 +1237,6 @@
   transform: translateX(1px);
 }
 
-  
-                                                                         
-                                                                            
-                                                                           
-   
 .thread-row-context-menu {
   position: fixed;
   z-index: 2147482000;
@@ -1381,8 +1356,7 @@
 }
 
 /* Unified empty-note row for sections that have no children. */
-.sidebar-section-empty-note,
-.project-thread-empty-note {
+.sidebar-section-empty-note {
   color: var(--ink-muted);
   font-size: var(--font-sm);
   line-height: 1.4;

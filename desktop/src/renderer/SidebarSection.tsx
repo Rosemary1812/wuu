@@ -1,6 +1,17 @@
 import { ChevronRight } from "lucide-react";
-import { createContext, type HTMLAttributes, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  type HTMLAttributes,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { SectionRowIcon } from "./ThreadSidebar";
+
+// Must match the .thread-list-collapse transition duration in sidebar.css.
+const SECTION_COLLAPSE_MS = 190;
 
 /**
  * dnd-kit activator context shared between SortableSection (AppSidebar)
@@ -36,7 +47,7 @@ export function useSidebarSectionDragHandle(): SidebarSectionDragHandle | null {
  * Differences between sections surface as props rather than as
  * duplicated markup:
  *   - iconKind + CollapsedIcon / ExpandedIcon pair (pinned uses Pin /
- *     Pin with a CSS rotate; agents uses Bot / BotMessageSquare; 对话
+ *     Pin with a CSS rotate; agents uses UserRound / UsersRound; 对话
  *     uses MessageSquare / MessagesSquare; project uses Folder /
  *     FolderOpen).
  *   - Optional `loading` / `unread` indicators in the right-hand grid
@@ -52,8 +63,11 @@ export function useSidebarSectionDragHandle(): SidebarSectionDragHandle | null {
  *     describe its toggle verb ("展开 / 收起 对话") and surface unread
  *     state in the label.
  *   - `emptyNote`: shown in the body when no `children` are mounted
- *     so the height collapse animation has real content (matches
- *     `.project-thread-empty-note`'s reasoning).
+ *     so the height collapse animation has real content.
+ *
+ * The close animation is self-contained: the body stays mounted with the
+ * `.thread-list-collapse.closing` class for 190 ms after `expanded` flips
+ * false, so all four sections share the identical collapse motion.
  */
 export function SidebarSection({
   expanded,
@@ -105,6 +119,33 @@ export function SidebarSection({
   const dragHandle = useSidebarSectionDragHandle();
   const dragHandleProps = dragHandle?.dragHandleProps;
   const isDragging = dragHandle?.isDragging ?? false;
+  // Self-contained close animation. When `expanded` flips true → false the
+  // body stays mounted for one SECTION_COLLAPSE_MS window with the
+  // `.closing` class so the grid-rows height transition can play; only
+  // after the window does the body unmount. Re-expanding mid-close cancels
+  // the timer and the still-mounted body animates back open. This gives
+  // every section (置顶 / Agents / 对话 / 项目) the same close motion
+  // without each parent having to orchestrate a collapsing phase.
+  const [closing, setClosing] = useState(false);
+  const prevExpandedRef = useRef(expanded);
+  useEffect(() => {
+    const wasExpanded = prevExpandedRef.current;
+    prevExpandedRef.current = expanded;
+    if (expanded) {
+      setClosing(false);
+      return;
+    }
+    if (!wasExpanded) {
+      return;
+    }
+    setClosing(true);
+    const timer = window.setTimeout(() => {
+      setClosing(false);
+    }, SECTION_COLLAPSE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [expanded]);
   const headerClassName = [
     "project-row",
     "sidebar-section-row",
@@ -154,10 +195,10 @@ export function SidebarSection({
         {newItemButton}
         {actions}
       </div>
-      {expanded && (children || emptyNote) ? (
+      {(expanded || closing) && (children || emptyNote) ? (
         <div
-          className="thread-list-collapse"
-          aria-hidden={!expanded || undefined}
+          className={`thread-list-collapse${closing ? " closing" : ""}`}
+          aria-hidden={closing || undefined}
         >
           {children ?? (
             <div className="sidebar-section-empty-note">{emptyNote}</div>

@@ -1,7 +1,5 @@
 import {
   Archive,
-  Bot,
-  BotMessageSquare,
   ChevronRight,
   Clock,
   CornerDownRight,
@@ -22,6 +20,8 @@ import {
   Settings,
   ShieldCheck,
   Upload,
+  UserRound,
+  UsersRound,
   Wrench,
 } from "lucide-react";
 import {
@@ -29,6 +29,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
   type RefObject,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -243,12 +244,15 @@ function SortableSection({
     transition,
     isDragging,
   } = useSortable({ id });
+  // Depend on the individual fields (not the object) so the parent's
+  // per-render headerInfo literal doesn't re-run the effect every render.
+  const { label, iconKind, CollapsedIcon, ExpandedIcon } = headerInfo;
   useEffect(() => {
-    registerHeaderInfo(id, headerInfo);
+    registerHeaderInfo(id, { label, iconKind, CollapsedIcon, ExpandedIcon });
     return () => {
       registerHeaderInfo(id, null);
     };
-  }, [id, headerInfo, registerHeaderInfo]);
+  }, [id, label, iconKind, CollapsedIcon, ExpandedIcon, registerHeaderInfo]);
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -479,16 +483,16 @@ export function AppSidebar({
   // ref (not state) avoids an extra render when a child mounts and
   // keeps the lookup cheap during high-frequency drag pointer moves.
   const sectionHeaderInfoByIDRef = useRef<Map<string, SectionHeaderInfo>>(new Map());
-  const registerSectionHeaderInfo = (
-    id: string,
-    info: SectionHeaderInfo | null,
-  ): void => {
-    if (info === null) {
-      sectionHeaderInfoByIDRef.current.delete(id);
-    } else {
-      sectionHeaderInfoByIDRef.current.set(id, info);
-    }
-  };
+  const registerSectionHeaderInfo = useCallback(
+    (id: string, info: SectionHeaderInfo | null): void => {
+      if (info === null) {
+        sectionHeaderInfoByIDRef.current.delete(id);
+      } else {
+        sectionHeaderInfoByIDRef.current.set(id, info);
+      }
+    },
+    [],
+  );
   const draggingSectionInfo = draggingSectionID
     ? sectionHeaderInfoByIDRef.current.get(draggingSectionID)
     : undefined;
@@ -784,16 +788,16 @@ export function AppSidebar({
                   headerInfo={{
                     label: "Agents",
                     iconKind: "agents",
-                    CollapsedIcon: Bot,
-                    ExpandedIcon: BotMessageSquare,
+                    CollapsedIcon: UserRound,
+                    ExpandedIcon: UsersRound,
                   }}
                   registerHeaderInfo={registerSectionHeaderInfo}
                 >
                   <SidebarSection
                     expanded={!collapsed}
                     iconKind="agents"
-                    CollapsedIcon={Bot}
-                    ExpandedIcon={BotMessageSquare}
+                    CollapsedIcon={UserRound}
+                    ExpandedIcon={UsersRound}
                     label="Agents"
                     ariaLabel={`${collapsed ? "展开" : "收起"} Agents`}
                     title={collapsed ? "展开 Agents" : "收起 Agents"}

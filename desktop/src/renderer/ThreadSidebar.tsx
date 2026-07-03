@@ -231,37 +231,25 @@ export function ProjectGroup({
             <MessageSquarePlus className="icon" />
           </button>
         }
-      />
-      {/* The project row's collapse window lives outside the unified
-       * SidebarSection because it tracks its own `collapsing` set to
-       * animate the .closing class during the close transition. The
-       * empty-note fallback uses the same wrapper so the height
-       * animation matches what non-empty projects get. */}
-      {(expanded || collapsing) ? (
-        <div
-          className={`thread-list-collapse${collapsing ? " closing" : ""}`}
-          aria-hidden={collapsing || undefined}
-        >
-          {projectThreads.length === 0 ? (
-            <div className="project-thread-empty-note">还没有会话</div>
-          ) : (
-            <ThreadList
-              threads={projectThreads}
-              activeID={activeThreadID}
-              pendingThreadID={pendingThreadID}
-              archiveConfirmThreadID={archiveConfirmThreadID}
-              lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-              visibleCount={visibleThreadCount}
-              onSelect={(threadID) => onSelectThread(project.id, threadID)}
-              onTogglePinned={onToggleThreadPinned}
-              onArchive={onArchiveThread}
-              onClearArchiveConfirm={onClearArchiveConfirm}
-              onShowMore={showMoreProjectThreads}
-              onCollapse={collapseProjectThreads}
-            />
-          )}
-        </div>
-      ) : null}
+        emptyNote="还没有会话"
+      >
+        {projectThreads.length === 0 ? null : (
+          <ThreadList
+            threads={projectThreads}
+            activeID={activeThreadID}
+            pendingThreadID={pendingThreadID}
+            archiveConfirmThreadID={archiveConfirmThreadID}
+            lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+            visibleCount={visibleThreadCount}
+            onSelect={(threadID) => onSelectThread(project.id, threadID)}
+            onTogglePinned={onToggleThreadPinned}
+            onArchive={onArchiveThread}
+            onClearArchiveConfirm={onClearArchiveConfirm}
+            onShowMore={showMoreProjectThreads}
+            onCollapse={collapseProjectThreads}
+          />
+        )}
+      </SidebarSection>
     </div>
   );
 }
@@ -274,9 +262,10 @@ export function ProjectGroup({
  * unconditionally rather than swapping them so the 190ms transition stays
  * smooth without a mount/unmount flicker.
  *
- * For the Agents section the expanded icon is a rotated variant of the same
- * glyph (Bot → BotMessageSquare); for the pinned section the expanded
- * variant uses CSS `transform: rotate(-45deg)` to evoke a diagonal pin.
+ * Every pair follows the same single → many / closed → open metaphor:
+ * Agents uses UserRound → UsersRound, 对话 uses MessageSquare →
+ * MessagesSquare, projects use Folder → FolderOpen; the pinned section
+ * keeps one Pin glyph and rotates the expanded state -45deg via CSS.
  */
 export function SectionRowIcon({
   collapsed,

@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Folder, FolderOpen } from "lucide-react";
+import { SidebarSection } from "./SidebarSection";
 import type { DesktopProject, InitializeResult, ParticipantProfile } from "../shared/protocol";
 import {
   AppSidebar,
@@ -823,5 +825,130 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
         .querySelector('section[aria-label="Agents"] .sidebar-section-row')
         ?.classList.contains("can-reorder"),
     ).toBe(true);
+  });
+});
+
+describe("Agents section icon pair", () => {
+  it("uses UserRound (collapsed) → UsersRound (expanded), not a robot", () => {
+    renderSidebar({ sectionOrder: [SIDEBAR_SECTION_AGENTS] });
+
+    const header = container.querySelector(
+      'section[aria-label="Agents"] .sidebar-section-row',
+    );
+    const collapsedIcon = header?.querySelector(
+      ".project-row-icon-state.collapsed",
+    );
+    const expandedIcon = header?.querySelector(
+      ".project-row-icon-state.expanded",
+    );
+    expect(collapsedIcon?.getAttribute("class")).toContain("lucide-user-round");
+    expect(expandedIcon?.getAttribute("class")).toContain("lucide-users-round");
+    // The two states must be visually distinct glyphs (single person vs
+    // group), unlike the old Bot → BotMessageSquare pair.
+    expect(collapsedIcon?.getAttribute("class")).not.toContain("lucide-bot");
+    expect(expandedIcon?.getAttribute("class")).not.toContain("lucide-bot");
+  });
+});
+
+describe("SidebarSection collapse animation", () => {
+  function renderSection(expanded: boolean): void {
+    const element = (
+      <SidebarSection
+        expanded={expanded}
+        iconKind="project"
+        CollapsedIcon={Folder}
+        ExpandedIcon={FolderOpen}
+        label="示例"
+        ariaLabel="示例"
+        title="示例"
+        onToggle={() => {}}
+      >
+        <div className="collapse-probe">body</div>
+      </SidebarSection>
+    );
+    act(() => {
+      if (!root) {
+        root = createRoot(container);
+      }
+      root.render(element);
+    });
+  }
+
+  it("keeps the body mounted with .closing for 190ms, then unmounts", () => {
+    vi.useFakeTimers();
+    try {
+      renderSection(true);
+      const openBody = container.querySelector(".thread-list-collapse");
+      expect(openBody).not.toBeNull();
+      expect(openBody?.classList.contains("closing")).toBe(false);
+
+      renderSection(false);
+      const closingBody = container.querySelector(".thread-list-collapse");
+      expect(closingBody).not.toBeNull();
+      expect(closingBody?.classList.contains("closing")).toBe(true);
+      expect(closingBody?.getAttribute("aria-hidden")).toBe("true");
+      expect(container.querySelector(".collapse-probe")).not.toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(190);
+      });
+      expect(container.querySelector(".thread-list-collapse")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-expanding mid-close cancels the closing phase and keeps the body", () => {
+    vi.useFakeTimers();
+    try {
+      renderSection(true);
+      renderSection(false);
+      expect(
+        container.querySelector(".thread-list-collapse.closing"),
+      ).not.toBeNull();
+
+      renderSection(true);
+      const body = container.querySelector(".thread-list-collapse");
+      expect(body).not.toBeNull();
+      expect(body?.classList.contains("closing")).toBe(false);
+
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      // The stale close timer must not unmount the re-opened body.
+      expect(container.querySelector(".thread-list-collapse")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders no body at all when mounted collapsed", () => {
+    renderSection(false);
+    expect(container.querySelector(".thread-list-collapse")).toBeNull();
+  });
+});
+
+describe("sidebar section spacing rhythm", () => {
+  it("section containers carry no flex gap — the offset lives on .thread-list-collapse", () => {
+    // Header → body distance must be identical across 置顶 / Agents /
+    // 对话 / 项目. Project bodies sit one .project-group wrapper deeper,
+    // so any gap on the shared section containers would double-count
+    // for the sections whose body is a direct child.
+    const sectionRule = sidebarCSS.match(
+      /\.project-section,\s*\.pinned-thread-section,\s*\.participant-roster-section \{[^}]*\}/,
+    )?.[0];
+    expect(sectionRule).toBeTruthy();
+    expect(sectionRule).not.toMatch(/\bgap:/);
+    expect(sidebarCSS).toMatch(/\.thread-list-collapse \{[^}]*margin-top: 5px/);
+  });
+
+  it("pinned list shares the .thread-list rhythm (gap 3px, 2px vertical padding)", () => {
+    const pinnedRule = sidebarCSS.match(/\.pinned-thread-list \{[^}]*\}/)?.[0];
+    expect(pinnedRule).toBeTruthy();
+    expect(pinnedRule).toMatch(/gap: 3px/);
+    expect(pinnedRule).toMatch(/padding: 2px 0/);
+    // No per-row indent override — pinned rows use the shared
+    // .thread-row padding.
+    expect(sidebarCSS).not.toMatch(/\.pinned-thread-list \.thread-row/);
   });
 });
