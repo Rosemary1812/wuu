@@ -656,6 +656,12 @@ export function App(): JSX.Element {
     "closed" | "open" | "closing"
   >("closed");
   const sidebarDrawerCloseTimerRef = useRef<number | undefined>(undefined);
+  const sidebarHoverZoneRef = useRef<HTMLDivElement>(null);
+  // Set while a sidebar drag is in flight and kept set after a drag that ends
+  // collapsed, until the pointer moves off the hover zone. Without it, the
+  // hover zone appears under the pointer the instant the drag crosses the
+  // collapse threshold and pointerenter immediately pops the drawer back open.
+  const sidebarDrawerSuppressedRef = useRef(false);
   const {
     sidebarWidth,
     settingsSidebarWidth,
@@ -2061,11 +2067,14 @@ export function App(): JSX.Element {
   }, []);
 
   const openSidebarDrawer = useCallback((): void => {
+    if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
+      return;
+    }
     clearSidebarDrawerCloseTimer();
     if (sidebarCollapsed) {
       setSidebarDrawerPhase("open");
     }
-  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed]);
+  }, [clearSidebarDrawerCloseTimer, resizingSidebar, sidebarCollapsed]);
 
   const closeSidebarDrawer = useCallback((): void => {
     clearSidebarDrawerCloseTimer();
@@ -2086,6 +2095,47 @@ export function App(): JSX.Element {
       setSidebarDrawerPhase("closed");
     }
   }, [clearSidebarDrawerCloseTimer, sidebarCollapsed, sidebarDrawerPhase]);
+
+  useEffect(() => {
+    if (resizingSidebar) {
+      sidebarDrawerSuppressedRef.current = true;
+      return undefined;
+    }
+    if (!sidebarDrawerSuppressedRef.current) {
+      return undefined;
+    }
+    if (!sidebarCollapsed) {
+      sidebarDrawerSuppressedRef.current = false;
+      return undefined;
+    }
+    // The drag ended collapsed with the pointer likely still on the hover
+    // zone. Keep the drawer suppressed until the pointer moves off the zone
+    // so the sidebar doesn't reopen in place right after being dragged shut.
+    function handlePointerMove(event: PointerEvent): void {
+      const zone = sidebarHoverZoneRef.current?.getBoundingClientRect();
+      if (!zone || event.clientX > zone.right || event.clientX < zone.left) {
+        sidebarDrawerSuppressedRef.current = false;
+        window.removeEventListener("pointermove", handlePointerMove);
+      }
+    }
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, [resizingSidebar, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!resizingSidebar || !sidebarCollapsed) {
+      return;
+    }
+    // Collapsing via drag leaves focus on whatever sidebar control was last
+    // clicked; `.sidebar-collapsed .sidebar:focus-within` would then pin the
+    // sidebar open as a drawer overlay at the clamped minimum width. Drop
+    // that focus so the sidebar actually closes.
+    const sidebar = appShellRef.current?.querySelector(".sidebar");
+    const active = document.activeElement;
+    if (sidebar && active instanceof HTMLElement && sidebar.contains(active)) {
+      active.blur();
+    }
+  }, [resizingSidebar, sidebarCollapsed]);
 
   useEffect(() => clearSidebarDrawerCloseTimer, [clearSidebarDrawerCloseTimer]);
 
@@ -6883,6 +6933,7 @@ export function App(): JSX.Element {
     <ImagePreviewProvider>
       <div ref={appShellRef} className={shellClassName} style={shellStyle}>
       <div
+        ref={sidebarHoverZoneRef}
         className="sidebar-hover-zone"
         aria-hidden="true"
         onPointerEnter={openSidebarDrawer}

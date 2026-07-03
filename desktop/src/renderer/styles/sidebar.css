@@ -123,14 +123,24 @@
   display: block;
 }
 
+/* While a sidebar drag is in flight the pointer sits exactly where the hover
+   zone appears at the collapse threshold; hide the zone so it cannot steal
+   the pointer or trigger the drawer mid-drag. */
+.resizing-sidebar .sidebar-hover-zone {
+  display: none;
+}
+
 .sidebar-collapsed .sidebar-hover-zone:hover,
 .sidebar-collapsed.sidebar-drawer-open .sidebar-hover-zone {
   background: linear-gradient(90deg, rgba(45, 50, 54, 0.08), transparent);
 }
 
+/* :focus-within is excluded while resizing: a drag that crosses the collapse
+   threshold would otherwise pin the sidebar open as an overlay because the
+   last-clicked sidebar control still holds focus. */
 .sidebar-collapsed.sidebar-drawer-open .sidebar,
 .sidebar-collapsed.sidebar-drawer-closing .sidebar,
-.sidebar-collapsed .sidebar:focus-within {
+.sidebar-collapsed:not(.resizing-sidebar) .sidebar:focus-within {
   position: absolute;
   inset: 0 auto 0 0;
   z-index: 140;
@@ -146,7 +156,7 @@
 
 .sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content,
 .sidebar-collapsed.sidebar-drawer-closing .sidebar .sidebar-content,
-.sidebar-collapsed .sidebar:focus-within .sidebar-content {
+.sidebar-collapsed:not(.resizing-sidebar) .sidebar:focus-within .sidebar-content {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
 }
