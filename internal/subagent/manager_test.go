@@ -1018,3 +1018,40 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestFollowupForcingTool_PinsFirstRequest verifies that a forced-tool
+// follow-up pins the closing turn's first request to the named tool and that
+// the force is one-shot: a later plain follow-up runs unforced.
+func TestFollowupForcingTool_PinsFirstRequest(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "done"}}
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:        "worker",
+		Description: "test task",
+		Prompt:      "do it",
+		Toolkit:     fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	mgr.Wait(context.Background(), sa.ID)
+
+	if _, err := mgr.FollowupForcingTool(context.Background(), sa.ID, "file your report", "agent_report"); err != nil {
+		t.Fatalf("FollowupForcingTool: %v", err)
+	}
+	mgr.Wait(context.Background(), sa.ID)
+	req := client.lastRequest.Load()
+	if req == nil || req.ForceToolName != "agent_report" {
+		t.Fatalf("expected forced tool on the closing turn's request, got %+v", req)
+	}
+
+	if _, err := mgr.Followup(context.Background(), sa.ID, "one more thing"); err != nil {
+		t.Fatalf("Followup: %v", err)
+	}
+	mgr.Wait(context.Background(), sa.ID)
+	req = client.lastRequest.Load()
+	if req == nil || req.ForceToolName != "" {
+		t.Fatalf("plain follow-up must run unforced, got %+v", req)
+	}
+}

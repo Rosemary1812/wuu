@@ -310,6 +310,11 @@ type LoopConfig struct {
 	// PromptCacheKey, when set, overrides the content-derived fallback
 	// key in CacheHint for providers with explicit prompt-cache routing.
 	PromptCacheKey string
+	// ForceToolFirstStep, when non-empty, pins the FIRST request of this
+	// loop to the named tool via the provider's forced tool_choice. Later
+	// steps run unforced so the model can finish normally after the tool
+	// result returns. Used for mechanical closing turns (agent_report).
+	ForceToolFirstStep string
 }
 
 // LoopResult is what RunToolLoop returns on success.

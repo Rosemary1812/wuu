@@ -29,6 +29,13 @@ type WorkerType struct {
 	OneShot          bool
 	Background       bool
 	DefaultIsolation IsolationMode
+	// RequiresReport marks verdict-class workers whose value depends on a
+	// structured agent_report handoff. When such a worker completes without
+	// filing one, the runtime issues a single mechanical closing turn with
+	// tool_choice pinned to agent_report before results are delivered. It
+	// never becomes a lifecycle state: if the closing turn still files
+	// nothing, the run completes with a synthesized final_text report.
+	RequiresReport bool
 }
 
 const DefaultSubagentType = "general-purpose"
@@ -96,6 +103,7 @@ Response style:
 		OneShot:          true,
 		Background:       true,
 		DefaultIsolation: IsolationInplace,
+		RequiresReport:   true,
 	},
 	"planner": {
 		Name:         "planner",
@@ -160,6 +168,7 @@ Response style:
 		OneShot:          true,
 		Background:       true,
 		DefaultIsolation: IsolationInplace,
+		RequiresReport:   true,
 	},
 	"qa": {
 		Name:         "qa",
@@ -176,6 +185,7 @@ Response style:
 		OneShot:          true,
 		Background:       true,
 		DefaultIsolation: IsolationInplace,
+		RequiresReport:   true,
 	},
 	"debugger": {
 		Name:         "debugger",

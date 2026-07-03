@@ -418,6 +418,11 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 			anthropicCompactedDiscoveredToolNames(req.Messages),
 			toolSearchEnabled,
 		)
+		if req.ForceToolName != "" {
+			// Forced tool choice for mechanical closing turns: the Anthropic
+			// wire form pins a specific tool by name.
+			payload.ToolChoice = map[string]any{"type": "tool", "name": req.ForceToolName}
+		}
 	}
 
 	// Effort level: maps to output_config.effort. Empty = API default (high).
@@ -1377,6 +1382,7 @@ type anthropicRequest struct {
 	TopK         *int                   `json:"top_k,omitempty"`
 	Messages     []anthropicMessage     `json:"messages"`
 	Tools        []anthropicTool        `json:"tools,omitempty"`
+	ToolChoice   any                    `json:"tool_choice,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
 	Speed        string                 `json:"speed,omitempty"`
 	Thinking     *anthropicThinking     `json:"thinking,omitempty"`

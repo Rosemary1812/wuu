@@ -85,6 +85,12 @@ type AgentControl struct {
 	resultDeliveriesMu sync.Mutex
 	resultDeliveries   map[string]agentResultDelivery
 
+	// reportNudgeMu guards reportNudged: run IDs that already received the
+	// single mechanical agent_report closing turn, so a requires_report
+	// worker is never nudged twice in one process lifetime.
+	reportNudgeMu sync.Mutex
+	reportNudged  map[string]struct{}
+
 	participantMessagesMu  sync.Mutex
 	participantMessages    []chan<- ParticipantMessage
 	participantSpeech      map[string]struct{}
@@ -2384,6 +2390,14 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 			return
 		}
 	}
+	// A requires_report worker that completed without filing agent_report
+	// gets one mechanical closing turn before its completion is recorded or
+	// delivered. Returning here leaves the thread status untouched, so the
+	// closing turn's own completion passes the dedupe guards above and
+	// flows through this consumer normally.
+	if n.Status == subagent.StatusCompleted && c.maybeNudgeReportClosing(n) {
+		return
+	}
 	c.recordHarnessStatus(n)
 	meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
 	if !ok {
@@ -2397,6 +2411,54 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 		}
 		go c.maybeStartQueued(context.Background())
 	}
+}
+
+// reportClosingNudge is the mechanical closing instruction sent to a
+// requires_report worker that finished without filing agent_report. The
+// accompanying turn pins its first request to agent_report via forced
+// tool_choice, so compliance is a wire constraint rather than a memory test.
+const reportClosingNudge = "You completed the task without submitting your structured handoff. " +
+	"Call agent_report now with your outcome, summary, changed files, blockers, and evidence. " +
+	"After the report is accepted, finish with a one-line confirmation."
+
+// maybeNudgeReportClosing gives a requires_report worker that completed
+// without filing agent_report ONE closing turn, with the request pinned to
+// agent_report. It returns true when the closing turn was started — the
+// caller then skips status recording and result delivery for this
+// notification; the closing turn's own completion flows through normally.
+// If the worker still files nothing, the second completion finds the run
+// already nudged and completes with a synthesized final_text report —
+// never a second nudge, never a lifecycle state.
+func (c *AgentControl) maybeNudgeReportClosing(n subagent.Notification) bool {
+	if c == nil || c.manager == nil || c.harnessStore == nil || c.threads == nil {
+		return false
+	}
+	meta, ok := c.threads.Resolve(n.AgentID)
+	if !ok {
+		return false
+	}
+	wt, err := LookupWorkerType(meta.Role)
+	if err != nil || !wt.RequiresReport {
+		return false
+	}
+	if _, ok, err := c.harnessStore.ReportForTask(n.AgentID); err != nil || ok {
+		return false
+	}
+	c.reportNudgeMu.Lock()
+	if _, done := c.reportNudged[n.AgentID]; done {
+		c.reportNudgeMu.Unlock()
+		return false
+	}
+	if c.reportNudged == nil {
+		c.reportNudged = make(map[string]struct{})
+	}
+	c.reportNudged[n.AgentID] = struct{}{}
+	c.reportNudgeMu.Unlock()
+	if _, err := c.manager.FollowupForcingTool(context.Background(), n.AgentID, reportClosingNudge, "agent_report"); err != nil {
+		providers.DebugLogf("agentcontrol: report closing nudge for %s failed: %v", n.AgentID, err)
+		return false
+	}
+	return true
 }
 
 func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) bool {

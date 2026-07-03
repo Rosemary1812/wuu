@@ -178,6 +178,11 @@ type SubAgent struct {
 	// is already running. Manager.run drains this queue between model
 	// turns and appends each entry as a new user message.
 	pendingMessages []string
+	// forceToolNextTurn, when non-empty, pins the first request of the
+	// next turn to the named tool (forced tool_choice). Set by
+	// FollowupForcingTool for mechanical closing turns; consumed and
+	// cleared by runTurn.
+	forceToolNextTurn string
 
 	// LLM client for the sub-agent's runner. Workers run through the
 	// streaming runner so they share the same transport semantics as

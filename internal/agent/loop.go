@@ -232,6 +232,11 @@ func RunToolLoop(
 		if cfg.Tools != nil {
 			req.Tools = cfg.Tools.Definitions()
 		}
+		// Providers only emit a forced tool_choice when the request carries
+		// tools, so the intent passes through unconditionally here.
+		if stepIdx == 0 && cfg.ForceToolFirstStep != "" {
+			req.ForceToolName = cfg.ForceToolFirstStep
+		}
 
 		// Cache-break telemetry: detect changes in stable-prefix components
 		// (model, tools, system prompt) that would break cache reuse. Section

@@ -3022,3 +3022,113 @@ func TestSpawn_WithoutParticipantStoreStillAssignsParticipantID(t *testing.T) {
 		t.Fatal("snapshot ParticipantID should be non-empty even without a participant store")
 	}
 }
+
+// nudgeCountingClient counts model turns so the closing-nudge test can prove
+// the mechanical agent_report turn happens exactly once.
+type nudgeCountingClient struct {
+	resp  providers.ChatResponse
+	calls nudgeCallCounter
+}
+
+type nudgeCallCounter struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (c *nudgeCallCounter) add() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.n++
+	return c.n
+}
+
+func (c *nudgeCallCounter) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+func (c *nudgeCountingClient) Chat(_ context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	c.calls.add()
+	return c.resp, nil
+}
+
+func (c *nudgeCountingClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.calls.add()
+	ch := make(chan providers.StreamEvent, 2)
+	if c.resp.Content != "" {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: c.resp.Content}
+	}
+	ch <- providers.StreamEvent{Type: providers.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+// TestRequiresReportWorkerGetsOneClosingNudge locks the mechanical closing
+// contract: a requires_report worker that completes without agent_report gets
+// exactly one forced closing turn, and when that turn still files nothing the
+// run completes with a synthesized final_text report — never a third turn,
+// never a lifecycle state.
+func TestRequiresReportWorkerGetsOneClosingNudge(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-nudge", "harness")
+	client := &nudgeCountingClient{resp: providers.ChatResponse{Content: "looked at the diff, all good"}}
+	c, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-nudge",
+		HistoryDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-nudge", "workers"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-nudge", "threads"),
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:        "reviewer",
+		TaskName:    "review_diff",
+		Description: "review the diff",
+		Prompt:      "review this diff",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	store := c.HarnessStore()
+	var reports []harness.Report
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		reports, err = store.ListReports()
+		if err != nil {
+			t.Fatalf("ListReports: %v", err)
+		}
+		if len(reports) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(reports) != 1 || reports[0].Kind != harness.ReportKindFinalText {
+		t.Fatalf("expected one synthesized final_text report after the failed nudge, got %+v", reports)
+	}
+
+	// Let any stray turn settle, then prove the nudge ran exactly once:
+	// initial turn + one forced closing turn, nothing further.
+	time.Sleep(150 * time.Millisecond)
+	if got := client.calls.count(); got != 2 {
+		t.Fatalf("expected exactly 2 model turns (initial + closing nudge), got %d", got)
+	}
+
+	tasks, err := store.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != res.AgentID || tasks[0].Status != harness.TaskStatusCompleted {
+		t.Fatalf("expected completed task, got %+v", tasks)
+	}
+}

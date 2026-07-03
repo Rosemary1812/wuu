@@ -58,6 +58,9 @@ type StreamRunner struct {
 	// Zero means the runtime does not know the limit and proactive compaction
 	// stays disabled; reactive provider overflow recovery still runs.
 	ContextWindowOverride int
+	// ForceToolFirstStep pins the run's first request to the named tool via
+	// forced tool_choice. See LoopConfig.ForceToolFirstStep.
+	ForceToolFirstStep string
 	// MaxInputTokens lets callers pass a provider/model prompt limit
 	// when it is smaller than the total context window.
 	MaxInputTokens int
@@ -236,6 +239,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		BeforeStep:              beforeStep,
 		BeforeRequestContext:    r.BeforeRequestContext,
 		SystemPromptSections:    systemPromptSections,
+		ForceToolFirstStep:      r.ForceToolFirstStep,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)

@@ -307,6 +307,11 @@ type ChatRequest struct {
 	// deferred-tool protocol for tools marked DeferLoading. Compatible
 	// endpoints leave this false unless the session explicitly opts in.
 	NativeDeferredToolDiscovery bool
+	// ForceToolName, when non-empty, pins this request's tool choice to the
+	// named tool: providers translate it to their forced tool_choice wire
+	// form. Used for mechanical closing turns (e.g. forcing agent_report on
+	// requires_report workers); the tool must be present in Tools.
+	ForceToolName string
 }
 
 // ChatResponse is the normalized response from providers.

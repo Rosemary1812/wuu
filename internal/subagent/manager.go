@@ -347,6 +347,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 
 	runner.BeforeStep = beforeStep
+	runner.ForceToolFirstStep = sa.takeForceToolNextTurn()
 	res, err := runner.RunWithCallback(ctx, history, onEvent)
 	content := res.Content
 	nextHistory := mergeTurnHistory(history, res)
@@ -584,6 +585,19 @@ func (m *Manager) QueueMessage(id, message string) bool {
 // Followup starts a new turn for an idle sub-agent or queues the
 // message for the current turn if it is still running.
 func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSnapshot, error) {
+	return m.followup(ctx, id, message, "")
+}
+
+// FollowupForcingTool is Followup with the next turn's first request pinned
+// to the named tool via forced tool_choice. Used for mechanical closing
+// turns (e.g. requiring agent_report from a requires_report worker). The
+// force applies only when the follow-up starts a new turn; if the run is
+// still active the message queues normally and the force is dropped.
+func (m *Manager) FollowupForcingTool(ctx context.Context, id, message, forceTool string) (SubAgentSnapshot, error) {
+	return m.followup(ctx, id, message, forceTool)
+}
+
+func (m *Manager) followup(ctx context.Context, id, message, forceTool string) (SubAgentSnapshot, error) {
 	sa := m.Get(id)
 	if sa == nil {
 		return SubAgentSnapshot{}, fmt.Errorf("subagent %q not found", id)
@@ -632,6 +646,7 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 	sa.ActivityAt = time.Time{}
 	sa.cancelFunc = cancel
 	sa.doneCh = doneCh
+	sa.forceToolNextTurn = strings.TrimSpace(forceTool)
 	snap := snapshotLocked(sa)
 	maxSteps := sa.maxSteps
 	defaults := sa.runtimeDefaults
@@ -832,6 +847,16 @@ func (s *SubAgent) popPendingMessage() (string, bool) {
 	s.pendingMessages[0] = ""
 	s.pendingMessages = s.pendingMessages[1:]
 	return msg, true
+}
+
+// takeForceToolNextTurn consumes the one-shot forced tool set by
+// FollowupForcingTool for the turn that is about to run.
+func (s *SubAgent) takeForceToolNextTurn() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tool := s.forceToolNextTurn
+	s.forceToolNextTurn = ""
+	return tool
 }
 
 func (s *SubAgent) popPendingUserMessages() []providers.ChatMessage {

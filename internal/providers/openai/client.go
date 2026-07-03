@@ -201,6 +201,14 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 	if len(req.Tools) > 0 {
 		payload.ToolChoice = "auto"
+		if req.ForceToolName != "" {
+			// Forced tool choice for mechanical closing turns: the OpenAI
+			// wire form pins a specific function by name.
+			payload.ToolChoice = map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": req.ForceToolName},
+			}
+		}
 		payload.Tools = make([]toolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			payload.Tools = append(payload.Tools, toolDefinition{
@@ -327,6 +335,14 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 	if len(req.Tools) > 0 {
 		payload.ToolChoice = "auto"
+		if req.ForceToolName != "" {
+			// Forced tool choice for mechanical closing turns: the OpenAI
+			// wire form pins a specific function by name.
+			payload.ToolChoice = map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": req.ForceToolName},
+			}
+		}
 		payload.Tools = make([]toolDefinition, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			payload.Tools = append(payload.Tools, toolDefinition{
@@ -772,7 +788,7 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 		Model           string           `json:"model"`
 		Messages        []chatMessage    `json:"messages"`
 		Tools           []toolDefinition `json:"tools,omitempty"`
-		ToolChoice      string           `json:"tool_choice,omitempty"`
+		ToolChoice      any              `json:"tool_choice,omitempty"`
 		Temperature     float64          `json:"temperature,omitempty"`
 		MaxTokens       int              `json:"max_tokens,omitempty"`
 		Stream          bool             `json:"stream,omitempty"`
@@ -959,7 +975,7 @@ type chatCompletionsRequest struct {
 	Model           string                `json:"model"`
 	Messages        []chatMessage         `json:"messages"`
 	Tools           []toolDefinition      `json:"tools,omitempty"`
-	ToolChoice      string                `json:"tool_choice,omitempty"`
+	ToolChoice      any                   `json:"tool_choice,omitempty"`
 	Temperature     float64               `json:"temperature,omitempty"`
 	MaxTokens       int                   `json:"max_tokens,omitempty"`
 	Stream          bool                  `json:"stream,omitempty"`

@@ -2562,3 +2562,46 @@ func TestChat_AnthropicCacheKillSwitch(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildAnthropicRequest_ForcedToolChoice(t *testing.T) {
+	base := providers.ChatRequest{
+		Model:    "claude-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "close out"}},
+		Tools: []providers.ToolDefinition{
+			{Name: "agent_report", InputSchema: map[string]any{"type": "object"}},
+		},
+	}
+
+	forced := base
+	forced.ForceToolName = "agent_report"
+	payload, err := buildAnthropicRequest(forced, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	choice, ok := payload.ToolChoice.(map[string]any)
+	if !ok || choice["type"] != "tool" || choice["name"] != "agent_report" {
+		t.Fatalf("expected forced tool_choice, got %#v", payload.ToolChoice)
+	}
+
+	payload, err = buildAnthropicRequest(base, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if payload.ToolChoice != nil {
+		t.Fatalf("expected no tool_choice without force, got %#v", payload.ToolChoice)
+	}
+
+	// Without tools the force must not leak into the wire payload.
+	toolless := providers.ChatRequest{
+		Model:         "claude-test",
+		Messages:      []providers.ChatMessage{{Role: "user", Content: "close out"}},
+		ForceToolName: "agent_report",
+	}
+	payload, err = buildAnthropicRequest(toolless, 1024, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if payload.ToolChoice != nil {
+		t.Fatalf("expected no tool_choice without tools, got %#v", payload.ToolChoice)
+	}
+}
