@@ -100,6 +100,7 @@ interface RenderOptions {
   onTogglePinned?: (thread: ThreadSummary) => void;
   onCreateGroupThread?: (title: string) => void;
   onSelectThread?: (id: string) => void;
+  onStartNewThreadForProject?: (id: string) => void;
 }
 
 function renderSidebar(options: RenderOptions): void {
@@ -123,6 +124,7 @@ function renderSidebar(options: RenderOptions): void {
     onTogglePinned = () => {},
     onCreateGroupThread = () => {},
     onSelectThread = () => {},
+    onStartNewThreadForProject = () => {},
   } = options;
 
   const state: AppState = {
@@ -182,7 +184,7 @@ function renderSidebar(options: RenderOptions): void {
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
         onToggleProjectCollapsed={() => {}}
-        onStartNewThreadForProject={() => {}}
+        onStartNewThreadForProject={onStartNewThreadForProject}
         onSelectProjectThread={() => {}}
         onOpenSettings={() => {}}
       />,
@@ -997,6 +999,69 @@ describe("sidebar section spacing rhythm", () => {
     // shared section layout (this happened: a stale grid/gap/margin-block
     // block gave the Agents section 2px/26px neighbor gaps instead of 14px).
     expect(participantsCSS).not.toMatch(/^\.participant-roster-section \{/m);
+  });
+});
+
+describe("hover new-session button (S2)", () => {
+  // sidebar-groups-andy-workspaces.md §1.2: hovering the 对话 section
+  // header and each project section header shows a MessageSquarePlus
+  // button that starts a session in that section's CWD. The button DOM
+  // lives inside .sidebar-section-header-group, so the CSS hover reveal
+  // must use a descendant selector — the old direct-child selector
+  // (.project-group:hover > .project-row-new-thread) silently stopped
+  // matching when the header-group wrapper was introduced.
+  const order = [
+    SIDEBAR_SECTION_AGENTS,
+    SCRATCH_PSEUDO_PROJECT_ID,
+    "project-1",
+  ];
+
+  it("renders the new-session button inside both 对话 and project headers", () => {
+    renderSidebar({ sectionOrder: order });
+    const scratchButton = container.querySelector(
+      'section[aria-label="项目"] .sidebar-section-header-group button[aria-label="在 对话 中新建会话"]',
+    );
+    const projectButton = container.querySelector(
+      'section[aria-label="项目 wuu"] .sidebar-section-header-group button[aria-label="在 wuu 中新建会话"]',
+    );
+    expect(scratchButton).not.toBeNull();
+    expect(projectButton).not.toBeNull();
+  });
+
+  it("fires onStartNewThreadForProject with the section id", () => {
+    const started: string[] = [];
+    renderSidebar({
+      sectionOrder: order,
+      onStartNewThreadForProject: (id) => started.push(id),
+    });
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="在 对话 中新建会话"]',
+        )
+        ?.click();
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="在 wuu 中新建会话"]',
+        )
+        ?.click();
+    });
+    expect(started).toEqual([SCRATCH_PSEUDO_PROJECT_ID, "project-1"]);
+  });
+
+  it("reveals the button with a selector that matches the header-group DOM", () => {
+    // The button is NOT a direct child of .project-group anymore; a
+    // child combinator would never match and the button stays opacity 0.
+    expect(sidebarCSS).not.toMatch(
+      /\.project-group:hover > \.project-row-new-thread/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.project-group:hover \.project-row-new-thread,\s*\.project-group:focus-within \.project-row-new-thread \{/,
+    );
+    // Same fix for the unread-dot fade-out that shares the reveal.
+    expect(sidebarCSS).not.toMatch(
+      /\.project-group:hover > \.project-row \.project-row-unread/,
+    );
   });
 });
 

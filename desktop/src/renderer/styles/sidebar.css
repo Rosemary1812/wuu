@@ -724,15 +724,19 @@
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.project-group:hover > .project-row-new-thread,
-.project-group:focus-within > .project-row-new-thread {
+/* Descendant (not child) combinator: SidebarSection nests the button
+ * inside .sidebar-section-header-group, so `>` from .project-group
+ * stopped matching and the button never appeared (regression fixed per
+ * sidebar-groups-andy-workspaces.md §1.2). */
+.project-group:hover .project-row-new-thread,
+.project-group:focus-within .project-row-new-thread {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
 }
 
-.project-group:hover > .project-row .project-row-unread,
-.project-group:focus-within > .project-row .project-row-unread {
+.project-group:hover .project-row .project-row-unread,
+.project-group:focus-within .project-row .project-row-unread {
   opacity: 0;
   transform: scale(0.72);
 }
