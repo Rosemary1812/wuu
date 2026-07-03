@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/harness"
 )
 
@@ -152,7 +151,9 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 		return AgentReportResult{}, err
 	}
 	task, _ := c.harnessTask(id)
-	c.updateHarnessStatusFromReport(id, outcome, report.SubmittedAt, report.Blockers)
+	// The report is durable metadata on the run, not a lifecycle verdict. The
+	// self-reported outcome is archived below as the agent's claim, but it does
+	// not adjudicate the task status; runtime facts own the lifecycle.
 	if err := c.recordAgentReport(AgentReport{
 		Source:       "harness_report",
 		TaskID:       id,
@@ -207,79 +208,9 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 	}, nil
 }
 
-func (c *AgentControl) updateHarnessStatusFromReport(taskID, outcome string, submittedAt time.Time, blockers []string) {
-	if c == nil || c.harnessStore == nil {
-		return
-	}
-	status := harnessStatusFromReportOutcome(outcome)
-	if status == "" {
-		return
-	}
-	task, ok := c.harnessTask(taskID)
-	if !ok {
-		return
-	}
-	if task.Status != harness.TaskStatusAwaitingReport && isActiveHarnessStatus(task.Status) {
-		snap := c.snapshotByID(taskID)
-		if snap == nil || !isFinalSubAgentStatus(snap.Status) {
-			return
-		}
-	}
-	completedAt := task.CompletedAt
-	if completedAt.IsZero() && isTerminalHarnessStatus(status) {
-		completedAt = submittedAt
-	}
-	errText := task.Error
-	if status == harness.TaskStatusFailed && strings.TrimSpace(errText) == "" {
-		errText = strings.Join(trimStringSlice(blockers), "; ")
-	}
-	_, _ = c.harnessStore.UpdateTaskStatus(taskID, status, completedAt, task.InputTokens, task.OutputTokens, errText)
-	if threadStatus := agentThreadStatusFromHarness(status); threadStatus != "" {
-		if meta, ok := c.threads.UpdateStatus(taskID, threadStatus, submittedAt); ok {
-			_ = c.threadStore.RecordStatus(meta)
-		}
-	}
-	runID := harnessRunID(taskID)
-	runTokensIn, runTokensOut, runErr := task.InputTokens, task.OutputTokens, errText
-	if runs, err := c.harnessStore.ListRuns(); err == nil {
-		for _, run := range runs {
-			if run.ID == runID {
-				runTokensIn = run.InputTokens
-				runTokensOut = run.OutputTokens
-				if strings.TrimSpace(runErr) == "" {
-					runErr = run.Error
-				}
-				break
-			}
-		}
-	}
-	if _, err := c.harnessStore.UpdateRunStatus(runID, status, completedAt, runTokensIn, runTokensOut, runErr); err == nil && isTerminalHarnessStatus(status) {
-		_ = c.harnessStore.AppendEvent(harness.Event{
-			Type:      harness.EventRunCompleted,
-			TaskID:    taskID,
-			RunID:     runID,
-			AgentID:   taskID,
-			Path:      task.Path,
-			Status:    string(status),
-			Message:   runErr,
-			CreatedAt: submittedAt,
-		})
-	}
-}
-
-func agentThreadStatusFromHarness(status harness.TaskStatus) agentthread.Status {
-	switch status {
-	case harness.TaskStatusCompleted:
-		return agentthread.StatusCompleted
-	case harness.TaskStatusFailed:
-		return agentthread.StatusFailed
-	case harness.TaskStatusCancelled:
-		return agentthread.StatusCancelled
-	default:
-		return ""
-	}
-}
-
+// harnessStatusFromReportOutcome classifies a self-reported outcome for
+// bookkeeping only (e.g. whether a report should sync a failure record). It
+// no longer drives task or run status: the lifecycle is owned by runtime facts.
 func harnessStatusFromReportOutcome(outcome string) harness.TaskStatus {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case "completed":

@@ -2029,22 +2029,18 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 	if c == nil || c.harnessStore == nil {
 		return
 	}
+	// Lifecycle is owned by runtime facts: a loop that ended without error is
+	// completed, unconditionally. A missing agent_report is a report-quality
+	// concern (surfaced as report metadata), never a lifecycle status. The
+	// self-reported outcome is recorded as data elsewhere but never overrides
+	// the observed run status here.
 	status := harnessStatusFromSubAgent(n.Status)
-	if n.Status == subagent.StatusCompleted {
-		if report, ok, err := c.harnessStore.ReportForTask(n.AgentID); err == nil && ok {
-			if reportStatus := harnessStatusFromReportOutcome(report.Outcome); reportStatus != "" {
-				status = reportStatus
-			}
-		} else if err == nil && !ok {
-			status = harness.TaskStatusAwaitingReport
-		}
-	}
 	errText := ""
 	if n.Snapshot.Error != nil {
 		errText = n.Snapshot.Error.Error()
 	}
 	if task, ok := c.harnessTask(n.AgentID); ok {
-		if isActiveHarnessStatus(status) && (task.Status == harness.TaskStatusAwaitingReport || isTerminalHarnessStatus(task.Status)) {
+		if isActiveHarnessStatus(status) && isTerminalHarnessStatus(task.Status) {
 			return
 		}
 		if isTerminalHarnessStatus(status) && task.Status == status && task.InputTokens == n.Snapshot.InputTokens && task.OutputTokens == n.Snapshot.OutputTokens && strings.TrimSpace(task.Error) == strings.TrimSpace(errText) {

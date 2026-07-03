@@ -217,8 +217,6 @@ func parseWorkflowAgentRunState(raw string) (workflow.AgentRunState, error) {
 		return workflow.AgentRunStateStarting, nil
 	case string(workflow.AgentRunStateRunning):
 		return workflow.AgentRunStateRunning, nil
-	case string(workflow.AgentRunStateAwaitingReport):
-		return workflow.AgentRunStateAwaitingReport, nil
 	case string(workflow.AgentRunStateCompleted):
 		return workflow.AgentRunStateCompleted, nil
 	case string(workflow.AgentRunStateFailed):

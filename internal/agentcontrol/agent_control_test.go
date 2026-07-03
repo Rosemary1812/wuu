@@ -535,7 +535,7 @@ func TestForkWithoutAgentProfileReplacesInheritedSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
+func TestSpawn_RecordsHarnessCompletedWhenWorkerSkipsReport(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
@@ -577,7 +577,7 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListTasks: %v", err)
 		}
-		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusAwaitingReport {
+		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusCompleted {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -596,7 +596,7 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 		t.Fatalf("unexpected run linkage/usage: %+v", task)
 	}
 	if task.ReportPath != "" {
-		t.Fatalf("worker completion without agent_report must not create a synthetic report: %+v", task)
+		t.Fatalf("worker completion without agent_report must not create a structured report: %+v", task)
 	}
 	var runs []harness.AgentRun
 	deadline = time.Now().Add(time.Second)
@@ -605,12 +605,12 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListRuns: %v", err)
 		}
-		if len(runs) == 1 && runs[0].TaskID == res.AgentID && runs[0].Status == harness.TaskStatusAwaitingReport {
+		if len(runs) == 1 && runs[0].TaskID == res.AgentID && runs[0].Status == harness.TaskStatusCompleted {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(runs) != 1 || runs[0].TaskID != res.AgentID || runs[0].Status != harness.TaskStatusAwaitingReport {
+	if len(runs) != 1 || runs[0].TaskID != res.AgentID || runs[0].Status != harness.TaskStatusCompleted {
 		t.Fatalf("unexpected runs: %+v", runs)
 	}
 	reports, err := store.ListReports()
@@ -618,7 +618,7 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 		t.Fatalf("ListReports: %v", err)
 	}
 	if len(reports) != 0 {
-		t.Fatalf("unexpected reports: %+v", reports)
+		t.Fatalf("unexpected structured reports: %+v", reports)
 	}
 	events, err := store.ReadEvents()
 	if err != nil {
@@ -634,12 +634,13 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 		t.Fatalf("expected first event task_created, got %+v", events[0])
 	}
 	// The last emitted *lifecycle* event must transition the task to
-	// awaiting_report. artifact_recorded events can follow run_completed
+	// completed: the loop ended without error, so the run is completed
+	// unconditionally. artifact_recorded events can follow run_completed
 	// because the harness keeps observing worker artifacts even after
 	// the worker falls silent, which would otherwise push a non-status
 	// event into the tail slot this test was checking. Walk back from
 	// the tail to find the last non-artifact event and verify its status
-	// is awaiting_report rather than asserting a positional `last`.
+	// is completed rather than asserting a positional `last`.
 	lastIdx := -1
 	for i := len(events) - 1; i >= 0; i-- {
 		if events[i].Type != harness.EventArtifactRecorded {
@@ -647,7 +648,7 @@ func TestSpawn_RecordsHarnessAwaitingReportWhenWorkerSkipsReport(t *testing.T) {
 			break
 		}
 	}
-	if lastIdx < 0 || events[lastIdx].Status != string(harness.TaskStatusAwaitingReport) {
+	if lastIdx < 0 || events[lastIdx].Status != string(harness.TaskStatusCompleted) {
 		t.Fatalf("unexpected event sequence: %+v", events)
 	}
 }
@@ -724,13 +725,9 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if len(reports) != 1 || reports[0].Summary == "" || len(reports[0].Evidence) != 1 || len(reports[0].ChangedFiles) != 1 || len(reports[0].Verification) != 1 {
 		t.Fatalf("unexpected persisted reports: %+v", reports)
 	}
-	tasks, err := c.HarnessStore().ListTasks()
-	if err != nil {
-		t.Fatalf("ListTasks: %v", err)
-	}
-	if len(tasks) != 1 || tasks[0].Status != harness.TaskStatusCompleted {
-		t.Fatalf("agent_report should close the harness task as completed: %+v", tasks)
-	}
+	// The lifecycle is owned by the runtime: the loop ended without error, so
+	// the task settles at completed independent of agent_report.
+	waitForHarnessTaskStatus(t, c.HarnessStore(), res.AgentID, harness.TaskStatusCompleted)
 	artifacts, err := c.HarnessStore().ListArtifacts()
 	if err != nil {
 		t.Fatalf("ListArtifacts: %v", err)
@@ -923,13 +920,10 @@ func TestRecordAgentReportSyncsFailureSinkForBlockers(t *testing.T) {
 	if got.Message != "go test ./internal/agentcontrol fails" || got.Outcome != "stuck" {
 		t.Fatalf("failure did not preserve blocker/outcome: %+v", got)
 	}
-	tasks, err := c.HarnessStore().ListTasks()
-	if err != nil {
-		t.Fatalf("ListTasks: %v", err)
-	}
-	if len(tasks) != 1 || tasks[0].Status != harness.TaskStatusFailed {
-		t.Fatalf("agent_report should mark failed harness task: %+v", tasks)
-	}
+	// The self-reported "stuck" outcome is archived as the agent's claim (and
+	// still syncs a failure record), but it does not adjudicate the lifecycle:
+	// the run finished without a runtime error, so it settles at completed.
+	waitForHarnessTaskStatus(t, c.HarnessStore(), res.AgentID, harness.TaskStatusCompleted)
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
 }
@@ -1003,11 +997,8 @@ func TestAwaitFromReportsMissingAndSubmittedReports(t *testing.T) {
 	if awaited.Action != "await_agents" {
 		t.Fatalf("AwaitFrom result action = %q, want await_agents", awaited.Action)
 	}
-	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusAwaitingReport) || !awaited.Results[0].ReportMissing {
-		t.Fatalf("expected awaiting_report result, got %+v", awaited)
-	}
-	if !spawnStepsContain(awaited.NextSteps, "agent_report") {
-		t.Fatalf("await_agents should guide missing report handoff, got %+v", awaited.NextSteps)
+	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) || !awaited.Results[0].ReportMissing {
+		t.Fatalf("expected completed result with report missing, got %+v", awaited)
 	}
 
 	report, err := c.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
@@ -2751,6 +2742,32 @@ func waitForSubAgentStatus(t *testing.T, mgr *subagent.Manager, id string, want 
 		got = sa.Snapshot().Status
 	}
 	t.Fatalf("expected sub-agent %s to reach %s within %s, got %s", id, want, timeout, got)
+}
+
+// waitForHarnessTaskStatus polls a single harness task until it reaches the
+// expected status. Task status is now driven by the runtime completion
+// notification (an async goroutine), not synchronously by agent_report, so
+// callers that read it right after a synchronous spawn must wait for the
+// observed lifecycle transition.
+func waitForHarnessTaskStatus(t *testing.T, store *harness.Store, taskID string, status harness.TaskStatus) harness.Task {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	var last []harness.Task
+	for time.Now().Before(deadline) {
+		tasks, err := store.ListTasks()
+		if err != nil {
+			t.Fatalf("ListTasks: %v", err)
+		}
+		last = tasks
+		for _, task := range tasks {
+			if task.ID == taskID && task.Status == status {
+				return task
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected harness task %s to reach status %s, got %+v", taskID, status, last)
+	return harness.Task{}
 }
 
 func waitForHarnessEvent(t *testing.T, store *harness.Store, eventType harness.EventType, taskID string) {

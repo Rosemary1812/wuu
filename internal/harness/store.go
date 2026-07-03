@@ -529,6 +529,9 @@ func (s *Store) loadTasksLocked() ([]Task, error) {
 	if err := readJSONFile(filepath.Join(s.dir, "tasks.json"), &out); err != nil {
 		return nil, err
 	}
+	for i := range out {
+		out[i].Status = NormalizeTaskStatus(out[i].Status)
+	}
 	return out, nil
 }
 
@@ -536,6 +539,9 @@ func (s *Store) loadRunsLocked() ([]AgentRun, error) {
 	var out []AgentRun
 	if err := readJSONFile(filepath.Join(s.dir, "runs.json"), &out); err != nil {
 		return nil, err
+	}
+	for i := range out {
+		out[i].Status = NormalizeTaskStatus(out[i].Status)
 	}
 	return out, nil
 }

@@ -113,7 +113,7 @@ func (c *AgentControl) claimAwaitedAgentResults(results []AwaitAgentResult) {
 
 func awaitResultSuppressesCompletion(result AwaitAgentResult) bool {
 	switch strings.TrimSpace(result.Status) {
-	case string(harness.TaskStatusCompleted), string(harness.TaskStatusFailed), string(harness.TaskStatusCancelled), string(harness.TaskStatusAwaitingReport):
+	case string(harness.TaskStatusCompleted), string(harness.TaskStatusFailed), string(harness.TaskStatusCancelled):
 		return true
 	default:
 		return false
@@ -218,13 +218,12 @@ func (c *AgentControl) activeDescendantTargets(currentPath string) []awaitTarget
 			out = append(out, awaitTarget{Meta: meta, Found: true})
 			continue
 		}
-		// Surface awaiting_report tasks until their raw result has been
-		// delivered once. After that, re-joining them from a no-target
-		// await only produces an empty, already-consumed row and traps
-		// parents in an await -> awaiting_report -> await polling loop:
-		// the child is terminal, so the status will never change on its
-		// own.
-		if result.Status == string(harness.TaskStatusAwaitingReport) && !c.agentResultDeliveryConsumed(result.ResultID) {
+		// Surface a completed worker that has not yet filed a structured
+		// report until its raw result has been delivered once. After that,
+		// re-joining it from a no-target await only produces an empty,
+		// already-consumed row and traps parents in a polling loop: the
+		// child is terminal, so its status will never change on its own.
+		if result.Status == string(harness.TaskStatusCompleted) && result.ReportMissing && !c.agentResultDeliveryConsumed(result.ResultID) {
 			out = append(out, awaitTarget{Meta: meta, Found: true})
 		}
 	}
@@ -263,9 +262,6 @@ func awaitAgentsNextSteps(result AwaitAgentsResult) []string {
 	}
 
 	steps := make([]string, 0, 4)
-	if awaitResultsHaveStatus(result.Results, string(harness.TaskStatusAwaitingReport)) {
-		steps = append(steps, "Verify the raw result of awaiting_report agents before relying on it; if you need durable evidence, follow up once asking for agent_report - otherwise proceed. The task is terminal, so re-awaiting will not change its status.")
-	}
 	if awaitResultsHaveStatus(result.Results, string(harness.TaskStatusFailed)) || awaitResultsHaveStatus(result.Results, string(subagent.StatusFailed)) {
 		steps = append(steps, "Inspect failed agent errors and artifacts, then decide whether to retry with a narrower brief, rollback, or ask the user.")
 	}
@@ -324,11 +320,9 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 	if report, ok := c.harnessReportDetailsForTask(meta.ID); ok {
 		out.ChangedFiles = trimStringSlice(report.ChangedFiles)
 	}
+	// A completed worker that filed no structured report stays completed; the
+	// missing report is report-quality metadata, not a lifecycle status.
 	if out.Status == string(subagent.StatusCompleted) && reportPath == "" {
-		out.Status = string(harness.TaskStatusAwaitingReport)
-		out.ReportMissing = true
-	}
-	if out.Status == string(harness.TaskStatusAwaitingReport) {
 		out.ReportMissing = true
 	}
 	return out
@@ -421,7 +415,7 @@ func applyHarnessTaskToAwaitResult(out *AwaitAgentResult, task harness.Task) {
 
 func shouldPreferHarnessStatus(status harness.TaskStatus) bool {
 	switch status {
-	case harness.TaskStatusQueued, harness.TaskStatusAwaitingReport, harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled:
+	case harness.TaskStatusQueued, harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled:
 		return true
 	default:
 		return false

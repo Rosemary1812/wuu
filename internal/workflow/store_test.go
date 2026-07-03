@@ -38,8 +38,8 @@ func TestStateTransitions(t *testing.T) {
 	if err := ValidatePhaseTransition("", PhaseState("missing")); err == nil {
 		t.Fatal("unknown initial phase state should be invalid")
 	}
-	if err := ValidateAgentRunTransition(AgentRunStateAwaitingReport, AgentRunStateCompleted); err != nil {
-		t.Fatalf("awaiting_report -> completed should be valid: %v", err)
+	if err := ValidateAgentRunTransition(AgentRunStateRunning, AgentRunStateCompleted); err != nil {
+		t.Fatalf("running -> completed should be valid: %v", err)
 	}
 	if err := ValidateAgentRunTransition(AgentRunStateFailed, AgentRunStateRunning); err == nil {
 		t.Fatal("failed agent -> running should be invalid")
@@ -134,13 +134,6 @@ func TestStoreCreatesAndUpdatesWorkflowRun(t *testing.T) {
 	}
 	if _, err := store.UpdateAgentRunStatus("run_1", "agent_run_1", AgentRunStateRunning, ""); err != nil {
 		t.Fatalf("UpdateAgentRunStatus running: %v", err)
-	}
-	awaiting, err := store.UpdateAgentRunStatus("run_1", "agent_run_1", AgentRunStateAwaitingReport, "missing structured handoff")
-	if err != nil {
-		t.Fatalf("UpdateAgentRunStatus awaiting_report: %v", err)
-	}
-	if awaiting.Status != AgentRunStateAwaitingReport {
-		t.Fatalf("agent status = %q", awaiting.Status)
 	}
 	completedAgent, err := store.UpdateAgentRunStatus("run_1", "agent_run_1", AgentRunStateCompleted, "")
 	if err != nil {
@@ -409,7 +402,7 @@ func TestStoreAgentRunUpsertMergesAndValidatesTransitions(t *testing.T) {
 	if err := store.UpsertAgentRun(AgentRun{
 		ID:            "agent-1",
 		WorkflowRunID: "run-agent",
-		Status:        AgentRunStateAwaitingReport,
+		Status:        AgentRunStateCompleted,
 		ReportPath:    "reports/agent-1.md",
 		ChangedFiles:  []string{"internal/workflow/store.go"},
 	}); err != nil {

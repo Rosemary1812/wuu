@@ -585,7 +585,7 @@ func (r *ScriptRuntime) recordAwaitResult(result agentcontrol.AwaitAgentsResult)
 		if agent.StartedAt.IsZero() {
 			agent.StartedAt = time.Now().UTC()
 		}
-		if IsTerminalAgentRunState(agent.Status) || agent.Status == AgentRunStateAwaitingReport {
+		if IsTerminalAgentRunState(agent.Status) {
 			agent.CompletedAt = time.Now().UTC()
 		} else {
 			agent.CompletedAt = existing.CompletedAt
@@ -1009,7 +1009,11 @@ func firstScriptBool(object *goja.Object, current bool, keys ...string) bool {
 	return current
 }
 
-func agentRunStateFromExternal(status string, reportMissing bool) AgentRunState {
+// agentRunStateFromExternal maps an external subagent status onto the workflow
+// agent-run enum. A missing structured report never changes the lifecycle
+// state: a completed loop is completed, and the missing report is tracked as
+// report metadata (ReportMissing) instead.
+func agentRunStateFromExternal(status string, _ bool) AgentRunState {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "queued", "pending":
 		return AgentRunStateQueued
@@ -1018,18 +1022,12 @@ func agentRunStateFromExternal(status string, reportMissing bool) AgentRunState 
 	case "running":
 		return AgentRunStateRunning
 	case "completed":
-		if reportMissing {
-			return AgentRunStateAwaitingReport
-		}
 		return AgentRunStateCompleted
 	case "failed", "not_found":
 		return AgentRunStateFailed
 	case "cancelled", "canceled":
 		return AgentRunStateCancelled
 	default:
-		if reportMissing {
-			return AgentRunStateAwaitingReport
-		}
 		return AgentRunStateRunning
 	}
 }

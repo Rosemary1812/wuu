@@ -1165,14 +1165,14 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	if err := json.Unmarshal([]byte(awaitingResp), &awaiting); err != nil {
 		t.Fatalf("parse awaiting response: %v", err)
 	}
-	if len(awaiting.AgentRuns) != 1 || awaiting.AgentRuns[0].Status != workflow.AgentRunStateAwaitingReport || !awaiting.AgentRuns[0].ReportMissing {
-		t.Fatalf("await result should be awaiting_report: %+v", awaiting.AgentRuns)
+	if len(awaiting.AgentRuns) != 1 || awaiting.AgentRuns[0].Status != workflow.AgentRunStateCompleted || !awaiting.AgentRuns[0].ReportMissing {
+		t.Fatalf("await result should be completed with report missing: %+v", awaiting.AgentRuns)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_control",
 		Arguments: `{"action":"generate_final_report","run_id":"workflow-await-run","complete_run":true}`,
 	}); err == nil {
-		t.Fatal("expected completion to reject awaiting_report agent")
+		t.Fatal("expected completion to reject a completed agent that filed no structured report")
 	}
 	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_status",

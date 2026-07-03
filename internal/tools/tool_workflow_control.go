@@ -701,8 +701,13 @@ func persistAcceptedWorkflowMemoryCandidate(ctx context.Context, env *Env, candi
 			"reason":    err.Error(),
 		}
 	}
+	// Accepted workflow memory candidates are durable, cross-project workflow
+	// facts, and this path is gated on the global store (env.Memory) above, so
+	// persist them to the global layer explicitly rather than the default
+	// "workspace" write scope.
 	args := writeMemoryArgs{
 		Action:  memoryActionAdd,
+		Scope:   memoryScopeGlobal,
 		Target:  target,
 		Content: candidate.Content,
 		Tags:    workflowMemoryCandidateTags(candidate),
@@ -1000,9 +1005,8 @@ func workflowAgentRunFromAwaitResult(runID, phaseID string, result workflowAwait
 }
 
 func workflowStatusFromAwaitResult(result workflowAwaitResult) (workflow.AgentRunState, error) {
-	if result.ReportMissing {
-		return workflow.AgentRunStateAwaitingReport, nil
-	}
+	// A missing structured report is report-quality metadata (ReportMissing),
+	// not a lifecycle status: a completed loop maps to completed.
 	switch strings.ToLower(strings.TrimSpace(result.Status)) {
 	case "", "pending", "queued":
 		return workflow.AgentRunStateQueued, nil
@@ -1010,8 +1014,6 @@ func workflowStatusFromAwaitResult(result workflowAwaitResult) (workflow.AgentRu
 		return workflow.AgentRunStateStarting, nil
 	case "running":
 		return workflow.AgentRunStateRunning, nil
-	case "awaiting_report":
-		return workflow.AgentRunStateAwaitingReport, nil
 	case "completed", "complete":
 		return workflow.AgentRunStateCompleted, nil
 	case "failed", "failure", "error", "stuck", "not_found":

@@ -25,12 +25,12 @@ func TestAwaitAgentsNextStepsDoNotMentionWorkflowForPlainResults(t *testing.T) {
 	}
 }
 
-// TestNoTargetAwaitDoesNotRejoinDeliveredAwaitingReport reproduces the
-// polling trap observed with live models: a worker that finishes without
-// agent_report stays awaiting_report forever, and a no-target await used
-// to re-join it on every call, returning an already-consumed empty row
-// plus "follow up" guidance the parent can never satisfy.
-func TestNoTargetAwaitDoesNotRejoinDeliveredAwaitingReport(t *testing.T) {
+// TestNoTargetAwaitDoesNotRejoinDeliveredCompletedWithoutReport reproduces the
+// polling trap observed with live models: a worker that finishes without a
+// structured report is completed with its report missing, and a no-target
+// await used to re-join it on every call, returning an already-consumed empty
+// row plus guidance the parent can never satisfy.
+func TestNoTargetAwaitDoesNotRejoinDeliveredCompletedWithoutReport(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
@@ -62,8 +62,8 @@ func TestNoTargetAwaitDoesNotRejoinDeliveredAwaitingReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first AwaitFrom: %v", err)
 	}
-	if len(first.Results) != 1 || first.Results[0].Status != string(harness.TaskStatusAwaitingReport) {
-		t.Fatalf("first no-target await should deliver the awaiting_report result, got %+v", first)
+	if len(first.Results) != 1 || first.Results[0].Status != string(harness.TaskStatusCompleted) || !first.Results[0].ReportMissing {
+		t.Fatalf("first no-target await should deliver the completed (report-missing) result, got %+v", first)
 	}
 	if first.Results[0].Result == "" {
 		t.Fatalf("first delivery should carry the raw result, got %+v", first.Results[0])
@@ -81,7 +81,7 @@ func TestNoTargetAwaitDoesNotRejoinDeliveredAwaitingReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explicit AwaitFrom: %v", err)
 	}
-	if len(explicit.Results) != 1 || explicit.Results[0].Status != string(harness.TaskStatusAwaitingReport) {
-		t.Fatalf("explicit-target await should still report the task, got %+v", explicit)
+	if len(explicit.Results) != 1 || explicit.Results[0].Status != string(harness.TaskStatusCompleted) || !explicit.Results[0].ReportMissing {
+		t.Fatalf("explicit-target await should still report the completed task, got %+v", explicit)
 	}
 }

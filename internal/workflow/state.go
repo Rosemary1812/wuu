@@ -29,15 +29,30 @@ const (
 type AgentRunState string
 
 const (
-	AgentRunStateQueued         AgentRunState = "queued"
-	AgentRunStateStarting       AgentRunState = "starting"
-	AgentRunStateRunning        AgentRunState = "running"
-	AgentRunStateAwaitingReport AgentRunState = "awaiting_report"
-	AgentRunStateCompleted      AgentRunState = "completed"
-	AgentRunStateFailed         AgentRunState = "failed"
-	AgentRunStateRetrying       AgentRunState = "retrying"
-	AgentRunStateCancelled      AgentRunState = "cancelled"
+	AgentRunStateQueued    AgentRunState = "queued"
+	AgentRunStateStarting  AgentRunState = "starting"
+	AgentRunStateRunning   AgentRunState = "running"
+	AgentRunStateCompleted AgentRunState = "completed"
+	AgentRunStateFailed    AgentRunState = "failed"
+	AgentRunStateRetrying  AgentRunState = "retrying"
+	AgentRunStateCancelled AgentRunState = "cancelled"
 )
+
+// legacyAgentRunStateAwaitingReport is the removed workflow agent-run status
+// that older builds persisted for a worker that finished without filing a
+// structured report. It survives only as a read-time migration alias; a
+// completed loop is completed, and a missing report is now report metadata.
+const legacyAgentRunStateAwaitingReport AgentRunState = "awaiting_report"
+
+// NormalizeAgentRunState maps any legacy persisted agent-run status onto the
+// converged enum. It is applied at every deserialization point so no consumer
+// observes a removed status.
+func NormalizeAgentRunState(state AgentRunState) AgentRunState {
+	if state == legacyAgentRunStateAwaitingReport {
+		return AgentRunStateCompleted
+	}
+	return state
+}
 
 func ValidateRunTransition(from, to RunState) error {
 	if !isKnownRunState(to) {
@@ -158,7 +173,6 @@ func isKnownAgentRunState(state AgentRunState) bool {
 	case AgentRunStateQueued,
 		AgentRunStateStarting,
 		AgentRunStateRunning,
-		AgentRunStateAwaitingReport,
 		AgentRunStateCompleted,
 		AgentRunStateFailed,
 		AgentRunStateRetrying,
@@ -232,13 +246,6 @@ var agentRunTransitions = map[AgentRunState]map[AgentRunState]bool{
 		AgentRunStateCancelled: true,
 	},
 	AgentRunStateRunning: {
-		AgentRunStateAwaitingReport: true,
-		AgentRunStateCompleted:      true,
-		AgentRunStateFailed:         true,
-		AgentRunStateRetrying:       true,
-		AgentRunStateCancelled:      true,
-	},
-	AgentRunStateAwaitingReport: {
 		AgentRunStateCompleted: true,
 		AgentRunStateFailed:    true,
 		AgentRunStateRetrying:  true,

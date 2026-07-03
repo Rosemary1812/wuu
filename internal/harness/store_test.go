@@ -144,6 +144,39 @@ func TestStoreReportForTaskReturnsLatest(t *testing.T) {
 	}
 }
 
+func TestStoreMapsLegacyAwaitingReportToCompleted(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Simulate a record persisted by an older build that still used the
+	// removed "awaiting_report" status. Reads must normalize it to
+	// completed; the loop ended without error, so the run is completed.
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"),
+		[]byte(`[{"id":"legacy-1","status":"awaiting_report"}]`), 0o644); err != nil {
+		t.Fatalf("write tasks.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "runs.json"),
+		[]byte(`[{"id":"legacy-1-run-1","task_id":"legacy-1","status":"awaiting_report"}]`), 0o644); err != nil {
+		t.Fatalf("write runs.json: %v", err)
+	}
+	tasks, err := store.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != TaskStatusCompleted {
+		t.Fatalf("legacy awaiting_report task must read as completed, got %+v", tasks)
+	}
+	runs, err := store.ListRuns()
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Status != TaskStatusCompleted {
+		t.Fatalf("legacy awaiting_report run must read as completed, got %+v", runs)
+	}
+}
+
 func TestStorePersistsQueueItems(t *testing.T) {
 	store := NewStore(t.TempDir())
 	payload := json.RawMessage(`{"task":"queued"}`)

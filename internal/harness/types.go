@@ -9,14 +9,30 @@ import (
 type TaskStatus string
 
 const (
-	TaskStatusPending        TaskStatus = "pending"
-	TaskStatusQueued         TaskStatus = "queued"
-	TaskStatusRunning        TaskStatus = "running"
-	TaskStatusAwaitingReport TaskStatus = "awaiting_report"
-	TaskStatusCompleted      TaskStatus = "completed"
-	TaskStatusFailed         TaskStatus = "failed"
-	TaskStatusCancelled      TaskStatus = "cancelled"
+	TaskStatusPending   TaskStatus = "pending"
+	TaskStatusQueued    TaskStatus = "queued"
+	TaskStatusRunning   TaskStatus = "running"
+	TaskStatusCompleted TaskStatus = "completed"
+	TaskStatusFailed    TaskStatus = "failed"
+	TaskStatusCancelled TaskStatus = "cancelled"
 )
+
+// legacyTaskStatusAwaitingReport is the removed lifecycle status that older
+// builds persisted for a worker that finished without filing agent_report.
+// Lifecycle is now owned by runtime facts (a loop that ended without error is
+// completed, unconditionally), so this value only survives as a read-time
+// migration alias.
+const legacyTaskStatusAwaitingReport TaskStatus = "awaiting_report"
+
+// NormalizeTaskStatus maps any legacy persisted status onto the converged
+// lifecycle enum. It is applied at every deserialization point so no consumer
+// ever observes a removed status.
+func NormalizeTaskStatus(status TaskStatus) TaskStatus {
+	if status == legacyTaskStatusAwaitingReport {
+		return TaskStatusCompleted
+	}
+	return status
+}
 
 // WorkspaceMode records where a task is allowed to execute.
 type WorkspaceMode string

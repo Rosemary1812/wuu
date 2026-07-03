@@ -515,6 +515,7 @@ func (s *Store) LoadAgentRun(runID, agentRunID string) (AgentRun, error) {
 	if err := readJSONFile(filepath.Join(s.agentDir(runID), agentRunID+".json"), &agent); err != nil {
 		return AgentRun{}, err
 	}
+	agent.Status = NormalizeAgentRunState(agent.Status)
 	return agent, nil
 }
 
@@ -543,6 +544,7 @@ func (s *Store) ListAgentRuns(runID string) ([]AgentRun, error) {
 		if err := readJSONFile(filepath.Join(dir, entry.Name()), &agent); err != nil {
 			continue
 		}
+		agent.Status = NormalizeAgentRunState(agent.Status)
 		agents = append(agents, agent)
 	}
 	sort.Slice(agents, func(i, j int) bool {

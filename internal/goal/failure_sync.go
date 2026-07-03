@@ -71,7 +71,7 @@ func failureFromAttention(item AttentionItem) (Failure, bool) {
 
 func attentionRequiresFailure(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "failed", "error", "stuck", "partial", "missing_report", "changed_file_overlap", "awaiting_report", "paused", "needs_human":
+	case "failed", "error", "stuck", "partial", "missing_report", "changed_file_overlap", "paused", "needs_human":
 		return true
 	default:
 		return false

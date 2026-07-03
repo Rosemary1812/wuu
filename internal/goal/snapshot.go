@@ -354,7 +354,7 @@ func SnapshotHarness(store *harness.Store) (HarnessSnapshot, []AttentionItem, []
 	} else {
 		snap.Tasks = harnessTaskSnapshots(tasks)
 		for _, task := range tasks {
-			if task.Status == harness.TaskStatusFailed || task.Status == harness.TaskStatusAwaitingReport {
+			if task.Status == harness.TaskStatusFailed {
 				attention = append(attention, AttentionItem{
 					Source:  "harness",
 					ID:      task.ID,
