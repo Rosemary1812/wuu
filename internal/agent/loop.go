@@ -102,6 +102,10 @@ func RunToolLoop(
 		// run. It is consumed by the next provider request and never enters
 		// live or durable history.
 		postToolContextSegments []ContextSegment
+		// Previous request's stable-prefix fingerprint for cache-break telemetry.
+		// Used to detect and log when model, tools, or system prompt changes
+		// between rounds, which would break cache reuse.
+		prevCacheFingerprint string
 	)
 	if usage == nil {
 		usage = NewUsageTracker()
@@ -228,6 +232,21 @@ func RunToolLoop(
 		if cfg.Tools != nil {
 			req.Tools = cfg.Tools.Definitions()
 		}
+
+		// Cache-break telemetry: detect changes in stable-prefix components
+		// (model, tools, system prompt) that would break cache reuse.
+		systemTexts := make([]string, 0)
+		for _, sec := range cfg.SystemPromptSections {
+			systemTexts = append(systemTexts, sec.Content)
+		}
+		currentFingerprint := cacheStablePrefixFingerprint(cfg.Model, req.Tools, systemTexts)
+		if stepIdx > 0 && prevCacheFingerprint != "" && prevCacheFingerprint != currentFingerprint {
+			// A cache-stable component changed between rounds. This shouldn't happen
+			// within a single turn, so log it for diagnostics.
+			providers.DebugLogf("prompt-cache stable prefix changed between rounds")
+		}
+		prevCacheFingerprint = currentFingerprint
+
 		if cfg.OnRequestContext != nil {
 			cfg.OnRequestContext(requestContextInfo(stepIdx, assembly, req.Tools, cacheHint, cfg.SystemPromptSections))
 		}

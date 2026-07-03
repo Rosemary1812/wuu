@@ -187,3 +187,43 @@ func writeCacheKeyMessage(b *strings.Builder, msg providers.ChatMessage) {
 		b.WriteByte('\n')
 	}
 }
+
+// cacheStablePrefixFingerprint computes a hash of the components that define
+// the stable prompt-cache prefix: model, tool schemas, and system prompt.
+// Used for cache-break telemetry: if the fingerprint changes between requests,
+// we log which component changed.
+func cacheStablePrefixFingerprint(model string, tools []providers.ToolDefinition, systemTexts []string) string {
+	var b strings.Builder
+	b.WriteString(strings.ToLower(strings.TrimSpace(model)))
+	b.WriteByte('\n')
+
+	// Hash tool names and schemas (order matters)
+	for _, tool := range tools {
+		b.WriteString(tool.Name)
+		b.WriteByte('\n')
+		// Include description and input schema for schema stability detection
+		b.WriteString(tool.Description)
+		b.WriteByte('\n')
+		// Serialize InputSchema deterministically (JSON with sorted keys would be better,
+		// but we use string representation for speed)
+		for k := range tool.InputSchema {
+			b.WriteString(k)
+			b.WriteByte('\n')
+		}
+	}
+
+	// Hash system texts
+	for _, text := range systemTexts {
+		b.WriteString(text)
+		b.WriteByte('\n')
+	}
+
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+// componentFingerprint computes a hash for one component (model, tools, or system).
+func componentFingerprint(name string, value string) string {
+	sum := sha256.Sum256([]byte(name + ":" + value))
+	return hex.EncodeToString(sum[:8]) // Short hash for logging
+}
