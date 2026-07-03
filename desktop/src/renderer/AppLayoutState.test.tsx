@@ -1,10 +1,19 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAppLayoutState } from "./AppLayoutState";
+import {
+  SIDEBAR_DEFAULT_WIDTH,
+  WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH,
+  useAppLayoutState
+} from "./AppLayoutState";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
 interface Harness {
+  sidebarWidth: ReturnType<typeof useAppLayoutState>["sidebarWidth"];
+  sidebarCollapsed: ReturnType<typeof useAppLayoutState>["sidebarCollapsed"];
+  workspaceRightPanelWidth: ReturnType<
+    typeof useAppLayoutState
+  >["workspaceRightPanelWidth"];
   startSidebarResize: ReturnType<typeof useAppLayoutState>["startSidebarResize"];
   startRightPanelResize: ReturnType<typeof useAppLayoutState>["startRightPanelResize"];
   setRightPanelOpenWithMotion: ReturnType<
@@ -32,6 +41,9 @@ function renderHookHarness(): void {
       onCloseProjectMenu: () => {}
     });
     latest = {
+      sidebarWidth: hook.sidebarWidth,
+      sidebarCollapsed: hook.sidebarCollapsed,
+      workspaceRightPanelWidth: hook.workspaceRightPanelWidth,
       startSidebarResize: hook.startSidebarResize,
       startRightPanelResize: hook.startRightPanelResize,
       setRightPanelOpenWithMotion: hook.setRightPanelOpenWithMotion
@@ -115,5 +127,50 @@ describe("useAppLayoutState window-resizing class", () => {
       } as unknown as React.PointerEvent<HTMLDivElement>);
     });
     expect(document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)).toBe(false);
+  });
+});
+
+describe("useAppLayoutState initial widths", () => {
+  // localStorage.getItem returns null for a missing key, and Number(null) is
+  // 0 — a naive Number() conversion clamps a fresh profile to the minimum
+  // width, parking the sidebar exactly on the collapse threshold.
+  it("falls back to the defaults when nothing is stored", () => {
+    renderHookHarness();
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+    expect(latest!.workspaceRightPanelWidth).toBe(WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH);
+  });
+
+  it("falls back to the default when the stored width is not numeric", () => {
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", "garbage");
+    renderHookHarness();
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+
+  it("keeps a stored in-range width", () => {
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", "420");
+    renderHookHarness();
+    expect(latest!.sidebarWidth).toBe(420);
+  });
+
+  it("collapses mid-drag once the pointer crosses the threshold", () => {
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", "200");
+    renderHookHarness();
+    expect(latest!.sidebarWidth).toBe(200);
+    expect(latest!.sidebarCollapsed).toBe(false);
+
+    act(() => {
+      latest!.startSidebarResize(makePointerDownEvent(200));
+    });
+    act(() => {
+      window.dispatchEvent(
+        Object.assign(new Event("pointermove"), { clientX: 190 })
+      );
+    });
+    expect(latest!.sidebarCollapsed).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
+    expect(latest!.sidebarCollapsed).toBe(true);
   });
 });

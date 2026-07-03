@@ -2087,7 +2087,12 @@ export function App(): JSX.Element {
 
   const closeSidebarDrawer = useCallback((): void => {
     clearSidebarDrawerCloseTimer();
-    if (!sidebarCollapsed) {
+    if (!sidebarCollapsed || resizingSidebar) {
+      // No closing animation mid-drag: collapsing unmounts the resizer, the
+      // pointer falls through onto sidebar content, and the resulting
+      // pointerleave would put the shell in .sidebar-drawer-closing — which
+      // pins the sidebar as a full-height overlay while the user is still
+      // dragging.
       setSidebarDrawerPhase("closed");
       return;
     }
@@ -2096,7 +2101,7 @@ export function App(): JSX.Element {
       sidebarDrawerCloseTimerRef.current = undefined;
       setSidebarDrawerPhase("closed");
     }, SIDEBAR_MOTION_MS);
-  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed]);
+  }, [clearSidebarDrawerCloseTimer, resizingSidebar, sidebarCollapsed]);
 
   useLayoutEffect(() => {
     if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {

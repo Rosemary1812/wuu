@@ -62,12 +62,23 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function initialSidebarWidth(): number {
-  const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  if (!Number.isFinite(stored)) {
-    return SIDEBAR_DEFAULT_WIDTH;
+// Number(null) is 0, not NaN, so a missing key must be checked explicitly —
+// otherwise a fresh profile boots with every panel clamped to its minimum
+// (the sidebar lands exactly on the collapse threshold).
+function storedWidth(key: string, fallback: number, min: number, max: number): number {
+  const raw = window.localStorage.getItem(key);
+  if (raw === null) {
+    return fallback;
   }
-  return clamp(stored, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+  const stored = Number(raw);
+  if (!Number.isFinite(stored)) {
+    return fallback;
+  }
+  return clamp(stored, min, max);
+}
+
+function initialSidebarWidth(): number {
+  return storedWidth(SIDEBAR_WIDTH_KEY, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
 }
 
 function initialSidebarCollapsed(): boolean {
@@ -75,19 +86,21 @@ function initialSidebarCollapsed(): boolean {
 }
 
 function initialSettingsSidebarWidth(): number {
-  const stored = Number(window.localStorage.getItem(SETTINGS_SIDEBAR_WIDTH_KEY));
-  if (!Number.isFinite(stored)) {
-    return SETTINGS_SIDEBAR_DEFAULT_WIDTH;
-  }
-  return clamp(stored, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+  return storedWidth(
+    SETTINGS_SIDEBAR_WIDTH_KEY,
+    SETTINGS_SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    SIDEBAR_MAX_WIDTH
+  );
 }
 
 function initialWorkspaceRightPanelWidth(): number {
-  const stored = Number(window.localStorage.getItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY));
-  if (!Number.isFinite(stored)) {
-    return WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH;
-  }
-  return clamp(stored, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, WORKSPACE_RIGHT_PANEL_MAX_WIDTH);
+  return storedWidth(
+    WORKSPACE_RIGHT_PANEL_WIDTH_KEY,
+    WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH,
+    WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
+    WORKSPACE_RIGHT_PANEL_MAX_WIDTH
+  );
 }
 
 function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: number): number {
