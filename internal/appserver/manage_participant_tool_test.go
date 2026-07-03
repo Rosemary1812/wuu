@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -240,7 +242,11 @@ func TestManageParticipantToolRetireSelfRejected(t *testing.T) {
 	}
 
 	// Now wire AgentControl so the agent's own ParticipantID resolves to Sloan
-	// and ask Sloan to retire herself.
+	// and ask Sloan to retire herself. The roster's findAgentParticipantID
+	// helper walks srv.threads looking for an AgentControl with the
+	// binding, so the test has to register a thread runtime that owns
+	// the test AgentControl — otherwise the production lookup chain
+	// never gets a chance to read the binding we set.
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
@@ -262,7 +268,10 @@ func TestManageParticipantToolRetireSelfRejected(t *testing.T) {
 	c.EnableParticipantSpeech("agent-self")
 
 	// Look up Sloan's participant record so we can pin the agent's
-	// ParticipantID to it.
+	// ParticipantID to it. SetAgentParticipantID is the production
+	// primitive handleParticipantStart uses to wire spawns to their
+	// participant identity; calling it here exercises the same code
+	// path the real flow takes.
 	all, err := session.ListParticipants(rt.SessionDir, participant.KindNamed)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -278,7 +287,16 @@ func TestManageParticipantToolRetireSelfRejected(t *testing.T) {
 		t.Fatalf("Sloan not found: %+v", all)
 	}
 	c.SetAgentParticipantID("agent-self", slparticipantID)
-	srv.RegisterAgentParticipantName("agent-self", "Sloan")
+
+	// Mount the test AgentControl behind a thread runtime so the
+	// roster's participant-id lookup (which walks srv.threads) can
+	// reach the binding we just set. This mirrors the wiring
+	// handleParticipantStart performs in production.
+	th := newThreadState("self-thread", nil, rt.ProviderName, rt.Model, rt.RootDir, true, time.Now().UTC())
+	th.execRuntime = &runtime.ThreadRuntime{}
+	th.execRuntime.AgentControl = c
+	srv.threads[th.ID] = th
+	t.Cleanup(func() { releaseThreadRuntime(th) })
 
 	kit.SetAgentControl(c)
 	kit.SetAgentIdentity("agent-self", string(agentthread.RootPath)+"/agent-self")
@@ -298,6 +316,46 @@ func TestManageParticipantToolRetireSelfRejected(t *testing.T) {
 		if p.ID == slparticipantID && p.RetiredAt != nil {
 			t.Errorf("self-retire must not retire Sloan, got %+v", p)
 		}
+	}
+}
+
+func TestManageParticipantSetAgentParticipantIDRoundTrip(t *testing.T) {
+	// SetAgentParticipantID is the production primitive
+	// handleParticipantStart uses to wire a freshly spawned agent to
+	// its participant identity. BoundParticipantID and the roster's
+	// findAgentParticipantID helper both read from the same map, so
+	// this test guards the round-trip that retire-self enforcement
+	// depends on.
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
+	srv := New(rt, &lockedBuffer{})
+
+	c, err := agentcontrol.New(agentcontrol.Config{
+		Client:        providers.AdaptStreamClient(&fakeClient{}),
+		DefaultModel:  "fake-model",
+		ParentRepo:    rt.RootDir,
+		WorktreeRoot:  filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:     "sess-bind",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return nil, nil },
+	})
+	if err != nil {
+		t.Fatalf("agentcontrol.New: %v", err)
+	}
+	t.Cleanup(c.Close)
+	c.SetParticipantRoster(srv.participantRosterForTool())
+
+	if got := c.BoundParticipantID("agent-bind"); got != "" {
+		t.Fatalf("unbound agent should resolve to \"\", got %q", got)
+	}
+	c.SetAgentParticipantID("agent-bind", "participant-sloan")
+	if got := c.BoundParticipantID("agent-bind"); got != "participant-sloan" {
+		t.Fatalf("bound agent should resolve to participant-sloan, got %q", got)
+	}
+	// Empty participantID removes the binding so an out-of-band
+	// "agent ended" signal can keep the map tidy.
+	c.SetAgentParticipantID("agent-bind", "")
+	if got := c.BoundParticipantID("agent-bind"); got != "" {
+		t.Fatalf("cleared binding should resolve to \"\", got %q", got)
 	}
 }
 

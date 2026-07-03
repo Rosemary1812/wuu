@@ -136,6 +136,13 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 			CreatedAt:     time.Now().UTC(),
 			UpdatedAt:     time.Now().UTC(),
 		})
+		// Bind the freshly-spawned agent to its participant identity so
+		// the manage_participant tool can resolve "this agent's own
+		// name" for retire-self enforcement. The handleParticipantStart
+		// path is the only way a speech-capable run receives its
+		// participant identity, so this is where the binding has to be
+		// installed.
+		threadRuntime.AgentControl.SetAgentParticipantID(spawned.AgentID, participantID)
 	}
 
 	for _, snap := range threadRuntime.AgentControl.List() {

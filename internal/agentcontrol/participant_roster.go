@@ -81,21 +81,22 @@ func (c *AgentControl) currentParticipantRoster() ParticipantRoster {
 // authorized speech run, so the roster can resolve the agent's own
 // participant name for retire-self enforcement. The mapping is
 // best-effort: AgentControl does not own participant lifecycle, so an
-// out-of-band call is the simplest way to opt in.
+// out-of-band call is the simplest way to opt in. Passing an empty
+// participantID removes any prior binding.
 func (c *AgentControl) SetAgentParticipantID(agentID, participantID string) {
 	agentID = strings.TrimSpace(agentID)
-	participantID = strings.TrimSpace(participantID)
-	if agentID == "" || participantID == "" {
+	if agentID == "" {
 		return
 	}
+	participantID = strings.TrimSpace(participantID)
 	c.participantRosterMu.Lock()
 	defer c.participantRosterMu.Unlock()
-	if c.participantRosterBindings == nil {
-		c.participantRosterBindings = make(map[string]string)
-	}
 	if participantID == "" {
 		delete(c.participantRosterBindings, agentID)
 		return
+	}
+	if c.participantRosterBindings == nil {
+		c.participantRosterBindings = make(map[string]string)
 	}
 	c.participantRosterBindings[agentID] = participantID
 }

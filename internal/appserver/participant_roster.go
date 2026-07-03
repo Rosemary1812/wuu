@@ -115,12 +115,6 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 			return agentcontrol.RosterEntry{}, werr
 		}
 		entry.Workspace = workspace
-		if err := os.MkdirAll(workspace, 0o755); err != nil {
-			return agentcontrol.RosterEntry{}, fmt.Errorf("create participant workspace: %w", err)
-		}
-		if err := os.WriteFile(participantMemoryPath(workspace), []byte(req.MemorySeed), 0o644); err != nil {
-			return agentcontrol.RosterEntry{}, fmt.Errorf("write participant memory: %w", err)
-		}
 	} else {
 		entry.ID = existing.ID
 		entry.CreatedAt = existing.CreatedAt
@@ -138,10 +132,34 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 			entry.Model = existing.Model
 		}
 	}
+	// Persist the participant row first so a failed workspace creation
+	// cannot leave a real participant row missing from the store. The
+	// resulting "row without workspace" state is acceptable: the next
+	// save/list will lazily fix the directory the same way the
+	// participant/save RPC tolerates the same partial state on retry.
 	if err := session.UpsertParticipant(r.sessionDir(), entry); err != nil {
 		return agentcontrol.RosterEntry{}, err
 	}
 	r.server.invalidateParticipantSummary(entry.ID)
+	if existing == nil {
+		if err := os.MkdirAll(entry.Workspace, 0o755); err != nil {
+			return agentcontrol.RosterEntry{}, fmt.Errorf("create participant workspace: %w", err)
+		}
+		// Only consume MemorySeed on initial creation. A blank/whitespace
+		// seed writes a 0-byte MEMORY.md so the workspace has a real
+		// file (matching the reset/save semantics); non-blank seeds are
+		// written verbatim, no internal whitespace trimming.
+		memPath := participantMemoryPath(entry.Workspace)
+		if memPath != "" {
+			seed := []byte(req.MemorySeed)
+			if strings.TrimSpace(req.MemorySeed) == "" {
+				seed = []byte{}
+			}
+			if err := os.WriteFile(memPath, seed, 0o644); err != nil {
+				return agentcontrol.RosterEntry{}, fmt.Errorf("write participant memory: %w", err)
+			}
+		}
+	}
 	return agentcontrol.RosterEntry{
 		ID:      entry.ID,
 		Name:    entry.Name,
@@ -188,9 +206,6 @@ func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name stri
 func (r *serverParticipantRoster) ResolveAgentName(agentID string) string {
 	if r == nil || r.server == nil || r.server.rt == nil {
 		return ""
-	}
-	if name := r.registeredAgentName(agentID); name != "" {
-		return name
 	}
 	participantID := r.findAgentParticipantID(agentID)
 	if participantID == "" {
@@ -251,39 +266,4 @@ func (r *serverParticipantRoster) findAgentParticipantID(agentID string) string 
 		}
 	}
 	return ""
-}
-
-// RegisterAgentParticipantName records the participant display name
-// associated with a running agent for the manage_participant
-// retire-self check. It is a fallback for call sites that do not
-// surface a thread/runtime AgentControl to the server (e.g. direct
-// test wiring or out-of-band tools).
-func (s *Server) RegisterAgentParticipantName(agentID, name string) {
-	if s == nil {
-		return
-	}
-	agentID = strings.TrimSpace(agentID)
-	name = strings.TrimSpace(name)
-	if agentID == "" {
-		return
-	}
-	s.agentParticipantNameMu.Lock()
-	defer s.agentParticipantNameMu.Unlock()
-	if s.agentParticipantNames == nil {
-		s.agentParticipantNames = make(map[string]string)
-	}
-	if name == "" {
-		delete(s.agentParticipantNames, agentID)
-		return
-	}
-	s.agentParticipantNames[agentID] = name
-}
-
-func (r *serverParticipantRoster) registeredAgentName(agentID string) string {
-	if r == nil || r.server == nil {
-		return ""
-	}
-	r.server.agentParticipantNameMu.Lock()
-	defer r.server.agentParticipantNameMu.Unlock()
-	return r.server.agentParticipantNames[agentID]
 }
