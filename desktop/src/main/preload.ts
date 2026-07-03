@@ -77,7 +77,8 @@ const api: WuuDesktopApi = {
   disconnectMCPServer: (name: string) =>
     ipcRenderer.invoke("wuu:mcp-disconnect", name),
   refreshMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-refresh", name),
-  startThread: () => ipcRenderer.invoke("wuu:thread-start"),
+  startThread: (params?: { dm_participant_id?: string }) =>
+    ipcRenderer.invoke("wuu:thread-start", params),
   resumeThread: (sessionId?: string) =>
     ipcRenderer.invoke("wuu:thread-resume", sessionId),
   startParticipant: (params) => ipcRenderer.invoke("wuu:participant-start", params),

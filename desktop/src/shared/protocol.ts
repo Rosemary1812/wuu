@@ -729,6 +729,9 @@ export type Thread = {
   status: ThreadStatus;
   read_only?: boolean;
   pinned?: boolean;
+  // dm_participant_id tags the thread as the DM conversation with a named
+  // participant (when started via startThread with a dm_participant_id param).
+  dm_participant_id?: string;
   archived?: boolean;
   forked_from_id?: string;
   forked_from_turn_id?: string;
@@ -1300,7 +1303,7 @@ export type WuuDesktopApi = {
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   refreshMCPServer: (name: string) => Promise<MCPServerActionResult>;
   listSkills: () => Promise<SkillListResult>;
-  startThread: () => Promise<{ thread: Thread }>;
+  startThread: (params?: { dm_participant_id?: string }) => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;
   forkThread: (

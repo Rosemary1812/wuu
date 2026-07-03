@@ -484,8 +484,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:mcp-refresh", (_event, name: string) =>
     appServerClientPool.request<MCPServerActionResult>("mcp/refresh", { name }),
   );
-  ipcMain.handle("wuu:thread-start", () =>
-    appServerClientPool.request<{ thread: Thread }>("thread/start"),
+  ipcMain.handle(
+    "wuu:thread-start",
+    (_event, params?: { dm_participant_id?: string }) =>
+      appServerClientPool.request<{ thread: Thread }>("thread/start", params ?? {}),
   );
   ipcMain.handle("wuu:thread-resume", (_event, sessionId?: string) =>
     appServerClientPool.request<{ thread: Thread }>("thread/resume", {

@@ -247,6 +247,17 @@ describe("summarizeThreadsForSidebar", () => {
     expect(JSON.stringify(summary)).not.toContain("secret message body");
   });
 
+  it("preserves dm_participant_id through summarization", () => {
+    const [summary] = summarizeThreadsForSidebar([
+      {
+        ...threadWithUserTexts(["dm hi"]),
+        dm_participant_id: "participant-7",
+      },
+    ]);
+
+    expect(summary.dm_participant_id).toBe("participant-7");
+  });
+
   it("groups worktree fork sessions by their base repo", () => {
     const project = {
       id: "project-1",

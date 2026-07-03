@@ -1300,6 +1300,7 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
     status: thread.status,
     read_only: thread.read_only,
     pinned: thread.pinned,
+    dm_participant_id: thread.dm_participant_id,
     archived: thread.archived,
     forked_from_id: thread.forked_from_id,
     forked_from_turn_id: thread.forked_from_turn_id,
