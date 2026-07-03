@@ -241,6 +241,7 @@ import {
   RunDebugPanel,
   runDebugPhaseForState,
 } from "./RunDebugPanel";
+import { ApprovalGalleryPanel } from "./ApprovalGalleryPanel";
 import { ChipGalleryPanel } from "./ChipGalleryPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { threadDisplayTitle } from "./ThreadTitles";
@@ -795,6 +796,8 @@ export function App(): JSX.Element {
     setConversationGridVisible,
     chipGalleryOpen,
     setChipGalleryOpen,
+    approvalGalleryOpen,
+    setApprovalGalleryOpen,
     runDebugEvents,
     runDebugCopied,
     runDebugRef,
@@ -6640,6 +6643,7 @@ export function App(): JSX.Element {
         onSeedConversationFixture={seedConversationFixture}
         onSeedAgentTreeDemo={seedAgentTreeDemo}
         onOpenChipGallery={() => setChipGalleryOpen(true)}
+        onOpenApprovalGallery={() => setApprovalGalleryOpen(true)}
         onSelectThread={(id) => void activateThread(id)}
         onSelectParticipant={openParticipantProfile}
         onCreateParticipant={openNewParticipantProfile}
@@ -6830,6 +6834,10 @@ export function App(): JSX.Element {
             <ChipGalleryPanel
               open={chipGalleryOpen}
               onClose={() => setChipGalleryOpen(false)}
+            />
+            <ApprovalGalleryPanel
+              open={approvalGalleryOpen}
+              onClose={() => setApprovalGalleryOpen(false)}
             />
             <button
               ref={environmentToggleRef}

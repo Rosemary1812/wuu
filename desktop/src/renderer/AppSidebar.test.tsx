@@ -100,6 +100,7 @@ function renderSidebar({
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
+        onOpenApprovalGallery={() => {}}
         onSelectThread={() => {}}
         onSelectParticipant={() => {}}
         onCreateParticipant={() => {}}

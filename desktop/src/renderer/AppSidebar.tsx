@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   Settings,
+  ShieldCheck,
   Upload,
   Wrench,
 } from "lucide-react";
@@ -46,6 +47,7 @@ export function AppSidebar({
   onSeedConversationFixture,
   onSeedAgentTreeDemo,
   onOpenChipGallery,
+  onOpenApprovalGallery,
   onSelectThread,
   onSelectParticipant,
   onCreateParticipant,
@@ -90,6 +92,7 @@ export function AppSidebar({
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
   onSeedAgentTreeDemo: () => void;
   onOpenChipGallery: () => void;
+  onOpenApprovalGallery: () => void;
   onSelectThread: (id: string) => void;
   onSelectParticipant: (participant: ParticipantProfile) => void;
   onCreateParticipant: () => void;
@@ -221,6 +224,13 @@ export function AppSidebar({
               >
                 <LayoutGrid className="icon" />
                 <span>Chip 图鉴</span>
+              </button>
+              <button
+                className="nav-item dev-fixture-button"
+                onClick={onOpenApprovalGallery}
+              >
+                <ShieldCheck className="icon" />
+                <span>审批图鉴</span>
               </button>
             </div>
           ) : null}

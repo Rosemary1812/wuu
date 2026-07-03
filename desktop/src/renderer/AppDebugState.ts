@@ -56,6 +56,19 @@ export function useAppDebugState({
    */
   chipGalleryOpen: boolean;
   setChipGalleryOpen: Dispatch<SetStateAction<boolean>>;
+  /**
+   * Whether the "审批图鉴" dev panel (ApprovalGalleryPanel) is open.
+   * The toggle lives next to "Chip 图鉴" in the sidebar and the panel
+   * itself renders every approval-card variant the renderer can
+   * produce: read-only commands, destructive commands, network
+   * GET/POST/DELETE, file reads/writes, with-rule, and long
+   * arguments. Each card is mounted through the real
+   * `ToolApprovalCard` so the design shown matches what the user
+   * sees inside an assistant turn. See
+   * `ApprovalGalleryPanel.tsx`.
+   */
+  approvalGalleryOpen: boolean;
+  setApprovalGalleryOpen: Dispatch<SetStateAction<boolean>>;
   runDebugEvents: RunDebugEvent[];
   runDebugCopied: boolean;
   runDebugRef: RefObject<HTMLDivElement | null>;
@@ -76,6 +89,7 @@ export function useAppDebugState({
   const [runDebugOpen, setRunDebugOpen] = useState(false);
   const [conversationGridVisible, setConversationGridVisible] = useState(false);
   const [chipGalleryOpen, setChipGalleryOpen] = useState(false);
+  const [approvalGalleryOpen, setApprovalGalleryOpen] = useState(false);
   const [runDebugEvents, setRunDebugEvents] = useState<RunDebugEvent[]>([]);
   const [runDebugCopied, setRunDebugCopied] = useState(false);
   const runDebugRef = useRef<HTMLDivElement>(null);
@@ -157,6 +171,7 @@ export function useAppDebugState({
     setConversationGridVisible(false);
     setRunDebugOpen(false);
     setChipGalleryOpen(false);
+    setApprovalGalleryOpen(false);
     onHideDebugControls();
   }, [debugControlsVisible, onHideDebugControls]);
 
@@ -202,6 +217,8 @@ export function useAppDebugState({
     setConversationGridVisible,
     chipGalleryOpen,
     setChipGalleryOpen,
+    approvalGalleryOpen,
+    setApprovalGalleryOpen,
     runDebugEvents,
     runDebugCopied,
     runDebugRef,
