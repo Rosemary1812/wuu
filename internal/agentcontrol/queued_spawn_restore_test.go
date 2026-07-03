@@ -54,6 +54,17 @@ func (c *pinRecordingClient) LastRequest() (providers.ChatRequest, bool) {
 	return c.request, c.got
 }
 
+func (c *pinRecordingClient) WaitRequest(timeout time.Duration) (providers.ChatRequest, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if req, ok := c.LastRequest(); ok {
+			return req, true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return c.LastRequest()
+}
+
 // pinAgentControl builds a minimal AgentControl with the requested default
 // worker client. Tests that exercise queued-spawn restore install a model-pin
 // resolver via SetModelPinClientResolver before triggering maybeStartQueued.
@@ -175,7 +186,7 @@ func TestQueuedSpawnRestore_CrossProviderPinRebuildsClient(t *testing.T) {
 	}
 
 	// The override client must have been hit; the default client must not.
-	if req, ok := overrideClient.LastRequest(); !ok {
+	if req, ok := overrideClient.WaitRequest(time.Second); !ok {
 		t.Fatalf("override client never received a chat request")
 	} else if req.Model != "pinned-model" {
 		t.Fatalf("override client got model %q, want %q", req.Model, "pinned-model")
@@ -215,7 +226,7 @@ func TestQueuedSpawnRestore_BareModelPinKeepsModelOverride(t *testing.T) {
 	if resolveCalls != 1 {
 		t.Fatalf("expected exactly one resolver call, got %d", resolveCalls)
 	}
-	if req, ok := defaultClient.LastRequest(); !ok {
+	if req, ok := defaultClient.WaitRequest(time.Second); !ok {
 		t.Fatalf("default client never received a chat request")
 	} else if req.Model != "bare-pinned-model" {
 		t.Fatalf("default client got model %q, want %q", req.Model, "bare-pinned-model")
@@ -249,7 +260,7 @@ func TestQueuedSpawnRestore_ResolverFailureFailsExplicitly(t *testing.T) {
 	}
 
 	// The worker thread must be marked failed in the in-memory registry so
-// callers querying the registry see the failure.
+	// callers querying the registry see the failure.
 	thr, ok := c.Threads().Resolve("worker_andy_missing")
 	if !ok {
 		t.Fatalf("expected thread worker_andy_missing to be registered")
@@ -343,7 +354,7 @@ func TestQueuedSpawnRestore_NoResolverBareModelPinStillWorks(t *testing.T) {
 	}
 	c.maybeStartQueued(context.Background())
 
-	if req, ok := defaultClient.LastRequest(); !ok {
+	if req, ok := defaultClient.WaitRequest(time.Second); !ok {
 		t.Fatalf("default client never received a chat request")
 	} else if req.Model != "legacy-pinned-model" {
 		t.Fatalf("default client got model %q, want %q", req.Model, "legacy-pinned-model")
