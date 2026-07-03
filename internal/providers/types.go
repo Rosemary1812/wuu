@@ -217,6 +217,12 @@ type ChatMessage struct {
 	ParticipantName string          `json:"participant_name,omitempty"`
 	PostKind        string          `json:"post_kind,omitempty"`
 	EnvelopeMeta    json.RawMessage `json:"envelope_meta,omitempty"`
+	// FocusMeta carries the structured {kind,name,root} metadata for a
+	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
+	// Mirrors EnvelopeMeta's plumbing but is semantically distinct: envelope
+	// metadata is resident routing bookkeeping, focus metadata describes a
+	// tool-cwd/workspace-scope change the thread has declared.
+	FocusMeta json.RawMessage `json:"focus_meta,omitempty"`
 	// ConsumeResidentEnvelopeIDs is app-server durable bookkeeping. When set
 	// on a user message, the session store appends that message and marks the
 	// listed resident inbox envelopes consumed in the same transaction.

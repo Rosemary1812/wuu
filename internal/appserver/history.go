@@ -78,6 +78,9 @@ type persistedMessage struct {
 	PostKind      string          `json:"post_kind,omitempty"`
 	ThreadID      string          `json:"thread_id,omitempty"`
 	EnvelopeMeta  json.RawMessage `json:"envelope_meta,omitempty"`
+	// FocusMeta marks a user message as a workspace-focus declaration item
+	// (2026-07-03-workspace-focus.md §3.1); plumbed like EnvelopeMeta.
+	FocusMeta json.RawMessage `json:"focus_meta,omitempty"`
 }
 
 type persistedAgentHistory struct {
@@ -147,6 +150,7 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 			ParticipantName:   rec.Name,
 			PostKind:          rec.PostKind,
 			EnvelopeMeta:      append(json.RawMessage(nil), rec.EnvelopeMeta...),
+			FocusMeta:         append(json.RawMessage(nil), rec.FocusMeta...),
 		}
 		for _, image := range rec.Images {
 			if strings.TrimSpace(image.Data) == "" {
@@ -282,6 +286,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		ParticipantID:     msg.ParticipantID,
 		PostKind:          msg.PostKind,
 		EnvelopeMeta:      append(json.RawMessage(nil), msg.EnvelopeMeta...),
+		FocusMeta:         append(json.RawMessage(nil), msg.FocusMeta...),
 		At:                time.Now().UTC(),
 	}
 	for _, image := range msg.Images {
@@ -390,6 +395,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		PostKind:            rec.PostKind,
 		ThreadID:            rec.ThreadID,
 		EnvelopeMeta:        append(json.RawMessage(nil), rec.EnvelopeMeta...),
+		FocusMeta:           append(json.RawMessage(nil), rec.FocusMeta...),
 	}
 }
 
@@ -423,6 +429,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		PostKind:            rec.PostKind,
 		ThreadID:            rec.ThreadID,
 		EnvelopeMeta:        append(json.RawMessage(nil), rec.EnvelopeMeta...),
+		FocusMeta:           append(json.RawMessage(nil), rec.FocusMeta...),
 	}
 	if err := unmarshalRaw(rec.ReasoningBlocks, &out.ReasoningBlocks); err != nil {
 		return persistedMessage{}, err

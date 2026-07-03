@@ -806,6 +806,7 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.ArchivedAt = metadata.ArchivedAt
 	th.DMParticipantID = metadata.DMParticipantID
 	th.Group = metadata.Group
+	th.FocusWorkspace = metadata.FocusWorkspace
 }
 
 func threadEntryFromSession(sess session.Session, provider, model string) threadListEntry {
@@ -833,6 +834,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 			Turns:            []Turn{},
 			DMParticipantID:  sess.DMParticipantID,
 			Group:            sess.Group,
+			FocusWorkspace:   sess.FocusWorkspace,
 		},
 		pinnedAt: sess.PinnedAt,
 	}

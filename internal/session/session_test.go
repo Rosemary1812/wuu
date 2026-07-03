@@ -268,6 +268,28 @@ func TestListSurfacesFocusWorkspace(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordFocusMetaRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	meta := json.RawMessage(`{"kind":"workspace","name":"acme","root":"/tmp/acme"}`)
+	if err := AppendHistoryRecord(dir, "thread-1", HistoryRecord{
+		Role:      "user",
+		Content:   "[focus: acme — /tmp/acme]",
+		FocusMeta: meta,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := LoadHistoryRecords(dir, "thread-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || string(history[0].FocusMeta) != string(meta) {
+		t.Fatalf("loaded focus meta = %+v, want %s", history, meta)
+	}
+}
+
 func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
 	dir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "project")

@@ -101,9 +101,24 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	th.mu.Lock()
 	isResidentDM := strings.TrimSpace(th.DMParticipantID) != ""
 	isGroup := th.Group
+	turnRunning := th.running
 	th.mu.Unlock()
 	if isGroup {
 		return s.handleGroupTurnStart(req, th, params, images, files)
+	}
+	// Workspace focus is a chat-style thread property; only the DM branch
+	// is wired today (2026-07-03-workspace-focus.md §3 — the group branch
+	// is a follow-up). Work sessions ignore the field entirely. Applied
+	// before ensureThreadRuntime so the toolkit root reflects the new
+	// focus for this very turn; a busy thread fails fast so a rejected
+	// turn cannot leave an orphan focus declaration behind.
+	if isResidentDM && params.FocusWorkspace != nil {
+		if turnRunning {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
+		}
+		if err := s.applyTurnWorkspaceFocus(th, params.FocusWorkspace); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 	}
 	mentioned, err := s.prepareThreadMentions(th, params.Mentions)
 	if err != nil {
@@ -414,6 +429,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 	th.mu.Lock()
 	participantID := strings.TrimSpace(th.DMParticipantID)
 	threadCWD := th.CWD
+	focusWorkspace := th.FocusWorkspace
 	running := th.running
 	th.mu.Unlock()
 	if participantID == "" || running {
@@ -486,6 +502,14 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		// Resident file tools work inside the home + registered workspaces
 		// + temp whitelist (design doc §5.2); reads and writes alike.
 		threadRuntime.Toolkit.SetFileScopeRoots(workspaces.FileScopeRoots(threadCWD, s.rt.WuuHome))
+		// The declared workspace focus decides where tools work by default
+		// (2026-07-03-workspace-focus.md §5): a workspace focus roots them
+		// at that workspace, "" (all) and "~" (home) keep the agent home.
+		// The file-scope whitelist above stays untouched — focus does not
+		// narrow what the resident may read or write.
+		if roster, err := workspaces.List(s.rt.WuuHome); err == nil {
+			threadRuntime.Toolkit.SetRootDir(focusWorkspaceRoot(focusWorkspace, threadCWD, roster))
+		}
 	}
 	if threadRuntime.AgentControl != nil {
 		threadRuntime.AgentControl.EnableParticipantSpeech(participantID)

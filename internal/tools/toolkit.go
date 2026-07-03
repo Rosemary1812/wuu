@@ -747,6 +747,40 @@ func (t *Toolkit) SetGroupManager(manager GroupManager) {
 	t.env.GroupManager = manager
 }
 
+// SetRootDir re-roots the toolkit's execution environment (bash cwd,
+// relative-path resolution, search root, display paths) without rebuilding
+// the toolkit or touching other per-session state. Used by DM threads
+// whose workspace focus moves between the agent home and a registered
+// workspace root (2026-07-03-workspace-focus.md §5); the file-scope
+// whitelist (SetFileScopeRoots) is intentionally independent — focus
+// changes where tools work by default, not what they may touch. Callers
+// must only invoke this between turns, never while tools are executing.
+func (t *Toolkit) SetRootDir(rootDir string) {
+	if t == nil || t.env == nil {
+		return
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return
+	}
+	abs, err := filepath.Abs(rootDir)
+	if err != nil {
+		return
+	}
+	if ev, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = ev
+	}
+	t.env.RootDir = abs
+}
+
+// RootDir returns the workspace root the toolkit currently executes in.
+func (t *Toolkit) RootDir() string {
+	if t == nil || t.env == nil {
+		return ""
+	}
+	return t.env.RootDir
+}
+
 // SetFileScopeRoots installs (or clears, with an empty slice) the file-tool
 // whitelist for resident turns and participant task runs: agent home,
 // registered workspace roots, and the system temp directory. Empty roots

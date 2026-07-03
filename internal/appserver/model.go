@@ -64,6 +64,7 @@ func (th *threadState) snapshotLocked() Thread {
 		BrowserState:     cloneThreadBrowserState(th.BrowserState),
 		DMParticipantID:  th.DMParticipantID,
 		Group:            th.Group,
+		FocusWorkspace:   th.FocusWorkspace,
 	}
 }
 
@@ -1056,14 +1057,15 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	switch msg.Role {
 	case "user":
 		return ThreadItem{
-			ID:       id,
-			SourceID: msg.ClientID,
-			Type:     ThreadItemUserMessage,
-			Status:   ThreadItemStatusCompleted,
-			Role:     "user",
-			Text:     chatMessageDisplayContent(msg),
-			Images:   threadItemImages(msg.Images),
-			Files:    threadItemFiles(msg.Files),
+			ID:        id,
+			SourceID:  msg.ClientID,
+			Type:      ThreadItemUserMessage,
+			Status:    ThreadItemStatusCompleted,
+			Role:      "user",
+			Text:      chatMessageDisplayContent(msg),
+			Images:    threadItemImages(msg.Images),
+			Files:     threadItemFiles(msg.Files),
+			FocusMeta: append(json.RawMessage(nil), msg.FocusMeta...),
 		}
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {
@@ -1120,6 +1122,7 @@ func chatMessageFromPersistedMessage(rec persistedMessage) providers.ChatMessage
 		Truncated:         rec.Truncated,
 		DiscoveredTools:   providers.CloneLoadableToolDefinitions(rec.DiscoveredTools),
 		EnvelopeMeta:      append(json.RawMessage(nil), rec.EnvelopeMeta...),
+		FocusMeta:         append(json.RawMessage(nil), rec.FocusMeta...),
 	}
 	for _, image := range rec.Images {
 		if strings.TrimSpace(image.Data) == "" {

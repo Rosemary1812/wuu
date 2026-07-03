@@ -965,6 +965,15 @@ type TurnStartParams struct {
 	Files          []TurnStartFile  `json:"files,omitempty"`
 	Mentions       []string         `json:"mentions,omitempty"`
 	PermissionMode *string          `json:"permission_mode,omitempty"`
+	// FocusWorkspace, when non-nil, asks the thread to switch its workspace
+	// focus before this turn's user message (2026-07-03-workspace-focus.md
+	// §2). nil (field absent) means "leave focus unchanged" — the common
+	// path, which must not touch history. A non-nil value requests a
+	// switch: "" back to all registered workspaces, "~" to the agent home
+	// only, anything else a registered workspace name. Only chat-style
+	// threads honor it (DM today; groups in a follow-up); work sessions
+	// ignore it entirely.
+	FocusWorkspace *string `json:"focus_workspace,omitempty"`
 }
 
 type TurnStartImage struct {
@@ -1277,6 +1286,12 @@ type Thread struct {
 	// conversation with the named participant of that ID. Set once at thread
 	// creation; never mutated afterward.
 	DMParticipantID string `json:"dm_participant_id,omitempty"`
+	// FocusWorkspace is the workspace focus this chat-style thread most
+	// recently declared (2026-07-03-workspace-focus.md §1): "" = all
+	// registered workspaces (default), "~" = agent home only, otherwise a
+	// registered workspace name. Unlike DMParticipantID it changes over the
+	// thread's lifetime via turn/start's focus_workspace param.
+	FocusWorkspace string `json:"focus_workspace,omitempty"`
 	// Group marks this thread as a chat-style group channel with no primary
 	// agent (chat-style-threads-design.md §3). Set once at thread creation.
 	Group bool `json:"group,omitempty"`
@@ -1399,6 +1414,11 @@ type ThreadItem struct {
 	// Participant attributes this item to a conversation participant.
 	// Populated for agent-originated items; nil means the thread owner.
 	Participant *participant.Summary `json:"participant,omitempty"`
+	// FocusMeta marks a user_message item as a workspace-focus declaration
+	// (2026-07-03-workspace-focus.md §3.1). Shape:
+	// {kind:"all"|"home"|"workspace", name?, root?}. The chat view renders
+	// items carrying it as a focus divider instead of a user bubble.
+	FocusMeta json.RawMessage `json:"focus_meta,omitempty"`
 }
 
 type TaskCard struct {

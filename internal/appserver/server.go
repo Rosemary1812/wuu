@@ -46,7 +46,12 @@ type threadState struct {
 	ArchivedAt       *time.Time
 	DMParticipantID  string
 	Group            bool
-	Turns            []Turn
+	// FocusWorkspace mirrors session.Session.FocusWorkspace: the workspace
+	// focus this chat-style thread most recently declared ("" = all
+	// registered workspaces, "~" = agent home only, otherwise a registered
+	// workspace name). Kept in sync with the session store on every switch.
+	FocusWorkspace string
+	Turns          []Turn
 	PersistHistory   bool
 	ReadOnly         bool
 	Ephemeral        bool
