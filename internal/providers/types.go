@@ -239,6 +239,15 @@ type ChatMessage struct {
 //     anchors toward that rewritten history root.
 //
 // Providers are free to ignore hints they don't support.
+//
+// Provider-specific caching strategy (Anthropic):
+// - StablePrefixMessages and TurnPrefixMessages are hints used to derive
+//   message-level cache markers. On Anthropic, the actual marker placement
+//   ignores the message counts and instead walks the final merged payload
+//   backward to find the last cacheable block, placing exactly one sliding
+//   tail marker there. This strategy optimizes intra-turn tool loops by
+//   marking the request tail, which moves every round without requiring
+//   per-tool or per-message stable prefixes.
 type CacheHint struct {
 	// PromptCacheKey is a stable key for providers exposing an explicit
 	// prompt cache key (for example promptCacheKey / prompt_cache_key).
@@ -250,12 +259,16 @@ type CacheHint struct {
 	// in ChatRequest.Messages that belong to the stable prefix.
 	// Providers that merge, split, or lift messages must map this
 	// source-message count onto their final wire-format block boundary.
+	// On Anthropic, this is informational only; the actual marker is derived
+	// from the payload tail instead.
 	StablePrefixMessages int
 	// TurnPrefixMessages is the number of leading non-system entries
 	// that are stable within the current turn, typically through the
 	// latest visible user message. It can be larger than
 	// StablePrefixMessages without making the latest user request part
 	// of the cross-turn stable prefix.
+	// On Anthropic, this is informational only; the actual marker is derived
+	// from the payload tail instead.
 	TurnPrefixMessages int
 	// HasCompactSummary reports that the leading system prompt contains
 	// a compacted conversation summary. This lets providers prefer a

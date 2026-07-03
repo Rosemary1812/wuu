@@ -332,16 +332,41 @@ func TestChat_AnthropicAddsCacheControlFromHint(t *testing.T) {
 			t.Fatalf("expected system cache_control, got %#v", sysBlock["cache_control"])
 		}
 		msgs, ok := body["messages"].([]any)
-		if !ok || len(msgs) < 2 {
-			t.Fatalf("expected messages, got %#v", body["messages"])
+		if !ok || len(msgs) < 4 {
+			t.Fatalf("expected 4 messages, got %#v", body["messages"])
 		}
-		second, ok := msgs[1].(map[string]any)
+
+		// With the sliding tail marker strategy, only the last message should
+		// have a cache_control marker on its last cacheable block.
+		// Check that earlier messages have no markers.
+		for i := 0; i < len(msgs)-1; i++ {
+			msg, ok := msgs[i].(map[string]any)
+			if !ok {
+				t.Fatalf("unexpected message: %#v", msgs[i])
+			}
+			content, ok := msg["content"].([]any)
+			if !ok || len(content) == 0 {
+				continue
+			}
+			for _, blk := range content {
+				block, ok := blk.(map[string]any)
+				if !ok {
+					continue
+				}
+				if _, exists := block["cache_control"]; exists {
+					t.Fatalf("did not expect cache_control on non-final message: %#v", block)
+				}
+			}
+		}
+
+		// The last message should have cache_control on its last cacheable block.
+		lastMsg, ok := msgs[len(msgs)-1].(map[string]any)
 		if !ok {
-			t.Fatalf("unexpected message payload: %#v", msgs[1])
+			t.Fatalf("unexpected last message: %#v", msgs[len(msgs)-1])
 		}
-		content, ok := second["content"].([]any)
+		content, ok := lastMsg["content"].([]any)
 		if !ok || len(content) == 0 {
-			t.Fatalf("unexpected content blocks: %#v", second["content"])
+			t.Fatalf("unexpected content blocks: %#v", lastMsg["content"])
 		}
 		lastBlock, ok := content[len(content)-1].(map[string]any)
 		if !ok {
@@ -349,7 +374,7 @@ func TestChat_AnthropicAddsCacheControlFromHint(t *testing.T) {
 		}
 		cacheCtl, ok = lastBlock["cache_control"].(map[string]any)
 		if !ok || cacheCtl["type"] != "ephemeral" {
-			t.Fatalf("expected message cache_control, got %#v", lastBlock["cache_control"])
+			t.Fatalf("expected cache_control on last block of final message, got %#v", lastBlock["cache_control"])
 		}
 		w.Header().Set("content-type", "application/json")
 		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
@@ -1096,6 +1121,7 @@ func TestChat_AnthropicPrefersCompactSummaryAsCacheAnchor(t *testing.T) {
 			t.Fatalf("expected cache_control on compact summary anchor, got %#v", firstBlock["cache_control"])
 		}
 
+		// Check that middle message has no cache_control.
 		second, ok := msgs[1].(map[string]any)
 		if !ok {
 			t.Fatalf("unexpected second message: %#v", msgs[1])
@@ -1109,7 +1135,25 @@ func TestChat_AnthropicPrefersCompactSummaryAsCacheAnchor(t *testing.T) {
 			t.Fatalf("unexpected second block: %#v", secondContent[0])
 		}
 		if _, exists := secondBlock["cache_control"]; exists {
-			t.Fatalf("did not expect cache_control on latest stable message when compact summary is present: %#v", secondBlock)
+			t.Fatalf("did not expect cache_control on middle message when compact summary is present: %#v", secondBlock)
+		}
+
+		// Check that the last message (sliding tail marker) has cache_control.
+		third, ok := msgs[2].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected third message: %#v", msgs[2])
+		}
+		thirdContent, ok := third["content"].([]any)
+		if !ok || len(thirdContent) != 1 {
+			t.Fatalf("unexpected third content payload: %#v", third["content"])
+		}
+		thirdBlock, ok := thirdContent[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected third block: %#v", thirdContent[0])
+		}
+		cacheControl, ok = thirdBlock["cache_control"].(map[string]any)
+		if !ok || cacheControl["type"] != "ephemeral" {
+			t.Fatalf("expected cache_control on last message tail, got %#v", thirdBlock["cache_control"])
 		}
 
 		w.Header().Set("content-type", "application/json")
@@ -1219,6 +1263,9 @@ func TestChat_AddsCacheControlToStableAnthropicPrefix(t *testing.T) {
 			t.Fatalf("unexpected messages payload: %#v", body["messages"])
 		}
 
+		// With the new sliding tail marker strategy, the marker should be on the
+		// last message only, not on the stable prefix boundary.
+
 		// First message (user "stable context") — no cache_control.
 		firstMsg, ok := msgs[0].(map[string]any)
 		if !ok {
@@ -1233,10 +1280,10 @@ func TestChat_AddsCacheControlToStableAnthropicPrefix(t *testing.T) {
 			t.Fatalf("unexpected first text block: %#v", content[0])
 		}
 		if _, exists := textBlock["cache_control"]; exists {
-			t.Fatalf("did not expect cache_control on first stable message: %#v", textBlock)
+			t.Fatalf("did not expect cache_control on first message: %#v", textBlock)
 		}
 
-		// Second message (assistant "stable reply") — cache_control on stable prefix boundary.
+		// Second message (assistant "stable reply") — no cache_control (marker moved to tail).
 		secondMsg, ok := msgs[1].(map[string]any)
 		if !ok {
 			t.Fatalf("unexpected second message: %#v", msgs[1])
@@ -1249,12 +1296,11 @@ func TestChat_AddsCacheControlToStableAnthropicPrefix(t *testing.T) {
 		if !ok {
 			t.Fatalf("unexpected second text block: %#v", content[0])
 		}
-		cacheControl, ok = textBlock["cache_control"].(map[string]any)
-		if !ok || cacheControl["type"] != "ephemeral" {
-			t.Fatalf("unexpected message cache_control: %#v", textBlock["cache_control"])
+		if _, exists := textBlock["cache_control"]; exists {
+			t.Fatalf("did not expect cache_control on second message: %#v", textBlock)
 		}
 
-		// Third message (user "volatile ask") — no cache_control.
+		// Third message (user "volatile ask") — has cache_control (sliding tail marker).
 		thirdMsg, ok := msgs[2].(map[string]any)
 		if !ok {
 			t.Fatalf("unexpected third message: %#v", msgs[2])
@@ -1267,8 +1313,9 @@ func TestChat_AddsCacheControlToStableAnthropicPrefix(t *testing.T) {
 		if !ok {
 			t.Fatalf("unexpected third text block: %#v", content[0])
 		}
-		if _, exists := textBlock["cache_control"]; exists {
-			t.Fatalf("did not expect cache_control on volatile message: %#v", textBlock)
+		cacheControl, ok = textBlock["cache_control"].(map[string]any)
+		if !ok || cacheControl["type"] != "ephemeral" {
+			t.Fatalf("expected cache_control on last message (sliding tail), got %#v", textBlock["cache_control"])
 		}
 
 		w.Header().Set("content-type", "application/json")
@@ -2156,123 +2203,164 @@ func TestStampCacheCreationFlag(t *testing.T) {
 	})
 }
 
-func TestLastCacheableBlockIndex(t *testing.T) {
-	t.Run("empty blocks returns -1", func(t *testing.T) {
-		if got := lastCacheableBlockIndex(nil); got != -1 {
-			t.Errorf("lastCacheableBlockIndex(nil) = %d, want -1", got)
+// TestChat_SlidingTailMarkerOnToolLoops verifies that the sliding tail marker
+// strategy works correctly for intra-turn tool loops. Three successive requests
+// represent rounds of a single turn: each adds assistant tool_call+tool result
+// pairs, and the cache marker should move to the tail of each request.
+func TestChat_SlidingTailMarkerOnToolLoops(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
 		}
-		if got := lastCacheableBlockIndex([]anthropicBlock{}); got != -1 {
-			t.Errorf("lastCacheableBlockIndex([]) = %d, want -1", got)
-		}
-	})
-	t.Run("all cacheable returns last index", func(t *testing.T) {
-		blocks := []anthropicBlock{
-			{Type: "text", Text: "a"},
-			{Type: "text", Text: "b"},
-			{Type: "text", Text: "c"},
-		}
-		if got := lastCacheableBlockIndex(blocks); got != 2 {
-			t.Errorf("got %d, want 2", got)
-		}
-	})
-	t.Run("text after image returns text index", func(t *testing.T) {
-		blocks := []anthropicBlock{
-			{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: "image/png", Data: "..."}},
-			{Type: "text", Text: "tail"},
-		}
-		if got := lastCacheableBlockIndex(blocks); got != 1 {
-			t.Errorf("got %d, want 1", got)
-		}
-	})
-	t.Run("all uncacheable returns -1", func(t *testing.T) {
-		blocks := []anthropicBlock{
-			{Type: "image"},
-			{Type: "audio"},
-			{Type: "thinking"},
-		}
-		if got := lastCacheableBlockIndex(blocks); got != -1 {
-			t.Errorf("got %d, want -1", got)
-		}
-	})
-	t.Run("mixed with tool_use picks tool_use index", func(t *testing.T) {
-		blocks := []anthropicBlock{
-			{Type: "image"},
-			{Type: "tool_use", ID: "x", Name: "Read"},
-		}
-		if got := lastCacheableBlockIndex(blocks); got != 1 {
-			t.Errorf("got %d, want 1", got)
-		}
-	})
-}
 
-func TestMarkAnthropicBoundaryForCache_UsesPreComputedSourceIndex(t *testing.T) {
-	// Source scenario:
-	//   s0: user "hi"                        (merged into messages[0])
-	//   s1: assistant tool_call              (messages[1])
-	//   s2: user tool_result                 (merged into messages[2])
-	//   s3: user mailbox_text                (merged into messages[2])
-	//   s4: user [text_a, image_b]           (merged into messages[2])
-	//
-	// After merge, messages[2].Content holds all of s2+s3+s4 blocks. The
-	// boundary is at s4 (nonSystemSeen hits StablePrefixMessages=5).
-	// SourceLastCacheablePayloadIdx is pre-computed to point at s4's
-	// text_a (the last cacheable block within s4). Without the fix, the
-	// walk-backward would land on s3's mailbox_text, leaving s4's image_b
-	// permanently uncached.
-	messages := []anthropicMessage{
-		{Role: "user", Content: []anthropicBlock{{Type: "text", Text: "hi"}}},
-		{Role: "assistant", Content: []anthropicBlock{{Type: "tool_use", ID: "call-1", Name: "Read"}}},
-		{Role: "user", Content: []anthropicBlock{
-			{Type: "tool_result", ToolUseID: "call-1", Content: "result-1"},
-			{Type: "text", Text: "mailbox"},
-			{Type: "text", Text: "text_a"},
-			{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: "image/png", Data: "x"}},
-		}},
-	}
-	// s4 occupies indices [2, 4) in messages[2].Content (text_a at 2,
-	// image at 3). Last cacheable in s4 is text_a at payload index 2.
-	boundary := anthropicCacheBoundary{
-		MessageIndex:                  2,
-		BlockEnd:                      4,
-		SourceLastCacheablePayloadIdx: 2,
-	}
-	if !markAnthropicBoundaryForCache(messages, boundary) {
-		t.Fatal("expected markAnthropicBoundaryForCache to return true")
-	}
-	marked := messages[2].Content[2]
-	if marked.CacheControl == nil || marked.CacheControl.Type != "ephemeral" {
-		t.Errorf("expected CacheControl=ephemeral on s4 text_a, got %+v", marked.CacheControl)
-	}
-	// mailbox_text (s3) must NOT be marked.
-	if messages[2].Content[1].CacheControl != nil {
-		t.Errorf("expected s3 mailbox_text to be untouched, got %+v", messages[2].Content[1].CacheControl)
-	}
-}
+		msgs, ok := body["messages"].([]any)
+		if !ok || len(msgs) == 0 {
+			t.Fatalf("expected messages, got %#v", body["messages"])
+		}
 
-func TestMarkAnthropicBoundaryForCache_LegacyFallbackWhenSourceEmpty(t *testing.T) {
-	// Boundary source message has no cacheable blocks. The pre-computed
-	// index is -1, so we fall back to the legacy walk-backward which
-	// marks the nearest preceding cacheable block (mailbox_text in this
-	// case, since s4 contributes only an image).
-	messages := []anthropicMessage{
-		{Role: "user", Content: []anthropicBlock{{Type: "text", Text: "hi"}}},
-		{Role: "assistant", Content: []anthropicBlock{{Type: "tool_use", ID: "c1", Name: "Read"}}},
-		{Role: "user", Content: []anthropicBlock{
-			{Type: "tool_result", ToolUseID: "c1", Content: "r"},
-			{Type: "text", Text: "mailbox"},
-			{Type: "image", Source: &anthropicImageSource{Type: "base64", MediaType: "image/png", Data: "x"}},
-		}},
+		// Count how many message pairs we have and verify the tail marker
+		// is on the last message's last cacheable block in each round.
+		// System marker should always be present.
+		system, ok := body["system"].([]any)
+		if !ok || len(system) != 1 {
+			t.Fatalf("round %d: expected system block, got %#v", callCount, body["system"])
+		}
+		sysBlock, ok := system[0].(map[string]any)
+		if !ok {
+			t.Fatalf("round %d: unexpected system block: %#v", callCount, system[0])
+		}
+		cacheCtl, ok := sysBlock["cache_control"].(map[string]any)
+		if !ok || cacheCtl["type"] != "ephemeral" {
+			t.Fatalf("round %d: expected system cache_control, got %#v", callCount, sysBlock["cache_control"])
+		}
+
+		// Verify no middle messages have cache markers.
+		for i := 0; i < len(msgs)-1; i++ {
+			msg, ok := msgs[i].(map[string]any)
+			if !ok {
+				continue
+			}
+			content, ok := msg["content"].([]any)
+			if !ok || len(content) == 0 {
+				continue
+			}
+			for _, blk := range content {
+				block, ok := blk.(map[string]any)
+				if !ok {
+					continue
+				}
+				if _, exists := block["cache_control"]; exists {
+					t.Fatalf("round %d: did not expect cache_control on message %d: %#v", callCount, i, block)
+				}
+			}
+		}
+
+		// Verify the last message has exactly one cache_control on its tail.
+		lastMsg, ok := msgs[len(msgs)-1].(map[string]any)
+		if !ok {
+			t.Fatalf("round %d: unexpected last message: %#v", callCount, msgs[len(msgs)-1])
+		}
+		content, ok := lastMsg["content"].([]any)
+		if !ok || len(content) == 0 {
+			t.Fatalf("round %d: unexpected content blocks: %#v", callCount, lastMsg["content"])
+		}
+		lastBlock, ok := content[len(content)-1].(map[string]any)
+		if !ok {
+			t.Fatalf("round %d: unexpected content block: %#v", callCount, content[len(content)-1])
+		}
+		cacheCtl, ok = lastBlock["cache_control"].(map[string]any)
+		if !ok || cacheCtl["type"] != "ephemeral" {
+			t.Fatalf("round %d: expected cache_control on tail, got %#v", callCount, lastBlock["cache_control"])
+		}
+
+		// Verify no tools carry cache_control.
+		tools, ok := body["tools"].([]any)
+		if ok {
+			for _, toolAny := range tools {
+				tool, ok := toolAny.(map[string]any)
+				if !ok {
+					continue
+				}
+				if _, exists := tool["cache_control"]; exists {
+					t.Fatalf("round %d: did not expect cache_control on tool: %#v", callCount, tool)
+				}
+			}
+		}
+
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
 	}
-	boundary := anthropicCacheBoundary{
-		MessageIndex:                  2,
-		BlockEnd:                      3,
-		SourceLastCacheablePayloadIdx: -1,
+
+	// Round 1: initial user request + system + tool definition
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "run tool A"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_a", Description: "Tool A", InputSchema: map[string]any{"type": "object"}},
+		},
+		CacheHint: &providers.CacheHint{StableSystem: true, StablePrefixMessages: 0},
+	})
+	if err != nil {
+		t.Fatalf("round 1 error: %v", err)
 	}
-	if !markAnthropicBoundaryForCache(messages, boundary) {
-		t.Fatal("expected legacy fallback to find a cacheable block")
+
+	// Round 2: add assistant tool_call + tool result
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "run tool A"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{
+				{ID: "call_1", Name: "tool_a", Arguments: "{}"},
+			}},
+			{Role: "tool", ToolCallID: "call_1", Content: "result of tool A"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_a", Description: "Tool A", InputSchema: map[string]any{"type": "object"}},
+		},
+		CacheHint: &providers.CacheHint{StableSystem: true, StablePrefixMessages: 0},
+	})
+	if err != nil {
+		t.Fatalf("round 2 error: %v", err)
 	}
-	marked := messages[2].Content[1]
-	if marked.CacheControl == nil || marked.CacheControl.Type != "ephemeral" {
-		t.Errorf("expected CacheControl=ephemeral on mailbox_text, got %+v", marked.CacheControl)
+
+	// Round 3: add another assistant tool_call + tool result
+	_, err = client.Chat(context.Background(), providers.ChatRequest{
+		Model: "claude-test",
+		Messages: []providers.ChatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "run tool A"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{
+				{ID: "call_1", Name: "tool_a", Arguments: "{}"},
+			}},
+			{Role: "tool", ToolCallID: "call_1", Content: "result of tool A"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{
+				{ID: "call_2", Name: "tool_a", Arguments: "{}"},
+			}},
+			{Role: "tool", ToolCallID: "call_2", Content: "result of tool A again"},
+		},
+		Tools: []providers.ToolDefinition{
+			{Name: "tool_a", Description: "Tool A", InputSchema: map[string]any{"type": "object"}},
+		},
+		CacheHint: &providers.CacheHint{StableSystem: true, StablePrefixMessages: 0},
+	})
+	if err != nil {
+		t.Fatalf("round 3 error: %v", err)
+	}
+
+	if callCount != 3 {
+		t.Fatalf("expected 3 chat calls, got %d", callCount)
 	}
 }
