@@ -516,11 +516,11 @@ func (m *Manager) Followup(ctx context.Context, id, message string) (SubAgentSna
 		sa.mu.Unlock()
 		m.BroadcastSnapshot(sa)
 		return snap, nil
-	case StatusCancelled:
-		snap := snapshotLocked(sa)
-		sa.mu.Unlock()
-		return snap, fmt.Errorf("subagent %q is cancelled and cannot receive follow-up messages", id)
 	}
+	// Every terminal state (completed, failed, cancelled) is resumable:
+	// the run keeps its full history, so a follow-up starts a new turn
+	// from where it stopped. A cancelled run means the user stopped it,
+	// and a later message is an explicit request to revive it.
 
 	history := providers.CloneChatMessages(sa.history)
 	if len(history) == 0 {

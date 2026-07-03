@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +85,75 @@ func (f *fakeClient) StreamChat(ctx context.Context, req providers.ChatRequest) 
 		}
 	}()
 	return ch, nil
+}
+
+// resumeClient drives a sub-agent turn to an abnormal terminal state on
+// demand (an API-style error, or a block until the context is cancelled)
+// and then, once disarmed with arm(""), runs the resume turn to
+// completion. It lets the fail->resume and cancel->resume paths be
+// exercised against a single manager and client.
+type resumeClient struct {
+	mu          sync.Mutex
+	mode        string // "fail", "block", or "" (succeed)
+	startedOnce bool
+	started     chan struct{}
+	response    providers.ChatResponse
+	lastRequest atomic.Pointer[providers.ChatRequest]
+}
+
+func newResumeClient(mode string, resp providers.ChatResponse) *resumeClient {
+	return &resumeClient{mode: mode, started: make(chan struct{}), response: resp}
+}
+
+func (c *resumeClient) arm(mode string) {
+	c.mu.Lock()
+	c.mode = mode
+	c.mu.Unlock()
+}
+
+func (c *resumeClient) currentMode() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.mode
+}
+
+func (c *resumeClient) signalStarted() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.startedOnce {
+		c.startedOnce = true
+		close(c.started)
+	}
+}
+
+func (c *resumeClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	return c.response, nil
+}
+
+func (c *resumeClient) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	cp := req
+	c.lastRequest.Store(&cp)
+	switch c.currentMode() {
+	case "fail":
+		return nil, errors.New("api terminal error")
+	case "block":
+		ch := make(chan providers.StreamEvent, 2)
+		go func() {
+			defer close(ch)
+			c.signalStarted()
+			<-ctx.Done()
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+		}()
+		return ch, nil
+	default:
+		ch := make(chan providers.StreamEvent, 2)
+		if c.response.Content != "" {
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: c.response.Content}
+		}
+		ch <- providers.StreamEvent{Type: providers.EventDone}
+		close(ch)
+		return ch, nil
+	}
 }
 
 // fakeToolkit is a no-op ToolExecutor that satisfies the runner contract.
@@ -514,6 +584,139 @@ func TestFollowup_CompletedAgentStartsNewTurnWithHistory(t *testing.T) {
 		if visible[i].Role != msg.role || visible[i].Content != msg.content {
 			t.Fatalf("message %d = {%s,%q}, want {%s,%q}", i, visible[i].Role, visible[i].Content, msg.role, msg.content)
 		}
+	}
+}
+
+// TestFollowup_FailedAgentResumesWithHistory locks the fall-through in
+// Manager.Followup: a run that ended in StatusFailed keeps its full
+// conversation and resumes in place on a follow-up. Any queued mailbox
+// messages must be replayed ahead of the new instruction.
+func TestFollowup_FailedAgentResumesWithHistory(t *testing.T) {
+	client := newResumeClient("fail", providers.ChatResponse{Content: "resumed done"})
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:         "worker",
+		Prompt:       "initial task",
+		SystemPrompt: "you are a worker",
+		Toolkit:      fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	snap, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if snap.Status != StatusFailed || snap.Error == nil {
+		t.Fatalf("expected failed first turn, got %s (err=%v)", snap.Status, snap.Error)
+	}
+
+	// Queue a mailbox note, then resume. The queued message must batch
+	// ahead of the new follow-up instruction.
+	if ok := mgr.QueueMessage(sa.ID, "queued mailbox note"); !ok {
+		t.Fatal("QueueMessage returned false")
+	}
+	client.arm("")
+
+	resumed, err := mgr.Followup(context.Background(), sa.ID, "continue task")
+	if err != nil {
+		t.Fatalf("Followup on failed agent: %v", err)
+	}
+	if resumed.Status != StatusRunning {
+		t.Fatalf("expected resume turn running, got %s", resumed.Status)
+	}
+	final, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait resume: %v", err)
+	}
+	if final.Status != StatusCompleted || final.Result != "resumed done" {
+		t.Fatalf("expected completed resume, got %s result=%q", final.Status, final.Result)
+	}
+
+	last := client.lastRequest.Load()
+	if last == nil {
+		t.Fatal("client never recorded a resume request")
+	}
+	want := []struct {
+		role    string
+		content string
+	}{
+		{"system", "you are a worker"},
+		{"user", "initial task"},
+		{"user", "queued mailbox note"},
+		{"user", "continue task"},
+	}
+	visible := visibleMessagesForTest(last.Messages)
+	if len(visible) != len(want) {
+		t.Fatalf("expected %d visible resume messages, got %+v", len(want), last.Messages)
+	}
+	for i, msg := range want {
+		if visible[i].Role != msg.role || visible[i].Content != msg.content {
+			t.Fatalf("resume message %d = {%s,%q}, want {%s,%q}", i, visible[i].Role, visible[i].Content, msg.role, msg.content)
+		}
+	}
+}
+
+// TestFollowup_CancelledAgentResumesWithHistory proves that a user-stopped
+// (cancelled) run is resumable: a follow-up after cancellation is treated
+// as an explicit revive request, not a hard rejection.
+func TestFollowup_CancelledAgentResumesWithHistory(t *testing.T) {
+	client := newResumeClient("block", providers.ChatResponse{Content: "resumed done"})
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:         "worker",
+		Prompt:       "initial task",
+		SystemPrompt: "you are a worker",
+		Toolkit:      fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	<-client.started // wait until the first turn is mid-flight
+	if !mgr.Stop(sa.ID) {
+		t.Fatal("Stop returned false")
+	}
+	snap, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if snap.Status != StatusCancelled {
+		t.Fatalf("expected cancelled, got %s", snap.Status)
+	}
+
+	client.arm("")
+	resumed, err := mgr.Followup(context.Background(), sa.ID, "resume after stop")
+	if err != nil {
+		t.Fatalf("Followup on cancelled agent: %v", err)
+	}
+	if resumed.Status != StatusRunning {
+		t.Fatalf("expected resume running, got %s", resumed.Status)
+	}
+	final, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait resume: %v", err)
+	}
+	if final.Status != StatusCompleted || final.Result != "resumed done" {
+		t.Fatalf("expected completed resume, got %s result=%q", final.Status, final.Result)
+	}
+
+	last := client.lastRequest.Load()
+	if last == nil {
+		t.Fatal("client never recorded a resume request")
+	}
+	visible := visibleMessagesForTest(last.Messages)
+	if len(visible) != 3 {
+		t.Fatalf("expected [system, user, user] resume history, got %+v", last.Messages)
+	}
+	if visible[0].Role != "system" || visible[1].Content != "initial task" {
+		t.Fatalf("resume history lost prior turn: %+v", visible)
+	}
+	tail := visible[len(visible)-1]
+	if tail.Role != "user" || tail.Content != "resume after stop" {
+		t.Fatalf("expected resume instruction as final message, got %+v", tail)
 	}
 }
 

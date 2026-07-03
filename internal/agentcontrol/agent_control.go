@@ -1208,10 +1208,8 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 		return fmt.Errorf("agent %q not found", id)
 	}
 	snap := sa.Snapshot()
-	switch snap.Status {
-	case subagent.StatusCancelled:
-		return fmt.Errorf("agent %q is %s and cannot receive messages", id, snap.Status)
-	}
+	// A cancelled run is resumable now: user stop followed by a message is
+	// an explicit revive request, so we no longer reject it here.
 	communication := newInterAgentCommunication(currentPath, snap.AgentPath, msg, false)
 	if ok := c.manager.QueueMessage(id, communication.String()); !ok {
 		return fmt.Errorf("agent %q not found", id)

@@ -2210,6 +2210,43 @@ func TestFork_WorktreeIsolation(t *testing.T) {
 	}
 }
 
+func TestSendMessageDoesNotRejectCancelledAgent(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	c, err := New(Config{
+		Client:        &slowClient{},
+		DefaultModel:  "fake",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		SessionID:     "sess-cancel-send",
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type: DefaultSubagentType, TaskName: "cancel_send", Description: "slow", Prompt: "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Stop(res.AgentID) {
+		t.Fatal("Stop returned false")
+	}
+	waitForSubAgentStatus(t, c.Manager(), res.AgentID, subagent.StatusCancelled, time.Second)
+
+	// A cancelled run is resumable, so send_message must accept the message
+	// instead of rejecting it with "cannot receive messages".
+	if err := c.SendMessage(res.AgentID, "please pick this back up"); err != nil {
+		t.Fatalf("SendMessage on cancelled agent should not be rejected: %v", err)
+	}
+	c.StopAll()
+	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+}
+
 func TestSendMessage_QueuesCompletedWorker(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
@@ -2428,6 +2465,22 @@ func waitForRunningWorkersToStop(t *testing.T, mgr *subagent.Manager, timeout ti
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("expected workers to stop within %s, still have %d running", timeout, mgr.CountRunning())
+}
+
+func waitForSubAgentStatus(t *testing.T, mgr *subagent.Manager, id string, want subagent.Status, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if sa := mgr.Get(id); sa != nil && sa.Snapshot().Status == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	got := subagent.Status("<missing>")
+	if sa := mgr.Get(id); sa != nil {
+		got = sa.Snapshot().Status
+	}
+	t.Fatalf("expected sub-agent %s to reach %s within %s, got %s", id, want, timeout, got)
 }
 
 func waitForHarnessEvent(t *testing.T, store *harness.Store, eventType harness.EventType, taskID string) {
