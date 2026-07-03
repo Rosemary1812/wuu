@@ -212,3 +212,39 @@ func TestStorePersistsQueueItems(t *testing.T) {
 		t.Fatalf("expected queue empty, got %+v", items)
 	}
 }
+
+// TestSubmitReportKindPrecedence locks the stand-in rules: a synthesized
+// final_text report never lands when the task already has any report, and a
+// structured submission supersedes a previously recorded stand-in — so
+// concurrent completion-time synthesis and tool-time structured submissions
+// stay deterministic regardless of arrival order.
+func TestSubmitReportKindPrecedence(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	synth := Report{TaskID: "task-1", Kind: ReportKindFinalText, Outcome: "completed", Summary: "stand-in"}
+	if _, err := store.SubmitReport(synth); err != nil {
+		t.Fatalf("submit final_text: %v", err)
+	}
+
+	structured := Report{TaskID: "task-1", ID: "task-1-structured", Kind: ReportKindStructured, Outcome: "completed", Summary: "real handoff"}
+	if _, err := store.SubmitReport(structured); err != nil {
+		t.Fatalf("submit structured: %v", err)
+	}
+
+	reports, err := store.ListReports()
+	if err != nil {
+		t.Fatalf("ListReports: %v", err)
+	}
+	if len(reports) != 1 || reports[0].Kind != ReportKindStructured || reports[0].Summary != "real handoff" {
+		t.Fatalf("structured report must supersede the stand-in, got %+v", reports)
+	}
+
+	// A late stand-in is a no-op against an existing report.
+	if _, err := store.SubmitReport(Report{TaskID: "task-1", Kind: ReportKindFinalText, Summary: "late stand-in"}); err != nil {
+		t.Fatalf("late final_text: %v", err)
+	}
+	reports, _ = store.ListReports()
+	if len(reports) != 1 || reports[0].Summary != "real handoff" {
+		t.Fatalf("late stand-in must not land or clobber, got %+v", reports)
+	}
+}

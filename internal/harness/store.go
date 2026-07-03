@@ -259,15 +259,42 @@ func (s *Store) SubmitReport(report Report) (Report, error) {
 	if report.ReportPath == "" {
 		report.ReportPath = filepath.Join(s.dir, "reports", report.TaskID+".md")
 	}
+	reports, err := s.loadReportsLocked()
+	if err != nil {
+		return Report{}, err
+	}
+	report.Kind = NormalizeReportKind(report.Kind)
+	// A synthesized final_text report is a stand-in, never a competitor: it
+	// is only stored while the task has no report at all, and a structured
+	// agent_report submission supersedes any stand-in already recorded.
+	// This keeps concurrent completion-time synthesis and tool-time
+	// structured submissions deterministic regardless of arrival order.
+	var supersededReportIDs []string
+	if report.Kind == ReportKindFinalText {
+		for i := range reports {
+			if reports[i].TaskID == report.TaskID {
+				return reports[i], nil
+			}
+		}
+	} else {
+		kept := reports[:0]
+		for _, existing := range reports {
+			if existing.TaskID == report.TaskID && NormalizeReportKind(existing.Kind) == ReportKindFinalText {
+				supersededReportIDs = append(supersededReportIDs, existing.ID)
+				continue
+			}
+			kept = append(kept, existing)
+		}
+		reports = kept
+	}
+	// The markdown render happens only after the kind rules above decided
+	// this submission actually lands, so a rejected stand-in can never
+	// clobber a structured report's file at the shared default path.
 	if err := os.MkdirAll(filepath.Dir(report.ReportPath), 0o755); err != nil {
 		return Report{}, fmt.Errorf("create report dir: %w", err)
 	}
 	if err := os.WriteFile(report.ReportPath, []byte(renderReportMarkdown(report)), 0o644); err != nil {
 		return Report{}, fmt.Errorf("write report: %w", err)
-	}
-	reports, err := s.loadReportsLocked()
-	if err != nil {
-		return Report{}, err
 	}
 	replaced := false
 	for i := range reports {
@@ -301,6 +328,22 @@ func (s *Store) SubmitReport(report Report) (Report, error) {
 	artifacts, err := s.loadArtifactsLocked()
 	if err != nil {
 		return Report{}, err
+	}
+	// A superseded stand-in report takes its artifact entry with it, so the
+	// artifact list mirrors the surviving report exactly.
+	if len(supersededReportIDs) > 0 {
+		stale := make(map[string]struct{}, len(supersededReportIDs))
+		for _, id := range supersededReportIDs {
+			stale[id+"-artifact"] = struct{}{}
+		}
+		keptArtifacts := artifacts[:0]
+		for _, existing := range artifacts {
+			if _, gone := stale[existing.ID]; gone {
+				continue
+			}
+			keptArtifacts = append(keptArtifacts, existing)
+		}
+		artifacts = keptArtifacts
 	}
 	replacedArtifact := false
 	for i := range artifacts {
