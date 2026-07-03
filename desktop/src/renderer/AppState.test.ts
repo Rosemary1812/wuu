@@ -10,6 +10,7 @@ import {
   createThreadSessionTab,
   handleStreamingNotification,
   initialState,
+  isGroupThread,
   isScratchThread,
   isThreadUnread,
   latestCompletedTurnID,
@@ -19,6 +20,7 @@ import {
   openForkThreadAsPrimary,
   queryTextsForThread,
   reduceServerEvent,
+  scratchThreadSummaries,
   sortThreads,
   summarizeThreadsForSidebar,
   threadBelongsToProject,
@@ -2031,5 +2033,35 @@ describe("chatMessagesFromTurns", () => {
       turn("turn-2", [{ id: "item-1", type: "user_message", text: "b" }]),
     ]);
     expect(rows.map((row) => row.id)).toEqual(["turn-1:item-1", "turn-2:item-1"]);
+  });
+});
+
+describe("isGroupThread", () => {
+  it("returns true when group is true", () => {
+    expect(isGroupThread({ group: true })).toBe(true);
+  });
+
+  it("returns false when group is false", () => {
+    expect(isGroupThread({ group: false })).toBe(false);
+  });
+
+  it("returns false when group is undefined", () => {
+    expect(isGroupThread({})).toBe(false);
+  });
+});
+
+describe("scratchThreadSummaries excludes group threads", () => {
+  it("drops group threads the same way it drops DM threads", () => {
+    const [groupSummary] = summarizeThreadsForSidebar([
+      { ...threadWithUserTexts(["群聊消息"]), id: "thread-group", group: true },
+    ]);
+    const [scratchSummary] = summarizeThreadsForSidebar([
+      { ...threadWithUserTexts(["普通会话"]), id: "thread-scratch" },
+    ]);
+    const results = scratchThreadSummaries(
+      [groupSummary, scratchSummary],
+      [],
+    );
+    expect(results.map((thread) => thread.id)).toEqual([scratchSummary.id]);
   });
 });

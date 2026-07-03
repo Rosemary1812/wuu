@@ -8,6 +8,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  Hash,
   LayoutGrid,
   List as ListIcon,
   MessageSquare,
@@ -56,7 +57,8 @@ import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
-import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
+import { PinnedThreadList, ProjectGroup, ThreadRowTitle } from "./ThreadSidebar";
+import { baseThreadTitle } from "./ThreadTitles";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 
@@ -76,6 +78,10 @@ import { ThreadContextMenu } from "./ThreadContextMenu";
  */
 export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
 export const SIDEBAR_SECTION_AGENTS = "__wuu_agents__";
+// Fixed-position (like SIDEBAR_SECTION_PINNED), rendered right after 置顶
+// and before the reorderable Agents / 对话 / 项目 list
+// (chat-style-threads-design.md §1). Not part of sectionOrder.
+export const SIDEBAR_SECTION_GROUP = "__wuu_group__";
 
 const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
 
@@ -280,6 +286,7 @@ export function AppSidebar({
   state,
   sidebarProjects,
   pinnedThreads,
+  groupThreads,
   activeThreadID,
   activeDMParticipantID,
   dmThreadByParticipantID,
@@ -333,6 +340,11 @@ export function AppSidebar({
   // actually shows.
   sidebarProjects: DesktopProject[];
   pinnedThreads: ThreadSummary[];
+  // Group (chat-style) threads for the sidebar's 群聊 section, between
+  // 置顶 and 对话 (chat-style-threads-design.md §1, §3). Always empty
+  // until the backend serializes Thread.group — the section then
+  // renders the inert "# all" placeholder instead.
+  groupThreads: ThreadSummary[];
   activeThreadID?: string;
   // The active thread's dm_participant_id (when the active thread is a
   // DM with a named participant). Drives the highlighted row in the agent
@@ -647,6 +659,64 @@ export function AppSidebar({
                   {pinnedThreads.length === 0 ? null : (
                     <PinnedThreadList
                       threads={pinnedThreads}
+                      activeID={activeThreadID}
+                      pendingThreadID={pendingThreadID}
+                      archiveConfirmThreadID={archiveConfirmThreadID}
+                      lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                      onSelect={onSelectThread}
+                      onTogglePinned={onTogglePinned}
+                      onArchive={onArchiveThread}
+                      onClearArchiveConfirm={onClearArchiveConfirm}
+                    />
+                  )}
+                </SidebarSection>
+              </section>
+            );
+          })()}
+          {(() => {
+            // 群聊 sits between 置顶 and 对话 (chat-style-threads-
+            // design.md §1). Fixed position like 置顶 — group threads
+            // are data-gated on the backend, so today the section is
+            // always visible but its body is the inert "# all"
+            // placeholder until Thread.group starts arriving.
+            const groupCollapsed = collapsedProjectIDs.has(
+              SIDEBAR_SECTION_GROUP,
+            );
+            const groupRows: ThreadSummary[] = groupThreads.map((thread) => ({
+              ...thread,
+              title: `#${baseThreadTitle(thread, groupThreads)}`,
+            }));
+            return (
+              <section className="group-thread-section" aria-label="群聊">
+                <SidebarSection
+                  expanded={!groupCollapsed}
+                  iconKind="group"
+                  CollapsedIcon={Hash}
+                  ExpandedIcon={Hash}
+                  label="群聊"
+                  ariaLabel={`${groupCollapsed ? "展开" : "收起"}群聊`}
+                  title={groupCollapsed ? "展开群聊" : "收起群聊"}
+                  onToggle={() =>
+                    onToggleProjectCollapsed(SIDEBAR_SECTION_GROUP)
+                  }
+                  emptyNote="还没有群聊"
+                >
+                  {groupRows.length === 0 ? (
+                    <div className="thread-list">
+                      <div className="thread-row group-thread-row-placeholder disabled">
+                        <button
+                          className="thread-row-main"
+                          type="button"
+                          disabled
+                          title="等待后端支持群聊"
+                        >
+                          <ThreadRowTitle title="# all" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <PinnedThreadList
+                      threads={groupRows}
                       activeID={activeThreadID}
                       pendingThreadID={pendingThreadID}
                       archiveConfirmThreadID={archiveConfirmThreadID}

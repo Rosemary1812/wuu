@@ -136,6 +136,7 @@ function renderSidebar(options: RenderOptions): void {
         state={state}
         sidebarProjects={sidebarProjects}
         pinnedThreads={pinnedThreads}
+        groupThreads={[]}
         activeThreadID={undefined}
         activeDMParticipantID={activeDMParticipantID}
         dmThreadByParticipantID={dmThreadByParticipantID}
@@ -249,9 +250,11 @@ describe("AppSidebar sections", () => {
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
     expect(ariaLabels).toEqual([
-      // 置顶 is fixed-position and always renders first so the panel
-      // reads as four stable sections (置顶 / Agents / 对话 / 项目).
+      // 置顶 and 群聊 are fixed-position and always render first so the
+      // panel reads as five stable sections (置顶 / 群聊 / Agents / 对话 /
+      // 项目) — chat-style-threads-design.md §1.
       "置顶",
+      "群聊",
       "Agents",
       "项目 interview",
       "项目 wuu",
@@ -271,7 +274,7 @@ describe("AppSidebar sections", () => {
       container.querySelectorAll(".sidebar-main > section"),
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["置顶", "Agents", "项目 wuu"]);
+    expect(ariaLabels).toEqual(["置顶", "群聊", "Agents", "项目 wuu"]);
   });
 
   it("renders the 对话 scratch section in the order list", () => {
@@ -287,7 +290,7 @@ describe("AppSidebar sections", () => {
       container.querySelectorAll(".sidebar-main > section"),
     );
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["置顶", "Agents", "项目", "项目 wuu"]);
+    expect(ariaLabels).toEqual(["置顶", "群聊", "Agents", "项目", "项目 wuu"]);
   });
 
   it("renders the pinned section above all reorderable sections", () => {
@@ -308,6 +311,7 @@ describe("AppSidebar sections", () => {
     const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
     expect(ariaLabels).toEqual([
       "置顶",
+      "群聊",
       "Agents",
       "项目 wuu",
     ]);
@@ -597,7 +601,7 @@ describe("AppSidebar sections", () => {
     expect(empty?.textContent).toBe("还没有会话");
   });
 
-  it("four section headers share the unified project-row anatomy", () => {
+  it("five section headers share the unified project-row anatomy", () => {
     const pinned = makeThreadSummary("thread-pinned", "Pinned session", {
       pinned: true,
     });
@@ -612,14 +616,15 @@ describe("AppSidebar sections", () => {
 
     // Every section header is a `.project-row` with the paired icon
     // states (collapsed + expanded). This is the unification contract:
-    // pinning icon, bot icon, conversation icon, project icon all use
-    // the same `<SectionRowIcon>` markup so the icon column lines up.
+    // pinning icon, group icon, bot icon, conversation icon, project
+    // icon all use the same `<SectionRowIcon>` markup so the icon
+    // column lines up.
     const headerButtons = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
         '.sidebar-main > section .project-row',
       ),
     );
-    expect(headerButtons.length).toBe(4);
+    expect(headerButtons.length).toBe(5);
     for (const header of headerButtons) {
       expect(header.classList.contains("sidebar-section-row")).toBe(true);
       expect(
@@ -761,6 +766,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
               makeProject("project-1", "wuu", "/repo/wuu"),
             ],
             pinnedThreads: [],
+            groupThreads: [],
             activeThreadID: undefined,
             activeDMParticipantID: undefined,
             dmThreadByParticipantID: new Map(),

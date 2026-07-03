@@ -106,6 +106,7 @@ function renderSidebar({
           },
         ]}
         pinnedThreads={pinnedThreads}
+        groupThreads={[]}
         activeThreadID={undefined}
         activeDMParticipantID={undefined}
         dmThreadByParticipantID={new Map()}

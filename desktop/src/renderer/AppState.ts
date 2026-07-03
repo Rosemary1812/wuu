@@ -1301,6 +1301,8 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
     read_only: thread.read_only,
     pinned: thread.pinned,
     dm_participant_id: thread.dm_participant_id,
+    group: thread.group,
+    members: thread.members,
     archived: thread.archived,
     forked_from_id: thread.forked_from_id,
     forked_from_turn_id: thread.forked_from_turn_id,
@@ -1506,6 +1508,7 @@ export function scratchThreadSummaries(
     (thread) =>
       !thread.pinned &&
       !thread.dm_participant_id &&
+      !thread.group &&
       isScratchThread(thread, projects),
   );
 }
@@ -1521,6 +1524,16 @@ export function isDMThread(
 ): boolean {
   return typeof thread.dm_participant_id === "string" &&
     thread.dm_participant_id.length > 0;
+}
+
+/**
+ * Predicate that mirrors the wire-level Thread.group field
+ * (chat-style-threads-design.md §3). Group threads are chat-style
+ * channels with no main agent — bucketed under the sidebar's 群聊
+ * section, never under 对话 or any project.
+ */
+export function isGroupThread(thread: { group?: boolean }): boolean {
+  return thread.group === true;
 }
 
 type DMThreadCandidate = {

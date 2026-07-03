@@ -168,6 +168,7 @@ import {
   isAnyThreadRunning,
   isDirectChildAgent,
   isDMThread,
+  isGroupThread,
   isScratchThread,
   isStateActiveThreadRunning,
   isThread,
@@ -1884,6 +1885,14 @@ export function App(): JSX.Element {
   const sidebarScratchThreads = useMemo(
     () => scratchThreadSummaries(sidebarThreadSummaries, state.projects),
     [sidebarThreadSummaries, state.projects],
+  );
+  // Group threads (chat-style-threads-design.md §3) live in their own
+  // sidebar 群聊 section between 置顶 and 对话, data-gated on the backend
+  // serializing Thread.group — today this is always empty and the
+  // section renders the inert "# all" placeholder.
+  const sidebarGroupThreads = useMemo(
+    () => sidebarThreadSummaries.filter(isGroupThread),
+    [sidebarThreadSummaries],
   );
   // The scratch pseudo project lives at the top of the sidebar tree. It is
   // a synthetic DesktopProject (id = SCRATCH_PSEUDO_PROJECT_ID) whose
@@ -6942,6 +6951,7 @@ export function App(): JSX.Element {
         state={state}
         sidebarProjects={sidebarProjects}
         pinnedThreads={sidebarPinnedThreads}
+        groupThreads={sidebarGroupThreads}
         activeThreadID={activeThreadID}
         activeDMParticipantID={activeDMParticipantID}
         dmThreadByParticipantID={dmThreadByParticipantID}
@@ -7697,11 +7707,20 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
           thread.worktree && thread.forked_from_id ? (
             <ForkWorktreeNotice thread={thread} />
           ) : null;
-        const isChatStyleThread = isDMThread(thread);
-        const dmTypingParticipants: ParticipantSummary[] =
-          isChatStyleThread &&
-          thread.dm_participant_id &&
-          busyDMThreadParticipantIDs.has(thread.dm_participant_id)
+        const isChatStyleThread = isDMThread(thread) || isGroupThread(thread);
+        // DM: a single typing row for the counterpart participant when
+        // its resident thread is running. Group: one row per member
+        // whose resident DM thread is running (chat-style-threads-
+        // design.md §2).
+        const chatTypingParticipants: ParticipantSummary[] = isGroupThread(
+          thread,
+        )
+          ? (thread.members ?? []).filter((member) =>
+              busyDMThreadParticipantIDs.has(member.id),
+            )
+          : isDMThread(thread) &&
+              thread.dm_participant_id &&
+              busyDMThreadParticipantIDs.has(thread.dm_participant_id)
             ? [participantSummariesByID.get(thread.dm_participant_id)].filter(
                 (participant): participant is ParticipantSummary =>
                   Boolean(participant),
@@ -7721,7 +7740,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
               {isChatStyleThread ? (
                 <ChatThreadView
                   turns={threadTurns}
-                  typingParticipants={dmTypingParticipants}
+                  typingParticipants={chatTypingParticipants}
                 />
               ) : (
               <ConversationTurnList

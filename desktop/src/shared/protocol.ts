@@ -739,6 +739,9 @@ export type Thread = {
   // dm_participant_id tags the thread as the DM conversation with a named
   // participant (when started via startThread with a dm_participant_id param).
   dm_participant_id?: string;
+  // group marks this thread as a chat-style group channel with no main
+  // agent (chat-style-threads-design.md §3). Set once at creation.
+  group?: boolean;
   // Named participants that are members of this (group) thread. Snapshot
   // of the thread_members table (docs/plans/2026-07-03-resident-named-agents.md
   // §3.1). Absent or empty for DM threads and threads without members.
