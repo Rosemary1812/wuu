@@ -1479,6 +1479,12 @@ export function isScratchThread(
   if (thread.workspace_kind === "project") {
     return false;
   }
+  // DM threads live under the agent roster, never under the 对话 scratch
+  // group. Their cwd (~/.wuu/agents/<id>/home) does not match any registered
+  // project, so the fallthrough below would otherwise bucket them here.
+  if (thread.workspace_kind === "dm") {
+    return false;
+  }
   const projectPath = threadProjectPath(thread);
   return !projects.some((project) => project.path === projectPath);
 }
@@ -1523,16 +1529,28 @@ type DMThreadCandidate = {
   updated_at: string;
   created_at: string;
   dm_participant_id?: string;
+  workspace_kind?: "project" | "scratch" | "dm";
 };
 
 /**
  * Pick the latest non-archived DM thread for a given participant id. The
- * picker matches by dm_participant_id and prefers the thread with the
- * largest updated_at, falling back to created_at when updated_at is
- * missing. Archived threads are ignored so re-archiving a DM does not
- * resurrect it as the active target — the user should start a new DM
- * instead. Returns undefined when no live DM exists, which is the
- * signal for the sidebar to create a fresh thread via startThread.
+ * picker matches by dm_participant_id AND requires workspace_kind === "dm"
+ * so legacy stray DMs (created before per-agent home dirs existed, when DMs
+ * were seeded with the active project cwd and carry workspace_kind "project")
+ * are deliberately skipped — a fresh, correctly-homed DM thread must be
+ * created via startThread instead, or turn execution will keep running in
+ * the wrong project directory. Among the survivors the picker prefers the
+ * thread with the largest updated_at, falling back to created_at when
+ * updated_at is missing. Archived threads are ignored so re-archiving a DM
+ * does not resurrect it as the active target. Returns undefined when no
+ * live DM exists, which is the signal for the sidebar to create a fresh
+ * thread via startThread.
+ *
+ * Note: `isDMThread` deliberately only checks dm_participant_id. It is used
+ * to EXCLUDE DM-tagged threads from project/scratch sidebar sections, and
+ * legacy stray threads must remain excluded there too. findDMThread is the
+ * reverse direction (picking one DM to re-open) and therefore needs the
+ * stricter workspace_kind check.
  */
 export function findDMThread<T extends DMThreadCandidate>(
   threads: readonly T[] | undefined,
@@ -1549,6 +1567,11 @@ export function findDMThread<T extends DMThreadCandidate>(
   for (const thread of threads) {
     if (!thread || thread.dm_participant_id !== participantID) continue;
     if (thread.archived) continue;
+    // Only proper DM-kind threads qualify: legacy strays (workspace_kind
+    // "project" or missing) intentionally fall through so a fresh
+    // per-agent-homed DM is created via startThread instead of resurrecting
+    // the mis-homed legacy.
+    if (thread.workspace_kind !== "dm") continue;
     const time = threadTime(thread);
     if (time > bestTime) {
       best = thread;

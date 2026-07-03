@@ -859,6 +859,12 @@ export function App(): JSX.Element {
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const draftSessionTabCounterRef = useRef(0);
+  // Synchronous in-flight guard for openParticipantDM. A rapid double-click
+  // on the same agent row otherwise fires two startThread calls and creates
+  // duplicate DM threads; the ref is checked and set before any await so
+  // the second invocation short-circuits immediately, and cleared in the
+  // finally block of openParticipantDM regardless of the resolution path.
+  const openingDMParticipantIDRef = useRef<string | undefined>(undefined);
   const currentSessionTab = activeSessionTab(state);
   const activeWorkspaceFile =
     currentSessionTab?.kind === "file" &&
@@ -2874,58 +2880,71 @@ export function App(): JSX.Element {
     if (!currentState.activeContext || !currentState.initialized) {
       return;
     }
-    cancelViewSwitch();
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    setPrompt("");
-    setComposerImages([]);
-    setComposerFiles([]);
-    const existing = findDMThread(currentState.threads, participant.id);
-    if (existing) {
-      await activateThread(existing.id);
+    // Synchronous in-flight guard: a rapid double-click on the same agent
+    // row must not produce two concurrent startThread calls. The ref is
+    // set before any await so the second invocation short-circuits
+    // immediately, and cleared in the finally block below regardless of
+    // which branch (existing-DM or freshly-started) resolved.
+    if (openingDMParticipantIDRef.current === participant.id) {
       return;
     }
+    openingDMParticipantIDRef.current = participant.id;
     try {
-      const { thread } = await window.wuu.startThread({
-        dm_participant_id: participant.id,
-      });
-      if (
-        !sameRuntimeContext(appStateRef.current.activeContext, currentState.activeContext)
-      ) {
+      cancelViewSwitch();
+      setArchiveConfirmThreadID(undefined);
+      setWorkspaceMode(undefined);
+      setPrompt("");
+      setComposerImages([]);
+      setComposerFiles([]);
+      const existing = findDMThread(currentState.threads, participant.id);
+      if (existing) {
+        await activateThread(existing.id);
         return;
       }
-      const activeContext = appStateRef.current.activeContext;
-      if (!activeContext) {
-        return;
+      try {
+        const { thread } = await window.wuu.startThread({
+          dm_participant_id: participant.id,
+        });
+        if (
+          !sameRuntimeContext(appStateRef.current.activeContext, currentState.activeContext)
+        ) {
+          return;
+        }
+        const activeContext = appStateRef.current.activeContext;
+        if (!activeContext) {
+          return;
+        }
+        const targetDraft = sessionTabDraftForThread(appStateRef.current, thread.id);
+        setSplitComposerDrafts(initialSplitComposerDrafts());
+        setState((current) => {
+          const withDraft = persistActiveSessionTabDraft(
+            current,
+            currentPrimaryComposerDraft(),
+          );
+          return {
+            ...withDraft,
+            thread,
+            secondaryThread: undefined,
+            activePane: "primary",
+            allowThreadAutoActivation: true,
+            sessionTabs: ensureSessionTab(
+              withDraft.sessionTabs,
+              createThreadSessionTab(thread, activeContext, targetDraft),
+            ),
+            activeSessionTabID: threadSessionTabID(thread.id),
+            threads: upsertThread(current.threads, thread),
+            running: isThreadRunning(thread),
+            status: "ready",
+          };
+        });
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          status: error instanceof Error ? error.message : "无法创建 Agent 对话",
+        }));
       }
-      const targetDraft = sessionTabDraftForThread(appStateRef.current, thread.id);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(
-          current,
-          currentPrimaryComposerDraft(),
-        );
-        return {
-          ...withDraft,
-          thread,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            withDraft.sessionTabs,
-            createThreadSessionTab(thread, activeContext, targetDraft),
-          ),
-          activeSessionTabID: threadSessionTabID(thread.id),
-          threads: upsertThread(current.threads, thread),
-          running: isThreadRunning(thread),
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "无法创建 Agent 对话",
-      }));
+    } finally {
+      openingDMParticipantIDRef.current = undefined;
     }
   }
 
