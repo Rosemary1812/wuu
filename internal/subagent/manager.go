@@ -396,6 +396,12 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 			sa.Status = StatusFailed
 			sa.Error = err
 		}
+		// Salvage the partial result: alongside the error (and the resume
+		// hint on the mailbox) the parent sees how far the worker got —
+		// the most recent assistant text in the retained history.
+		if partial := lastAssistantText(nextHistory); strings.TrimSpace(partial) != "" {
+			sa.Result = partial
+		}
 	} else {
 		sa.Status = StatusCompleted
 		sa.Result = content

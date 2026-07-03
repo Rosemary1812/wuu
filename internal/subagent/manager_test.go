@@ -1055,3 +1055,37 @@ func TestFollowupForcingTool_PinsFirstRequest(t *testing.T) {
 		t.Fatalf("plain follow-up must run unforced, got %+v", req)
 	}
 }
+
+// TestFailedRunSalvagesPartialResult locks the partial-result contract: when
+// a turn fails after earlier turns produced text, the failed snapshot still
+// carries the most recent assistant text so the parent sees how far the
+// worker got alongside the error and the resume hint.
+func TestFailedRunSalvagesPartialResult(t *testing.T) {
+	client := newResumeClient("", providers.ChatResponse{Content: "found the bug in parser.go"})
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:        "worker",
+		Description: "test task",
+		Prompt:      "find the bug",
+		Toolkit:     fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	mgr.Wait(context.Background(), sa.ID)
+
+	client.arm("fail")
+	if _, err := mgr.Followup(context.Background(), sa.ID, "now fix it"); err != nil {
+		t.Fatalf("Followup: %v", err)
+	}
+	mgr.Wait(context.Background(), sa.ID)
+
+	snap := mgr.Get(sa.ID).Snapshot()
+	if snap.Status != StatusFailed {
+		t.Fatalf("expected failed run, got %s", snap.Status)
+	}
+	if !contains(snap.Result, "found the bug in parser.go") {
+		t.Fatalf("failed run should salvage the partial result, got %q", snap.Result)
+	}
+}
