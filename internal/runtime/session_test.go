@@ -2455,7 +2455,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message"} {
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message", "manage_participant"} {
 		if defs[blocked] {
 			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
 		}
@@ -2478,10 +2478,16 @@ func TestApplyWorkerToolFilter_AllowsAuthorizedParticipantSpeech(t *testing.T) {
 	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); defs["post_message"] {
 		t.Fatalf("ordinary worker toolkit should hide post_message before speech authorization; defs=%v", defs)
 	}
+	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); defs["manage_participant"] {
+		t.Fatalf("ordinary worker toolkit should hide manage_participant before speech authorization; defs=%v", defs)
+	}
 
 	kit.SetParticipantSpeechEnabled(true)
 	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); !defs["post_message"] {
 		t.Fatalf("authorized participant worker toolkit should expose post_message after role filtering; defs=%v", defs)
+	}
+	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); !defs["manage_participant"] {
+		t.Fatalf("authorized participant worker toolkit should expose manage_participant after role filtering; defs=%v", defs)
 	}
 }
 

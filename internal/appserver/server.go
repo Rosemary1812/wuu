@@ -133,6 +133,13 @@ type Server struct {
 	// resolve.
 	participantMu           sync.Mutex
 	participantSummaryCache map[string]participant.Summary
+	// agentParticipantNames caches an agent's resolved participant
+	// display name for the manage_participant retire-self check. The
+	// cache is only consulted when a thread/runtime AgentControl
+	// binding is not available, so isolated test wiring can opt in by
+	// calling RegisterAgentParticipantName directly.
+	agentParticipantNameMu sync.Mutex
+	agentParticipantNames   map[string]string
 
 	// guardianBreaker tracks recent auto-review denials so a runaway
 	// rejection loop can interrupt the host turn instead of burning LLM
@@ -161,7 +168,8 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingGoalContinuation:     make(map[string]bool),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 
-		guardianBreaker: guardian.NewRejectionCircuitBreaker(),
+		guardianBreaker:        guardian.NewRejectionCircuitBreaker(),
+		agentParticipantNames:   make(map[string]string),
 	}
 	if rt != nil {
 		s.installToolApprovalReviewer(rt.Toolkit)

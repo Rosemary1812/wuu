@@ -6925,6 +6925,9 @@ func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T)
 	if !defs["decline"] {
 		t.Fatalf("conversation-native participant request must directly include decline, got %v", defs)
 	}
+	if !defs["manage_participant"] {
+		t.Fatalf("conversation-native participant request must directly include manage_participant, got %v", defs)
+	}
 	waitForAgentStatus(t, th.execRuntime.AgentControl, result.Agent.ID, subagent.StatusCompleted)
 	waitForMethod(t, out, NotificationAgentMailbox)
 	waitForMethod(t, out, NotificationItemCompleted)

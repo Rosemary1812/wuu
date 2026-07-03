@@ -623,6 +623,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	if containsProfileDef(kit.Definitions(), "decline") {
 		t.Fatalf("ordinary worker surface must not advertise decline: %v", sortedProfileDefNames(kit.Definitions()))
 	}
+	if containsProfileDef(kit.Definitions(), "manage_participant") {
+		t.Fatalf("ordinary worker surface must not advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
+	}
 	if info, ok := kit.ToolInfo("post_message"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "post_message")
 	} else if info.Exposure != ToolExposureHidden {
@@ -633,11 +636,19 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	} else if info.Exposure != ToolExposureHidden {
 		t.Fatalf("ordinary worker decline exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 	}
+	if info, ok := kit.ToolInfo("manage_participant"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "manage_participant")
+	} else if info.Exposure != ToolExposureHidden {
+		t.Fatalf("ordinary worker manage_participant exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker post_message should be blocked by speech capability, got %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "decline", Arguments: `{"reason":"covered"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker decline should be blocked by speech capability, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
+		t.Fatalf("ordinary worker manage_participant should be blocked by speech capability, got %v", err)
 	}
 
 	kit.SetParticipantSpeechEnabled(true)
@@ -646,6 +657,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if !containsProfileDef(kit.Definitions(), "decline") {
 		t.Fatalf("authorized participant surface should advertise decline: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if !containsProfileDef(kit.Definitions(), "manage_participant") {
+		t.Fatalf("authorized participant surface should advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
 	}
 	if info, ok := kit.ToolInfo("post_message"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "post_message")
@@ -657,8 +671,16 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	} else if info.Exposure != ToolExposureDirect || info.Risk != ToolRiskLow {
 		t.Fatalf("authorized decline info = %+v, want direct low-risk", info)
 	}
+	if info, ok := kit.ToolInfo("manage_participant"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "manage_participant")
+	} else if info.Exposure != ToolExposureDirect {
+		t.Fatalf("authorized manage_participant info = %+v, want direct", info)
+	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("authorized post_message should reach tool validation, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("authorized manage_participant should reach tool validation, got %v", err)
 	}
 
 	earlyAuthorized, err := New(t.TempDir())
@@ -672,6 +694,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if !containsProfileDef(earlyAuthorized.Definitions(), "decline") {
 		t.Fatalf("participant decline authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
+	}
+	if !containsProfileDef(earlyAuthorized.Definitions(), "manage_participant") {
+		t.Fatalf("participant manage_participant authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
 	}
 }
 

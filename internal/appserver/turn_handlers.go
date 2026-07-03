@@ -380,6 +380,7 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 	if threadRuntime == nil || threadRuntime.AgentControl == nil {
 		return nil
 	}
+	threadRuntime.AgentControl.SetParticipantRoster(s.participantRosterForTool())
 	sub := &threadRuntimeSubscription{
 		statusCh:             make(chan subagent.Notification, 64),
 		streamCh:             make(chan subagent.StreamNotification, 256),

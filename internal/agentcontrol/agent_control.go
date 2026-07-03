@@ -90,6 +90,13 @@ type AgentControl struct {
 	participantSpeech      map[string]struct{}
 	participantResultPosts map[string]struct{}
 	participantResponses   map[string]struct{}
+
+	// participantRosterMu guards participantRoster and
+	// participantRosterBindings, the dispatch table for the
+	// manage_participant tool.
+	participantRosterMu       sync.Mutex
+	participantRoster         ParticipantRoster
+	participantRosterBindings map[string]string
 }
 
 // Config holds the dependencies needed to build an AgentControl.

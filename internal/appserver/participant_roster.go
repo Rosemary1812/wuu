@@ -1,0 +1,289 @@
+package appserver
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/session"
+)
+
+func timeNow() time.Time { return time.Now().UTC() }
+
+// lookupWorkerTypeName validates that role matches a built-in
+// agentcontrol worker type. The check is intentionally local so
+// participant_roster does not have to import agentcontrol's full
+// worker type registry.
+func lookupWorkerTypeName(role string) (string, error) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "", nil
+	}
+	if _, err := agentcontrol.LookupWorkerType(role); err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+// participantRosterForTool builds the manage_participant roster backed
+// by the app-server's session store. It is installed on every
+// AgentControl the server owns, including the throwaway test instances
+// created by direct test wiring.
+func (s *Server) participantRosterForTool() agentcontrol.ParticipantRoster {
+	return &serverParticipantRoster{server: s}
+}
+
+type serverParticipantRoster struct {
+	server *Server
+}
+
+func (r *serverParticipantRoster) sessionDir() string {
+	if r == nil || r.server == nil || r.server.rt == nil {
+		return ""
+	}
+	return r.server.rt.SessionDir
+}
+
+func (r *serverParticipantRoster) List(ctx context.Context, agentID string) ([]agentcontrol.RosterEntry, error) {
+	if err := r.requireSessionDir(); err != nil {
+		return nil, err
+	}
+	all, err := session.ListParticipants(r.sessionDir(), participant.KindNamed)
+	if err != nil {
+		return nil, fmt.Errorf("manage_participant: list: %w", err)
+	}
+	out := make([]agentcontrol.RosterEntry, 0, len(all))
+	for _, p := range all {
+		out = append(out, agentcontrol.RosterEntry{
+			ID:      p.ID,
+			Name:    p.Name,
+			Role:    p.Role,
+			Avatar:  p.Avatar,
+			Tagline: p.Tagline,
+			Model:   p.Model,
+		})
+	}
+	return out, nil
+}
+
+func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req agentcontrol.RosterSaveRequest) (agentcontrol.RosterEntry, error) {
+	if err := r.requireSessionDir(); err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return agentcontrol.RosterEntry{}, errors.New("manage_participant: name is required")
+	}
+	role := strings.TrimSpace(req.Role)
+	if role != "" {
+		if _, err := lookupWorkerTypeName(role); err != nil {
+			return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: %w", err)
+		}
+	}
+	avatar := strings.TrimSpace(req.Avatar)
+	tagline := strings.TrimSpace(req.Tagline)
+	model := strings.TrimSpace(req.Model)
+
+	existing, err := r.findActiveByName(name)
+	if err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+
+	now := timeNow()
+	entry := participant.Participant{
+		Kind:      participant.KindNamed,
+		Name:      name,
+		Role:      role,
+		Avatar:    avatar,
+		Tagline:   tagline,
+		Model:     model,
+		UpdatedAt: now,
+	}
+	if existing == nil {
+		entry.ID = participant.NewID()
+		entry.CreatedAt = now
+		if entry.Avatar == "" {
+			entry.Avatar = participant.DefaultAvatar(role)
+		}
+		workspace, werr := r.server.participantWorkspace(entry.ID)
+		if werr != nil {
+			return agentcontrol.RosterEntry{}, werr
+		}
+		entry.Workspace = workspace
+		if err := os.MkdirAll(workspace, 0o755); err != nil {
+			return agentcontrol.RosterEntry{}, fmt.Errorf("create participant workspace: %w", err)
+		}
+		if err := os.WriteFile(participantMemoryPath(workspace), []byte(req.MemorySeed), 0o644); err != nil {
+			return agentcontrol.RosterEntry{}, fmt.Errorf("write participant memory: %w", err)
+		}
+	} else {
+		entry.ID = existing.ID
+		entry.CreatedAt = existing.CreatedAt
+		entry.Workspace = existing.Workspace
+		if entry.Avatar == "" {
+			entry.Avatar = existing.Avatar
+		}
+		if entry.Role == "" {
+			entry.Role = existing.Role
+		}
+		if entry.Tagline == "" {
+			entry.Tagline = existing.Tagline
+		}
+		if entry.Model == "" {
+			entry.Model = existing.Model
+		}
+	}
+	if err := session.UpsertParticipant(r.sessionDir(), entry); err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	r.server.invalidateParticipantSummary(entry.ID)
+	return agentcontrol.RosterEntry{
+		ID:      entry.ID,
+		Name:    entry.Name,
+		Role:    entry.Role,
+		Avatar:  entry.Avatar,
+		Tagline: entry.Tagline,
+		Model:   entry.Model,
+	}, nil
+}
+
+func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name string) (agentcontrol.RosterEntry, error) {
+	if err := r.requireSessionDir(); err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return agentcontrol.RosterEntry{}, errors.New("manage_participant: name is required")
+	}
+	agentName := r.ResolveAgentName(agentID)
+	if agentName != "" && strings.EqualFold(agentName, name) {
+		return agentcontrol.RosterEntry{}, errors.New("cannot retire yourself")
+	}
+	target, err := r.findActiveByName(name)
+	if err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	if target == nil {
+		return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: participant %q is not active", name)
+	}
+	if err := session.RetireParticipant(r.sessionDir(), target.ID); err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	r.server.invalidateParticipantSummary(target.ID)
+	return agentcontrol.RosterEntry{
+		ID:      target.ID,
+		Name:    target.Name,
+		Role:    target.Role,
+		Avatar:  target.Avatar,
+		Tagline: target.Tagline,
+		Model:   target.Model,
+	}, nil
+}
+
+func (r *serverParticipantRoster) ResolveAgentName(agentID string) string {
+	if r == nil || r.server == nil || r.server.rt == nil {
+		return ""
+	}
+	if name := r.registeredAgentName(agentID); name != "" {
+		return name
+	}
+	participantID := r.findAgentParticipantID(agentID)
+	if participantID == "" {
+		return ""
+	}
+	p, err := session.GetParticipant(r.sessionDir(), participantID)
+	if err != nil {
+		return ""
+	}
+	return p.Name
+}
+
+func (r *serverParticipantRoster) findActiveByName(name string) (*participant.Participant, error) {
+	all, err := session.ListParticipants(r.sessionDir(), participant.KindNamed)
+	if err != nil {
+		return nil, fmt.Errorf("manage_participant: list: %w", err)
+	}
+	for i, p := range all {
+		if strings.EqualFold(p.Name, name) {
+			return &all[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *serverParticipantRoster) requireSessionDir() error {
+	if strings.TrimSpace(r.sessionDir()) == "" {
+		return errors.New("manage_participant: session dir is not configured")
+	}
+	return nil
+}
+
+// findAgentParticipantID resolves the participant id associated with a
+// running agent. It checks the explicit roster binding first
+// (SetAgentParticipantID), then falls back to any thread's snapshot
+// ParticipantID. Returns "" if no mapping is known.
+func (r *serverParticipantRoster) findAgentParticipantID(agentID string) string {
+	if r == nil || r.server == nil {
+		return ""
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return ""
+	}
+	r.server.mu.Lock()
+	defer r.server.mu.Unlock()
+	for _, th := range r.server.threads {
+		if th == nil || th.execRuntime == nil || th.execRuntime.AgentControl == nil {
+			continue
+		}
+		if pid := th.execRuntime.AgentControl.BoundParticipantID(agentID); pid != "" {
+			return pid
+		}
+		for _, snap := range th.execRuntime.AgentControl.List() {
+			if snap.ID == agentID {
+				return snap.ParticipantID
+			}
+		}
+	}
+	return ""
+}
+
+// RegisterAgentParticipantName records the participant display name
+// associated with a running agent for the manage_participant
+// retire-self check. It is a fallback for call sites that do not
+// surface a thread/runtime AgentControl to the server (e.g. direct
+// test wiring or out-of-band tools).
+func (s *Server) RegisterAgentParticipantName(agentID, name string) {
+	if s == nil {
+		return
+	}
+	agentID = strings.TrimSpace(agentID)
+	name = strings.TrimSpace(name)
+	if agentID == "" {
+		return
+	}
+	s.agentParticipantNameMu.Lock()
+	defer s.agentParticipantNameMu.Unlock()
+	if s.agentParticipantNames == nil {
+		s.agentParticipantNames = make(map[string]string)
+	}
+	if name == "" {
+		delete(s.agentParticipantNames, agentID)
+		return
+	}
+	s.agentParticipantNames[agentID] = name
+}
+
+func (r *serverParticipantRoster) registeredAgentName(agentID string) string {
+	if r == nil || r.server == nil {
+		return ""
+	}
+	r.server.agentParticipantNameMu.Lock()
+	defer r.server.agentParticipantNameMu.Unlock()
+	return r.server.agentParticipantNames[agentID]
+}

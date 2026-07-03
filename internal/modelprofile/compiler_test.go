@@ -511,6 +511,12 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := mainSurface.DeferredTools["post_message"]; ok {
 			t.Errorf("%s/%s main-agent surface must NOT defer post_message", tt.provider, tt.model)
 		}
+		if _, ok := mainSurface.Tools["manage_participant"]; ok {
+			t.Errorf("%s/%s main-agent surface must NOT directly include manage_participant", tt.provider, tt.model)
+		}
+		if _, ok := mainSurface.DeferredTools["manage_participant"]; ok {
+			t.Errorf("%s/%s main-agent surface must NOT defer manage_participant", tt.provider, tt.model)
+		}
 		if _, ok := workerSurface.Tools["agent_report"]; !ok {
 			t.Errorf("%s/%s worker surface must directly include agent_report", tt.provider, tt.model)
 		}
@@ -519,6 +525,12 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		}
 		if _, ok := workerSurface.DeferredTools["post_message"]; ok {
 			t.Errorf("%s/%s ordinary worker surface must NOT defer post_message", tt.provider, tt.model)
+		}
+		if _, ok := workerSurface.Tools["manage_participant"]; ok {
+			t.Errorf("%s/%s ordinary worker surface must NOT directly include manage_participant", tt.provider, tt.model)
+		}
+		if _, ok := workerSurface.DeferredTools["manage_participant"]; ok {
+			t.Errorf("%s/%s ordinary worker surface must NOT defer manage_participant", tt.provider, tt.model)
 		}
 	}
 }

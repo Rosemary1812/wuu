@@ -26,6 +26,8 @@ func TestNamedParticipantPromptFull(t *testing.T) {
 		"## Request",
 		"ship the demo",
 		"",
+		"If the user asks you to set up, adjust, or retire other named agents, use the manage_participant tool instead of describing the steps.",
+		"",
 		"When you are done, post your conclusion with post_message (kind=result). If you are blocked on the user, ask with post_message (kind=question). If no response is actually needed, call decline with a one-line reason. Never end the turn silently.",
 	}, "\n")
 	if got != want {

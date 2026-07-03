@@ -268,6 +268,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewAgentReportTool(e),
 		NewPostMessageTool(e),
 		NewDeclineTool(e),
+		NewManageParticipantTool(e),
 		// Process management
 		NewStartProcessTool(e),
 		NewListProcessesTool(e),
@@ -700,6 +701,7 @@ func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
 	} else {
 		delete(t.activeSurface.Tools, "post_message")
 		delete(t.activeSurface.Tools, "decline")
+		delete(t.activeSurface.Tools, "manage_participant")
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -713,8 +715,12 @@ func enableParticipantSpeechSurface(surface *capability.Surface) {
 	}
 	surface.Tools["post_message"] = capability.CapabilityTaskCommunicate
 	surface.Tools["decline"] = capability.CapabilityTaskCommunicate
+	surface.Tools["manage_participant"] = capability.CapabilityTaskManage
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
+	}
+	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
+		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
 	}
 }
 
@@ -937,7 +943,7 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 
 func isParticipantSpeechTool(name string) bool {
 	switch name {
-	case "post_message", "decline":
+	case "post_message", "decline", "manage_participant":
 		return true
 	default:
 		return false

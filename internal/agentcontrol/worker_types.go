@@ -314,7 +314,7 @@ func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 		if _, denied := denySet[name]; denied {
 			continue
 		}
-		if (name == "post_message" || name == "decline") && len(wt.AllowedTools) == 0 {
+		if (name == "post_message" || name == "decline" || name == "manage_participant") && len(wt.AllowedTools) == 0 {
 			continue
 		}
 		if len(wt.AllowedTools) == 0 {
