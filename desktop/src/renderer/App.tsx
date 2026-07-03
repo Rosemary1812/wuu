@@ -449,6 +449,7 @@ type ParticipantPanelState = {
   saving?: boolean;
   feedbackSubmitting?: boolean;
   resettingScope?: ParticipantResetScope;
+  retiring?: boolean;
 };
 
 type ParticipantTeamTemplate = {
@@ -2858,6 +2859,47 @@ export function App(): JSX.Element {
                 ...current,
                 resettingScope: undefined,
                 error: desktopApiErrorMessage(error, "无法 reset Agent"),
+              }
+            : current,
+        );
+      }
+    })();
+  }
+
+  function handleParticipantRetire(participantID: string): void {
+    setParticipantPanel((current) =>
+      current
+        ? {
+            ...current,
+            retiring: true,
+            error: undefined,
+          }
+        : current,
+    );
+    void (async () => {
+      try {
+        const result = await window.wuu.retireParticipant(participantID);
+        setParticipants((current) =>
+          current.filter((entry) => entry.id !== participantID),
+        );
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                participant: result.participant,
+                retiring: false,
+              }
+            : current,
+        );
+        setParticipantPanel(undefined);
+        void refreshParticipants();
+      } catch (error) {
+        setParticipantPanel((current) =>
+          current
+            ? {
+                ...current,
+                retiring: false,
+                error: desktopApiErrorMessage(error, "无法退役 Agent"),
               }
             : current,
         );
@@ -6990,15 +7032,18 @@ export function App(): JSX.Element {
           <ParticipantProfilePanel
             mode={participantPanel.mode}
             participant={participantPanel.participant}
+            providers={state.initialized?.providers}
             loading={participantPanel.loading}
             error={participantPanel.error}
             saving={participantPanel.saving}
             feedbackSubmitting={participantPanel.feedbackSubmitting}
             resettingScope={participantPanel.resettingScope}
+            retiring={participantPanel.retiring}
             onClose={() => setParticipantPanel(undefined)}
             onSave={handleParticipantSave}
             onFeedback={handleParticipantFeedback}
             onReset={handleParticipantReset}
+            onRetire={handleParticipantRetire}
           />
         ) : null}
 

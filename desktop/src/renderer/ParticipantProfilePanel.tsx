@@ -1,13 +1,24 @@
-import { Loader2, RotateCcw, Save, Send, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  Camera,
+  ImagePlus,
+  Loader2,
+  RotateCcw,
+  Save,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ParticipantProfile,
   ParticipantSaveParams,
+  ProviderModelSummary,
+  ProviderSummary,
 } from "../shared/protocol";
 
 export type ParticipantResetScope = "restart" | "session" | "full";
 
-const PARTICIPANT_ROLES = [
+export const PARTICIPANT_ROLES = [
   "general-purpose",
   "planner",
   "researcher",
@@ -19,6 +30,9 @@ const PARTICIPANT_ROLES = [
   "verification",
 ];
 
+const AVATAR_MAX_BYTES = 512 * 1024;
+const RETIRE_CONFIRM_TIMEOUT_MS = 5_000;
+
 type ParticipantProfileForm = {
   name: string;
   role: string;
@@ -26,6 +40,10 @@ type ParticipantProfileForm = {
   tagline: string;
   model: string;
   memory: string;
+  // avatarImage is the data URL chosen in this session, if any.
+  avatarImage?: string;
+  // clearAvatarImage flags the intent to drop the previously uploaded image.
+  clearAvatarImage: boolean;
 };
 
 function formFromParticipant(
@@ -38,6 +56,8 @@ function formFromParticipant(
     tagline: participant?.tagline ?? "",
     model: participant?.model ?? "",
     memory: participant?.memory ?? "",
+    avatarImage: undefined,
+    clearAvatarImage: false,
   };
 }
 
@@ -57,45 +77,97 @@ function timestampLabel(value?: string): string {
   });
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("文件读取失败"));
+      }
+    };
+    reader.onerror = () => reject(new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function ParticipantProfilePanel({
   participant,
   mode,
+  providers,
   loading,
   error,
   saving,
   feedbackSubmitting,
   resettingScope,
+  retiring,
   onClose,
   onSave,
   onFeedback,
   onReset,
+  onRetire,
 }: {
   participant?: ParticipantProfile;
   mode: "new" | "edit";
+  providers?: ProviderSummary[];
   loading?: boolean;
   error?: string;
   saving?: boolean;
   feedbackSubmitting?: boolean;
   resettingScope?: ParticipantResetScope;
+  retiring?: boolean;
   onClose: () => void;
   onSave: (params: ParticipantSaveParams) => void;
   onFeedback: (text: string) => void;
   onReset: (scope: ParticipantResetScope) => void;
+  onRetire: (participantId: string) => void;
 }): JSX.Element {
   const [form, setForm] = useState<ParticipantProfileForm>(() =>
     formFromParticipant(participant),
   );
   const [feedback, setFeedback] = useState("");
+  const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
+  const [retireArmed, setRetireArmed] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const retireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setForm(formFromParticipant(participant));
     setFeedback("");
+    setAvatarError(undefined);
+    setRetireArmed(false);
+    if (retireTimerRef.current) {
+      clearTimeout(retireTimerRef.current);
+      retireTimerRef.current = null;
+    }
   }, [participant?.id, mode]);
+
+  useEffect(
+    () => () => {
+      if (retireTimerRef.current) {
+        clearTimeout(retireTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const providerOptions = useMemo(
+    () =>
+      (providers ?? []).map((provider) => ({
+        name: provider.name,
+        models: (provider.models ?? []).map(
+          (model): ProviderModelSummary => model,
+        ),
+      })),
+    [providers],
+  );
 
   const trackRecord = participant?.track_record ?? [];
   const panelTitle =
     mode === "new" ? "新建 Agent" : participant?.name || "Agent";
-  const canSave = form.name.trim().length > 0 && !saving && !loading;
+  const canSave =
+    form.name.trim().length > 0 && !saving && !loading && !avatarError;
   const canSendFeedback =
     mode === "edit" &&
     feedback.trim().length > 0 &&
@@ -108,6 +180,9 @@ export function ParticipantProfilePanel({
     return parts.join(" · ");
   }, [form.model, form.role]);
 
+  const avatarPreview = form.avatarImage || participant?.avatar_image;
+  const showAvatarImage = Boolean(form.avatarImage || participant?.avatar_image);
+
   function updateField<K extends keyof ParticipantProfileForm>(
     key: K,
     value: ParticipantProfileForm[K],
@@ -115,11 +190,50 @@ export function ParticipantProfilePanel({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  async function handleAvatarChange(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ): Promise<void> {
+    const file = event.currentTarget.files?.[0];
+    // Always reset the input so re-picking the same file fires change.
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setAvatarError("头像超过 512KB，请压缩后再试");
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setAvatarError(undefined);
+      setForm((current) => ({
+        ...current,
+        avatarImage: dataUrl,
+        clearAvatarImage: false,
+      }));
+    } catch {
+      setAvatarError("读取头像失败");
+    }
+  }
+
+  function triggerAvatarPicker(): void {
+    fileInputRef.current?.click();
+  }
+
+  function clearAvatarImage(): void {
+    setAvatarError(undefined);
+    setForm((current) => ({
+      ...current,
+      avatarImage: undefined,
+      clearAvatarImage: Boolean(participant?.avatar_image),
+    }));
+  }
+
   function submitSave(): void {
     if (!canSave) {
       return;
     }
-    onSave({
+    const params: ParticipantSaveParams = {
       id: participant?.id,
       name: form.name.trim(),
       role: form.role.trim(),
@@ -127,7 +241,14 @@ export function ParticipantProfilePanel({
       tagline: form.tagline.trim(),
       model: form.model.trim(),
       memory: form.memory,
-    });
+    };
+    if (form.avatarImage) {
+      params.avatar_image = form.avatarImage;
+    }
+    if (form.clearAvatarImage) {
+      params.clear_avatar_image = true;
+    }
+    onSave(params);
   }
 
   function submitFeedback(): void {
@@ -137,6 +258,29 @@ export function ParticipantProfilePanel({
     }
     onFeedback(text);
     setFeedback("");
+  }
+
+  function armRetire(): void {
+    if (retireTimerRef.current) {
+      clearTimeout(retireTimerRef.current);
+    }
+    setRetireArmed(true);
+    retireTimerRef.current = setTimeout(() => {
+      setRetireArmed(false);
+      retireTimerRef.current = null;
+    }, RETIRE_CONFIRM_TIMEOUT_MS);
+  }
+
+  function confirmRetire(): void {
+    if (!participant?.id) {
+      return;
+    }
+    if (retireTimerRef.current) {
+      clearTimeout(retireTimerRef.current);
+      retireTimerRef.current = null;
+    }
+    setRetireArmed(false);
+    onRetire(participant.id);
   }
 
   return (
@@ -171,12 +315,86 @@ export function ParticipantProfilePanel({
             ) : null}
             <section
               className="participant-profile-section"
-              aria-labelledby="participant-profile-basic"
+              aria-labelledby="participant-profile-identity"
             >
-              <h3 id="participant-profile-basic">身份</h3>
+              <h3 id="participant-profile-identity">身份</h3>
+              <div className="participant-profile-avatar-row">
+                <button
+                  type="button"
+                  className="participant-profile-avatar"
+                  aria-label="上传头像"
+                  title="上传头像"
+                  onClick={triggerAvatarPicker}
+                >
+                  {showAvatarImage && avatarPreview ? (
+                    <img
+                      className="participant-profile-avatar-image"
+                      src={avatarPreview}
+                      alt="头像"
+                    />
+                  ) : form.avatar ? (
+                    <span className="participant-profile-avatar-emoji">
+                      {form.avatar}
+                    </span>
+                  ) : (
+                    <Camera
+                      className="participant-profile-avatar-placeholder"
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="participant-profile-file-input"
+                  data-field="avatar-file"
+                  onChange={(event) => {
+                    void handleAvatarChange(event);
+                  }}
+                />
+                <div className="participant-profile-avatar-actions">
+                  <button
+                    type="button"
+                    className="participant-profile-text-action"
+                    onClick={triggerAvatarPicker}
+                  >
+                    <ImagePlus aria-hidden="true" />
+                    <span>上传图片</span>
+                  </button>
+                  {showAvatarImage ? (
+                    <button
+                      type="button"
+                      className="participant-profile-text-action danger"
+                      onClick={clearAvatarImage}
+                    >
+                      <Trash2 aria-hidden="true" />
+                      <span>移除</span>
+                    </button>
+                  ) : null}
+                </div>
+                <label className="participant-profile-avatar-emoji-input">
+                  <span>Emoji</span>
+                  <input
+                    data-field="avatar"
+                    value={form.avatar}
+                    onChange={(event) =>
+                      updateField("avatar", event.currentTarget.value)
+                    }
+                    placeholder="N"
+                    maxLength={4}
+                  />
+                </label>
+              </div>
+              {avatarError ? (
+                <p className="participant-profile-error" role="alert">
+                  {avatarError}
+                </p>
+              ) : null}
               <label className="participant-profile-field">
                 <span>名字</span>
                 <input
+                  data-field="name"
                   value={form.name}
                   onChange={(event) =>
                     updateField("name", event.currentTarget.value)
@@ -184,19 +402,28 @@ export function ParticipantProfilePanel({
                   placeholder="Noel"
                 />
               </label>
-              <label className="participant-profile-field inline">
-                <span>头像</span>
+              <label className="participant-profile-field">
+                <span>一句话</span>
                 <input
-                  value={form.avatar}
+                  data-field="tagline"
+                  value={form.tagline}
                   onChange={(event) =>
-                    updateField("avatar", event.currentTarget.value)
+                    updateField("tagline", event.currentTarget.value)
                   }
-                  placeholder="头像"
+                  placeholder="Find regressions"
                 />
               </label>
+            </section>
+
+            <section
+              className="participant-profile-section"
+              aria-labelledby="participant-profile-config"
+            >
+              <h3 id="participant-profile-config">配置</h3>
               <label className="participant-profile-field">
                 <span>角色</span>
                 <select
+                  data-field="role"
                   value={form.role}
                   onChange={(event) =>
                     updateField("role", event.currentTarget.value)
@@ -210,24 +437,28 @@ export function ParticipantProfilePanel({
                 </select>
               </label>
               <label className="participant-profile-field">
-                <span>一句话</span>
-                <input
-                  value={form.tagline}
-                  onChange={(event) =>
-                    updateField("tagline", event.currentTarget.value)
-                  }
-                  placeholder="Find regressions"
-                />
-              </label>
-              <label className="participant-profile-field">
                 <span>模型</span>
-                <input
+                <select
+                  data-field="model"
                   value={form.model}
                   onChange={(event) =>
                     updateField("model", event.currentTarget.value)
                   }
-                  placeholder="跟随全局"
-                />
+                >
+                  <option value="">跟随全局</option>
+                  {providerOptions.map((provider) => (
+                    <optgroup key={provider.name} label={provider.name}>
+                      {provider.models.map((model) => (
+                        <option
+                          key={`${provider.name}:${model.id}`}
+                          value={`${provider.name}:${model.id}`}
+                        >
+                          {model.display_name ?? model.id}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
               </label>
             </section>
 
@@ -238,73 +469,41 @@ export function ParticipantProfilePanel({
               <h3 id="participant-profile-memory">Memory</h3>
               <textarea
                 className="participant-profile-memory"
+                data-field="memory"
                 value={form.memory}
                 onChange={(event) =>
                   updateField("memory", event.currentTarget.value)
                 }
-                rows={10}
+                rows={8}
               />
-            </section>
-
-            <section
-              className="participant-profile-section"
-              aria-labelledby="participant-profile-track"
-            >
-              <h3 id="participant-profile-track">Track record</h3>
-              {trackRecord.length === 0 ? (
-                <p className="participant-profile-empty">暂无记录</p>
-              ) : (
-                <ol className="participant-profile-track-list">
-                  {trackRecord.map((entry, index) => (
-                    <li
-                      key={`${entry.task_id ?? index}-${entry.created_at ?? index}`}
-                    >
-                      <div className="participant-profile-track-title">
-                        {entry.summary || entry.task_id || "任务"}
-                      </div>
-                      <div className="participant-profile-track-meta">
-                        {[entry.outcome, timestampLabel(entry.created_at)]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
             </section>
 
             {mode === "edit" ? (
               <section
                 className="participant-profile-section"
-                aria-labelledby="participant-profile-changelog"
+                aria-labelledby="participant-profile-track"
               >
-                <h3 id="participant-profile-changelog">Changelog</h3>
-                <ol className="participant-profile-track-list">
-                  <li>
-                    <div className="participant-profile-track-title">
-                      当前角色：{form.role || "未设置"}
-                    </div>
-                    <div className="participant-profile-track-meta">
-                      {form.model ? `模型：${form.model}` : "模型：跟随全局"}
-                    </div>
-                  </li>
-                  {participant?.updated_at ? (
-                    <li>
-                      <div className="participant-profile-track-title">已更新</div>
-                      <div className="participant-profile-track-meta">
-                        {timestampLabel(participant.updated_at)}
-                      </div>
-                    </li>
-                  ) : null}
-                  {participant?.created_at ? (
-                    <li>
-                      <div className="participant-profile-track-title">已创建</div>
-                      <div className="participant-profile-track-meta">
-                        {timestampLabel(participant.created_at)}
-                      </div>
-                    </li>
-                  ) : null}
-                </ol>
+                <h3 id="participant-profile-track">Track record</h3>
+                {trackRecord.length === 0 ? (
+                  <p className="participant-profile-empty">暂无记录</p>
+                ) : (
+                  <ol className="participant-profile-track-list">
+                    {trackRecord.map((entry, index) => (
+                      <li
+                        key={`${entry.task_id ?? index}-${entry.created_at ?? index}`}
+                      >
+                        <div className="participant-profile-track-title">
+                          {entry.summary || entry.task_id || "任务"}
+                        </div>
+                        <div className="participant-profile-track-meta">
+                          {[entry.outcome, timestampLabel(entry.created_at)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </section>
             ) : null}
 
@@ -342,9 +541,9 @@ export function ParticipantProfilePanel({
             {mode === "edit" ? (
               <section
                 className="participant-profile-section"
-                aria-labelledby="participant-profile-reset"
+                aria-labelledby="participant-profile-manage"
               >
-                <h3 id="participant-profile-reset">Reset</h3>
+                <h3 id="participant-profile-manage">管理</h3>
                 <div className="participant-profile-reset-actions">
                   {(["restart", "session", "full"] as ParticipantResetScope[]).map(
                     (scope) => (
@@ -352,7 +551,7 @@ export function ParticipantProfilePanel({
                         key={scope}
                         type="button"
                         className="participant-profile-text-action"
-                        disabled={Boolean(resettingScope)}
+                        disabled={Boolean(resettingScope) || retiring}
                         onClick={() => onReset(scope)}
                       >
                         {resettingScope === scope ? (
@@ -367,6 +566,24 @@ export function ParticipantProfilePanel({
                       </button>
                     ),
                   )}
+                  <button
+                    type="button"
+                    className={
+                      retireArmed
+                        ? "participant-profile-text-action danger"
+                        : "participant-profile-text-action"
+                    }
+                    disabled={retiring}
+                    onClick={retireArmed ? confirmRetire : armRetire}
+                  >
+                    {retiring ? (
+                      <Loader2
+                        className="participant-profile-spinner"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <span>{retireArmed ? "确认退役" : "退役"}</span>
+                  </button>
                 </div>
               </section>
             ) : null}

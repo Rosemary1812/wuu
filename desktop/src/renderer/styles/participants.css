@@ -367,7 +367,7 @@
 .participant-profile-section {
   display: grid;
   min-width: 0;
-  gap: 10px;
+  gap: 14px;
   padding-block: 16px;
   border-top: 1px solid var(--hairline);
 }
@@ -397,9 +397,93 @@
   line-height: var(--line-ui);
 }
 
-.participant-profile-field.inline {
-  grid-template-columns: 64px minmax(0, 1fr);
+.participant-profile-field > span {
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+}
+
+.participant-profile-avatar-row {
+  display: flex;
+  min-width: 0;
   align-items: center;
+  gap: 10px;
+}
+
+.participant-profile-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.participant-profile-avatar:hover,
+.participant-profile-avatar:focus-visible {
+  border-color: var(--hairline-strong);
+}
+
+.participant-profile-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.participant-profile-avatar-emoji {
+  font-size: var(--font-ui);
+  line-height: 1;
+}
+
+.participant-profile-avatar-placeholder {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--ink-muted);
+}
+
+.participant-profile-avatar-actions {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.participant-profile-avatar-emoji-input {
+  display: flex;
+  flex: 0 0 auto;
+  width: 64px;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+}
+
+.participant-profile-avatar-emoji-input input {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.participant-profile-file-input {
+  display: none;
+}
+
+.participant-profile-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
 }
 
 .participant-profile-field input,
@@ -495,6 +579,15 @@
 .participant-profile-action.primary {
   background: var(--ink);
   color: var(--paper);
+}
+
+.participant-profile-text-action.danger {
+  color: var(--danger);
+}
+
+.participant-profile-text-action.danger:hover,
+.participant-profile-text-action.danger:focus-visible {
+  border-color: var(--danger-border);
 }
 
 .participant-profile-action:hover,
