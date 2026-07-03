@@ -172,5 +172,9 @@ describe("useAppLayoutState initial widths", () => {
       window.dispatchEvent(new Event("pointerup", { bubbles: true }));
     });
     expect(latest!.sidebarCollapsed).toBe(true);
+    // Collapsing with a minimum remembered width heals it to the default so
+    // the hover drawer / reopened sidebar are not cramped at 200px — the
+    // same rule toggleSidebar applies.
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
   });
 });

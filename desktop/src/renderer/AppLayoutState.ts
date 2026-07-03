@@ -293,6 +293,24 @@ export function useAppLayoutState({
     [layoutRootRef]
   );
 
+  // A drag that ends collapsed leaves the live writer's clamped-to-minimum
+  // --sidebar-open-width behind as an inline style. React only rewrites the
+  // variable when the width state changes, so the stale 200px would size the
+  // hover drawer and, after reopening, the sidebar content — while the shell
+  // itself opens at the real width. Restore the remembered open width (only
+  // that variable: --sidebar-width must stay 0 while collapsed).
+  const restoreSidebarOpenWidth = useCallback(
+    (nextWidth: number): void => {
+      const root = layoutRootRef?.current;
+      if (!root) {
+        return;
+      }
+      const clampedWidth = clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
+    },
+    [layoutRootRef]
+  );
+
   const writeLiveSettingsSidebarWidth = useCallback(
     (nextWidth: number): void => {
       const root = settingsLayoutRootRef?.current;
@@ -332,6 +350,10 @@ export function useAppLayoutState({
         }
         onCloseProjectMenu();
         setSidebarCollapsed(true);
+        // Same rule as toggleSidebar: a collapsed sidebar whose remembered
+        // open width is the bare minimum reopens (hover drawer included) at
+        // the comfortable default instead of the cramped 200px.
+        setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
         return;
       }
       if (sidebarCollapsed && !resizingSidebar) {
@@ -426,12 +448,22 @@ export function useAppLayoutState({
           sidebarLive.flush();
         } else {
           sidebarLive.cancel();
+          restoreSidebarOpenWidth(
+            sidebarWidth <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : sidebarWidth
+          );
         }
         applySidebarWidth(session.currentWidth);
       }
       setResizingSidebar(false);
     },
-    [applySettingsSidebarWidth, applySidebarWidth, settingsSidebarLive, sidebarLive]
+    [
+      applySettingsSidebarWidth,
+      applySidebarWidth,
+      restoreSidebarOpenWidth,
+      settingsSidebarLive,
+      sidebarLive,
+      sidebarWidth,
+    ]
   );
 
   useWindowPointerResize({
