@@ -165,9 +165,14 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 	}
 	if rt != nil {
 		s.installToolApprovalReviewer(rt.Toolkit)
-		logDefaultParticipantSeedError(s.ensureDefaultParticipant())
+		// Only seed Andy when the runtime is actually usable: test-only
+		// sessions frequently leave SessionDir/WuuHome empty, and the seed
+		// would otherwise log a workspace error for every unrelated
+		// appserver test.
+		if strings.TrimSpace(rt.SessionDir) != "" && strings.TrimSpace(rt.WuuHome) != "" {
+			logDefaultParticipantSeedError(s.ensureDefaultParticipant())
+		}
 	}
-	_ = rt
 	return s
 }
 

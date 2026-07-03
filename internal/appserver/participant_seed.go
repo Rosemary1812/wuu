@@ -56,25 +56,19 @@ func (s *Server) ensureDefaultParticipant() error {
 	}
 	seed.Workspace = workspace
 
-	// Only materialize the workspace directory and empty MEMORY.md when the
-	// runtime has a real WuuHome. Test environments often fall through to a
-	// home-relative path, and writing under it risks racing with TempDir
-	// cleanup on platforms where SQLite WAL files don't unlink cleanly.
-	if strings.TrimSpace(s.rt.WuuHome) != "" {
-		if err := os.MkdirAll(seed.Workspace, 0o755); err != nil {
-			return fmt.Errorf("create default participant workspace: %w", err)
+	if err := os.MkdirAll(seed.Workspace, 0o755); err != nil {
+		return fmt.Errorf("create default participant workspace: %w", err)
+	}
+	memPath := participantMemoryPath(seed.Workspace)
+	if memPath == "" {
+		return fmt.Errorf("default participant memory path is empty")
+	}
+	if _, err := os.Stat(memPath); os.IsNotExist(err) {
+		if err := os.WriteFile(memPath, nil, 0o644); err != nil {
+			return fmt.Errorf("write default participant memory: %w", err)
 		}
-		memPath := participantMemoryPath(seed.Workspace)
-		if memPath == "" {
-			return fmt.Errorf("default participant memory path is empty")
-		}
-		if _, err := os.Stat(memPath); os.IsNotExist(err) {
-			if err := os.WriteFile(memPath, nil, 0o644); err != nil {
-				return fmt.Errorf("write default participant memory: %w", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("stat default participant memory: %w", err)
-		}
+	} else if err != nil {
+		return fmt.Errorf("stat default participant memory: %w", err)
 	}
 
 	if err := session.UpsertParticipant(sessionDir, seed); err != nil {
