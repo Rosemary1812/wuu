@@ -141,6 +141,57 @@ func TestListForCWDWithDMsIncludesDMSessions(t *testing.T) {
 	}
 }
 
+func TestSetGroupThreadPersistsAndSurfacesRegardlessOfCWD(t *testing.T) {
+	dir := t.TempDir()
+	projectCWD := filepath.Join(t.TempDir(), "project-a")
+	groupCWD := filepath.Join(t.TempDir(), "elsewhere")
+
+	if _, err := CreateWithMetadata(dir, "sess-project", projectCWD); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateWithMetadata(dir, "sess-group", groupCWD); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := SetGroupThread(dir, "sess-group", true)
+	if err != nil {
+		t.Fatalf("SetGroupThread: %v", err)
+	}
+	if !updated.Group {
+		t.Fatalf("expected returned session to have Group=true, got %+v", updated)
+	}
+
+	found, ok, err := Find(dir, "sess-group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !found.Group {
+		t.Fatalf("expected persisted session to be marked group, got %+v (ok=%v)", found, ok)
+	}
+
+	sessions, err := ListForCWDWithDMs(dir, projectCWD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make(map[string]bool, len(sessions))
+	for _, s := range sessions {
+		ids[s.ID] = true
+	}
+	if !ids["sess-group"] {
+		t.Fatalf("ListForCWDWithDMs should surface group threads regardless of cwd, got: %+v", sessions)
+	}
+
+	// Strict cwd scoping must not leak group threads bound to other cwds.
+	scoped, err := ListForCWD(dir, projectCWD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range scoped {
+		if s.ID == "sess-group" {
+			t.Fatalf("ListForCWD should stay cwd-scoped and exclude group threads from other cwds, got: %+v", scoped)
+		}
+	}
+}
+
 func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
 	dir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "project")

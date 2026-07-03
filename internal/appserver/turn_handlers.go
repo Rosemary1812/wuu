@@ -99,7 +99,11 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	}
 	th.mu.Lock()
 	isResidentDM := strings.TrimSpace(th.DMParticipantID) != ""
+	isGroup := th.Group
 	th.mu.Unlock()
+	if isGroup {
+		return s.handleGroupTurnStart(req, th, params, images, files)
+	}
 	mentioned, err := s.prepareThreadMentions(th, params.Mentions)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)

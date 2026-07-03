@@ -50,6 +50,9 @@ type Session struct {
 	// DMParticipantID pins the named participant this thread is a direct-message
 	// conversation with. Set once at thread creation; never mutated afterward.
 	DMParticipantID string `json:"dm_participant_id,omitempty"`
+	// Group marks this session as a chat-style group channel with no primary
+	// agent (chat-style-threads-design.md §3). Set once at thread creation.
+	Group bool `json:"group,omitempty"`
 }
 
 type ForkMetadata struct {
@@ -201,7 +204,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id
+       dm_participant_id, is_group
 FROM sessions`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -233,10 +236,11 @@ func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
 }
 
 // ListForCWDWithDMs reads sessions scoped to a workspace cwd, plus all
-// direct-message sessions (DMParticipantID != "") regardless of their cwd, so
-// DM threads surface in every app server's thread list and search results.
-// Callers that need strict cwd scoping (MostRecentForCWD, CLI listings, the
-// insight scanner) should use ListForCWD instead.
+// direct-message sessions (DMParticipantID != "") and group channels
+// (Group == true) regardless of their cwd, so DM and group threads surface
+// in every app server's thread list and search results. Callers that need
+// strict cwd scoping (MostRecentForCWD, CLI listings, the insight scanner)
+// should use ListForCWD instead.
 func ListForCWDWithDMs(sessDir, cwd string, limit int) ([]Session, error) {
 	return listForCWD(sessDir, cwd, limit, true)
 }
@@ -252,7 +256,7 @@ func listForCWD(sessDir, cwd string, limit int, includeDMs bool) ([]Session, err
 	}
 	filtered := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
-		if includeDMs && strings.TrimSpace(s.DMParticipantID) != "" {
+		if includeDMs && (strings.TrimSpace(s.DMParticipantID) != "" || s.Group) {
 			filtered = append(filtered, s)
 			continue
 		}
@@ -340,6 +344,15 @@ func UpdatePinned(sessDir, id string, pinned bool) (Session, error) {
 func BindDMParticipant(sessDir, id, participantID string) (Session, error) {
 	return updateMetadata(sessDir, id, false, func(s *Session) {
 		s.DMParticipantID = strings.TrimSpace(participantID)
+	})
+}
+
+// SetGroupThread permanently tags a session as a chat-style group channel.
+// Like BindDMParticipant, this is set once at creation; callers should not
+// invoke this for arbitrary session IDs in normal flows.
+func SetGroupThread(sessDir, id string, group bool) (Session, error) {
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.Group = group
 	})
 }
 
@@ -800,6 +813,9 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "sessions", "dm_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "sessions", "is_group", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -856,8 +872,8 @@ func insertSessionSQL(conflict string) string {
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
 		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo,
-		dm_participant_id
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		dm_participant_id, is_group
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 }
 
 func updateSessionTx(tx *sql.Tx, sess Session) error {
@@ -866,13 +882,13 @@ UPDATE sessions
 SET created_at = ?, updated_at = ?, title = ?, summary = ?, entries = ?, cwd = ?,
     forked_from_id = ?, forked_from_turn_id = ?, forked_from_item_id = ?,
     pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?,
-    dm_participant_id = ?
+    dm_participant_id = ?, is_group = ?
 WHERE id = ?`,
 		timeText(sess.CreatedAt), timeText(sess.UpdatedAt), sess.Title, sess.Summary, sess.Entries, normalizeCWD(sess.CWD),
 		sess.ForkedFromID, sess.ForkedFromTurnID, sess.ForkedFromItemID,
 		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt),
 		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo),
-		strings.TrimSpace(sess.DMParticipantID),
+		strings.TrimSpace(sess.DMParticipantID), boolToInt(sess.Group),
 		sess.ID,
 	)
 	if err != nil {
@@ -899,7 +915,15 @@ func sessionArgs(sess Session) []any {
 		sess.WorktreeBaseHEAD,
 		normalizeCWD(sess.WorktreeBaseRepo),
 		strings.TrimSpace(sess.DMParticipantID),
+		boolToInt(sess.Group),
 	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func findSessionDB(db *sql.DB, id string) (Session, bool, error) {
@@ -908,7 +932,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id
+       dm_participant_id, is_group
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -920,7 +944,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id
+       dm_participant_id, is_group
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -945,15 +969,17 @@ func scanSession(scanner interface {
 	var s Session
 	var createdAt, updatedAt string
 	var pinnedAt, archivedAt sql.NullString
+	var isGroup int
 	if err := scanner.Scan(
 		&s.ID, &createdAt, &updatedAt, &s.Title, &s.Summary, &s.Entries, &s.CWD,
 		&s.ForkedFromID, &s.ForkedFromTurnID, &s.ForkedFromItemID,
 		&pinnedAt, &archivedAt,
 		&s.WorktreePath, &s.WorktreeBaseHEAD, &s.WorktreeBaseRepo,
-		&s.DMParticipantID,
+		&s.DMParticipantID, &isGroup,
 	); err != nil {
 		return Session{}, err
 	}
+	s.Group = isGroup != 0
 	s.CreatedAt = parseTime(createdAt)
 	s.UpdatedAt = parseTime(updatedAt)
 	if pinnedAt.Valid {

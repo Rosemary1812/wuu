@@ -57,6 +57,36 @@ func (s *Server) handleThreadStart(req Request) error {
 	if dmParticipantID != "" && params.Ephemeral {
 		return s.writeResponse(req.ID, nil, errors.New("dm threads cannot be ephemeral"))
 	}
+	if params.Group && dmParticipantID != "" {
+		return s.writeResponse(req.ID, nil, errors.New("group threads cannot also be dm threads"))
+	}
+	if params.Group && params.Ephemeral {
+		return s.writeResponse(req.ID, nil, errors.New("group threads cannot be ephemeral"))
+	}
+	if params.Group {
+		th, err := s.createGroupThreadState(session.NewID(), params.Title, time.Now().UTC())
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		s.mu.Lock()
+		s.threads[th.ID] = th
+		s.mu.Unlock()
+
+		th.mu.Lock()
+		thread := th.snapshotLocked()
+		th.mu.Unlock()
+		thread = s.threadWithGroupMembers(thread)
+		if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
+			return err
+		}
+		if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+			Thread: thread,
+		}); err != nil {
+			return err
+		}
+		s.pruneResidentThreads(thread.ID)
+		return nil
+	}
 	if dmParticipantID != "" {
 		p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID)
 		if err != nil {
@@ -602,6 +632,9 @@ func (s *Server) handleThreadList(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	if _, err := s.ensureAllChannel(); err != nil {
+		providers.DebugLogf("ensure #all group channel: %v", err)
+	}
 	targetCWD := firstNonEmpty(params.CWD, s.rt.RootDir)
 	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, targetCWD, 0)
 	if err != nil {
@@ -631,7 +664,7 @@ func (s *Server) handleThreadList(req Request) error {
 			delete(entries, thread.ID)
 			continue
 		}
-		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) || thread.DMParticipantID != "" {
+		if sameThreadListCWD(thread.CWD, targetCWD) || sameThreadListCWD(worktreeBaseRepo(thread.Worktree), targetCWD) || thread.DMParticipantID != "" || thread.Group {
 			entries[thread.ID] = entry
 		}
 	}
@@ -764,6 +797,7 @@ func applySessionMetadata(th *threadState, metadata session.Session) {
 	th.PinnedAt = metadata.PinnedAt
 	th.ArchivedAt = metadata.ArchivedAt
 	th.DMParticipantID = metadata.DMParticipantID
+	th.Group = metadata.Group
 }
 
 func threadEntryFromSession(sess session.Session, provider, model string) threadListEntry {
@@ -790,6 +824,7 @@ func threadEntryFromSession(sess session.Session, provider, model string) thread
 			UpdatedAt:        updatedAt,
 			Turns:            []Turn{},
 			DMParticipantID:  sess.DMParticipantID,
+			Group:            sess.Group,
 		},
 		pinnedAt: sess.PinnedAt,
 	}
@@ -805,6 +840,7 @@ func (s *Server) threadWithChildAgents(thread Thread) (Thread, error) {
 	if err != nil {
 		return thread, err
 	}
+	thread = s.threadWithGroupMembers(thread)
 	return s.threadWithWorktreeStatus(thread), nil
 }
 

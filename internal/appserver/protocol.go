@@ -647,6 +647,13 @@ type ProviderModelVariantSummary struct {
 type ThreadStartParams struct {
 	Ephemeral       bool   `json:"ephemeral,omitempty"`
 	DMParticipantID string `json:"dm_participant_id,omitempty"`
+	// Group requests a chat-style group channel with no primary agent
+	// (chat-style-threads-design.md §3). Mutually exclusive with
+	// DMParticipantID and Ephemeral.
+	Group bool `json:"group,omitempty"`
+	// Title names the group thread; ignored unless Group is set. Empty
+	// falls back to a generated placeholder.
+	Title string `json:"title,omitempty"`
 }
 
 type ThreadStartResult struct {
@@ -1270,6 +1277,15 @@ type Thread struct {
 	// conversation with the named participant of that ID. Set once at thread
 	// creation; never mutated afterward.
 	DMParticipantID string `json:"dm_participant_id,omitempty"`
+	// Group marks this thread as a chat-style group channel with no primary
+	// agent (chat-style-threads-design.md §3). Set once at thread creation.
+	Group bool `json:"group,omitempty"`
+	// Members lists the named participants belonging to this group thread
+	// (chips UI, chat avatars). Populated only for group threads; DM threads
+	// and work sessions leave this empty. For the "all" channel, members
+	// mirror the entire named-participant roster rather than explicit
+	// thread_members rows.
+	Members []participant.Summary `json:"members,omitempty"`
 	// ListeningPorts is the latest deduped, sorted list of localhost
 	// ports the agent asked the desktop to surface (via
 	// report_listening_ports). The desktop uses the first entry to

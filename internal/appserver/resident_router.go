@@ -20,8 +20,13 @@ const (
 )
 
 type envelopeMetaRecord struct {
-	ID                  string    `json:"id,omitempty"`
-	SourceThreadID      string    `json:"source_thread_id"`
+	ID             string `json:"id,omitempty"`
+	SourceThreadID string `json:"source_thread_id"`
+	// SourceThreadTitle snapshots the source thread's title at write time so
+	// DM/group chat rows can name the source without a reverse lookup at
+	// render time (the source thread may since have been renamed or
+	// archived). Mirrors MessageEnvelope.SourceTitle.
+	SourceThreadTitle   string    `json:"source_thread_title,omitempty"`
 	Addressed           bool      `json:"addressed"`
 	Hop                 int       `json:"hop"`
 	SenderParticipantID string    `json:"sender_participant_id,omitempty"`
@@ -271,6 +276,7 @@ func envelopeMetaJSON(envs []MessageEnvelope) json.RawMessage {
 		records = append(records, envelopeMetaRecord{
 			ID:                  env.ID,
 			SourceThreadID:      env.SourceThreadID,
+			SourceThreadTitle:   env.SourceTitle,
 			Addressed:           env.Addressed,
 			Hop:                 env.Hop,
 			SenderParticipantID: env.SenderParticipantID,

@@ -45,6 +45,7 @@ type threadState struct {
 	PinnedAt         *time.Time
 	ArchivedAt       *time.Time
 	DMParticipantID  string
+	Group            bool
 	Turns            []Turn
 	PersistHistory   bool
 	ReadOnly         bool
@@ -128,6 +129,10 @@ type Server struct {
 
 	residentDrainMu       sync.Mutex
 	drainingResidentAgent map[string]bool
+
+	// allChannelMu serializes ensureAllChannel so concurrent thread/list
+	// calls cannot race to create two "all" group threads.
+	allChannelMu sync.Mutex
 
 	codexModelsMu   sync.Mutex
 	codexModelCache map[string]map[string]config.ProviderModelConfig
