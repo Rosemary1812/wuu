@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -12,7 +13,30 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
-const participantMemoryFileName = "MEMORY.md"
+const (
+	participantMemoryFileName  = "MEMORY.md"
+	participantAvatarFileName  = "avatar"
+	participantAvatarMimeName  = "avatar.mime"
+	// participantAvatarMaxBytes caps the decoded avatar image payload.
+	// 512KB is generous for a square avatar while keeping the
+	// workspace from becoming a vector for oversized uploads.
+	participantAvatarMaxBytes = 512 * 1024
+	// participantAvatarReadMaxBytes is a defensive cap used when
+	// re-reading the avatar during profile serialization. It is set
+	// above the upload cap so a file that somehow grew past the limit
+	// is skipped silently rather than blocking the profile read.
+	participantAvatarReadMaxBytes = 1024 * 1024
+)
+
+// supportedAvatarMimes lists the image mime types the participant
+// profile avatar upload accepts. webp is intentionally included for
+// modern UIs; gif and svg are rejected because gif doesn't compress
+// well for avatars and svg can carry script payloads.
+var supportedAvatarMimes = map[string]string{
+	"image/png":  ".png",
+	"image/jpeg": ".jpg",
+	"image/webp": ".webp",
+}
 
 func (s *Server) handleParticipantList(req Request) error {
 	participants, err := session.ListParticipants(s.rt.SessionDir, participant.KindNamed)
@@ -71,6 +95,19 @@ func (s *Server) handleParticipantSave(req Request) error {
 	}
 	if err := os.MkdirAll(p.Workspace, 0o755); err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("create participant workspace: %w", err))
+	}
+	if params.ClearAvatarImage {
+		if err := removeParticipantAvatarImage(p.Workspace); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	} else if raw := strings.TrimSpace(params.AvatarImage); raw != "" {
+		mime, decoded, err := decodeAvatarDataURL(raw)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if err := writeParticipantAvatarImage(p.Workspace, mime, decoded); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 	}
 	if err := os.WriteFile(participantMemoryPath(p.Workspace), []byte(params.Memory), 0o644); err != nil {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("write participant memory: %w", err))
@@ -182,6 +219,43 @@ func (s *Server) handleParticipantReset(req Request) error {
 	return s.writeResponse(req.ID, ParticipantResetResult{Participant: profile}, nil)
 }
 
+func (s *Server) handleParticipantRetire(req Request) error {
+	var params ParticipantRetireParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	id := strings.TrimSpace(params.ParticipantID)
+	if id == "" {
+		return s.writeResponse(req.ID, nil, errors.New("participant_id is required"))
+	}
+	p, err := session.GetParticipant(s.rt.SessionDir, id)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if p.Kind != participant.KindNamed {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is not a named agent (kind=%s)", id, p.Kind))
+	}
+	if err := session.RetireParticipant(s.rt.SessionDir, id); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	s.invalidateParticipantSummary(id)
+	// Reload so the profile reflects the new RetiredAt timestamp set by
+	// the store.
+	updated, err := session.GetParticipant(s.rt.SessionDir, id)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	profile, err := s.participantProfile(updated)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	// Keep the retire response lightweight: avatar image bytes are not
+	// useful to the caller and the participant is no longer in the
+	// active roster. The DB row remains for audit/history.
+	profile.AvatarImage = ""
+	return s.writeResponse(req.ID, ParticipantRetireResult{Participant: profile}, nil)
+}
+
 func (s *Server) participantProfile(p participant.Participant) (ParticipantProfile, error) {
 	memory := ""
 	if path := participantMemoryPath(p.Workspace); path != "" {
@@ -190,6 +264,10 @@ func (s *Server) participantProfile(p participant.Participant) (ParticipantProfi
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return ParticipantProfile{}, fmt.Errorf("read participant memory: %w", err)
 		}
+	}
+	avatarImage, err := readParticipantAvatarDataURL(p.Workspace)
+	if err != nil {
+		return ParticipantProfile{}, err
 	}
 	runs, err := session.ListParticipantRuns(s.rt.SessionDir, p.ID, 10)
 	if err != nil {
@@ -210,6 +288,7 @@ func (s *Server) participantProfile(p participant.Participant) (ParticipantProfi
 		Name:        p.Name,
 		Role:        p.Role,
 		Avatar:      p.Avatar,
+		AvatarImage: avatarImage,
 		Tagline:     p.Tagline,
 		Workspace:   p.Workspace,
 		Model:       p.Model,
@@ -260,6 +339,145 @@ func appendParticipantMemory(workspace, text string) error {
 		return fmt.Errorf("append participant memory: %w", err)
 	}
 	return nil
+}
+
+// participantAvatarImagePath returns the absolute path of the avatar image
+// file inside the given participant workspace.
+func participantAvatarImagePath(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return ""
+	}
+	return filepath.Join(workspace, participantAvatarFileName)
+}
+
+// participantAvatarImageMimePath returns the absolute path of the avatar
+// mime sidecar. The mime is stored separately so the avatar file is the
+// raw image bytes the browser can serve directly when extended later.
+func participantAvatarImageMimePath(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return ""
+	}
+	return filepath.Join(workspace, participantAvatarMimeName)
+}
+
+// decodeAvatarDataURL parses an image data URL of the form
+// "data:<mime>;base64,<payload>" and returns the mime and decoded bytes.
+// Empty input is rejected so callers can distinguish "no upload" from
+// "empty upload".
+func decodeAvatarDataURL(raw string) (string, []byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil, errors.New("avatar_image is empty")
+	}
+	if !strings.HasPrefix(strings.ToLower(raw), "data:") {
+		return "", nil, errors.New("avatar_image must be a data URL (data:image/...;base64,...)")
+	}
+	header, payload, ok := strings.Cut(raw, ",")
+	if !ok {
+		return "", nil, errors.New("invalid avatar_image data URL: missing comma separator")
+	}
+	if !strings.Contains(strings.ToLower(header), ";base64") {
+		return "", nil, errors.New("avatar_image data URL must be base64 encoded")
+	}
+	mime := strings.TrimSpace(strings.ToLower(strings.TrimPrefix(strings.Split(header, ";")[0], "data:")))
+	if mime == "" {
+		return "", nil, errors.New("avatar_image data URL is missing a mime type")
+	}
+	ext, ok := supportedAvatarMimes[mime]
+	if !ok {
+		return "", nil, fmt.Errorf("unsupported avatar_image mime %q (allowed: png, jpeg, webp)", mime)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+	if err != nil {
+		return "", nil, fmt.Errorf("avatar_image base64 decode: %w", err)
+	}
+	if len(decoded) == 0 {
+		return "", nil, errors.New("avatar_image decoded payload is empty")
+	}
+	if len(decoded) > participantAvatarMaxBytes {
+		return "", nil, fmt.Errorf("avatar_image too large: %d bytes (max %d)", len(decoded), participantAvatarMaxBytes)
+	}
+	_ = ext // extension is informational; the mime sidecar carries the truth
+	return mime, decoded, nil
+}
+
+// writeParticipantAvatarImage atomically replaces the avatar image (and its
+// mime sidecar) inside the workspace. Existing files are overwritten so a
+// re-upload replaces the previous avatar in a single step.
+func writeParticipantAvatarImage(workspace, mime string, data []byte) error {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return errors.New("participant workspace is required for avatar upload")
+	}
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return fmt.Errorf("create participant workspace: %w", err)
+	}
+	imgPath := participantAvatarImagePath(workspace)
+	mimePath := participantAvatarImageMimePath(workspace)
+	if err := os.WriteFile(imgPath, data, 0o644); err != nil {
+		return fmt.Errorf("write avatar image: %w", err)
+	}
+	if err := os.WriteFile(mimePath, []byte(strings.TrimSpace(strings.ToLower(mime))), 0o644); err != nil {
+		// Best-effort cleanup: a half-written avatar is worse than no
+		// avatar, so remove the bytes we just wrote.
+		_ = os.Remove(imgPath)
+		return fmt.Errorf("write avatar mime: %w", err)
+	}
+	return nil
+}
+
+// removeParticipantAvatarImage deletes both the avatar bytes and the mime
+// sidecar. Missing files are not an error so the helper is safe to call as
+// part of an idempotent reset.
+func removeParticipantAvatarImage(workspace string) error {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return nil
+	}
+	for _, path := range []string{participantAvatarImagePath(workspace), participantAvatarImageMimePath(workspace)} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove participant avatar: %w", err)
+		}
+	}
+	return nil
+}
+
+// readParticipantAvatarDataURL returns the avatar as a base64 data URL or
+// an empty string when the workspace has no avatar. Files larger than
+// participantAvatarReadMaxBytes are treated as corrupt and skipped, since
+// they would exceed the upload limit and inflate profile payloads.
+func readParticipantAvatarDataURL(workspace string) (string, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return "", nil
+	}
+	imgPath := participantAvatarImagePath(workspace)
+	info, err := os.Stat(imgPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("stat avatar image: %w", err)
+	}
+	if info.Size() > participantAvatarReadMaxBytes {
+		return "", nil
+	}
+	mime := "image/png"
+	if raw, err := os.ReadFile(participantAvatarImageMimePath(workspace)); err == nil {
+		if trimmed := strings.TrimSpace(strings.ToLower(string(raw))); trimmed != "" {
+			mime = trimmed
+		}
+	}
+	data, err := os.ReadFile(imgPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read avatar image: %w", err)
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(data)), nil
 }
 
 func (s *Server) invalidateParticipantSummary(id string) {

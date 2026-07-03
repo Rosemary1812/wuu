@@ -58,6 +58,7 @@ const (
 	MethodParticipantSave          = "participant/save"
 	MethodParticipantFeedback      = "participant/feedback"
 	MethodParticipantReset         = "participant/reset"
+	MethodParticipantRetire        = "participant/retire"
 	MethodTurnStart                = "turn/start"
 	MethodTurnQueue                = "turn/queue"
 	MethodTurnUpdateQueued         = "turn/update-queued"
@@ -796,6 +797,11 @@ type ParticipantProfile struct {
 	Name        string                `json:"name"`
 	Role        string                `json:"role,omitempty"`
 	Avatar      string                `json:"avatar,omitempty"`
+	// AvatarImage is the participant's uploaded avatar as a data URL
+	// (e.g. "data:image/png;base64,..."). Populated on the profile read
+	// path when the workspace contains an avatar image; omitted on the
+	// lightweight wire Summary.
+	AvatarImage string                `json:"avatar_image,omitempty"`
 	Tagline     string                `json:"tagline,omitempty"`
 	Workspace   string                `json:"workspace,omitempty"`
 	Model       string                `json:"model,omitempty"`
@@ -824,6 +830,15 @@ type ParticipantSaveParams struct {
 	Tagline string `json:"tagline,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Memory  string `json:"memory,omitempty"`
+	// AvatarImage accepts an image data URL
+	// ("data:image/<mime>;base64,...") to upload a custom avatar. The
+	// emoji Avatar field is preserved independently; both can coexist.
+	// Decoded bytes are capped at 512KB; only image/png, image/jpeg,
+	// and image/webp are accepted.
+	AvatarImage string `json:"avatar_image,omitempty"`
+	// ClearAvatarImage removes any previously uploaded avatar image
+	// for this participant. Takes precedence over AvatarImage when set.
+	ClearAvatarImage bool `json:"clear_avatar_image,omitempty"`
 }
 
 type ParticipantSaveResult struct {
@@ -847,6 +862,14 @@ type ParticipantResetParams struct {
 }
 
 type ParticipantResetResult struct {
+	Participant ParticipantProfile `json:"participant"`
+}
+
+type ParticipantRetireParams struct {
+	ParticipantID string `json:"participant_id"`
+}
+
+type ParticipantRetireResult struct {
 	Participant ParticipantProfile `json:"participant"`
 }
 

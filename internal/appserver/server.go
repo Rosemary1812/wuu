@@ -286,6 +286,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleParticipantFeedback(req)
 	case MethodParticipantReset:
 		return s.handleParticipantReset(req)
+	case MethodParticipantRetire:
+		return s.handleParticipantRetire(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:
