@@ -385,11 +385,18 @@ func decodeAvatarDataURL(raw string) (string, []byte, error) {
 	if mime == "" {
 		return "", nil, errors.New("avatar_image data URL is missing a mime type")
 	}
-	ext, ok := supportedAvatarMimes[mime]
-	if !ok {
+	if _, ok := supportedAvatarMimes[mime]; !ok {
 		return "", nil, fmt.Errorf("unsupported avatar_image mime %q (allowed: png, jpeg, webp)", mime)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+	trimmed := strings.TrimSpace(payload)
+	// Pre-decode cap: reject payloads whose decoded size would exceed the
+	// limit without paying the cost (and allocation) of a full base64
+	// decode. The post-decode check below is kept as the source of truth
+	// because base64 padding can shift DecodedLen by a few bytes.
+	if base64.StdEncoding.DecodedLen(len(trimmed)) > participantAvatarMaxBytes {
+		return "", nil, fmt.Errorf("avatar_image too large: exceeds %d bytes", participantAvatarMaxBytes)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(trimmed)
 	if err != nil {
 		return "", nil, fmt.Errorf("avatar_image base64 decode: %w", err)
 	}
@@ -399,7 +406,6 @@ func decodeAvatarDataURL(raw string) (string, []byte, error) {
 	if len(decoded) > participantAvatarMaxBytes {
 		return "", nil, fmt.Errorf("avatar_image too large: %d bytes (max %d)", len(decoded), participantAvatarMaxBytes)
 	}
-	_ = ext // extension is informational; the mime sidecar carries the truth
 	return mime, decoded, nil
 }
 

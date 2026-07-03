@@ -345,3 +345,42 @@ func TestParticipantRetireRejectsNonNamed(t *testing.T) {
 		t.Fatalf("error message should mention named kind, got %q", msg)
 	}
 }
+
+// TestParticipantAvatarImageRejectsOversizedPreDecode asserts that the
+// oversized-avatar path is rejected with the same "too large" error message
+// regardless of whether the payload is over the limit by a small margin
+// (post-decode check) or by a large margin (pre-decode short-circuit). The
+// pre-decode short-circuit avoids a multi-MB base64 allocation, so both
+// shapes must funnel through the same user-visible error.
+func TestParticipantAvatarImageRejectsOversizedPreDecode(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	// ~2MB of zeros; DecodedLen far exceeds the 512KB cap so the pre-decode
+	// short-circuit must fire.
+	huge := make([]byte, 2*1024*1024)
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(huge)
+
+	raw, _ := json.Marshal(map[string]any{
+		"id":     "save-pre",
+		"method": MethodParticipantSave,
+		"params": ParticipantSaveParams{
+			Name:        "Pre",
+			Role:        "worker",
+			AvatarImage: dataURL,
+		},
+	})
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("participant/save: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, out.String()), "save-pre")
+	if resp["error"] == nil {
+		t.Fatalf("expected pre-decode cap error, got success: %+v", resp["result"])
+	}
+	msg, _ := resp["error"].(map[string]any)["message"].(string)
+	if !strings.Contains(strings.ToLower(msg), "too large") {
+		t.Fatalf("pre-decode cap error message should mention size, got %q", msg)
+	}
+}
