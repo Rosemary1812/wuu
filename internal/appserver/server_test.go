@@ -5292,6 +5292,63 @@ func TestServerThreadSearchMatchesHistoryContent(t *testing.T) {
 	}
 }
 
+func TestServerThreadSearchFindsParticipantMessagesAndSkipsEnvelopeCopies(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	group, err := session.CreateWithMetadata(rt.SessionDir, "group-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, group.ID, session.HistoryRecord{
+		Role:          "participant",
+		Content:       "The resident answer contains helios-signal evidence.",
+		Name:          "Mina",
+		ParticipantID: "prt-mina",
+		PostKind:      "result",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.UpdateIndex(rt.SessionDir, group.ID, 1, "group preview"); err != nil {
+		t.Fatal(err)
+	}
+	dm, err := session.CreateWithMetadata(rt.SessionDir, "dm-thread", rt.RootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.BindDMParticipant(rt.SessionDir, dm.ID, "prt-mina"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendHistoryRecord(rt.SessionDir, dm.ID, session.HistoryRecord{
+		Role:         "user",
+		Content:      "Envelope copy mentioning helios-signal should not duplicate search results.",
+		EnvelopeMeta: json.RawMessage(`[{"source_thread_id":"group-thread","addressed":true,"hop":0}]`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	payload := map[string]any{
+		"id":     "search",
+		"method": MethodThreadSearch,
+		"params": ThreadSearchParams{Query: "helios-signal"},
+	}
+	rawPayload, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal search request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), rawPayload); err != nil {
+		t.Fatalf("thread/search: %v", err)
+	}
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadSearchResult](t, responseByID(t, msgs, "search")["result"])
+	if len(result.Results) != 1 || result.Results[0].Thread.ID != group.ID {
+		t.Fatalf("expected only group participant hit, got %+v", result.Results)
+	}
+	if !strings.Contains(result.Results[0].Snippet, "helios-signal") {
+		t.Fatalf("expected participant snippet, got %q", result.Results[0].Snippet)
+	}
+}
+
 func TestServerConversationSubthreadRPCs(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	sess, err := session.CreateWithMetadata(rt.SessionDir, "parent-thread", rt.RootDir)

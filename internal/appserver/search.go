@@ -177,11 +177,30 @@ func threadSearchCandidates(thread Thread, history []providers.ChatMessage) []th
 		{text: thread.Model},
 	}
 	for _, msg := range history {
+		if len(msg.EnvelopeMeta) > 0 {
+			continue
+		}
 		if msg.Hidden {
+			if isParticipantModelContextMessage(msg) {
+				candidates = append(candidates, threadSearchCandidatesFromParticipantContext(msg)...)
+			}
 			continue
 		}
 		candidates = append(candidates, threadSearchCandidatesFromMessage(msg)...)
 	}
+	return candidates
+}
+
+func threadSearchCandidatesFromParticipantContext(msg providers.ChatMessage) []threadSearchCandidate {
+	candidates := make([]threadSearchCandidate, 0, 3)
+	add := func(text string) {
+		if compact := compactThreadSearchText(text); compact != "" {
+			candidates = append(candidates, threadSearchCandidate{text: compact})
+		}
+	}
+	add(msg.DisplayContent)
+	add(msg.ParticipantName)
+	add(msg.PostKind)
 	return candidates
 }
 
