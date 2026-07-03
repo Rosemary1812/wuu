@@ -21,12 +21,13 @@ import {
   Upload,
   Wrench,
 } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
 import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup, SectionRowIcon } from "./ThreadSidebar";
+import { ThreadContextMenu } from "./ThreadContextMenu";
 
 /**
  * Stable section identity keys for the new sidebar tree.
@@ -109,7 +110,9 @@ export function AppSidebar({
   sidebarProjects,
   pinnedThreads,
   activeThreadID,
-  activeParticipantID,
+  activeDMParticipantID,
+  dmThreadByParticipantID,
+  unreadDMParticipantIDs,
   participants,
   busyParticipantIDs,
   pendingThreadID,
@@ -133,6 +136,7 @@ export function AppSidebar({
   onOpenApprovalGallery,
   onSelectThread,
   onSelectParticipant,
+  onEditParticipant,
   onCreateParticipant,
   onImportParticipants,
   onExportParticipants,
@@ -158,7 +162,18 @@ export function AppSidebar({
   sidebarProjects: DesktopProject[];
   pinnedThreads: ThreadSummary[];
   activeThreadID?: string;
-  activeParticipantID?: string;
+  // The active thread's dm_participant_id (when the active thread is a
+  // DM with a named participant). Drives the highlighted row in the agent
+  // roster; collapses to undefined for any non-DM thread.
+  activeDMParticipantID?: string;
+  // Most-recent non-archived DM thread per participant id, derived in
+  // App.tsx. Drives the context menu's pin/unpin DM affordance and any
+  // future per-row DM metadata.
+  dmThreadByParticipantID: Map<string, ThreadSummary>;
+  // Participants whose DM thread has an unseen completed turn. Drives the
+  // `.has-unread` indicator on the roster row so the user can spot new
+  // messages at a glance without opening the conversation.
+  unreadDMParticipantIDs: Set<string>;
   participants: ParticipantProfile[];
   // Set of participant IDs with at least one running run. Drives the busy
   // status dot in the roster. Derived in App.tsx by walking child agents
@@ -188,7 +203,14 @@ export function AppSidebar({
   onOpenChipGallery: () => void;
   onOpenApprovalGallery: () => void;
   onSelectThread: (id: string) => void;
+  // Fires when the user clicks an agent row. The current product flow
+  // routes this to opening (or creating) the DM conversation with that
+  // named participant; profile editing lives behind the right-click menu
+  // (see onEditParticipant).
   onSelectParticipant: (participant: ParticipantProfile) => void;
+  // Fires when the user picks the "编辑设定" entry in the agent row's
+  // right-click menu. Opens the profile editing side panel.
+  onEditParticipant: (participant: ParticipantProfile) => void;
   onCreateParticipant: () => void;
   onImportParticipants: (file: File) => void;
   onExportParticipants: () => void;
@@ -210,6 +232,15 @@ export function AppSidebar({
   const participantTemplateInputRef = useRef<HTMLInputElement>(null);
   const rosterMenuRef = useRef<HTMLDivElement>(null);
   const [rosterMenuOpen, setRosterMenuOpen] = useState(false);
+  // Right-click menu on an individual agent row. The menu hosts the
+  // profile-editing entry plus a pin/unpin DM affordance that drives off
+  // the latest DM thread for that participant. The roster header's own
+  // overflow menu is unchanged; only the per-row context menu is new.
+  const [rosterContextMenu, setRosterContextMenu] = useState<{
+    x: number;
+    y: number;
+    participant: ParticipantProfile;
+  } | null>(null);
   // Close the overflow menu on outside pointerdown or Escape so the same
   // input devices that open it (click / keyboard) can also dismiss it
   // without coupling to a parent click handler.
@@ -408,13 +439,45 @@ export function AppSidebar({
           {sectionOrder.map((key) => {
             if (key === SIDEBAR_SECTION_AGENTS) {
               const collapsed = collapsedProjectIDs.has(SIDEBAR_SECTION_AGENTS);
+              const rosterMenu = rosterContextMenu ? (
+                <ThreadContextMenu
+                  x={rosterContextMenu.x}
+                  y={rosterContextMenu.y}
+                  items={[
+                    {
+                      label: "编辑设定",
+                      onSelect: () =>
+                        onEditParticipant(rosterContextMenu.participant),
+                    },
+                    {
+                      label: (() => {
+                        const dm = dmThreadByParticipantID.get(
+                          rosterContextMenu.participant.id,
+                        );
+                        return dm?.pinned ? "取消置顶 DM" : "置顶 DM";
+                      })(),
+                      disabled: !dmThreadByParticipantID.has(
+                        rosterContextMenu.participant.id,
+                      ),
+                      onSelect: () => {
+                        const dm = dmThreadByParticipantID.get(
+                          rosterContextMenu.participant.id,
+                        );
+                        if (!dm) return;
+                        onTogglePinned(dm);
+                      },
+                    },
+                  ]}
+                  onClose={() => setRosterContextMenu(null)}
+                />
+              ) : null;
               return (
-                <section
-                  key={SIDEBAR_SECTION_AGENTS}
-                  className="participant-roster-section"
-                  aria-label="Agents"
-                  data-section-id={SIDEBAR_SECTION_AGENTS}
-                >
+                <Fragment key={SIDEBAR_SECTION_AGENTS}>
+                  <section
+                    className="participant-roster-section"
+                    aria-label="Agents"
+                    data-section-id={SIDEBAR_SECTION_AGENTS}
+                  >
                   <div className="participant-roster-header-group">
                     <button
                       className={`project-row agent-row${collapsed ? "" : " expanded"}`}
@@ -524,6 +587,9 @@ export function AppSidebar({
                         ) : (
                           participants.map((participant) => {
                             const isBusy = busyParticipantIDs.has(participant.id);
+                            const isActiveDM =
+                              activeDMParticipantID === participant.id;
+                            const isUnread = unreadDMParticipantIDs.has(participant.id);
                             const status = isBusy ? "busy" : "online";
                             const avatar = (
                               <span className="participant-roster-avatar" aria-hidden="true">
@@ -541,14 +607,27 @@ export function AppSidebar({
                                 )}
                               </span>
                             );
+                            const className = [
+                              "participant-roster-row",
+                              isActiveDM ? "active" : "",
+                              isUnread ? "has-unread" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ");
                             return (
                               <button
                                 key={participant.id}
                                 type="button"
-                                className={`participant-roster-row${
-                                  activeParticipantID === participant.id ? " active" : ""
-                                }`}
+                                className={className}
                                 onClick={() => onSelectParticipant(participant)}
+                                onContextMenu={(event) => {
+                                  event.preventDefault();
+                                  setRosterContextMenu({
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                    participant,
+                                  });
+                                }}
                               >
                                 <span
                                   className="participant-roster-status"
@@ -571,7 +650,9 @@ export function AppSidebar({
                       </div>
                     </div>
                   ) : null}
-                </section>
+                  </section>
+                  {rosterMenu}
+                </Fragment>
               );
             }
             // For SCRATCH_PSEUDO_PROJECT_ID or any real project id, look up

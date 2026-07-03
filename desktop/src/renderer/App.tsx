@@ -158,15 +158,18 @@ import {
   emptyComposerDraft,
   ensureSessionTab,
   fileNameFromPath,
+  findDMThread,
   handleStreamingNotification,
   initialSplitComposerDrafts,
   initialState,
   isAnyThreadRunning,
   isDirectChildAgent,
+  isDMThread,
   isScratchThread,
   isStateActiveThreadRunning,
   isThread,
   isThreadRunning,
+  isThreadUnread,
   latestPlanUpdateForThread,
   mergeListedThreads,
   markThreadTurnsViewed,
@@ -1815,7 +1818,16 @@ export function App(): JSX.Element {
     for (const [projectID, threads] of Object.entries(
       sidebarProjectThreadsByProjectID,
     )) {
-      next[projectID] = summarizeThreadsForSidebar(threads);
+      // DM conversations with named participants live under the agent
+      // roster, not under the project tree. They are hidden from the
+      // 对话 scratch group (already filtered inside
+      // scratchThreadSummaries) and from every project's thread list
+      // here. Pinned DMs continue to surface under 置顶 because that
+      // list reads from sidebarThreadSummaries directly, bypassing this
+      // filter.
+      next[projectID] = summarizeThreadsForSidebar(
+        threads.filter((thread) => !isDMThread(thread)),
+      );
     }
     return next;
   }, [sidebarProjectThreadsByProjectID]);
@@ -1914,6 +1926,44 @@ export function App(): JSX.Element {
     }
     return ids;
   }, [state.thread, state.secondaryThread, state.threads]);
+  // The active thread's dm_participant_id (when set) drives the highlight
+  // in the agent roster. When the active thread is a DM the matching
+  // participant row renders as active; for non-DM threads the highlight
+  // collapses so no row is highlighted.
+  const activeDMParticipantID = useMemo(() => {
+    const id = state.thread?.dm_participant_id;
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  }, [state.thread?.dm_participant_id]);
+  // Per-participant DM lookup so the roster row can drive a context menu
+  // (pin/unpin DM, edit profile) without the sidebar having to refetch.
+  // Walk the participant list explicitly so the sidebar knows which
+  // participants have a DM thread even if state.threads hasn't been
+  // refreshed yet (the picker in AppState.ts picks the latest non-archived
+  // match for the given id). Values are summarized so the sidebar only
+  // sees the cheap ThreadSummary shape it already expects.
+  const dmThreadByParticipantID = useMemo(() => {
+    const map = new Map<string, ThreadSummary>();
+    for (const participant of participants) {
+      const dmThread = findDMThread(state.threads, participant.id);
+      if (dmThread) {
+        map.set(participant.id, dmThread as unknown as ThreadSummary);
+      }
+    }
+    return map;
+  }, [participants, state.threads]);
+  // Participants whose DM thread has a turn that the user has not yet
+  // seen. Mirrors the `.has-unread` treatment used by thread rows so the
+  // roster row gives the same visual cue without re-implementing the
+  // helper.
+  const unreadDMParticipantIDs = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [participantID, thread] of dmThreadByParticipantID) {
+      if (isThreadUnread(thread, state.lastViewedTurnByThreadID[thread.id])) {
+        ids.add(participantID);
+      }
+    }
+    return ids;
+  }, [dmThreadByParticipantID, state.lastViewedTurnByThreadID]);
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !previewingLaunch &&
@@ -2806,6 +2856,77 @@ export function App(): JSX.Element {
       mode: "new",
       loading: false,
     });
+  }
+
+  /**
+   * Open (or create) the DM conversation with the given named participant
+   * and surface it as the active thread. The picker prefers the latest live
+   * (non-archived) DM thread tagged with `participant.id` so a returning
+   * user lands in their previous conversation. When no DM exists yet we
+   * start a fresh thread tagged with `dm_participant_id` on the server and
+   * mirror the seed-fixture state-merge so the new thread is selected,
+   * upserted into `state.threads`, and bound to a session tab.
+   */
+  async function openParticipantDM(
+    participant: ParticipantProfile,
+  ): Promise<void> {
+    const currentState = appStateRef.current;
+    if (!currentState.activeContext || !currentState.initialized) {
+      return;
+    }
+    cancelViewSwitch();
+    setArchiveConfirmThreadID(undefined);
+    setWorkspaceMode(undefined);
+    setPrompt("");
+    setComposerImages([]);
+    setComposerFiles([]);
+    const existing = findDMThread(currentState.threads, participant.id);
+    if (existing) {
+      await activateThread(existing.id);
+      return;
+    }
+    try {
+      const { thread } = await window.wuu.startThread({
+        dm_participant_id: participant.id,
+      });
+      if (
+        !sameRuntimeContext(appStateRef.current.activeContext, currentState.activeContext)
+      ) {
+        return;
+      }
+      const activeContext = appStateRef.current.activeContext;
+      if (!activeContext) {
+        return;
+      }
+      const targetDraft = sessionTabDraftForThread(appStateRef.current, thread.id);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setState((current) => {
+        const withDraft = persistActiveSessionTabDraft(
+          current,
+          currentPrimaryComposerDraft(),
+        );
+        return {
+          ...withDraft,
+          thread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(thread, activeContext, targetDraft),
+          ),
+          activeSessionTabID: threadSessionTabID(thread.id),
+          threads: upsertThread(current.threads, thread),
+          running: isThreadRunning(thread),
+          status: "ready",
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "无法创建 Agent 对话",
+      }));
+    }
   }
 
   function handleParticipantSave(params: ParticipantSaveParams): void {
@@ -5568,6 +5689,30 @@ export function App(): JSX.Element {
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
+    // Active thread is a DM with a named participant: route the message to
+    // that participant's child agent. Attachments are unsupported in this
+    // path for v1, so when the composer carries images or files we fall
+    // through to the normal turn-start flow rather than blocking the user.
+    const dmParticipantID = targetThread?.dm_participant_id;
+    if (
+      typeof dmParticipantID === "string" &&
+      dmParticipantID.length > 0 &&
+      message.images.length === 0 &&
+      message.files.length === 0 &&
+      targetThread
+    ) {
+      const routed = await sendPromptToParticipant(
+        targetThread,
+        dmParticipantID,
+        message.text,
+      );
+      if (!routed) {
+        setPrompt(message.text);
+        setComposerImages(message.images);
+        setComposerFiles(message.files);
+      }
+      return;
+    }
     if (isStateActiveThreadRunning(currentState)) {
       const queued = await queueComposerMessage(message, targetThread);
       if (!queued) {
@@ -5578,6 +5723,66 @@ export function App(): JSX.Element {
       return;
     }
     await sendComposerMessage(message, true);
+  }
+
+  /**
+   * DM send path: a 1:1 conversation with a named participant is a thin
+   * shell over the participant sub-agent system. The composer prompt
+   * becomes a routed participant/start with the participant's profile
+   * driving task_name/description/subagent_type. The returned child
+   * agent is upserted into the active thread so the conversation tree
+   * mirrors what users see for explicit @mentions in legacy builds.
+   */
+  async function sendPromptToParticipant(
+    targetThread: Thread,
+    participantID: string,
+    text: string,
+  ): Promise<boolean> {
+    const currentState = appStateRef.current;
+    if (
+      text.trim() === "" ||
+      !currentState.activeContext ||
+      !currentState.initialized ||
+      targetThread.read_only ||
+      viewSwitchPending
+    ) {
+      return false;
+    }
+    const participant = participants.find(
+      (candidate) => candidate.id === participantID,
+    );
+    if (!participant) {
+      return false;
+    }
+    setState((current) => ({
+      ...current,
+      status: `正在路由给 ${participant.name}`,
+    }));
+    try {
+      const result = await window.wuu.startParticipant({
+        thread_id: targetThread.id,
+        participant_id: participant.id,
+        task_name: participant.name,
+        description: participant.tagline || participant.role || participant.name,
+        prompt: text,
+        subagent_type: participant.role,
+        record_user_message: true,
+      });
+      setState((current) => ({
+        ...updateThreadByID(current, targetThread.id, (thread) =>
+          upsertThreadChildAgent(thread, result.agent),
+        ),
+        status: `已路由给 ${participant.name}`,
+      }));
+      return true;
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "无法路由给 Agent",
+      }));
+      return false;
+    }
   }
 
   async function updateQueuedComposerMessage(
@@ -6649,7 +6854,9 @@ export function App(): JSX.Element {
         sidebarProjects={sidebarProjects}
         pinnedThreads={sidebarPinnedThreads}
         activeThreadID={activeThreadID}
-        activeParticipantID={participantPanel?.participant?.id}
+        activeDMParticipantID={activeDMParticipantID}
+        dmThreadByParticipantID={dmThreadByParticipantID}
+        unreadDMParticipantIDs={unreadDMParticipantIDs}
         participants={participants}
         busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={visiblePendingThreadID}
@@ -6674,7 +6881,8 @@ export function App(): JSX.Element {
         onOpenChipGallery={() => setChipGalleryOpen(true)}
         onOpenApprovalGallery={() => setApprovalGalleryOpen(true)}
         onSelectThread={(id) => void activateThread(id)}
-        onSelectParticipant={openParticipantProfile}
+        onSelectParticipant={(participant) => void openParticipantDM(participant)}
+        onEditParticipant={openParticipantProfile}
         onCreateParticipant={openNewParticipantProfile}
         onImportParticipants={importParticipantTemplate}
         onExportParticipants={exportParticipantTemplate}

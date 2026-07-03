@@ -107,7 +107,9 @@ function renderSidebar({
         ]}
         pinnedThreads={pinnedThreads}
         activeThreadID={undefined}
-        activeParticipantID={undefined}
+        activeDMParticipantID={undefined}
+        dmThreadByParticipantID={new Map()}
+        unreadDMParticipantIDs={new Set()}
         participants={participants}
         busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={undefined}
@@ -131,6 +133,7 @@ function renderSidebar({
         onOpenApprovalGallery={() => {}}
         onSelectThread={() => {}}
         onSelectParticipant={onSelectParticipant}
+        onEditParticipant={() => {}}
         onCreateParticipant={onCreateParticipant}
         onImportParticipants={onImportParticipants}
         onExportParticipants={onExportParticipants}

@@ -1497,8 +1497,65 @@ export function scratchThreadSummaries(
   projects: DesktopProject[],
 ): ThreadSummary[] {
   return sortThreadSummaries(threads).filter(
-    (thread) => !thread.pinned && isScratchThread(thread, projects),
+    (thread) =>
+      !thread.pinned &&
+      !thread.dm_participant_id &&
+      isScratchThread(thread, projects),
   );
+}
+
+/**
+ * Predicate that mirrors the wire-level Thread.dm_participant_id field. A
+ * thread is a "DM" when it was started (or already exists) as a 1:1
+ * conversation with a named participant. DMs are bucketed under the agent
+ * roster and never under the 对话 scratch group or any project.
+ */
+export function isDMThread(
+  thread: { dm_participant_id?: string },
+): boolean {
+  return typeof thread.dm_participant_id === "string" &&
+    thread.dm_participant_id.length > 0;
+}
+
+type DMThreadCandidate = {
+  id: string;
+  archived?: boolean;
+  updated_at: string;
+  created_at: string;
+  dm_participant_id?: string;
+};
+
+/**
+ * Pick the latest non-archived DM thread for a given participant id. The
+ * picker matches by dm_participant_id and prefers the thread with the
+ * largest updated_at, falling back to created_at when updated_at is
+ * missing. Archived threads are ignored so re-archiving a DM does not
+ * resurrect it as the active target — the user should start a new DM
+ * instead. Returns undefined when no live DM exists, which is the
+ * signal for the sidebar to create a fresh thread via startThread.
+ */
+export function findDMThread<T extends DMThreadCandidate>(
+  threads: readonly T[] | undefined,
+  participantID: string,
+): T | undefined {
+  if (typeof participantID !== "string" || participantID.length === 0) {
+    return undefined;
+  }
+  if (!threads) {
+    return undefined;
+  }
+  let best: T | undefined;
+  let bestTime = -Infinity;
+  for (const thread of threads) {
+    if (!thread || thread.dm_participant_id !== participantID) continue;
+    if (thread.archived) continue;
+    const time = threadTime(thread);
+    if (time > bestTime) {
+      best = thread;
+      bestTime = time;
+    }
+  }
+  return best;
 }
 
 function createDraftSessionTab(

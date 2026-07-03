@@ -84,6 +84,12 @@ interface RenderOptions {
   pinnedThreads?: ThreadSummary[];
   busyParticipantIDs?: Set<string>;
   sidebarProjects?: DesktopProject[];
+  activeDMParticipantID?: string;
+  unreadDMParticipantIDs?: Set<string>;
+  dmThreadByParticipantID?: Map<string, ThreadSummary>;
+  onSelectParticipant?: (participant: ParticipantProfile) => void;
+  onEditParticipant?: (participant: ParticipantProfile) => void;
+  onTogglePinned?: (thread: ThreadSummary) => void;
 }
 
 function renderSidebar(options: RenderOptions): void {
@@ -98,6 +104,12 @@ function renderSidebar(options: RenderOptions): void {
       makeProject("project-1", "wuu", "/repo/wuu"),
       makeProject("project-2", "interview", "/repo/interview"),
     ],
+    activeDMParticipantID,
+    unreadDMParticipantIDs = new Set<string>(),
+    dmThreadByParticipantID = new Map<string, ThreadSummary>(),
+    onSelectParticipant = () => {},
+    onEditParticipant = () => {},
+    onTogglePinned = () => {},
   } = options;
 
   const state: AppState = {
@@ -118,7 +130,9 @@ function renderSidebar(options: RenderOptions): void {
         sidebarProjects={sidebarProjects}
         pinnedThreads={pinnedThreads}
         activeThreadID={undefined}
-        activeParticipantID={undefined}
+        activeDMParticipantID={activeDMParticipantID}
+        dmThreadByParticipantID={dmThreadByParticipantID}
+        unreadDMParticipantIDs={unreadDMParticipantIDs}
         participants={participants}
         busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={undefined}
@@ -141,11 +155,12 @@ function renderSidebar(options: RenderOptions): void {
         onOpenChipGallery={() => {}}
         onOpenApprovalGallery={() => {}}
         onSelectThread={() => {}}
-        onSelectParticipant={() => {}}
+        onSelectParticipant={onSelectParticipant}
+        onEditParticipant={onEditParticipant}
         onCreateParticipant={() => {}}
         onImportParticipants={() => {}}
         onExportParticipants={() => {}}
-        onTogglePinned={() => {}}
+        onTogglePinned={onTogglePinned}
         onArchiveThread={() => {}}
         onClearArchiveConfirm={() => {}}
         onToggleProjectMenu={() => {}}
@@ -374,5 +389,170 @@ describe("AppSidebar sections", () => {
     // the expanded variant is rotated -45deg via CSS so the visual reads as
     // a diagonal pin.
     expect(sidebarCSS).toMatch(/\[data-project-icon-kind="pinned"\][\s\S]*?\.project-row\.expanded/);
+  });
+
+  it("agent row click fires onSelectParticipant (DM open path), not profile", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    let selected: ParticipantProfile | undefined;
+    let edited: ParticipantProfile | undefined;
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      onSelectParticipant: (participant) => {
+        selected = participant;
+      },
+      onEditParticipant: (participant) => {
+        edited = participant;
+      },
+    });
+
+    const row = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row",
+    );
+    expect(row).not.toBeNull();
+    act(() => {
+      row?.click();
+    });
+    expect(selected?.id).toBe("p-1");
+    // Profile editing is now exclusive to the right-click context menu.
+    expect(edited).toBeUndefined();
+  });
+
+  it("right-clicking an agent row shows the context menu with 编辑设定", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    let edited: ParticipantProfile | undefined;
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      onEditParticipant: (participant) => {
+        edited = participant;
+      },
+    });
+
+    const row = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row",
+    );
+    expect(row).not.toBeNull();
+    act(() => {
+      row?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 200,
+        }),
+      );
+    });
+    const menu = document.body.querySelector(".thread-row-context-menu");
+    expect(menu).not.toBeNull();
+    const items = menu?.querySelectorAll(".thread-row-context-menu-item");
+    expect(items?.length).toBeGreaterThan(0);
+    expect(items?.[0].textContent).toContain("编辑设定");
+
+    act(() => {
+      items?.[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(edited?.id).toBe("p-1");
+  });
+
+  it("pins DM via the context menu when a DM thread exists", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    const dmThread = makeThreadSummary("dm-1", "DM with Alpha", {
+      dm_participant_id: "p-1",
+      pinned: false,
+    });
+    let toggled: ThreadSummary | undefined;
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      dmThreadByParticipantID: new Map([["p-1", dmThread]]),
+      onTogglePinned: (thread) => {
+        toggled = thread;
+      },
+    });
+
+    const row = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row",
+    );
+    act(() => {
+      row?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 200,
+        }),
+      );
+    });
+    const items = document.body
+      .querySelector(".thread-row-context-menu")
+      ?.querySelectorAll<HTMLButtonElement>(".thread-row-context-menu-item");
+    expect(items?.[1].textContent).toContain("置顶 DM");
+    expect(items?.[1].disabled).toBe(false);
+    act(() => {
+      items?.[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(toggled?.id).toBe("dm-1");
+  });
+
+  it("disables DM pin entry when no DM thread exists yet", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+    });
+
+    const row = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row",
+    );
+    act(() => {
+      row?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 200,
+        }),
+      );
+    });
+    const items = document.body
+      .querySelector(".thread-row-context-menu")
+      ?.querySelectorAll<HTMLButtonElement>(".thread-row-context-menu-item");
+    expect(items?.[1].textContent).toContain("置顶 DM");
+    expect(items?.[1].disabled).toBe(true);
+  });
+
+  it("highlights the active DM participant row and applies has-unread", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-active", kind: "named", name: "Active", role: "writer" },
+      { id: "p-unread", kind: "named", name: "Unread", role: "writer" },
+      { id: "p-quiet", kind: "named", name: "Quiet", role: "writer" },
+    ];
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      activeDMParticipantID: "p-active",
+      unreadDMParticipantIDs: new Set(["p-unread"]),
+    });
+
+    const rows = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".participant-roster-row"),
+    );
+    const byName = new Map<string, HTMLButtonElement>();
+    for (const row of rows) {
+      const name = row.querySelector(".participant-roster-name")?.textContent ?? "";
+      byName.set(name, row);
+    }
+    expect(byName.get("Active")?.classList.contains("active")).toBe(true);
+    expect(byName.get("Active")?.classList.contains("has-unread")).toBe(false);
+    expect(byName.get("Unread")?.classList.contains("active")).toBe(false);
+    expect(byName.get("Unread")?.classList.contains("has-unread")).toBe(true);
+    expect(byName.get("Quiet")?.classList.contains("active")).toBe(false);
+    expect(byName.get("Quiet")?.classList.contains("has-unread")).toBe(false);
   });
 });
