@@ -476,32 +476,6 @@ function replaceParticipantProfile(
   return next;
 }
 
-function mentionedParticipantsFromText(
-  text: string,
-  participants: ParticipantProfile[],
-): ParticipantProfile[] {
-  const unique = new Map<string, ParticipantProfile>();
-  const source = text.trim();
-  if (source === "") {
-    return [];
-  }
-  const candidates = [...participants]
-    .filter((participant) => participant.name.trim() !== "")
-    .sort((a, b) => b.name.length - a.name.length);
-  for (const participant of candidates) {
-    const escaped = escapeRegExp(participant.name.trim());
-    const pattern = new RegExp(`(^|\\s)@${escaped}(?=$|\\s|[,.!?，。；：、])`);
-    if (pattern.test(source)) {
-      unique.set(participant.id, participant);
-    }
-  }
-  return [...unique.values()];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function participantTemplateEntries(value: unknown): ParticipantSaveParams[] {
   if (!value || typeof value !== "object" || !("participants" in value)) {
     throw new Error("template is missing participants");
@@ -1615,12 +1589,6 @@ export function App(): JSX.Element {
     !showingSkillsCatalog &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
-
-  // The default named agent (Andy) is the seed of the participant
-  // roster, so it's always the first entry. The greeting already
-  // addresses the user, and the onboarding chip points the user at
-  // the same agent.
-  const onboardingNamedParticipant = participants[0];
 
   // Past user queries for the input-box hover popover. We collect them
   // in turn order, oldest first, so the popover mirrors the order in
@@ -3186,7 +3154,6 @@ export function App(): JSX.Element {
         onClearGoal={clearCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
-        participants={participants}
       />
     );
   }
@@ -3436,28 +3403,6 @@ export function App(): JSX.Element {
   }
 
   function handleEmptyStateHint(action: EmptyStateHintAction): void {
-    if (action.kind === "mentionNamed") {
-      // Append "@<name> " to the existing prompt so we never clobber
-      // what the user has already typed. An empty composer gets a
-      // fresh "@<name> " insertion; a non-empty one keeps its tail and
-      // gets a separating space added before the mention. The trailing
-      // space lets the user keep typing without having to backspace
-      // past the mention, and keeps the mention regex in
-      // `mentionedParticipantsFromText` matching as soon as they
-      // finish a word.
-      const name = action.participant.name.trim();
-      if (name === "") {
-        return;
-      }
-      setPrompt((prev) => {
-        const trimmed = prev.trimEnd();
-        return trimmed === "" ? `@${name} ` : `${trimmed} @${name} `;
-      });
-      // Refocus on the next render so the just-updated prompt is in
-      // the textarea, with the caret at the end of the inserted text.
-      setHeroComposerFocusTick((tick) => tick + 1);
-      return;
-    }
     if (action.kind === "openSettings") {
       closeProjectMenus();
       setSettingsInitialPage("providers");
@@ -5534,109 +5479,6 @@ export function App(): JSX.Element {
     }
   }
 
-  async function sendMentionedParticipants(
-    message: QueuedComposerMessage,
-    targets: ParticipantProfile[],
-  ): Promise<boolean> {
-    const currentState = appStateRef.current;
-    const targetThread = activeThreadForState(currentState);
-    const targetPane: ConversationPaneID =
-      currentState.activePane === "secondary" && currentState.secondaryThread
-        ? "secondary"
-        : "primary";
-    const text = message.text.trim();
-    if (
-      text === "" ||
-      targets.length === 0 ||
-      !currentState.activeContext ||
-      !currentState.initialized ||
-      targetThread?.read_only ||
-      viewSwitchPending
-    ) {
-      return false;
-    }
-    const activeContext = currentState.activeContext;
-    try {
-      const thread =
-        targetThread ??
-        requireThread(
-          await window.wuu.startThread(),
-          "thread/start did not return a thread",
-        );
-      appStateRef.current = {
-        ...setThreadForPane(appStateRef.current, targetPane, thread),
-        activePane: targetPane,
-        allowThreadAutoActivation: true,
-        sessionTabs:
-          targetPane === "primary"
-            ? bindActiveSessionTabToThread(
-                appStateRef.current.sessionTabs,
-                appStateRef.current.activeSessionTabID,
-                thread,
-                activeContext,
-              )
-            : appStateRef.current.sessionTabs,
-        activeSessionTabID:
-          targetPane === "primary"
-            ? threadSessionTabID(thread.id)
-            : appStateRef.current.activeSessionTabID,
-        threads: upsertThread(appStateRef.current.threads, thread),
-      };
-      setState((current) => ({
-        ...setThreadForPane(current, targetPane, thread),
-        activePane: targetPane,
-        allowThreadAutoActivation: true,
-        sessionTabs:
-          targetPane === "primary"
-            ? bindActiveSessionTabToThread(
-                current.sessionTabs,
-                current.activeSessionTabID,
-                thread,
-                activeContext,
-              )
-            : current.sessionTabs,
-        activeSessionTabID:
-          targetPane === "primary"
-            ? threadSessionTabID(thread.id)
-            : current.activeSessionTabID,
-        threads: upsertThread(current.threads, thread),
-        status: `正在路由给 ${targets.map((target) => target.name).join("、")}`,
-      }));
-      const results = await Promise.all(
-        targets.map((target, index) =>
-          window.wuu.startParticipant({
-            thread_id: thread.id,
-            participant_id: target.id,
-            task_name: target.name,
-            description: target.tagline || target.role || target.name,
-            prompt: text,
-            subagent_type: target.role,
-            record_user_message: index === 0,
-          }),
-        ),
-      );
-      setState((current) => {
-        let next = current;
-        for (const result of results) {
-          next = updateThreadByID(next, thread.id, (currentThread) =>
-            upsertThreadChildAgent(currentThread, result.agent),
-          );
-        }
-        return {
-          ...next,
-          status: `已路由给 ${targets.map((target) => target.name).join("、")}`,
-        };
-      });
-      return true;
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "mention routing failed",
-      }));
-      return false;
-    }
-  }
-
   async function sendPrompt(): Promise<void> {
     if (viewSwitchPending) {
       return;
@@ -5656,23 +5498,9 @@ export function App(): JSX.Element {
       await updateQueuedComposerMessage(message, queuedEditTarget);
       return;
     }
-    const files = inputFilesFromComposer(message.files);
-    const mentionTargets =
-      message.images.length === 0 && files.length === 0
-        ? mentionedParticipantsFromText(message.text, participants)
-        : [];
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
-    if (mentionTargets.length > 0) {
-      const routed = await sendMentionedParticipants(message, mentionTargets);
-      if (!routed) {
-        setPrompt(message.text);
-        setComposerImages(message.images);
-        setComposerFiles(message.files);
-      }
-      return;
-    }
     if (isStateActiveThreadRunning(currentState)) {
       const queued = await queueComposerMessage(message, targetThread);
       if (!queued) {
@@ -7148,7 +6976,6 @@ export function App(): JSX.Element {
                 title={emptyThreadTitle}
                 belowTitle={
                   <EmptyStateHints
-                    namedParticipant={onboardingNamedParticipant}
                     providers={state.initialized?.providers}
                     onSelect={handleEmptyStateHint}
                   />
