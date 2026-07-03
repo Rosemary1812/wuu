@@ -338,9 +338,14 @@
   font-size: var(--font-sm);
 }
 
+/* Shared row spec (sidebar-groups-andy-workspaces.md §1.1): thread rows
+ * and DM/participant rows are one family — same height, padding, font,
+ * hover, and focus treatment. Each family only overrides its own grid
+ * columns (icon vs status+avatar); never fork the base spec. */
 .nav-item,
 .project-row,
-.thread-row {
+.thread-row,
+.participant-roster-row {
   display: grid;
   position: relative;
   width: 100%;
@@ -388,7 +393,8 @@
 
 .nav-item:hover,
 .project-row:hover,
-.thread-row:hover {
+.thread-row:hover,
+.participant-roster-row:hover {
   background: var(--sidebar-glass-hover);
   color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
@@ -402,7 +408,8 @@
 
 .nav-item:focus-visible,
 .project-row:focus-visible,
-.thread-row:focus-visible {
+.thread-row:focus-visible,
+.participant-roster-row:focus-visible {
   outline: 0;
   box-shadow: inset 0 0 0 2px rgba(17, 19, 21, 0.18);
 }
@@ -889,7 +896,8 @@
   transform: scale(1);
 }
 
-.thread-row.active {
+.thread-row.active,
+.participant-roster-row.active {
   background: var(--sidebar-glass-active);
   color: var(--ink);
   font-weight: var(--weight-medium);
@@ -928,7 +936,15 @@
   transform: scale(1);
 }
 
-.thread-row.has-unread .thread-row-title {
+/* Unread badge language shared across both row families (§1.1): the
+ * leading dot turns --info and the title bumps to semibold. Thread rows
+ * use their ::before dot; DM rows reuse their status dot column. */
+.participant-roster-row.has-unread .participant-roster-status {
+  background: var(--info);
+}
+
+.thread-row.has-unread .thread-row-title,
+.participant-roster-row.has-unread .participant-roster-name {
   color: var(--ink);
   font-weight: var(--weight-semibold);
 }
@@ -1397,13 +1413,6 @@
 
 .project-row.expanded .project-row-icon:has([data-project-icon-kind="pinned"]) .project-row-icon-state.expanded {
   transform: rotate(-45deg) scale(1);
-}
-
-/* Agent roster unread cue: bump the name weight (instead of inventing
- * a new dot) so the row matches .thread-row.has-unread. */
-.participant-roster-row.has-unread .participant-roster-name {
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
 }
 
 /* Unified empty-note row for sections that have no children. */

@@ -1000,6 +1000,54 @@ describe("sidebar section spacing rhythm", () => {
   });
 });
 
+describe("unified DM/thread row spec (S1)", () => {
+  // sidebar-groups-andy-workspaces.md §1.1: DM/participant rows and
+  // thread rows share one row spec (height, padding, font, hover,
+  // unread badge language); only avatar-vs-icon identity differs.
+  it("participant rows join the shared row base group", () => {
+    expect(sidebarCSS).toMatch(
+      /\.nav-item,\s*\.project-row,\s*\.thread-row,\s*\.participant-roster-row \{/,
+    );
+  });
+
+  it("participant rows share hover and focus states with thread rows", () => {
+    expect(sidebarCSS).toMatch(
+      /\.thread-row:hover,\s*\.participant-roster-row:hover \{/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.thread-row:focus-visible,\s*\.participant-roster-row:focus-visible \{/,
+    );
+  });
+
+  it("participant rows share the active-row treatment with thread rows", () => {
+    expect(sidebarCSS).toMatch(
+      /\.thread-row\.active,\s*\.participant-roster-row\.active \{/,
+    );
+  });
+
+  it("unread rows share one badge language: info dot plus semibold title", () => {
+    expect(sidebarCSS).toMatch(
+      /\.participant-roster-row\.has-unread \.participant-roster-status \{[^}]*var\(--info\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.thread-row\.has-unread \.thread-row-title,\s*\.participant-roster-row\.has-unread \.participant-roster-name \{/,
+    );
+  });
+
+  it("participants.css keeps no parallel row spec", () => {
+    expect(participantsCSS).not.toMatch(/\.participant-roster-row:hover/);
+    expect(participantsCSS).not.toMatch(
+      /\.participant-roster-row \{[^}]*padding: 5px/,
+    );
+  });
+
+  it("roster copy is single-line so DM rows match the shared row height", () => {
+    expect(participantsCSS).toMatch(
+      /\.participant-roster-copy \{[^}]*display: flex/,
+    );
+  });
+});
+
 describe("group chat section", () => {
   const order = [SIDEBAR_SECTION_AGENTS, "project-1"];
 

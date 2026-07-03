@@ -260,26 +260,14 @@
   padding: 2px 0;
 }
 
+/* Row spec (height / padding / font / hover / focus / active / unread)
+ * comes from the shared sidebar row family in sidebar.css
+ * (sidebar-groups-andy-workspaces.md §1.1). Only the identity columns
+ * differ here: status dot + avatar instead of the thread-row icon. */
 .participant-roster-row {
-  display: grid;
   min-width: 0;
-  grid-template-columns: var(--sidebar-tree-toggle-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
-  align-items: center;
-  column-gap: var(--sidebar-tree-column-gap);
-  padding: 5px var(--sidebar-row-pad-x);
   border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.participant-roster-row:hover,
-.participant-roster-row:focus-visible,
-.participant-roster-row.active {
-  background: var(--surface-2);
+  grid-template-columns: var(--sidebar-tree-toggle-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
 }
 
 .participant-roster-row:disabled {
@@ -340,19 +328,19 @@
   min-width: 180px;
 }
 
+/* Single-line copy (name · meta inline) so DM rows keep the shared
+ * 32px thread-row height instead of a taller two-line spec. */
 .participant-roster-copy {
-  display: grid;
+  display: flex;
   min-width: 0;
-  gap: 1px;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .participant-roster-name {
   min-width: 0;
   overflow: hidden;
-  color: var(--ink);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  line-height: var(--line-ui);
+  flex: 0 1 auto;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -360,8 +348,10 @@
 .participant-roster-meta {
   min-width: 0;
   overflow: hidden;
+  flex: 0 1 auto;
   color: var(--ink-muted);
   font-size: var(--font-xs);
+  font-weight: 400;
   line-height: var(--line-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
