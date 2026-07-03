@@ -7888,6 +7888,14 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
               ) : null}
               {isChatStyleThread ? (
                 <ChatThreadView
+                  // Give the chat-style windowing its own reveal state per
+                  // thread (ChatThreadView.tsx's hiddenOlderCount) instead
+                  // of carrying over whatever the previously active thread
+                  // had scrolled open. In practice this pane is already
+                  // dedicated to `threadID` for as long as it stays in the
+                  // cache, so this mostly documents the intent and guards
+                  // the eviction/recreate path explicitly.
+                  key={threadID}
                   turns={threadTurns}
                   typingParticipants={chatTypingParticipants}
                 />
