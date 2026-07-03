@@ -2364,3 +2364,105 @@ func TestChat_SlidingTailMarkerOnToolLoops(t *testing.T) {
 		t.Fatalf("expected 3 chat calls, got %d", callCount)
 	}
 }
+
+// TestChat_CacheTTLOption verifies that the cacheTTL provider option is
+// correctly wired to the cache_control.ttl field in the request payload.
+func TestChat_CacheTTLOption(t *testing.T) {
+	testCases := []struct {
+		name     string
+		ttl      any
+		expected string
+	}{
+		{"empty string uses default", "", ""},
+		{"5m TTL is applied", "5m", "5m"},
+		{"1h TTL is applied", "1h", "1h"},
+		{"invalid TTL is ignored", "2h", ""},
+		{"non-string option is ignored", 123, ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request body: %v", err)
+				}
+
+				// Check system block cache_control TTL
+				system, ok := body["system"].([]any)
+				if !ok || len(system) != 1 {
+					t.Fatalf("expected system blocks, got %#v", body["system"])
+				}
+				sysBlock, ok := system[0].(map[string]any)
+				if !ok {
+					t.Fatalf("unexpected system block: %#v", system[0])
+				}
+				cacheCtl, ok := sysBlock["cache_control"].(map[string]any)
+				if !ok || cacheCtl["type"] != "ephemeral" {
+					t.Fatalf("expected system cache_control, got %#v", sysBlock["cache_control"])
+				}
+				ttlVal, hasttl := cacheCtl["ttl"]
+				if tc.expected == "" && hasttl {
+					t.Fatalf("did not expect ttl field when empty, got %v", ttlVal)
+				} else if tc.expected != "" && ttlVal != tc.expected {
+					t.Fatalf("expected ttl=%q, got %v", tc.expected, ttlVal)
+				}
+
+				// Check message cache_control TTL
+				msgs, ok := body["messages"].([]any)
+				if !ok || len(msgs) == 0 {
+					t.Fatalf("expected messages, got %#v", body["messages"])
+				}
+				lastMsg, ok := msgs[len(msgs)-1].(map[string]any)
+				if !ok {
+					t.Fatalf("unexpected last message: %#v", msgs[len(msgs)-1])
+				}
+				content, ok := lastMsg["content"].([]any)
+				if !ok || len(content) == 0 {
+					t.Fatalf("unexpected content blocks: %#v", lastMsg["content"])
+				}
+				lastBlock, ok := content[len(content)-1].(map[string]any)
+				if !ok {
+					t.Fatalf("unexpected content block: %#v", content[len(content)-1])
+				}
+				msgCacheCtl, ok := lastBlock["cache_control"].(map[string]any)
+				if !ok || msgCacheCtl["type"] != "ephemeral" {
+					t.Fatalf("expected cache_control on last block, got %#v", lastBlock["cache_control"])
+				}
+				msgTTLVal, hasMsgTTL := msgCacheCtl["ttl"]
+				if tc.expected == "" && hasMsgTTL {
+					t.Fatalf("did not expect ttl field in message when empty, got %v", msgTTLVal)
+				} else if tc.expected != "" && msgTTLVal != tc.expected {
+					t.Fatalf("expected message ttl=%q, got %v", tc.expected, msgTTLVal)
+				}
+
+				w.Header().Set("content-type", "application/json")
+				_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}]}`))
+			}))
+			defer server.Close()
+
+			client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+
+			opts := map[string]any{}
+			if tc.ttl != nil {
+				opts["cacheTTL"] = tc.ttl
+			}
+
+			_, err = client.Chat(context.Background(), providers.ChatRequest{
+				Model: "claude-test",
+				Messages: []providers.ChatMessage{
+					{Role: "system", Content: "sys"},
+					{Role: "user", Content: "hello"},
+				},
+				CacheHint: &providers.CacheHint{StableSystem: true},
+				ProviderOptions: opts,
+			})
+			if err != nil {
+				t.Fatalf("chat error: %v", err)
+			}
+		})
+	}
+}

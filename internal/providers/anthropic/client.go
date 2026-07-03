@@ -302,6 +302,23 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 	}
 	req.Messages = prepared
 	toolSearchEnabled := shouldEnableAnthropicToolSearch(req, support)
+
+	// Parse cache TTL from provider options. Accepted values: "5m", "1h".
+	// Empty or invalid values default to no TTL (5m server default).
+	cacheTTL := ""
+	if ttlVal, ok := req.ProviderOptions["cacheTTL"].(string); ok {
+		ttlVal = strings.TrimSpace(ttlVal)
+		switch ttlVal {
+		case "5m", "1h":
+			cacheTTL = ttlVal
+		case "":
+			// Empty is valid, use default
+		default:
+			// Invalid TTL, log and ignore
+			providers.DebugLogf("buildAnthropicRequest: invalid cacheTTL %q, ignoring", ttlVal)
+		}
+	}
+
 	payload := anthropicRequest{
 		Model:     req.Model,
 		MaxTokens: maxTokens,
@@ -341,7 +358,7 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		}
 	}
 	providers.DebugLogf("buildAnthropicRequest: %d input msgs → %d merged msgs", len(req.Messages), len(payload.Messages))
-	applyAnthropicCacheHint(&payload, req.CacheHint)
+	applyAnthropicCacheHint(&payload, req.CacheHint, cacheTTL)
 	for i := range payload.Messages {
 		payload.Messages[i] = smooshSystemReminderBlocks(payload.Messages[i])
 	}
@@ -356,7 +373,7 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		}
 		providers.DebugLogf("buildAnthropicRequest: role sequence: [%s]", roles.String())
 	}
-	payload.System = buildAnthropicSystem(systemTexts, req.CacheHint)
+	payload.System = buildAnthropicSystem(systemTexts, req.CacheHint, cacheTTL)
 
 	if len(req.Tools) > 0 {
 		payload.Tools = buildAnthropicTools(
@@ -575,7 +592,7 @@ func isFirstPartyAnthropicBaseURL(raw string) bool {
 	return u == "https://api.anthropic.com" || u == "https://api.anthropic.com/v1"
 }
 
-func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {
+func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint, cacheTTL string) any {
 	if len(systemTexts) == 0 {
 		return nil
 	}
@@ -586,7 +603,7 @@ func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint) any {
 	for _, text := range systemTexts {
 		blocks = append(blocks, anthropicSystemBlock{Type: "text", Text: text})
 	}
-	blocks[len(blocks)-1].CacheControl = ephemeralCacheControl()
+	blocks[len(blocks)-1].CacheControl = ephemeralCacheControl(cacheTTL)
 	return blocks
 }
 
@@ -644,7 +661,7 @@ func anthropicCompactedDiscoveredToolNames(messages []providers.ChatMessage) map
 }
 
 
-func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint) {
+func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint, cacheTTL string) {
 	if payload == nil || hint == nil {
 		return
 	}
@@ -663,33 +680,33 @@ func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHin
 	//    marker drift from the Anthropic 20-block lookback window.
 
 	if hint.HasCompactSummary {
-		markAnthropicMessageForCache(&payload.Messages[0])
+		markAnthropicMessageForCache(&payload.Messages[0], cacheTTL)
 	}
 
 	// Apply the sliding tail marker: walk backward from the end of payload
 	// to find the last cacheable block across all messages.
-	markAnthropicTailForCache(payload)
+	markAnthropicTailForCache(payload, cacheTTL)
 }
 
 // markAnthropicTailForCache finds the last cacheable block in the entire
 // payload (walking backward across messages from the end) and marks it
 // with a cache_control marker. This implements the sliding tail strategy
 // for efficient intra-turn tool loops.
-func markAnthropicTailForCache(payload *anthropicRequest) bool {
+func markAnthropicTailForCache(payload *anthropicRequest, cacheTTL string) bool {
 	if payload == nil || len(payload.Messages) == 0 {
 		return false
 	}
 	// Walk backward from the last message to find the first message with
 	// a cacheable block, then mark the last cacheable block in that message.
 	for i := len(payload.Messages) - 1; i >= 0; i-- {
-		if markAnthropicMessageForCache(&payload.Messages[i]) {
+		if markAnthropicMessageForCache(&payload.Messages[i], cacheTTL) {
 			return true
 		}
 	}
 	return false
 }
 
-func markAnthropicMessageForCache(msg *anthropicMessage) bool {
+func markAnthropicMessageForCache(msg *anthropicMessage, cacheTTL string) bool {
 	if msg == nil {
 		return false
 	}
@@ -698,7 +715,7 @@ func markAnthropicMessageForCache(msg *anthropicMessage) bool {
 		if !anthropicBlockSupportsCache(block) {
 			continue
 		}
-		block.CacheControl = ephemeralCacheControl()
+		block.CacheControl = ephemeralCacheControl(cacheTTL)
 		return true
 	}
 	return false
@@ -716,8 +733,12 @@ func anthropicBlockSupportsCache(block *anthropicBlock) bool {
 	}
 }
 
-func ephemeralCacheControl() *anthropicCacheControl {
-	return &anthropicCacheControl{Type: "ephemeral"}
+func ephemeralCacheControl(ttl string) *anthropicCacheControl {
+	cc := &anthropicCacheControl{Type: "ephemeral"}
+	if ttl != "" {
+		cc.TTL = ttl
+	}
+	return cc
 }
 
 // doSingleMessagesRequest sends one HTTP request to the messages endpoint
@@ -1335,6 +1356,7 @@ type anthropicSystemBlock struct {
 
 type anthropicCacheControl struct {
 	Type string `json:"type"`
+	TTL  string `json:"ttl,omitempty"`
 }
 
 type anthropicImageSource struct {
