@@ -1,0 +1,162 @@
+# 工作焦点(Workspace Focus)— 设计与实施计划
+
+日期:2026-07-03
+状态:设计定稿(DM 部分实施中;群聊部分留待后续)
+性质:**本文档同时是给实施 agent 的强约束提示词。**
+
+## 0. 动机:缓存纪律优先于便利
+
+具名常驻 agent(如 Andy)的 DM thread 就是它的大脑:`internal/agent/cache_hint.go`
+头注释写明 `PromptCacheKey` 落到 thread ID,整条历史都指望这一点做 prompt-cache
+命中。产品上想让用户按天/按话题把 agent 的注意力钉在某个工作区("现在只看
+acme 这个项目"),最直接的实现是把"当前项目"写进 system prompt —— 但那样做,
+每次切换焦点都会让 `system` 消息哈希变化,直接打穿 Anthropic/OpenAI 的稳定前缀
+缓存,整条历史重新计费。这是本设计唯一不能妥协的约束:
+
+> **焦点绝不进 system prompt。** `internal/appserver/participant_prompt.go`
+> 一个字节都不动。
+
+代替方案:焦点是**消息流的属性**——像一条普通的历史消息一样持久化,只在真正
+变化时声明一次,声明之后的所有轮次(包括进程重启后的重放)都能从历史里"重新
+推导"出当前焦点,而不需要额外的可变系统提示。这正是 `envelope_meta` 已经在用
+的模式(见 §3),本设计照抄它的骨架。
+
+## 1. 三态编码
+
+单个字符串字段 `focus_workspace`,贯穿 wire 协议、session 持久化、turn 参数:
+
+| 值 | 含义 | 工具 cwd |
+|---|---|---|
+| `""` / 缺省 | 全部注册工作区(现状行为,未使用本功能时完全不变) | agent home |
+| `"~"` | 仅个人空间(agent home 目录) | agent home |
+| 其他值 | 必须是 `internal/workspaces/workspaces.go` 里 `Workspace.Name`(来自 `<wuuHome>/projects.json`) | 该工作区 `Root` |
+
+不新增第二个字段、不新增枚举类型——单字符串足以表达三态,且能直接当作
+`session_messages`/`sessions` 表的一列存,和 `dm_participant_id` 的风格一致。
+
+## 2. 协议改动
+
+- `Thread.focus_workspace,omitempty`(`internal/appserver/protocol.go`):只读快照,
+  跟 `DMParticipantID` 一样从 `threadState`/`session.Session` 镜像出来。
+- `TurnStartParams.focus_workspace`(protocol.go:961 附近),类型 `*string`,跟
+  `PermissionMode *string` 同一风格:
+  - `nil`(JSON 里完全不带这个字段)= **不改变焦点**,这是绝大多数轮次走的路径,
+    历史字节不变,缓存不受影响。
+  - 非 nil(哪怕指向空字符串)= **请求切换**到该焦点。空字符串显式请求切回"全部
+    工作区"。
+  - 用 `*string` 而不是"空字符串当默认值"的写法,是因为空字符串本身是一个合法
+    且有意义的目标态(切回全部),必须能和"没传"区分开,否则用户没法从工作区
+    焦点切回默认视图。
+
+## 3. 幂等判定 + 声明项注入
+
+`turn/start` 落到某个 thread 时:
+
+1. 只有 chat 风格 thread(`th.DMParticipantID != "" || th.Group`)才处理
+   `focus_workspace`;工作会话(project/scratch)完全忽略该字段——它们本来就没有
+   "焦点"概念。**本次实施只接线 DM 分支**;判定/构造声明文本的辅助函数按 thread-
+   kind 无关的方式书写(输入是"当前焦点字符串"+"请求焦点字符串",不依赖
+   `threadState`),群聊 worker 可以直接复用,不需要重写。
+2. 请求值先对 `workspaces.List(wuuHome)` 校验:非法工作区名(不在 roster 里、也
+   不是 `""`/`"~"`)→ 直接返回明确的 JSON-RPC 错误,不触碰线程状态、不注入任何
+   东西。
+3. 合法值和 session 里持久化的当前焦点比较:
+   - **相同**→ 什么都不做(幂等)。这是切换后续每一轮的常态路径:前端/模型可以
+     无脑在每个 `turn/start` 里都带上 `focus_workspace`,只要没变就不会产生任何
+     额外历史条目,不影响缓存。
+   - **不同**→ (a) 持久化新焦点到 `session.Session.FocusWorkspace`(见 §4);
+     (b) 在本轮真正的用户消息**之前**,往历史里插入一条焦点声明项(见 §3.1),
+     作为一个独立的、已完成的合成 turn(仿照 `group_thread.go` 的
+     `handleGroupTurnStart` / `participant_handlers.go` 的
+     `RecordUserMessage` 分支:锁 → 持久化 → `appendUserMessageTurnLocked` →
+     解锁 → `NotificationTurnStarted`),然后真正的用户 turn 才照常走
+     `startResidentTurn`。
+
+### 3.1 声明项:双内容 + 结构化元数据
+
+仿照 `internal/appserver/envelope.go` / `resident_router.go` 里
+`MessageEnvelope` 的双内容模式(模型可见 `Content` vs 前端渲染用
+`DisplayContent` + `envelope_meta`):
+
+- **模型可见 `Content`**(同时作为 `DisplayContent`,文案短到不值得区分):
+  - 全部工作区:`[focus: all registered workspaces]`
+  - 个人空间:`[focus: home directory only]`
+  - 具体工作区:`[focus: <name> — <root>]`
+- **结构化元数据 `focus_meta`**(新字段,和 `envelope_meta` 平行,不复用同一列——
+  语义不同,`envelope_meta` 是路由簿记,`focus_meta` 是焦点声明):
+  ```json
+  {"kind": "all" | "home" | "workspace", "name"?: "...", "root"?: "..."}
+  ```
+  `kind="all"` 不带 `name`/`root`;`kind="home"` 带 `root`(agent home 路径,方便
+  前端不用另查);`kind="workspace"` 两者都带。前端渲染分割线是**后续工作**(本
+  实施不碰 `desktop/`),这里只保证数据管道通到 `session_messages` 表、往返
+  (load→save→load)字节一致。
+
+**必须持久化进历史,不允许做成临时/运行时注入。** 缓存正确性的前提是"每次从
+`session_messages` 重建 prompt,字节完全一致"——如果声明项只在内存里、进程重
+启或 thread/resume 后就消失,重放出来的历史会和原来发给模型的不一致,等于悄悄
+破坏了已经产生的 prompt cache 条目对应的"事实"。
+
+## 4. Session 持久化层
+
+跟 `DMParticipantID` 的存取模式对齐(`internal/session/session.go`):
+
+- `Session.FocusWorkspace string`(`json:"focus_workspace,omitempty"`)。
+- `sessions` 表新增列 `focus_workspace TEXT NOT NULL DEFAULT ''`,走
+  `addColumnIfMissing` 迁移(不改 `CREATE TABLE IF NOT EXISTS` 字面量,跟
+  `dm_participant_id`/`is_group` 的演进方式一致)。
+- `SetFocusWorkspace(sessDir, id, focus string) (Session, error)`:**区别于**
+  `BindDMParticipant`——`DMParticipantID` 建线程时定死、终身不变;
+  `FocusWorkspace` 反之,预期在线程生命周期里反复改,所以是个普通的可重复调用
+  setter,不是"只准调一次"的绑定操作。
+- `session_messages` 表新增列 `focus_meta TEXT NOT NULL DEFAULT ''`,
+  `HistoryRecord.FocusMeta json.RawMessage`,插入/查询路径完全比照
+  `envelope_meta` 那一列。
+
+## 5. 工具 cwd
+
+DM thread 的 turn 开始时,`internal/tools.Toolkit` 的执行根需要跟着焦点走:
+
+- 焦点 = 具体工作区 → cwd = 该工作区 `Root`。
+- 焦点 = `"~"` 或 `""` → cwd = agent home(现状不变)。
+
+`Toolkit` 目前没有"运行时可改根目录"的入口——`RootDir` 只在 `New()`/
+`CloneForRoot()` 里设一次,后续所有工具(bash cwd、search root、file 显示路径)
+都直接读 `t.env.RootDir`。给 `Toolkit` 加一个 `SetRootDir(dir string)` setter
+(跟 `SetFileScopeRoots`/`SetStateDir` 同风格的字段更新,不重建 Toolkit、不影响
+其余可变状态),挂到 `turn_handlers.go` 里已经存在的
+`configureResidentThreadRuntime`——这个函数本来就在每个 DM turn 开始前(线程
+非 running 时)跑一次、设置该轮的 `FileScopeRoots`,现在同一处根据
+`th.FocusWorkspace` 多设一次 `RootDir` 即可,改动面很小。
+
+注意 `FileScopeRoots`(文件工具白名单)**不**跟着收窄——焦点只改变"默认在哪干
+活"(bash cwd、相对路径解析、搜索根),不改变"能不能读/写别的注册工作区"。收紧
+读写范围不在本次范围内,契约里也没有要求。
+
+## 6. 刻意留给后续的工作
+
+- **群聊分支**:`th.Group` 线程如何声明/继承焦点(是每个成员各自的焦点,还是
+  群共享一个焦点?)——本文档判定函数写成 thread-kind 无关,群聊 worker 接线时
+  应该能直接复用 §3 的 `focusChanged`/`normalizeFocusWorkspace` 等辅助函数,
+  但具体挂载点、群内广播语义留给该 worker 设计。
+- **信封携带焦点**:`MessageEnvelope`/`envelopeMetaRecord` 目前不携带发送方的
+  焦点上下文;如果后续想让"resident A 把消息路由给 resident B"时带上"A 当时
+  聚焦在哪个工作区",需要扩展信封结构,本次不做。
+- **压缩(compact)时的重声明**:`internal/compact` 把历史压成摘要后,焦点声明
+  项和其余历史一起被摘要吸收;摘要本身不特别提及当前焦点。如果观察到压缩后
+  模型"忘记"了焦点(比如又开始满工作区乱翻),后续需要在压缩摘要生成时补一句
+  "当前焦点:X",或者在摘要之后强制重新注入一条声明项。本次不做,先观察实际
+  影响。
+- **前端渲染**:分割线 UI、`focus_workspace` 选择器等,`desktop/` 完全不碰。
+- **文件作用域收紧**:见 §5 末尾。
+
+## 7. 红线
+
+1. `internal/appserver/participant_prompt.go` 一个字节都不动——焦点绝不进
+   system prompt。
+2. 声明项必须走持久化路径(`appendChatMessage` + `session.AppendHistoryRecord`
+   等价物),不允许只存在于内存 `threadState.History` 里。
+3. `focus_workspace` 请求为 `nil`(未传)时,历史必须与不传这个字段时完全一样
+   ——不能因为"支持了这个功能"就在无关轮次里多写一个字节。
+4. 判定/校验函数保持 thread-kind 无关,方便群聊 worker 复用。
+5. 不改 `desktop/`。
