@@ -3405,6 +3405,7 @@ export function App(): JSX.Element {
         onClearGoal={clearCurrentGoal}
         queryHistorySessionID={activeThread?.id}
         queryHistory={queryTextsForThread(activeThread)}
+        participants={participants}
       />
     );
   }
