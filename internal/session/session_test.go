@@ -79,6 +79,68 @@ func TestListForCWDFiltersSessions(t *testing.T) {
 	}
 }
 
+func TestListForCWDStaysScopedDespiteDMSessions(t *testing.T) {
+	dir := t.TempDir()
+	projectCWD := filepath.Join(t.TempDir(), "project-a")
+	dmCWD := filepath.Join(t.TempDir(), ".wuu", "agents", "prt-x", "home")
+
+	if _, err := CreateWithMetadata(dir, "sess-project", projectCWD); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateWithMetadata(dir, "sess-dm", dmCWD); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BindDMParticipant(dir, "sess-dm", "prt-x"); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := ListForCWD(dir, projectCWD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != "sess-project" {
+		t.Fatalf("ListForCWD should stay cwd-scoped, got: %+v", sessions)
+	}
+
+	// A newer DM session must not hijack the project's most-recent lookup
+	// (e.g. `wuu resume` inside a project).
+	recent, err := MostRecentForCWD(dir, projectCWD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recent != "sess-project" {
+		t.Fatalf("MostRecentForCWD() = %q, want sess-project", recent)
+	}
+}
+
+func TestListForCWDWithDMsIncludesDMSessions(t *testing.T) {
+	dir := t.TempDir()
+	projectCWD := filepath.Join(t.TempDir(), "project-a")
+	dmCWD := filepath.Join(t.TempDir(), ".wuu", "agents", "prt-x", "home")
+
+	if _, err := CreateWithMetadata(dir, "sess-project", projectCWD); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateWithMetadata(dir, "sess-dm", dmCWD); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BindDMParticipant(dir, "sess-dm", "prt-x"); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := ListForCWDWithDMs(dir, projectCWD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make(map[string]bool, len(sessions))
+	for _, s := range sessions {
+		ids[s.ID] = true
+	}
+	if len(sessions) != 2 || !ids["sess-project"] || !ids["sess-dm"] {
+		t.Fatalf("ListForCWDWithDMs should include the DM session, got: %+v", sessions)
+	}
+}
+
 func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
 	dir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "project")

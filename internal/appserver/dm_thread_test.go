@@ -297,8 +297,8 @@ func TestThreadListNoDuplicateForDMFromOwnServer(t *testing.T) {
 }
 
 func TestListForCWDIncludesPersistedDMFromUnrelatedServer(t *testing.T) {
-	// Direct session-level test: confirms ListForCWD surfaces DMs even when
-	// the queried cwd is a totally different project.
+	// Direct session-level test: confirms ListForCWDWithDMs surfaces DMs even
+	// when the queried cwd is a totally different project.
 	rt, _, wuuHome := withDMRuntime(t)
 
 	participantID := saveNamedParticipant(t, rt, "Gabe", "general-purpose", "")
@@ -318,9 +318,9 @@ func TestListForCWDIncludesPersistedDMFromUnrelatedServer(t *testing.T) {
 	// Sanity: a normal project cwd query on the SAME session dir but a
 	// different project RootDir must still include the DM.
 	unrelated := filepath.Join(t.TempDir(), "unrelated-project")
-	got, err := session.ListForCWD(rt.SessionDir, unrelated, 0)
+	got, err := session.ListForCWDWithDMs(rt.SessionDir, unrelated, 0)
 	if err != nil {
-		t.Fatalf("ListForCWD: %v", err)
+		t.Fatalf("ListForCWDWithDMs: %v", err)
 	}
 	found := false
 	for _, s := range got {
@@ -332,6 +332,6 @@ func TestListForCWDIncludesPersistedDMFromUnrelatedServer(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("ListForCWD(unrelated) omitted DM session %q; got %+v", sess.ID, got)
+		t.Fatalf("ListForCWDWithDMs(unrelated) omitted DM session %q; got %+v", sess.ID, got)
 	}
 }

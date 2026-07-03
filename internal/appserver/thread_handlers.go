@@ -513,7 +513,7 @@ func (s *Server) handleThreadList(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	targetCWD := firstNonEmpty(params.CWD, s.rt.RootDir)
-	sessions, err := session.ListForCWD(s.rt.SessionDir, targetCWD, 0)
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, targetCWD, 0)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -1022,7 +1022,7 @@ func (s *Server) rootThreadIDs() ([]string, error) {
 		ids = append(ids, id)
 	}
 
-	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1216,7 +1216,7 @@ func sortThreadListEntries(entries []threadListEntry) {
 }
 
 func (s *Server) mostRecentVisibleThreadID() (string, error) {
-	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, 0)
 	if err != nil {
 		return "", err
 	}

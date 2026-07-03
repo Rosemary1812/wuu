@@ -78,7 +78,7 @@ func (s *Server) handleThreadSearch(req Request) error {
 }
 
 func (s *Server) threadSearchSources() ([]threadSearchSource, error) {
-	sessions, err := session.ListForCWD(s.rt.SessionDir, s.rt.RootDir, 0)
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, 0)
 	if err != nil {
 		return nil, err
 	}
