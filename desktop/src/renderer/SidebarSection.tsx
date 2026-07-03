@@ -1,17 +1,22 @@
 import { ChevronRight } from "lucide-react";
 import {
   createContext,
+  type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { SectionRowIcon } from "./ThreadSidebar";
 
-// Must match the .thread-list-collapse transition duration in sidebar.css.
-const SECTION_COLLAPSE_MS = 190;
+// Mirrors --section-fold-ms in sidebar.css. The body stays mounted while
+// collapsing so the exit motion can finish before React removes the rows.
+export const SECTION_COLLAPSE_MS = 260;
+
+type CollapsePhase = "open" | "opening" | "closing";
 
 /**
  * dnd-kit activator context shared between SortableSection (AppSidebar)
@@ -38,8 +43,8 @@ export function useSidebarSectionDragHandle(): SidebarSectionDragHandle | null {
  *
  * One component renders the four section types in the left sidebar:
  * 置顶 / Agents / 对话 scratch / project. They all share the same visual
- * anatomy (icon + label + chevron + collapse body) and the same 190 ms
- * expand/collapse grid animation. Wiring them through one component
+ * anatomy (icon + label + chevron + collapse body) and the same
+ * expand/collapse unfurl animation. Wiring them through one component
  * keeps icon size, spacing, and motion unified across the panel —
  * the parallel look-alike markup that the previous restructure
  * shipped led to subtle size and spacing drift between the four.
@@ -65,8 +70,8 @@ export function useSidebarSectionDragHandle(): SidebarSectionDragHandle | null {
  *   - `emptyNote`: shown in the body when no `children` are mounted
  *     so the height collapse animation has real content.
  *
- * The close animation is self-contained: the body stays mounted with the
- * `.thread-list-collapse.closing` class for 190 ms after `expanded` flips
+ * The close animation is self-contained: the body stays mounted in
+ * `data-state="closing"` for SECTION_COLLAPSE_MS after `expanded` flips
  * false, so all four sections share the identical collapse motion.
  */
 export function SidebarSection({
@@ -119,33 +124,83 @@ export function SidebarSection({
   const dragHandle = useSidebarSectionDragHandle();
   const dragHandleProps = dragHandle?.dragHandleProps;
   const isDragging = dragHandle?.isDragging ?? false;
-  // Self-contained close animation. When `expanded` flips true → false the
-  // body stays mounted for one SECTION_COLLAPSE_MS window with the
-  // `.closing` class so the grid-rows height transition can play; only
-  // after the window does the body unmount. Re-expanding mid-close cancels
-  // the timer and the still-mounted body animates back open. This gives
-  // every section (置顶 / Agents / 对话 / 项目) the same close motion
-  // without each parent having to orchestrate a collapsing phase.
-  const [closing, setClosing] = useState(false);
+  // Measured collapse animation. Opening runs 0px → content height, then
+  // settles to auto height by removing the fixed inline variable. Closing
+  // snapshots the current content height, then animates to 0 before unmount.
+  // This avoids the old auto-height / closing-class split and keeps all
+  // section types on the same fluid motion, even with dynamic row counts.
+  const [mounted, setMounted] = useState(expanded);
+  const [phase, setPhase] = useState<CollapsePhase>(expanded ? "open" : "closing");
+  const collapseRef = useRef<HTMLDivElement | null>(null);
+  const [bodyHeight, setBodyHeight] = useState<number | null>(expanded ? null : 0);
   const prevExpandedRef = useRef(expanded);
   useEffect(() => {
     const wasExpanded = prevExpandedRef.current;
     prevExpandedRef.current = expanded;
     if (expanded) {
-      setClosing(false);
+      if (!wasExpanded) {
+        setBodyHeight(0);
+        setPhase("opening");
+        setMounted(true);
+      }
       return;
     }
     if (!wasExpanded) {
       return;
     }
-    setClosing(true);
+    const currentHeight = collapseRef.current?.scrollHeight ?? 0;
+    setBodyHeight(currentHeight);
+    setPhase("closing");
+    const frame = window.requestAnimationFrame(() => {
+      setBodyHeight(0);
+    });
     const timer = window.setTimeout(() => {
-      setClosing(false);
+      setMounted(false);
     }, SECTION_COLLAPSE_MS);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
   }, [expanded]);
+
+  useLayoutEffect(() => {
+    if (!expanded || !mounted) return;
+    if (phase !== "opening") return;
+    const element = collapseRef.current;
+    if (!element) return;
+    const measuredHeight = element.scrollHeight;
+    setBodyHeight(measuredHeight);
+    setPhase("opening");
+    const frame = window.requestAnimationFrame(() => {
+      setBodyHeight(measuredHeight);
+    });
+    const timer = window.setTimeout(() => {
+      setPhase("open");
+      setBodyHeight(null);
+    }, SECTION_COLLAPSE_MS);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [expanded, mounted, phase, children, emptyNote]);
+
+  useEffect(() => {
+    if (!expanded || phase !== "open") return;
+    const element = collapseRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      setBodyHeight(null);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [expanded, phase]);
+
+  const collapseStyle =
+    bodyHeight === null
+      ? undefined
+      : ({
+          "--sidebar-section-body-height": `${Math.max(0, bodyHeight)}px`,
+        } as CSSProperties);
   const headerClassName = [
     "project-row",
     "sidebar-section-row",
@@ -195,14 +250,19 @@ export function SidebarSection({
         {newItemButton}
         {actions}
       </div>
-      {(expanded || closing) && (children || emptyNote) ? (
+      {mounted && (children || emptyNote) ? (
         <div
-          className={`thread-list-collapse${closing ? " closing" : ""}`}
-          aria-hidden={closing || undefined}
+          ref={collapseRef}
+          className="thread-list-collapse"
+          data-state={phase}
+          style={collapseStyle}
+          aria-hidden={phase === "closing" || undefined}
         >
-          {children ?? (
-            <div className="sidebar-section-empty-note">{emptyNote}</div>
-          )}
+          <div className="thread-list-collapse-inner">
+            {children ?? (
+              <div className="sidebar-section-empty-note">{emptyNote}</div>
+            )}
+          </div>
         </div>
       ) : null}
     </>

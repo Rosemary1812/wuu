@@ -4,7 +4,7 @@ import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Folder, FolderOpen } from "lucide-react";
-import { SidebarSection } from "./SidebarSection";
+import { SECTION_COLLAPSE_MS, SidebarSection } from "./SidebarSection";
 import type { DesktopProject, InitializeResult, ParticipantProfile } from "../shared/protocol";
 import {
   AppSidebar,
@@ -878,23 +878,23 @@ describe("SidebarSection collapse animation", () => {
     });
   }
 
-  it("keeps the body mounted with .closing for 190ms, then unmounts", () => {
+  it("keeps the body mounted in closing state for the collapse window, then unmounts", () => {
     vi.useFakeTimers();
     try {
       renderSection(true);
       const openBody = container.querySelector(".thread-list-collapse");
       expect(openBody).not.toBeNull();
-      expect(openBody?.classList.contains("closing")).toBe(false);
+      expect(openBody?.getAttribute("data-state")).toBe("open");
 
       renderSection(false);
       const closingBody = container.querySelector(".thread-list-collapse");
       expect(closingBody).not.toBeNull();
-      expect(closingBody?.classList.contains("closing")).toBe(true);
+      expect(closingBody?.getAttribute("data-state")).toBe("closing");
       expect(closingBody?.getAttribute("aria-hidden")).toBe("true");
       expect(container.querySelector(".collapse-probe")).not.toBeNull();
 
       act(() => {
-        vi.advanceTimersByTime(190);
+        vi.advanceTimersByTime(SECTION_COLLAPSE_MS);
       });
       expect(container.querySelector(".thread-list-collapse")).toBeNull();
     } finally {
@@ -908,13 +908,13 @@ describe("SidebarSection collapse animation", () => {
       renderSection(true);
       renderSection(false);
       expect(
-        container.querySelector(".thread-list-collapse.closing"),
+        container.querySelector('.thread-list-collapse[data-state="closing"]'),
       ).not.toBeNull();
 
       renderSection(true);
       const body = container.querySelector(".thread-list-collapse");
       expect(body).not.toBeNull();
-      expect(body?.classList.contains("closing")).toBe(false);
+      expect(body?.getAttribute("data-state")).toBe("opening");
 
       act(() => {
         vi.advanceTimersByTime(400);
@@ -930,6 +930,26 @@ describe("SidebarSection collapse animation", () => {
     renderSection(false);
     expect(container.querySelector(".thread-list-collapse")).toBeNull();
   });
+
+  it("uses a measured height custom property while opening", () => {
+    vi.useFakeTimers();
+    try {
+      renderSection(false);
+      renderSection(true);
+      const body = container.querySelector<HTMLElement>(".thread-list-collapse");
+      expect(body).not.toBeNull();
+      expect(body?.getAttribute("data-state")).toBe("opening");
+      expect(body?.style.getPropertyValue("--sidebar-section-body-height")).toMatch(/px$/);
+
+      act(() => {
+        vi.advanceTimersByTime(SECTION_COLLAPSE_MS);
+      });
+      expect(body?.getAttribute("data-state")).toBe("open");
+      expect(body?.style.getPropertyValue("--sidebar-section-body-height")).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("sidebar section spacing rhythm", () => {
@@ -944,6 +964,8 @@ describe("sidebar section spacing rhythm", () => {
     expect(sectionRule).toBeTruthy();
     expect(sectionRule).not.toMatch(/\bgap:/);
     expect(sidebarCSS).toMatch(/\.thread-list-collapse \{[^}]*margin-top: 5px/);
+    expect(sidebarCSS).toContain("--sidebar-section-body-height");
+    expect(sidebarCSS).toContain('.thread-list-collapse[data-state="closing"]');
   });
 
   it("pinned list shares the .thread-list rhythm (gap 3px, 2px vertical padding)", () => {

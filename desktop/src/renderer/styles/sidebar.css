@@ -27,6 +27,12 @@
 }
 
 .sidebar {
+  /* Section expand/collapse motion tokens, shared by the collapse body,
+   * the header chevron, and the header icon cross-fade so all three land
+   * together. */
+  --section-fold-ms: 260ms;
+  --section-fold-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --section-fold-fade-ms: 170ms;
   grid-row: 1 / 3;
   display: flex;
   position: relative;
@@ -123,6 +129,7 @@
 }
 
 .sidebar-collapsed.sidebar-drawer-open .sidebar,
+.sidebar-collapsed.sidebar-drawer-closing .sidebar,
 .sidebar-collapsed .sidebar:focus-within {
   position: absolute;
   inset: 0 auto 0 0;
@@ -138,6 +145,7 @@
 }
 
 .sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content,
+.sidebar-collapsed.sidebar-drawer-closing .sidebar .sidebar-content,
 .sidebar-collapsed .sidebar:focus-within .sidebar-content {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
@@ -512,20 +520,19 @@
   font-weight: var(--weight-medium);
 }
 
+/* The chevron mirrors the section motion tokens so it settles in the same
+ * frame as the collapse body — a mismatched duration reads as a two-stage
+ * animation, most visible on empty sections where the chevron is the only
+ * motion. */
 .project-row-chevron {
   flex: 0 0 auto;
   opacity: 0;
   color: var(--ink-muted);
-  /* Must match the .thread-list-collapse timing (190ms, linear-ish ease)
-   * so the chevron and the content settle as one continuous motion. The
-   * previous 160ms cubic-bezier(0.16, 1, 0.3, 1) was an aggressive ease-out
-   * that finished first and read as a two-stage animation — most visible on
-   * empty projects, where the height transition is 0 → 0 and the chevron is
-   * the only motion the user can see against the margin/opacity tail. */
+  transform: rotate(0deg);
   transition:
-    color 190ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 190ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 120ms ease;
+    color var(--section-fold-ms) var(--section-fold-ease),
+    transform var(--section-fold-ms) var(--section-fold-ease),
+    opacity 120ms ease-out;
 }
 
 .project-group:hover > .project-row .project-row-chevron,
@@ -562,9 +569,15 @@
 .project-row-icon-state {
   grid-area: 1 / 1;
   transition:
-    opacity 170ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 190ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--section-fold-fade-ms) ease-out,
+    transform var(--section-fold-ms) var(--section-fold-ease);
   transform-origin: center;
+}
+
+.project-row.expanded .project-row-icon-state {
+  transition:
+    opacity var(--section-fold-fade-ms) ease-out,
+    transform var(--section-fold-ms) var(--section-fold-ease);
 }
 
 .project-row-icon-state.collapsed {
@@ -710,31 +723,52 @@
 /* `.sidebar-section-empty-note` (the shared empty-state placeholder) is
  * styled at the bottom of the file. */
 
+/* Section expand/collapse motion.
+ *
+ * SidebarSection measures the body and writes
+ * --sidebar-section-body-height. The outer layer animates between 0px and
+ * that measured height, then releases back to auto height once open so live
+ * thread rows can keep growing naturally. The inner layer only translates
+ * and fades, which keeps row text crisp while the clipped body unfurls. */
 .thread-list-collapse {
-  display: grid;
-  grid-template-rows: 1fr;
+  height: var(--sidebar-section-body-height, auto);
   margin-top: 5px;
   min-height: 0;
-  opacity: 1;
-  overflow: hidden;
+  overflow: clip;
   transition:
-    grid-template-rows 190ms cubic-bezier(0.4, 0, 0.2, 1),
-    margin-top 190ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 190ms cubic-bezier(0.4, 0, 0.2, 1);
+    height var(--section-fold-ms) var(--section-fold-ease),
+    margin-top var(--section-fold-ms) var(--section-fold-ease);
+  will-change: height, margin-top;
+  contain: layout paint;
 }
 
-.thread-list-collapse.closing {
-  grid-template-rows: 0fr;
+.thread-list-collapse-inner {
+  min-height: 0;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity var(--section-fold-fade-ms) ease-out,
+    transform var(--section-fold-ms) var(--section-fold-ease);
+  will-change: opacity, transform;
+}
+
+.thread-list-collapse[data-state="opening"] {
+  height: var(--sidebar-section-body-height, 0);
+}
+
+.thread-list-collapse[data-state="closing"] {
+  height: 0;
   margin-top: 0;
-  opacity: 0;
 }
 
-@starting-style {
-  .thread-list-collapse {
-    grid-template-rows: 0fr;
-    margin-top: 0;
-    opacity: 0;
-  }
+.thread-list-collapse[data-state="opening"] .thread-list-collapse-inner {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.thread-list-collapse[data-state="closing"] .thread-list-collapse-inner {
+  opacity: 0;
+  transform: translate3d(0, -8px, 0) scale(0.992);
 }
 
 .thread-list {
@@ -1115,6 +1149,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .project-row-chevron,
+  .project-row-icon-state,
+  .thread-list-collapse,
+  .thread-list-collapse-inner {
+    transition: none;
+  }
+
   .thread-row-main > .thread-row-title[data-title-swap] {
     animation: none;
   }
