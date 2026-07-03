@@ -254,6 +254,26 @@ WHERE retired_at IS NULL`
 	return participants, nil
 }
 
+// CountParticipantsByKind returns the number of participants with the given
+// kind, including retired rows. Useful for "have we ever created one of these?"
+// checks where retiring must not allow the seed to re-fire.
+func CountParticipantsByKind(sessDir string, kind participant.Kind) (int, error) {
+	if kind == "" {
+		return 0, errors.New("kind is required")
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM participants WHERE kind = ?`, string(kind)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count participants: %w", err)
+	}
+	return count, nil
+}
+
 // RetireParticipant marks a participant as retired.
 func RetireParticipant(sessDir, id string) error {
 	db, err := openStore(sessDir)

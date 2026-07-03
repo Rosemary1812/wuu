@@ -165,6 +165,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 	}
 	if rt != nil {
 		s.installToolApprovalReviewer(rt.Toolkit)
+		logDefaultParticipantSeedError(s.ensureDefaultParticipant())
 	}
 	_ = rt
 	return s

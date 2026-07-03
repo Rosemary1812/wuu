@@ -178,21 +178,22 @@ func participantRunSummary(values ...string) string {
 
 func namedParticipantPrompt(p participant.Participant, memory, prompt string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are responding as the named participant %s.\n", p.Name)
+	fmt.Fprintf(&b, "You are %s, a long-running named agent in this workspace.", p.Name)
 	if role := strings.TrimSpace(p.Role); role != "" {
-		fmt.Fprintf(&b, "Role: %s.\n", role)
+		fmt.Fprintf(&b, " Your role is %s.", role)
 	}
+	b.WriteString("\n")
 	if tagline := strings.TrimSpace(p.Tagline); tagline != "" {
-		fmt.Fprintf(&b, "Tagline: %s.\n", tagline)
+		fmt.Fprintf(&b, "How your teammates describe you: %s\n", tagline)
 	}
 	if memory = strings.TrimSpace(memory); memory != "" {
-		b.WriteString("\nPersistent memory for this participant:\n")
+		b.WriteString("\n## Your memory\nNotes you kept from previous work. Trust them, but verify anything that may have gone stale:\n\n")
 		b.WriteString(memory)
 		b.WriteString("\n")
 	}
-	b.WriteString("\nUser request:\n")
+	b.WriteString("\n## Request\n")
 	b.WriteString(strings.TrimSpace(prompt))
-	b.WriteString("\n\nWhen finished, either call post_message with kind=result/question or call decline with a short reason. Do not end silently.")
+	b.WriteString("\n\nWhen you are done, post your conclusion with post_message (kind=result). If you are blocked on the user, ask with post_message (kind=question). If no response is actually needed, call decline with a one-line reason. Never end the turn silently.")
 	return b.String()
 }
 

@@ -91,3 +91,36 @@ func TestRetiredNamedParticipantFreesName(t *testing.T) {
 		t.Errorf("upsert named participant with retired name = %v, want nil", err)
 	}
 }
+
+func TestCountParticipantsByKindIncludesRetired(t *testing.T) {
+	dir := t.TempDir()
+	if got, err := CountParticipantsByKind(dir, participant.KindNamed); err != nil || got != 0 {
+		t.Fatalf("empty dir: count=%d err=%v", got, err)
+	}
+	a := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Andy", Role: "general-purpose"}
+	if err := UpsertParticipant(dir, a); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := CountParticipantsByKind(dir, participant.KindNamed); err != nil || got != 1 {
+		t.Fatalf("after insert: count=%d err=%v", got, err)
+	}
+	if err := RetireParticipant(dir, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := CountParticipantsByKind(dir, participant.KindNamed); err != nil || got != 1 {
+		t.Errorf("retired row must still be counted: count=%d err=%v", got, err)
+	}
+	b := participant.Participant{ID: participant.NewID(), Kind: participant.KindEphemeral, Name: "Worker·task"}
+	if err := UpsertParticipant(dir, b); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := CountParticipantsByKind(dir, participant.KindNamed); err != nil || got != 1 {
+		t.Errorf("ephemeral insert should not change named count: count=%d err=%v", got, err)
+	}
+	if got, err := CountParticipantsByKind(dir, participant.KindEphemeral); err != nil || got != 1 {
+		t.Errorf("ephemeral count: count=%d err=%v", got, err)
+	}
+	if _, err := CountParticipantsByKind(dir, ""); err == nil {
+		t.Error("empty kind should be rejected")
+	}
+}

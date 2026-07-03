@@ -6966,8 +6966,18 @@ func TestServerParticipantProfileLifecycle(t *testing.T) {
 		t.Fatalf("participant/list: %v", err)
 	}
 	list := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list")["result"])
-	if len(list.Participants) != 1 || list.Participants[0].ID != save.Participant.ID {
-		t.Fatalf("unexpected participant list: %+v", list.Participants)
+	if len(list.Participants) < 1 {
+		t.Fatalf("participant list empty: %+v", list.Participants)
+	}
+	var found *ParticipantProfile
+	for i, p := range list.Participants {
+		if p.ID == save.Participant.ID {
+			found = &list.Participants[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("saved participant %q not in list: %+v", save.Participant.ID, list.Participants)
 	}
 	if err := session.UpsertParticipantRun(rt.SessionDir, session.ParticipantRun{
 		ID:            "run-1",
@@ -6985,8 +6995,18 @@ func TestServerParticipantProfileLifecycle(t *testing.T) {
 		t.Fatalf("participant/list with run: %v", err)
 	}
 	listWithRun := remarshal[ParticipantListResult](t, responseByID(t, parseOutput(t, out.String()), "list-with-run")["result"])
-	if len(listWithRun.Participants[0].TrackRecord) != 1 || listWithRun.Participants[0].TrackRecord[0].Summary != "Reviewed auth diff." {
-		t.Fatalf("unexpected participant track record: %+v", listWithRun.Participants[0].TrackRecord)
+	var withRun *ParticipantProfile
+	for i, p := range listWithRun.Participants {
+		if p.ID == save.Participant.ID {
+			withRun = &listWithRun.Participants[i]
+			break
+		}
+	}
+	if withRun == nil {
+		t.Fatalf("saved participant %q not in run list: %+v", save.Participant.ID, listWithRun.Participants)
+	}
+	if len(withRun.TrackRecord) != 1 || withRun.TrackRecord[0].Summary != "Reviewed auth diff." {
+		t.Fatalf("unexpected participant track record: %+v", withRun.TrackRecord)
 	}
 
 	feedbackPayload := map[string]any{
