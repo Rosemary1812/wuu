@@ -4,42 +4,66 @@
  * while a decision is pending. The card is the only place the user can
  * decide on a tool call; it intentionally has no onClose affordance.
  *
- * Two visual states:
- *   - default: neutral 3px transparent left border, --surface-2 preview.
- *   - .danger: 3px var(--danger) left border with a slow pulse, preview
- *     border switches to var(--danger). Triggered by `destructive=true`
- *     or a network call with a non-idempotent HTTP method.
+ * Visual language: a small "task brief" — a clear header identifying
+ * the kind of operation, the policy reason, a code-style preview of
+ * what's about to run, and a three-button footer with a clear primary
+ * action. Two states:
+ *
+ *   - default: neutral surface, ink primary, subtle hairline borders
+ *   - .danger: red-tinted header band, shield icon, destructive pill,
+ *     left edge in danger; pre-empts the user and forces a deliberate
+ *     read of the preview before approving
+ *
+ * Test contract (preserved): `.tool-approval-card`, `.danger`, the
+ * `.tool-approval-card-preview-prompt` for command.* capabilities, the
+ * `.tool-approval-card-preview-text` block, and the three button labels
+ * 拒绝 / 本会话批准 / 批准一次.
  */
 
 /* ---- Container ---------------------------------------------------------- */
 
 .tool-approval-card {
-  display: grid;
-  gap: 10px;
-  margin: 8px 0 10px;
-  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 10px 0 12px;
+  padding: 0;
   border: 1px solid var(--surface-3);
-  border-left: 3px solid transparent;
+  border-left: 3px solid var(--ink-overlay-12);
   border-radius: var(--radius-md);
   background: var(--paper);
-  box-shadow: 0 1px 0 rgba(20, 24, 28, 0.02);
+  box-shadow: var(--shadow-card);
   font-family: inherit;
-  /* Reset any inherited prose spacing */
-  line-height: 1.45;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+.tool-approval-card.read-only {
+  border-left-color: var(--info, #0969da);
 }
 
 .tool-approval-card.danger {
-  border-left-color: var(--danger);
-  animation: tool-approval-pulse 1.6s ease-in-out infinite;
+  border-color: var(--danger-border);
+  border-left: 3px solid var(--danger);
+  box-shadow:
+    0 1px 0 var(--danger-soft),
+    var(--shadow-card);
+  animation: tool-approval-pulse 1.8s ease-in-out 1;
 }
 
 @keyframes tool-approval-pulse {
-  0%,
-  100% {
-    border-left-color: var(--danger);
+  0% {
+    box-shadow:
+      0 0 0 0 var(--danger-soft),
+      var(--shadow-card);
   }
-  50% {
-    border-left-color: var(--danger-border);
+  60% {
+    box-shadow:
+      0 0 0 6px transparent,
+      var(--shadow-card);
+  }
+  100% {
+    box-shadow: var(--shadow-card);
   }
 }
 
@@ -49,70 +73,173 @@
   }
 }
 
-/* ---- Header / capability line ------------------------------------------- */
+/* ---- Header (icon + title + risk pill + subtitle) ----------------------- */
 
 .tool-approval-card-header {
   display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--surface-3);
+  min-width: 0;
+}
+
+.tool-approval-card.danger .tool-approval-card-header {
+  background: var(--danger-soft);
+  border-bottom-color: var(--danger-border);
+}
+
+.tool-approval-card-icon {
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  border: 1px solid var(--surface-3);
+  color: var(--ink);
+  margin-top: 2px;
 }
 
-.tool-approval-card-capability {
-  font-size: 12px;
-  font-weight: var(--weight-semibold);
-  color: var(--ink-tertiary);
-  letter-spacing: 0.02em;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  text-transform: lowercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+.tool-approval-card-icon .icon {
+  width: 16px;
+  height: 16px;
 }
 
-.tool-approval-card.danger .tool-approval-card-capability {
+.tool-approval-card-icon.danger {
+  background: var(--paper);
+  border-color: var(--danger);
   color: var(--danger);
 }
 
-/* ---- Reason / object ---------------------------------------------------- */
-
-.tool-approval-card-reason {
-  margin: 0;
-  font-size: var(--font-ui);
-  color: var(--ink);
-}
-
-.tool-approval-card-object {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+.tool-approval-card-heading {
+  flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--font-ui);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.tool-approval-card-object-label {
-  color: var(--ink-tertiary);
-  font-size: 12px;
+.tool-approval-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.tool-approval-card-title {
+  font-size: 14px;
+  font-weight: var(--weight-semibold);
+  color: var(--ink-strong);
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+
+.tool-approval-card-risk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
   font-weight: var(--weight-semibold);
   letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+  color: var(--ink-tertiary);
+  border: 1px solid var(--surface-3);
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.tool-approval-card-object-value {
+.tool-approval-card-risk-pill.danger {
+  background: var(--danger);
+  color: var(--paper);
+  border-color: var(--danger);
+}
+
+.tool-approval-card-risk-pill .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.tool-approval-card-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-tertiary);
+  line-height: 1.4;
+}
+
+.tool-approval-card-subtitle code.mono {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  background: transparent;
+  color: var(--ink-tertiary);
+  padding: 0;
+  word-break: break-all;
+}
+
+.tool-approval-card-subtitle .dot {
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+.tool-approval-card-subtitle-object {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-approval-card.danger .tool-approval-card-subtitle code.mono,
+.tool-approval-card.danger .tool-approval-card-subtitle-object {
+  color: var(--ink);
+}
+
+/* ---- Section blocks (Why this is asking, About to run) ------------------ */
+
+.tool-approval-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 16px;
+  min-width: 0;
+}
+
+.tool-approval-card-section-label {
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  line-height: 1;
+}
+
+.tool-approval-card-reason {
+  margin: 0;
   font-size: 13px;
   color: var(--ink);
-  word-break: break-all;
-  min-width: 0;
+  line-height: 1.55;
 }
 
 /* ---- Preview block (the command / URL / payload) ------------------------ */
 
 .tool-approval-card-preview {
   position: relative;
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -122,14 +249,15 @@
   gap: 8px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--surface-3);
+  border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   transition: border-color 160ms ease;
 }
 
 .tool-approval-card.danger .tool-approval-card-preview-line {
-  border-color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--paper);
 }
 
 .tool-approval-card-preview-prompt {
@@ -139,6 +267,7 @@
   line-height: 1.55;
   user-select: none;
   flex-shrink: 0;
+  padding-top: 1px;
 }
 
 .tool-approval-card-method-badge {
@@ -152,7 +281,7 @@
   background: var(--surface-3);
   color: var(--ink);
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .tool-approval-card-method-badge.POST,
@@ -161,12 +290,20 @@
 .tool-approval-card-method-badge.DELETE {
   background: var(--danger-soft);
   color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+.tool-approval-card-method-badge.GET,
+.tool-approval-card-method-badge.HEAD {
+  background: #eaf4e8;
+  color: var(--success, #1f9d55);
+  border: 1px solid #cfe6cc;
 }
 
 .tool-approval-card-preview-text {
   margin: 0;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.55;
   color: var(--ink);
   white-space: pre-wrap;
@@ -176,7 +313,7 @@
 }
 
 .tool-approval-card-expand {
-  justify-self: flex-end;
+  align-self: flex-end;
   background: transparent;
   border: 0;
   color: var(--ink-tertiary);
@@ -197,14 +334,15 @@
 /* ---- Rule (collapsed by default) --------------------------------------- */
 
 .tool-approval-card-rule {
-  border-top: 1px solid var(--surface-3);
-  padding-top: 6px;
+  margin: 0 16px;
+  border-top: 1px dashed var(--surface-3);
+  padding-top: 8px;
 }
 
 .tool-approval-card-rule summary {
   cursor: pointer;
   font-size: 12px;
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   color: var(--ink-tertiary);
   list-style: none;
   padding: 2px 0;
@@ -248,10 +386,26 @@
 
 .tool-approval-card-actions {
   display: flex;
-  gap: 8px;
-  justify-content: flex-end;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--surface-3);
   margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.tool-approval-card.danger .tool-approval-card-actions {
+  background: var(--danger-soft);
+  border-top-color: var(--danger-border);
+}
+
+.tool-approval-card-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .tool-approval-card-actions button {
@@ -260,7 +414,7 @@
   border: 1px solid var(--surface-3);
   background: var(--paper);
   color: var(--ink);
-  font-size: var(--font-ui);
+  font-size: 13px;
   font-weight: var(--weight-medium);
   font-family: inherit;
   cursor: pointer;
@@ -268,12 +422,8 @@
     background 120ms ease,
     border-color 120ms ease,
     color 120ms ease,
-    transform 100ms ease-out;
-}
-
-.tool-approval-card-actions button:hover {
-  background: var(--surface-2);
-  border-color: var(--ink-tertiary);
+    transform 100ms ease-out,
+    box-shadow 120ms ease;
 }
 
 .tool-approval-card-actions button:active {
@@ -285,13 +435,52 @@
   outline-offset: 1px;
 }
 
+/* Deny — left-aligned, ghost with danger on hover */
+.tool-approval-card-actions button.deny {
+  background: transparent;
+  border-color: var(--surface-3);
+  color: var(--ink-soft);
+}
+
+.tool-approval-card-actions button.deny:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+/* Session — secondary action */
+.tool-approval-card-actions button.session {
+  background: var(--paper);
+  border-color: var(--ink-overlay-18);
+  color: var(--ink-soft);
+}
+
+.tool-approval-card-actions button.session:hover {
+  background: var(--surface-2);
+  border-color: var(--ink-tertiary);
+  color: var(--ink);
+}
+
+/* Primary — the main approve action */
 .tool-approval-card-actions button.primary {
-  background: var(--ink);
+  background: var(--ink-strong);
   color: var(--paper);
-  border-color: var(--ink);
+  border-color: var(--ink-strong);
+  box-shadow: 0 1px 0 var(--ink-overlay-8);
 }
 
 .tool-approval-card-actions button.primary:hover {
   background: #2a2f33;
   border-color: #2a2f33;
+}
+
+.tool-approval-card.danger .tool-approval-card-actions button.primary {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--paper);
+}
+
+.tool-approval-card.danger .tool-approval-card-actions button.primary:hover {
+  background: #951d14;
+  border-color: #951d14;
 }

@@ -4,6 +4,15 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import {
+  AlertTriangle,
+  FileEdit,
+  FileText,
+  Globe,
+  ShieldAlert,
+  Terminal,
+  type LucideIcon,
+} from "lucide-react";
 import type { PendingToolApproval } from "../shared/protocol";
 
 const PREVIEW_LINE_LIMIT = 6;
@@ -49,9 +58,50 @@ function isNetworkCapability(capability: string | undefined): boolean {
   return Boolean(capability?.startsWith("network."));
 }
 
+function isFileCapability(capability: string | undefined): boolean {
+  return Boolean(
+    capability?.startsWith("file.") || capability?.startsWith("fs."),
+  );
+}
+
 function networkMethod(preview: string): string | undefined {
   const match = preview.match(/\b(GET|POST|PUT|DELETE|PATCH|HEAD)\b/);
   return match ? (match[1] ?? "").toUpperCase() : undefined;
+}
+
+function iconForCapability(
+  capability: string | undefined,
+  danger: boolean,
+): LucideIcon {
+  if (danger) {
+    return ShieldAlert;
+  }
+  if (isCommandCapability(capability)) {
+    return Terminal;
+  }
+  if (isNetworkCapability(capability)) {
+    return Globe;
+  }
+  if (isFileCapability(capability)) {
+    return FileEdit;
+  }
+  return FileText;
+}
+
+function capabilityLabel(capability: string | undefined): string {
+  if (!capability) {
+    return "tool call";
+  }
+  if (isCommandCapability(capability)) {
+    return "Shell command";
+  }
+  if (isNetworkCapability(capability)) {
+    return "Network request";
+  }
+  if (isFileCapability(capability)) {
+    return "File operation";
+  }
+  return "Tool call";
 }
 
 /**
@@ -84,12 +134,13 @@ export function ToolApprovalCard({
   const object = approval.capability_object?.trim();
   const capability = approval.capability?.trim();
   const capabilityAction = approval.capability_action?.trim();
-  const capabilityLine = [capability, capabilityAction].filter(Boolean).join(" · ");
 
   const danger = isDangerApproval(approval);
   const command = isCommandCapability(capability);
   const network = isNetworkCapability(capability);
   const method = network && preview ? networkMethod(preview) : undefined;
+  const readOnly = approval.read_only === true;
+  const Icon = iconForCapability(capability, danger);
 
   const previewLines = preview ? preview.split("\n") : [];
   const isLongPreview = previewLines.length > PREVIEW_LINE_LIMIT;
@@ -115,7 +166,15 @@ export function ToolApprovalCard({
     }
   }
 
-  const className = `tool-approval-card${danger ? " danger" : ""}`;
+  const className = `tool-approval-card${danger ? " danger" : ""}${
+    readOnly ? " read-only" : ""
+  }`;
+
+  const riskLabel = danger
+    ? readOnly
+      ? "Read-only"
+      : "Destructive"
+    : null;
 
   return (
     <div
@@ -125,71 +184,128 @@ export function ToolApprovalCard({
       onKeyDown={handleKeyDown}
     >
       <header className="tool-approval-card-header">
-        <span className="tool-approval-card-capability">
-          {capabilityLine || approval.tool_name}
-        </span>
-      </header>
-      <p className="tool-approval-card-reason">{reason}</p>
-      {object ? (
-        <div className="tool-approval-card-object">
-          <span className="tool-approval-card-object-label">对象</span>
-          <code className="tool-approval-card-object-value">{object}</code>
+        <div
+          className={`tool-approval-card-icon${danger ? " danger" : ""}`}
+          aria-hidden="true"
+        >
+          <Icon className="icon" strokeWidth={1.75} />
         </div>
-      ) : null}
-      {visiblePreview ? (
-        <div className="tool-approval-card-preview">
-          <div className="tool-approval-card-preview-line">
-            {command ? (
+        <div className="tool-approval-card-heading">
+          <div className="tool-approval-card-title-row">
+            <span className="tool-approval-card-title">
+              {capabilityLabel(capability)}
+            </span>
+            {riskLabel ? (
               <span
-                className="tool-approval-card-preview-prompt"
-                aria-hidden="true"
+                className={`tool-approval-card-risk-pill${
+                  danger ? " danger" : ""
+                }`}
               >
-                $_
+                {danger ? (
+                  <AlertTriangle
+                    className="icon"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {riskLabel}
               </span>
             ) : null}
-            {network && method ? (
-              <span
-                className={`tool-approval-card-method-badge ${method}`}
-              >
-                {method}
-              </span>
-            ) : null}
-            <pre className="tool-approval-card-preview-text">{visiblePreview}</pre>
           </div>
-          {isLongPreview ? (
-            <button
-              type="button"
-              className="tool-approval-card-expand"
-              onClick={() => setExpanded((current) => !current)}
-            >
-              {expanded
-                ? "收起"
-                : `展开完整参数 (${previewLines.length} 行)`}
-            </button>
-          ) : null}
+          <div className="tool-approval-card-subtitle">
+            {capability ? <code className="mono">{capability}</code> : null}
+            {capabilityAction ? (
+              <>
+                <span className="dot" aria-hidden="true">
+                  ·
+                </span>
+                <span>{capabilityAction}</span>
+              </>
+            ) : null}
+            {object ? (
+              <>
+                <span className="dot" aria-hidden="true">
+                  ·
+                </span>
+                <span className="tool-approval-card-subtitle-object" title={object}>
+                  {object}
+                </span>
+              </>
+            ) : null}
+          </div>
         </div>
+      </header>
+
+      <section className="tool-approval-card-section">
+        <div className="tool-approval-card-section-label">Why this is asking</div>
+        <p className="tool-approval-card-reason">{reason}</p>
+      </section>
+
+      {visiblePreview ? (
+        <section className="tool-approval-card-section">
+          <div className="tool-approval-card-section-label">About to run</div>
+          <div className="tool-approval-card-preview">
+            <div className="tool-approval-card-preview-line">
+              {command ? (
+                <span
+                  className="tool-approval-card-preview-prompt"
+                  aria-hidden="true"
+                >
+                  $_
+                </span>
+              ) : null}
+              {network && method ? (
+                <span className={`tool-approval-card-method-badge ${method}`}>
+                  {method}
+                </span>
+              ) : null}
+              <pre className="tool-approval-card-preview-text">
+                {visiblePreview}
+              </pre>
+            </div>
+            {isLongPreview ? (
+              <button
+                type="button"
+                className="tool-approval-card-expand"
+                onClick={() => setExpanded((current) => !current)}
+              >
+                {expanded
+                  ? "收起"
+                  : `展开完整参数 (${previewLines.length} 行)`}
+              </button>
+            ) : null}
+          </div>
+        </section>
       ) : null}
+
       {rule ? (
         <details className="tool-approval-card-rule">
-          <summary>规则</summary>
+          <summary>Show matched rule</summary>
           <code>{rule}</code>
         </details>
       ) : null}
+
       <footer className="tool-approval-card-actions">
-        <button type="button" onClick={onDeny}>
+        <button type="button" className="deny" onClick={onDeny}>
           拒绝
         </button>
-        <button type="button" onClick={onApproveForSession}>
-          本会话批准
-        </button>
-        <button
-          ref={primaryButtonRef}
-          type="button"
-          className="primary"
-          onClick={onApprove}
-        >
-          批准一次
-        </button>
+        <div className="tool-approval-card-actions-right">
+          <button
+            type="button"
+            className="session"
+            onClick={onApproveForSession}
+          >
+            本会话批准
+          </button>
+          <button
+            ref={primaryButtonRef}
+            type="button"
+            className="primary"
+            onClick={onApprove}
+          >
+            批准一次
+          </button>
+        </div>
       </footer>
     </div>
   );
