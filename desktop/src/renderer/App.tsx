@@ -126,7 +126,12 @@ import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog"
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { lastUserMessageAnchor } from "./TurnViewHelpers";
-import { AppSidebar } from "./AppSidebar";
+import {
+  AppSidebar,
+  reconcileSidebarSectionOrder,
+  SIDEBAR_SECTION_AGENTS,
+  SIDEBAR_SECTION_PINNED,
+} from "./AppSidebar";
 import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
@@ -409,6 +414,7 @@ type TurnProgressContent = {
 
 const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
 const PROJECT_EXPANDED_IDS_KEY = "wuu.desktop.expandedProjectIDs";
+const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -523,6 +529,20 @@ function storedProjectIDSet(key: string): Set<string> {
     );
   } catch {
     return new Set();
+  }
+}
+
+function storedSidebarSectionOrder(): string[] | undefined {
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_SECTION_ORDER_KEY);
+    if (!stored) return undefined;
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed.filter(
+      (id): id is string => typeof id === "string" && id.length > 0,
+    );
+  } catch {
+    return undefined;
   }
 }
 
@@ -666,6 +686,19 @@ export function App(): JSX.Element {
   >({});
   const [cachedScratchThreads, setCachedScratchThreads] = useState<Thread[]>(
     [],
+  );
+  // Reorderable sidebar section order. Pinned is fixed-position and lives
+  // outside this list. Reconciled against the current project list every
+  // time `state.projects` changes so newly-added projects append to the end
+  // and removed ones drop out.
+  const [sidebarSectionOrder, setSidebarSectionOrder] = useState<string[]>(
+    () =>
+      reconcileSidebarSectionOrder(
+        storedSidebarSectionOrder(),
+        // The first render has not yet populated state.projects; reconcile
+        // will be re-derived on the first effect run below.
+        [],
+      ),
   );
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
@@ -1443,6 +1476,20 @@ export function App(): JSX.Element {
   }, [expandedProjectIDs]);
 
   useEffect(() => {
+    window.localStorage.setItem(
+      SIDEBAR_SECTION_ORDER_KEY,
+      JSON.stringify(sidebarSectionOrder),
+    );
+  }, [sidebarSectionOrder]);
+
+  useEffect(() => {
+    const validProjectIDs = state.projects.map((project) => project.id);
+    setSidebarSectionOrder((current) =>
+      reconcileSidebarSectionOrder(current, validProjectIDs),
+    );
+  }, [state.projects]);
+
+  useEffect(() => {
     const validProjectIDs = new Set(state.projects.map((project) => project.id));
     setCollapsedProjectIDs((current) =>
       removeMissingIDs(current, validProjectIDs),
@@ -2069,6 +2116,26 @@ export function App(): JSX.Element {
   }
 
   function toggleProjectCollapsed(projectID: string): void {
+    // The pinned/Agents pseudo section ids use collapsed-set-only
+    // semantics: expanded ⇔ !collapsedProjectIDs.has(id). Skip the active
+    // project auto-expand branch and the collapsing-project timer
+    // animation entirely so a click is one synchronous state flip with
+    // no thread-loading side effect (there are no threads to load for
+    // these sections).
+    if (
+      projectID === SIDEBAR_SECTION_PINNED ||
+      projectID === SIDEBAR_SECTION_AGENTS
+    ) {
+      setCollapsedProjectIDs((current) => {
+        if (!current.has(projectID)) {
+          return new Set(current).add(projectID);
+        }
+        const next = new Set(current);
+        next.delete(projectID);
+        return next;
+      });
+      return;
+    }
     const expanded =
       projectExpanded(
         projectID,
@@ -6598,6 +6665,7 @@ export function App(): JSX.Element {
         debugFixturesVisible={
           debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
         }
+        sectionOrder={sidebarSectionOrder}
         onStartNewThread={() => void startNewThread()}
         onOpenSkillsTab={openSkillsTab}
         onToggleConversationSearch={toggleConversationSearch}

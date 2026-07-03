@@ -1,4 +1,4 @@
-import { Archive, ChevronRight, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
+import { Archive, Bot, BotMessageSquare, ChevronRight, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
@@ -79,127 +79,190 @@ export function ProjectList({
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
-  const [visibleThreadCountsByProjectID, setVisibleThreadCountsByProjectID] = useState<Record<string, number>>({});
-
-  function visibleThreadCountForProject(projectID: string): number {
-    return visibleThreadCountsByProjectID[projectID] ?? PROJECT_THREAD_INITIAL_VISIBLE_COUNT;
-  }
-
-  function showMoreProjectThreads(projectID: string): void {
-    setVisibleThreadCountsByProjectID((current) => ({
-      ...current,
-      [projectID]: (current[projectID] ?? PROJECT_THREAD_INITIAL_VISIBLE_COUNT) + PROJECT_THREAD_VISIBLE_INCREMENT
-    }));
-  }
-
-  function collapseProjectThreads(projectID: string): void {
-    setVisibleThreadCountsByProjectID((current) => {
-      if (!(projectID in current)) return current;
-      const next = { ...current };
-      delete next[projectID];
-      return next;
-    });
-  }
-
   return (
     <div className="projects">
-      {projects.map((project) => {
-        const pendingProject = pendingProjectID === project.id;
-        const isScratchPseudo = project.id === scratchPseudoProjectID;
-        const activeProject = isScratchPseudo
-          ? scratchPseudoActive
-          : project.id === activeID;
-        const collapsed = collapsedProjectIDs.has(project.id);
-        const collapsing = collapsingProjectIDs.has(project.id);
-        const expanded =
-          (expandedProjectIDs.has(project.id) || (activeProject && !collapsed)) &&
-          !collapsing;
-        const threadListMounted = expanded || collapsing;
-        // The scratch pseudo project trusts the threadsByProjectID entry
-        // directly: App.tsx already filtered scratch threads. Real
-        // projects still go through the cwd-path filter so stale entries
-        // can't leak into the wrong group.
-        const projectThreads = unpinnedThreads(
-          isScratchPseudo
-            ? threadsByProjectID[project.id] ?? []
-            : threadsForProjectPath(
-                threadsByProjectID[project.id] ?? [],
-                project.path,
-              ),
-        );
-        const projectHasUnread = projectThreads.some((thread) =>
-          projectThreadUnread(
-            thread,
-            activeThreadID,
-            pendingThreadID,
-            lastViewedTurnByThreadID,
-          ),
-        );
-        const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
-          pendingProject ? " pending-switch" : ""
-        }${projectHasUnread ? " has-unread" : ""}${isScratchPseudo ? " scratch-pseudo" : ""}`;
-        return (
-          <div key={project.id} className="project-group">
-            <button
-              className={projectRowClassName}
-              aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的会话${
-                projectHasUnread ? "，有未读会话" : ""
-              }`}
-              aria-current={activeProject ? "page" : undefined}
-              aria-expanded={expanded}
-              aria-busy={pendingProject}
-              title={expanded ? "收起会话" : "展开会话"}
-              onClick={() => onToggleProjectCollapsed(project.id)}
-            >
-              <ProjectRowIcon scratch={isScratchPseudo} expanded={expanded} />
-              <span className="project-row-label">
-                <span className="project-row-name">{project.name}</span>
-                <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
-              </span>
-              {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
-              {projectHasUnread && !pendingProject ? (
-                <span className="project-row-unread" aria-hidden="true" />
-              ) : null}
-            </button>
-            <button
-              className="sidebar-row-icon-button project-row-new-thread"
-              type="button"
-              aria-label={`在 ${project.name} 中新建会话`}
-              title="新建会话"
-              onClick={() => onStartNewThread(project.id)}
-            >
-              <MessageSquarePlus className="icon" />
-            </button>
-            {threadListMounted ? (
-              <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
-                {projectThreads.length === 0 ? (
-                  // Empty projects would otherwise render a 0-height .thread-list,
-                  // which makes grid-template-rows animate 0 → 0 (invisible) and
-                  // leaves the user with only a margin/opacity tail. Rendering
-                  // a small note gives the wrapper real content to collapse, so
-                  // the height animation matches what non-empty projects get.
-                  <div className="project-thread-empty-note">还没有会话</div>
-                ) : (
-                  <ThreadList
-                    threads={projectThreads}
-                    activeID={activeThreadID}
-                    pendingThreadID={pendingThreadID}
-                    archiveConfirmThreadID={archiveConfirmThreadID}
-                    lastViewedTurnByThreadID={lastViewedTurnByThreadID}
-                    visibleCount={visibleThreadCountForProject(project.id)}
-                    onSelect={(threadID) => onSelectThread(project.id, threadID)}
-                    onTogglePinned={onToggleThreadPinned}
-                    onArchive={onArchiveThread}
-                    onClearArchiveConfirm={onClearArchiveConfirm}
-                    onShowMore={() => showMoreProjectThreads(project.id)}
-                    onCollapse={() => collapseProjectThreads(project.id)}
-                  />
-                )}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
+      {projects.map((project) => (
+        <ProjectGroup
+          key={project.id}
+          project={project}
+          activeID={activeID}
+          pendingProjectID={pendingProjectID}
+          collapsedProjectIDs={collapsedProjectIDs}
+          expandedProjectIDs={expandedProjectIDs}
+          collapsingProjectIDs={collapsingProjectIDs}
+          threadsByProjectID={threadsByProjectID}
+          activeThreadID={activeThreadID}
+          pendingThreadID={pendingThreadID}
+          archiveConfirmThreadID={archiveConfirmThreadID}
+          lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+          scratchPseudoProjectID={scratchPseudoProjectID}
+          scratchPseudoActive={scratchPseudoActive}
+          onToggleProjectCollapsed={onToggleProjectCollapsed}
+          onStartNewThread={onStartNewThread}
+          onSelectThread={onSelectThread}
+          onToggleThreadPinned={onToggleThreadPinned}
+          onArchiveThread={onArchiveThread}
+          onClearArchiveConfirm={onClearArchiveConfirm}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Single project (or scratch pseudo) collapsible group. AppSidebar renders
+ * one of these per reorderable section key. Visual/behavioral parity with
+ * the legacy `ProjectList` map: the same `project-row` anatomy, the same
+ * 190ms `thread-list-collapse` animation, the same unread/active classes.
+ */
+export function ProjectGroup({
+  project,
+  activeID,
+  pendingProjectID,
+  collapsedProjectIDs,
+  expandedProjectIDs,
+  collapsingProjectIDs,
+  threadsByProjectID,
+  activeThreadID,
+  pendingThreadID,
+  archiveConfirmThreadID,
+  lastViewedTurnByThreadID,
+  scratchPseudoProjectID,
+  scratchPseudoActive,
+  onToggleProjectCollapsed,
+  onStartNewThread,
+  onSelectThread,
+  onToggleThreadPinned,
+  onArchiveThread,
+  onClearArchiveConfirm,
+}: {
+  project: DesktopProject;
+  activeID?: string;
+  pendingProjectID?: string;
+  collapsedProjectIDs: ReadonlySet<string>;
+  expandedProjectIDs: ReadonlySet<string>;
+  collapsingProjectIDs: ReadonlySet<string>;
+  threadsByProjectID: Record<string, ThreadSummary[]>;
+  activeThreadID?: string;
+  pendingThreadID?: string;
+  archiveConfirmThreadID?: string;
+  lastViewedTurnByThreadID: Record<string, string>;
+  scratchPseudoProjectID: string;
+  scratchPseudoActive: boolean;
+  onToggleProjectCollapsed: (id: string) => void;
+  onStartNewThread: (id: string) => void;
+  onSelectThread: (projectID: string, threadID: string) => void;
+  onToggleThreadPinned: (thread: ThreadSummary) => void;
+  onArchiveThread: (thread: ThreadSummary) => void;
+  onClearArchiveConfirm: (threadID: string) => void;
+}): JSX.Element {
+  const [visibleThreadCount, setVisibleThreadCount] = useState<number>(
+    PROJECT_THREAD_INITIAL_VISIBLE_COUNT,
+  );
+
+  function showMoreProjectThreads(): void {
+    setVisibleThreadCount(
+      (current) => current + PROJECT_THREAD_VISIBLE_INCREMENT,
+    );
+  }
+
+  function collapseProjectThreads(): void {
+    setVisibleThreadCount(PROJECT_THREAD_INITIAL_VISIBLE_COUNT);
+  }
+
+  const pendingProject = pendingProjectID === project.id;
+  const isScratchPseudo = project.id === scratchPseudoProjectID;
+  const activeProject = isScratchPseudo
+    ? scratchPseudoActive
+    : project.id === activeID;
+  const collapsed = collapsedProjectIDs.has(project.id);
+  const collapsing = collapsingProjectIDs.has(project.id);
+  const expanded =
+    (expandedProjectIDs.has(project.id) || (activeProject && !collapsed)) &&
+    !collapsing;
+  const threadListMounted = expanded || collapsing;
+  // The scratch pseudo project trusts the threadsByProjectID entry
+  // directly: App.tsx already filtered scratch threads. Real
+  // projects still go through the cwd-path filter so stale entries
+  // can't leak into the wrong group.
+  const projectThreads = unpinnedThreads(
+    isScratchPseudo
+      ? threadsByProjectID[project.id] ?? []
+      : threadsForProjectPath(
+          threadsByProjectID[project.id] ?? [],
+          project.path,
+        ),
+  );
+  const projectHasUnread = projectThreads.some((thread) =>
+    projectThreadUnread(
+      thread,
+      activeThreadID,
+      pendingThreadID,
+      lastViewedTurnByThreadID,
+    ),
+  );
+  const projectRowClassName = `project-row ${activeProject ? "active" : ""}${expanded ? " expanded" : ""}${
+    pendingProject ? " pending-switch" : ""
+  }${projectHasUnread ? " has-unread" : ""}${isScratchPseudo ? " scratch-pseudo" : ""}`;
+  return (
+    <div className="project-group" data-section-id={project.id}>
+      <button
+        className={projectRowClassName}
+        aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的会话${
+          projectHasUnread ? "，有未读会话" : ""
+        }`}
+        aria-current={activeProject ? "page" : undefined}
+        aria-expanded={expanded}
+        aria-busy={pendingProject}
+        title={expanded ? "收起会话" : "展开会话"}
+        onClick={() => onToggleProjectCollapsed(project.id)}
+      >
+        <ProjectRowIcon scratch={isScratchPseudo} expanded={expanded} />
+        <span className="project-row-label">
+          <span className="project-row-name">{project.name}</span>
+          <ChevronRight className="project-row-chevron icon" aria-hidden="true" />
+        </span>
+        {pendingProject ? <span className="project-row-loading" aria-hidden="true" /> : null}
+        {projectHasUnread && !pendingProject ? (
+          <span className="project-row-unread" aria-hidden="true" />
+        ) : null}
+      </button>
+      <button
+        className="sidebar-row-icon-button project-row-new-thread"
+        type="button"
+        aria-label={`在 ${project.name} 中新建会话`}
+        title="新建会话"
+        onClick={() => onStartNewThread(project.id)}
+      >
+        <MessageSquarePlus className="icon" />
+      </button>
+      {threadListMounted ? (
+        <div className={`thread-list-collapse${collapsing ? " closing" : ""}`} aria-hidden={collapsing || undefined}>
+          {projectThreads.length === 0 ? (
+            // Empty projects would otherwise render a 0-height .thread-list,
+            // which makes grid-template-rows animate 0 → 0 (invisible) and
+            // leaves the user with only a margin/opacity tail. Rendering
+            // a small note gives the wrapper real content to collapse, so
+            // the height animation matches what non-empty projects get.
+            <div className="project-thread-empty-note">还没有会话</div>
+          ) : (
+            <ThreadList
+              threads={projectThreads}
+              activeID={activeThreadID}
+              pendingThreadID={pendingThreadID}
+              archiveConfirmThreadID={archiveConfirmThreadID}
+              lastViewedTurnByThreadID={lastViewedTurnByThreadID}
+              visibleCount={visibleThreadCount}
+              onSelect={(threadID) => onSelectThread(project.id, threadID)}
+              onTogglePinned={onToggleThreadPinned}
+              onArchive={onArchiveThread}
+              onClearArchiveConfirm={onClearArchiveConfirm}
+              onShowMore={showMoreProjectThreads}
+              onCollapse={collapseProjectThreads}
+            />
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -215,18 +278,51 @@ function ProjectRowIcon({
   const ExpandedIcon = scratch ? MessagesSquare : FolderOpen;
 
   return (
+    <SectionRowIcon
+      collapsed={!expanded}
+      iconKind={scratch ? "conversation" : "project"}
+      CollapsedIcon={CollapsedIcon}
+      ExpandedIcon={ExpandedIcon}
+    />
+  );
+}
+
+/**
+ * Renders the dual collapsed/expanded icon pair that lives inside every
+ * section header (project, 对话/chat scratch, pinned, agents). The pair is
+ * always rendered together; CSS crossfades between them via
+ * `.project-row-icon-state` rules in sidebar.css. We render both icons
+ * unconditionally rather than swapping them so the 190ms transition stays
+ * smooth without a mount/unmount flicker.
+ *
+ * For the Agents section the expanded icon is a rotated variant of the same
+ * glyph (Bot → BotMessageSquare); for the pinned section the expanded
+ * variant uses CSS `transform: rotate(-45deg)` to evoke a diagonal pin.
+ */
+export function SectionRowIcon({
+  collapsed,
+  iconKind,
+  CollapsedIcon,
+  ExpandedIcon,
+}: {
+  collapsed: boolean;
+  iconKind: string;
+  CollapsedIcon: React.ComponentType<{ className?: string }>;
+  ExpandedIcon: React.ComponentType<{ className?: string }>;
+}): JSX.Element {
+  return (
     <span
-      className={`project-row-icon${expanded ? " expanded" : ""}`}
+      className={`project-row-icon${collapsed ? "" : " expanded"}`}
       aria-hidden="true"
     >
       <CollapsedIcon
         className="icon-lg project-row-icon-state collapsed"
-        data-project-icon-kind={scratch ? "conversation" : "project"}
+        data-project-icon-kind={iconKind}
         data-project-icon-state="collapsed"
       />
       <ExpandedIcon
         className="icon-lg project-row-icon-state expanded"
-        data-project-icon-kind={scratch ? "conversation" : "project"}
+        data-project-icon-kind={iconKind}
         data-project-icon-state="expanded"
       />
     </span>

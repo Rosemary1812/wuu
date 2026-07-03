@@ -1345,3 +1345,70 @@
   margin: 4px 9px;
   pointer-events: none;
 }
+
+/* New sidebar section structure (T5):
+ *   .pinned-thread-section, .participant-roster-section, .project-section
+ *   each render a `.project-row` header that toggles a
+ *   `.thread-list-collapse` body. The pinned header reuses the same
+ *   anatomy as project rows so the crossfade + chevron + hover treatment
+ *   all stay consistent. */
+
+/* The pinned header icon is the same Pin glyph in both states; rotate it
+ * -45deg when expanded so it reads as a "diagonal pin" and visually
+ * distinguishes itself from the collapsed dot-on-pin form. */
+.project-row .project-row-icon:has([data-project-icon-kind="pinned"]) {
+  color: var(--ink-tertiary);
+}
+
+.project-row.expanded .project-row-icon:has([data-project-icon-kind="pinned"]) .project-row-icon-state.expanded {
+  transform: rotate(-45deg) scale(1);
+}
+
+/* Agent section: the roster rows already have their own status dot,
+ * avatar, and copy layout. The header still uses `.project-row` for
+ * parity with project rows but reskins the right-hand grid track to
+ * hold the + / … action group instead of the "+ new conversation"
+ * overlay. */
+.participant-roster-actions-header {
+  display: flex;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(4px, 0, 0);
+  transition:
+    opacity 120ms ease,
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.participant-roster-section:hover .participant-roster-actions-header,
+.participant-roster-section:focus-within .participant-roster-actions-header {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+}
+
+/* When the Agents section is collapsed, hide its body via the same
+ * grid-template-rows animation the project bodies use. The wrapper has
+ * no internal padding so the height transition matches project bodies
+ * exactly. */
+.participant-roster-collapse {
+  margin-top: 5px;
+}
+
+.participant-roster-collapse > .participant-roster-list {
+  padding: 2px 0;
+}
+
+/* Section header right-edge spacing: the pinned header reuses
+ * `.project-row` but does NOT render `.project-row-unread` or
+ * `.project-row-loading`. The default 3-column grid would leave an
+ * empty 3rd track, so collapse to 2 cols. */
+.pinned-row {
+  grid-template-columns:
+    var(--sidebar-nav-icon-col)
+    minmax(0, 1fr);
+  column-gap: var(--sidebar-nav-column-gap);
+}

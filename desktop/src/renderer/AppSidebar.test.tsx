@@ -4,8 +4,8 @@ import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InitializeResult, ParticipantProfile } from "../shared/protocol";
-import { AppSidebar } from "./AppSidebar";
-import { initialState, type AppState, type ThreadSummary } from "./AppState";
+import { AppSidebar, SIDEBAR_SECTION_AGENTS } from "./AppSidebar";
+import { initialState, SCRATCH_PSEUDO_PROJECT_ID, type AppState, type ThreadSummary } from "./AppState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -96,7 +96,15 @@ function renderSidebar({
     root.render(
       <AppSidebar
         state={state}
-        sidebarProjects={[]}
+        sidebarProjects={[
+          {
+            id: SCRATCH_PSEUDO_PROJECT_ID,
+            name: "对话",
+            path: "",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ]}
         pinnedThreads={pinnedThreads}
         activeThreadID={undefined}
         activeParticipantID={undefined}
@@ -113,6 +121,7 @@ function renderSidebar({
         projectMenuRef={createRef<HTMLDivElement>()}
         searchOpen={false}
         debugFixturesVisible={false}
+        sectionOrder={[SIDEBAR_SECTION_AGENTS, SCRATCH_PSEUDO_PROJECT_ID]}
         onStartNewThread={() => {}}
         onOpenSkillsTab={() => {}}
         onToggleConversationSearch={() => {}}
@@ -145,6 +154,9 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toContain(".sidebar-hover-zone");
     expect(sidebarCSS).toContain(
       ".sidebar-collapsed.sidebar-drawer-open .sidebar",
+    );
+    expect(sidebarCSS).toContain(
+      ".sidebar-collapsed.sidebar-drawer-closing .sidebar",
     );
     expect(sidebarCSS).toContain(
       ".sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content",
