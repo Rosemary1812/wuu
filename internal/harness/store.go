@@ -559,6 +559,9 @@ func (s *Store) loadReportsLocked() ([]Report, error) {
 	if err := readJSONFile(filepath.Join(s.dir, "reports.json"), &out); err != nil {
 		return nil, err
 	}
+	for i := range out {
+		out[i].Kind = NormalizeReportKind(out[i].Kind)
+	}
 	return out, nil
 }
 

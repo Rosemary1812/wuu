@@ -595,8 +595,11 @@ func TestSpawn_RecordsHarnessCompletedWhenWorkerSkipsReport(t *testing.T) {
 	if task.LastRunID != res.AgentID+"-run-1" || task.InputTokens != 0 || task.OutputTokens != 0 {
 		t.Fatalf("unexpected run linkage/usage: %+v", task)
 	}
-	if task.ReportPath != "" {
-		t.Fatalf("worker completion without agent_report must not create a structured report: %+v", task)
+	if task.ReportPath == "" {
+		t.Fatalf("worker completion without agent_report should still get a synthesized final_text report path: %+v", task)
+	}
+	if report, ok := c.harnessReportDetailsForTask(task.ID); !ok || report.Kind != harness.ReportKindFinalText {
+		t.Fatalf("report for a report-skipping worker must be final_text, got %+v ok=%v", report, ok)
 	}
 	var runs []harness.AgentRun
 	deadline = time.Now().Add(time.Second)
@@ -617,8 +620,8 @@ func TestSpawn_RecordsHarnessCompletedWhenWorkerSkipsReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListReports: %v", err)
 	}
-	if len(reports) != 0 {
-		t.Fatalf("unexpected structured reports: %+v", reports)
+	if len(reports) != 1 || reports[0].Kind != harness.ReportKindFinalText {
+		t.Fatalf("expected exactly one synthesized final_text report, got %+v", reports)
 	}
 	events, err := store.ReadEvents()
 	if err != nil {
@@ -1239,8 +1242,11 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 		t.Fatalf("archive does not include untracked file %q", archivePath)
 	}
 	reportPath, paths := c.harnessReportForTask(res.AgentID)
-	if reportPath != "" || !stringSliceContains(paths, patchPath) || !stringSliceContains(paths, archivePath) {
-		t.Fatalf("mailbox artifact lookup should expose patch and archive without a synthetic report, report=%q paths=%+v", reportPath, paths)
+	if reportPath == "" || !stringSliceContains(paths, patchPath) || !stringSliceContains(paths, archivePath) {
+		t.Fatalf("mailbox artifact lookup should expose patch and archive alongside the synthesized report, report=%q paths=%+v", reportPath, paths)
+	}
+	if report, ok := c.harnessReportDetailsForTask(res.AgentID); !ok || report.Kind != harness.ReportKindFinalText {
+		t.Fatalf("worker that filed no agent_report should get a final_text synthesized report, got %+v ok=%v", report, ok)
 	}
 }
 

@@ -143,13 +143,38 @@ type EvidenceRef struct {
 	Note    string `json:"note,omitempty"`
 }
 
-// Report is the structured handoff packet submitted by an agent.
+// ReportKind classifies how a run's report was produced.
+type ReportKind string
+
+const (
+	// ReportKindStructured is a report the agent submitted via agent_report.
+	ReportKindStructured ReportKind = "structured"
+	// ReportKindFinalText is a report the runtime synthesized from observed
+	// facts (final text, changed files, artifacts) when the agent finished
+	// without submitting a structured handoff.
+	ReportKindFinalText ReportKind = "final_text"
+)
+
+// NormalizeReportKind resolves the report kind, defaulting a legacy report
+// with no recorded kind to structured (all pre-migration reports came from
+// agent_report).
+func NormalizeReportKind(kind ReportKind) ReportKind {
+	if kind == ReportKindFinalText {
+		return ReportKindFinalText
+	}
+	return ReportKindStructured
+}
+
+// Report is the handoff packet for a run. It is either a structured packet the
+// agent submitted via agent_report, or a final_text packet the runtime
+// synthesized from observed facts. Kind records which.
 type Report struct {
 	ID           string        `json:"id"`
 	TaskID       string        `json:"task_id"`
 	RunID        string        `json:"run_id,omitempty"`
 	AgentID      string        `json:"agent_id,omitempty"`
 	AgentPath    string        `json:"agent_path,omitempty"`
+	Kind         ReportKind    `json:"kind,omitempty"`
 	Outcome      string        `json:"outcome"`
 	Summary      string        `json:"summary,omitempty"`
 	ChangedFiles []string      `json:"changed_files,omitempty"`

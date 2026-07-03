@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -32,6 +33,7 @@ type AgentMailboxMessage struct {
 	InputTokens     int       `json:"input_tokens,omitempty"`
 	OutputTokens    int       `json:"output_tokens,omitempty"`
 	ReportPath      string    `json:"report_path,omitempty"`
+	ReportKind      string    `json:"report_kind,omitempty"`
 	ReportMissing   bool      `json:"report_missing,omitempty"`
 	Artifacts       []string  `json:"artifacts,omitempty"`
 	StartedAt       time.Time `json:"started_at,omitempty"`
@@ -40,10 +42,10 @@ type AgentMailboxMessage struct {
 }
 
 func NewAgentMailboxMessage(snap subagent.SubAgentSnapshot) AgentMailboxMessage {
-	return NewAgentMailboxMessageWithReport(snap, "", nil)
+	return NewAgentMailboxMessageWithReport(snap, "", "", nil)
 }
 
-func NewAgentMailboxMessageWithReport(snap subagent.SubAgentSnapshot, reportPath string, artifacts []string) AgentMailboxMessage {
+func NewAgentMailboxMessageWithReport(snap subagent.SubAgentSnapshot, reportPath string, reportKind harness.ReportKind, artifacts []string) AgentMailboxMessage {
 	ref := AgentResultReference{}
 	if strings.TrimSpace(snap.Result) != "" {
 		preview, truncated := previewAgentResult(snap.Result)
@@ -53,10 +55,18 @@ func NewAgentMailboxMessageWithReport(snap subagent.SubAgentSnapshot, reportPath
 			Truncated: truncated,
 		}
 	}
-	return NewAgentMailboxMessageWithReportAndResult(snap, reportPath, artifacts, ref)
+	return NewAgentMailboxMessageWithReportAndResult(snap, reportPath, reportKind, artifacts, ref)
 }
 
-func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, reportPath string, artifacts []string, ref AgentResultReference) AgentMailboxMessage {
+func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, reportPath string, reportKind harness.ReportKind, artifacts []string, ref AgentResultReference) AgentMailboxMessage {
+	// report_missing is a derived alias for report_kind != structured, kept for
+	// wire compatibility this release. Only terminal completed runs have a
+	// report kind at all.
+	reportMissing := snap.Status == subagent.StatusCompleted && reportKind != harness.ReportKindStructured
+	kindOut := ""
+	if snap.Status == subagent.StatusCompleted && reportKind != "" {
+		kindOut = string(reportKind)
+	}
 	msg := AgentMailboxMessage{
 		Type:            "agent_result",
 		ResultID:        agentResultDeliveryID(snap),
@@ -76,7 +86,8 @@ func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, r
 		InputTokens:     snap.InputTokens,
 		OutputTokens:    snap.OutputTokens,
 		ReportPath:      reportPath,
-		ReportMissing:   snap.Status == subagent.StatusCompleted && reportPath == "",
+		ReportKind:      kindOut,
+		ReportMissing:   reportMissing,
 		Artifacts:       artifacts,
 		StartedAt:       snap.StartedAt,
 		CompletedAt:     snap.CompletedAt,

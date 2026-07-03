@@ -135,6 +135,7 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 		RunID:        harnessRunID(id),
 		AgentID:      id,
 		AgentPath:    path,
+		Kind:         harness.ReportKindStructured,
 		Outcome:      outcome,
 		Summary:      summary,
 		ChangedFiles: trimStringSlice(req.ChangedFiles),

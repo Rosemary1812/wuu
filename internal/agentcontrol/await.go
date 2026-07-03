@@ -35,6 +35,7 @@ type AwaitAgentResult struct {
 	Error           string   `json:"error,omitempty"`
 	ChangedFiles    []string `json:"changed_files,omitempty"`
 	ReportPath      string   `json:"report_path,omitempty"`
+	ReportKind      string   `json:"report_kind,omitempty"`
 	ReportMissing   bool     `json:"report_missing,omitempty"`
 	Artifacts       []string `json:"artifacts,omitempty"`
 	WorktreePath    string   `json:"worktree_path,omitempty"`
@@ -323,10 +324,14 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 	if report, ok := c.harnessReportDetailsForTask(meta.ID); ok {
 		out.ChangedFiles = trimStringSlice(report.ChangedFiles)
 	}
-	// A completed worker that filed no structured report stays completed; the
-	// missing report is report-quality metadata, not a lifecycle status.
-	if out.Status == string(subagent.StatusCompleted) && reportPath == "" {
-		out.ReportMissing = true
+	// A completed worker's report is typed metadata, not a lifecycle status:
+	// structured when it filed agent_report, otherwise final_text (a
+	// synthesized handoff). report_missing is the derived alias for
+	// kind != structured, kept for wire compatibility this release.
+	if out.Status == string(subagent.StatusCompleted) {
+		kind := c.reportKindForTask(meta.ID)
+		out.ReportKind = string(kind)
+		out.ReportMissing = kind != harness.ReportKindStructured
 	}
 	return out
 }

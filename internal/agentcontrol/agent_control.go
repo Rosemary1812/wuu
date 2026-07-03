@@ -2079,7 +2079,82 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 	if isFinalSubAgentStatus(n.Status) {
 		c.recordAgentResultArtifact(n.Snapshot)
 		c.recordWorktreeArtifacts(n.Snapshot)
+		if n.Status == subagent.StatusCompleted {
+			c.synthesizeFinalTextReport(n.Snapshot)
+		}
 	}
+}
+
+// synthesizeFinalTextReport gives a completed run that filed no structured
+// agent_report a report anyway, built from the facts the runtime already owns
+// (final text, changed files, artifacts). The report is tagged final_text so
+// consumers can tell a synthesized handoff apart from a structured one, and it
+// gives the run a durable report path just like agent_report would.
+func (c *AgentControl) synthesizeFinalTextReport(snap subagent.SubAgentSnapshot) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	taskID := strings.TrimSpace(snap.ID)
+	if taskID == "" {
+		return
+	}
+	if _, ok, err := c.harnessStore.ReportForTask(taskID); err != nil || ok {
+		// A structured report was filed (or the store errored); leave it alone.
+		return
+	}
+	summary := strings.TrimSpace(snap.Result)
+	if summary == "" {
+		summary = "Worker completed without a final message."
+	}
+	task, _ := c.harnessTask(taskID)
+	changed := c.worktreeChangedFiles(task)
+	_, artifacts := c.harnessReportForTask(taskID)
+	report := harness.Report{
+		ID:           taskID + "-final-text-report",
+		TaskID:       taskID,
+		RunID:        harnessRunID(taskID),
+		AgentID:      taskID,
+		AgentPath:    strings.TrimSpace(snap.AgentPath),
+		Kind:         harness.ReportKindFinalText,
+		Outcome:      "completed",
+		Summary:      summary,
+		ChangedFiles: changed,
+		Artifacts:    artifacts,
+		RawResult:    snap.Result,
+		SubmittedAt:  time.Now().UTC(),
+	}
+	if _, err := c.harnessStore.SubmitReport(report); err != nil {
+		return
+	}
+}
+
+// worktreeChangedFiles returns the git-observed changed files for a worktree
+// task, best effort. Shared-workspace tasks return nil because the runtime does
+// not attribute repo-wide edits to a single inplace worker.
+func (c *AgentControl) worktreeChangedFiles(task harness.Task) []string {
+	if task.Workspace.Mode != harness.WorkspaceWorktree || strings.TrimSpace(task.Workspace.Root) == "" {
+		return nil
+	}
+	out, err := gitOutput(task.Workspace.Root, "status", "--porcelain")
+	if err != nil {
+		return nil
+	}
+	changed := make([]string, 0)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		changed = append(changed, fields[len(fields)-1])
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	return changed
 }
 
 func (c *AgentControl) harnessReportForTask(taskID string) (string, []string) {
@@ -2400,9 +2475,20 @@ func (c *AgentControl) agentMailboxMessageWithRefs(snap subagent.SubAgentSnapsho
 	return NewAgentMailboxMessageWithReportAndResult(
 		snap,
 		c.sessionArtifactRef(reportPath),
+		c.reportKindForTask(snap.ID),
 		c.sessionArtifactRefs(artifacts),
 		ref,
 	)
+}
+
+// reportKindForTask reports how a run's report was produced: structured when
+// the agent filed one via agent_report, otherwise final_text (a synthesized
+// handoff, or none yet). Callers derive report_missing as kind != structured.
+func (c *AgentControl) reportKindForTask(taskID string) harness.ReportKind {
+	if report, ok := c.harnessReportDetailsForTask(taskID); ok {
+		return harness.NormalizeReportKind(report.Kind)
+	}
+	return harness.ReportKindFinalText
 }
 
 func newAgentCompletionCommunicationWithMessage(snap subagent.SubAgentSnapshot, recipientPath string, message AgentMailboxMessage) agentthread.InterAgentCommunication {
