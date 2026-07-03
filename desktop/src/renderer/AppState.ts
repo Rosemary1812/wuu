@@ -1608,6 +1608,53 @@ export function findDMThread<T extends DMThreadCandidate>(
   return best;
 }
 
+type SessionTabParticipantCandidate = {
+  id: string;
+  dm_participant_id?: string;
+  updated_at: string;
+  created_at: string;
+};
+
+/**
+ * Find an already-open session tab whose thread belongs to the given DM
+ * participant (issue #3: the same agent, e.g. "Andy", could end up with two
+ * content-different, indistinguishable tabs). thread/start is now an
+ * idempotent find-or-create on the server, but openParticipantDM should
+ * still prefer focusing a tab that is already open locally instead of
+ * round-tripping to the server at all — and this also guards against any
+ * pre-existing duplicate tabs left over from before the server-side fix, or
+ * a cross-window race, by always converging on one tab per participant.
+ * Only "thread"-kind tabs are considered; ties (more than one open tab for
+ * the same participant) are broken by the associated thread's most recent
+ * activity, mirroring findDMThread.
+ */
+export function sessionTabForParticipant(
+  tabs: readonly SessionTab[],
+  threads: readonly SessionTabParticipantCandidate[] | undefined,
+  participantID: string,
+): (SessionTab & { kind: "thread" }) | undefined {
+  if (typeof participantID !== "string" || participantID.length === 0) {
+    return undefined;
+  }
+  if (!threads || threads.length === 0) {
+    return undefined;
+  }
+  const threadByID = new Map(threads.map((thread) => [thread.id, thread]));
+  let best: (SessionTab & { kind: "thread" }) | undefined;
+  let bestTime = -Infinity;
+  for (const tab of tabs) {
+    if (tab.kind !== "thread") continue;
+    const thread = threadByID.get(tab.threadID);
+    if (!thread || thread.dm_participant_id !== participantID) continue;
+    const time = threadTime(thread);
+    if (time > bestTime) {
+      best = tab;
+      bestTime = time;
+    }
+  }
+  return best;
+}
+
 /**
  * Collect participant IDs whose resident DM thread is currently running.
  * A resident named agent's DM thread IS the agent's brain, so the roster's

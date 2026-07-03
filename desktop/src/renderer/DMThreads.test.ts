@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Thread, Turn } from "../shared/protocol";
+import type { RuntimeContext, Thread, Turn } from "../shared/protocol";
 import {
   busyDMParticipantIDs,
   findDMThread,
   isDMThread,
   scratchThreadSummaries,
+  sessionTabForParticipant,
   summarizeThreadsForSidebar,
+  type SessionTab,
 } from "./AppState";
 
 function makeThread(
@@ -179,6 +181,122 @@ describe("findDMThread proper-kind fixtures", () => {
       updated_at: "2026-02-01T00:00:00Z",
     });
     expect(findDMThread([proper], "participant-1")?.id).toBe("dm-proper");
+  });
+});
+
+const runtimeContext: RuntimeContext = { kind: "no_project", cwd: "/agents" };
+
+function makeThreadTab(
+  threadID: string,
+  overrides: Partial<Extract<SessionTab, { kind: "thread" }>> = {},
+): SessionTab {
+  return {
+    id: `thread:${threadID}`,
+    kind: "thread",
+    context: runtimeContext,
+    threadID,
+    title: threadID,
+    prompt: "",
+    images: [],
+    files: [],
+    ...overrides,
+  };
+}
+
+describe("sessionTabForParticipant", () => {
+  it("finds the open thread tab whose thread belongs to the participant", () => {
+    const thread = makeThread({
+      id: "dm-andy",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-andy",
+    });
+    const tabs = [makeThreadTab("dm-andy")];
+    const found = sessionTabForParticipant(tabs, [thread], "participant-andy");
+    expect(found?.id).toBe("thread:dm-andy");
+    expect(found?.threadID).toBe("dm-andy");
+  });
+
+  it("returns undefined when no open tab belongs to the participant", () => {
+    const thread = makeThread({
+      id: "dm-andy",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-other",
+    });
+    const tabs = [makeThreadTab("dm-andy")];
+    expect(
+      sessionTabForParticipant(tabs, [thread], "participant-andy"),
+    ).toBeUndefined();
+  });
+
+  it("ignores draft/file/skills tabs even if their id coincidentally matches a thread id", () => {
+    const thread = makeThread({
+      id: "dm-andy",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-andy",
+    });
+    const draftTab: SessionTab = {
+      id: "dm-andy",
+      kind: "draft",
+      context: runtimeContext,
+      title: "新对话",
+      prompt: "",
+      images: [],
+      files: [],
+      createdAt: 0,
+    };
+    expect(
+      sessionTabForParticipant([draftTab], [thread], "participant-andy"),
+    ).toBeUndefined();
+  });
+
+  it("prefers the tab whose thread was updated most recently when duplicates exist", () => {
+    // This mirrors the exact issue #3 scenario: two real, different threads
+    // for the same participant are both open as tabs (e.g. left over from
+    // before the server-side idempotent find-or-create fix). The helper
+    // must converge on one — the most recently active — rather than
+    // leaving the caller to guess.
+    const older = makeThread({
+      id: "dm-andy-older",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-andy",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const newer = makeThread({
+      id: "dm-andy-newer",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-andy",
+      updated_at: "2026-02-01T00:00:00Z",
+    });
+    const tabs = [makeThreadTab("dm-andy-older"), makeThreadTab("dm-andy-newer")];
+    const found = sessionTabForParticipant(
+      tabs,
+      [older, newer],
+      "participant-andy",
+    );
+    expect(found?.threadID).toBe("dm-andy-newer");
+  });
+
+  it("returns undefined for an empty or invalid participant id", () => {
+    const thread = makeThread({
+      id: "dm-andy",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-andy",
+    });
+    const tabs = [makeThreadTab("dm-andy")];
+    expect(sessionTabForParticipant(tabs, [thread], "")).toBeUndefined();
+  });
+
+  it("returns undefined when threads or tabs are empty", () => {
+    expect(
+      sessionTabForParticipant([], [], "participant-andy"),
+    ).toBeUndefined();
+    expect(
+      sessionTabForParticipant(
+        [makeThreadTab("dm-andy")],
+        undefined,
+        "participant-andy",
+      ),
+    ).toBeUndefined();
   });
 });
 

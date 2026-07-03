@@ -196,6 +196,7 @@ import {
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
   sessionTabForLoadedRuntime,
+  sessionTabForParticipant,
   sessionTabDraftForThread,
   setThreadForPane,
   sortThreads,
@@ -3086,6 +3087,20 @@ export function App(): JSX.Element {
       const existing = findDMThread(currentState.threads, participant.id);
       if (existing) {
         await activateThread(existing.id);
+        return;
+      }
+      // Defense against issue #3: a stale threads cache can miss a DM
+      // thread the server already knows about, but if a session tab for
+      // this participant is already open locally, focus it directly
+      // instead of asking the server to start (what used to always be) a
+      // brand new, indistinguishable thread.
+      const existingTab = sessionTabForParticipant(
+        currentState.sessionTabs,
+        currentState.threads,
+        participant.id,
+      );
+      if (existingTab) {
+        await activateThread(existingTab.threadID);
         return;
       }
       try {
