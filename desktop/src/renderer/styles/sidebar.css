@@ -123,13 +123,6 @@
   display: block;
 }
 
-/* While a sidebar drag is in flight the pointer sits exactly where the hover
-   zone appears at the collapse threshold; hide the zone so it cannot steal
-   the pointer or trigger the drawer mid-drag. */
-.resizing-sidebar .sidebar-hover-zone {
-  display: none;
-}
-
 .sidebar-collapsed .sidebar-hover-zone:hover,
 .sidebar-collapsed.sidebar-drawer-open .sidebar-hover-zone {
   background: linear-gradient(90deg, rgba(45, 50, 54, 0.08), transparent);
