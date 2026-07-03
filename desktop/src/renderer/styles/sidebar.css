@@ -87,6 +87,14 @@
   --sidebar-row-action-size: 24px;
   --sidebar-row-control-pad-x: 8px;
   --sidebar-project-unread-size: 8px;
+  /* Vertical rhythm (task B, sidebar-groups-andy-workspaces.md §1.1
+   * spirit): one token set for every section family below 置顶 —
+   * inter-section distance, header → body offset, inter-row gap, and
+   * the list's own vertical padding. Never hardcode these per section. */
+  --sidebar-section-gap: 14px;
+  --sidebar-section-body-gap: 5px;
+  --sidebar-row-gap: 3px;
+  --sidebar-list-pad-y: 2px;
   display: flex;
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
@@ -429,7 +437,7 @@
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
-  margin-top: 14px;
+  margin-top: var(--sidebar-section-gap);
 }
 
 .project-list {
@@ -442,8 +450,8 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
-  padding: 2px 0;
+  gap: var(--sidebar-row-gap);
+  padding: var(--sidebar-list-pad-y) 0;
 }
 
 .project-add-menu {
@@ -754,7 +762,7 @@
  * and fades, which keeps row text crisp while the clipped body unfurls. */
 .thread-list-collapse {
   height: var(--sidebar-section-body-height, auto);
-  margin-top: 5px;
+  margin-top: var(--sidebar-section-body-gap);
   min-height: 0;
   overflow: clip;
   transition:
@@ -797,8 +805,8 @@
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 3px;
-  padding: 2px 0;
+  gap: var(--sidebar-row-gap);
+  padding: var(--sidebar-list-pad-y) 0;
 }
 
 .thread-list-footer {
@@ -1255,7 +1263,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 14px;
+  margin-top: var(--sidebar-section-gap);
   /* Combined with `.sidebar-content`'s 16px bottom padding, this matches
    * `.composer-wrap`'s 24px bottom inset so both bottom edges share a
    * horizontal baseline. */
@@ -1485,7 +1493,7 @@
    editor appears from the header's 新建群聊 button and commits on Enter /
    cancels on Escape. */
 .group-thread-name-editor {
-  padding: 2px 8px;
+  padding: var(--sidebar-list-pad-y) var(--sidebar-row-pad-x);
 }
 
 .group-thread-name-input {

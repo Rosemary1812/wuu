@@ -256,8 +256,8 @@
  * .pinned-thread-list so all section bodies start at the same offset. */
 .participant-roster-list {
   display: grid;
-  gap: 3px;
-  padding: 2px 0;
+  gap: var(--sidebar-row-gap);
+  padding: var(--sidebar-list-pad-y) 0;
 }
 
 /* Row spec (height / padding / font / hover / focus / active / unread)

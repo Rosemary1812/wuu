@@ -1004,16 +1004,47 @@ describe("sidebar section spacing rhythm", () => {
     )?.[0];
     expect(sectionRule).toBeTruthy();
     expect(sectionRule).not.toMatch(/\bgap:/);
-    expect(sidebarCSS).toMatch(/\.thread-list-collapse \{[^}]*margin-top: 5px/);
+    expect(sidebarCSS).toMatch(
+      /\.thread-list-collapse \{[^}]*margin-top: var\(--sidebar-section-body-gap\)/,
+    );
     expect(sidebarCSS).toContain("--sidebar-section-body-height");
     expect(sidebarCSS).toContain('.thread-list-collapse[data-state="closing"]');
   });
 
-  it("pinned list shares the .thread-list rhythm (gap 3px, 2px vertical padding)", () => {
+  it("declares one set of spacing tokens shared by every section family (task B)", () => {
+    // Vertical rhythm tokens: inter-section, header → body, inter-row,
+    // and list vertical padding. Every section family below 置顶 must
+    // consume these instead of hardcoding values, so the panel reads as
+    // one grid.
+    expect(sidebarCSS).toMatch(/--sidebar-section-gap: 14px/);
+    expect(sidebarCSS).toMatch(/--sidebar-section-body-gap: 5px/);
+    expect(sidebarCSS).toMatch(/--sidebar-row-gap: 3px/);
+    expect(sidebarCSS).toMatch(/--sidebar-list-pad-y: 2px/);
+    const sectionRule = sidebarCSS.match(
+      /\.project-section,\s*\.pinned-thread-section,\s*\.group-thread-section,\s*\.participant-roster-section \{[^}]*\}/,
+    )?.[0];
+    expect(sectionRule).toMatch(/margin-top: var\(--sidebar-section-gap\)/);
+    expect(sidebarCSS).toMatch(
+      /\.thread-list \{[^}]*gap: var\(--sidebar-row-gap\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.pinned-thread-list \{[^}]*gap: var\(--sidebar-row-gap\)/,
+    );
+    expect(participantsCSS).toMatch(
+      /\.participant-roster-list \{[^}]*gap: var\(--sidebar-row-gap\)/,
+    );
+    // The 群聊 inline name editor indents with the shared row padding,
+    // not a hardcoded pixel value.
+    expect(sidebarCSS).toMatch(
+      /\.group-thread-name-editor \{[^}]*var\(--sidebar-row-pad-x\)/,
+    );
+  });
+
+  it("pinned list shares the .thread-list rhythm (row-gap + list-pad tokens)", () => {
     const pinnedRule = sidebarCSS.match(/\.pinned-thread-list \{[^}]*\}/)?.[0];
     expect(pinnedRule).toBeTruthy();
-    expect(pinnedRule).toMatch(/gap: 3px/);
-    expect(pinnedRule).toMatch(/padding: 2px 0/);
+    expect(pinnedRule).toMatch(/gap: var\(--sidebar-row-gap\)/);
+    expect(pinnedRule).toMatch(/padding: var\(--sidebar-list-pad-y\) 0/);
     // No per-row indent override — pinned rows use the shared
     // .thread-row padding.
     expect(sidebarCSS).not.toMatch(/\.pinned-thread-list \.thread-row/);
