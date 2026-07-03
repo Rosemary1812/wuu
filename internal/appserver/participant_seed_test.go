@@ -59,8 +59,8 @@ func TestEnsureDefaultParticipantSeedsAndy(t *testing.T) {
 	if andy.Avatar != "🦉" {
 		t.Errorf("avatar = %q, want owl", andy.Avatar)
 	}
-	if andy.Tagline != "随时开工的常驻搭档，可以帮你搭建团队" {
-		t.Errorf("tagline = %q, want constant tagline", andy.Tagline)
+	if andy.Tagline != defaultSeedParticipantTagline {
+		t.Errorf("tagline = %q, want %q", andy.Tagline, defaultSeedParticipantTagline)
 	}
 	if andy.Model != "" {
 		t.Errorf("model = %q, want empty", andy.Model)
@@ -68,17 +68,41 @@ func TestEnsureDefaultParticipantSeedsAndy(t *testing.T) {
 	if !strings.Contains(andy.Workspace, filepath.Join("participants", andy.ID)) {
 		t.Errorf("workspace should contain participants/<id>, got %q", andy.Workspace)
 	}
-	if andy.Memory != "" {
-		t.Errorf("memory = %q, want empty", andy.Memory)
+	if !strings.Contains(andy.Memory, "团队组建者") {
+		t.Errorf("memory should carry the preset persona, got %q", andy.Memory)
 	}
 
 	memPath := filepath.Join(andy.Workspace, participantMemoryFileName)
-	info, err := os.Stat(memPath)
+	data, err := os.ReadFile(memPath)
 	if err != nil {
 		t.Fatalf("MEMORY.md should exist: %v", err)
 	}
-	if info.Size() != 0 {
-		t.Errorf("MEMORY.md size = %d, want 0", info.Size())
+	if !strings.Contains(string(data), "团队组建者") || !strings.Contains(string(data), "create_group") {
+		t.Errorf("MEMORY.md should contain the preset persona, got %q", string(data))
+	}
+
+	markerPath := filepath.Join(rt.WuuHome, defaultAgentSeededMarkerName)
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Errorf("seed marker should exist after seeding: %v", err)
+	}
+}
+
+func TestEnsureDefaultParticipantSkipsWhenMarkerPresent(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
+	if err := os.MkdirAll(rt.WuuHome, 0o755); err != nil {
+		t.Fatalf("mkdir wuu home: %v", err)
+	}
+	markerPath := filepath.Join(rt.WuuHome, defaultAgentSeededMarkerName)
+	if err := os.WriteFile(markerPath, []byte("seeded earlier\n"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	srv := New(rt, &lockedBuffer{})
+
+	ensureDefaultParticipantForTest(t, srv)
+	list := listParticipantsForTest(t, srv)
+	if len(list.Participants) != 0 {
+		t.Fatalf("marker must block seeding even with an empty roster, got %+v", list.Participants)
 	}
 }
 
