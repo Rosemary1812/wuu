@@ -1168,6 +1168,31 @@ describe("unified DM/thread row spec (S1)", () => {
       /\.participant-roster-copy \{[^}]*display: flex/,
     );
   });
+
+  it("DM rows lead with the same column geometry as thread rows", () => {
+    // The DM row's status dot and the session row's leading icon must
+    // sit on one vertical axis: both leading columns use
+    // --sidebar-nav-icon-col (left inset is already shared via the base
+    // row padding), and both row grids use the same column gap token.
+    expect(sidebarCSS).toMatch(
+      /\.thread-row \{[^}]*var\(--sidebar-nav-icon-col\)/,
+    );
+    const rosterRowRule = participantsCSS.match(
+      /\.participant-roster-row \{[^}]*\}/,
+    )?.[0];
+    expect(rosterRowRule).toBeTruthy();
+    expect(rosterRowRule).toMatch(
+      /grid-template-columns: var\(--sidebar-nav-icon-col\)/,
+    );
+    expect(rosterRowRule).toMatch(
+      /column-gap: var\(--sidebar-nav-column-gap\)/,
+    );
+    // The dot centers inside that column, mirroring the thread-row
+    // ::before dot's justify-self: center.
+    expect(participantsCSS).toMatch(
+      /\.participant-roster-status \{[^}]*justify-self: center/,
+    );
+  });
 });
 
 describe("group chat section", () => {

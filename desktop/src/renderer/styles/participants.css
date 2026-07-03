@@ -263,11 +263,15 @@
 /* Row spec (height / padding / font / hover / focus / active / unread)
  * comes from the shared sidebar row family in sidebar.css
  * (sidebar-groups-andy-workspaces.md §1.1). Only the identity columns
- * differ here: status dot + avatar instead of the thread-row icon. */
+ * differ here: status dot + avatar instead of the thread-row icon. The
+ * leading (status-dot) column reuses the thread-row leading-column
+ * width and gap tokens so the dot sits on the exact vertical axis of
+ * the session rows' leading icon. */
 .participant-roster-row {
   min-width: 0;
   border: 0;
-  grid-template-columns: var(--sidebar-tree-toggle-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
+  column-gap: var(--sidebar-nav-column-gap);
+  grid-template-columns: var(--sidebar-nav-icon-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
 }
 
 .participant-roster-row:disabled {
@@ -276,7 +280,7 @@
 }
 
 .participant-roster-row.empty {
-  grid-template-columns: var(--sidebar-tree-toggle-col) minmax(0, 1fr) auto;
+  grid-template-columns: var(--sidebar-nav-icon-col) minmax(0, 1fr) auto;
   color: var(--ink-muted);
 }
 
