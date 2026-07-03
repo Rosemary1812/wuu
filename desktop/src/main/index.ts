@@ -29,6 +29,7 @@ import type {
   ParticipantFeedbackResult,
   ParticipantListResult,
   ParticipantResetResult,
+  ParticipantRetireResult,
   ParticipantSaveParams,
   ParticipantSaveResult,
   ParticipantStartParams,
@@ -553,6 +554,11 @@ app.whenReady().then(async () => {
         participant_id: participantId,
         scope,
       }),
+  );
+  ipcMain.handle("wuu:participant-retire", (_event, participantId: string) =>
+    appServerClientPool.request<ParticipantRetireResult>("participant/retire", {
+      participant_id: participantId,
+    }),
   );
   ipcMain.handle("wuu:thread-list-sub", (_event, threadId: string) =>
     appServerClientPool.request<ThreadListSubResult>("thread/listSub", {

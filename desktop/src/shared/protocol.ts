@@ -648,6 +648,11 @@ export type ParticipantProfile = {
   name: string;
   role?: string;
   avatar?: string;
+  // avatar_image is an uploaded image data URL (e.g. "data:image/png;base64,...")
+  // that supersedes the emoji avatar in the UI. Populated by the profile read
+  // path when the workspace stores an avatar image; absent on the lightweight
+  // wire Summary used in agent and task card attribution.
+  avatar_image?: string;
   tagline?: string;
   workspace?: string;
   model?: string;
@@ -666,6 +671,12 @@ export type ParticipantSaveParams = {
   name: string;
   role?: string;
   avatar?: string;
+  // avatar_image accepts an image data URL to upload a custom avatar. The
+  // emoji avatar field is preserved independently; both can coexist.
+  avatar_image?: string;
+  // clear_avatar_image removes any previously uploaded avatar image.
+  // Takes precedence over avatar_image when set.
+  clear_avatar_image?: boolean;
   tagline?: string;
   model?: string;
   memory?: string;
@@ -680,6 +691,14 @@ export type ParticipantFeedbackResult = {
 };
 
 export type ParticipantResetResult = {
+  participant: ParticipantProfile;
+};
+
+export type ParticipantRetireParams = {
+  participant_id: string;
+};
+
+export type ParticipantRetireResult = {
   participant: ParticipantProfile;
 };
 
@@ -1304,6 +1323,7 @@ export type WuuDesktopApi = {
     participantId: string,
     scope: "restart" | "session" | "full"
   ) => Promise<ParticipantResetResult>;
+  retireParticipant: (participantId: string) => Promise<ParticipantRetireResult>;
   listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
   openConversationSubthread: (
     threadId: string,

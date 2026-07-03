@@ -1843,6 +1843,29 @@ export function App(): JSX.Element {
     }
     return Array.from(names);
   }, [state.thread, state.secondaryThread, state.threads]);
+  // Aggregate participant IDs that currently own a running run. Walks the
+  // child_agents list on every thread (active, secondary, and sidebar) and
+  // collects participants whose agent status is in_progress. Named
+  // participants not in the set render as online; the roster is the only
+  // consumer so we keep the aggregation local to App.tsx.
+  const busyParticipantIDs = useMemo(() => {
+    const ids = new Set<string>();
+    const collect = (agent: Agent | undefined): void => {
+      if (!agent) return;
+      if (agent.status === "running" || agent.status === "in_progress") {
+        const id = agent.participant?.id;
+        if (id) {
+          ids.add(id);
+        }
+      }
+    };
+    for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
+      for (const agent of thread?.child_agents ?? []) {
+        collect(agent);
+      }
+    }
+    return ids;
+  }, [state.thread, state.secondaryThread, state.threads]);
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !previewingLaunch &&
@@ -6638,6 +6661,7 @@ export function App(): JSX.Element {
         activeThreadID={activeThreadID}
         activeParticipantID={participantPanel?.participant?.id}
         participants={participants}
+        busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={visiblePendingThreadID}
         pendingProjectID={visiblePendingProjectID}
         archiveConfirmThreadID={archiveConfirmThreadID}

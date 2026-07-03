@@ -246,6 +246,24 @@
   white-space: nowrap;
 }
 
+.participant-roster-avatar-image {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}
+
+.participant-roster-menu {
+  position: relative;
+}
+
+.participant-roster-menu .project-add-menu {
+  right: 0;
+  left: auto;
+  min-width: 180px;
+}
+
 .participant-roster-copy {
   display: grid;
   min-width: 0;

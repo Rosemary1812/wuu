@@ -103,6 +103,8 @@ const api: WuuDesktopApi = {
     ),
   resetParticipant: (participantId, scope) =>
     ipcRenderer.invoke("wuu:participant-reset", participantId, scope),
+  retireParticipant: (participantId) =>
+    ipcRenderer.invoke("wuu:participant-retire", participantId),
   listConversationSubthreads: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-list-sub", threadId),
   openConversationSubthread: (threadId: string, options) =>

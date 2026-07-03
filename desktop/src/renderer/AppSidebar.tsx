@@ -2,13 +2,14 @@ import {
   Archive,
   Clock,
   CornerDownRight,
+  Download,
   FileText,
   FolderOpen,
   FolderPlus,
-  Download,
   LayoutGrid,
   List as ListIcon,
   MessageSquarePlus,
+  MoreHorizontal,
   Plus,
   Search,
   Settings,
@@ -16,7 +17,7 @@ import {
   Upload,
   Wrench,
 } from "lucide-react";
-import { type RefObject, useRef } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
@@ -30,6 +31,7 @@ export function AppSidebar({
   activeThreadID,
   activeParticipantID,
   participants,
+  busyParticipantIDs,
   pendingThreadID,
   pendingProjectID,
   archiveConfirmThreadID,
@@ -77,6 +79,10 @@ export function AppSidebar({
   activeThreadID?: string;
   activeParticipantID?: string;
   participants: ParticipantProfile[];
+  // Set of participant IDs with at least one running run. Drives the busy
+  // status dot in the roster. Derived in App.tsx by walking child agents
+  // across all threads; participants not in the set render as online.
+  busyParticipantIDs: Set<string>;
   pendingThreadID?: string;
   pendingProjectID?: string;
   archiveConfirmThreadID?: string;
@@ -116,6 +122,36 @@ export function AppSidebar({
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
   const participantTemplateInputRef = useRef<HTMLInputElement>(null);
+  const rosterMenuRef = useRef<HTMLDivElement>(null);
+  const [rosterMenuOpen, setRosterMenuOpen] = useState(false);
+  // Close the overflow menu on outside pointerdown or Escape so the same
+  // input devices that open it (click / keyboard) can also dismiss it
+  // without coupling to a parent click handler.
+  useEffect(() => {
+    if (!rosterMenuOpen) {
+      return undefined;
+    }
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (!rosterMenuRef.current) {
+        return;
+      }
+      if (event.target instanceof Node && rosterMenuRef.current.contains(event.target)) {
+        return;
+      }
+      setRosterMenuOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setRosterMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [rosterMenuOpen]);
   // The scratch pseudo project is "active" when the runtime context is in
   // no-project mode (i.e. the user is viewing a scratch conversation).
   // Active state is passed into ProjectList so the row highlights even though
@@ -263,26 +299,48 @@ export function AppSidebar({
                     }
                   }}
                 />
-                <button
-                  type="button"
-                  className="participant-roster-add"
-                  aria-label="导入团队模板"
-                  title="导入团队模板"
-                  disabled={!state.initialized}
-                  onClick={() => participantTemplateInputRef.current?.click()}
-                >
-                  <Upload aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="participant-roster-add"
-                  aria-label="导出团队模板"
-                  title="导出团队模板"
-                  disabled={!state.initialized || participants.length === 0}
-                  onClick={onExportParticipants}
-                >
-                  <Download aria-hidden="true" />
-                </button>
+                <div className="participant-roster-menu" ref={rosterMenuRef}>
+                  <button
+                    type="button"
+                    className="participant-roster-add"
+                    aria-label="团队模板操作"
+                    aria-haspopup="menu"
+                    aria-expanded={rosterMenuOpen}
+                    title="团队模板操作"
+                    disabled={!state.initialized}
+                    onClick={() => setRosterMenuOpen((open) => !open)}
+                  >
+                    <MoreHorizontal aria-hidden="true" />
+                  </button>
+                  {rosterMenuOpen ? (
+                    <div className="project-add-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!state.initialized}
+                        onClick={() => {
+                          setRosterMenuOpen(false);
+                          participantTemplateInputRef.current?.click();
+                        }}
+                      >
+                        <Upload aria-hidden="true" />
+                        <span>导入团队模板</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!state.initialized || participants.length === 0}
+                        onClick={() => {
+                          setRosterMenuOpen(false);
+                          onExportParticipants();
+                        }}
+                      >
+                        <Download aria-hidden="true" />
+                        <span>导出团队模板</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 <button
                   type="button"
                   className="participant-roster-add"
@@ -311,32 +369,51 @@ export function AppSidebar({
                   <span className="participant-roster-meta">常驻身份</span>
                 </button>
               ) : (
-                participants.map((participant) => (
-                  <button
-                    key={participant.id}
-                    type="button"
-                    className={`participant-roster-row${
-                      activeParticipantID === participant.id ? " active" : ""
-                    }`}
-                    onClick={() => onSelectParticipant(participant)}
-                  >
-                    <span
-                      className="participant-roster-status"
-                      data-status="online"
-                    />
+                participants.map((participant) => {
+                  const isBusy = busyParticipantIDs.has(participant.id);
+                  const status = isBusy ? "busy" : "online";
+                  const avatar = (
                     <span className="participant-roster-avatar" aria-hidden="true">
-                      {participant.avatar || "•"}
+                      {participant.avatar_image ? (
+                        <img
+                          className="participant-roster-avatar-image"
+                          src={participant.avatar_image}
+                          alt=""
+                          loading="lazy"
+                        />
+                      ) : participant.avatar ? (
+                        participant.avatar
+                      ) : (
+                        "•"
+                      )}
                     </span>
-                    <span className="participant-roster-copy">
-                      <span className="participant-roster-name">
-                        {participant.name}
+                  );
+                  return (
+                    <button
+                      key={participant.id}
+                      type="button"
+                      className={`participant-roster-row${
+                        activeParticipantID === participant.id ? " active" : ""
+                      }`}
+                      onClick={() => onSelectParticipant(participant)}
+                    >
+                      <span
+                        className="participant-roster-status"
+                        data-status={status}
+                        title={isBusy ? "运行中" : "在线"}
+                      />
+                      {avatar}
+                      <span className="participant-roster-copy">
+                        <span className="participant-roster-name">
+                          {participant.name}
+                        </span>
+                        <span className="participant-roster-meta">
+                          {participant.tagline || participant.role || "named"}
+                        </span>
                       </span>
-                      <span className="participant-roster-meta">
-                        {participant.tagline || participant.role || "named"}
-                      </span>
-                    </span>
-                  </button>
-                ))
+                    </button>
+                  );
+                })
               )}
             </div>
           </section>
