@@ -38,20 +38,12 @@ describe("greetingFor", () => {
         memberNames: ["Alice", "Bob"],
       };
       const greeting = greetingFor(8, ctx);
-      expect(greeting).toBe(
-        "早上好，这里是群聊空间，Alice、Bob 都在。把任务丢进来，@ 某位成员点名，或直接广播给大家。",
-      );
+      expect(greeting).toBe("早上好，Alice、Bob 都在，有事直接喊。");
     });
 
-    it("returns group-specific greeting for afternoon with members", () => {
-      const ctx: GreetingContext = {
-        kind: "group",
-        memberNames: ["Alice", "Bob"],
-      };
-      const greeting = greetingFor(15, ctx);
-      expect(greeting).toBe(
-        "下午好，这里是群聊空间，和 Alice、Bob 一起协作。描述任务让大家认领，或点名某位成员推进。",
-      );
+    it("uses 在 instead of 都在 for a single member", () => {
+      const ctx: GreetingContext = { kind: "group", memberNames: ["Alice"] };
+      expect(greetingFor(8, ctx)).toBe("早上好，Alice 在，有事直接喊。");
     });
 
     it("returns group greeting even when members are empty (implicit all channel)", () => {
@@ -64,37 +56,24 @@ describe("greetingFor", () => {
         memberNames: [],
       };
       const greeting = greetingFor(8, ctx);
-      expect(greeting).toBe(
-        "早上好，这里是群聊「all」。把任务丢进来，@ 某位成员点名，或直接广播给大家。",
-      );
+      expect(greeting).toBe("早上好，有事直接在群里喊。");
     });
 
-    it("returns the roster-free variant for every bucket when members are empty", () => {
+    it("covers every bucket when members are empty", () => {
       const ctx: GreetingContext = { kind: "group", memberNames: [] };
-      expect(greetingFor(12, ctx)).toBe(
-        "中午好，这里是群聊空间。可以广播任务，也可以 @ 指定成员来接。",
-      );
-      expect(greetingFor(15, ctx)).toBe(
-        "下午好，这里是群聊空间。描述任务让大家认领，或点名某位成员推进。",
-      );
-      expect(greetingFor(20, ctx)).toBe(
-        "晚上好，群聊空间的成员在待命。广播、点名或直接派活都可以。",
-      );
-      expect(greetingFor(23, ctx)).toBe(
-        "夜深了，还想让群里的成员帮忙推进什么吗？",
-      );
+      expect(greetingFor(12, ctx)).toBe("中午好，想让谁接手，@ 一下就行。");
+      expect(greetingFor(15, ctx)).toBe("下午好，有任务就丢进群里。");
+      expect(greetingFor(20, ctx)).toBe("晚上好，直接在群里派活吧。");
+      expect(greetingFor(23, ctx)).toBe("夜深了，还要拉大家推进什么吗？");
     });
 
-    it("uses the thread title as the space name when present", () => {
+    it("does not repeat the group title (the tab and header already show it)", () => {
       const ctx: GreetingContext = {
         kind: "group",
         title: "前端小队",
         memberNames: ["Alice"],
       };
-      const greeting = greetingFor(12, ctx);
-      expect(greeting).toBe(
-        "中午好，Alice 都在这个群聊「前端小队」里。可以广播任务，也可以 @ 指定成员来接。",
-      );
+      expect(greetingFor(12, ctx)).not.toContain("前端小队");
     });
 
     it("lists at most 3 member names and closes with the total headcount", () => {
@@ -108,48 +87,31 @@ describe("greetingFor", () => {
       expect(greeting).not.toContain("Eve");
     });
 
-    it("covers evening and late-night buckets with members", () => {
+    it("covers evening bucket with members", () => {
       const ctx: GreetingContext = {
         kind: "group",
         memberNames: ["Alice", "Bob"],
       };
-      expect(greetingFor(20, ctx)).toBe(
-        "晚上好，Alice、Bob 在群聊空间里待命。广播、点名或直接派活都可以。",
-      );
-      expect(greetingFor(23, ctx)).toBe(
-        "夜深了，还想让 Alice、Bob 帮忙推进什么吗？",
-      );
+      expect(greetingFor(20, ctx)).toBe("晚上好，Alice、Bob 都在，直接派活吧。");
     });
   });
 
   describe("dm context", () => {
-    it("returns a one-on-one greeting for morning", () => {
+    it("returns a hand-off greeting for morning", () => {
       const ctx: GreetingContext = { kind: "dm", agentName: "Andy" };
-      const greeting = greetingFor(8, ctx);
-      expect(greeting).toBe(
-        "早上好，这里是和 Andy 的一对一对话。直接把任务、背景或目标交给 TA 吧。",
-      );
+      expect(greetingFor(8, ctx)).toBe("早上好，有什么要交给 Andy 的？");
     });
 
-    it("returns a one-on-one greeting for afternoon", () => {
+    it("returns a hand-off greeting for afternoon", () => {
       const ctx: GreetingContext = { kind: "dm", agentName: "Andy" };
-      const greeting = greetingFor(15, ctx);
-      expect(greeting).toBe(
-        "下午好，这是和 Andy 的一对一对话。描述任务或问题，TA 会专注帮你。",
-      );
+      expect(greetingFor(15, ctx)).toBe("下午好，想让 Andy 帮你做点什么？");
     });
 
     it("covers noon, evening and late-night buckets", () => {
       const ctx: GreetingContext = { kind: "dm", agentName: "Andy" };
-      expect(greetingFor(12, ctx)).toBe(
-        "中午好，正在和 Andy 单独交流。把需求和上下文直接说出来就行。",
-      );
-      expect(greetingFor(20, ctx)).toBe(
-        "晚上好，在和 Andy 一对一讨论。直接交代想法和目标吧。",
-      );
-      expect(greetingFor(23, ctx)).toBe(
-        "夜深了，和 Andy 的对话还要继续吗？",
-      );
+      expect(greetingFor(12, ctx)).toBe("中午好，有事直接跟 Andy 说。");
+      expect(greetingFor(20, ctx)).toBe("晚上好，任务交给 Andy 就行。");
+      expect(greetingFor(23, ctx)).toBe("夜深了，还有要交给 Andy 的吗？");
     });
 
     it("is clearly distinct from the group greeting", () => {
@@ -158,13 +120,10 @@ describe("greetingFor", () => {
         kind: "group",
         memberNames: ["Andy"],
       };
-      const dmGreeting = greetingFor(8, dmCtx);
-      const groupGreeting = greetingFor(8, groupCtx);
-
-      expect(dmGreeting).toContain("一对一对话");
-      expect(dmGreeting).not.toContain("群聊");
-      expect(groupGreeting).toContain("群聊");
-      expect(dmGreeting).not.toBe(groupGreeting);
+      for (const hour of [8, 12, 15, 20, 23]) {
+        expect(greetingFor(hour, dmCtx)).toContain("Andy");
+        expect(greetingFor(hour, dmCtx)).not.toBe(greetingFor(hour, groupCtx));
+      }
     });
   });
 

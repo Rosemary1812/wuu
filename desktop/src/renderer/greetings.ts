@@ -49,68 +49,63 @@ export function greetingFor(hour: number, ctx: GreetingContext): string {
     : "夜深了，还要继续吗？";
 }
 
-// Group threads greet with a collaboration framing: this is a space to
-// hand tasks to a crew — broadcast to everyone, @-mention a member, or
-// describe work for anyone to pick up. Member names weave in naturally
-// when the snapshot is available; the `all` channel has implicit
-// membership (members may be empty), so every branch must read well
-// without a roster too.
+// Group threads greet like a room you toss work into — one short line,
+// same register as the base greetings above. The tab and header already
+// name the group, so the copy deliberately doesn't repeat ctx.title. The
+// `all` channel has implicit membership (members may be empty), so every
+// branch must read well without a roster too.
 function groupGreeting(
   hour: number,
   ctx: Extract<GreetingContext, { kind: "group" }>,
 ): string {
   const roster = formatRoster(ctx.memberNames);
-  const title = ctx.title?.trim();
-  const space = title ? `群聊「${title}」` : "群聊空间";
+  // "Alice 在" for one member, "Alice、Bob 都在" for several.
+  const present = roster
+    ? ctx.memberNames.length === 1
+      ? `${roster} 在`
+      : `${roster} 都在`
+    : null;
 
   if (hour >= 5 && hour < 11) {
-    return roster
-      ? `早上好，这里是${space}，${roster} 都在。把任务丢进来，@ 某位成员点名，或直接广播给大家。`
-      : `早上好，这里是${space}。把任务丢进来，@ 某位成员点名，或直接广播给大家。`;
+    return present
+      ? `早上好，${present}，有事直接喊。`
+      : "早上好，有事直接在群里喊。";
   }
   if (hour >= 11 && hour < 14) {
-    return roster
-      ? `中午好，${roster} 都在这个${space}里。可以广播任务，也可以 @ 指定成员来接。`
-      : `中午好，这里是${space}。可以广播任务，也可以 @ 指定成员来接。`;
+    return "中午好，想让谁接手，@ 一下就行。";
   }
   if (hour >= 14 && hour < 18) {
-    return roster
-      ? `下午好，这里是${space}，和 ${roster} 一起协作。描述任务让大家认领，或点名某位成员推进。`
-      : `下午好，这里是${space}。描述任务让大家认领，或点名某位成员推进。`;
+    return "下午好，有任务就丢进群里。";
   }
   if (hour >= 18 && hour < 22) {
-    return roster
-      ? `晚上好，${roster} 在${space}里待命。广播、点名或直接派活都可以。`
-      : `晚上好，${space}的成员在待命。广播、点名或直接派活都可以。`;
+    return present
+      ? `晚上好，${present}，直接派活吧。`
+      : "晚上好，直接在群里派活吧。";
   }
   // 22:00 – 04:59 late night.
-  return roster
-    ? `夜深了，还想让 ${roster} 帮忙推进什么吗？`
-    : "夜深了，还想让群里的成员帮忙推进什么吗？";
+  return "夜深了，还要拉大家推进什么吗？";
 }
 
-// DM threads greet as a one-on-one conversation with a named agent —
-// unlike the group framing, the user is talking to exactly one member,
-// so the copy nudges them to hand over the task, context, or goal
-// directly instead of broadcasting or @-mentioning.
+// DM threads greet as a hand-off to one named agent — name up front,
+// one short line, clearly not a group space.
 function dmGreeting(
   hour: number,
   ctx: Extract<GreetingContext, { kind: "dm" }>,
 ): string {
   if (hour >= 5 && hour < 11) {
-    return `早上好，这里是和 ${ctx.agentName} 的一对一对话。直接把任务、背景或目标交给 TA 吧。`;
+    return `早上好，有什么要交给 ${ctx.agentName} 的？`;
   }
   if (hour >= 11 && hour < 14) {
-    return `中午好，正在和 ${ctx.agentName} 单独交流。把需求和上下文直接说出来就行。`;
+    return `中午好，有事直接跟 ${ctx.agentName} 说。`;
   }
   if (hour >= 14 && hour < 18) {
-    return `下午好，这是和 ${ctx.agentName} 的一对一对话。描述任务或问题，TA 会专注帮你。`;
+    return `下午好，想让 ${ctx.agentName} 帮你做点什么？`;
   }
   if (hour >= 18 && hour < 22) {
-    return `晚上好，在和 ${ctx.agentName} 一对一讨论。直接交代想法和目标吧。`;
+    return `晚上好，任务交给 ${ctx.agentName} 就行。`;
   }
   // 22:00 – 04:59 late night.
-  return `夜深了，和 ${ctx.agentName} 的对话还要继续吗？`;
+  return `夜深了，还有要交给 ${ctx.agentName} 的吗？`;
 }
 
 // Renders the member snapshot as a short roster string, or null when the
