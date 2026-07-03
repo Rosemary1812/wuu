@@ -180,4 +180,26 @@ describe("EmptyStateHints", () => {
     });
     expect(container?.querySelector(".empty-home-hints")).toBeNull();
   });
+
+  it("renders both chips when a named participant is supplied and providers is undefined", () => {
+    mount({
+      namedParticipant: andy,
+      providers: undefined,
+      onSelect: () => {},
+    });
+    const labels = hintLabels();
+    expect(labels).toContain("@Andy 打个招呼");
+    expect(labels).toContain("配置模型");
+  });
+
+  it("renders both chips when a named participant is supplied and the providers list is empty", () => {
+    mount({
+      namedParticipant: andy,
+      providers: [],
+      onSelect: () => {},
+    });
+    const labels = hintLabels();
+    expect(labels).toContain("@Andy 打个招呼");
+    expect(labels).toContain("配置模型");
+  });
 });

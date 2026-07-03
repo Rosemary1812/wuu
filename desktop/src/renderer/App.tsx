@@ -3437,16 +3437,22 @@ export function App(): JSX.Element {
 
   function handleEmptyStateHint(action: EmptyStateHintAction): void {
     if (action.kind === "mentionNamed") {
-      // Always overwrite the prompt with a clean "name + trailing space"
-      // insertion. The trailing space lets the user keep typing without
-      // having to backspace past the mention, and keeps the mention
-      // regex in `mentionedParticipantsFromText` matching as soon as
-      // they finish a word.
+      // Append "@<name> " to the existing prompt so we never clobber
+      // what the user has already typed. An empty composer gets a
+      // fresh "@<name> " insertion; a non-empty one keeps its tail and
+      // gets a separating space added before the mention. The trailing
+      // space lets the user keep typing without having to backspace
+      // past the mention, and keeps the mention regex in
+      // `mentionedParticipantsFromText` matching as soon as they
+      // finish a word.
       const name = action.participant.name.trim();
       if (name === "") {
         return;
       }
-      setPrompt(`@${name} `);
+      setPrompt((prev) => {
+        const trimmed = prev.trimEnd();
+        return trimmed === "" ? `@${name} ` : `${trimmed} @${name} `;
+      });
       // Refocus on the next render so the just-updated prompt is in
       // the textarea, with the caret at the end of the inserted text.
       setHeroComposerFocusTick((tick) => tick + 1);
