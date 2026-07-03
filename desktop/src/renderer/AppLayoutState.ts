@@ -8,6 +8,7 @@ import {
   useRef,
   useState
 } from "react";
+import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
 export const SIDEBAR_MOTION_MS = 280;
 export const RIGHT_PANEL_MOTION_MS = 280;
@@ -463,6 +464,21 @@ export function useAppLayoutState({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [effectiveSidebarWidth]);
+
+  // Sidebar / right-panel drags resize the conversation viewport every frame.
+  // Reuse the window-resize deferred-scroll path so ResizeObserver consumers
+  // (ConversationScrollState, AutoFollowScroll, ConversationTurnRail) stop
+  // forcing layout + scrollTop writes on every pointermove.
+  useEffect(() => {
+    if (!resizingSidebar && !resizingRightPanel) {
+      return undefined;
+    }
+    const root = document.documentElement;
+    root.classList.add(WINDOW_RESIZING_CLASS);
+    return () => {
+      root.classList.remove(WINDOW_RESIZING_CLASS);
+    };
+  }, [resizingSidebar, resizingRightPanel]);
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0) {
