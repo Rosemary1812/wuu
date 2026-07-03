@@ -398,54 +398,67 @@ describe("useConversationScrollState — dock composer height", () => {
     document.body.removeChild(container);
   });
 
+  function DockComposerProbe({
+    overlayVisible,
+  }: {
+    overlayVisible: boolean;
+  }): ReactNode {
+    const h = useConversationScrollState({
+      activeThreadID: "thread-1",
+      activePane: "primary",
+      splitConversation: false,
+      primaryTurns: makeLongTurns(),
+      secondaryTurns: undefined,
+      emptyConversation: false,
+      previewingLaunch: false,
+      showingWorkspaceMode: false,
+      initialized: true,
+    });
+    return createElement(
+      "section",
+      {
+        ref: (node: HTMLElement | null) => {
+          h.conversationPaneRef.current = node;
+        },
+        "data-testid": "conversation-pane",
+      },
+      createElement("div", {
+        ref: (node: HTMLDivElement | null) => {
+          h.conversationScrollRef.current = node;
+        },
+        "data-testid": "scroll-container",
+      }),
+      createElement(
+        "footer",
+        {
+          ref: h.dockComposerRef,
+          "data-testid": "dock-composer",
+        },
+        createElement("div", {
+          className: "composer-frame",
+          "data-testid": "composer-frame",
+        }),
+      ),
+      // Mirrors App.tsx: `.jump-to-latest-cluster` only mounts while the
+      // "跳到最新" pill or the progress chip is showing, so the bottom
+      // overlay probe node is conditionally rendered too.
+      overlayVisible
+        ? createElement("div", {
+            ref: h.bottomOverlayRef,
+            "data-testid": "bottom-overlay",
+          })
+        : null,
+    );
+  }
+
   function mountDockComposerProbe(): {
     pane: HTMLElement;
     dockComposer: HTMLElement;
     frame: HTMLElement;
   } {
-    function DockComposerProbe(): ReactNode {
-      const h = useConversationScrollState({
-        activeThreadID: "thread-1",
-        activePane: "primary",
-        splitConversation: false,
-        primaryTurns: makeLongTurns(),
-        secondaryTurns: undefined,
-        emptyConversation: false,
-        previewingLaunch: false,
-        showingWorkspaceMode: false,
-        initialized: true,
-      });
-      return createElement(
-        "section",
-        {
-          ref: (node: HTMLElement | null) => {
-            h.conversationPaneRef.current = node;
-          },
-          "data-testid": "conversation-pane",
-        },
-        createElement("div", {
-          ref: (node: HTMLDivElement | null) => {
-            h.conversationScrollRef.current = node;
-          },
-          "data-testid": "scroll-container",
-        }),
-        createElement(
-          "footer",
-          {
-            ref: h.dockComposerRef,
-            "data-testid": "dock-composer",
-          },
-          createElement("div", {
-            className: "composer-frame",
-            "data-testid": "composer-frame",
-          }),
-        ),
-      );
-    }
-
     act(() => {
       root = createRoot(container);
-      root.render(createElement(DockComposerProbe));
+      root.render(createElement(DockComposerProbe, { overlayVisible: false }));
     });
 
     const pane = container.querySelector<HTMLElement>(
@@ -461,6 +474,17 @@ describe("useConversationScrollState — dock composer height", () => {
       throw new Error("DockComposerProbe did not render");
     }
     return { pane, dockComposer, frame };
+  }
+
+  function setBottomOverlayVisible(visible: boolean): void {
+    if (!root) throw new Error("not mounted");
+    act(() => {
+      root!.render(createElement(DockComposerProbe, { overlayVisible: visible }));
+    });
+  }
+
+  function queryBottomOverlay(): HTMLElement | null {
+    return container.querySelector<HTMLElement>("[data-testid='bottom-overlay']");
   }
 
   function stubRectHeight(node: HTMLElement, height: number): void {
@@ -499,6 +523,31 @@ describe("useConversationScrollState — dock composer height", () => {
     flushResizeObserversFor(frame);
 
     expect(pane.style.getPropertyValue("--dock-composer-height")).toBe("452px");
+  });
+
+  it("folds the pill cluster height into --bottom-dock-height, and falls back to the composer height alone once the cluster unmounts", () => {
+    const { pane, dockComposer } = mountDockComposerProbe();
+    stubRectHeight(dockComposer, 168);
+    flushResizeObserversFor(dockComposer);
+    expect(pane.style.getPropertyValue("--dock-composer-height")).toBe("168px");
+    // No pill cluster mounted: the combined token matches the composer
+    // height alone (mirrors the CSS fallback `var(--bottom-dock-height,
+    // var(--dock-composer-height))`).
+    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("168px");
+
+    setBottomOverlayVisible(true);
+    const overlay = queryBottomOverlay();
+    if (!overlay) throw new Error("bottom overlay did not mount");
+    stubRectHeight(overlay, 38);
+    flushResizeObserversFor(overlay);
+    // 168px composer + 12px gap + 38px pill cluster.
+    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
+
+    setBottomOverlayVisible(false);
+    // Cluster unmounted (e.g. the user scrolled back to latest and the
+    // plan finished): the reservation collapses back to the composer
+    // height alone so the message flow's padding shrinks back down.
+    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("168px");
   });
 });
 

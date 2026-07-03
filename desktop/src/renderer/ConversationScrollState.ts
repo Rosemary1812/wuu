@@ -35,6 +35,15 @@ const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = AUTO_FOLLOW_SCROLLBAR_HIDE_DELAY_MS
 const CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS =
   USER_SCROLL_AWAY_INTENT_WINDOW_MS;
 
+// Gap the floating "jump to latest / progress" pill cluster keeps above
+// the dock composer, and that the message flow keeps above the cluster.
+// Must match `.jump-to-latest-cluster`'s
+// `bottom: calc(var(--dock-composer-height) + 12px)` in
+// conversation-shell.css — this constant feeds the combined
+// `--bottom-dock-height` token below so the message flow reserves enough
+// bottom padding to clear the pill cluster whenever it is showing.
+const BOTTOM_DOCK_CLUSTER_GAP_PX = 12;
+
 function cssPixelValue(value: string): number {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -112,6 +121,15 @@ export function useConversationScrollState({
   splitPaneRefs: MutableRefObject<Record<ConversationPaneID, HTMLElement | null>>;
   conversationPaneRef: RefObject<HTMLElement | null>;
   dockComposerRef: (node: HTMLElement | null) => void;
+  /**
+   * Attach to the floating "jump to latest / progress" pill cluster
+   * (`.jump-to-latest-cluster`). Its rendered height (0 when the cluster
+   * is not mounted) is combined with the dock composer height into the
+   * `--bottom-dock-height` CSS variable, which the message flow's bottom
+   * padding uses so the cluster never overlaps the last message's
+   * persistent action row.
+   */
+  bottomOverlayRef: (node: HTMLElement | null) => void;
   scheduleStreamScroll: () => void;
   handleConversationScroll: (scrolledNode?: HTMLElement) => void;
   scrollConversationToBottom: (options?: {
@@ -149,6 +167,11 @@ export function useConversationScrollState({
     setDockComposerNode(node);
   }, []);
   const dockComposerHeightRef = useRef(0);
+  const [bottomOverlayNode, setBottomOverlayNode] = useState<HTMLElement | null>(null);
+  const bottomOverlayRef = useCallback((node: HTMLElement | null) => {
+    setBottomOverlayNode(node);
+  }, []);
+  const bottomOverlayHeightRef = useRef(0);
   const conversationAutoFollowRef = useRef(true);
   // Mirrors the ref for the UI: true when the user has scrolled up out of
   // the bottom band. Drives the "Jump to latest" pill visibility.
@@ -191,6 +214,20 @@ export function useConversationScrollState({
   // callback consumes the height already carried by ResizeObserver entries
   // instead of rereading scroll metrics on every drag frame.
   const liveResizeBaselineClientHeightRef = useRef<number | null>(null);
+
+  // Combines the dock composer height with the floating pill cluster's
+  // height (0 when the cluster is not mounted) into `--bottom-dock-height`.
+  // Read by both the dock composer and bottom overlay ResizeObserver
+  // effects below, since either one changing can move the combined total.
+  function applyBottomDockHeight(pane: HTMLElement | null): void {
+    const composerHeight = dockComposerHeightRef.current;
+    const overlayHeight = bottomOverlayHeightRef.current;
+    const nextHeight =
+      overlayHeight > 0
+        ? composerHeight + BOTTOM_DOCK_CLUSTER_GAP_PX + overlayHeight
+        : composerHeight;
+    pane?.style.setProperty("--bottom-dock-height", `${nextHeight}px`);
+  }
 
   function conversationViewport(): HTMLElement | undefined {
     if (splitConversation) {
@@ -835,6 +872,7 @@ export function useConversationScrollState({
       const visibilityChanged = wasVisible !== isVisible;
       dockComposerHeightRef.current = nextHeight;
       pane?.style.setProperty("--dock-composer-height", nextValue);
+      applyBottomDockHeight(pane);
       // Only re-scroll on a visibility transition (composer hidden → visible
       // or vice versa), not on every continuous resize from typing or focus
       // changes. Continuous resize firing scrollConversationToBottom used to
@@ -879,6 +917,40 @@ export function useConversationScrollState({
     scrollConversationToBottom
   ]);
 
+  // Mirrors the dock composer height effect above for the floating
+  // "jump to latest / progress" pill cluster. The cluster mounts and
+  // unmounts based on `userScrolledAway` / `activePlanVisible` (0 height
+  // while unmounted), so this effect re-runs whenever the ref callback
+  // hands back a new node (or null) and keeps `--bottom-dock-height` in
+  // sync via `applyBottomDockHeight`.
+  useLayoutEffect(() => {
+    const node = bottomOverlayNode;
+    const pane = conversationPaneRef.current;
+    const applyHeight = (nextHeight: number): void => {
+      if (bottomOverlayHeightRef.current === nextHeight) {
+        return;
+      }
+      bottomOverlayHeightRef.current = nextHeight;
+      applyBottomDockHeight(pane);
+    };
+
+    if (!node) {
+      applyHeight(0);
+      return undefined;
+    }
+
+    const updateHeight = (): void => {
+      applyHeight(Math.ceil(node.getBoundingClientRect().height));
+    };
+
+    updateHeight();
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(node);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [bottomOverlayNode]);
+
   useEffect(() => {
     return () => {
       if (streamScrollFrameRef.current !== undefined) {
@@ -900,6 +972,7 @@ export function useConversationScrollState({
     splitPaneRefs,
     conversationPaneRef,
     dockComposerRef,
+    bottomOverlayRef,
     scheduleStreamScroll,
     handleConversationScroll,
     scrollConversationToBottom,

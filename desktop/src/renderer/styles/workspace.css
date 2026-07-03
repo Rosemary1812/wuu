@@ -2315,7 +2315,13 @@
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
-  padding-bottom: calc(var(--dock-composer-height) + 12px);
+  /* Falls back to --dock-composer-height alone before the ResizeObserver
+     effect in useConversationScrollState has written --bottom-dock-height
+     (or in environments where JS never runs, e.g. static snapshots). Once
+     written, --bottom-dock-height already folds in the pill cluster's
+     height, so the flow reserves enough room to clear both the composer
+     and the cluster. */
+  padding-bottom: calc(var(--bottom-dock-height, var(--dock-composer-height)) + 12px);
 }
 
 .conversation-grid-guides {
