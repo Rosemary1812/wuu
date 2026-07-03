@@ -18,12 +18,14 @@ export function EnvelopeNotice({
   text: string;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const title = meta.source_thread_title?.trim();
+  const records = meta;
+  const title = records
+    .map((record) => record.source_thread_title?.trim() ?? "")
+    .find((candidate) => candidate !== "");
   const source = title ? `「${title}」` : "其他会话";
-  const count = meta.message_count;
   const label =
-    typeof count === "number" && count > 0
-      ? `收到来自${source}的 ${count} 条消息`
+    records.length > 1
+      ? `收到来自${source}的 ${records.length} 条消息`
       : `收到来自${source}的消息`;
   return (
     <div className="envelope-notice">

@@ -46,11 +46,16 @@ describe("EnvelopeNotice", () => {
   it("renders a collapsed meta line with source title and count", () => {
     const container = mount(
       createElement(EnvelopeNotice, {
-        meta: {
-          source_thread_id: "thread-group",
-          source_thread_title: "发布排期讨论",
-          message_count: 3,
-        },
+        meta: [
+          {
+            source_thread_id: "thread-group",
+            source_thread_title: "发布排期讨论",
+            addressed: true,
+            hop: 1,
+          },
+          { source_thread_id: "thread-group", addressed: false, hop: 1 },
+          { source_thread_id: "thread-group", addressed: false, hop: 2 },
+        ],
         text: "<message from=\"user\">明天能上线吗</message>",
       }),
     );
@@ -66,7 +71,7 @@ describe("EnvelopeNotice", () => {
   it("expands the original text on click and collapses on second click", () => {
     const container = mount(
       createElement(EnvelopeNotice, {
-        meta: { source_thread_title: "发布排期讨论", message_count: 1 },
+        meta: [{ source_thread_title: "发布排期讨论", addressed: true, hop: 1 }],
         text: "原始信封内容",
       }),
     );
@@ -85,10 +90,24 @@ describe("EnvelopeNotice", () => {
     expect(container.querySelector(".envelope-notice-body")).toBeNull();
   });
 
-  it("falls back to a generic source label and omits the count when missing", () => {
+  it("renders without a count when only a single record is present", () => {
     const container = mount(
       createElement(EnvelopeNotice, {
-        meta: { source_thread_id: "thread-x" },
+        meta: [{ source_thread_title: "发布排期讨论", addressed: true, hop: 1 }],
+        text: "内容",
+      }),
+    );
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".envelope-notice-toggle",
+    );
+    expect(toggle?.textContent).toContain("收到来自「发布排期讨论」的消息");
+    expect(toggle?.textContent).not.toContain("条消息");
+  });
+
+  it("falls back to a generic source label when no record has a title", () => {
+    const container = mount(
+      createElement(EnvelopeNotice, {
+        meta: [{ source_thread_id: "thread-x", addressed: false, hop: 1 }],
         text: "内容",
       }),
     );
@@ -97,6 +116,19 @@ describe("EnvelopeNotice", () => {
     );
     expect(toggle?.textContent).toContain("收到来自其他会话的消息");
     expect(toggle?.textContent).not.toContain("条消息");
+  });
+
+  it("falls back to a generic source label for an empty array", () => {
+    const container = mount(
+      createElement(EnvelopeNotice, {
+        meta: [],
+        text: "内容",
+      }),
+    );
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".envelope-notice-toggle",
+    );
+    expect(toggle?.textContent).toContain("收到来自其他会话的消息");
   });
 });
 
@@ -119,11 +151,10 @@ describe("ThreadItemView envelope routing", () => {
       id: "item-1",
       type: "user_message",
       text: "信封正文",
-      envelope_meta: {
-        source_thread_id: "thread-group",
-        source_thread_title: "群聊",
-        message_count: 2,
-      },
+      envelope_meta: [
+        { source_thread_id: "thread-group", source_thread_title: "群聊", addressed: true, hop: 1 },
+        { source_thread_id: "thread-group", addressed: false, hop: 1 },
+      ],
     });
     expect(container.querySelector(".envelope-notice")).not.toBeNull();
     expect(container.querySelector(".user-message")).toBeNull();
@@ -134,6 +165,17 @@ describe("ThreadItemView envelope routing", () => {
       id: "item-2",
       type: "user_message",
       text: "普通消息",
+    });
+    expect(container.querySelector(".envelope-notice")).toBeNull();
+    expect(container.querySelector(".user-message")).not.toBeNull();
+  });
+
+  it("keeps user messages with an empty envelope_meta array on the bubble path", () => {
+    const container = renderItem({
+      id: "item-3",
+      type: "user_message",
+      text: "普通消息",
+      envelope_meta: [],
     });
     expect(container.querySelector(".envelope-notice")).toBeNull();
     expect(container.querySelector(".user-message")).not.toBeNull();

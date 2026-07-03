@@ -97,7 +97,7 @@ export function ThreadItemView({
       // Envelope-routed messages (group chat → resident DM) render as a
       // collapsed meta row, never as a user bubble — a bubble would read
       // as if the user typed the forwarded content themselves.
-      if (item.envelope_meta) {
+      if (item.envelope_meta && item.envelope_meta.length > 0) {
         return <EnvelopeNotice meta={item.envelope_meta} text={text} />;
       }
       const handoff = agentHandoffDisplay(text);

@@ -1052,17 +1052,21 @@ export type TurnEventNotification = {
 // this field switches the DM view from a user bubble to a collapsed
 // meta row (§7.3). All fields optional so partial backend payloads
 // still render.
-export type EnvelopeMeta = {
+// One record per envelope coalesced into this user message. Mirrors the
+// backend's envelopeMetaRecord array (resident-named-agents.md §3.3,
+// 2026-07-03 revision). Message count == array length.
+export type EnvelopeMetaRecord = {
+  id?: string;
   source_thread_id?: string;
-  // Snapshot of the source thread's title at write time; the source
-  // thread may be archived or renamed later.
+  // Snapshot of the source thread title at write time (backend fills it
+  // per the revised contract; may be absent on older rows).
   source_thread_title?: string;
   addressed?: boolean;
   hop?: number;
   sender_participant_id?: string;
-  // Number of coalesced envelopes rendered into this one message.
-  message_count?: number;
+  created_at?: string;
 };
+export type EnvelopeMeta = EnvelopeMetaRecord[];
 
 export type ThreadItem = {
   id: string;
