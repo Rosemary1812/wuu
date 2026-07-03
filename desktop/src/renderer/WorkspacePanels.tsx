@@ -13,17 +13,16 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import { FileDiff, FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
-import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
+import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
-export type WorkspaceRightPanelView = "tools" | "turn-diff" | WorkspacePanelView;
 
 export function WorkspaceMainPanel({
   view,
@@ -69,12 +68,13 @@ const WORKSPACE_TOOL_ITEMS: Array<{
 export function WorkspaceRightPanel({
   open,
   present,
-  view,
-  openTabs,
+  tabs,
+  activeTabID,
   activeContext,
   gitStatus,
   selectedFilePath,
-  onSelectView,
+  onSelectTab,
+  onOpenTool,
   onShowTools,
   onCloseTab,
   onReorderTabs,
@@ -82,49 +82,43 @@ export function WorkspaceRightPanel({
   onClose,
   pendingBrowserURL,
   onBrowserURLConsumed,
-  onBrowserURLChange,
-  turnFileDiffSelection,
-  onCloseTurnFileDiff
+  onBrowserURLChange
 }: {
   open: boolean;
   present: boolean;
-  view: WorkspaceRightPanelView;
-  openTabs: WorkspacePanelView[];
+  tabs: WorkspaceViewTab[];
+  activeTabID: string | undefined;
   activeContext?: RuntimeContext;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
-  onSelectView: (view: WorkspacePanelView) => void;
+  onSelectTab: (id: string) => void;
+  onOpenTool: (view: WorkspacePanelView) => void;
   onShowTools: () => void;
-  onCloseTab: (view: WorkspacePanelView) => void;
-  onReorderTabs: (activeView: WorkspacePanelView, overView: WorkspacePanelView) => void;
+  onCloseTab: (id: string) => void;
+  onReorderTabs: (activeID: string, overID: string) => void;
   onOpenFile: (path: string) => void;
   onClose: () => void;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onBrowserURLChange?: (url: string) => void;
-  turnFileDiffSelection?: TurnFileDiffSelection;
-  onCloseTurnFileDiff?: () => void;
 }): JSX.Element {
-  const detailView = view === "tools" ? undefined : view;
-  const [draggingTab, setDraggingTab] = useState<WorkspacePanelView | undefined>(undefined);
+  const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
+  const showingPicker = !activeTab;
+  const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const draggingTool = draggingTab ? workspaceToolFor(draggingTab) : undefined;
+  const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
 
   function startTabDrag(event: DragStartEvent): void {
-    const activeView = workspacePanelViewFromSortableID(event.active.id);
-    if (!activeView) {
-      return;
-    }
-    setDraggingTab(activeView);
+    setDraggingTabID(String(event.active.id));
     setDraggingTabWidth(event.active.rect.current.initial?.width);
   }
 
   function endTabDrag(event: DragEndEvent): void {
-    const activeView = workspacePanelViewFromSortableID(event.active.id);
-    const overView = event.over ? workspacePanelViewFromSortableID(event.over.id) : undefined;
-    if (activeView && overView && activeView !== overView) {
-      onReorderTabs(activeView, overView);
+    const activeID = String(event.active.id);
+    const overID = event.over ? String(event.over.id) : undefined;
+    if (overID && activeID !== overID) {
+      onReorderTabs(activeID, overID);
     }
     finishTabDrag();
   }
@@ -134,13 +128,13 @@ export function WorkspaceRightPanel({
   }
 
   function finishTabDrag(): void {
-    setDraggingTab(undefined);
+    setDraggingTabID(undefined);
     setDraggingTabWidth(undefined);
   }
 
   return (
     <aside
-      className={`workspace-right-panel${detailView ? " detail" : " tools"}${detailView === "review" ? " review" : ""}${detailView === "turn-diff" ? " turn-diff" : ""}`}
+      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}`}
       aria-hidden={!open}
     >
       <div className="workspace-panel-tabbar">
@@ -152,48 +146,40 @@ export function WorkspaceRightPanel({
           onDragEnd={endTabDrag}
           onDragCancel={cancelTabDrag}
         >
-          <SortableContext items={openTabs} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
             <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
-              {openTabs.map((item) => {
-                const tool = workspaceToolFor(item);
-                const active = item === detailView;
+              {tabs.map((tab) => {
+                const active = tab.id === activeTabID;
                 return (
-                  <SortableWorkspaceToolTab
-                    key={item}
-                    view={item}
-                    title={tool.title}
+                  <SortableWorkspaceViewTab
+                    key={tab.id}
+                    tab={tab}
                     active={active}
                     open={open}
-                    reorderable={openTabs.length > 1}
-                    onSelect={() => onSelectView(item)}
-                    onClose={() => onCloseTab(item)}
+                    reorderable={tabs.length > 1}
+                    onSelect={() => onSelectTab(tab.id)}
+                    onClose={() => onCloseTab(tab.id)}
                   />
                 );
               })}
             </div>
           </SortableContext>
           <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-            {draggingTab && draggingTool ? (
-              <WorkspaceToolTabPreview
-                view={draggingTab}
-                title={draggingTool.title}
-                active={draggingTab === detailView}
+            {draggingTab ? (
+              <WorkspaceViewTabPreview
+                tab={draggingTab}
+                active={draggingTab.id === activeTabID}
                 width={draggingTabWidth}
               />
             ) : null}
           </DragOverlay>
         </DndContext>
-        {view === "turn-diff" ? (
-          <span className="workspace-panel-detail-tab" role="tab" aria-selected="true">
-            本轮变更
-          </span>
-        ) : null}
         <span className="workspace-panel-tabbar-spacer" />
         <button
-          className={`icon-button workspace-panel-add${view === "tools" ? " active" : ""}`}
+          className={`icon-button workspace-panel-add${showingPicker ? " active" : ""}`}
           type="button"
           aria-label="选择工具"
-          aria-pressed={view === "tools"}
+          aria-pressed={showingPicker}
           disabled={!open}
           onClick={onShowTools}
         >
@@ -211,26 +197,26 @@ export function WorkspaceRightPanel({
       </div>
       {present ? (
         <>
-          <div className={`workspace-panel-body${view === "tools" ? " picker" : ""}`}>
-            {view === "tools" ? (
-              <WorkspaceToolPicker openTabs={openTabs} onSelectTool={onSelectView} />
-            ) : view === "turn-diff" ? (
+          <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
+            {!activeTab ? (
+              <WorkspaceToolPicker tabs={tabs} onSelectTool={onOpenTool} />
+            ) : activeTab.kind === "diff" ? (
               <TurnFileDiffPanel
-                selection={turnFileDiffSelection}
-                onClose={onCloseTurnFileDiff ?? onClose}
+                selection={activeTab.selection}
+                onClose={() => onCloseTab(activeTab.id)}
               />
-            ) : view === "files" ? (
+            ) : activeTab.kind === "files" ? (
               <WorkspaceFileTree
                 activeContext={activeContext}
                 open={open}
                 selectedFilePath={selectedFilePath}
                 onOpenFile={onOpenFile}
               />
-            ) : view === "review" ? (
+            ) : activeTab.kind === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
-            ) : view === "terminal" ? (
+            ) : activeTab.kind === "terminal" ? (
               <WorkspaceTerminalPanel activeContext={activeContext} />
-            ) : view === "browser" ? (
+            ) : activeTab.kind === "browser" ? (
               <WorkspaceBrowserPanel
                 open={open}
                 activeContext={activeContext}
@@ -246,17 +232,15 @@ export function WorkspaceRightPanel({
   );
 }
 
-function SortableWorkspaceToolTab({
-  view,
-  title,
+function SortableWorkspaceViewTab({
+  tab,
   active,
   open,
   reorderable,
   onSelect,
   onClose
 }: {
-  view: WorkspacePanelView;
-  title: string;
+  tab: WorkspaceViewTab;
   active: boolean;
   open: boolean;
   reorderable: boolean;
@@ -264,7 +248,7 @@ function SortableWorkspaceToolTab({
   onClose: () => void;
 }): JSX.Element {
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: view,
+    id: tab.id,
     disabled: !reorderable
   });
   const { role: _dragRole, ...dragAttributes } = attributes;
@@ -272,6 +256,8 @@ function SortableWorkspaceToolTab({
     transform: CSS.Transform.toString(transform),
     transition
   };
+  const label = workspaceViewTabLabel(tab);
+  const tooltip = workspaceViewTabTooltip(tab);
   return (
     <div
       ref={setNodeRef}
@@ -287,20 +273,20 @@ function SortableWorkspaceToolTab({
         type="button"
         role="tab"
         aria-selected={active}
-        title={title}
+        title={tooltip}
         disabled={!open}
         onClick={onSelect}
         {...dragAttributes}
         {...listeners}
       >
-        <WorkspaceToolIcon view={view} className="icon" />
-        <span>{title}</span>
+        <WorkspaceViewTabIcon tab={tab} className="icon" />
+        <span>{label}</span>
       </button>
       <button
         className="workspace-tool-tab-close"
         type="button"
         draggable={false}
-        aria-label={`关闭${title}`}
+        aria-label={`关闭${label}`}
         disabled={!open}
         onClick={(event) => {
           event.stopPropagation();
@@ -313,22 +299,21 @@ function SortableWorkspaceToolTab({
   );
 }
 
-function WorkspaceToolTabPreview({
-  view,
-  title,
+function WorkspaceViewTabPreview({
+  tab,
   active,
   width
 }: {
-  view: WorkspacePanelView;
-  title: string;
+  tab: WorkspaceViewTab;
   active: boolean;
   width?: number;
 }): JSX.Element {
+  const label = workspaceViewTabLabel(tab);
   return (
     <div className={`workspace-tool-tab workspace-tool-tab-drag-overlay${active ? " active" : ""}`} style={width ? { width } : undefined}>
       <div className="workspace-tool-tab-main">
-        <WorkspaceToolIcon view={view} className="icon" />
-        <span>{title}</span>
+        <WorkspaceViewTabIcon tab={tab} className="icon" />
+        <span>{label}</span>
       </div>
       <div className="workspace-tool-tab-close" aria-hidden="true">
         <X className="icon-xs" />
@@ -338,10 +323,10 @@ function WorkspaceToolTabPreview({
 }
 
 function WorkspaceToolPicker({
-  openTabs,
+  tabs,
   onSelectTool
 }: {
-  openTabs: WorkspacePanelView[];
+  tabs: WorkspaceViewTab[];
   onSelectTool: (view: WorkspacePanelView) => void;
 }): JSX.Element {
   return (
@@ -349,7 +334,7 @@ function WorkspaceToolPicker({
       {WORKSPACE_TOOL_ITEMS.map((item) => (
         <button
           key={item.id}
-          className={`workspace-tool-menu-item${openTabs.includes(item.id) ? " active" : ""}`}
+          className={`workspace-tool-menu-item${tabs.some((tab) => tab.kind === item.id) ? " active" : ""}`}
           type="button"
           onClick={() => onSelectTool(item.id)}
         >
@@ -431,9 +416,19 @@ function workspaceToolFor(view: WorkspacePanelView): (typeof WORKSPACE_TOOL_ITEM
   return WORKSPACE_TOOL_ITEMS.find((item) => item.id === view) ?? WORKSPACE_TOOL_ITEMS[0];
 }
 
-function workspacePanelViewFromSortableID(id: unknown): WorkspacePanelView | undefined {
-  const value = typeof id === "string" ? id : String(id);
-  return WORKSPACE_TOOL_ITEMS.some((item) => item.id === value) ? (value as WorkspacePanelView) : undefined;
+function workspaceViewTabLabel(tab: WorkspaceViewTab): string {
+  return tab.kind === "diff" ? tab.title : workspaceToolFor(tab.kind).title;
+}
+
+function workspaceViewTabTooltip(tab: WorkspaceViewTab): string {
+  return tab.kind === "diff" ? tab.path : workspaceToolFor(tab.kind).title;
+}
+
+function WorkspaceViewTabIcon({ tab, className }: { tab: WorkspaceViewTab; className?: string }): JSX.Element {
+  if (tab.kind === "diff") {
+    return <FileDiff className={className} />;
+  }
+  return <WorkspaceToolIcon view={tab.kind} className={className} />;
 }
 
 export function workspaceModeTitle(view: WorkspacePanelView): string {

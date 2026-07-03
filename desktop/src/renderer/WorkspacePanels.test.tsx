@@ -2,6 +2,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceRightPanel } from "./WorkspacePanels";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import { workspaceDiffViewTab, workspaceToolViewTab, type WorkspaceViewTab } from "./WorkspaceViewTabs";
 
 vi.mock("./WorkspaceTerminalPanel", () => ({
   WorkspaceTerminalPanel: () => <div data-testid="terminal-panel" />,
@@ -35,60 +37,151 @@ afterEach(() => {
   unmount();
 });
 
+function makeSelection(path: string): TurnFileDiffSelection {
+  return {
+    path,
+    additions: 1,
+    deletions: 1,
+    newFile: false,
+    diff: {
+      path,
+      hunks: [
+        {
+          oldStart: 1,
+          newStart: 1,
+          lines: [
+            { op: "delete", content: "old value" },
+            { op: "insert", content: "new value" },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+function baseProps(): Parameters<typeof WorkspaceRightPanel>[0] {
+  return {
+    open: true,
+    present: true,
+    tabs: [],
+    activeTabID: undefined,
+    onSelectTab: () => {},
+    onOpenTool: () => {},
+    onShowTools: () => {},
+    onCloseTab: () => {},
+    onReorderTabs: () => {},
+    onOpenFile: () => {},
+    onClose: () => {},
+  };
+}
+
 describe("WorkspaceRightPanel", () => {
-  it("renders a turn file diff as a right panel detail view", () => {
-    const onCloseTurnFileDiff = vi.fn();
+  it("renders a diff tab as a unified, closable right panel tab (folded into the tab strip)", () => {
+    const onCloseTab = vi.fn();
+    const diffTab = workspaceDiffViewTab({
+      threadID: "thread-1",
+      path: "/tmp/a.txt",
+      selection: makeSelection("/tmp/a.txt"),
+    });
 
     mount(
       <WorkspaceRightPanel
-        open
-        present
-        view="turn-diff"
-        openTabs={[]}
-        onSelectView={() => {}}
-        onShowTools={() => {}}
-        onCloseTab={() => {}}
-        onReorderTabs={() => {}}
-        onOpenFile={() => {}}
-        onClose={() => {}}
-        turnFileDiffSelection={{
-          path: "/tmp/a.txt",
-          additions: 1,
-          deletions: 1,
-          newFile: false,
-          diff: {
-            path: "/tmp/a.txt",
-            hunks: [
-              {
-                oldStart: 1,
-                newStart: 1,
-                lines: [
-                  { op: "delete", content: "old value" },
-                  { op: "insert", content: "new value" },
-                ],
-              },
-            ],
-          },
-        }}
-        onCloseTurnFileDiff={onCloseTurnFileDiff}
+        {...baseProps()}
+        tabs={[diffTab]}
+        activeTabID={diffTab.id}
+        onCloseTab={onCloseTab}
       />,
     );
 
-    const panel = container?.querySelector<HTMLElement>(
-      ".workspace-right-panel.detail.turn-diff",
-    );
+    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel.detail.diff");
     expect(panel).toBeTruthy();
-    expect(panel?.querySelector(".workspace-panel-body")?.textContent).toContain(
-      "/tmp/a.txt",
-    );
-    expect(panel?.querySelector(".workspace-panel-body")?.textContent).toContain(
-      "new value",
-    );
+    expect(panel?.querySelector(".workspace-panel-body")?.textContent).toContain("/tmp/a.txt");
+    expect(panel?.querySelector(".workspace-panel-body")?.textContent).toContain("new value");
+
+    // The diff tab shows up in the unified tab strip, not as a separate
+    // pseudo-tab: it has a title (basename), a close button, and (once
+    // there's more than one tab) is reorderable just like a tool tab.
+    const tabButton = panel?.querySelector<HTMLButtonElement>(".workspace-tool-tab-main");
+    expect(tabButton?.textContent).toContain("a.txt");
+    expect(tabButton?.getAttribute("title")).toBe("/tmp/a.txt");
 
     act(() => {
       panel?.querySelector<HTMLButtonElement>(".turn-file-diff-close")?.click();
     });
+    expect(onCloseTab).toHaveBeenCalledTimes(1);
+    expect(onCloseTab).toHaveBeenCalledWith(diffTab.id);
 
-    expect(onCloseTurnFileDiff).toHaveBeenCalledTimes(1);
+    onCloseTab.mockClear();
+    act(() => {
+      panel?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
+    });
+    expect(onCloseTab).toHaveBeenCalledTimes(1);
+    expect(onCloseTab).toHaveBeenCalledWith(diffTab.id);
+  });
+
+  it("supports several diff tabs open side by side alongside tool tabs", () => {
+    const onSelectTab = vi.fn();
+    const filesTab = workspaceToolViewTab("files");
+    const diffA = workspaceDiffViewTab({
+      threadID: "thread-1",
+      path: "a.txt",
+      selection: makeSelection("a.txt"),
+    });
+    const diffB = workspaceDiffViewTab({
+      threadID: "thread-1",
+      path: "src/b.txt",
+      selection: makeSelection("src/b.txt"),
+    });
+    const tabs: WorkspaceViewTab[] = [filesTab, diffA, diffB];
+
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={tabs}
+        activeTabID={diffB.id}
+        onSelectTab={onSelectTab}
+      />,
+    );
+
+    const tabButtons = container?.querySelectorAll(".workspace-panel-tabs .workspace-tool-tab");
+    expect(tabButtons?.length).toBe(3);
+    // Reorderable once more than one tab is present, regardless of kind.
+    expect(container?.querySelectorAll(".workspace-tool-tab.can-reorder").length).toBe(3);
+
+    const diffBTab = container?.querySelector(".workspace-tool-tab.active");
+    expect(diffBTab?.textContent).toContain("b.txt");
+
+    const diffAButton = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>(".workspace-tool-tab-main") ?? [],
+    ).find((button) => button.textContent?.includes("a.txt") && !button.textContent.includes("b.txt"));
+    act(() => {
+      diffAButton?.click();
+    });
+    expect(onSelectTab).toHaveBeenCalledWith(diffA.id);
+  });
+
+  it("shows the tool picker when there is no active tab, and marks open tools active", () => {
+    const onOpenTool = vi.fn();
+    const filesTab = workspaceToolViewTab("files");
+
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[filesTab]}
+        activeTabID={undefined}
+        onOpenTool={onOpenTool}
+      />,
+    );
+
+    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel.tools");
+    expect(panel).toBeTruthy();
+    const picker = panel?.querySelector(".workspace-tool-menu");
+    expect(picker).toBeTruthy();
+    expect(picker?.querySelector(".workspace-tool-menu-item.active")?.textContent).toContain("文件");
+
+    act(() => {
+      picker?.querySelectorAll<HTMLButtonElement>(".workspace-tool-menu-item")[1]?.click();
+    });
+    expect(onOpenTool).toHaveBeenCalledWith("review");
   });
 });

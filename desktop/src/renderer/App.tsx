@@ -303,6 +303,7 @@ import {
   type WorkspacePanelView,
 } from "./WorkspacePanels";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
+import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
@@ -645,10 +646,6 @@ export function App(): JSX.Element {
   >(initialSplitComposerDrafts);
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
-  const [turnFileDiffSelection, setTurnFileDiffSelection] =
-    useState<(TurnFileDiffSelection & { threadID: string }) | undefined>(
-      undefined,
-    );
   const [, setQueuedMessageEditTarget] =
     useState<QueuedMessageEditTarget | undefined>(undefined);
   const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
@@ -740,19 +737,20 @@ export function App(): JSX.Element {
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const {
-    workspaceToolTabs,
+    workspaceViewTabs,
+    workspaceActiveViewTabID,
     workspacePanelView,
-    setWorkspacePanelView,
-    workspaceRightPanelView,
-    setWorkspaceRightPanelView,
     workspaceMode,
     setWorkspaceMode,
     ensureWorkspaceToolTab,
     activateWorkspaceTool,
     openWorkspaceTool,
+    openWorkspaceDiffTab,
     showWorkspaceToolPicker,
-    closeWorkspaceToolTab,
-    reorderWorkspaceToolTabs,
+    focusWorkspaceViewTab,
+    closeWorkspaceViewTab,
+    closeWorkspaceViewTabsWhere,
+    reorderWorkspaceViewTabs,
     toggleRightPanel,
   } = useWorkspaceToolState({
     rightPanelOpen,
@@ -969,17 +967,11 @@ export function App(): JSX.Element {
   }, [participants]);
   const openTurnFileDiffPanel = useStableCallback(
     (threadID: string, selection: TurnFileDiffSelection) => {
-      setTurnFileDiffSelection({ ...selection, threadID });
-      setWorkspaceRightPanelView("turn-diff");
+      openWorkspaceDiffTab({ threadID, path: selection.path, selection });
       setRightPanelOpenWithMotion(true);
       closeEnvironmentPanel({ dismissed: true });
     },
   );
-  const closeTurnFileDiffPanel = useStableCallback(() => {
-    setTurnFileDiffSelection(undefined);
-    setWorkspaceRightPanelView("tools");
-    setRightPanelOpenWithMotion(false);
-  });
   const activePendingComposerMessages = pendingComposerMessagesForThread(
     pendingComposerMessagesByThread,
     activeThreadID,
@@ -1753,27 +1745,34 @@ export function App(): JSX.Element {
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
 
   useEffect(() => {
-    if (!turnFileDiffSelection) return;
-    if (
-      !activeThreadID ||
-      turnFileDiffSelection.threadID !== activeThreadID ||
-      showingWorkspaceMode ||
-      showingSkillsCatalog ||
-      emptyConversation
-    ) {
-      setTurnFileDiffSelection(undefined);
-      if (workspaceRightPanelView === "turn-diff") {
-        setWorkspaceRightPanelView("tools");
-        setRightPanelOpenWithMotion(false);
-      }
+    // Diff tabs are scoped to the thread whose turn they came from: they
+    // don't make sense to keep browsing once we've navigated away from
+    // that thread (or away from the conversation view entirely), so prune
+    // them eagerly instead of leaving stale diffs sitting in the tab strip.
+    const isStaleDiffTab = (tab: WorkspaceViewTab): boolean =>
+      tab.kind === "diff" &&
+      (!activeThreadID ||
+        tab.threadID !== activeThreadID ||
+        showingWorkspaceMode ||
+        showingSkillsCatalog ||
+        emptyConversation);
+    if (!workspaceViewTabs.some(isStaleDiffTab)) {
+      return;
+    }
+    const activeTab = workspaceViewTabs.find((tab) => tab.id === workspaceActiveViewTabID);
+    const closingActiveDiffTab = Boolean(activeTab && isStaleDiffTab(activeTab));
+    closeWorkspaceViewTabsWhere(isStaleDiffTab);
+    if (closingActiveDiffTab) {
+      setRightPanelOpenWithMotion(false);
     }
   }, [
     activeThreadID,
+    closeWorkspaceViewTabsWhere,
     emptyConversation,
     showingSkillsCatalog,
     showingWorkspaceMode,
-    turnFileDiffSelection,
-    workspaceRightPanelView,
+    workspaceActiveViewTabID,
+    workspaceViewTabs,
   ]);
 
   const {
@@ -1888,10 +1887,7 @@ export function App(): JSX.Element {
     }
     const fileTab = createFileSessionTab(context, path);
     const outgoingDraft = currentPrimaryComposerDraft();
-    ensureWorkspaceToolTab("files");
-    setWorkspacePanelView("files");
-    setWorkspaceRightPanelView("files");
-    setRightPanelOpenWithMotion(true);
+    openWorkspaceTool("files");
     setWorkspaceMode("files");
     setState((current) => ({
       ...persistActiveSessionTabDraft(current, outgoingDraft),
@@ -7416,10 +7412,8 @@ export function App(): JSX.Element {
           onSelectBranch={(branch) => void checkoutBranch(branch)}
           onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
           onOpenReview={() => {
-            setWorkspacePanelView("review");
-            setWorkspaceRightPanelView("review");
+            openWorkspaceTool("review");
             setWorkspaceMode(undefined);
-            setRightPanelOpenWithMotion(true);
             closeEnvironmentPanel({ dismissed: true });
           }}
           onOpenCommit={() => openEnvironmentDialog("commit")}
@@ -7669,34 +7663,21 @@ export function App(): JSX.Element {
       <WorkspaceRightPanel
         open={rightPanelOpen}
         present={rightPanelOpen || rightPanelAnimating}
-        view={workspaceRightPanelView}
-        openTabs={workspaceToolTabs}
+        tabs={workspaceViewTabs}
+        activeTabID={workspaceActiveViewTabID}
         activeContext={state.activeContext}
         gitStatus={state.gitStatus}
         selectedFilePath={activeWorkspaceFile}
-        onSelectView={(view) => {
-          setTurnFileDiffSelection(undefined);
-          openWorkspaceTool(view);
-        }}
-        onShowTools={() => {
-          setTurnFileDiffSelection(undefined);
-          showWorkspaceToolPicker();
-        }}
-        onCloseTab={closeWorkspaceToolTab}
-        onReorderTabs={reorderWorkspaceToolTabs}
+        onSelectTab={focusWorkspaceViewTab}
+        onOpenTool={openWorkspaceTool}
+        onShowTools={showWorkspaceToolPicker}
+        onCloseTab={closeWorkspaceViewTab}
+        onReorderTabs={reorderWorkspaceViewTabs}
         onOpenFile={openWorkspaceFile}
-        onClose={() => {
-          setTurnFileDiffSelection(undefined);
-          if (workspaceRightPanelView === "turn-diff") {
-            setWorkspaceRightPanelView("tools");
-          }
-          setRightPanelOpenWithMotion(false);
-        }}
+        onClose={() => setRightPanelOpenWithMotion(false)}
         pendingBrowserURL={pendingBrowserURL}
         onBrowserURLConsumed={consumePendingBrowserURL}
         onBrowserURLChange={rememberBrowserURLForActiveThread}
-        turnFileDiffSelection={turnFileDiffSelection}
-        onCloseTurnFileDiff={closeTurnFileDiffPanel}
       />
       {environmentDialog === "commit" ? (
         <CommitChangesDialog

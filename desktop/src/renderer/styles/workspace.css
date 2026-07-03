@@ -39,7 +39,7 @@
 }
 
 .workspace-right-panel.review .workspace-panel-body,
-.workspace-right-panel.turn-diff .workspace-panel-body {
+.workspace-right-panel.diff .workspace-panel-body {
   padding: 0;
 }
 
@@ -51,21 +51,6 @@
   gap: 8px;
   border-bottom: 1px solid var(--surface-3);
   padding: 0 10px;
-}
-
-.workspace-panel-detail-tab {
-  display: inline-flex;
-  min-width: 0;
-  height: 28px;
-  align-items: center;
-  border: 1px solid var(--surface-3);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
-  color: var(--ink);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  padding: 0 9px;
-  white-space: nowrap;
 }
 
 .turn-file-diff-panel {

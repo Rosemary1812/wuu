@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { arrayMove } from "@dnd-kit/sortable";
-import type {
-  WorkspacePanelView,
-  WorkspaceRightPanelView
-} from "./WorkspacePanels";
+import type { WorkspacePanelView } from "./WorkspacePanels";
+import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
+import {
+  useWorkspaceViewTabs,
+  workspaceDiffViewTab,
+  workspaceToolViewTab,
+  type WorkspaceViewTab,
+} from "./WorkspaceViewTabs";
 
 export function useWorkspaceToolState({
   rightPanelOpen,
@@ -12,82 +15,60 @@ export function useWorkspaceToolState({
   rightPanelOpen: boolean;
   setRightPanelOpenWithMotion: (open: boolean) => void;
 }): {
-  workspaceToolTabs: WorkspacePanelView[];
+  // Unified right-panel tab strip: the four singleton tools plus zero or
+  // more per-file diff tabs. See WorkspaceViewTabs.ts.
+  workspaceViewTabs: WorkspaceViewTab[];
+  workspaceActiveViewTabID: string | undefined;
   workspacePanelView: WorkspacePanelView;
   setWorkspacePanelView: (view: WorkspacePanelView) => void;
-  workspaceRightPanelView: WorkspaceRightPanelView;
-  setWorkspaceRightPanelView: (view: WorkspaceRightPanelView) => void;
   workspaceMode: WorkspacePanelView | undefined;
   setWorkspaceMode: (view: WorkspacePanelView | undefined) => void;
   ensureWorkspaceToolTab: (view: WorkspacePanelView) => void;
   activateWorkspaceTool: (view: WorkspacePanelView) => void;
   openWorkspaceTool: (view: WorkspacePanelView) => void;
+  openWorkspaceDiffTab: (input: { threadID: string; path: string; selection: TurnFileDiffSelection }) => void;
   showWorkspaceToolPicker: () => void;
-  closeWorkspaceToolTab: (view: WorkspacePanelView) => void;
-  reorderWorkspaceToolTabs: (activeView: WorkspacePanelView, overView: WorkspacePanelView) => void;
+  focusWorkspaceViewTab: (id: string | undefined) => void;
+  closeWorkspaceViewTab: (id: string) => void;
+  closeWorkspaceViewTabsWhere: (predicate: (tab: WorkspaceViewTab) => boolean) => void;
+  reorderWorkspaceViewTabs: (activeID: string, overID: string) => void;
   toggleRightPanel: () => void;
 } {
-  const [workspaceToolTabs, setWorkspaceToolTabs] = useState<WorkspacePanelView[]>([]);
   const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
-  const [workspaceRightPanelView, setWorkspaceRightPanelView] =
-    useState<WorkspaceRightPanelView>("tools");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
+  const {
+    tabs: workspaceViewTabs,
+    activeTabID: workspaceActiveViewTabID,
+    openTab,
+    focusTab,
+    closeTab,
+    closeTabsWhere,
+    reorderTabs,
+  } = useWorkspaceViewTabs();
 
   function ensureWorkspaceToolTab(view: WorkspacePanelView): void {
-    setWorkspaceToolTabs((current) =>
-      current.includes(view) ? current : [...current, view]
-    );
+    if (!workspaceViewTabs.some((tab) => tab.id === view)) {
+      openTab(workspaceToolViewTab(view));
+    }
   }
 
   function activateWorkspaceTool(view: WorkspacePanelView): void {
     setWorkspacePanelView(view);
-    setWorkspaceRightPanelView(view);
+    openTab(workspaceToolViewTab(view));
   }
 
   function openWorkspaceTool(view: WorkspacePanelView): void {
-    ensureWorkspaceToolTab(view);
     activateWorkspaceTool(view);
     setRightPanelOpenWithMotion(true);
   }
 
+  function openWorkspaceDiffTab(input: { threadID: string; path: string; selection: TurnFileDiffSelection }): void {
+    openTab(workspaceDiffViewTab(input));
+  }
+
   function showWorkspaceToolPicker(): void {
-    setWorkspaceRightPanelView("tools");
+    focusTab(undefined);
     setRightPanelOpenWithMotion(true);
-  }
-
-  function closeWorkspaceToolTab(view: WorkspacePanelView): void {
-    const nextTabs = workspaceToolTabs.filter((item) => item !== view);
-    setWorkspaceToolTabs(nextTabs);
-
-    if (workspaceRightPanelView !== view) {
-      return;
-    }
-
-    const closedIndex = workspaceToolTabs.indexOf(view);
-    const fallback =
-      nextTabs[Math.min(Math.max(closedIndex, 0), Math.max(nextTabs.length - 1, 0))];
-    if (fallback) {
-      activateWorkspaceTool(fallback);
-      return;
-    }
-    setWorkspaceRightPanelView("tools");
-  }
-
-  function reorderWorkspaceToolTabs(
-    activeView: WorkspacePanelView,
-    overView: WorkspacePanelView
-  ): void {
-    if (activeView === overView) {
-      return;
-    }
-    setWorkspaceToolTabs((current) => {
-      const sourceIndex = current.indexOf(activeView);
-      const targetIndex = current.indexOf(overView);
-      if (sourceIndex < 0 || targetIndex < 0) {
-        return current;
-      }
-      return arrayMove(current, sourceIndex, targetIndex);
-    });
   }
 
   function toggleRightPanel(): void {
@@ -95,26 +76,28 @@ export function useWorkspaceToolState({
       setRightPanelOpenWithMotion(false);
       return;
     }
-    if (workspaceRightPanelView === "tools" && workspaceToolTabs.length > 0) {
-      activateWorkspaceTool(workspaceToolTabs[workspaceToolTabs.length - 1]);
+    if (workspaceActiveViewTabID === undefined && workspaceViewTabs.length > 0) {
+      focusTab(workspaceViewTabs[workspaceViewTabs.length - 1].id);
     }
     setRightPanelOpenWithMotion(true);
   }
 
   return {
-    workspaceToolTabs,
+    workspaceViewTabs,
+    workspaceActiveViewTabID,
     workspacePanelView,
     setWorkspacePanelView,
-    workspaceRightPanelView,
-    setWorkspaceRightPanelView,
     workspaceMode,
     setWorkspaceMode,
     ensureWorkspaceToolTab,
     activateWorkspaceTool,
     openWorkspaceTool,
+    openWorkspaceDiffTab,
     showWorkspaceToolPicker,
-    closeWorkspaceToolTab,
-    reorderWorkspaceToolTabs,
+    focusWorkspaceViewTab: focusTab,
+    closeWorkspaceViewTab: closeTab,
+    closeWorkspaceViewTabsWhere: closeTabsWhere,
+    reorderWorkspaceViewTabs: reorderTabs,
     toggleRightPanel
   };
 }
