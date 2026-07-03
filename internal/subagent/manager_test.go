@@ -395,6 +395,93 @@ func TestPersistHistory(t *testing.T) {
 	}
 }
 
+// TestPersistHistoryRecordsResumeFields verifies a persisted snapshot
+// carries every field needed to rebuild the runtime for a cross-restart
+// resume: identity, thread placement, working directory, and model pin.
+func TestPersistHistoryRecordsResumeFields(t *testing.T) {
+	dir := t.TempDir()
+	historyPath := filepath.Join(dir, "workers", "worker.json")
+	client := &fakeClient{response: providers.ChatResponse{Content: "ok"}}
+	mgr := NewManager(client, "fake-model")
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		ID:            "worker-resume",
+		ParticipantID: "prt-1",
+		Type:          "worker",
+		TaskName:      "resume_task",
+		AgentProfile:  "qa workflow",
+		AgentPath:     "/root/resume_task",
+		ParentID:      "sess-1",
+		Description:   "resume me",
+		Prompt:        "do the work",
+		SystemPrompt:  "you are a worker",
+		Toolkit:       fakeToolkit{},
+		Model:         "pinned-model",
+		ModelPin:      "alt-provider:pinned-model",
+		WorkerRoot:    dir,
+		HistoryPath:   historyPath,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+
+	run, err := LoadPersistedRun(historyPath)
+	if err != nil {
+		t.Fatalf("LoadPersistedRun: %v", err)
+	}
+	if run.Version != ResumeSnapshotVersion {
+		t.Fatalf("version = %d, want %d", run.Version, ResumeSnapshotVersion)
+	}
+	if run.ParticipantID != "prt-1" || run.Type != "worker" || run.TaskName != "resume_task" ||
+		run.AgentPath != "/root/resume_task" || run.ParentID != "sess-1" || run.AgentProfile != "qa workflow" {
+		t.Fatalf("missing rebuild metadata: %+v", run)
+	}
+	if run.CWD != dir || run.Model != "pinned-model" || run.ModelPin != "alt-provider:pinned-model" {
+		t.Fatalf("missing runtime fields: %+v", run)
+	}
+	if run.Status != StatusCompleted || len(run.Messages) == 0 {
+		t.Fatalf("expected completed snapshot with history, got %+v", run)
+	}
+}
+
+// TestLoadPersistedRunToleratesPreVersionSnapshot proves an old snapshot
+// written before resume support loads without crashing, reporting
+// version 0 and empty new fields (the resume gate lives at resume time,
+// not load time).
+func TestLoadPersistedRunToleratesPreVersionSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.json")
+	legacy := `{
+		"id": "worker-legacy",
+		"type": "worker",
+		"task_name": "legacy_task",
+		"status": "failed",
+		"model": "old-model",
+		"prompt": "do it",
+		"error": "boom",
+		"messages": [{"role":"system","content":"sys"},{"role":"user","content":"do it"}]
+	}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run, err := LoadPersistedRun(path)
+	if err != nil {
+		t.Fatalf("LoadPersistedRun on legacy snapshot: %v", err)
+	}
+	if run.Version != 0 {
+		t.Fatalf("legacy snapshot version = %d, want 0", run.Version)
+	}
+	if run.ID != "worker-legacy" || run.Status != StatusFailed || len(run.Messages) != 2 {
+		t.Fatalf("legacy snapshot did not parse: %+v", run)
+	}
+	if run.CWD != "" || run.ParticipantID != "" {
+		t.Fatalf("legacy snapshot should leave new fields empty: %+v", run)
+	}
+}
+
 func TestList(t *testing.T) {
 	client := &fakeClient{response: providers.ChatResponse{Content: "ok"}}
 	mgr := NewManager(client, "fake-model")

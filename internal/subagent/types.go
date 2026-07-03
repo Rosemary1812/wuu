@@ -76,6 +76,19 @@ type SpawnOptions struct {
 	// the runner's default is.
 	Model string
 
+	// WorkerRoot is the sub-agent's working directory: the shared parent
+	// repo for inplace workers or the worktree path for isolated ones. It
+	// is persisted with the run so a follow-up after a restart can rebuild
+	// the toolkit rooted at the same place and confirm the directory still
+	// exists before resuming.
+	WorkerRoot string
+
+	// ModelPin is the raw per-participant model pin (e.g. "provider:model"
+	// or "model"). It is persisted so a resumed run can rebuild a
+	// cross-provider client the same way queued-spawn restore does. Empty
+	// means the run honors only Model.
+	ModelPin string
+
 	// Client, when non-nil, replaces the stream client the runner
 	// would otherwise inherit from the manager defaults. Callers use
 	// it to honor a per-participant model pin that points at a
@@ -152,6 +165,8 @@ type SubAgent struct {
 	prompt          string
 	systemPrompt    string
 	model           string
+	modelPin        string // raw participant pin, persisted for cross-restart resume
+	workerRoot      string // working directory, persisted so a resume can validate + reroot
 	toolkit         agent.ToolExecutor
 	historyPath     string
 	initialHistory  []providers.ChatMessage

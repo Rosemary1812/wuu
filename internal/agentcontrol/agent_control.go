@@ -711,7 +711,9 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		SystemPrompt:  sys,
 		Toolkit:       workerKit,
 		HistoryPath:   historyPath,
+		WorkerRoot:    workerRoot,
 		Model:         strings.TrimSpace(req.ModelOverride),
+		ModelPin:      strings.TrimSpace(req.ModelPin),
 		Client:        req.ClientOverride,
 	})
 	if err != nil {
@@ -1032,6 +1034,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		Prompt:         forkPrompt,
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
+		WorkerRoot:     workerRoot,
 		InitialHistory: initialHistory,
 	})
 	if err != nil {
@@ -1942,8 +1945,10 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		SystemPrompt:   systemPrompt,
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
+		WorkerRoot:     workerRoot,
 		InitialHistory: initialHistory,
 		Model:          modelOverride,
+		ModelPin:       prepared.ModelPin,
 		Client:         clientOverride,
 	})
 	if err != nil {

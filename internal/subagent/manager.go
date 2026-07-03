@@ -223,6 +223,8 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		prompt:          opts.Prompt,
 		systemPrompt:    opts.SystemPrompt,
 		model:           model,
+		modelPin:        opts.ModelPin,
+		workerRoot:      opts.WorkerRoot,
 		toolkit:         opts.Toolkit,
 		historyPath:     opts.HistoryPath,
 		initialHistory:  opts.InitialHistory,
