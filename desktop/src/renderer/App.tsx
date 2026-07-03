@@ -1686,10 +1686,25 @@ export function App(): JSX.Element {
       ? workspaceModeTitle(workspaceMode)
       : activeThread?.preview || "新对话";
   const currentHour = useCurrentHour();
-  const greetingContext: GreetingContext =
-    state.activeContext?.kind === "project"
-      ? { kind: "project", projectName: activeProject?.name ?? "这个项目" }
-      : { kind: "wuu" };
+  const greetingContext: GreetingContext = (() => {
+    // Group chats greet with the collaboration framing. The `group` flag
+    // is the discriminant — the `all` channel has implicit membership, so
+    // members may be empty even for a group thread.
+    if (activeThread?.group) {
+      return {
+        kind: "group",
+        title: activeThread.title?.trim() || undefined,
+        memberNames: (activeThread.members ?? []).map((m) => m.name),
+      };
+    }
+    if (state.activeContext?.kind === "project") {
+      return {
+        kind: "project",
+        projectName: activeProject?.name ?? "这个项目",
+      };
+    }
+    return { kind: "wuu" };
+  })();
   const emptyThreadTitle = greetingFor(currentHour, greetingContext);
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
