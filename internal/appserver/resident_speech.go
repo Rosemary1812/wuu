@@ -145,8 +145,15 @@ func (r residentParticipantSpeech) resolveTargetThread(targetThreadID string) (s
 	}
 	th.mu.Lock()
 	isOwnDM := strings.TrimSpace(th.DMParticipantID) == participantID
+	isAllChannel := isAllChannelThread(th.Group, th.Title)
 	th.mu.Unlock()
 	if isOwnDM {
+		return th.ID, nil
+	}
+	// #all's membership is implicit: every named participant may post there
+	// without an explicit thread_members row (chat-style-threads-design.md
+	// §3.2).
+	if isAllChannel {
 		return th.ID, nil
 	}
 	members, err := session.ListThreadMembers(r.server.rt.SessionDir, th.ID)

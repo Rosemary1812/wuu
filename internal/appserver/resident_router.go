@@ -102,7 +102,7 @@ func (s *Server) routeParticipantMessageToResidents(source *threadState, msg age
 	if env.Hop <= 0 {
 		env.Hop = 1
 	}
-	mentioned := s.mentionedMembersByName(env.SourceThreadID, env.Text)
+	mentioned := s.mentionedMembersByName(source, env.Text)
 	s.routeEnvelopes(source, env, mentioned)
 }
 
@@ -112,11 +112,21 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 	}
 	source.mu.Lock()
 	sourceThreadID := strings.TrimSpace(source.ID)
+	isAllChannel := isAllChannelThread(source.Group, source.Title)
 	source.mu.Unlock()
 	if sourceThreadID == "" {
 		return
 	}
-	members, err := session.ListThreadMembers(s.rt.SessionDir, sourceThreadID)
+	// #all's membership is implicit (the entire named-participant roster);
+	// every other group/conversation thread routes to its explicit
+	// thread_members rows (chat-style-threads-design.md §3.2).
+	var members []string
+	var err error
+	if isAllChannel {
+		members, err = s.allNamedParticipantIDs()
+	} else {
+		members, err = session.ListThreadMembers(s.rt.SessionDir, sourceThreadID)
+	}
 	if err != nil {
 		providers.DebugLogf("list thread members for resident routing %q: %v", sourceThreadID, err)
 		return
@@ -308,12 +318,22 @@ func residentSpeechHopsByThread(envs []MessageEnvelope) map[string]int {
 	return hops
 }
 
-func (s *Server) mentionedMembersByName(threadID, text string) map[string]bool {
+func (s *Server) mentionedMembersByName(source *threadState, text string) map[string]bool {
 	out := make(map[string]bool)
-	if s == nil || s.rt == nil || strings.TrimSpace(text) == "" {
+	if s == nil || s.rt == nil || source == nil || strings.TrimSpace(text) == "" {
 		return out
 	}
-	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
+	source.mu.Lock()
+	threadID := strings.TrimSpace(source.ID)
+	isAllChannel := isAllChannelThread(source.Group, source.Title)
+	source.mu.Unlock()
+	var members []string
+	var err error
+	if isAllChannel {
+		members, err = s.allNamedParticipantIDs()
+	} else {
+		members, err = session.ListThreadMembers(s.rt.SessionDir, threadID)
+	}
 	if err != nil {
 		return out
 	}

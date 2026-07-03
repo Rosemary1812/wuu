@@ -204,3 +204,51 @@ func findDMHistoryIfExists(t *testing.T, srv *Server, participantID string) (str
 func providersResponse(content string) providers.ChatResponse {
 	return providers.ChatResponse{Content: content}
 }
+
+func TestGroupTurnStartRoutesThroughAllChannelWithoutExplicitMembership(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+
+	allID, err := srv.ensureAllChannel()
+	if err != nil {
+		t.Fatalf("ensureAllChannel: %v", err)
+	}
+
+	raw := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"Heads up, everyone."}}`, allID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	resp := responseByID(t, msgs, "turn")
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("turn/start returned error: %v", errMsg)
+	}
+
+	// Ivy was never added to thread_members, yet #all's implicit roster
+	// membership still routes her an envelope.
+	_, ivyHistory := waitForResidentDMHistory(t, srv, ivy, 1)
+	ivyMeta := findEnvelopeMetaRecord(t, ivyHistory)
+	if ivyMeta.SourceThreadID != allID {
+		t.Fatalf("expected envelope sourced from #all, got %+v", ivyMeta)
+	}
+}
+
+func TestResidentPostMessageToAllChannelWithoutExplicitMembership(t *testing.T) {
+	srv, _ := newResidentSpeechTestServer(t)
+	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
+	dmID := startResidentDMForTest(t, srv, participantID)
+	allID, err := srv.ensureAllChannel()
+	if err != nil {
+		t.Fatalf("ensureAllChannel: %v", err)
+	}
+
+	kit := residentToolkitForTest(t, srv, dmID)
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"result","text":"Heads up.","thread_id":%q}`, allID),
+	})
+	if err != nil {
+		t.Fatalf("post_message to #all without explicit membership: %v", err)
+	}
+}
