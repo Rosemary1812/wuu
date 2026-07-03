@@ -205,3 +205,15 @@ func TestApprovalResponseForAnswer(t *testing.T) {
 		}
 	}
 }
+
+func TestServerRequestHandlerRejectsPromptWithExternalHandler(t *testing.T) {
+	if _, err := newServerRequestHandler(Options{ApprovalHandler: "approve.sh", ApprovalsMode: ApprovalsModePrompt}); err == nil {
+		t.Fatal("prompt mode combined with an external handler should be rejected")
+	}
+	if _, err := newServerRequestHandler(Options{ApprovalSocket: "/tmp/a.sock", ApprovalsMode: ApprovalsModeAuto}); err == nil {
+		t.Fatal("auto mode combined with an approval socket should be rejected")
+	}
+	if _, err := newServerRequestHandler(Options{ApprovalHandler: "approve.sh", ApprovalsMode: ApprovalsModeStrict}); err != nil {
+		t.Fatalf("strict mode with a handler is coherent, got %v", err)
+	}
+}

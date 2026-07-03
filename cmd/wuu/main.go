@@ -1196,7 +1196,7 @@ type execCLIConfig struct {
 	approvalHandler   *string
 	approvalSocket    *string
 	approve           *stringListFlag
-	approvalPrompt    *bool
+	approvalsMode     *string
 	noTools           *bool
 	jsonOutput        *bool
 	timeout           *time.Duration
@@ -1431,7 +1431,7 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		approvalHandler:   fs.String("approval-handler", "", "command that handles approval requests"),
 		approvalSocket:    fs.String("approval-socket", "", "Unix socket that handles approval requests"),
 		approve:           &approve,
-		approvalPrompt:    fs.Bool("approval-prompt", false, "ask on the controlling terminal when a tool needs approval"),
+		approvalsMode:     fs.String("approvals", "", "approvals mode: auto (default, run flows), strict (deny with grant recipe), prompt (ask on the terminal)"),
 		noTools:           fs.Bool("no-tools", false, "disable local tools"),
 		jsonOutput:        fs.Bool("json", false, "emit machine-readable JSONL to stdout"),
 		timeout:           fs.Duration("timeout", 0, "total timeout (e.g. 20m)"),
@@ -1484,7 +1484,7 @@ type execInputPayload struct {
 	ApprovalHandler   string                     `json:"approval_handler"`
 	ApprovalSocket    string                     `json:"approval_socket"`
 	Approve           []string                   `json:"approve"`
-	ApprovalPrompt    *bool                      `json:"approval_prompt"`
+	Approvals         string                     `json:"approvals"`
 	MaxTurns          *int                       `json:"max_turns"`
 	NoTools           *bool                      `json:"no_tools"`
 	JSON              *bool                      `json:"json"`
@@ -1516,7 +1516,7 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		ApprovalHandler:   valueOfStringFlag(cfg.approvalHandler),
 		ApprovalSocket:    valueOfStringFlag(cfg.approvalSocket),
 		Approvals:         stringListValues(cfg.approve),
-		ApprovalPrompt:    valueOfBoolFlag(cfg.approvalPrompt),
+		ApprovalsMode:     valueOfStringFlag(cfg.approvalsMode),
 		MaxTurns:          valueOfIntFlag(cfg.maxTurns),
 		NoTools:           valueOfBoolFlag(cfg.noTools),
 		JSON:              valueOfBoolFlag(cfg.jsonOutput),
@@ -1587,8 +1587,11 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 		return errors.New("approval_handler and approval_socket cannot be used together")
 	}
 	opts.Approvals = append(opts.Approvals, input.Approve...)
-	if input.ApprovalPrompt != nil && !opts.ApprovalPrompt {
-		opts.ApprovalPrompt = *input.ApprovalPrompt
+	if opts.ApprovalsMode == "" {
+		opts.ApprovalsMode = strings.TrimSpace(input.Approvals)
+	}
+	if _, err := wuuexec.NormalizeApprovalsMode(opts.ApprovalsMode); err != nil {
+		return err
 	}
 	if err := validateToolOverrideFlags(opts.AllowTools, opts.DenyTools); err != nil {
 		return err

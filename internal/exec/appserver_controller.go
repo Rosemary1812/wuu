@@ -196,8 +196,44 @@ func applyConfigOverrides(cfg *config.Config, opts Options) error {
 			return err
 		}
 	}
+	if err := resolveApprovalsMode(&cfg.Agent, opts); err != nil {
+		return err
+	}
 	if err := applyToolPolicyOverrides(&cfg.Agent.ToolPolicy, opts.AllowTools, opts.DenyTools); err != nil {
 		return err
+	}
+	return nil
+}
+
+// resolveApprovalsMode maps exec's --approvals mode onto the agent
+// approval policy. The default is auto: a delegated exec run flows -
+// approval_policy resolves to never, so ask-classified actions (e.g.
+// unclassified toolchain commands) execute the way full_access executes
+// them, while destructive commands stay denied by the command policy and
+// the tool layer's hard protections never turn off. on_request review
+// flows are explicit opt-ins: --approvals strict/prompt, an approval
+// handler or socket, or a configured auto_review reviewer.
+func resolveApprovalsMode(agent *config.AgentConfig, opts Options) error {
+	if agent == nil {
+		return nil
+	}
+	mode, err := NormalizeApprovalsMode(opts.ApprovalsMode)
+	if err != nil {
+		return err
+	}
+	switch {
+	case mode == ApprovalsModeStrict || mode == ApprovalsModePrompt:
+		agent.ApprovalPolicy = config.ApprovalPolicyOnRequest
+	case strings.TrimSpace(opts.ApprovalHandler) != "" || strings.TrimSpace(opts.ApprovalSocket) != "":
+		agent.ApprovalPolicy = config.ApprovalPolicyOnRequest
+	case mode == ApprovalsModeAuto:
+		// explicit auto wins over any configured review flow
+		agent.ApprovalPolicy = config.ApprovalPolicyNever
+	case config.ResolveAgentPermissions(*agent).ApprovalsReviewer == config.ApprovalsReviewerAutoReview:
+		// auto_review has a headless answerer (the guardian); keep the
+		// configured review flow.
+	default:
+		agent.ApprovalPolicy = config.ApprovalPolicyNever
 	}
 	return nil
 }

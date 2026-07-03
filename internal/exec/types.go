@@ -91,12 +91,18 @@ type Options struct {
 	// Approvals pre-grants specific blocked calls by approval key (or
 	// request id / arguments hash) from a previous run's denial.
 	Approvals []string
-	// ApprovalPrompt opts in to the inline terminal approval prompt.
-	// It is off by default because exec's primary callers are other
-	// agents whose shells may hold a pty: an unanswered prompt would
-	// hang their run, and a fast denial with a grant recipe is strictly
-	// better for them.
-	ApprovalPrompt    bool
+	// ApprovalsMode picks how the run treats approval questions:
+	//   "auto" (default): resolve approval_policy to never - a
+	//     delegated run flows; destructive actions stay denied and the
+	//     tool hard protections are always on.
+	//   "strict": keep on_request; requests nothing answers are denied
+	//     with a grant recipe (--approve closes the loop on rerun).
+	//   "prompt": keep on_request and ask the human on the controlling
+	//     terminal.
+	// It never blocks by default because exec's primary callers are
+	// other agents whose shells may hold a pty: an unanswered prompt
+	// would hang their run.
+	ApprovalsMode     string
 	NoTools           bool
 	JSON              bool
 	Ephemeral         bool

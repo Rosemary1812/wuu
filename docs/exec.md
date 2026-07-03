@@ -84,7 +84,7 @@ stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
 `strict_config`, `env`, `allow_tools`, `deny_tools`, `approval_handler`,
-`approval_socket`, `approve`, `approval_prompt`, `max_turns`,
+`approval_socket`, `approve`, `approvals`, `max_turns`,
 `output_schema`, `no_tools`, `timeout`, and `output_last_message`.
 
 ## Resume
@@ -188,7 +188,7 @@ Current implemented flags:
 --approval-handler <command>
 --approval-socket <path>
 --approve <approval-key>
---approval-prompt
+--approvals <auto|strict|prompt>
 --file <path>
 --image <path>
 --no-tools
@@ -245,44 +245,54 @@ same response shape.
 socket, one newline-delimited object per approval request. `--approval-handler`
 and `--approval-socket` are mutually exclusive.
 
-## Approvals Without a Handler
+## Approvals
 
-When neither `--approval-handler` nor `--approval-socket` is set, exec answers
-approval requests itself, from most to least specific:
+**By default a delegated exec run just flows.** exec is built for callers —
+usually other agents — that hand over a task and expect the repo toolchain to
+run unattended. `--approvals` picks the mode:
 
-1. **`--approve <key>` grants.** Repeatable. Pre-approves exactly the named
-   calls for this run, matched by the stable `approval_key`
-   (`<tool>:<arguments-sha256>`), the request id, the bare arguments hash, or
-   the approval artifact filename. Because the key hashes the tool name and
-   arguments, it stays the same when the model retries the same command in a
-   resumed session.
-2. **`--approval-prompt` terminal prompt (opt-in).** For a human debugging
-   interactively: exec asks on the controlling terminal — `[y]es once /
-   [a]lways this session / [N]o` — and forwards the answer. This is never on
-   by default because exec's primary callers are other agents, and an agent's
-   shell may hold a pty: an unanswered prompt would hang its run. Without a
-   terminal the flag warns on stderr and falls through to denial.
-3. **Deny with a grant recipe (the default).** The call is denied with a
-   reason that tells the model to stop and report the blocked action, and
-   tells the caller how to grant it on the next run. Nothing ever blocks
-   waiting for input.
+- `auto` (the default): exec resolves `approval_policy` to `never`.
+  Ask-classified actions such as unclassified shell commands (`go vet`,
+  `make test`, project scripts) execute without a round-trip, the same way
+  `full_access` resolves them. This does not loosen the hard limits:
+  destructive commands stay denied by the command policy, and the tool
+  layer's always-on protections (unsafe git, sensitive paths, env dumps,
+  package/network mutation) never turn off. Per-tool `require_approval`
+  rules in config still generate requests, answered by `--approve` grants or
+  denied with a grant recipe.
+- `strict`: keep `approval_policy: on_request`. Requests nothing answers are
+  denied with a grant recipe — the fail-closed mode for CI or untrusted
+  configurations.
+- `prompt`: keep `on_request` and ask the human on the controlling terminal:
+  `[y]es once / [a]lways this session / [N]o`. Without a terminal the flag
+  warns on stderr and requests are denied.
 
-The intended loop for an agent driving `wuu exec` is:
+Providing `--approval-handler <command>` or `--approval-socket <path>` also
+keeps `on_request`, with automation answering each request. A configured
+`auto_review` reviewer (the LLM guardian) keeps its review flow too; an
+explicit `--approvals auto` overrides it. Note that a bare
+`approval_policy: "on_request"` in the config file cannot opt into strictness
+for exec runs — config loading fills that field from the permission-mode
+preset, so exec cannot tell it apart from a derived default; use
+`--approvals strict` (or input-json `"approvals": "strict"`).
+
+In a review flow, `--approve <key>` (repeatable) pre-grants exactly the named
+calls, matched by the stable `approval_key` (`<tool>:<arguments-sha256>` over
+the call's binding fields, so a rephrased retry of the same command still
+matches). Denied runs exit with status `permission_denied` and the final
+`result` event carries `blocked_approvals:
+[{approval_key, tool_name, arguments_preview, reason}]`, so a strict-mode
+caller can decide and rerun:
 
 ```bash
-wuu exec --json "run go vet and fix what it reports"
-# → result event: status "permission_denied" plus
-#   blocked_approvals: [{approval_key, tool_name, arguments_preview, reason}]
+wuu exec --json --approvals strict "run go vet and fix what it reports"
+# → result: status "permission_denied" + blocked_approvals with the key
 
-wuu exec resume --last --approve bash:2fd4e1c6... "vet is approved now, continue"
+wuu exec resume --last --approvals strict --approve bash:2fd4e1c6... "vet is approved, continue"
 ```
 
-The calling agent reads `blocked_approvals` from the final `result` event (or
-`request.approval_key` from the `approval_requested` event), decides whether
-the command is acceptable, and reruns with `--approve`. Because the key hashes
-only the binding fields of the call, the inner model's rephrased retry still
-matches the grant. Broad alternatives remain `--allow-tool <name>` (allow a
-whole tool for the run) and `--permission-mode full_access`.
+Broad alternatives remain `--allow-tool <name>` (allow a whole tool for the
+run) and `--permission-mode full_access`.
 
 ## Session Inspection
 
@@ -307,10 +317,14 @@ workspace-scoped artifacts Wuu can locate for that thread.
 
 ## Safety
 
-`wuu exec` runs through the normal Wuu permission model. Unattended runs
-must fail closed when they need approval and nothing can answer it: without a
-handler, a matching `--approve` grant, or a human at the terminal, the call is
-denied. Approvals are never granted silently — every grant is either an
-explicit caller token, a handler decision, or an interactive human answer, and
-each one is recorded in the JSONL stream as `approval_requested` /
+`wuu exec` runs through the normal Wuu permission model. The safety floor for
+unattended runs is the layer that cannot be approved away: destructive
+commands are denied by the command policy, and the tool hard protections
+(unsafe git, sensitive paths, env dumps, package/network mutation) are always
+on. Above that floor, unattended runs default to flowing —
+`--approvals auto` resolves `approval_policy` to `never` — so delegation
+works without a babysitter. When a caller opts into a review flow
+(`--approvals strict`, `--approvals prompt`, a handler, a socket, or an
+`auto_review` reviewer), requests that nothing answers fail closed with a
+grant recipe, and every decision is recorded as `approval_requested` /
 `approval_resolved` events.

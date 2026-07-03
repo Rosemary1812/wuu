@@ -150,3 +150,81 @@ func TestApplyConfigOverridesExplicitVariantWinsOverEffort(t *testing.T) {
 		t.Fatalf("Variant = %q, want high", cfg.Agent.Variant)
 	}
 }
+
+// TestApplyConfigOverridesApprovalsMode pins exec's approvals contract:
+// a delegated run flows by default (approval_policy resolves to never;
+// ask-classified actions run, destructive stays denied), and on_request
+// review flows exist only as explicit opt-ins - --approvals
+// strict/prompt, an approval handler or socket, or a configured
+// auto_review reviewer.
+func TestApplyConfigOverridesApprovalsMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		agent config.AgentConfig
+		opts  Options
+		want  string
+	}{
+		"default flows": {
+			agent: config.AgentConfig{},
+			opts:  Options{},
+			want:  config.ApprovalPolicyNever,
+		},
+		"permission mode preset still flows": {
+			agent: config.AgentConfig{},
+			opts:  Options{PermissionMode: config.PermissionModeAgent},
+			want:  config.ApprovalPolicyNever,
+		},
+		"config on_request is superseded by the default auto mode": {
+			// config load fills approval_policy from the permission
+			// mode preset, so a file value is indistinguishable from a
+			// derived one; strict mode is the way to keep review flows.
+			agent: config.AgentConfig{ApprovalPolicy: config.ApprovalPolicyOnRequest},
+			opts:  Options{},
+			want:  config.ApprovalPolicyNever,
+		},
+		"strict keeps the review flow": {
+			agent: config.AgentConfig{},
+			opts:  Options{ApprovalsMode: ApprovalsModeStrict},
+			want:  config.ApprovalPolicyOnRequest,
+		},
+		"prompt keeps the review flow": {
+			agent: config.AgentConfig{},
+			opts:  Options{ApprovalsMode: ApprovalsModePrompt},
+			want:  config.ApprovalPolicyOnRequest,
+		},
+		"handler keeps the review flow": {
+			agent: config.AgentConfig{},
+			opts:  Options{ApprovalHandler: "approve.sh"},
+			want:  config.ApprovalPolicyOnRequest,
+		},
+		"socket keeps the review flow": {
+			agent: config.AgentConfig{},
+			opts:  Options{ApprovalSocket: "/tmp/approvals.sock"},
+			want:  config.ApprovalPolicyOnRequest,
+		},
+		"auto_review reviewer keeps the review flow": {
+			agent: config.AgentConfig{ApprovalsReviewer: config.ApprovalsReviewerAutoReview},
+			opts:  Options{},
+			want:  "",
+		},
+		"explicit auto wins over auto_review": {
+			agent: config.AgentConfig{ApprovalsReviewer: config.ApprovalsReviewerAutoReview},
+			opts:  Options{ApprovalsMode: ApprovalsModeAuto},
+			want:  config.ApprovalPolicyNever,
+		},
+	} {
+		cfg := config.Config{Agent: tc.agent}
+		if err := applyConfigOverrides(&cfg, tc.opts); err != nil {
+			t.Fatalf("%s: applyConfigOverrides: %v", name, err)
+		}
+		if got := cfg.Agent.ApprovalPolicy; got != tc.want {
+			t.Fatalf("%s: ApprovalPolicy = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+func TestApplyConfigOverridesRejectsInvalidApprovalsMode(t *testing.T) {
+	cfg := config.Config{}
+	if err := applyConfigOverrides(&cfg, Options{ApprovalsMode: "yolo"}); err == nil {
+		t.Fatal("invalid approvals mode should be rejected")
+	}
+}
