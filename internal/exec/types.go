@@ -88,6 +88,12 @@ type Options struct {
 	DenyTools         []string
 	ApprovalHandler   string
 	ApprovalSocket    string
+	// Approvals pre-grants specific blocked calls by approval key (or
+	// request id / arguments hash) from a previous run's denial.
+	Approvals []string
+	// NoApprovalPrompt disables the inline terminal approval prompt
+	// even when a controlling TTY is available.
+	NoApprovalPrompt  bool
 	NoTools           bool
 	JSON              bool
 	Ephemeral         bool

@@ -1195,6 +1195,8 @@ type execCLIConfig struct {
 	denyTools         *stringListFlag
 	approvalHandler   *string
 	approvalSocket    *string
+	approve           *stringListFlag
+	noApprovalPrompt  *bool
 	noTools           *bool
 	jsonOutput        *bool
 	timeout           *time.Duration
@@ -1401,12 +1403,14 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 	env := stringListFlag{}
 	allowTools := stringListFlag{}
 	denyTools := stringListFlag{}
+	approve := stringListFlag{}
 	fs.Var(&files, "file", "attach a local file (repeatable)")
 	fs.Var(&images, "image", "attach a local image (repeatable)")
 	imageOriginal := fs.Bool("image-original", false, "send --image attachments at original resolution without resizing (Codex ImageDetail::Original equivalent)")
 	fs.Var(&env, "env", "set an environment variable for the run (KEY=VALUE, repeatable)")
 	fs.Var(&allowTools, "allow-tool", "allow a tool for this run (repeatable)")
 	fs.Var(&denyTools, "deny-tool", "deny a tool for this run (repeatable)")
+	fs.Var(&approve, "approve", "pre-approve a blocked call by approval key from a previous run (repeatable)")
 	return execCLIConfig{
 		provider:          fs.String("provider", "", "provider name in config"),
 		model:             fs.String("model", "", "model override"),
@@ -1426,6 +1430,8 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		denyTools:         &denyTools,
 		approvalHandler:   fs.String("approval-handler", "", "command that handles approval requests"),
 		approvalSocket:    fs.String("approval-socket", "", "Unix socket that handles approval requests"),
+		approve:           &approve,
+		noApprovalPrompt:  fs.Bool("no-approval-prompt", false, "never prompt on the terminal for tool approvals"),
 		noTools:           fs.Bool("no-tools", false, "disable local tools"),
 		jsonOutput:        fs.Bool("json", false, "emit machine-readable JSONL to stdout"),
 		timeout:           fs.Duration("timeout", 0, "total timeout (e.g. 20m)"),
@@ -1477,6 +1483,8 @@ type execInputPayload struct {
 	DenyTools         []string                   `json:"deny_tools"`
 	ApprovalHandler   string                     `json:"approval_handler"`
 	ApprovalSocket    string                     `json:"approval_socket"`
+	Approve           []string                   `json:"approve"`
+	NoApprovalPrompt  *bool                      `json:"no_approval_prompt"`
 	MaxTurns          *int                       `json:"max_turns"`
 	NoTools           *bool                      `json:"no_tools"`
 	JSON              *bool                      `json:"json"`
@@ -1507,6 +1515,8 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		DenyTools:         stringListValues(cfg.denyTools),
 		ApprovalHandler:   valueOfStringFlag(cfg.approvalHandler),
 		ApprovalSocket:    valueOfStringFlag(cfg.approvalSocket),
+		Approvals:         stringListValues(cfg.approve),
+		NoApprovalPrompt:  valueOfBoolFlag(cfg.noApprovalPrompt),
 		MaxTurns:          valueOfIntFlag(cfg.maxTurns),
 		NoTools:           valueOfBoolFlag(cfg.noTools),
 		JSON:              valueOfBoolFlag(cfg.jsonOutput),
@@ -1575,6 +1585,10 @@ func applyExecInputPayload(opts *wuuexec.Options, input *execInputPayload) error
 	}
 	if opts.ApprovalHandler != "" && opts.ApprovalSocket != "" {
 		return errors.New("approval_handler and approval_socket cannot be used together")
+	}
+	opts.Approvals = append(opts.Approvals, input.Approve...)
+	if input.NoApprovalPrompt != nil && !opts.NoApprovalPrompt {
+		opts.NoApprovalPrompt = *input.NoApprovalPrompt
 	}
 	if err := validateToolOverrideFlags(opts.AllowTools, opts.DenyTools); err != nil {
 		return err

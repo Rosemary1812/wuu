@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	osexec "os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
@@ -29,30 +30,111 @@ func newServerRequestHandler(opts Options) (ServerRequestHandler, error) {
 		return func(ctx context.Context, req ServerRequest) ServerRequestResult {
 			return runApprovalSocketRequest(ctx, socket, req)
 		}, nil
-	default:
-		return denyApprovalsRequestHandler, nil
 	}
-}
 
-// denyApprovalsRequestHandler answers approval requests when exec runs
-// without --approval-handler/--approval-socket. It returns an explicit
-// denied decision instead of a protocol error: the error path tells the
-// model to "ask the user", which is impossible mid-run in a
-// non-interactive exec and sends it chasing approval mechanisms that do
-// not exist here.
-func denyApprovalsRequestHandler(_ context.Context, req ServerRequest) ServerRequestResult {
-	if req.Method == appserver.MethodToolApprovalRequest {
+	// Without an external handler, exec still answers approvals itself,
+	// from most to least specific:
+	//  1. --approve grants: pre-approve exactly the named calls
+	//     (matched by stable approval key, request id, or arguments
+	//     hash), which is how a caller re-runs after a headless denial.
+	//  2. a controlling terminal: prompt the human inline - a run
+	//     attached to a TTY is not actually unattended.
+	//  3. otherwise deny with a decision (not a protocol error) whose
+	//     reason tells the model to report the blocked call and tells
+	//     the caller how to grant it on the next run.
+	grants := newApprovalGrants(opts.Approvals)
+	var prompter *ttyApprovalPrompter
+	if !opts.NoApprovalPrompt {
+		prompter = newTTYApprovalPrompter()
+	}
+	return func(ctx context.Context, req ServerRequest) ServerRequestResult {
+		if req.Method != appserver.MethodToolApprovalRequest {
+			return ServerRequestResult{Error: &appserver.ResponseError{
+				Code:    "non_interactive_unavailable",
+				Message: fmt.Sprintf("non-interactive exec cannot handle app-server request %q", req.Method),
+			}}
+		}
+		var request appserver.ToolApprovalRequest
+		_ = json.Unmarshal(req.Params, &request)
+		if grants.matches(request) {
+			return ServerRequestResult{Result: appserver.ToolApprovalResponse{
+				Decision: string(tools.ToolApprovalDecisionApprovedForSession),
+				Reason:   "pre-approved by the caller via --approve",
+			}}
+		}
+		if prompter != nil {
+			if response, ok := prompter.prompt(request); ok {
+				return ServerRequestResult{Result: response}
+			}
+		}
 		return ServerRequestResult{Result: appserver.ToolApprovalResponse{
 			Decision: string(tools.ToolApprovalDecisionDenied),
-			Reason: "approval prompts are unavailable in this non-interactive run; " +
-				"do not retry this call or look for an approval mechanism - " +
-				"use an alternative allowed by the current permissions, or finish and report the exact blocked action so the caller can rerun with --approval-handler",
+			Reason:   headlessApprovalDenyReason(request),
 		}}
+	}, nil
+}
+
+// headlessApprovalDenyReason is what the model reads when a tool call
+// needs approval and nothing in this run can grant it. It must both stop
+// the model from chasing approval mechanisms that do not exist here and
+// carry the exact token the human caller needs to grant this call on a
+// rerun.
+func headlessApprovalDenyReason(request appserver.ToolApprovalRequest) string {
+	reason := "approval prompts are unavailable in this unattended run; " +
+		"do not retry this call or look for an approval mechanism - " +
+		"use an alternative allowed by the current permissions, or finish and report the exact blocked action to the caller"
+	if key := strings.TrimSpace(request.ApprovalKey); key != "" {
+		reason += fmt.Sprintf("; the caller can grant exactly this call by rerunning with: wuu exec resume --last --approve %s", key)
+	} else {
+		reason += "; the caller can grant it by rerunning with --approval-handler or --allow-tool"
 	}
-	return ServerRequestResult{Error: &appserver.ResponseError{
-		Code:    "non_interactive_unavailable",
-		Message: fmt.Sprintf("non-interactive exec cannot handle app-server request %q", req.Method),
-	}}
+	return reason
+}
+
+// approvalGrants holds the --approve tokens for this run. A token
+// matches a request by its stable approval key (tool name + arguments
+// hash), by the request id, by the bare arguments hash, or by the
+// basename of the persisted approval artifact - whatever identifier the
+// caller happened to copy out of the previous run.
+type approvalGrants struct {
+	tokens map[string]struct{}
+}
+
+func newApprovalGrants(tokens []string) approvalGrants {
+	grants := approvalGrants{tokens: map[string]struct{}{}}
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		grants.tokens[token] = struct{}{}
+	}
+	return grants
+}
+
+func (g approvalGrants) matches(request appserver.ToolApprovalRequest) bool {
+	if len(g.tokens) == 0 {
+		return false
+	}
+	candidates := []string{
+		request.ApprovalKey,
+		request.ID,
+		request.ArgumentsSHA256,
+	}
+	if ref := strings.TrimSpace(request.ApprovalRef); ref != "" {
+		base := filepath.Base(ref)
+		candidates = append(candidates, base, strings.TrimSuffix(base, filepath.Ext(base)))
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := g.tokens[candidate]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func runApprovalHandlerCommand(ctx context.Context, command string, req ServerRequest) ServerRequestResult {

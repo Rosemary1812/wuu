@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
@@ -109,8 +110,29 @@ func decodeApprovalHandlerResult(t *testing.T, result any) appserver.ToolApprova
 	return response
 }
 
+func approvalChainTestRequest(t *testing.T) ServerRequest {
+	t.Helper()
+	params, err := json.Marshal(appserver.ToolApprovalRequest{
+		ID:              "approval-1",
+		ToolName:        "bash",
+		ArgumentsSHA256: "sha-1",
+		ApprovalKey:     "bash:sha-1",
+		ApprovalRef:     "/sessions/s1/approvals/approval-1.json",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	return ServerRequest{
+		ID:     json.RawMessage(`"server-1"`),
+		Method: appserver.MethodToolApprovalRequest,
+		Params: params,
+	}
+}
+
 func TestDefaultRequestHandlerDeniesApprovalsWithReason(t *testing.T) {
-	handler, err := newServerRequestHandler(Options{})
+	// NoApprovalPrompt keeps the test deterministic when the test
+	// process itself has a controlling terminal.
+	handler, err := newServerRequestHandler(Options{NoApprovalPrompt: true})
 	if err != nil {
 		t.Fatalf("newServerRequestHandler: %v", err)
 	}
@@ -118,7 +140,7 @@ func TestDefaultRequestHandlerDeniesApprovalsWithReason(t *testing.T) {
 		t.Fatal("exec without approval handler should still answer approval requests")
 	}
 
-	result := handler(context.Background(), approvalHandlerTestRequest(t))
+	result := handler(context.Background(), approvalChainTestRequest(t))
 	if result.Error != nil {
 		t.Fatalf("approval request should get a decision, not a protocol error: %+v", result.Error)
 	}
@@ -129,6 +151,9 @@ func TestDefaultRequestHandlerDeniesApprovalsWithReason(t *testing.T) {
 	if response.Reason == "" {
 		t.Fatal("denied decision must carry a model-facing reason")
 	}
+	if !strings.Contains(response.Reason, "--approve bash:sha-1") {
+		t.Fatalf("denied reason should carry the rerun grant recipe, got %q", response.Reason)
+	}
 
 	other := handler(context.Background(), ServerRequest{
 		ID:     json.RawMessage(`"server-2"`),
@@ -136,5 +161,47 @@ func TestDefaultRequestHandlerDeniesApprovalsWithReason(t *testing.T) {
 	})
 	if other.Error == nil || other.Error.Code != "non_interactive_unavailable" {
 		t.Fatalf("non-approval requests should keep the protocol error, got %+v", other)
+	}
+}
+
+func TestApprovalGrantsApproveMatchingRequestForSession(t *testing.T) {
+	for name, tc := range map[string]struct {
+		grants []string
+		want   string
+	}{
+		"key":  {[]string{"bash:sha-1"}, "approved_for_session"},
+		"id":   {[]string{"approval-1"}, "approved_for_session"},
+		"sha":  {[]string{"sha-1"}, "approved_for_session"},
+		"ref":  {[]string{"approval-1.json"}, "approved_for_session"},
+		"miss": {[]string{"bash:other"}, "denied"},
+	} {
+		handler, err := newServerRequestHandler(Options{NoApprovalPrompt: true, Approvals: tc.grants})
+		if err != nil {
+			t.Fatalf("%s: newServerRequestHandler: %v", name, err)
+		}
+		result := handler(context.Background(), approvalChainTestRequest(t))
+		if result.Error != nil {
+			t.Fatalf("%s: unexpected protocol error: %+v", name, result.Error)
+		}
+		response := decodeApprovalHandlerResult(t, result.Result)
+		if response.Decision != tc.want {
+			t.Fatalf("%s: decision = %q, want %q", name, response.Decision, tc.want)
+		}
+	}
+}
+
+func TestApprovalResponseForAnswer(t *testing.T) {
+	for answer, want := range map[string]string{
+		"y":      "approved",
+		"YES\n":  "approved",
+		"a":      "approved_for_session",
+		"always": "approved_for_session",
+		"n":      "denied",
+		"":       "denied",
+		"junk":   "denied",
+	} {
+		if got := approvalResponseForAnswer(answer); got.Decision != want {
+			t.Fatalf("answer %q: decision = %q, want %q", answer, got.Decision, want)
+		}
 	}
 }

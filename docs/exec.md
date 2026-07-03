@@ -187,6 +187,8 @@ Current implemented flags:
 --deny-tool <name>
 --approval-handler <command>
 --approval-socket <path>
+--approve <approval-key>
+--no-approval-prompt
 --file <path>
 --image <path>
 --no-tools
@@ -243,6 +245,41 @@ same response shape.
 socket, one newline-delimited object per approval request. `--approval-handler`
 and `--approval-socket` are mutually exclusive.
 
+## Approvals Without a Handler
+
+When neither `--approval-handler` nor `--approval-socket` is set, exec answers
+approval requests itself, from most to least specific:
+
+1. **`--approve <key>` grants.** Repeatable. Pre-approves exactly the named
+   calls for this run, matched by the stable `approval_key`
+   (`<tool>:<arguments-sha256>`), the request id, the bare arguments hash, or
+   the approval artifact filename. Because the key hashes the tool name and
+   arguments, it stays the same when the model retries the same command in a
+   resumed session.
+2. **Terminal prompt.** If the process has a controlling terminal
+   (`/dev/tty`), exec asks inline — `[y]es once / [a]lways this session /
+   [N]o` — and forwards the human's decision. CI, cron, and detached runs have
+   no terminal and skip this step; `--no-approval-prompt` disables it
+   explicitly.
+3. **Deny with a grant recipe.** The call is denied with a reason that tells
+   the model to stop and report the blocked action, and tells the caller how
+   to grant it on the next run.
+
+The unattended retry loop looks like:
+
+```bash
+wuu exec --json "run go vet and fix what it reports"
+# → result status "permission_denied"; the denial reason and the
+#   approval_requested JSONL event both carry the approval_key
+
+wuu exec resume --last --approve bash:2fd4e1c6... "vet is approved now, continue"
+```
+
+Machine callers can automate this loop: the `approval_requested` event's
+`request.approval_key` field is the exact token `--approve` expects. Broad
+alternatives remain `--allow-tool <name>` (allow a whole tool for the run) and
+`--permission-mode full_access`.
+
 ## Session Inspection
 
 Agent-facing session inspection lives under `wuu session`:
@@ -266,6 +303,10 @@ workspace-scoped artifacts Wuu can locate for that thread.
 
 ## Safety
 
-`wuu exec` runs through the normal Wuu permission model. Non-interactive runs
-must fail closed when they need approval and no approval handler is available.
-They must not silently approve destructive work.
+`wuu exec` runs through the normal Wuu permission model. Unattended runs
+must fail closed when they need approval and nothing can answer it: without a
+handler, a matching `--approve` grant, or a human at the terminal, the call is
+denied. Approvals are never granted silently — every grant is either an
+explicit caller token, a handler decision, or an interactive human answer, and
+each one is recorded in the JSONL stream as `approval_requested` /
+`approval_resolved` events.

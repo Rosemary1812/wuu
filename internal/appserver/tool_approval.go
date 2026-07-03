@@ -31,6 +31,11 @@ type ToolApprovalRequest struct {
 	ArgumentsSHA256      string   `json:"arguments_sha256,omitempty"`
 	ArgumentsPreview     string   `json:"arguments_preview,omitempty"`
 	ApprovalRef          string   `json:"approval_ref,omitempty"`
+	// ApprovalKey is the stable identity of this call (tool name +
+	// arguments hash). It stays the same when the model retries the
+	// same command in a later turn or resumed session, so callers can
+	// grant exactly this call ahead of time (wuu exec --approve <key>).
+	ApprovalKey string `json:"approval_key,omitempty"`
 	Permission           string   `json:"permission,omitempty"`
 	PermissionPatterns   []string `json:"permission_patterns,omitempty"`
 	PermissionAlways     []string `json:"permission_always,omitempty"`
@@ -94,6 +99,7 @@ func (s *Server) installToolApprovalReviewerForPermissions(kit *tools.Toolkit, p
 			ArgumentsSHA256:      request.ArgumentsSHA256,
 			ArgumentsPreview:     request.ArgumentsPreview,
 			ApprovalRef:          request.ApprovalRef,
+			ApprovalKey:          request.ApprovalKey,
 			Permission:           request.Permission,
 			PermissionPatterns:   request.PermissionPatterns,
 			PermissionAlways:     request.PermissionAlways,

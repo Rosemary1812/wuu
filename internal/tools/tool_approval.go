@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -289,7 +290,7 @@ func (e toolApprovalReviewError) Unwrap() error {
 
 func toolApprovalKey(call providers.ToolCall) string {
 	name := strings.TrimSpace(call.Name)
-	hash := toolArgumentsSHA256(call.Arguments)
+	hash := toolArgumentsSHA256(canonicalApprovalArguments(call.Arguments))
 	if name == "" {
 		return hash
 	}
@@ -297,6 +298,34 @@ func toolApprovalKey(call providers.ToolCall) string {
 		return name
 	}
 	return name + ":" + hash
+}
+
+// canonicalApprovalArguments reduces a call's arguments to the fields
+// that decide what the call will do. Command-style tools carry free-text
+// companions (purpose, timeout_seconds) that models rephrase on every
+// retry; hashing them would mint a new approval key for the same command
+// each attempt, breaking session approvals and exec --approve grants.
+func canonicalApprovalArguments(argsJSON string) string {
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return argsJSON
+	}
+	command, ok := args["command"].(string)
+	if !ok || strings.TrimSpace(command) == "" {
+		return argsJSON
+	}
+	binding := map[string]any{"command": command}
+	for _, key := range []string{"action", "cwd", "workdir"} {
+		if value, exists := args[key]; exists {
+			binding[key] = value
+		}
+	}
+	// json.Marshal sorts map keys, so the canonical form is stable.
+	data, err := json.Marshal(binding)
+	if err != nil {
+		return argsJSON
+	}
+	return string(data)
 }
 
 func approvalArgumentsPreview(arguments string) string {
