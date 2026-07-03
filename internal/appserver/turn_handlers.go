@@ -20,6 +20,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -39,6 +40,23 @@ type agentCompletionTurn struct {
 	resultID string
 	msg      providers.ChatMessage
 }
+
+type startedThreadTurn struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	turnID  string
+	turn    Turn
+	runtime turnRuntimeSnapshot
+	history []providers.ChatMessage
+}
+
+type turnReadOnlyPolicy int
+
+const (
+	turnReadOnlyIgnore turnReadOnlyPolicy = iota
+	turnReadOnlySkip
+	turnReadOnlyFail
+)
 
 type turnRuntimeSnapshot struct {
 	ProviderName       string
@@ -84,46 +102,37 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
-	turnID := session.NewID()
-	turnCtx, cancel := context.WithCancel(ctx)
 	userMsg := userMessageFromPrompt(params.Prompt, images, files)
-	now := time.Now().UTC()
-
+	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
+	snapshot.PermissionExplicit = params.PermissionMode != nil
+	startTurn := s.startThreadUserTurn
 	th.mu.Lock()
-	if th.running {
-		th.mu.Unlock()
-		cancel()
+	isResidentDM := strings.TrimSpace(th.DMParticipantID) != ""
+	th.mu.Unlock()
+	if isResidentDM {
+		startTurn = s.startResidentTurn
+	}
+	started, ok, err := startTurn(ctx, th, userMsg, snapshot, true, turnReadOnlyIgnore)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !ok {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
 	}
-	if th.PersistHistory {
-		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
-			th.mu.Unlock()
-			cancel()
-			return s.writeResponse(req.ID, nil, err)
-		}
-	}
-	history := cloneHistory(th.History)
-	history = append(history, userMsg)
-	th.History = history
-	th.cancel = cancel
-	turn := th.startTurnLocked(turnID, userMsg, now)
-	turnRuntime := turnRuntimeSnapshotLocked(th).withPermissions(permissions)
-	turnRuntime.PermissionExplicit = params.PermissionMode != nil
-	th.mu.Unlock()
 
-	if err := s.writeResponse(req.ID, TurnStartResult{Turn: turn}, nil); err != nil {
-		cancel()
+	if err := s.writeResponse(req.ID, TurnStartResult{Turn: started.turn}, nil); err != nil {
+		started.cancel()
 		return err
 	}
 	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: params.ThreadID,
-		Turn:     turn,
+		Turn:     started.turn,
 	}); err != nil {
-		cancel()
+		started.cancel()
 		return err
 	}
 
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
+	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
 	return nil
 }
 
@@ -343,10 +352,16 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	}
 	th.mu.Lock()
 	existing := th.execRuntime
+	running := th.running
 	history := cloneHistory(th.History)
 	rootDir := th.CWD
 	th.mu.Unlock()
 	if existing != nil {
+		if !running {
+			if err := s.configureResidentThreadRuntime(th, existing); err != nil {
+				return nil, err
+			}
+		}
 		return existing, nil
 	}
 	if s.rt == nil {
@@ -363,6 +378,10 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		}
 	}
 	sub := s.subscribeThreadRuntime(th.ID, threadRuntime)
+	if err := s.configureResidentThreadRuntime(th, threadRuntime); err != nil {
+		releaseThreadRuntimeSubscription(threadRuntime, sub)
+		return nil, err
+	}
 	th.mu.Lock()
 	if th.execRuntime == nil {
 		th.execRuntime = threadRuntime
@@ -374,6 +393,87 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	th.mu.Unlock()
 	releaseThreadRuntimeSubscription(threadRuntime, sub)
 	return existing, nil
+}
+
+func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *runtime.ThreadRuntime) error {
+	if s == nil || s.rt == nil || th == nil || threadRuntime == nil {
+		return nil
+	}
+	th.mu.Lock()
+	participantID := strings.TrimSpace(th.DMParticipantID)
+	running := th.running
+	th.mu.Unlock()
+	if participantID == "" || running {
+		return nil
+	}
+	p, err := session.GetParticipant(s.rt.SessionDir, participantID)
+	if err != nil {
+		return err
+	}
+	if p.Kind != participant.KindNamed {
+		return fmt.Errorf("dm participant %q is not a named agent", participantID)
+	}
+	prompt, err := s.residentPromptForParticipant(p)
+	if err != nil {
+		return err
+	}
+
+	providerName := strings.TrimSpace(s.rt.ProviderName)
+	modelName := strings.TrimSpace(s.rt.Model)
+	apiModel := ""
+	var client providers.StreamClient
+	if s.rt.StreamRunner != nil {
+		if modelName == "" {
+			modelName = strings.TrimSpace(s.rt.StreamRunner.Model)
+		}
+		apiModel = strings.TrimSpace(s.rt.StreamRunner.APIModel)
+		client = s.rt.StreamRunner.Client
+	}
+	if apiModel == "" {
+		apiModel = modelName
+	}
+	if rawPin := strings.TrimSpace(p.Model); rawPin != "" {
+		pinProvider, _ := parseParticipantModelPin(rawPin)
+		modelOverride, clientOverride, err := resolveParticipantModelOverride(
+			&runtimeSessionReference{configPath: s.rt.ConfigPath},
+			p.Name,
+			rawPin,
+			providerName,
+		)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(pinProvider) != "" {
+			providerName = strings.TrimSpace(pinProvider)
+		}
+		if strings.TrimSpace(modelOverride) != "" {
+			modelName = strings.TrimSpace(modelOverride)
+			apiModel = modelName
+		}
+		if clientOverride != nil {
+			client = clientOverride
+		}
+	}
+	if threadRuntime.StreamRunner != nil {
+		if client != nil {
+			threadRuntime.StreamRunner.Client = client
+		}
+		if modelName != "" {
+			threadRuntime.StreamRunner.Model = modelName
+		}
+		threadRuntime.StreamRunner.APIModel = apiModel
+		threadRuntime.StreamRunner.UpdateSystemPrompt(prompt)
+	}
+	th.mu.Lock()
+	if !th.running {
+		th.ModelProvider = providerName
+		if modelName != "" {
+			th.Model = modelName
+		}
+		th.History = ensureResidentSystemPrompt(th.History, prompt)
+	}
+	th.mu.Unlock()
+	return nil
 }
 
 func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) *threadRuntimeSubscription {
@@ -1404,6 +1504,74 @@ func (s *Server) drainQueuedTurns(threadID string) {
 	}
 }
 
+func (s *Server) startResidentTurn(ctx context.Context, th *threadState, userMsg providers.ChatMessage, snapshot turnRuntimeSnapshot, failIfRunning bool, readOnlyPolicy turnReadOnlyPolicy) (startedThreadTurn, bool, error) {
+	return s.startThreadUserTurn(ctx, th, userMsg, snapshot, failIfRunning, readOnlyPolicy)
+}
+
+func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userMsg providers.ChatMessage, snapshot turnRuntimeSnapshot, failIfRunning bool, readOnlyPolicy turnReadOnlyPolicy) (startedThreadTurn, bool, error) {
+	if th == nil {
+		return startedThreadTurn{}, false, errors.New("thread is required")
+	}
+	if strings.TrimSpace(userMsg.Role) == "" {
+		userMsg.Role = "user"
+	}
+	if !chatMessageHasUserPayload(userMsg) {
+		return startedThreadTurn{}, false, nil
+	}
+	turnID := session.NewID()
+	turnCtx, cancel := context.WithCancel(ctx)
+	now := time.Now().UTC()
+
+	th.mu.Lock()
+	if th.running {
+		th.mu.Unlock()
+		cancel()
+		if failIfRunning {
+			return startedThreadTurn{}, false, fmt.Errorf("thread %q already has a running turn", th.ID)
+		}
+		return startedThreadTurn{}, false, nil
+	}
+	if th.ReadOnly {
+		switch readOnlyPolicy {
+		case turnReadOnlyFail:
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, errors.New("thread is read-only")
+		case turnReadOnlySkip:
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, nil
+		}
+	}
+	if th.PersistHistory {
+		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, err
+		}
+	}
+	history := cloneHistory(th.History)
+	history = append(history, userMsg)
+	th.History = history
+	th.cancel = cancel
+	turn := th.startTurnLocked(turnID, userMsg, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
+	if snapshot.hasPermissions() || snapshot.PermissionExplicit {
+		turnRuntime = turnRuntime.withPermissions(snapshot.permissions())
+		turnRuntime.PermissionExplicit = snapshot.PermissionExplicit
+	}
+	th.mu.Unlock()
+
+	return startedThreadTurn{
+		ctx:     turnCtx,
+		cancel:  cancel,
+		turnID:  turnID,
+		turn:    turn,
+		runtime: turnRuntime,
+		history: history,
+	}, true, nil
+}
+
 func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry queuedTurn) (bool, error) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
@@ -1438,43 +1606,19 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 		}
 	}
 
-	turnID := session.NewID()
-	turnCtx, cancel := context.WithCancel(ctx)
-	now := time.Now().UTC()
-
-	th.mu.Lock()
-	if th.running {
-		th.mu.Unlock()
-		cancel()
-		return false, nil
+	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
+	snapshot.PermissionExplicit = entry.snapshot.PermissionExplicit
+	started, ok, err := s.startThreadUserTurn(ctx, th, entry.msg, snapshot, false, turnReadOnlyFail)
+	if err != nil || !ok {
+		return ok, err
 	}
-	if th.ReadOnly {
-		th.mu.Unlock()
-		cancel()
-		return false, errors.New("thread is read-only")
-	}
-	if th.PersistHistory {
-		if err := appendChatMessage(s.rt.SessionDir, th.ID, entry.msg); err != nil {
-			th.mu.Unlock()
-			cancel()
-			return false, err
-		}
-	}
-	history := cloneHistory(th.History)
-	history = append(history, entry.msg)
-	th.History = history
-	th.cancel = cancel
-	turn := th.startTurnLocked(turnID, entry.msg, now)
-	turnRuntime := turnRuntimeSnapshotLocked(th).withPermissions(permissions)
-	turnRuntime.PermissionExplicit = entry.snapshot.PermissionExplicit
-	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
-		Turn:     turn,
+		Turn:     started.turn,
 		QueueID:  entry.id,
 	})
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
+	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
 	return true, nil
 }
 
@@ -1654,41 +1798,16 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 		return false, err
 	}
 
-	turnID := session.NewID()
-	turnCtx, cancel := context.WithCancel(ctx)
-	now := time.Now().UTC()
-
-	th.mu.Lock()
-	if th.running {
-		th.mu.Unlock()
-		cancel()
-		return false, nil
+	started, ok, err := s.startThreadUserTurn(ctx, th, userMsg, turnRuntimeSnapshot{}, false, turnReadOnlySkip)
+	if err != nil || !ok {
+		return ok, err
 	}
-	if th.ReadOnly {
-		th.mu.Unlock()
-		cancel()
-		return false, nil
-	}
-	if th.PersistHistory {
-		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
-			th.mu.Unlock()
-			cancel()
-			return false, err
-		}
-	}
-	history := cloneHistory(th.History)
-	history = append(history, userMsg)
-	th.History = history
-	th.cancel = cancel
-	turn := th.startTurnLocked(turnID, userMsg, now)
-	turnRuntime := turnRuntimeSnapshotLocked(th)
-	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
-		Turn:     turn,
+		Turn:     started.turn,
 	})
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
+	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
 	return true, nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -137,11 +136,6 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 	agentProfile := strings.TrimSpace(params.AgentProfile)
 	description := strings.TrimSpace(params.Description)
 	taskName := strings.TrimSpace(params.TaskName)
-	var (
-		modelOverride  string
-		clientOverride providers.StreamClient
-		modelPin       string
-	)
 	if participantID != "" {
 		p, err := session.GetParticipant(s.rt.SessionDir, participantID)
 		if err != nil {
@@ -162,36 +156,11 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		if agentProfile == "" {
 			agentProfile = p.Name
 		}
-		memory := ""
-		if path := participantMemoryPath(p.Workspace); path != "" {
-			if data, err := os.ReadFile(path); err == nil {
-				memory = string(data)
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return s.writeResponse(req.ID, nil, fmt.Errorf("read participant memory: %w", err))
-			}
+		memory, err := s.readParticipantMemory(p)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
 		}
 		prompt = namedParticipantPrompt(p, memory, prompt)
-
-		// Per-participant model pin (named participants only). Pins
-		// without a colon override just the model on the worker's
-		// current provider; pins with a colon that target a
-		// different provider install a dedicated stream client for
-		// this single run. Errors must not be swallowed: a bad pin
-		// is a config problem the user has to fix.
-		modelPin = strings.TrimSpace(p.Model)
-		if modelPin != "" {
-			workerProvider := workerProviderName(s.rt)
-			var pinErr error
-			modelOverride, clientOverride, pinErr = resolveParticipantModelOverride(
-				&runtimeSessionReference{configPath: s.rt.ConfigPath},
-				p.Name,
-				modelPin,
-				workerProvider,
-			)
-			if pinErr != nil {
-				return s.writeResponse(req.ID, nil, pinErr)
-			}
-		}
 	}
 	if subagentType == "" {
 		subagentType = agentcontrol.DefaultSubagentType
@@ -237,9 +206,6 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		SpeechCapability: true,
 		Isolation:        strings.TrimSpace(params.Isolation),
 		Synchronous:      false,
-		ModelOverride:    modelOverride,
-		ClientOverride:   clientOverride,
-		ModelPin:         modelPin,
 	})
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -301,27 +267,6 @@ func participantRunSummary(values ...string) string {
 		return summary
 	}
 	return ""
-}
-
-func namedParticipantPrompt(p participant.Participant, memory, prompt string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "You are %s, a long-running named agent in this workspace.", p.Name)
-	if role := strings.TrimSpace(p.Role); role != "" {
-		fmt.Fprintf(&b, " Your role is %s.", role)
-	}
-	b.WriteString("\n")
-	if tagline := strings.TrimSpace(p.Tagline); tagline != "" {
-		fmt.Fprintf(&b, "How your teammates describe you: %s\n", tagline)
-	}
-	if memory = strings.TrimSpace(memory); memory != "" {
-		b.WriteString("\n## Your memory\nNotes you kept from previous work. Trust them, but verify anything that may have gone stale:\n\n")
-		b.WriteString(memory)
-		b.WriteString("\n")
-	}
-	b.WriteString("\n## Request\n")
-	b.WriteString(strings.TrimSpace(prompt))
-	b.WriteString("\n\nIf the user asks you to set up, adjust, or retire other named agents, use the manage_participant tool instead of describing the steps.\n\nWhen you are done, post your conclusion with post_message (kind=result). If you are blocked on the user, ask with post_message (kind=question). If no response is actually needed, call decline with a one-line reason. Never end the turn silently.")
-	return b.String()
 }
 
 func deriveParticipantTaskName(description, prompt, subagentType string) string {

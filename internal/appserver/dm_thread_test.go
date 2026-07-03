@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -201,6 +202,69 @@ func TestThreadStartWithDMParticipantUsesAgentHome(t *testing.T) {
 	if start.Thread.CWD == rt.RootDir {
 		t.Fatalf("DM thread CWD = RootDir %q; should live in per-agent home", rt.RootDir)
 	}
+}
+
+func TestDMTurnStartUsesResidentConversationHistory(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{Content: "first answer"},
+			{Content: "second answer"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	participantID := saveNamedParticipant(t, rt, "Hana", "general-purpose", "")
+
+	raw := fmt.Sprintf(`{"id":"start","method":"thread/start","params":{"dm_participant_id":%q}}`, participantID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "start")["result"]).Thread.ID
+
+	first := fmt.Sprintf(`{"id":"turn-1","method":"turn/start","params":{"thread_id":%q,"prompt":"first question"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(first)); err != nil {
+		t.Fatalf("first turn/start: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+
+	second := fmt.Sprintf(`{"id":"turn-2","method":"turn/start","params":{"thread_id":%q,"prompt":"second question"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(second)); err != nil {
+		t.Fatalf("second turn/start: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 2)
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if len(requests) < 2 {
+		t.Fatalf("expected two provider requests, got %d", len(requests))
+	}
+	secondReq := requests[1]
+	if len(secondReq.Messages) < 4 {
+		t.Fatalf("second request should include resident history, got %+v", secondReq.Messages)
+	}
+	if secondReq.Messages[0].Role != "system" || !strings.Contains(secondReq.Messages[0].Content, "resident named agent") {
+		t.Fatalf("second request should use resident system prompt, got %+v", secondReq.Messages[0])
+	}
+	if !requestContainsMessage(secondReq, "user", "first question") {
+		t.Fatalf("second request missing first DM user message: %+v", secondReq.Messages)
+	}
+	if !requestContainsMessage(secondReq, "assistant", "first answer") {
+		t.Fatalf("second request missing first assistant answer: %+v", secondReq.Messages)
+	}
+	if !requestContainsMessage(secondReq, "user", "second question") {
+		t.Fatalf("second request missing second DM user message: %+v", secondReq.Messages)
+	}
+}
+
+func requestContainsMessage(req providers.ChatRequest, role, content string) bool {
+	for _, msg := range req.Messages {
+		if msg.Role == role && strings.Contains(msg.Content, content) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWorkspaceKindForCWDDetectsAgentHome(t *testing.T) {

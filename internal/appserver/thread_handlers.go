@@ -57,7 +57,6 @@ func (s *Server) handleThreadStart(req Request) error {
 	if dmParticipantID != "" && params.Ephemeral {
 		return s.writeResponse(req.ID, nil, errors.New("dm threads cannot be ephemeral"))
 	}
-	var dmParticipantName string
 	if dmParticipantID != "" {
 		p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID)
 		if err != nil {
@@ -66,44 +65,36 @@ func (s *Server) handleThreadStart(req Request) error {
 		if p.Kind != participant.KindNamed {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q is not a named agent", dmParticipantID))
 		}
-		dmParticipantName = p.Name
+		th, err := s.createResidentDMThreadState(p, session.NewID(), time.Now().UTC())
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		s.mu.Lock()
+		s.threads[th.ID] = th
+		s.mu.Unlock()
+
+		th.mu.Lock()
+		thread := th.snapshotLocked()
+		th.mu.Unlock()
+		if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
+			return err
+		}
+		if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+			Thread: thread,
+		}); err != nil {
+			return err
+		}
+		s.pruneResidentThreads(thread.ID)
+		return nil
 	}
+
 	id := session.NewID()
 	persistHistory := !params.Ephemeral
-	// DM threads live in a per-agent home directory under wuu's own state
-	// root, never the active project's RootDir. The home dir is created on
-	// demand so list/find have a real path to point at.
-	var threadCWD string
-	var workspaceKind WorkspaceKind
-	if dmParticipantID != "" {
-		wuuHome := strings.TrimSpace(s.rt.WuuHome)
-		if wuuHome == "" {
-			home, err := statepath.Home("")
-			if err != nil {
-				return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q: resolve wuu home: %w", dmParticipantID, err))
-			}
-			wuuHome = home
-		}
-		threadCWD = statepath.AgentHomeDir(wuuHome, dmParticipantID)
-		if err := os.MkdirAll(threadCWD, 0o755); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("dm participant %q: create agent home: %w", dmParticipantID, err))
-		}
-		workspaceKind = WorkspaceKindDM
-	} else {
-		threadCWD = s.rt.RootDir
-		workspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
-	}
+	threadCWD := s.rt.RootDir
+	workspaceKind := workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
 	if !params.Ephemeral {
 		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 			return s.writeResponse(req.ID, nil, err)
-		}
-		if dmParticipantID != "" {
-			if _, err := session.BindDMParticipant(s.rt.SessionDir, id, dmParticipantID); err != nil {
-				return s.writeResponse(req.ID, nil, err)
-			}
-			if _, err := session.UpdateTitle(s.rt.SessionDir, id, dmParticipantName); err != nil {
-				return s.writeResponse(req.ID, nil, err)
-			}
 		}
 	} else {
 		id = "ephemeral-" + id
@@ -115,8 +106,6 @@ func (s *Server) handleThreadStart(req Request) error {
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, persistHistory, time.Now().UTC())
 	th.WorkspaceKind = workspaceKind
 	th.Ephemeral = params.Ephemeral
-	th.DMParticipantID = dmParticipantID
-	th.Title = dmParticipantName
 
 	s.mu.Lock()
 	s.threads[id] = th
@@ -135,6 +124,46 @@ func (s *Server) handleThreadStart(req Request) error {
 	}
 	s.pruneResidentThreads(thread.ID)
 	return nil
+}
+
+func (s *Server) createResidentDMThreadState(p participant.Participant, id string, now time.Time) (*threadState, error) {
+	if p.Kind != participant.KindNamed {
+		return nil, fmt.Errorf("dm participant %q is not a named agent", p.ID)
+	}
+	wuuHome := strings.TrimSpace(s.rt.WuuHome)
+	if wuuHome == "" {
+		home, err := statepath.Home("")
+		if err != nil {
+			return nil, fmt.Errorf("dm participant %q: resolve wuu home: %w", p.ID, err)
+		}
+		wuuHome = home
+	}
+	threadCWD := statepath.AgentHomeDir(wuuHome, p.ID)
+	if err := os.MkdirAll(threadCWD, 0o755); err != nil {
+		return nil, fmt.Errorf("dm participant %q: create agent home: %w", p.ID, err)
+	}
+	prompt, err := s.residentPromptForParticipant(p)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(id) == "" {
+		id = session.NewID()
+	}
+	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
+		return nil, err
+	}
+	if _, err := session.BindDMParticipant(s.rt.SessionDir, id, p.ID); err != nil {
+		return nil, err
+	}
+	if _, err := session.UpdateTitle(s.rt.SessionDir, id, p.Name); err != nil {
+		return nil, err
+	}
+	history := []providers.ChatMessage{{Role: "system", Content: prompt}}
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, true, now)
+	th.WorkspaceKind = WorkspaceKindDM
+	th.DMParticipantID = p.ID
+	th.Title = p.Name
+	return th, nil
 }
 
 func (s *Server) handleThreadResume(req Request) error {
@@ -223,6 +252,53 @@ func (s *Server) ensureResidentThread(id string) (*threadState, error) {
 	return th, nil
 }
 
+func (s *Server) ensureResidentDMThread(participantID string) (*threadState, error) {
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" {
+		return nil, errors.New("participant_id is required")
+	}
+	s.mu.Lock()
+	threads := make([]*threadState, 0, len(s.threads))
+	for _, th := range s.threads {
+		threads = append(threads, th)
+	}
+	s.mu.Unlock()
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		th.mu.Lock()
+		matches := strings.TrimSpace(th.DMParticipantID) == participantID
+		th.mu.Unlock()
+		if matches {
+			return th, nil
+		}
+	}
+
+	sessions, err := session.List(s.rt.SessionDir, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, sess := range sessions {
+		if strings.TrimSpace(sess.DMParticipantID) != participantID {
+			continue
+		}
+		return s.ensureResidentThread(sess.ID)
+	}
+
+	p, err := session.GetParticipant(s.rt.SessionDir, participantID)
+	if err != nil {
+		return nil, err
+	}
+	th, err := s.createResidentDMThreadState(p, session.NewID(), time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	th = s.addResidentThread(th)
+	s.pruneResidentThreads(th.ID)
+	return th, nil
+}
+
 func (s *Server) addResidentThread(th *threadState) *threadState {
 	if th == nil {
 		return nil
@@ -241,9 +317,11 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 	if id == "" {
 		return nil, errors.New("thread_id is required")
 	}
-	if _, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
+	metadata, ok, err := session.Find(s.rt.SessionDir, id)
+	if err != nil {
 		return nil, err
-	} else if !ok {
+	}
+	if !ok {
 		return nil, session.ErrSessionNotFound
 	}
 	history, err := loadChatMessages(s.rt.SessionDir, id)
@@ -259,8 +337,24 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 			return nil, err
 		}
 	}
-	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
+	systemPrompt := s.rt.StreamRunner.SystemPrompt
+	if participantID := strings.TrimSpace(metadata.DMParticipantID); participantID != "" {
+		p, err := session.GetParticipant(s.rt.SessionDir, participantID)
+		if err != nil {
+			return nil, err
+		}
+		systemPrompt, err = s.residentPromptForParticipant(p)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if strings.TrimSpace(metadata.DMParticipantID) != "" {
+		history = ensureResidentSystemPrompt(repaired, systemPrompt)
+	} else {
+		history = ensureBaseSystemPrompt(repaired, systemPrompt)
+	}
+	threadCWD := firstNonEmpty(metadata.CWD, s.rt.RootDir)
+	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, true, now)
 	displayHistory, err := loadPersistedMessages(s.rt.SessionDir, id, false)
 	if err != nil {
 		return nil, err
@@ -271,12 +365,8 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 	} else {
 		th.Turns = applyTokenUsageMetasToTurns(th.Turns, metas)
 	}
-	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, s.rt.RootDir)
-	if metadata, ok, err := session.Find(s.rt.SessionDir, id); err != nil {
-		return nil, err
-	} else if ok {
-		applySessionMetadata(th, metadata)
-	}
+	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, threadCWD)
+	applySessionMetadata(th, metadata)
 	return th, nil
 }
 
