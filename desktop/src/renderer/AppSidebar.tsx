@@ -56,7 +56,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
-import { SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
+import { isGroupThread, SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
 import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
 import { baseThreadTitle } from "./ThreadTitles";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
@@ -663,6 +663,16 @@ export function AppSidebar({
             const pinnedCollapsed = collapsedProjectIDs.has(
               SIDEBAR_SECTION_PINNED,
             );
+            // Pinned group threads keep their # channel identity after
+            // moving under 置顶, mirroring the 群聊 section's prefix.
+            const pinnedRows: ThreadSummary[] = pinnedThreads.map((thread) =>
+              isGroupThread(thread)
+                ? {
+                    ...thread,
+                    title: `#${baseThreadTitle(thread, pinnedThreads)}`,
+                  }
+                : thread,
+            );
             return (
               <section className="pinned-thread-section" aria-label="置顶">
                 <SidebarSection
@@ -678,9 +688,9 @@ export function AppSidebar({
                   }
                   emptyNote="还没有会话"
                 >
-                  {pinnedThreads.length === 0 ? null : (
+                  {pinnedRows.length === 0 ? null : (
                     <PinnedThreadList
-                      threads={pinnedThreads}
+                      threads={pinnedRows}
                       activeID={activeThreadID}
                       pendingThreadID={pendingThreadID}
                       archiveConfirmThreadID={archiveConfirmThreadID}

@@ -7,6 +7,8 @@ import {
   appendTurnTokenSample,
   chatMessagesFromTurns,
   conversationPaneThreadsByID,
+  groupThreadSummaries,
+  pinnedThreadSummaries,
   createThreadSessionTab,
   handleStreamingNotification,
   initialState,
@@ -28,6 +30,7 @@ import {
   threadSessionTabID,
   turnStreamStatusForThread,
   type SessionTab,
+  type ThreadSummary,
 } from "./AppState";
 import { streamTextKey, streamTextStore } from "./StreamText";
 
@@ -2063,5 +2066,62 @@ describe("scratchThreadSummaries excludes group threads", () => {
       [],
     );
     expect(results.map((thread) => thread.id)).toEqual([scratchSummary.id]);
+  });
+});
+
+describe("sidebar pin/archive matrix", () => {
+  // Mental model under test: pinning MOVES an entity to 置顶 (no
+  // duplicate left in its own section); archiving removes it from the
+  // sidebar completely (own section AND 置顶).
+  function summaries(
+    overrides: Array<Partial<Thread> & { id: string }>,
+  ): ThreadSummary[] {
+    return summarizeThreadsForSidebar(
+      overrides.map((entry) => ({
+        ...threadWithUserTexts([entry.id]),
+        ...entry,
+      })),
+    );
+  }
+
+  it("groupThreadSummaries lists only live, unpinned group threads", () => {
+    const all = summaries([
+      { id: "group-live", group: true },
+      { id: "group-pinned", group: true, pinned: true },
+      { id: "group-archived", group: true, archived: true },
+      { id: "scratch-live" },
+      { id: "dm-live", dm_participant_id: "prt-1" },
+    ]);
+    expect(groupThreadSummaries(all).map((thread) => thread.id)).toEqual([
+      "group-live",
+    ]);
+  });
+
+  it("pinnedThreadSummaries hosts pinned entities of every kind, never archived ones", () => {
+    const all = summaries([
+      { id: "scratch-pinned", pinned: true },
+      { id: "group-pinned", group: true, pinned: true },
+      { id: "dm-pinned", dm_participant_id: "prt-1", pinned: true },
+      { id: "scratch-live" },
+      { id: "group-archived-pinned", group: true, pinned: true, archived: true },
+    ]);
+    const pinned = pinnedThreadSummaries(all).map((thread) => thread.id);
+    expect(pinned).toContain("scratch-pinned");
+    expect(pinned).toContain("group-pinned");
+    expect(pinned).toContain("dm-pinned");
+    expect(pinned).not.toContain("scratch-live");
+    // Archived-but-pinned must not ghost in 置顶.
+    expect(pinned).not.toContain("group-archived-pinned");
+  });
+
+  it("scratchThreadSummaries drops pinned and archived entries (move semantics)", () => {
+    const all = summaries([
+      { id: "scratch-live" },
+      { id: "scratch-pinned", pinned: true },
+      { id: "scratch-archived", archived: true },
+    ]);
+    expect(
+      scratchThreadSummaries(all, []).map((thread) => thread.id),
+    ).toEqual(["scratch-live"]);
   });
 });

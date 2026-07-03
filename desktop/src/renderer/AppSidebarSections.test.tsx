@@ -1322,6 +1322,22 @@ describe("group chat section", () => {
     expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
   });
 
+  it("keeps the # identity prefix when a pinned group thread moves under 置顶", () => {
+    renderSidebar({
+      sectionOrder: order,
+      pinnedThreads: [
+        makeThreadSummary("thread-group-pinned", "发布协调", {
+          group: true,
+          pinned: true,
+        }),
+      ],
+    });
+    const pinnedRow = container.querySelector<HTMLButtonElement>(
+      'section[aria-label="置顶"] .thread-row-main',
+    );
+    expect(pinnedRow?.textContent).toContain("#发布协调");
+  });
+
   it("renders group threads with a # title prefix and selects on click", () => {
     const selected: string[] = [];
     renderSidebar({

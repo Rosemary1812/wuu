@@ -169,6 +169,7 @@ import {
   isAnyThreadRunning,
   isDirectChildAgent,
   isDMThread,
+  groupThreadSummaries,
   isGroupThread,
   isScratchThread,
   isStateActiveThreadRunning,
@@ -1909,15 +1910,18 @@ export function App(): JSX.Element {
     for (const [projectID, threads] of Object.entries(
       sidebarProjectThreadsByProjectID,
     )) {
-      // DM conversations with named participants live under the agent
-      // roster, not under the project tree. They are hidden from the
-      // 对话 scratch group (already filtered inside
-      // scratchThreadSummaries) and from every project's thread list
-      // here. Pinned DMs continue to surface under 置顶 because that
-      // list reads from sidebarThreadSummaries directly, bypassing this
-      // filter.
+      // DM conversations live under the agent roster and group threads
+      // under 群聊, never under the project tree — even when their cwd
+      // happens to match a project root (group threads inherit the
+      // runtime root as cwd). Both are hidden from the 对话 scratch
+      // group already (scratchThreadSummaries) and from every project's
+      // thread list here. Pinned ones continue to surface under 置顶
+      // because that list reads from sidebarThreadSummaries directly,
+      // bypassing this filter.
       next[projectID] = summarizeThreadsForSidebar(
-        threads.filter((thread) => !isDMThread(thread)),
+        threads.filter(
+          (thread) => !isDMThread(thread) && !isGroupThread(thread),
+        ),
       );
     }
     return next;
@@ -1934,12 +1938,12 @@ export function App(): JSX.Element {
     () => scratchThreadSummaries(sidebarThreadSummaries, state.projects),
     [sidebarThreadSummaries, state.projects],
   );
-  // Group threads (chat-style-threads-design.md §3) live in their own
-  // sidebar 群聊 section between 置顶 and 对话, data-gated on the backend
-  // serializing Thread.group — today this is always empty and the
-  // section renders the inert "# all" placeholder.
+  // Group threads (chat-style-threads-design.md §3) live in the 群聊
+  // section. groupThreadSummaries applies the shared pin/archive
+  // semantics: pinned groups move under 置顶 (no duplicate here) and
+  // archived groups leave the sidebar entirely.
   const sidebarGroupThreads = useMemo(
-    () => sidebarThreadSummaries.filter(isGroupThread),
+    () => groupThreadSummaries(sidebarThreadSummaries),
     [sidebarThreadSummaries],
   );
   // The scratch pseudo project lives at the top of the sidebar tree. It is

@@ -1536,6 +1536,20 @@ export function isGroupThread(thread: { group?: boolean }): boolean {
   return thread.group === true;
 }
 
+/**
+ * Group threads for the sidebar's 群聊 section. Same move/remove
+ * semantics as the 对话 list: pinning MOVES the thread under 置顶 (so
+ * pinned ones are excluded here — no duplicates), and archiving removes
+ * it entirely (sortThreadSummaries drops archived threads).
+ */
+export function groupThreadSummaries(
+  threads: ThreadSummary[],
+): ThreadSummary[] {
+  return sortThreadSummaries(threads).filter(
+    (thread) => !thread.pinned && isGroupThread(thread),
+  );
+}
+
 type DMThreadCandidate = {
   id: string;
   archived?: boolean;
