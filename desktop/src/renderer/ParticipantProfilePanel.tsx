@@ -12,7 +12,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ParticipantProfile,
   ParticipantSaveParams,
-  ProviderModelSummary,
   ProviderSummary,
 } from "../shared/protocol";
 
@@ -131,6 +130,9 @@ export function ParticipantProfilePanel({
   const [retireArmed, setRetireArmed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const retireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic token used to ignore stale FileReader results when the user
+  // rapidly picks multiple files.
+  const avatarReadTokenRef = useRef(0);
 
   useEffect(() => {
     setForm(formFromParticipant(participant));
@@ -156,12 +158,28 @@ export function ParticipantProfilePanel({
     () =>
       (providers ?? []).map((provider) => ({
         name: provider.name,
-        models: (provider.models ?? []).map(
-          (model): ProviderModelSummary => model,
-        ),
+        models: provider.models ?? [],
       })),
     [providers],
   );
+
+  // When the participant pins a model that is no longer offered by any
+  // provider, surface it as a disabled-by-default option so the user's pin
+  // is visible in the select and only changes on explicit interaction.
+  const orphanModelOption = useMemo(() => {
+    if (form.model.trim().length === 0) {
+      return undefined;
+    }
+    const known = providerOptions.some((provider) =>
+      provider.models.some(
+        (model) => `${provider.name}:${model.id}` === form.model,
+      ),
+    );
+    if (known) {
+      return undefined;
+    }
+    return { value: form.model, label: `${form.model}（不可用）` };
+  }, [form.model, providerOptions]);
 
   const trackRecord = participant?.track_record ?? [];
   const panelTitle =
@@ -203,8 +221,13 @@ export function ParticipantProfilePanel({
       setAvatarError("头像超过 512KB，请压缩后再试");
       return;
     }
+    const token = ++avatarReadTokenRef.current;
     try {
       const dataUrl = await readFileAsDataUrl(file);
+      // A later pick has superseded this read; drop the result.
+      if (token !== avatarReadTokenRef.current) {
+        return;
+      }
       setAvatarError(undefined);
       setForm((current) => ({
         ...current,
@@ -212,6 +235,9 @@ export function ParticipantProfilePanel({
         clearAvatarImage: false,
       }));
     } catch {
+      if (token !== avatarReadTokenRef.current) {
+        return;
+      }
       setAvatarError("读取头像失败");
     }
   }
@@ -248,6 +274,16 @@ export function ParticipantProfilePanel({
     if (form.clearAvatarImage) {
       params.clear_avatar_image = true;
     }
+    // The save payload already carries the avatar intent; clear the local
+    // markers so a second save without an avatar change does not resend
+    // `avatar_image` / `clear_avatar_image`. The parent will re-supply the
+    // participant object on success, and the avatar preview falls back to
+    // `participant?.avatar_image` when `form.avatarImage` is undefined.
+    setForm((current) => ({
+      ...current,
+      avatarImage: undefined,
+      clearAvatarImage: false,
+    }));
     onSave(params);
   }
 
@@ -458,6 +494,11 @@ export function ParticipantProfilePanel({
                       ))}
                     </optgroup>
                   ))}
+                  {orphanModelOption ? (
+                    <option value={orphanModelOption.value}>
+                      {orphanModelOption.label}
+                    </option>
+                  ) : null}
                 </select>
               </label>
             </section>

@@ -10,6 +10,7 @@ import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
+const pendingInputCleanups: Array<() => void> = [];
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -22,6 +23,10 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  while (pendingInputCleanups.length > 0) {
+    const cleanup = pendingInputCleanups.pop();
+    cleanup?.();
+  }
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -83,7 +88,9 @@ function stubFileReader(result: string): () => void {
 
 function setInputFiles(input: HTMLInputElement, files: File[]): void {
   // jsdom refuses ad-hoc objects for `files`. We replace the prototype
-  // getter so the input reads back the files we want.
+  // getter so the input reads back the files we want. The original getter
+  // is captured and restored via `pendingInputCleanups` so the prototype
+  // does not leak between tests.
   const originalDescriptor = Object.getOwnPropertyDescriptor(
     HTMLInputElement.prototype,
     "files",
@@ -107,6 +114,13 @@ function setInputFiles(input: HTMLInputElement, files: File[]): void {
     },
   });
   (input as unknown as { __mockFiles: File[] }).__mockFiles = files;
+  pendingInputCleanups.push(() => {
+    if (originalDescriptor) {
+      Object.defineProperty(HTMLInputElement.prototype, "files", originalDescriptor);
+    } else {
+      delete (HTMLInputElement.prototype as { files?: PropertyDescriptor }).files;
+    }
+  });
 }
 
 function mount(props: {
@@ -116,9 +130,11 @@ function mount(props: {
   onSave?: (params: Parameters<typeof ParticipantProfilePanel>[0]["onSave"] extends (p: infer P) => void ? P : never) => void;
   onRetire?: (id: string) => void;
 }): void {
-  act(() => {
+  if (root === null) {
     root = createRoot(container);
-    root.render(
+  }
+  act(() => {
+    root!.render(
       <ParticipantProfilePanel
         mode={props.mode}
         participant={props.participant}
@@ -328,6 +344,118 @@ describe("ParticipantProfilePanel — identity and model", () => {
     expect(onSave).toHaveBeenCalledTimes(1);
     const params = onSave.mock.calls[0]?.[0] as { model: string };
     expect(params.model).toBe("");
+  });
+
+  it("renders an orphan model fallback option and preserves the pin across save", async () => {
+    const onSave = vi.fn();
+    mount({
+      mode: "edit",
+      participant: participantFixture({
+        name: "Mira",
+        model: "missing:gone",
+      }),
+      providers: providersFixture(),
+      onSave,
+    });
+
+    const modelSelect = container.querySelector<HTMLSelectElement>(
+      "select[data-field='model']",
+    )!;
+    // The orphan pin must remain the selected value rather than silently
+    // collapsing to "follow global".
+    expect(modelSelect.value).toBe("missing:gone");
+    const fallbackOption = Array.from(modelSelect.options).find(
+      (option) => option.value === "missing:gone",
+    );
+    expect(fallbackOption).toBeDefined();
+    expect(fallbackOption?.disabled).toBe(false);
+    expect(fallbackOption?.text).toContain("missing:gone");
+    expect(fallbackOption?.text).toContain("不可用");
+
+    const saveButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "保存",
+    )!;
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const params = onSave.mock.calls[0]?.[0] as { model: string };
+    // Saving without explicitly retargeting the model must keep the orphan
+    // pin, not silently downgrade to "follow global".
+    expect(params.model).toBe("missing:gone");
+  });
+
+  it("does not resend avatar_image on a second save when the avatar did not change", async () => {
+    const onSave = vi.fn();
+    const initialParticipant = participantFixture({
+      name: "Mira",
+      avatar_image: "data:image/png;base64,STORED",
+    });
+    mount({
+      mode: "edit",
+      participant: initialParticipant,
+      providers: providersFixture(),
+      onSave,
+    });
+
+    const fileInput = container.querySelector<HTMLInputElement>(
+      "input[type='file']",
+    )!;
+    const smallFile = new File([new Uint8Array(1024)], "avatar.png", {
+      type: "image/png",
+    });
+    Object.defineProperty(smallFile, "size", { value: 4 * 1024 });
+    const firstDataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9U3K5RoAAAAASUVORK5CYII=";
+    stubFileReader(firstDataUrl);
+    setInputFiles(fileInput, [smallFile]);
+    await act(async () => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const saveButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "保存",
+    )!;
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    // The parent now mirrors back the saved participant as a fresh object
+    // reference with the same id. The panel's reset effect is keyed on
+    // [participant?.id, mode] so it does NOT re-initialize the form, but
+    // the parent did rebuild the panel state object.
+    const refreshed = {
+      ...initialParticipant,
+      avatar_image: firstDataUrl,
+    };
+    mount({
+      mode: "edit",
+      participant: refreshed,
+      providers: providersFixture(),
+      onSave,
+    });
+
+    const saveButton2 = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "保存",
+    )!;
+    await act(async () => {
+      saveButton2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onSave).toHaveBeenCalledTimes(2);
+    const firstParams = onSave.mock.calls[0]?.[0] as {
+      avatar_image?: string;
+      clear_avatar_image?: boolean;
+    };
+    const secondParams = onSave.mock.calls[1]?.[0] as {
+      avatar_image?: string;
+      clear_avatar_image?: boolean;
+    };
+    expect(firstParams.avatar_image).toMatch(/^data:image\/png/);
+    expect(secondParams.avatar_image).toBeUndefined();
+    expect(secondParams.clear_avatar_image).toBeUndefined();
   });
 });
 

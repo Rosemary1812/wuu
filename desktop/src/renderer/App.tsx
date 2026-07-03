@@ -2878,18 +2878,9 @@ export function App(): JSX.Element {
     );
     void (async () => {
       try {
-        const result = await window.wuu.retireParticipant(participantID);
+        await window.wuu.retireParticipant(participantID);
         setParticipants((current) =>
           current.filter((entry) => entry.id !== participantID),
-        );
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                participant: result.participant,
-                retiring: false,
-              }
-            : current,
         );
         setParticipantPanel(undefined);
         void refreshParticipants();
