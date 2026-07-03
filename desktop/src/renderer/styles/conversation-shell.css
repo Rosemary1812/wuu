@@ -742,15 +742,17 @@
         var(--session-outer-padding-inline) - var(--conversation-scrollbar-gutter)
     )
   );
-  display: inline-flex;
-  width: fit-content;
-  max-width: var(--jump-to-latest-max-width);
+  display: flex;
+  width: var(--jump-to-latest-max-width);
+  max-width: 100%;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   margin-inline: auto;
   transform: translateY(0);
   z-index: 20;
   animation: jump-to-latest-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: none;
   -webkit-app-region: no-drag;
 }
 
@@ -772,6 +774,7 @@
   font-weight: var(--weight-semibold);
   line-height: 1;
 
+  pointer-events: auto;
   -webkit-app-region: no-drag;
 
   transition:
@@ -787,7 +790,7 @@
 }
 
 .jump-to-latest-progress {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   justify-content: center;
   gap: 0;
   min-width: 0;
