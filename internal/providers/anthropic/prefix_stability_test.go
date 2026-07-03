@@ -7,6 +7,20 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+// stripCacheControlForCompare clones a payload message with every
+// cache_control marker removed. The sliding tail marker moves between
+// rounds by design; the API's cache key hashes prompt content, not marker
+// placement, so prefix-stability assertions must ignore the markers.
+func stripCacheControlForCompare(msg anthropicMessage) anthropicMessage {
+	out := msg
+	out.Content = make([]anthropicBlock, len(msg.Content))
+	for i, block := range msg.Content {
+		block.CacheControl = nil
+		out.Content[i] = block
+	}
+	return out
+}
+
 // TestPrefixStabilityAcrossRounds verifies that the prompt-cache prefix
 // remains stable across consecutive requests in a single turn (intra-turn
 // tool loops). This is a regression guard: if tools or system change between
@@ -69,20 +83,20 @@ func TestPrefixStabilityAcrossRounds(t *testing.T) {
 
 	// Build anthropic requests
 	req1, err := buildAnthropicRequest(providers.ChatRequest{
-		Model:      "claude-3-5-sonnet",
-		Messages:   round1Messages,
-		Tools:      tools,
-		CacheHint:  hint1,
+		Model:     "claude-3-5-sonnet",
+		Messages:  round1Messages,
+		Tools:     tools,
+		CacheHint: hint1,
 	}, 1024, false)
 	if err != nil {
 		t.Fatalf("round 1 buildAnthropicRequest: %v", err)
 	}
 
 	req2, err := buildAnthropicRequest(providers.ChatRequest{
-		Model:      "claude-3-5-sonnet",
-		Messages:   round2Messages,
-		Tools:      tools,
-		CacheHint:  hint2,
+		Model:     "claude-3-5-sonnet",
+		Messages:  round2Messages,
+		Tools:     tools,
+		CacheHint: hint2,
 	}, 1024, false)
 	if err != nil {
 		t.Fatalf("round 2 buildAnthropicRequest: %v", err)
@@ -119,14 +133,16 @@ func TestPrefixStabilityAcrossRounds(t *testing.T) {
 		t.Fatalf("round 1 has more messages (%d) than round 2 (%d)", len(req1.Messages), len(req2.Messages))
 	}
 
-	// For each message in round 1, verify it's identical to the corresponding message in round 2
+	// For each message in round 1, verify its content is identical to the
+	// corresponding message in round 2. Cache markers are stripped first:
+	// the sliding tail marker moves between rounds by design.
 	for i, msg1 := range req1.Messages {
 		msg2 := req2.Messages[i]
-		json1, err := json.Marshal(msg1)
+		json1, err := json.Marshal(stripCacheControlForCompare(msg1))
 		if err != nil {
 			t.Fatalf("marshal round 1 message %d: %v", i, err)
 		}
-		json2, err := json.Marshal(msg2)
+		json2, err := json.Marshal(stripCacheControlForCompare(msg2))
 		if err != nil {
 			t.Fatalf("marshal round 2 message %d: %v", i, err)
 		}
@@ -206,14 +222,15 @@ func TestPrefixStabilityWithUncacheableTrail(t *testing.T) {
 		t.Fatalf("system diverged")
 	}
 
-	// Verify round 1 messages are prefix of round 2
+	// Verify round 1 messages are a content-prefix of round 2 (cache
+	// markers stripped — the tail marker moves between rounds by design).
 	if len(req1.Messages) > len(req2.Messages) {
 		t.Fatalf("round 1 has more messages")
 	}
 	for i, msg1 := range req1.Messages {
 		msg2 := req2.Messages[i]
-		json1, _ := json.Marshal(msg1)
-		json2, _ := json.Marshal(msg2)
+		json1, _ := json.Marshal(stripCacheControlForCompare(msg1))
+		json2, _ := json.Marshal(stripCacheControlForCompare(msg2))
 		if string(json1) != string(json2) {
 			t.Fatalf("message %d diverged", i)
 		}

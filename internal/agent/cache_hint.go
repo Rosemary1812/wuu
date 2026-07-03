@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
@@ -204,9 +205,14 @@ func cacheStablePrefixFingerprint(model string, tools []providers.ToolDefinition
 		// Include description and input schema for schema stability detection
 		b.WriteString(tool.Description)
 		b.WriteByte('\n')
-		// Serialize InputSchema deterministically (JSON with sorted keys would be better,
-		// but we use string representation for speed)
+		// Map iteration order is random in Go; sort the schema keys so the
+		// fingerprint stays deterministic for identical tools.
+		keys := make([]string, 0, len(tool.InputSchema))
 		for k := range tool.InputSchema {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
 			b.WriteString(k)
 			b.WriteByte('\n')
 		}

@@ -241,13 +241,13 @@ type ChatMessage struct {
 // Providers are free to ignore hints they don't support.
 //
 // Provider-specific caching strategy (Anthropic):
-// - StablePrefixMessages and TurnPrefixMessages are hints used to derive
-//   message-level cache markers. On Anthropic, the actual marker placement
-//   ignores the message counts and instead walks the final merged payload
-//   backward to find the last cacheable block, placing exactly one sliding
-//   tail marker there. This strategy optimizes intra-turn tool loops by
-//   marking the request tail, which moves every round without requiring
-//   per-tool or per-message stable prefixes.
+//   - StablePrefixMessages and TurnPrefixMessages are hints used to derive
+//     message-level cache markers. On Anthropic, the actual marker placement
+//     ignores the message counts and instead walks the final merged payload
+//     backward to find the last cacheable block, placing exactly one sliding
+//     tail marker there. This strategy optimizes intra-turn tool loops by
+//     marking the request tail, which moves every round without requiring
+//     per-tool or per-message stable prefixes.
 type CacheHint struct {
 	// PromptCacheKey is a stable key for providers exposing an explicit
 	// prompt cache key (for example promptCacheKey / prompt_cache_key).

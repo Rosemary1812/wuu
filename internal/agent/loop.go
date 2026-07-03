@@ -234,12 +234,14 @@ func RunToolLoop(
 		}
 
 		// Cache-break telemetry: detect changes in stable-prefix components
-		// (model, tools, system prompt) that would break cache reuse.
-		systemTexts := make([]string, 0)
+		// (model, tools, system prompt) that would break cache reuse. Section
+		// content never reaches the loop; the builder-computed per-section
+		// hashes stand in for it.
+		systemHashes := make([]string, 0, len(cfg.SystemPromptSections))
 		for _, sec := range cfg.SystemPromptSections {
-			systemTexts = append(systemTexts, sec.Content)
+			systemHashes = append(systemHashes, sec.Key+":"+sec.Hash)
 		}
-		currentFingerprint := cacheStablePrefixFingerprint(cfg.Model, req.Tools, systemTexts)
+		currentFingerprint := cacheStablePrefixFingerprint(cfg.Model, req.Tools, systemHashes)
 		if stepIdx > 0 && prevCacheFingerprint != "" && prevCacheFingerprint != currentFingerprint {
 			// A cache-stable component changed between rounds. This shouldn't happen
 			// within a single turn, so log it for diagnostics.

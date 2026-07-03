@@ -332,8 +332,8 @@ func TestChat_AnthropicAddsCacheControlFromHint(t *testing.T) {
 			t.Fatalf("expected system cache_control, got %#v", sysBlock["cache_control"])
 		}
 		msgs, ok := body["messages"].([]any)
-		if !ok || len(msgs) < 4 {
-			t.Fatalf("expected 4 messages, got %#v", body["messages"])
+		if !ok || len(msgs) != 3 {
+			t.Fatalf("expected 3 non-system messages, got %#v", body["messages"])
 		}
 
 		// With the sliding tail marker strategy, only the last message should
@@ -546,7 +546,7 @@ func TestBuildAnthropicRequest_CacheBoundaryKeepsSystemReminderAfterToolResult(t
 	}
 }
 
-func TestBuildAnthropicRequest_TurnPrefixCachesLatestUserBeforeDynamicContext(t *testing.T) {
+func TestBuildAnthropicRequest_TailMarkerSkipsHiddenTrailingContext(t *testing.T) {
 	reminder := wuucontext.FormatSystemReminder(wuucontext.EnvInfo{
 		CWD:  "/tmp/project",
 		Date: "2026-04-21",
@@ -571,23 +571,29 @@ func TestBuildAnthropicRequest_TurnPrefixCachesLatestUserBeforeDynamicContext(t 
 	if len(payload.Messages) != 3 {
 		t.Fatalf("expected 3 messages after merge, got %d", len(payload.Messages))
 	}
+	// The sliding tail marker lands on the last cacheable block from a
+	// non-hidden source: the tool_result. The per-request reminder that
+	// merged in after it stays outside the cached prefix, and the earlier
+	// user message carries no marker of its own.
 	first := payload.Messages[0]
 	if first.Role != "user" || len(first.Content) != 1 {
 		t.Fatalf("unexpected first message: %+v", first)
 	}
-	if first.Content[0].CacheControl == nil || first.Content[0].CacheControl.Type != "ephemeral" {
-		t.Fatalf("expected turn prefix cache marker on latest user, got %+v", first.Content[0].CacheControl)
+	if first.Content[0].CacheControl != nil {
+		t.Fatalf("did not expect marker on earlier user message, got %+v", first.Content[0].CacheControl)
 	}
 	last := payload.Messages[2]
-	if len(last.Content) != 1 || last.Content[0].Type != "tool_result" {
-		t.Fatalf("expected tool_result carrying volatile reminder, got %+v", last.Content)
+	if len(last.Content) != 2 || last.Content[0].Type != "tool_result" || last.Content[1].Type != "text" {
+		t.Fatalf("expected marked tool_result followed by reminder text, got %+v", last.Content)
 	}
-	if last.Content[0].CacheControl != nil {
-		t.Fatalf("did not expect cache marker on dynamic tool result context, got %+v", last.Content[0].CacheControl)
+	if last.Content[0].CacheControl == nil || last.Content[0].CacheControl.Type != "ephemeral" {
+		t.Fatalf("expected sliding tail marker on stable tool_result, got %+v", last.Content[0].CacheControl)
 	}
-	content, ok := last.Content[0].Content.(string)
-	if !ok || !strings.Contains(content, "<system-reminder>") {
-		t.Fatalf("expected volatile reminder in uncached tool_result content, got %#v", last.Content[0].Content)
+	if last.Content[1].CacheControl != nil {
+		t.Fatalf("did not expect marker on volatile reminder, got %+v", last.Content[1].CacheControl)
+	}
+	if !strings.Contains(last.Content[1].Text, "<system-reminder>") {
+		t.Fatalf("expected volatile reminder after the cache boundary, got %q", last.Content[1].Text)
 	}
 }
 
@@ -670,7 +676,10 @@ func TestBuildAnthropicRequest_LeavesRegularUserTextOutsideToolResult(t *testing
 	}
 }
 
-func TestBuildAnthropicRequest_CachesStableToolPrefix(t *testing.T) {
+func TestBuildAnthropicRequest_ToolsCarryNoCacheControl(t *testing.T) {
+	// Tools render before system in Anthropic's cache-prefix order, so the
+	// system-block marker already covers them; a per-tool marker would only
+	// waste one of the four breakpoints.
 	payload, err := buildAnthropicRequest(providers.ChatRequest{
 		Model: "claude-test",
 		Messages: []providers.ChatMessage{
@@ -688,14 +697,10 @@ func TestBuildAnthropicRequest_CachesStableToolPrefix(t *testing.T) {
 	if len(payload.Tools) != 3 {
 		t.Fatalf("expected 3 tools, got %+v", payload.Tools)
 	}
-	if payload.Tools[0].CacheControl != nil {
-		t.Fatalf("did not expect cache_control on first stable tool: %+v", payload.Tools[0].CacheControl)
-	}
-	if payload.Tools[1].CacheControl == nil || payload.Tools[1].CacheControl.Type != "ephemeral" {
-		t.Fatalf("expected cache_control on stable tool prefix boundary, got %+v", payload.Tools[1].CacheControl)
-	}
-	if payload.Tools[2].CacheControl != nil {
-		t.Fatalf("did not expect cache_control on dynamic tool: %+v", payload.Tools[2].CacheControl)
+	for i, tool := range payload.Tools {
+		if tool.CacheControl != nil {
+			t.Fatalf("did not expect cache_control on tool %d (%s): %+v", i, tool.Name, tool.CacheControl)
+		}
 	}
 }
 
@@ -1575,7 +1580,7 @@ func TestChat_SendsDocumentBlocks(t *testing.T) {
 	}
 }
 
-func TestChat_AppliesCacheControlToStablePrefix(t *testing.T) {
+func TestChat_AppliesCacheControlToStableTail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			System []struct {
@@ -1614,16 +1619,18 @@ func TestChat_AppliesCacheControlToStablePrefix(t *testing.T) {
 		if body.Messages[0].Role != "user" {
 			t.Fatalf("unexpected first role: %q", body.Messages[0].Role)
 		}
-		lastBlock := body.Messages[0].Content[len(body.Messages[0].Content)-1]
-		if lastBlock.CacheControl == nil || lastBlock.CacheControl.Type != "ephemeral" {
-			t.Fatalf("expected cache_control on stable prefix boundary, got %#v", lastBlock.CacheControl)
+		// Sliding tail: the earlier user message carries no marker; the
+		// marker rides on the last cacheable block of the final message.
+		firstLast := body.Messages[0].Content[len(body.Messages[0].Content)-1]
+		if firstLast.CacheControl != nil {
+			t.Fatalf("did not expect cache_control on earlier message, got %#v", firstLast.CacheControl)
 		}
 		if len(body.Messages[1].Content) == 0 {
 			t.Fatal("expected follow-up content")
 		}
-		followUpLast := body.Messages[1].Content[len(body.Messages[1].Content)-1]
-		if followUpLast.CacheControl != nil {
-			t.Fatalf("did not expect cache_control on volatile message, got %#v", followUpLast.CacheControl)
+		tailBlock := body.Messages[1].Content[len(body.Messages[1].Content)-1]
+		if tailBlock.CacheControl == nil || tailBlock.CacheControl.Type != "ephemeral" {
+			t.Fatalf("expected sliding tail cache_control on final message, got %#v", tailBlock.CacheControl)
 		}
 
 		w.Header().Set("content-type", "application/json")
@@ -2457,7 +2464,7 @@ func TestChat_CacheTTLOption(t *testing.T) {
 					{Role: "system", Content: "sys"},
 					{Role: "user", Content: "hello"},
 				},
-				CacheHint: &providers.CacheHint{StableSystem: true},
+				CacheHint:       &providers.CacheHint{StableSystem: true},
 				ProviderOptions: opts,
 			})
 			if err != nil {
@@ -2546,7 +2553,7 @@ func TestChat_AnthropicCacheKillSwitch(t *testing.T) {
 					{Role: "system", Content: "sys"},
 					{Role: "user", Content: "hello"},
 				},
-				CacheHint: &providers.CacheHint{StableSystem: true},
+				CacheHint:       &providers.CacheHint{StableSystem: true},
 				ProviderOptions: opts,
 			})
 			if err != nil {

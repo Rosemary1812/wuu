@@ -349,6 +349,13 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 	}
 
 	systemTexts := make([]string, 0, 1)
+	// stableTail tracks the payload coordinates of the last cacheable block
+	// that came from a non-hidden source message. Hidden messages are
+	// per-request volatile context (system reminders, injected state): a
+	// cache marker placed on or after them can never be read back, so the
+	// sliding tail marker must land on this boundary instead of the raw
+	// payload tail.
+	var stableTail *anthropicStableTail
 	for _, msg := range req.Messages {
 		if strings.EqualFold(msg.Role, "system") {
 			systemTexts = append(systemTexts, msg.Content)
@@ -359,6 +366,8 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		if err != nil {
 			return anthropicRequest{}, err
 		}
+		destIdx := len(payload.Messages)
+		blockBase := 0
 		if n := len(payload.Messages); n > 0 && payload.Messages[n-1].Role == mapped.Role {
 			// Anthropic's Messages API accepts mixed text + tool_result
 			// blocks in a single user message.  Always merge consecutive
@@ -367,14 +376,23 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 			// caused tool results to vanish when a worker mailbox text
 			// block landed between an assistant tool_call and its
 			// tool_result).
+			destIdx = n - 1
+			blockBase = len(payload.Messages[n-1].Content)
 			payload.Messages[n-1].Content = append(payload.Messages[n-1].Content, mapped.Content...)
 		} else {
 			payload.Messages = append(payload.Messages, mapped)
 		}
+		// Volatile context is flagged either by Hidden or by being a
+		// system-reminder message (some call sites set only the name).
+		if !msg.Hidden && !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+			if last := lastCacheableBlockIndex(mapped.Content); last >= 0 {
+				stableTail = &anthropicStableTail{Message: destIdx, Block: blockBase + last}
+			}
+		}
 	}
 	providers.DebugLogf("buildAnthropicRequest: %d input msgs → %d merged msgs", len(req.Messages), len(payload.Messages))
 	if !cacheDisabled {
-		applyAnthropicCacheHint(&payload, req.CacheHint, cacheTTL)
+		applyAnthropicCacheHint(&payload, req.CacheHint, cacheTTL, stableTail)
 	}
 	for i := range payload.Messages {
 		payload.Messages[i] = smooshSystemReminderBlocks(payload.Messages[i])
@@ -677,8 +695,17 @@ func anthropicCompactedDiscoveredToolNames(messages []providers.ChatMessage) map
 	return compacted
 }
 
+// anthropicStableTail is the payload position (message index, absolute block
+// index within that message's merged content) of the last cacheable block
+// that originated from a non-hidden source message. It is captured during
+// message mapping in buildAnthropicRequest, where source-message hiddenness
+// is still known.
+type anthropicStableTail struct {
+	Message int
+	Block   int
+}
 
-func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint, cacheTTL string) {
+func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHint, cacheTTL string, stableTail *anthropicStableTail) {
 	if payload == nil || hint == nil {
 		return
 	}
@@ -691,36 +718,61 @@ func applyAnthropicCacheHint(payload *anthropicRequest, hint *providers.CacheHin
 	//    This is done separately in buildAnthropicSystem.
 	// 2. Compact anchor: when hint.HasCompactSummary, mark the first message
 	//    as a cache anchor close to the rewritten history root.
-	// 3. Sliding tail marker: find the last cacheable block in the entire payload
-	//    and mark it. This single marker moves with every request round in an
-	//    intra-turn tool loop, eliminating O(n²) re-caching and avoiding
-	//    marker drift from the Anthropic 20-block lookback window.
+	// 3. Sliding tail marker: mark the last cacheable block that came from a
+	//    non-hidden source message. The single marker moves with every request
+	//    round in an intra-turn tool loop, eliminating O(n²) re-caching and
+	//    staying inside Anthropic's 20-block breakpoint lookback window.
+	//    Hidden trailing context (per-request system reminders and similar)
+	//    stays after the marker: those bytes never repeat across requests, so
+	//    a marker beyond them could never produce a cache hit — and the
+	//    smoosh pass below would delete a marker riding on a reminder block.
+	// Budget: system (1) + optional compact anchor (1) + tail (1) = 2-3 of
+	// the API maximum of 4 cache_control blocks per request.
 
 	if hint.HasCompactSummary {
 		markAnthropicMessageForCache(&payload.Messages[0], cacheTTL)
 	}
 
-	// Apply the sliding tail marker: walk backward from the end of payload
-	// to find the last cacheable block across all messages.
-	markAnthropicTailForCache(payload, cacheTTL)
+	markAnthropicStableTailForCache(payload, cacheTTL, stableTail)
 }
 
-// markAnthropicTailForCache finds the last cacheable block in the entire
-// payload (walking backward across messages from the end) and marks it
-// with a cache_control marker. This implements the sliding tail strategy
-// for efficient intra-turn tool loops.
-func markAnthropicTailForCache(payload *anthropicRequest, cacheTTL string) bool {
+// markAnthropicStableTailForCache places the sliding tail marker. It prefers
+// the tracked stable-tail position; when none was captured (e.g. every
+// message is hidden, or the caller bypassed mapping in tests) it falls back
+// to walking backward from the end of the payload.
+func markAnthropicStableTailForCache(payload *anthropicRequest, cacheTTL string, stableTail *anthropicStableTail) bool {
 	if payload == nil || len(payload.Messages) == 0 {
 		return false
 	}
-	// Walk backward from the last message to find the first message with
-	// a cacheable block, then mark the last cacheable block in that message.
+	if stableTail != nil && stableTail.Message >= 0 && stableTail.Message < len(payload.Messages) {
+		msg := &payload.Messages[stableTail.Message]
+		if stableTail.Block >= 0 && stableTail.Block < len(msg.Content) {
+			block := &msg.Content[stableTail.Block]
+			if anthropicBlockSupportsCache(block) {
+				block.CacheControl = ephemeralCacheControl(cacheTTL)
+				return true
+			}
+		}
+	}
+	// Fallback: walk backward from the last message to find the last
+	// cacheable block anywhere in the payload.
 	for i := len(payload.Messages) - 1; i >= 0; i-- {
 		if markAnthropicMessageForCache(&payload.Messages[i], cacheTTL) {
 			return true
 		}
 	}
 	return false
+}
+
+// lastCacheableBlockIndex returns the index of the last block in blocks that
+// anthropicBlockSupportsCache accepts, or -1 when none qualify.
+func lastCacheableBlockIndex(blocks []anthropicBlock) int {
+	for i := len(blocks) - 1; i >= 0; i-- {
+		if anthropicBlockSupportsCache(&blocks[i]) {
+			return i
+		}
+	}
+	return -1
 }
 
 func markAnthropicMessageForCache(msg *anthropicMessage, cacheTTL string) bool {
