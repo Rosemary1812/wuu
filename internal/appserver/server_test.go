@@ -6750,8 +6750,11 @@ func TestServerAutoResumesRootAgentOnAgentCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AwaitFrom after auto resume: %v", err)
 	}
-	if len(awaited.Results) != 1 || awaited.Results[0].ResultID == "" || !awaited.Results[0].ResultConsumed || awaited.Results[0].ConsumedBy != "auto_completion" || awaited.Results[0].Result != "" {
-		t.Fatalf("await after auto resume should not return duplicate result content: %+v", awaited)
+	// Result delivery is unconditional: an await re-read still returns the
+	// content, with the consumed markers telling the parent it was already
+	// injected by auto-completion (the ledger dedupes injection, not reads).
+	if len(awaited.Results) != 1 || awaited.Results[0].ResultID == "" || !awaited.Results[0].ResultConsumed || awaited.Results[0].ConsumedBy != "auto_completion" || awaited.Results[0].Result == "" {
+		t.Fatalf("await after auto resume should return the result with consumed markers set: %+v", awaited)
 	}
 }
 
