@@ -97,7 +97,35 @@ type AgentControl struct {
 	participantRosterMu       sync.Mutex
 	participantRoster         ParticipantRoster
 	participantRosterBindings map[string]string
+
+	// workerProviderName is the provider name the AgentControl's worker
+	// runtime is currently configured for. The model-pin resolver
+	// (installed via SetModelPinClientResolver) uses it to decide
+	// whether a queued spawn's pin targets the same provider (no fresh
+	// client needed) or a different one (resolver MUST yield a fresh
+	// client or fail).
+	workerProviderNameMu sync.Mutex
+	workerProviderName   string
+
+	// modelPinResolver rebuilds the stream client for a queued spawn
+	// whose raw pin targets a provider different from the worker
+	// default. nil means no resolver is installed; in that case a
+	// cross-provider pin restored from disk fails the spawn
+	// explicitly instead of silently falling back to the default
+	// client (which would route the request to the wrong provider).
+	modelPinResolverMu sync.Mutex
+	modelPinResolver   ModelPinClientResolver
 }
+
+// ModelPinClientResolver rebuilds the (model, client) pair for a queued
+// spawn whose raw participant pin survived a process restart. The
+// resolver owns the policy: bare-model / same-provider pins return
+// (model, nil, nil), cross-provider pins return (model, freshClient, nil),
+// and any error fails the queued spawn explicitly. Appserver
+// (internal/appserver) is the typical owner of this callback because
+// it already holds the runtime config + provider factory used to build
+// the worker client.
+type ModelPinClientResolver func(rawPin string) (modelOverride string, clientOverride providers.StreamClient, err error)
 
 // Config holds the dependencies needed to build an AgentControl.
 type Config struct {
@@ -254,6 +282,15 @@ func (c *AgentControl) HarnessStore() *harness.Store {
 	return c.harnessStore
 }
 
+// Threads exposes the in-memory thread registry. Tests use it to assert
+// thread state directly without round-tripping through the persisted store.
+func (c *AgentControl) Threads() *agentthread.Registry {
+	if c == nil {
+		return nil
+	}
+	return c.threads
+}
+
 // SetSessionInfo updates the coordinator's session ID and history dir
 // after the session runtime has assigned them. Safe to call once at startup.
 func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ...string) {
@@ -282,6 +319,87 @@ func (c *AgentControl) setHarnessDir(dir string) {
 // SetSessionInfo hasn't been called yet.
 func (c *AgentControl) SessionID() string {
 	return c.sessionID
+}
+
+// SetWorkerProviderName records the name of the provider the
+// AgentControl's worker runtime is currently configured for. The
+// model-pin resolver (installed via SetModelPinClientResolver) consults
+// it to decide whether a queued spawn's pin targets the same provider
+// or a different one. Passing an empty string clears the binding.
+func (c *AgentControl) SetWorkerProviderName(name string) {
+	if c == nil {
+		return
+	}
+	c.workerProviderNameMu.Lock()
+	defer c.workerProviderNameMu.Unlock()
+	c.workerProviderName = strings.TrimSpace(name)
+}
+
+// WorkerProviderName returns the provider name installed via
+// SetWorkerProviderName, or "" when none is set.
+func (c *AgentControl) WorkerProviderName() string {
+	if c == nil {
+		return ""
+	}
+	c.workerProviderNameMu.Lock()
+	defer c.workerProviderNameMu.Unlock()
+	return c.workerProviderName
+}
+
+// SetModelPinClientResolver installs the callback that rebuilds the
+// stream client for a queued spawn whose raw pin targets a different
+// provider. Appserver (internal/appserver) owns the resolver because it
+// holds the runtime config + provider factory used to build the worker
+// client. Passing nil removes any previously installed resolver; in
+// that case a queued spawn restored with a cross-provider pin fails
+// explicitly instead of silently using the worker default client.
+//
+// The resolver signature:
+//   - bare-model / same-provider pin → (model, nil, nil)
+//   - cross-provider pin with a working provider → (model, freshClient, nil)
+//   - any error → fail the queued spawn with that error visible on the
+//     thread + harness task (never silently fall back).
+func (c *AgentControl) SetModelPinClientResolver(resolver ModelPinClientResolver) {
+	if c == nil {
+		return
+	}
+	c.modelPinResolverMu.Lock()
+	defer c.modelPinResolverMu.Unlock()
+	c.modelPinResolver = resolver
+}
+
+func (c *AgentControl) currentModelPinResolver() ModelPinClientResolver {
+	if c == nil {
+		return nil
+	}
+	c.modelPinResolverMu.Lock()
+	defer c.modelPinResolverMu.Unlock()
+	return c.modelPinResolver
+}
+
+// pinTargetsDifferentProvider reports whether the raw participant pin
+// (e.g. "alt:model") names a provider that is not the worker's current
+// default provider. A bare model (no colon) and a same-provider pin
+// both return false. Mirrors appserver.parseParticipantModelPin so
+// agentcontrol does not depend on the appserver package.
+func pinTargetsDifferentProvider(rawPin, workerProvider string) bool {
+	value := strings.TrimSpace(rawPin)
+	if value == "" {
+		return false
+	}
+	idx := strings.Index(value, ":")
+	if idx < 0 {
+		return false
+	}
+	pinProvider := strings.TrimSpace(value[:idx])
+	if pinProvider == "" {
+		return false
+	}
+	workerProvider = strings.TrimSpace(workerProvider)
+	if workerProvider == "" {
+		return true
+	}
+	return pinProvider != workerProvider
 }
 
 // SpawnRequest is the internal shape of a spawn_agent tool invocation
@@ -319,6 +437,16 @@ type SpawnRequest struct {
 	// spawn_agent tool MUST NOT expose either field.
 	ModelOverride  string
 	ClientOverride providers.StreamClient
+	// ModelPin is the raw participant pin (e.g. "alt-provider:model" or
+	// "bare-model"). It is persisted with queued spawns so the restore
+	// path can rebuild ClientOverride via the registered
+	// ModelPinClientResolver when the pin targets a different
+	// provider. Empty pin means the spawn honors only ModelOverride
+	// (or the worker default when ModelOverride is also empty). Like
+	// ModelOverride and ClientOverride, this field is internal-only
+	// and must not be exposed through the LLM-facing spawn_agent
+	// tool.
+	ModelPin string
 }
 
 // SpawnResult is what the spawn_agent tool returns to the model.
@@ -363,6 +491,16 @@ type preparedSpawn struct {
 	// the pin once they dequeue.
 	ModelOverride  string
 	ClientOverride providers.StreamClient
+	// ModelPin is the raw participant Model pin (e.g. "p:m" or "m").
+	// It is persisted alongside ModelOverride so a queued spawn can
+	// rebuild the ClientOverride on restart when the pin targets a
+	// provider different from the worker default. The resolver
+	// callback installed via SetModelPinClientResolver owns the
+	// policy: bare-model / same-provider pins just change the model,
+	// cross-provider pins MUST resolve to a fresh client — a nil
+	// client or resolver error fails the spawn explicitly so a wrong
+	// provider is never used.
+	ModelPin string
 }
 
 type queuedSpawnPayload struct {
@@ -386,7 +524,16 @@ type queuedSpawnPayload struct {
 	// provider client from the queue on its own is not safe, and a
 	// restart that drops a per-participant pin falls back to the
 	// worker default (matching the empty pin semantics).
+	//
+	// ModelPin is the raw participant pin (e.g. "p:m" or "m"). When
+	// present, the restore path asks the registered
+	// ModelPinClientResolver to rebuild the client: a cross-provider
+	// pin MUST return a non-nil client or an error. A missing
+	// resolver is treated as an error rather than a silent fallback,
+	// because a queued spawn restored with no resolver and a
+	// cross-provider pin would otherwise route to the wrong provider.
 	ModelOverride string `json:"model_override,omitempty"`
+	ModelPin      string `json:"model_pin,omitempty"`
 }
 
 // Spawn launches a sub-agent. In synchronous mode it waits until the child
@@ -445,6 +592,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			BaseRepo:         req.BaseRepo,
 			ModelOverride:    strings.TrimSpace(req.ModelOverride),
 			ClientOverride:   req.ClientOverride,
+			ModelPin:         strings.TrimSpace(req.ModelPin),
 		}
 		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
@@ -1612,6 +1760,7 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		ForkMode:         prepared.ForkMode,
 		ParentHistory:    providers.CloneChatMessages(prepared.ParentHistory),
 		ModelOverride:    prepared.ModelOverride,
+		ModelPin:         prepared.ModelPin,
 	}
 }
 
@@ -1650,6 +1799,7 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		ForkMode:         payload.ForkMode,
 		ParentHistory:    providers.CloneChatMessages(payload.ParentHistory),
 		ModelOverride:    payload.ModelOverride,
+		ModelPin:         payload.ModelPin,
 	}, nil
 }
 
@@ -1740,6 +1890,43 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		// existed) get a fresh participant at start time.
 		participantID = c.newEphemeralParticipant(prepared.ThreadMeta.TaskName, prepared.WorkerType).ID
 	}
+	// Per-participant model pin restore. Queued spawns persist the raw
+	// pin (e.g. "alt-provider:model") but not the stream client. Before
+	// the runner can pick a client we MUST rebuild it for any pin whose
+	// provider differs from the current worker default; otherwise the
+	// subagent.Manager would silently fall back to defaults.client and
+	// route the request to the wrong provider.
+	//
+	// Behavior matrix (raw pin → resolver action):
+	//   ""                                 → no-op, keep ModelOverride
+	//   "model"                            → bare model, keep ModelOverride
+	//   "p:model" p==workerProviderName    → keep ModelOverride
+	//   "p:model" p!=workerProviderName    → resolver must yield a fresh
+	//                                       client; nil client or any
+	//                                       error fails this run
+	//                                       explicitly (never silent).
+	modelOverride := prepared.ModelOverride
+	clientOverride := prepared.ClientOverride
+	if rawPin := strings.TrimSpace(prepared.ModelPin); rawPin != "" {
+		resolver := c.currentModelPinResolver()
+		if resolver == nil {
+			return fmt.Errorf("queued spawn %s has model pin %q but no model-pin resolver is installed; refusing to fall back to the worker default client", prepared.WorkerID, rawPin)
+		}
+		resolvedModel, resolvedClient, resolveErr := resolver(rawPin)
+		if resolveErr != nil {
+			return fmt.Errorf("queued spawn %s model pin %q could not be resolved: %w", prepared.WorkerID, rawPin, resolveErr)
+		}
+		if strings.TrimSpace(resolvedModel) == "" {
+			return fmt.Errorf("queued spawn %s model pin %q resolved to an empty model", prepared.WorkerID, rawPin)
+		}
+		if pinTargetsDifferentProvider(rawPin, c.WorkerProviderName()) {
+			if resolvedClient == nil {
+				return fmt.Errorf("queued spawn %s model pin %q targets a different provider but resolver returned no client; refusing to use the worker default client", prepared.WorkerID, rawPin)
+			}
+			clientOverride = resolvedClient
+		}
+		modelOverride = resolvedModel
+	}
 	_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
 		ID:             prepared.WorkerID,
 		ParticipantID:  participantID,
@@ -1754,8 +1941,8 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
 		InitialHistory: initialHistory,
-		Model:          prepared.ModelOverride,
-		Client:         prepared.ClientOverride,
+		Model:          modelOverride,
+		Client:         clientOverride,
 	})
 	if err != nil {
 		if worktreeRef != nil {

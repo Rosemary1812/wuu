@@ -89,7 +89,8 @@ func resolveParticipantModelOverride(rt *runtimeSessionReference, participantNam
 	if !found {
 		return "", nil, fmt.Errorf("participant %q pins model %q but provider %q is not configured", participantName, rawPin, providerName)
 	}
-	client, buildErr := providerfactory.BuildStreamClientWithRetry(providerCfg, providerName, retryConfigPointer(providerfactory.SubAgentRetryConfig()))
+	retryCfg := providerfactory.SubAgentRetryConfig()
+	client, buildErr := providerfactory.BuildStreamClientWithRetry(providerCfg, providerName, &retryCfg)
 	if buildErr != nil {
 		return "", nil, fmt.Errorf("participant %q pins model %q but provider %q failed to build: %w", participantName, rawPin, providerName, buildErr)
 	}
@@ -139,6 +140,7 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 	var (
 		modelOverride  string
 		clientOverride providers.StreamClient
+		modelPin       string
 	)
 	if participantID != "" {
 		p, err := session.GetParticipant(s.rt.SessionDir, participantID)
@@ -176,13 +178,14 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		// different provider install a dedicated stream client for
 		// this single run. Errors must not be swallowed: a bad pin
 		// is a config problem the user has to fix.
-		if strings.TrimSpace(p.Model) != "" {
+		modelPin = strings.TrimSpace(p.Model)
+		if modelPin != "" {
 			workerProvider := workerProviderName(s.rt)
 			var pinErr error
 			modelOverride, clientOverride, pinErr = resolveParticipantModelOverride(
 				&runtimeSessionReference{configPath: s.rt.ConfigPath},
 				p.Name,
-				p.Model,
+				modelPin,
 				workerProvider,
 			)
 			if pinErr != nil {
@@ -236,6 +239,7 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		Synchronous:      false,
 		ModelOverride:    modelOverride,
 		ClientOverride:   clientOverride,
+		ModelPin:         modelPin,
 	})
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -351,11 +355,4 @@ func deriveParticipantTaskName(description, prompt, subagentType string) string 
 		}
 	}
 	return "participant_task"
-}
-
-// retryConfigPointer returns a stable pointer to a RetryConfig value so
-// providerfactory.BuildStreamClientWithRetry can take its retry argument
-// by address without forcing a value-type copy at every call site.
-func retryConfigPointer(cfg providers.RetryConfig) *providers.RetryConfig {
-	return &cfg
 }

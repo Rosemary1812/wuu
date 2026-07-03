@@ -381,6 +381,22 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		return nil
 	}
 	threadRuntime.AgentControl.SetParticipantRoster(s.participantRosterForTool())
+	// Per-participant model pins persist the raw pin but not the stream
+	// client (StreamClient is not serializable). When a queued spawn
+	// restores after a process restart the AgentControl calls the
+	// installed resolver to rebuild the client; otherwise it would
+	// silently fall back to the worker default client and route the
+	// request to the wrong provider. Capture workerProviderName in the
+	// closure so the resolver sees the same value the original spawn
+	// saw.
+	if s.rt != nil {
+		workerProvider := workerProviderName(s.rt)
+		threadRuntime.AgentControl.SetWorkerProviderName(workerProvider)
+		ref := &runtimeSessionReference{configPath: s.rt.ConfigPath}
+		threadRuntime.AgentControl.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
+			return resolveParticipantModelOverride(ref, "queued-restore", rawPin, workerProvider)
+		})
+	}
 	sub := &threadRuntimeSubscription{
 		statusCh:             make(chan subagent.Notification, 64),
 		streamCh:             make(chan subagent.StreamNotification, 256),
