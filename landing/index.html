@@ -148,6 +148,7 @@ header.hero {
 .install-line:hover { border-color: var(--accent); }
 .install-line .dollar { color: var(--accent); }
 .install-line .copy-hint { font-size: 11px; color: var(--text-2); letter-spacing: .08em; }
+.trust { position: relative; z-index: 2; margin-top: 20px; font-size: 13px; color: var(--text-2); }
 
 /* hero screenshot with mouse tilt */
 .hero-shot {
@@ -288,6 +289,30 @@ header.hero {
 .core-strip .proto { font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; color: var(--accent); text-transform: uppercase; }
 .core-strip .d { font-size: 13.5px; color: var(--text-1); }
 
+/* ---------- faq ---------- */
+.faq-section { padding: 120px 0; }
+.faq-list { margin-top: 48px; max-width: 780px; border-top: 1px solid var(--line); }
+.faq-list details { border-bottom: 1px solid var(--line); }
+.faq-list summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 22px 4px; font-size: 17px; font-weight: 500;
+  transition: color .25s;
+}
+.faq-list summary::-webkit-details-marker { display: none; }
+.faq-list summary:hover { color: var(--accent); }
+.faq-list summary i {
+  flex: none; position: relative; width: 14px; height: 14px;
+}
+.faq-list summary i::before, .faq-list summary i::after {
+  content: ""; position: absolute; background: var(--text-2); transition: transform .3s, background .3s;
+}
+.faq-list summary i::before { left: 0; right: 0; top: 6px; height: 2px; }
+.faq-list summary i::after { top: 0; bottom: 0; left: 6px; width: 2px; }
+.faq-list details[open] summary i::after { transform: scaleY(0); }
+.faq-list details[open] summary { color: var(--accent); }
+.faq-list details p { padding: 0 4px 24px; color: var(--text-1); font-size: 15.5px; max-width: 44em; }
+
 /* ---------- acknowledgments ---------- */
 .credits-section { padding: 120px 0; }
 .credit-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 52px; }
@@ -359,7 +384,8 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
   <a class="logo" href="#">wuu<em>.</em></a>
   <div class="nav-links">
     <a href="#caps"><span class="zh">能力</span><span class="en">Capabilities</span></a>
-    <a href="#everywhere"><span class="zh">架构</span><span class="en">Architecture</span></a>
+    <a href="#everywhere"><span class="zh">用法</span><span class="en">Usage</span></a>
+    <a href="#faq">FAQ</a>
     <a href="#quickstart"><span class="zh">快速开始</span><span class="en">Quick start</span></a>
     <a href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub</a>
     <button class="lang-toggle" id="langToggle" aria-label="Switch language">EN</button>
@@ -372,8 +398,8 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
   <div class="wrap">
     <h1 class="reveal in">wuu</h1>
     <p class="sub reveal in d1">
-      <span class="zh">帮你把工程任务<strong>端到端做完</strong>的 AI Coding Agent。<br>开源，本地优先，用你自己的 API Key。</span>
-      <span class="en">A coding agent that takes engineering tasks <strong>end to end</strong>.<br>Open source, local-first, powered by your own API key.</span>
+      <span class="zh">一句话描述任务，它在你的仓库里读代码、改文件、跑测试，<strong>直到做完</strong>。<br>免费开源，接上你已有的 API Key 就能用。</span>
+      <span class="en">Describe the task in one sentence — it reads, edits, and tests code in your repo <strong>until it's done</strong>.<br>Free and open source. Works with the API key you already have.</span>
     </p>
     <div class="hero-cta reveal in d2">
       <a class="btn btn-solid" href="#quickstart"><span class="zh">开始使用</span><span class="en">Get started</span></a>
@@ -384,6 +410,10 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
         <span><span class="dollar">$</span> go install github.com/blueberrycongee/wuu/cmd/wuu@latest</span>
         <span class="copy-hint zh">复制</span><span class="copy-hint en">copy</span>
       </button>
+      <p class="trust">
+        <span class="zh">MIT 开源 · 在你自己的机器上运行 · 支持 Anthropic 和任何 OpenAI 兼容模型</span>
+        <span class="en">MIT licensed · Runs on your own machine · Works with Anthropic and any OpenAI-compatible model</span>
+      </p>
     </div>
   </div>
   <div class="hero-shot reveal in d3" id="heroShot">
@@ -408,12 +438,12 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
 
     <div class="cap-row">
       <div class="cap-copy reveal">
-        <h3><span class="zh">为真实的工程工作而造</span><span class="en">Built to drive real engineering work</span></h3>
+        <h3><span class="zh">交给它，就能拿回结果</span><span class="en">Hand it a task, get back a result</span></h3>
         <p>
-          <span class="zh">交给它一句话，它自己找到相关文件、动手修改、运行测试、根据失败继续迭代——最后交回一次干净的改动。文件和截图也能直接作为上下文传入。</span>
-          <span class="en">Hand it one sentence and it finds the relevant files, makes the change, runs the tests, and iterates on failures — then hands back a clean diff. Files and screenshots go straight in as context.</span>
+          <span class="zh">「修一下这个失败的测试」——它自己找到相关文件、动手修改、跑测试、根据报错继续调，最后交回一份干净的 diff 和一句人话总结。报错截图、需求文档，直接扔给它当上下文。</span>
+          <span class="en">"Fix the failing test" — it finds the relevant files, makes the change, runs the tests, iterates on the errors, and hands back a clean diff with a plain-language summary. Error screenshots and spec docs go straight in as context.</span>
         </p>
-        <p class="mini"><span class="zh">读写文件 · 执行命令 · 审查改动 · 附件上下文</span><span class="en">File edits · Shell execution · Change review · Attachments</span></p>
+        <p class="mini"><span class="zh">修 bug · 写功能 · 重构 · 迁移</span><span class="en">Bug fixes · Features · Refactors · Migrations</span></p>
       </div>
       <div class="cap-visual reveal d1">
         <div class="card terminal" id="terminal">
@@ -425,12 +455,12 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
 
     <div class="cap-row flip">
       <div class="cap-copy reveal">
-        <h3><span class="zh">为多智能体工作流设计</span><span class="en">Designed for multi-agent workflows</span></h3>
+        <h3><span class="zh">大任务，拆开并行做</span><span class="en">Big tasks, split and run in parallel</span></h3>
         <p>
-          <span class="zh">规划、实现、审查、调试、QA——把一个任务拆给专门的子智能体并行推进，再合并成一份结果。可持久化的工作流支持分阶段执行与断点恢复，跑到一半不会前功尽弃。</span>
-          <span class="en">Planner, worker, reviewer, debugger, QA — split one task across specialized subagents working in parallel, then merge the results. Durable workflows run in phases and recover from interruptions, so long runs never start over.</span>
+          <span class="zh">不用盯着一个 agent 慢慢磨。wuu 会把任务拆给几个子智能体同时推进——一个改代码、一个审查、一个补测试——最后合并成一份结果。跑到一半中断了，从断点接着来，不会前功尽弃。</span>
+          <span class="en">No babysitting a single agent. wuu splits the task across subagents working at once — one editing, one reviewing, one adding tests — and merges the results. If a long run gets interrupted, it picks up from the checkpoint instead of starting over.</span>
         </p>
-        <p class="mini"><span class="zh">子智能体 · 工作流 · 阶段与恢复</span><span class="en">Subagents · Workflows · Phases &amp; recovery</span></p>
+        <p class="mini"><span class="zh">并行推进 · 自动审查 · 断点恢复</span><span class="en">Parallel work · Built-in review · Checkpoint recovery</span></p>
       </div>
       <div class="cap-visual reveal d1">
         <div class="card fan">
@@ -448,12 +478,12 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
 
     <div class="cap-row">
       <div class="cap-copy reveal">
-        <h3><span class="zh">适配你的项目和习惯</span><span class="en">Adapts to how you build</span></h3>
+        <h3><span class="zh">想用哪个模型，用哪个</span><span class="en">Use whichever model you want</span></h3>
         <p>
-          <span class="zh">技能（skills）让它按你的方式做特定类型的工作；持久记忆跨会话记住偏好和上下文；会话可以随时恢复、从检查点 fork——昨天没做完的事，今天接着做。</span>
-          <span class="en">Skills teach it to do specific kinds of work your way. Persistent memory carries preferences and context across sessions. Sessions resume anytime and fork from checkpoints — yesterday's work continues today.</span>
+          <span class="zh">Claude、GPT、开源模型、本地网关——改一行配置就换。难题交给旗舰模型，日常任务用便宜的，账单直接来自模型提供商，没有订阅，也没有中间商抽成。</span>
+          <span class="en">Claude, GPT, open models, local gateways — switching is a one-line config change. Flagship models for hard problems, cheap ones for routine work. The bill comes straight from your provider: no subscription, no markup.</span>
         </p>
-        <p class="mini"><span class="zh">技能 · 持久记忆 · 会话恢复与 fork</span><span class="en">Skills · Persistent memory · Resume &amp; fork</span></p>
+        <p class="mini"><span class="zh">Anthropic · OpenAI 兼容 · 本地网关 · 按用量付费</span><span class="en">Anthropic · OpenAI-compatible · Local gateways · Pay per use</span></p>
       </div>
       <div class="cap-visual reveal d1">
         <div class="card conf"><span class="p"># .wuu.json</span>
@@ -471,12 +501,12 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
 
     <div class="cap-row flip">
       <div class="cap-copy reveal">
-        <h3><span class="zh">全天候的后台工作</span><span class="en">Made for always-on background work</span></h3>
+        <h3><span class="zh">你睡觉的时候，它在干活</span><span class="en">It works while you sleep</span></h3>
         <p>
-          <span class="zh">定时任务按 cron 自动醒来，处理例行但重要的事：跑 review、盯 CI、整理 issue。<code class="inline">wuu exec</code> 输出流式 JSONL，脚本、CI 和其他 agent 都能编程式驱动它——你专注写代码就好。</span>
-          <span class="en">Scheduled tasks wake on cron and handle the routine-but-important work: reviews, CI babysitting, issue triage. <code class="inline">wuu exec</code> streams JSONL, so scripts, CI, and other agents drive it programmatically — you stay focused on building.</span>
+          <span class="zh">把例行但重要的事排成定时任务：早上醒来 PR 已经 review 完，CI 挂了它自己去修，新 issue 整理好了标签。你只在需要决策的时候出现。</span>
+          <span class="en">Turn routine-but-important work into scheduled tasks: wake up to reviewed PRs, CI failures already fixed, new issues triaged and labeled. You show up only when a decision needs you.</span>
         </p>
-        <p class="mini"><span class="zh">定时任务 · JSONL 输出 · CI 集成</span><span class="en">Scheduled tasks · JSONL output · CI integration</span></p>
+        <p class="mini"><span class="zh">定时任务 · 自动 review · CI 值守</span><span class="en">Scheduled tasks · Automated review · CI watch</span></p>
       </div>
       <div class="cap-visual reveal d1">
         <div class="card sched">
@@ -492,68 +522,31 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
 
 <section class="everywhere" id="everywhere">
   <div class="wrap">
-    <span class="kicker reveal"><span class="zh">架构</span><span class="en">Architecture</span></span>
+    <span class="kicker reveal"><span class="zh">用法</span><span class="en">How you use it</span></span>
     <h2 class="title reveal">
-      <span class="zh">同一个 agent，随处可用。</span>
-      <span class="en">The same agent everywhere you build.</span>
+      <span class="zh">想聊就开桌面端，<br>想自动化就用命令行。</span>
+      <span class="en">A desktop app when you want to talk.<br>A CLI when you want to automate.</span>
     </h2>
     <p class="lede reveal">
-      <span class="zh">wuu 是一个 Go 核心加多个 Shell：桌面应用、CLI，以及未来的编辑器插件，共享同一套运行时、会话和配置。在一个地方开始，在另一个地方继续。</span>
-      <span class="en">wuu is one Go core with many shells: the desktop app, the CLI, and future editor plugins share the same runtime, sessions, and config. Start in one place, continue in another.</span>
+      <span class="zh">两边是同一个 agent，会话互通：桌面端开始的工作，命令行里可以接着跑，反过来也一样。</span>
+      <span class="en">It's the same agent on both sides, and sessions carry over: start in the app, continue from the command line — or the other way around.</span>
     </p>
     <div class="surface-grid">
       <div class="card surface reveal">
         <span class="step">01</span>
-        <h3><span class="zh">从桌面应用开始</span><span class="en">Start in the desktop app</span></h3>
-        <p><span class="zh">交互式地探索任务：多标签会话、过程记录、改动审查，适合需要来回讨论的工作。</span><span class="en">Explore tasks interactively: tabbed sessions, process logs, and change review — for work that needs a conversation.</span></p>
+        <h3><span class="zh">桌面应用</span><span class="en">Desktop app</span></h3>
+        <p><span class="zh">适合边讨论边做的工作：多标签会话、完整的过程记录、逐文件的改动审查，随时打断和追问。</span><span class="en">For work that needs a conversation: tabbed sessions, full process logs, file-by-file change review — interrupt and follow up anytime.</span></p>
       </div>
       <div class="card surface reveal d1">
         <span class="step">02</span>
-        <h3><span class="zh">在终端和 CI 里继续</span><span class="en">Continue in the terminal and CI</span></h3>
-        <p><span class="zh"><code class="inline">wuu exec</code> 把同一个 agent 带进脚本、CI 和自动化——<code class="inline">resume --last</code> 接着昨天的会话继续。</span><span class="en"><code class="inline">wuu exec</code> brings the same agent to scripts, CI, and automation — <code class="inline">resume --last</code> picks up yesterday's session.</span></p>
+        <h3><span class="zh">命令行与 CI</span><span class="en">Command line &amp; CI</span></h3>
+        <p><span class="zh"><code class="inline">wuu exec "..."</code> 一条命令跑任务，<code class="inline">resume --last</code> 接着昨天的会话；输出是流式 JSONL，脚本和 CI 拿来就能用。</span><span class="en">Run a task with <code class="inline">wuu exec "..."</code>, pick up yesterday's session with <code class="inline">resume --last</code>. Output streams as JSONL — ready for scripts and CI.</span></p>
       </div>
       <div class="card surface reveal d2">
         <span class="step">03</span>
-        <h3><span class="zh">未来：你的编辑器</span><span class="en">Next: your editor</span></h3>
-        <p><span class="zh">VS Code、JetBrains 等插件可以直接复用同一个核心——通过 <code class="inline">wuu app-server</code>，不需要 fork。</span><span class="en">VS Code, JetBrains, and other plugins can reuse the exact same core via <code class="inline">wuu app-server</code> — no forks required.</span></p>
+        <h3><span class="zh">你的编辑器（在路上）</span><span class="en">Your editor (coming)</span></h3>
+        <p><span class="zh">VS Code、JetBrains 插件会接入同一个 agent、同一批会话。写插件的人看这里：<a href="https://github.com/blueberrycongee/wuu/blob/main/docs/app-server-protocol.md" target="_blank" rel="noopener" style="color:var(--accent)">app-server 协议文档</a>。</span><span class="en">VS Code and JetBrains plugins will connect to the same agent and the same sessions. Building an integration? See the <a href="https://github.com/blueberrycongee/wuu/blob/main/docs/app-server-protocol.md" target="_blank" rel="noopener" style="color:var(--accent)">app-server protocol docs</a>.</span></p>
       </div>
-    </div>
-    <div class="core-strip reveal d2">
-      <span class="t"><span class="zh">Go 核心</span><span class="en">Go core</span></span>
-      <span class="proto">JSON-RPC · app-server</span>
-      <span class="d"><span class="zh">Agent 运行时 · 模型提供商 · 工具循环 · 会话 · 配置</span><span class="en">Agent runtime · Providers · Tool loop · Sessions · Config</span></span>
-    </div>
-  </div>
-</section>
-
-<section class="credits-section">
-  <div class="wrap">
-    <span class="kicker reveal"><span class="zh">致谢</span><span class="en">Acknowledgments</span></span>
-    <h2 class="title reveal">
-      <span class="zh">站在这些项目的肩膀上。</span>
-      <span class="en">Standing on the shoulders of these projects.</span>
-    </h2>
-    <p class="lede reveal">
-      <span class="zh">wuu 的设计深受这些开源项目启发——它们在 agent 运行时、工具循环和多智能体编排上的工作，塑造了 wuu 的许多决策。</span>
-      <span class="en">wuu's design draws heavily from these open-source projects — their work on agent runtimes, tool loops, and multi-agent orchestration shaped many of wuu's decisions.</span>
-    </p>
-    <div class="credit-grid">
-      <a class="card credit reveal" href="https://github.com/openai/codex" target="_blank" rel="noopener">
-        <span class="n">Codex</span>
-        <p><span class="zh">OpenAI 的 coding agent</span><span class="en">OpenAI's coding agent</span></p>
-      </a>
-      <a class="card credit reveal d1" href="https://github.com/sst/opencode" target="_blank" rel="noopener">
-        <span class="n">OpenCode</span>
-        <p><span class="zh">开源终端 coding agent</span><span class="en">The open-source terminal coding agent</span></p>
-      </a>
-      <a class="card credit reveal d2" href="https://github.com/badlogic/pi-mono" target="_blank" rel="noopener">
-        <span class="n">pi</span>
-        <p><span class="zh">Mario Zechner 的极简 agent 工具集</span><span class="en">Mario Zechner's minimal AI agent toolkit</span></p>
-      </a>
-      <a class="card credit reveal d3" href="https://github.com/MoonshotAI/kimi-cli" target="_blank" rel="noopener">
-        <span class="n">Kimi Code</span>
-        <p><span class="zh">Moonshot AI 的 coding agent</span><span class="en">Moonshot AI's coding agent</span></p>
-      </a>
     </div>
   </div>
 </section>
@@ -596,6 +589,70 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
 <span class="dollar">$</span> wuu exec resume --last "continue"</div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="faq-section" id="faq">
+  <div class="wrap">
+    <span class="kicker reveal">FAQ</span>
+    <h2 class="title reveal">
+      <span class="zh">你可能想问。</span>
+      <span class="en">Questions you might have.</span>
+    </h2>
+    <div class="faq-list reveal">
+      <details>
+        <summary><span class="zh">要花钱吗？</span><span class="en">Does it cost anything?</span><i></i></summary>
+        <p><span class="zh">wuu 本身免费开源（MIT）。你只为自己调用的模型付费——用你已有的 API Key，账单直接来自模型提供商，没有订阅，也没有抽成。</span><span class="en">wuu itself is free and open source (MIT). You only pay for the model calls you make — with your own API key, billed directly by your provider. No subscription, no markup.</span></p>
+      </details>
+      <details>
+        <summary><span class="zh">我的代码会被上传到哪里吗？</span><span class="en">Does my code get uploaded anywhere?</span><i></i></summary>
+        <p><span class="zh">wuu 在你自己的机器上运行。代码只会发给你自己配置的模型提供商——和你亲自调 API 一模一样，中间没有任何别的服务器。</span><span class="en">wuu runs on your own machine. Your code only goes to the model provider you configured — exactly as if you called the API yourself. There is no server in between.</span></p>
+      </details>
+      <details>
+        <summary><span class="zh">支持哪些模型？</span><span class="en">Which models does it support?</span><i></i></summary>
+        <p><span class="zh">Anthropic 全系，以及任何 OpenAI 兼容端点：OpenAI、OpenRouter、one-api、本地网关等。在配置里改一行就能切换。</span><span class="en">All Anthropic models, plus any OpenAI-compatible endpoint: OpenAI, OpenRouter, one-api, local gateways, and more. Switching is a one-line config change.</span></p>
+      </details>
+      <details>
+        <summary><span class="zh">和 Cursor、Claude Code 有什么区别？</span><span class="en">How is it different from Cursor or Claude Code?</span><i></i></summary>
+        <p><span class="zh">最大的区别是完全开源和 BYOK：没有订阅费，不锁定某一家模型，代码可以自己审计。形态上同时提供桌面应用和可脚本化的 CLI，多智能体编排和定时任务是内置的。</span><span class="en">The big differences are full open source and BYOK: no subscription, no lock-in to one model vendor, and code you can audit yourself. It ships both a desktop app and a scriptable CLI, with multi-agent orchestration and scheduled tasks built in.</span></p>
+      </details>
+      <details>
+        <summary><span class="zh">它能记住我的项目和习惯吗？</span><span class="en">Does it remember my project and preferences?</span><i></i></summary>
+        <p><span class="zh">能。会话可以随时恢复、从检查点 fork；持久记忆跨会话保留偏好和上下文；技能（skills）让它按你的方式做特定类型的工作。</span><span class="en">Yes. Sessions resume anytime and fork from checkpoints; persistent memory carries preferences and context across sessions; skills teach it to do specific kinds of work your way.</span></p>
+      </details>
+      <details>
+        <summary><span class="zh">现在到什么阶段了？</span><span class="en">How mature is it?</span><i></i></summary>
+        <p><span class="zh">pre-1.0（当前 v0.1.0），接口和桌面端行为还在演进，目前推荐从源码安装。遇到问题欢迎<a href="https://github.com/blueberrycongee/wuu/issues" target="_blank" rel="noopener" style="color:var(--accent)">提 issue</a>。</span><span class="en">Pre-1.0 (currently v0.1.0) — interfaces and desktop behavior are still evolving, and installing from source is recommended. If you hit rough edges, <a href="https://github.com/blueberrycongee/wuu/issues" target="_blank" rel="noopener" style="color:var(--accent)">open an issue</a>.</span></p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="credits-section">
+  <div class="wrap">
+    <span class="kicker reveal"><span class="zh">致谢</span><span class="en">Acknowledgments</span></span>
+    <h2 class="title reveal">
+      <span class="zh">站在这些项目的肩膀上。</span>
+      <span class="en">Standing on the shoulders of these projects.</span>
+    </h2>
+    <div class="credit-grid">
+      <a class="card credit reveal" href="https://github.com/openai/codex" target="_blank" rel="noopener">
+        <span class="n">Codex</span>
+        <p><span class="zh">OpenAI 的 coding agent</span><span class="en">OpenAI's coding agent</span></p>
+      </a>
+      <a class="card credit reveal d1" href="https://github.com/sst/opencode" target="_blank" rel="noopener">
+        <span class="n">OpenCode</span>
+        <p><span class="zh">开源终端 coding agent</span><span class="en">The open-source terminal coding agent</span></p>
+      </a>
+      <a class="card credit reveal d2" href="https://github.com/badlogic/pi-mono" target="_blank" rel="noopener">
+        <span class="n">pi</span>
+        <p><span class="zh">Mario Zechner 的极简 agent 工具集</span><span class="en">Mario Zechner's minimal AI agent toolkit</span></p>
+      </a>
+      <a class="card credit reveal d3" href="https://github.com/MoonshotAI/kimi-cli" target="_blank" rel="noopener">
+        <span class="n">Kimi Code</span>
+        <p><span class="zh">Moonshot AI 的 coding agent</span><span class="en">Moonshot AI's coding agent</span></p>
+      </a>
     </div>
   </div>
 </section>
