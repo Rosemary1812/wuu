@@ -19,7 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/cron"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/hooks"
-	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
+	"github.com/blueberrycongee/wuu/internal/memdir"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -287,7 +287,7 @@ func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	}
 }
 
-func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
+func TestNewSessionRetiresMemoryToolsAndInjectsMemdir(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -315,8 +315,8 @@ func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 	if rt.Toolkit == nil {
 		t.Fatal("expected toolkit")
 	}
-	if rt.Toolkit.Memory() == nil {
-		t.Fatal("default profile should attach the global long-term memory store")
+	if rt.Toolkit.Memory() != nil || rt.Toolkit.WorkspaceMemory() != nil {
+		t.Fatal("memstore layers are retired and must not be mounted (memory-redesign §6)")
 	}
 	if rt.Toolkit.ActiveSurface().ProfileName == "" {
 		t.Fatal("expected runtime toolkit to install a model surface")
@@ -334,20 +334,9 @@ func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 		strings.Contains(rt.BaseSystemPrompt, "approval_policy:") {
 		t.Fatalf("base system prompt should keep runtime permission state out of the stable prompt:\n%s", rt.BaseSystemPrompt)
 	}
-	defs := make(map[string]bool)
 	for _, def := range rt.Toolkit.Definitions() {
-		defs[def.Name] = true
-	}
-	for _, name := range []string{"read_memory", "write_memory"} {
-		if !defs[name] {
-			t.Fatalf("compatible provider auto mode should expose %s in the flat tool surface", name)
-		}
-		info, ok := rt.Toolkit.ToolInfo(name)
-		if !ok {
-			t.Fatalf("ToolInfo(%q) not found", name)
-		}
-		if info.Exposure != tools.ToolExposureDirect {
-			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDirect)
+		if def.Name == "read_memory" || def.Name == "write_memory" {
+			t.Fatalf("retired memory tool %q must not appear on any tool surface", def.Name)
 		}
 	}
 }
@@ -484,8 +473,11 @@ func TestApplyGeneralConfigRefreshesPromptAndMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if rt.Toolkit == nil || rt.Toolkit.Memory() == nil {
-		t.Fatal("expected default session to start with memory enabled")
+	if rt.Toolkit == nil {
+		t.Fatal("expected toolkit")
+	}
+	if !rt.MemdirEnabled || !strings.Contains(rt.BaseSystemPrompt, "# Memory directory") {
+		t.Fatal("expected default session to start with memdir enabled")
 	}
 
 	baseConfig.Agent.AppendSystemPrompt = "默认用中文回答。"
@@ -495,16 +487,14 @@ func TestApplyGeneralConfigRefreshesPromptAndMemory(t *testing.T) {
 	if rt.UserSystemPrompt != "默认用中文回答。" || !strings.Contains(prompt, "默认用中文回答。") || !strings.Contains(rt.StreamRunner.SystemPrompt, "默认用中文回答。") {
 		t.Fatalf("user prompt not refreshed: user=%q prompt=%q runner=%q", rt.UserSystemPrompt, prompt, rt.StreamRunner.SystemPrompt)
 	}
-	if rt.Toolkit.Memory() != nil {
-		t.Fatal("memory.disable should detach toolkit memory provider")
+	if rt.MemdirEnabled {
+		t.Fatal("memory.disable should disable memdir")
+	}
+	if strings.Contains(prompt, "# Memory directory") {
+		t.Fatalf("memory.disable should drop the memdir section:\n%s", prompt)
 	}
 	if rt.DreamIntervalDays != 0 {
 		t.Fatalf("DreamIntervalDays = %d, want disabled", rt.DreamIntervalDays)
-	}
-	for _, def := range rt.Toolkit.Definitions() {
-		if def.Name == "read_memory" || def.Name == "write_memory" {
-			t.Fatalf("memory tool %q should be hidden after memory.disable", def.Name)
-		}
 	}
 }
 
@@ -1130,7 +1120,7 @@ func TestNewThreadRuntimeLocalWorkerDoesNotTeachTerminalPaths(t *testing.T) {
 	}
 }
 
-func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
+func TestNewThreadRuntimeAgentProfileSpawnGetsReadOnlyUserMemory(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	wuuHome := filepath.Join(home, "state")
@@ -1138,16 +1128,12 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	t.Setenv("WUU_HOME", wuuHome)
 	t.Setenv("TEST_WUU_KEY", "abc")
 
-	provider, err := memstore.NewFileProvider(statepath.GlobalMemoryDir(wuuHome))
-	if err != nil {
-		t.Fatalf("NewFileProvider: %v", err)
+	userNotebook := memdir.UserMemdir(wuuHome)
+	if err := os.MkdirAll(userNotebook, 0o755); err != nil {
+		t.Fatalf("mkdir user notebook: %v", err)
 	}
-	if _, err := provider.Store(context.Background(), memstore.Entry{
-		Content: "QA workflow checks visual regressions before release",
-		Tags:    []string{"target:memory", "qa"},
-		Source:  memstore.SourceAssistant,
-	}); err != nil {
-		t.Fatalf("Store memory: %v", err)
+	if err := os.WriteFile(filepath.Join(userNotebook, "MEMORY.md"), []byte("- [QA gate](qa_gate.md) — QA workflow checks visual regressions before release\n"), 0o644); err != nil {
+		t.Fatalf("seed notebook index: %v", err)
 	}
 
 	rt, err := NewSession(Options{
@@ -1168,9 +1154,6 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
-	}
-	if rt.Toolkit.Memory() == nil {
-		t.Fatal("ordinary root session should attach the global long-term memory store")
 	}
 	client := &sessionRecordingClient{}
 	rt.WorkerClient = client
@@ -1202,8 +1185,8 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		toolNames[def.Name] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory"} {
-		if !toolNames[name] {
-			t.Fatalf("compatible profile worker should expose %s in the flat tool surface: %+v", name, req.Tools)
+		if toolNames[name] {
+			t.Fatalf("retired memory tool %s must not reach worker tool surfaces: %+v", name, req.Tools)
 		}
 	}
 	if toolNames["tool_search"] {
@@ -1229,73 +1212,7 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 	}
 }
 
-func TestNewSessionUsesGlobalMemoryStore(t *testing.T) {
-	root := t.TempDir()
-	home := t.TempDir()
-	wuuHome := filepath.Join(home, "state")
-	t.Setenv("WUU_HOME", wuuHome)
-	t.Setenv("TEST_WUU_KEY", "abc")
-
-	rt, err := NewSession(Options{
-		RootDir:    root,
-		HomeDir:    home,
-		ConfigPath: filepath.Join(root, ".wuu.json"),
-		Config: config.Config{
-			DefaultProvider: "test",
-			Providers: map[string]config.ProviderConfig{
-				"test": {
-					Type:      "openai-compatible",
-					BaseURL:   "https://example.test/v1",
-					APIKeyEnv: "TEST_WUU_KEY",
-					Model:     "gpt-test",
-				},
-			},
-			Memory: config.MemoryConfig{
-				MemoryCharLimit: 42,
-				UserCharLimit:   24,
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	if rt.Toolkit == nil {
-		t.Fatal("expected toolkit")
-	}
-	provider, ok := rt.Toolkit.Memory().(*memstore.FileProvider)
-	if !ok {
-		t.Fatalf("memory provider = %T, want *FileProvider", rt.Toolkit.Memory())
-	}
-	want := statepath.GlobalMemoryDir(wuuHome)
-	if provider.Dir() != want {
-		t.Fatalf("memory dir = %q, want %q", provider.Dir(), want)
-	}
-	if strings.HasPrefix(provider.Dir(), rt.StateDir+string(os.PathSeparator)) {
-		t.Fatalf("memory dir should be the global user store, got workspace path %q", provider.Dir())
-	}
-	memoryLimit, userLimit := rt.Toolkit.MemoryLimits()
-	if memoryLimit != 42 || userLimit != 24 {
-		t.Fatalf("memory limits = (%d, %d), want (42, 24)", memoryLimit, userLimit)
-	}
-	defs := make(map[string]bool)
-	for _, def := range rt.Toolkit.Definitions() {
-		defs[def.Name] = true
-	}
-	for _, name := range []string{"read_memory", "write_memory"} {
-		if !defs[name] {
-			t.Fatalf("compatible provider auto mode should expose %s in the flat tool surface", name)
-		}
-		info, ok := rt.Toolkit.ToolInfo(name)
-		if !ok {
-			t.Fatalf("ToolInfo(%q) not found", name)
-		}
-		if info.Exposure != tools.ToolExposureDirect {
-			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDirect)
-		}
-	}
-}
-
-func TestNewSessionInjectsProfileMemorySnapshot(t *testing.T) {
+func TestNewSessionInjectsUserNotebookIndex(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	wuuHome := filepath.Join(home, "state")
@@ -1303,23 +1220,14 @@ func TestNewSessionInjectsProfileMemorySnapshot(t *testing.T) {
 	t.Setenv("WUU_HOME", wuuHome)
 	t.Setenv("TEST_WUU_KEY", "abc")
 
-	provider, err := memstore.NewFileProvider(statepath.GlobalMemoryDir(wuuHome))
-	if err != nil {
-		t.Fatalf("NewFileProvider: %v", err)
+	userNotebook := memdir.UserMemdir(wuuHome)
+	if err := os.MkdirAll(userNotebook, 0o755); err != nil {
+		t.Fatalf("mkdir user notebook: %v", err)
 	}
-	if _, err := provider.Store(context.Background(), memstore.Entry{
-		Content: "User prefers concise Chinese replies",
-		Tags:    []string{"target:user", "tone"},
-		Source:  memstore.SourceUser,
-	}); err != nil {
-		t.Fatalf("Store user memory: %v", err)
-	}
-	if _, err := provider.Store(context.Background(), memstore.Entry{
-		Content: "Project uses make install for local CLI refresh",
-		Tags:    []string{"target:memory", "wuu"},
-		Source:  memstore.SourceAssistant,
-	}); err != nil {
-		t.Fatalf("Store agent memory: %v", err)
+	index := "- [Reply style](reply_style.md) — User prefers concise Chinese replies\n" +
+		"- [Local refresh](local_refresh.md) — Project uses make install for local CLI refresh\n"
+	if err := os.WriteFile(filepath.Join(userNotebook, "MEMORY.md"), []byte(index), 0o644); err != nil {
+		t.Fatalf("write notebook index: %v", err)
 	}
 
 	rt, err := NewSession(Options{
@@ -1342,20 +1250,16 @@ func TestNewSessionInjectsProfileMemorySnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	// The memdir section injects the user notebook's MEMORY.md content —
-	// here the store-rendered document seeded above.
+	// The memdir section injects the user notebook's MEMORY.md index lines.
 	for _, want := range []string{
 		"# Memory directory",
 		"## MEMORY.md",
-		"User prefers concise Chinese replies",
-		"Project uses make install",
+		"- [Reply style](reply_style.md) — User prefers concise Chinese replies",
+		"- [Local refresh](local_refresh.md) — Project uses make install for local CLI refresh",
 	} {
 		if !strings.Contains(rt.BaseSystemPrompt, want) {
 			t.Fatalf("BaseSystemPrompt missing %q:\n%s", want, rt.BaseSystemPrompt)
 		}
-	}
-	if strings.Contains(rt.BaseSystemPrompt, "target:user") || strings.Contains(rt.BaseSystemPrompt, "target:memory") {
-		t.Fatalf("internal target tags leaked into prompt:\n%s", rt.BaseSystemPrompt)
 	}
 }
 

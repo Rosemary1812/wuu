@@ -25,7 +25,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/memory"
-	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
@@ -88,9 +87,6 @@ type Session struct {
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.
 	MemdirEnabled               bool
-	ProfileMemoryNudgeInterval  int
-	ProfileMemoryCharLimit      int
-	ProfileUserMemoryCharLimit  int
 	DreamIntervalDays           int
 	AgentControl                *agentcontrol.AgentControl
 	ProcessManager              *process.Manager
@@ -157,7 +153,6 @@ func NewSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 	}
-	profileName := cfg.Agent.ProfileName()
 	profileMemoryEnabled := cfg.Agent.ProfileMemoryEnabled()
 	userSystemPrompt := cfg.Agent.UserSystemPrompt()
 	permissions := config.ResolveAgentPermissions(cfg.Agent)
@@ -232,9 +227,6 @@ func NewSession(opts Options) (*Session, error) {
 
 	var toolExecutor agent.ToolExecutor
 	var toolkit *tools.Toolkit
-	var profileMemoryProvider memstore.Provider
-	profileMemoryCharLimit := cfg.Memory.ProfileMemoryCharLimit()
-	profileUserMemoryCharLimit := cfg.Memory.ProfileUserCharLimit()
 	toolLoadingPreference := cfg.Agent.ToolLoadingPreference()
 	toolLoadingMode, toolSearchEnabled, nativeDeferredDiscovery := resolveToolLoadingModeForProvider(toolLoadingPreference, ruleProviderCfg, toolModeModel, mainRole.ProviderOptions)
 	experimentalDeferredBundles := cfg.Agent.ExperimentalDeferredToolBundles
@@ -253,23 +245,10 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
-		kit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
-		if profileMemoryEnabled && !cfg.Memory.Disable {
-			// Attach both long-term memory layers. The GLOBAL layer
-			// (statepath.GlobalMemoryDir) is the single per-user store shared
-			// by every session; the profileName dimension is ignored. The
-			// WORKSPACE layer (statepath.WorkspaceMemoryDir) is scoped to this
-			// workspace and holds project-specific durable facts. The escape
-			// hatch Memory.Disable=true removes both layers, so a user who
-			// wants a fully memoryless session keeps that option.
-			if memProvider, memErr := newProfileMemoryProvider(wuuHome, profileName); memErr == nil {
-				kit.SetMemory(memProvider)
-				profileMemoryProvider = memProvider
-			}
-			if wsProvider, wsErr := newWorkspaceMemoryProvider(workspaceStateDir); wsErr == nil && wsProvider != nil {
-				kit.SetWorkspaceMemory(wsProvider)
-			}
-		}
+		// The retired memstore layers (read_memory/write_memory) are no
+		// longer mounted (memory-redesign §6): memory is the file-directory
+		// notebook injected into the prompt and written with plain file
+		// tools inside the whitelist below.
 		if memdirEnabled {
 			// The user notebook joins the session agent's file-tool whitelist
 			// (memory-redesign §3): FileScopeRoots replaces the single-RootDir
@@ -382,25 +361,6 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetToolSearchEnabled(workerToolSearchEnabled)
 				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 				wkit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
-				wkit.SetMemoryLimits(profileMemoryCharLimit, profileUserMemoryCharLimit)
-				if strings.TrimSpace(meta.AgentProfile) != "" {
-					memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
-					if memErr != nil {
-						return nil, memErr
-					}
-					wkit.SetMemory(memProvider)
-					// Attach the worker's workspace memory layer too, scoped to
-					// the worker's own workspace state directory.
-					if wsProvider, wsErr := newWorkspaceMemoryProvider(workerStateDir); wsErr == nil {
-						wkit.SetWorkspaceMemory(wsProvider)
-					}
-				} else {
-					// Workers without an explicit AgentProfile are transient
-					// and stay memoryless — they must not inherit the parent
-					// session's global or workspace memory through CloneForRoot.
-					wkit.SetMemory(nil)
-					wkit.SetWorkspaceMemory(nil)
-				}
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
 				applyWorkerToolFilter(wkit, wt)
 				// Group management is resident-only; spawned runs never
@@ -430,24 +390,14 @@ func NewSession(opts Options) (*Session, error) {
 		ruleProviderCfg,
 		cfg.Agent.MaxContextTokens,
 	)
-	profileMemoryNudgeInterval := cfg.Memory.ProfileMemoryNudgeInterval()
 	dreamIntervalDays := cfg.Memory.DreamIntervalDaysValue()
 	if cfg.Memory.Disable {
 		dreamIntervalDays = 0
 	}
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
-	// The background memory reviewer targets the GLOBAL layer only. Its job is
-	// to distill cross-session, cross-project user/agent facts (preferences,
-	// corrections, identity) from the transcript — exactly the global-flavored
-	// facts. Project-specific facts are captured by the foreground agent's
-	// scope-aware write_memory (which defaults to the workspace layer and has
-	// full task context), and the separate dream pass already consolidates
-	// workspace/session history. Keeping review global-only preserves the
-	// reviewer's existing, well-tested behavior and avoids a background LLM
-	// misrouting facts or flooding the workspace layer with project trivia.
-	if memoryReviewer := newProfileMemoryReviewScheduler(profileMemoryProvider, profileMemoryNudgeInterval, profileMemoryCharLimit, profileUserMemoryCharLimit); memoryReviewer != nil {
-		afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
-	}
+	// The background profile-memory reviewer is retired (memory-redesign §6):
+	// its distillation duty moves to the settings-panel curator agent and a
+	// future dream v2. The dream scheduler below stays untouched.
 	if toolkit != nil {
 		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
@@ -495,9 +445,6 @@ func NewSession(opts Options) (*Session, error) {
 		Plugins:                     discoveredPlugins,
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
-		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
-		ProfileMemoryCharLimit:      profileMemoryCharLimit,
-		ProfileUserMemoryCharLimit:  profileUserMemoryCharLimit,
 		DreamIntervalDays:           dreamIntervalDays,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
@@ -864,24 +811,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetToolSearchEnabled(workerToolSearchEnabled)
 					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
 					workerKit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
-					if strings.TrimSpace(meta.AgentProfile) != "" {
-						memProvider, memErr := newProfileMemoryProvider(wuuHome, meta.AgentProfile)
-						if memErr != nil {
-							return nil, memErr
-						}
-						workerKit.SetMemory(memProvider)
-						// Attach the worker's workspace memory layer too, scoped
-						// to the worker's own workspace state directory.
-						if wsProvider, wsErr := newWorkspaceMemoryProvider(workerStateDir); wsErr == nil {
-							workerKit.SetWorkspaceMemory(wsProvider)
-						}
-					} else {
-						// Workers without an explicit AgentProfile are transient
-						// and stay memoryless — they must not inherit the parent
-						// session's global or workspace memory through CloneForRoot.
-						workerKit.SetMemory(nil)
-						workerKit.SetWorkspaceMemory(nil)
-					}
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
 					applyWorkerToolFilter(workerKit, wt)
 					// Group management is resident-only; spawned runs (task
@@ -941,10 +870,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	runner.BeforeRequestContext = RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
-		memoryLimit, userLimit := kit.MemoryLimits()
-		if memoryReviewer := newProfileMemoryReviewScheduler(kit.Memory(), s.ProfileMemoryNudgeInterval, memoryLimit, userLimit); memoryReviewer != nil {
-			afterTurnHooks = append(afterTurnHooks, memoryReviewer.AfterTurn)
-		}
 		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)
 		}
@@ -1760,35 +1685,6 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 	return memory.Discover(rootDir, homeDir, memOpts)
 }
 
-// newProfileMemoryProvider returns the durable long-term memory store for
-// the current user. The store is a single global directory under
-// statepath.GlobalMemoryDir(wuuHome) — independent of the agent profile
-// name — to match the Claude Code convention: one durable memory document
-// per user, with no profile-name dimension.
-//
-// The profileName argument is preserved on the function signature so
-// caller sites (worker subagents, refresh paths) compile unchanged, but
-// the directory is shared. The function does not require a workflow
-// profile registration; the file-backed store creates its directory
-// lazily.
-func newProfileMemoryProvider(wuuHome, _ string) (*memstore.FileProvider, error) {
-	return memstore.NewFileProvider(statepath.GlobalMemoryDir(wuuHome))
-}
-
-// newWorkspaceMemoryProvider returns the workspace layer of the two-layer
-// LLM-writable long-term memory: a file-backed store rooted under
-// statepath.WorkspaceMemoryDir for the given workspace state directory. It is a
-// sibling of, and never collides with, the per-workspace dream memory under the
-// same workspace state directory. An empty workspaceStateDir yields a nil
-// provider (no workspace layer), which the callers treat as "workspace memory
-// unavailable" rather than an error.
-func newWorkspaceMemoryProvider(workspaceStateDir string) (*memstore.FileProvider, error) {
-	if strings.TrimSpace(workspaceStateDir) == "" {
-		return nil, nil
-	}
-	return memstore.NewFileProvider(statepath.WorkspaceMemoryDir(workspaceStateDir))
-}
-
 // buildWorkerBasePrompt assembles a worker subagent's base system prompt.
 // Workers get the READ-ONLY user-notebook variant (memory-redesign §3:
 // 临时 worker 只读注入): the user index is injected as orientation — read
@@ -1858,9 +1754,6 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 		homeDir = os.Getenv("HOME")
 	}
 	s.UserSystemPrompt = cfg.Agent.UserSystemPrompt()
-	s.ProfileMemoryNudgeInterval = cfg.Memory.ProfileMemoryNudgeInterval()
-	s.ProfileMemoryCharLimit = cfg.Memory.ProfileMemoryCharLimit()
-	s.ProfileUserMemoryCharLimit = cfg.Memory.ProfileUserCharLimit()
 	s.Memory = discoverMemory(s.RootDir, homeDir, cfg.Memory)
 	s.MemdirEnabled = cfg.Agent.ProfileMemoryEnabled() && !cfg.Memory.Disable
 	s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
@@ -1876,24 +1769,6 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 			s.Toolkit.SetFileScopeRoots([]string{s.Toolkit.RootDir(), userNotebook})
 		} else {
 			s.Toolkit.SetFileScopeRoots(nil)
-		}
-		s.Toolkit.SetMemoryLimits(s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit)
-		if cfg.Agent.ProfileMemoryEnabled() && !cfg.Memory.Disable {
-			if memProvider, err := newProfileMemoryProvider(s.WuuHome, cfg.Agent.ProfileName()); err == nil {
-				s.Toolkit.SetMemory(memProvider)
-			} else {
-				providers.DebugLogf("refresh profile memory provider after general settings update: %v", err)
-				s.Toolkit.SetMemory(nil)
-			}
-			if wsProvider, err := newWorkspaceMemoryProvider(s.StateDir); err == nil {
-				s.Toolkit.SetWorkspaceMemory(wsProvider)
-			} else {
-				providers.DebugLogf("refresh workspace memory provider after general settings update: %v", err)
-				s.Toolkit.SetWorkspaceMemory(nil)
-			}
-		} else {
-			s.Toolkit.SetMemory(nil)
-			s.Toolkit.SetWorkspaceMemory(nil)
 		}
 	}
 	apiModel := s.Model
@@ -2029,35 +1904,3 @@ func compiledSurfaceForProviderModel(providerName, model string) capability.Surf
 	return modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(providerName, model), false)
 }
 
-func recallProfileMemory(ctx context.Context, provider memstore.Provider) []memstore.Entry {
-	if provider == nil {
-		return nil
-	}
-	entries, err := provider.Recall(ctx, memstore.RecallQuery{})
-	if err != nil {
-		return nil
-	}
-	return entries
-}
-
-// recallLayeredProfileMemory reads the two long-term memory layers and returns
-// the deterministic merged snapshot injected into the base system prompt:
-// global entries first, workspace entries after. Each layer is internally
-// ordered by its provider's stable Recall order (UpdatedAt desc, ID asc), so
-// re-reading unchanged stores produces a byte-identical prompt — a hard
-// requirement for prompt-cache prefix stability. A nil layer contributes
-// nothing.
-func recallLayeredProfileMemory(ctx context.Context, global, workspace memstore.Provider) []memstore.Entry {
-	globalEntries := recallProfileMemory(ctx, global)
-	workspaceEntries := recallProfileMemory(ctx, workspace)
-	if len(workspaceEntries) == 0 {
-		return globalEntries
-	}
-	if len(globalEntries) == 0 {
-		return workspaceEntries
-	}
-	merged := make([]memstore.Entry, 0, len(globalEntries)+len(workspaceEntries))
-	merged = append(merged, globalEntries...)
-	merged = append(merged, workspaceEntries...)
-	return merged
-}

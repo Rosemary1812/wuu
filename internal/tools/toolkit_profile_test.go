@@ -131,8 +131,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 
 	for _, name := range []string{
 		"session_memory",
-		"read_memory",
-		"write_memory",
 		"thread_get",
 		"list_workflows",
 		"load_workflow",
@@ -1011,7 +1009,10 @@ func TestActiveProfileFlatToolSurfaceHidesToolSearchAndExposesDeferredTools(t *t
 	}
 }
 
-func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
+func TestActiveProfileHidesRetiredMemoryToolsEvenWithProvider(t *testing.T) {
+	// read_memory/write_memory retired with the memstore injection chain
+	// (memory-redesign §6): no model surface carries the project-memory
+	// capability, so the tools stay hidden even when a provider is attached.
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -1029,26 +1030,15 @@ func TestActiveProfileExposesMemoryToolsOnlyWithProvider(t *testing.T) {
 	defs := kit.Definitions()
 	for _, want := range []string{"read_memory", "write_memory"} {
 		if containsProfileDef(defs, want) {
-			t.Fatalf("memory provider should keep %s deferred, got %v", want, sortedProfileDefNames(defs))
+			t.Fatalf("retired tool %s must not surface, got %v", want, sortedProfileDefNames(defs))
 		}
 		info, ok := kit.ToolInfo(want)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", want)
 		}
-		if info.Exposure != ToolExposureDeferred {
-			t.Fatalf("%s exposure = %s, want %s", want, info.Exposure, ToolExposureDeferred)
+		if info.Exposure != ToolExposureHidden {
+			t.Fatalf("%s exposure = %s, want %s", want, info.Exposure, ToolExposureHidden)
 		}
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "tool_search",
-		Arguments: `{"query":"select:read_memory write_memory"}`,
-	})
-	if err != nil {
-		t.Fatalf("tool_search memory tools: %v", err)
-	}
-	if !strings.Contains(resp, "read_memory") || !strings.Contains(resp, "write_memory") {
-		t.Fatalf("tool_search should load memory tools with provider: %s", resp)
 	}
 }
 

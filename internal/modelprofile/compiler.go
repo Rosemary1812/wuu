@@ -341,13 +341,10 @@ func addWorkerReportTool(b *surfaceBuilder) {
 
 func addMemoryTools(b *surfaceBuilder) {
 	b.addDeferred("session_memory", capability.CapabilityMemorySession)
-	// Project-level memory tools are gated on the model surface
-	// (not on whether a memory provider is attached). The toolkit
-	// still hides individual memory_* tools when no provider is
-	// configured; the capability is the contract that says "project
-	// memory is a thing on this surface".
-	b.addDeferred("read_memory", capability.CapabilityMemoryProject)
-	b.addDeferred("write_memory", capability.CapabilityMemoryProject)
+	// read_memory/write_memory retired with the memstore injection chain
+	// (memory-redesign §6): durable memory is a file directory written
+	// through the ordinary file tools, so no model surface carries the
+	// project-memory tool capability anymore.
 }
 
 func addSessionTools(b *surfaceBuilder) {
