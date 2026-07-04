@@ -112,6 +112,14 @@ func focusDeclarationMessage(meta focusMeta) (providers.ChatMessage, error) {
 // history as a completed synthetic turn ahead of the caller's user
 // message. Invalid workspace names fail the turn before any state
 // changes.
+//
+// A pending th.focusDeclarationStale flag (set when a compaction pass may
+// have folded away the thread's last focus declaration, §7) forces a
+// re-declare even when the requested value matches the stored one — the
+// idempotent no-op path exists to avoid polluting history on an unchanged
+// value, but after compaction there may be no focus reminder left anywhere
+// in the live context, so this one case trades a small history entry for
+// not silently losing the agent's focus.
 func (s *Server) applyTurnWorkspaceFocus(th *threadState, requested *string) error {
 	if s == nil || s.rt == nil || th == nil || requested == nil {
 		return nil
@@ -120,9 +128,10 @@ func (s *Server) applyTurnWorkspaceFocus(th *threadState, requested *string) err
 	th.mu.Lock()
 	current := strings.TrimSpace(th.FocusWorkspace)
 	homeRoot := th.CWD
+	stale := th.focusDeclarationStale
 	th.mu.Unlock()
 
-	if strings.TrimSpace(*requested) == current {
+	if strings.TrimSpace(*requested) == current && !stale {
 		return nil
 	}
 	roster, err := workspaces.List(s.rt.WuuHome)
@@ -133,7 +142,7 @@ func (s *Server) applyTurnWorkspaceFocus(th *threadState, requested *string) err
 	if err != nil {
 		return err
 	}
-	if focus == current {
+	if focus == current && !stale {
 		return nil
 	}
 
@@ -155,6 +164,7 @@ func (s *Server) applyTurnWorkspaceFocus(th *threadState, requested *string) err
 		}
 	}
 	th.FocusWorkspace = focus
+	th.focusDeclarationStale = false
 	history := cloneHistory(th.History)
 	history = append(history, declMsg)
 	th.History = history

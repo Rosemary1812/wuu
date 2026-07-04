@@ -1,7 +1,7 @@
 # 工作焦点(Workspace Focus)— 设计与实施计划
 
 日期:2026-07-03
-状态:设计定稿(DM、群聊、信封携带焦点均已实施;压缩后重声明见 §6 状态更新)
+状态:设计定稿(DM、群聊、信封携带焦点、压缩后重声明均已实施)
 性质:**本文档同时是给实施 agent 的强约束提示词。**
 
 ## 0. 动机:缓存纪律优先于便利
@@ -172,9 +172,57 @@ DM thread 的 turn 开始时,`internal/tools.Toolkit` 的执行根需要跟着�
 
 ### 6.1 压缩后重声明——状态更新
 
-见 §7(新增)"压缩后重声明"一节的完整设计与实施记录。
+见 §7"压缩后重声明"一节的完整设计与实施记录。
 
-## 7. 红线
+## 7. 压缩后重声明(已实施)
+
+### 7.1 调查结论
+
+`internal/agent/loop.go` 的压缩(proactive 或 overflow 触发,`cfg.Compact`)完成
+后会调用 `cfg.OnCompact(CompactInfo{...})`(loop.go 三处调用点);
+`internal/agent/stream_runner.go` 把 `OnCompact` 接到 `effectiveOnEvent`,产出一
+个 `providers.StreamEvent{Type: providers.EventCompact, ...}`。这个事件和其余
+流式事件走同一条管道到 appserver:`turn_handlers.go` 主 turn 循环
+(`runner.RunWithCallback` 的回调,约 1058-1071 行)和 `agent_threads.go`
+(子 agent 流转发,约 101-103 行)都在 `th.mu.Lock()` 之下调用
+`th.applyStreamEventLocked(turnID, ev, now)`(`model.go`),该函数已有
+`case providers.EventCompact:` 分支,专门用来把压缩记成一条
+`ThreadItemContextCompaction` 时间线条目。
+
+结论:**存在现成的、已在 `th.mu` 保护下运行的压缩完成事件钩子**,不需要用
+"历史根是否为压缩摘要"这种事后启发式替代方案。
+
+### 7.2 实施
+
+- `threadState`(`internal/appserver/server.go`)新增字段
+  `focusDeclarationStale bool`,和 `FocusWorkspace` 一样受 `th.mu` 保护。
+- `model.go` 的 `applyStreamEventLocked`,`case providers.EventCompact:` 分支
+  开头置位:`th.focusDeclarationStale = true`。压缩只会发生在该 thread 自己
+  正在跑的 turn 内,而 `applyTurnWorkspaceFocus` 只在 turn 未运行时被调用
+  (`handleTurnStart`/`handleGroupTurnStart` 的忙碌检查已保证互斥),所以读写
+  该标志不需要额外同步。
+- `workspace_focus.go` 的 `applyTurnWorkspaceFocus`:在最初读 `current`/
+  `homeRoot` 的同一把锁下多读一次 `stale := th.focusDeclarationStale`;两处
+  幂等短路判断(`requested == current`、`focus == current`)都追加
+  `&& !stale` 条件——有该标志时即使请求值和存储值相同也照常往下走完整声明
+  流程(校验、持久化、注入声明项);声明真正落地时(`th.FocusWorkspace = focus`
+  那一行旁)把 `th.focusDeclarationStale = false` 清掉。
+- 不新增字段以外的持久化:该标志只活在内存 `threadState` 里,不落
+  `session.Session`/`session_messages`——这是有意的,压缩后重声明是"下一次进
+  程内的判定"要做的事,不是需要跨进程重启存活的状态(重启后历史从存储重放,
+  重放路径本来就不会带着一个"待重声明"位;若重放后历史里确实丢了声明项,
+  下一次真正的 `turn/start` 请求焦点时会自然按当前值声明一次,不依赖这个
+  标志)。
+- 测试:`internal/appserver/workspace_focus_test.go`
+  `TestDMTurnFocusRedeclaresAfterCompaction`——先正常声明一次焦点,再直接调用
+  `th.applyStreamEventLocked` 喂一个 `EventCompact` 事件模拟压缩(不构造真实
+  会溢出上下文的历史,因为这里要测的是 appserver 侧的反应,不是
+  `internal/agent` 的压缩触发时机启发式),断言标志置位;随后用**相同**焦点值
+  再发一次 `turn/start`,断言声明项数量从 1 变成 2(若无本次修复,这一步应为
+  幂等空操作,数量仍是 1);最后再发一次相同值,断言标志已清、行为恢复幂等
+  (数量仍是 2,不再新增)。
+
+## 8. 红线
 
 1. `internal/appserver/participant_prompt.go` 一个字节都不动——焦点绝不进
    system prompt。

@@ -343,6 +343,75 @@ func TestDMTurnFocusHomeAndAllSemantics(t *testing.T) {
 	}
 }
 
+// TestDMTurnFocusRedeclaresAfterCompaction covers §7 (compaction
+// re-declaration): a context-compaction pass may fold the thread's focus
+// declaration item into a summary that drops it, so the next focus
+// determination must treat the thread as "undeclared" even when the
+// requested value still matches the stored one — the idempotent no-op path
+// exists to avoid polluting history on an unchanged value, and must not
+// silently swallow the re-declare this once.
+//
+// Compaction is surfaced to appserver as a providers.EventCompact stream
+// event, handled by threadState.applyStreamEventLocked (model.go) under
+// th.mu — the same path a real compact pass in internal/agent/loop.go
+// drives via StreamRunner.OnCompact/OnCompactAttempt. This test fires that
+// event directly rather than forcing a real compaction (which needs a
+// context-overflowing history), since the appserver-side reaction is what's
+// under test here, not internal/agent's compaction heuristics.
+func TestDMTurnFocusRedeclaresAfterCompaction(t *testing.T) {
+	client := &fakeClient{responses: []providers.ChatResponse{{Content: "one"}, {Content: "two"}, {Content: "three"}}}
+	srv, out, _, _ := newFocusTestServer(t, client)
+	participantID := saveNamedParticipant(t, srv.rt, "Reo", "general-purpose", "")
+	thread := startFocusDMThread(t, srv, participantID)
+
+	if resp := startFocusTurn(t, srv, "turn-1", thread.ID, "first", strPtr("acme")); resp["error"] != nil {
+		t.Fatalf("first turn/start: %v", resp["error"])
+	}
+	waitForTurnCompletedCountForThread(t, out, thread.ID, 1)
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, thread.ID)); got != 1 {
+		t.Fatalf("declarations after first set = %d, want 1", got)
+	}
+
+	th := srv.thread(thread.ID)
+	if th == nil {
+		t.Fatalf("thread %q not resident", thread.ID)
+	}
+	th.mu.Lock()
+	th.applyStreamEventLocked("compaction-sim", providers.StreamEvent{Type: providers.EventCompact, Content: "summary"}, time.Now().UTC())
+	stale := th.focusDeclarationStale
+	th.mu.Unlock()
+	if !stale {
+		t.Fatalf("expected focusDeclarationStale to be set after a compact stream event")
+	}
+
+	// Same focus value again: without staleness this is a pure no-op
+	// (TestDMTurnFocusRepeatIsIdempotent); post-compaction it must
+	// re-declare even though the request is unchanged.
+	if resp := startFocusTurn(t, srv, "turn-2", thread.ID, "second", strPtr("acme")); resp["error"] != nil {
+		t.Fatalf("second turn/start: %v", resp["error"])
+	}
+	waitForTurnCompletedCountForThread(t, out, thread.ID, 2)
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, thread.ID)); got != 2 {
+		t.Fatalf("declarations after post-compaction same-value request = %d, want 2 (re-declared)", got)
+	}
+
+	th.mu.Lock()
+	staleAfter := th.focusDeclarationStale
+	th.mu.Unlock()
+	if staleAfter {
+		t.Fatalf("focusDeclarationStale should be cleared once the re-declare lands")
+	}
+
+	// The flag stays clear: the next same-value request is idempotent again.
+	if resp := startFocusTurn(t, srv, "turn-3", thread.ID, "third", strPtr("acme")); resp["error"] != nil {
+		t.Fatalf("third turn/start: %v", resp["error"])
+	}
+	waitForTurnCompletedCountForThread(t, out, thread.ID, 3)
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, thread.ID)); got != 2 {
+		t.Fatalf("declarations after subsequent repeat = %d, want 2 (no further re-declare)", got)
+	}
+}
+
 func TestThreadWireCarriesFocusWorkspace(t *testing.T) {
 	client := &fakeClient{responses: []providers.ChatResponse{{Content: "ok"}}}
 	srv, out, rt, _ := newFocusTestServer(t, client)

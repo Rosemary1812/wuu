@@ -513,6 +513,14 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		}
 		out = append(out, th.applyMessageItemLocked(turnID, *ev.Message, now)...)
 	case providers.EventCompact:
+		// A compaction pass just folded this thread's older history into a
+		// summary that may not have preserved the workspace-focus
+		// declaration item (2026-07-03-workspace-focus.md §7). Mark the
+		// declaration stale so the next applyTurnWorkspaceFocus call
+		// re-declares the focus even if the requested value still matches
+		// the stored one — otherwise the idempotent no-op path would leave
+		// the agent with no focus reminder anywhere in its live context.
+		th.focusDeclarationStale = true
 		item := ThreadItem{
 			ID:     th.nextItemIDLocked(turnID),
 			Type:   ThreadItemContextCompaction,

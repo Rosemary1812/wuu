@@ -51,10 +51,16 @@ type threadState struct {
 	// registered workspaces, "~" = agent home only, otherwise a registered
 	// workspace name). Kept in sync with the session store on every switch.
 	FocusWorkspace string
-	Turns          []Turn
-	PersistHistory   bool
-	ReadOnly         bool
-	Ephemeral        bool
+	// focusDeclarationStale is set when a context-compaction pass folds this
+	// thread's history into a summary that may not have preserved the
+	// current focus declaration (2026-07-03-workspace-focus.md §7). While
+	// set, the next applyTurnWorkspaceFocus call re-declares the focus even
+	// if the requested value matches the stored one, and clears the flag.
+	focusDeclarationStale bool
+	Turns                 []Turn
+	PersistHistory        bool
+	ReadOnly              bool
+	Ephemeral             bool
 	// ListeningPorts is the deduped, sorted list of localhost ports the
 	// agent has surfaced via the report_listening_ports tool. It is
 	// reset whenever a fresh tool call reports an explicit (possibly
