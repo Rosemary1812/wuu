@@ -57,7 +57,7 @@ func (t *WorkflowStatusTool) Execute(_ context.Context, argsJSON string) (string
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	store, err := t.env.WorkflowStore()
+	store, err := workflowStoreForEnv(t.env)
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
 	}

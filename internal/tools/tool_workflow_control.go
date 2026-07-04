@@ -296,7 +296,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 	if strings.TrimSpace(args.RunID) == "" {
 		return "", errors.New("workflow_control requires run_id")
 	}
-	store, err := t.env.WorkflowStore()
+	store, err := workflowStoreForEnv(t.env)
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
 	}
@@ -371,9 +371,11 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 		background := false
 		if startInitialScriptRun {
 			runtime := newWorkflowScriptRuntime(t.env, store, run, resumeScript, resumeMaxAgents, resumeMaxConcurrency)
-			go func() {
-				_, _ = runtime.Run(context.Background())
-			}()
+			// UpdateRunStatusWithDetails above already persisted the
+			// durable started marker (Status=running); the background
+			// helper adds the live-registry entry, goal sync, and error
+			// logging so a failure is never silently swallowed.
+			runWorkflowScriptInBackground(runtime, run.ID, "workflow_control resume_run")
 			background = true
 		}
 		return workflowControlRunResult(action, run, map[string]any{

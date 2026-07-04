@@ -275,7 +275,7 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 	}
 	body := strings.TrimSpace(args.Content)
 	if body == "" && strings.TrimSpace(args.RunID) != "" {
-		store, err := t.env.WorkflowStore()
+		store, err := workflowStoreForEnv(t.env)
 		if err != nil {
 			return "", fmt.Errorf("resolve workflow store: %w", err)
 		}
@@ -596,7 +596,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	if runID == "" {
 		runID = "workflow-" + session.NewID()
 	}
-	store, err := t.env.WorkflowStore()
+	store, err := workflowStoreForEnv(t.env)
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
 	}
@@ -644,10 +644,11 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 
 	if status == workflow.RunStateRunning {
 		if background {
-			go func() {
-				finished, _ := runtime.Run(context.Background())
-				_, _ = syncWorkflowGoalStatus(finished)
-			}()
+			// The durable started marker is already on disk: CreateRun
+			// persisted Status=running + StartedAt before this point, so a
+			// crash between here and script completion is visible to the
+			// startup sweep in reconcileOrphanWorkflowRuns.
+			runWorkflowScriptInBackground(runtime, run.ID, "run_workflow")
 		} else {
 			run, err = runtime.Run(ctx)
 			if _, syncErr := syncWorkflowGoalStatus(run); syncErr != nil {
@@ -1066,7 +1067,7 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	if runID == "" {
 		runID = "workflow-" + session.NewID()
 	}
-	store, err := t.env.WorkflowStore()
+	store, err := workflowStoreForEnv(t.env)
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
 	}
