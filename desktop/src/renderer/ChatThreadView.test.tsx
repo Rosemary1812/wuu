@@ -219,6 +219,100 @@ describe("ChatThreadView", () => {
     expect(container.querySelector(".envelope-notice")).not.toBeNull();
   });
 
+  it("renders consecutive envelope rows as one collapsed notice", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: [
+          {
+            id: "turn-1",
+            items: [
+              {
+                id: "item-1",
+                type: "user_message",
+                text: "第一条群聊消息",
+                envelope_meta: [
+                  {
+                    source_thread_id: "thread-x",
+                    source_thread_title: "all",
+                    addressed: false,
+                    hop: 0,
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            id: "turn-2",
+            items: [
+              {
+                id: "item-2",
+                type: "user_message",
+                text: "第二条群聊消息",
+                envelope_meta: [
+                  {
+                    source_thread_id: "thread-x",
+                    source_thread_title: "all",
+                    addressed: true,
+                    hop: 1,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const notices = container.querySelectorAll(".envelope-notice");
+    expect(notices).toHaveLength(1);
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".envelope-notice-toggle",
+    );
+    expect(toggle?.textContent).toContain("收到来自「all」的 2 条消息");
+    expect(toggle?.textContent).toContain("点名");
+    expect(toggle?.textContent).toContain("转发×1");
+
+    act(() => {
+      toggle?.click();
+    });
+    const body = container.querySelector(".envelope-notice-body");
+    expect(body?.textContent).toContain("第一条群聊消息");
+    expect(body?.textContent).toContain("第二条群聊消息");
+  });
+
+  it("starts a new envelope notice after a user query", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "user_message",
+            text: "群聊消息一",
+            envelope_meta: [
+              { source_thread_id: "thread-x", source_thread_title: "all" },
+            ],
+          },
+          {
+            id: "item-2",
+            type: "user_message",
+            text: "这是我新发给 agent 的问题",
+          },
+          {
+            id: "item-3",
+            type: "user_message",
+            text: "群聊消息二",
+            envelope_meta: [
+              { source_thread_id: "thread-x", source_thread_title: "all" },
+            ],
+          },
+        ]),
+      }),
+    );
+    expect(container.querySelectorAll(".envelope-notice")).toHaveLength(2);
+    expect(container.querySelector(".chat-row--user")?.textContent).toContain(
+      "这是我新发给 agent 的问题",
+    );
+  });
+
   it("renders a decline post_kind as a muted line, not a bubble", () => {
     const container = mount(
       createElement(ChatThreadView, {

@@ -171,6 +171,22 @@ describe("EnvelopeNotice", () => {
     expect(toggle?.textContent).not.toContain("条消息");
   });
 
+  it("uses a multi-source label when coalesced records name different threads", () => {
+    const container = mount(
+      createElement(EnvelopeNotice, {
+        meta: [
+          { source_thread_id: "thread-a", source_thread_title: "A" },
+          { source_thread_id: "thread-b", source_thread_title: "B" },
+        ],
+        text: "内容",
+      }),
+    );
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".envelope-notice-toggle",
+    );
+    expect(toggle?.textContent).toContain("收到来自多个会话的 2 条消息");
+  });
+
   it("falls back to a generic source label for an empty array", () => {
     const container = mount(
       createElement(EnvelopeNotice, {

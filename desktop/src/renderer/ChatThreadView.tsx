@@ -6,7 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ParticipantSummary, Turn } from "../shared/protocol";
+import type {
+  EnvelopeMeta,
+  FocusMeta,
+  ParticipantSummary,
+  Turn,
+} from "../shared/protocol";
 import { chatMessagesFromTurns, type ChatMessageRow } from "./AppState";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
@@ -245,7 +250,9 @@ export function ChatThreadView({
           row={row}
           busyParticipantIDs={busyParticipantIDs}
           marks={
-            row.item.seq ? marksBySeq?.get(row.item.seq) : undefined
+            row.kind !== "envelope" && row.item.seq
+              ? marksBySeq?.get(row.item.seq)
+              : undefined
           }
           readerCount={readerCount}
           resolveParticipantName={resolveParticipantName}
@@ -296,7 +303,7 @@ function PendingChatRow({
 // glyph for the resident's personal space, a generic workspace glyph
 // for everything else (both the "all workspaces" catch-all and any one
 // named project), differentiated only by the trailing label.
-function focusDividerLabel(meta: NonNullable<ChatMessageRow["item"]["focus_meta"]>): string {
+function focusDividerLabel(meta: FocusMeta): string {
   if (meta.kind === "home") {
     return "⌂ 个人";
   }
@@ -332,9 +339,11 @@ function ChatRow({
     );
   }
   if (row.kind === "envelope") {
+    const meta = envelopeRowMeta(row);
+    const text = envelopeRowText(row);
     return (
       <div className="chat-row chat-row--envelope">
-        <EnvelopeNotice meta={row.item.envelope_meta ?? []} text={row.item.text ?? ""} />
+        <EnvelopeNotice meta={meta} text={text} />
       </div>
     );
   }
@@ -402,6 +411,21 @@ function ChatRow({
       </div>
     </div>
   );
+}
+
+function envelopeRowMeta(
+  row: Extract<ChatMessageRow, { kind: "envelope" }>,
+): EnvelopeMeta {
+  return row.items.flatMap((item) => item.envelope_meta ?? []);
+}
+
+function envelopeRowText(
+  row: Extract<ChatMessageRow, { kind: "envelope" }>,
+): string {
+  return row.items
+    .map((item) => item.text ?? "")
+    .filter((text) => text.trim() !== "")
+    .join("\n\n");
 }
 
 function ChatAvatar({

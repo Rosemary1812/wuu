@@ -1831,7 +1831,7 @@ export function busyDMParticipantIDs(
 
 export type ChatMessageRow =
   | { kind: "user"; id: string; turnID: string; item: ThreadItem }
-  | { kind: "envelope"; id: string; turnID: string; item: ThreadItem }
+  | { kind: "envelope"; id: string; turnID: string; items: ThreadItem[] }
   | { kind: "participant"; id: string; turnID: string; item: ThreadItem }
   | { kind: "focus"; id: string; turnID: string; item: ThreadItem };
 
@@ -1860,7 +1860,12 @@ export function chatMessagesFromTurns(
         rows.push({ kind: "focus", id, turnID: turn.id, item });
       } else if (item.type === "user_message") {
         if (item.envelope_meta && item.envelope_meta.length > 0) {
-          rows.push({ kind: "envelope", id, turnID: turn.id, item });
+          const previous = rows[rows.length - 1];
+          if (previous?.kind === "envelope") {
+            previous.items.push(item);
+          } else {
+            rows.push({ kind: "envelope", id, turnID: turn.id, items: [item] });
+          }
         } else {
           rows.push({ kind: "user", id, turnID: turn.id, item });
         }

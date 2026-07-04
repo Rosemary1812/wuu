@@ -2194,7 +2194,75 @@ describe("chatMessagesFromTurns", () => {
     };
     const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
     expect(rows).toEqual([
-      { kind: "envelope", id: "turn-1:item-1", turnID: "turn-1", item },
+      {
+        kind: "envelope",
+        id: "turn-1:item-1",
+        turnID: "turn-1",
+        items: [item],
+      },
+    ]);
+  });
+
+  it("coalesces consecutive envelope rows into one visible chat row", () => {
+    const first: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      text: "first forwarded message",
+      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 0 }],
+    };
+    const second: ThreadItem = {
+      id: "item-2",
+      type: "user_message",
+      text: "second forwarded message",
+      envelope_meta: [{ source_thread_id: "thread-x", addressed: false, hop: 1 }],
+    };
+    const rows = chatMessagesFromTurns([
+      turn("turn-1", [first]),
+      turn("turn-2", [second]),
+    ]);
+    expect(rows).toEqual([
+      {
+        kind: "envelope",
+        id: "turn-1:item-1",
+        turnID: "turn-1",
+        items: [first, second],
+      },
+    ]);
+  });
+
+  it("starts a new envelope group after a user message", () => {
+    const first: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      text: "forwarded before query",
+      envelope_meta: [{ source_thread_id: "thread-x", addressed: false, hop: 0 }],
+    };
+    const query: ThreadItem = {
+      id: "item-2",
+      type: "user_message",
+      text: "new query",
+    };
+    const second: ThreadItem = {
+      id: "item-3",
+      type: "user_message",
+      text: "forwarded after query",
+      envelope_meta: [{ source_thread_id: "thread-x", addressed: true, hop: 0 }],
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [first, query, second])]);
+    expect(rows).toEqual([
+      {
+        kind: "envelope",
+        id: "turn-1:item-1",
+        turnID: "turn-1",
+        items: [first],
+      },
+      { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: query },
+      {
+        kind: "envelope",
+        id: "turn-1:item-3",
+        turnID: "turn-1",
+        items: [second],
+      },
     ]);
   });
 

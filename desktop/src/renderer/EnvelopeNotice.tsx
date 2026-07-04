@@ -26,10 +26,19 @@ export function EnvelopeNotice({
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const records = meta;
-  const title = records
-    .map((record) => record.source_thread_title?.trim() ?? "")
-    .find((candidate) => candidate !== "");
-  const source = title ? `「${title}」` : "其他会话";
+  const titles = [
+    ...new Set(
+      records
+        .map((record) => record.source_thread_title?.trim() ?? "")
+        .filter((candidate) => candidate !== ""),
+    ),
+  ];
+  const source =
+    titles.length === 1
+      ? `「${titles[0]}」`
+      : titles.length > 1
+        ? "多个会话"
+        : "其他会话";
   const label =
     records.length > 1
       ? `收到来自${source}的 ${records.length} 条消息`
