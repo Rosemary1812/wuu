@@ -510,3 +510,40 @@ func TestChatMessageItemCarriesEnvelopeMeta(t *testing.T) {
 		t.Fatalf("item.Text = %q, want %q", item.Text, "你们好")
 	}
 }
+
+func TestFallbackReplyTargetThreadIDHonorsSilenceForUnaddressed(t *testing.T) {
+	// Plain user DM turn (no envelopes): a plain-text answer belongs in the
+	// resident's own DM.
+	if id, ok := fallbackReplyTargetThreadID("dm-1", nil); !ok || id != "dm-1" {
+		t.Fatalf("plain DM turn: got (%q,%v), want (dm-1,true)", id, ok)
+	}
+
+	// UN-addressed group message: silence is valid and plain text is private, so
+	// the fallback must NOT republish it (this is the "(staying silent)" leak).
+	unaddressed := []MessageEnvelope{
+		{SourceThreadID: "group-all", Addressed: false, Text: "你们好"},
+	}
+	if id, ok := fallbackReplyTargetThreadID("dm-1", unaddressed); ok {
+		t.Fatalf("un-addressed batch should send nothing; got target %q", id)
+	}
+
+	// ADDRESSED (@mention/DM) still gets the plain-text fallback, routed to its
+	// source thread (rule 1: addressed MUST be answered). Ambient un-addressed
+	// envelopes in the same batch don't change the target.
+	addressed := []MessageEnvelope{
+		{SourceThreadID: "group-all", Addressed: true, Text: "@Bea 在吗"},
+		{SourceThreadID: "group-all", Addressed: false, Text: "ambient"},
+	}
+	if id, ok := fallbackReplyTargetThreadID("dm-1", addressed); !ok || id != "group-all" {
+		t.Fatalf("addressed batch: got (%q,%v), want (group-all,true)", id, ok)
+	}
+
+	// Addressed envelopes disagreeing on source thread → ambiguous → nothing.
+	ambiguous := []MessageEnvelope{
+		{SourceThreadID: "group-a", Addressed: true, Text: "@X"},
+		{SourceThreadID: "group-b", Addressed: true, Text: "@X"},
+	}
+	if _, ok := fallbackReplyTargetThreadID("dm-1", ambiguous); ok {
+		t.Fatalf("ambiguous addressed sources should send nothing")
+	}
+}

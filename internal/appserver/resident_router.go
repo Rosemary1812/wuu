@@ -506,12 +506,20 @@ func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID s
 // fallbackReplyTargetThreadID picks where a fallback reply belongs. With no
 // envelopes, this is a plain user DM turn and the reply stays in the
 // resident's own DM thread (ownDMThreadID). With envelopes, the turn was
-// triggered by routed MessageEnvelope(s) — addressed envelopes take
-// priority (falling back to all envelopes if none are addressed) — and the
-// reply must go to their (deduplicated) SourceThreadID instead. If those
-// envelopes disagree on a source thread the target is ambiguous, so no
-// fallback message is sent; recordUnansweredAddressedEnvelopes telemetry
-// covers that case instead of guessing.
+// triggered by routed MessageEnvelope(s), and the reply must go to the
+// (deduplicated) SourceThreadID of the ADDRESSED envelopes — the ones the
+// participant contract requires an answer to (rule 1). If those disagree on a
+// source thread the target is ambiguous, so nothing is sent;
+// recordUnansweredAddressedEnvelopes telemetry covers that case.
+//
+// When NO envelope in the batch is addressed, the fallback deliberately sends
+// nothing. The contract makes silence a valid outcome for un-addressed group
+// messages ("simply do not post") and treats plain assistant text as a private
+// working transcript that "never reaches the user". A model that chose not to
+// call post_message here has chosen silence; republishing its plain text would
+// leak private reasoning (e.g. "(no reply needed, staying silent)") into the
+// channel. So un-addressed batches get no plain-text fallback at all — only the
+// tool channel (post_message) can speak for them.
 func fallbackReplyTargetThreadID(ownDMThreadID string, envs []MessageEnvelope) (string, bool) {
 	if len(envs) == 0 {
 		return ownDMThreadID, true
@@ -523,7 +531,7 @@ func fallbackReplyTargetThreadID(ownDMThreadID string, envs []MessageEnvelope) (
 		}
 	}
 	if len(candidates) == 0 {
-		candidates = envs
+		return "", false
 	}
 	sourceThreadIDs := make(map[string]bool, len(candidates))
 	for _, env := range candidates {
