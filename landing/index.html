@@ -7,94 +7,86 @@
 <meta name="description" content="wuu 是一个开源、自带 API Key 的 AI Coding Agent：Go 核心、桌面应用、可脚本化 CLI，内置多智能体编排。Open-source, BYOK AI coding agent — a Go core with a desktop app, a scriptable CLI, and built-in multi-agent orchestration.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Noto+Serif+SC:wght@300;400;500;600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --ink-0: #0b0d10;        /* deepest background */
-  --ink-1: #101318;        /* section background */
-  --ink-2: #171b22;        /* card background */
+  --bg-0: #0a0b0e;
+  --bg-1: #0f1116;
+  --bg-2: #15181f;
   --line: rgba(255,255,255,.08);
   --line-strong: rgba(255,255,255,.16);
-  --fog-100: #f2f0ea;      /* primary text — warm paper white */
-  --fog-300: #c9c7c0;      /* secondary text */
-  --fog-500: #8e8d88;      /* muted text */
-  --accent: #d8c8a8;       /* pale gold — dawn light */
-  --accent-dim: rgba(216,200,168,.14);
-  --serif-en: "Fraunces", Georgia, serif;
-  --serif-zh: "Noto Serif SC", "Songti SC", "SimSun", serif;
-  --serif: var(--serif-en), var(--serif-zh);
+  --text-0: #f4f4f2;
+  --text-1: #b9bab6;
+  --text-2: #83847f;
+  --accent: #d8c8a8;
+  --accent-dim: rgba(216,200,168,.13);
   --sans: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --mono: "IBM Plex Mono", "SF Mono", Consolas, monospace;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  background: var(--ink-0);
-  color: var(--fog-100);
+  background: var(--bg-0);
+  color: var(--text-0);
   font-family: var(--sans);
-  font-size: 17px;
-  line-height: 1.8;
+  font-size: 16px;
+  line-height: 1.75;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
-::selection { background: var(--accent); color: var(--ink-0); }
+::selection { background: var(--accent); color: var(--bg-0); }
 
 /* ---------- bilingual switching ---------- */
 [data-lang="zh"] .en { display: none !important; }
 [data-lang="en"] .zh { display: none !important; }
-[data-lang="en"] body, [data-lang="en"] { --serif: var(--serif-en); }
-.serif { font-family: "Fraunces", "Noto Serif SC", Georgia, "Songti SC", serif; }
 
 /* ---------- shared ---------- */
 .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
-.narrow { max-width: 760px; margin: 0 auto; padding: 0 32px; }
 .kicker {
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: .22em;
+  letter-spacing: .2em;
   text-transform: uppercase;
   color: var(--accent);
   display: block;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 h2.title {
-  font-family: "Fraunces", "Noto Serif SC", serif;
-  font-weight: 400;
-  font-size: clamp(30px, 4.5vw, 46px);
-  line-height: 1.3;
-  letter-spacing: .01em;
-  margin-bottom: 24px;
+  font-weight: 600;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  margin-bottom: 20px;
 }
-.lede { color: var(--fog-300); font-size: 18px; max-width: 40em; }
+.lede { color: var(--text-1); font-size: 17px; max-width: 40em; }
 
 /* scroll reveal */
-.reveal { opacity: 0; transform: translateY(28px); transition: opacity .9s cubic-bezier(.2,.6,.2,1), transform .9s cubic-bezier(.2,.6,.2,1); }
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity .8s cubic-bezier(.2,.6,.2,1), transform .8s cubic-bezier(.2,.6,.2,1); }
 .reveal.in { opacity: 1; transform: none; }
-.reveal.d1 { transition-delay: .12s; } .reveal.d2 { transition-delay: .24s; } .reveal.d3 { transition-delay: .36s; }
+.reveal.d1 { transition-delay: .1s; } .reveal.d2 { transition-delay: .2s; } .reveal.d3 { transition-delay: .3s; }
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
-  .hero-bg { animation: none !important; }
   html { scroll-behavior: auto; }
 }
 
 /* ---------- nav ---------- */
 nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-  padding: 20px 36px;
+  padding: 18px 36px;
   display: flex; align-items: center; justify-content: space-between;
   transition: background .4s, backdrop-filter .4s, border-color .4s;
   border-bottom: 1px solid transparent;
 }
-nav.scrolled { background: rgba(11,13,16,.82); backdrop-filter: blur(14px); border-bottom-color: var(--line); }
-.logo { font-family: "Fraunces", serif; font-size: 22px; font-weight: 500; letter-spacing: .04em; color: var(--fog-100); text-decoration: none; }
+nav.scrolled { background: rgba(10,11,14,.8); backdrop-filter: blur(14px); border-bottom-color: var(--line); }
+.logo { font-weight: 700; font-size: 19px; letter-spacing: -.02em; color: var(--text-0); text-decoration: none; }
 .logo em { font-style: normal; color: var(--accent); }
-.nav-links { display: flex; align-items: center; gap: 30px; }
-.nav-links a { color: var(--fog-300); text-decoration: none; font-size: 14px; letter-spacing: .04em; transition: color .25s; }
-.nav-links a:hover { color: var(--fog-100); }
+.nav-links { display: flex; align-items: center; gap: 28px; }
+.nav-links a { color: var(--text-1); text-decoration: none; font-size: 14px; transition: color .25s; }
+.nav-links a:hover { color: var(--text-0); }
 .lang-toggle {
-  font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .08em;
   background: none; border: 1px solid var(--line-strong); border-radius: 99px;
-  color: var(--fog-100); padding: 7px 16px; cursor: pointer;
+  color: var(--text-0); padding: 6px 15px; cursor: pointer;
   transition: border-color .25s, background .25s;
 }
 .lang-toggle:hover { border-color: var(--accent); background: var(--accent-dim); }
@@ -102,220 +94,222 @@ nav.scrolled { background: rgba(11,13,16,.82); backdrop-filter: blur(14px); bord
 
 /* ---------- hero ---------- */
 header.hero {
-  position: relative; min-height: 100vh;
-  display: flex; flex-direction: column; justify-content: flex-end;
+  position: relative;
+  padding: 170px 0 0;
+  text-align: center;
   overflow: hidden;
 }
-.hero-bg {
-  position: absolute; inset: -6%;
-  background: url("https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=2400&q=80&auto=format&fit=crop") center 30% / cover no-repeat;
-  animation: kenburns 36s ease-in-out infinite alternate;
-  filter: saturate(.75) brightness(.8);
-}
-@keyframes kenburns { from { transform: scale(1); } to { transform: scale(1.09) translateY(-1.5%); } }
-.hero-veil {
-  position: absolute; inset: 0;
+.hero-glow {
+  position: absolute; top: -320px; left: 50%; transform: translateX(-50%);
+  width: 1100px; height: 700px; pointer-events: none;
   background:
-    linear-gradient(to bottom, rgba(11,13,16,.55) 0%, rgba(11,13,16,.15) 38%, rgba(11,13,16,.62) 72%, var(--ink-0) 100%);
+    radial-gradient(ellipse 45% 55% at 38% 40%, rgba(233,113,133,.14), transparent 70%),
+    radial-gradient(ellipse 45% 55% at 62% 45%, rgba(120,119,238,.14), transparent 70%),
+    radial-gradient(ellipse 60% 60% at 50% 30%, rgba(56,178,222,.10), transparent 70%);
+  filter: blur(20px);
 }
-.hero-inner { position: relative; z-index: 2; padding: 0 0 11vh; width: 100%; }
-.hero-name {
-  font-family: "Fraunces", serif; font-weight: 300;
-  font-size: clamp(72px, 13vw, 168px);
-  line-height: 1; letter-spacing: .015em; color: var(--fog-100);
-  margin-left: -6px;
-}
-.hero-tag {
-  font-family: "Fraunces", "Noto Serif SC", serif; font-weight: 400;
-  font-size: clamp(20px, 2.6vw, 30px); line-height: 1.6;
-  color: var(--fog-100); max-width: 25em; margin-top: 26px;
+.hero h1 {
+  position: relative;
+  font-weight: 700;
+  font-size: clamp(40px, 6.5vw, 76px);
+  line-height: 1.12;
+  letter-spacing: -.03em;
+  max-width: 15em; margin: 0 auto;
   text-wrap: balance;
 }
-.hero-sub { color: var(--fog-300); font-size: 16px; max-width: 38em; margin-top: 18px; }
-.hero-cta { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 40px; }
+.hero .sub {
+  position: relative;
+  color: var(--text-1); font-size: clamp(16px, 2vw, 19px);
+  max-width: 44em; margin: 26px auto 0;
+  text-wrap: balance;
+}
+.hero-cta { position: relative; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: center; margin-top: 38px; }
 .btn {
   display: inline-flex; align-items: center; gap: 10px;
-  padding: 13px 26px; border-radius: 99px; text-decoration: none;
-  font-size: 15px; font-weight: 500; letter-spacing: .02em;
+  padding: 12px 24px; border-radius: 10px; text-decoration: none;
+  font-size: 15px; font-weight: 500; letter-spacing: .01em;
   transition: transform .25s, background .25s, border-color .25s;
 }
 .btn:hover { transform: translateY(-2px); }
-.btn-solid { background: var(--fog-100); color: var(--ink-0); }
+.btn-solid { background: var(--text-0); color: var(--bg-0); }
 .btn-solid:hover { background: #fff; }
-.btn-ghost { border: 1px solid var(--line-strong); color: var(--fog-100); }
+.btn-ghost { border: 1px solid var(--line-strong); color: var(--text-0); }
 .btn-ghost:hover { border-color: var(--accent); background: var(--accent-dim); }
 .install-line {
+  position: relative;
   display: inline-flex; align-items: center; gap: 14px;
-  font-family: var(--mono); font-size: 13.5px;
-  background: rgba(11,13,16,.6); backdrop-filter: blur(8px);
-  border: 1px solid var(--line-strong); border-radius: 12px;
-  padding: 12px 18px; color: var(--fog-300); cursor: pointer;
+  font-family: var(--mono); font-size: 13px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  padding: 11px 18px; color: var(--text-1); cursor: pointer;
+  margin-top: 18px;
   transition: border-color .25s;
 }
 .install-line:hover { border-color: var(--accent); }
 .install-line .dollar { color: var(--accent); }
-.install-line .copy-hint { font-size: 11px; color: var(--fog-500); letter-spacing: .08em; }
-.scroll-cue {
-  position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-  z-index: 2; width: 1px; height: 52px; overflow: hidden;
-}
-.scroll-cue::after {
-  content: ""; position: absolute; left: 0; top: -52px; width: 1px; height: 52px;
-  background: linear-gradient(to bottom, transparent, var(--fog-100));
-  animation: cue 2.2s ease-in-out infinite;
-}
-@keyframes cue { to { top: 52px; } }
+.install-line .copy-hint { font-size: 11px; color: var(--text-2); letter-spacing: .08em; }
 
-/* ---------- narrative ---------- */
-.narrative { padding: 150px 0 130px; background: var(--ink-0); }
-.narrative p.big {
-  font-family: "Fraunces", "Noto Serif SC", serif; font-weight: 400;
-  font-size: clamp(24px, 3.4vw, 36px); line-height: 1.85;
-  color: var(--fog-100); text-wrap: balance;
+/* hero screenshot */
+.hero-shot {
+  position: relative;
+  margin: 76px auto -2px;
+  max-width: 1040px;
+  padding: 0 32px;
 }
-.narrative p.big .dim { color: var(--fog-500); }
-.narrative p.follow { margin-top: 44px; color: var(--fog-300); font-size: 18px; line-height: 1.9; }
-.narrative .rule { width: 56px; height: 1px; background: var(--accent); margin-bottom: 48px; }
+.hero-shot .frame {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  overflow: hidden;
+  box-shadow: 0 -30px 120px -40px rgba(120,119,238,.25), 0 -10px 60px -30px rgba(233,113,133,.18);
+}
+.hero-shot img {
+  display: block; width: 100%; height: auto;
+  max-height: 640px; object-fit: cover; object-position: top center;
+}
+.hero-shot .fade {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 140px;
+  background: linear-gradient(to bottom, transparent, var(--bg-0));
+}
+header.hero { border-bottom: 1px solid var(--line); }
 
 /* ---------- terminal ---------- */
-.terminal-section { padding: 40px 0 150px; }
+.terminal-section { padding: 130px 0; }
+.term-grid { display: grid; grid-template-columns: 5fr 6fr; gap: 64px; align-items: center; }
+@media (max-width: 900px) { .term-grid { grid-template-columns: 1fr; gap: 44px; } }
 .terminal {
-  background: #0d0f13; border: 1px solid var(--line-strong); border-radius: 16px;
-  box-shadow: 0 40px 90px -30px rgba(0,0,0,.8);
-  overflow: hidden; font-family: var(--mono); font-size: 14px; line-height: 1.9;
+  background: #0c0e12; border: 1px solid var(--line-strong); border-radius: 14px;
+  box-shadow: 0 30px 80px -30px rgba(0,0,0,.7);
+  overflow: hidden; font-family: var(--mono); font-size: 13.5px; line-height: 1.9;
 }
-.term-bar { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.term-bar { display: flex; align-items: center; gap: 8px; padding: 13px 17px; border-bottom: 1px solid var(--line); }
 .term-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
-.term-bar span { margin-left: 10px; font-size: 12px; color: var(--fog-500); letter-spacing: .06em; }
-.term-body { padding: 22px 24px 28px; min-height: 300px; color: var(--fog-300); }
+.term-bar span { margin-left: 10px; font-size: 12px; color: var(--text-2); letter-spacing: .06em; }
+.term-body { padding: 20px 22px 26px; min-height: 300px; color: var(--text-1); }
 .term-body .ps { color: var(--accent); }
-.term-body .cmd { color: var(--fog-100); }
+.term-body .cmd { color: var(--text-0); }
 .term-body .ok { color: #9fc79f; }
-.term-body .dim { color: var(--fog-500); }
+.term-body .dim { color: var(--text-2); }
 .term-body .line { display: block; white-space: pre-wrap; word-break: break-word; }
-.caret { display: inline-block; width: 8px; height: 17px; background: var(--fog-100); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
+.caret { display: inline-block; width: 8px; height: 16px; background: var(--text-0); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ---------- features ---------- */
-.features { padding: 140px 0; background: var(--ink-1); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 64px; }
+.features { padding: 130px 0; background: var(--bg-1); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-top: 56px; }
 @media (max-width: 900px) { .feature-grid { grid-template-columns: 1fr; } }
 .feature {
-  background: var(--ink-1); padding: 42px 36px 46px;
+  background: var(--bg-1); padding: 36px 32px 40px;
   transition: background .35s;
-  position: relative;
 }
-.feature:hover { background: var(--ink-2); }
-.feature .num { font-family: var(--mono); font-size: 12px; color: var(--fog-500); letter-spacing: .15em; }
-.feature h3 {
-  font-family: "Fraunces", "Noto Serif SC", serif; font-weight: 500;
-  font-size: 21px; margin: 18px 0 14px; line-height: 1.45;
-}
-.feature p { color: var(--fog-300); font-size: 15.5px; line-height: 1.85; }
+.feature:hover { background: var(--bg-2); }
+.feature .num { font-family: var(--mono); font-size: 12px; color: var(--text-2); letter-spacing: .15em; }
+.feature h3 { font-weight: 600; font-size: 18px; margin: 16px 0 10px; line-height: 1.4; letter-spacing: -.01em; }
+.feature p { color: var(--text-1); font-size: 14.5px; line-height: 1.8; }
 .feature code { font-family: var(--mono); font-size: .88em; color: var(--accent); background: var(--accent-dim); padding: 1px 6px; border-radius: 5px; }
 
-/* ---------- interlude ---------- */
-.interlude {
-  position: relative; min-height: 78vh;
-  display: flex; align-items: center;
-  overflow: hidden;
+/* ---------- statement ---------- */
+.statement {
+  position: relative; padding: 150px 0; text-align: center; overflow: hidden;
 }
-.interlude .bg {
-  position: absolute; inset: 0; background-size: cover; background-position: center;
-  filter: saturate(.7) brightness(.6);
-  will-change: transform;
+.statement .glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 55% 65% at 50% 50%, rgba(120,119,238,.09), transparent 70%);
 }
-.interlude .veil { position: absolute; inset: 0; background: linear-gradient(to bottom, var(--ink-0), rgba(11,13,16,.25) 30%, rgba(11,13,16,.25) 70%, var(--ink-0)); }
-.interlude blockquote {
-  position: relative; z-index: 2;
-  font-family: "Fraunces", "Noto Serif SC", serif; font-weight: 400;
-  font-size: clamp(24px, 3.6vw, 40px); line-height: 1.75;
-  max-width: 20em; text-wrap: balance;
+.statement blockquote {
+  position: relative;
+  font-weight: 600;
+  font-size: clamp(24px, 3.6vw, 40px); line-height: 1.5; letter-spacing: -.02em;
+  max-width: 22em; margin: 0 auto; text-wrap: balance;
 }
-.interlude .attribution { position: relative; z-index: 2; display: block; margin-top: 28px; font-family: var(--mono); font-size: 12.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--fog-300); }
+.statement .attribution { position: relative; display: block; margin-top: 26px; font-family: var(--mono); font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--text-2); }
 
 /* ---------- architecture ---------- */
-.arch { padding: 140px 0 150px; }
-.arch-diagram { margin-top: 70px; display: grid; gap: 0; justify-items: center; }
-.arch-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 20px; width: 100%; max-width: 860px; }
+.arch { padding: 130px 0 140px; }
+.arch-diagram { margin-top: 60px; display: grid; gap: 0; justify-items: center; }
+.arch-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px; width: 100%; max-width: 860px; }
 .arch-box {
-  border: 1px solid var(--line-strong); border-radius: 14px;
-  padding: 26px 24px; text-align: center; background: var(--ink-1);
+  border: 1px solid var(--line-strong); border-radius: 12px;
+  padding: 24px 22px; text-align: center; background: var(--bg-1);
   transition: border-color .3s, transform .3s;
 }
 .arch-box:hover { border-color: var(--accent); transform: translateY(-3px); }
-.arch-box .t { font-family: "Fraunces", "Noto Serif SC", serif; font-size: 18px; font-weight: 500; }
-.arch-box .d { font-size: 13.5px; color: var(--fog-500); margin-top: 8px; line-height: 1.7; }
+.arch-box .t { font-size: 16px; font-weight: 600; }
+.arch-box .d { font-size: 13px; color: var(--text-2); margin-top: 6px; line-height: 1.7; }
 .arch-core {
   border: 1px solid var(--accent); background: linear-gradient(180deg, var(--accent-dim), transparent);
-  border-radius: 16px; padding: 34px 30px; text-align: center; width: 100%; max-width: 560px;
+  border-radius: 14px; padding: 30px 28px; text-align: center; width: 100%; max-width: 560px;
 }
-.arch-core .t { font-family: "Fraunces", "Noto Serif SC", serif; font-size: 22px; font-weight: 500; }
-.arch-core .d { font-size: 14px; color: var(--fog-300); margin-top: 10px; line-height: 1.8; }
-.arch-link {
-  height: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-}
+.arch-core .t { font-size: 19px; font-weight: 600; }
+.arch-core .d { font-size: 13.5px; color: var(--text-1); margin-top: 8px; line-height: 1.8; }
+.arch-link { height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .arch-link .wire { width: 1px; flex: 1; background: linear-gradient(to bottom, var(--line-strong), var(--accent), var(--line-strong)); }
 .arch-link .proto { font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; color: var(--accent); text-transform: uppercase; }
 @media (max-width: 720px) { .arch-row { grid-template-columns: 1fr; } }
 
 /* ---------- quickstart ---------- */
-.quickstart { padding: 140px 0 150px; background: var(--ink-1); border-top: 1px solid var(--line); }
-.steps { margin-top: 64px; display: grid; gap: 44px; max-width: 780px; }
-.step { display: grid; grid-template-columns: 64px 1fr; gap: 26px; align-items: start; }
+.quickstart { padding: 130px 0 140px; background: var(--bg-1); border-top: 1px solid var(--line); }
+.steps { margin-top: 56px; display: grid; gap: 40px; max-width: 780px; }
+.step { display: grid; grid-template-columns: 56px 1fr; gap: 24px; align-items: start; }
 .step .n {
-  font-family: "Fraunces", serif; font-size: 40px; font-weight: 300; color: var(--fog-500);
-  line-height: 1; padding-top: 4px;
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 14px; color: var(--text-1);
+  margin-top: 2px;
 }
-.step h3 { font-family: "Fraunces", "Noto Serif SC", serif; font-size: 20px; font-weight: 500; margin-bottom: 10px; }
-.step p { color: var(--fog-300); font-size: 15.5px; margin-bottom: 16px; }
+.step h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; letter-spacing: -.01em; }
+.step p { color: var(--text-1); font-size: 15px; margin-bottom: 14px; }
 .codeblock {
   position: relative;
-  background: #0d0f13; border: 1px solid var(--line-strong); border-radius: 12px;
-  font-family: var(--mono); font-size: 13.5px; line-height: 1.9;
-  padding: 16px 20px; color: var(--fog-300); overflow-x: auto;
+  background: #0c0e12; border: 1px solid var(--line-strong); border-radius: 10px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.9;
+  padding: 14px 18px; color: var(--text-1); overflow-x: auto;
   white-space: pre;
 }
 .codeblock .dollar { color: var(--accent); user-select: none; }
-.codeblock .c { color: var(--fog-500); }
+.codeblock .c { color: var(--text-2); }
 .copy-btn {
-  position: absolute; top: 10px; right: 10px;
+  position: absolute; top: 9px; right: 9px;
   font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
-  background: var(--ink-2); border: 1px solid var(--line-strong); border-radius: 7px;
-  color: var(--fog-500); padding: 4px 10px; cursor: pointer;
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 7px;
+  color: var(--text-2); padding: 4px 10px; cursor: pointer;
   transition: color .2s, border-color .2s;
 }
-.copy-btn:hover { color: var(--fog-100); border-color: var(--accent); }
-@media (max-width: 600px) { .step { grid-template-columns: 1fr; gap: 10px; } }
+.copy-btn:hover { color: var(--text-0); border-color: var(--accent); }
+@media (max-width: 600px) { .step { grid-template-columns: 1fr; gap: 8px; } }
 
 /* ---------- footer ---------- */
-footer { padding: 110px 0 60px; position: relative; overflow: hidden; }
-.footer-bg {
-  position: absolute; inset: 0;
-  background: url("https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=2000&q=70&auto=format&fit=crop") center / cover;
-  filter: saturate(.5) brightness(.35);
+footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
+.footer-glow {
+  position: absolute; bottom: -300px; left: 50%; transform: translateX(-50%);
+  width: 1000px; height: 600px; pointer-events: none;
+  background:
+    radial-gradient(ellipse 50% 55% at 42% 60%, rgba(233,113,133,.10), transparent 70%),
+    radial-gradient(ellipse 50% 55% at 58% 55%, rgba(120,119,238,.10), transparent 70%);
+  filter: blur(20px);
 }
-.footer-veil { position: absolute; inset: 0; background: linear-gradient(to bottom, var(--ink-0), rgba(11,13,16,.7)); }
 .footer-inner { position: relative; z-index: 2; }
 .footer-cta h2 {
-  font-family: "Fraunces", "Noto Serif SC", serif; font-weight: 400;
-  font-size: clamp(30px, 4.5vw, 48px); line-height: 1.4; max-width: 22em; text-wrap: balance;
+  font-weight: 600;
+  font-size: clamp(28px, 4.2vw, 46px); line-height: 1.3; letter-spacing: -.02em;
+  max-width: 22em; text-wrap: balance;
 }
-.footer-cta .hero-cta { margin-top: 36px; }
+.footer-cta .hero-cta { justify-content: flex-start; margin-top: 32px; }
 .footer-meta {
-  margin-top: 96px; padding-top: 28px; border-top: 1px solid var(--line);
-  display: flex; flex-wrap: wrap; gap: 18px 40px; justify-content: space-between;
-  font-size: 13px; color: var(--fog-500);
+  margin-top: 90px; padding-top: 26px; border-top: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 16px 40px; justify-content: space-between;
+  font-size: 13px; color: var(--text-2);
 }
-.footer-meta a { color: var(--fog-300); text-decoration: none; }
-.footer-meta a:hover { color: var(--fog-100); }
-.credits { font-size: 12px; color: var(--fog-500); }
+.footer-meta a { color: var(--text-1); text-decoration: none; }
+.footer-meta a:hover { color: var(--text-0); }
 </style>
 </head>
 <body>
 
 <nav id="nav">
-  <a class="logo" href="#"><em>w</em>uu</a>
+  <a class="logo" href="#">wuu<em>.</em></a>
   <div class="nav-links">
     <a href="#features"><span class="zh">特性</span><span class="en">Features</span></a>
     <a href="#arch"><span class="zh">架构</span><span class="en">Architecture</span></a>
@@ -326,49 +320,49 @@ footer { padding: 110px 0 60px; position: relative; overflow: hidden; }
 </nav>
 
 <header class="hero">
-  <div class="hero-bg" aria-hidden="true"></div>
-  <div class="hero-veil" aria-hidden="true"></div>
-  <div class="hero-inner wrap">
-    <h1 class="hero-name reveal in">wuu</h1>
-    <p class="hero-tag reveal in d1">
-      <span class="zh">开源、自带 API Key 的 AI Coding Agent。<br>它读代码、改文件、跑命令、审改动——在你自己的仓库里，用你自己的模型。</span>
-      <span class="en">An open-source, bring-your-own-key AI coding agent.<br>It reads code, edits files, runs commands, and reviews changes — in your own repository, with your own model.</span>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="wrap">
+    <h1 class="reveal in">
+      <span class="zh">开源的 AI Coding Agent，<br>用你自己的 Key。</span>
+      <span class="en">The open-source AI coding agent.<br>Bring your own key.</span>
+    </h1>
+    <p class="sub reveal in d1">
+      <span class="zh">wuu 在你的本地仓库里读代码、改文件、跑命令、审改动。Go 核心 + 桌面应用 + 可脚本化 CLI，内置多智能体编排，支持 Anthropic 和任何 OpenAI 兼容端点。</span>
+      <span class="en">wuu reads code, edits files, runs commands, and reviews changes in your local repository. A Go core with a desktop app and a scriptable CLI, built-in multi-agent orchestration, and support for Anthropic and any OpenAI-compatible endpoint.</span>
     </p>
-    <p class="hero-sub reveal in d2">
-      <span class="zh">Go 核心 · 桌面应用 · 可脚本化 CLI · 内置多智能体编排 · MIT 许可</span>
-      <span class="en">Go core · Desktop app · Scriptable CLI · Built-in multi-agent orchestration · MIT licensed</span>
-    </p>
-    <div class="hero-cta reveal in d3">
+    <div class="hero-cta reveal in d2">
       <a class="btn btn-solid" href="#quickstart"><span class="zh">开始使用</span><span class="en">Get started</span></a>
-      <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">
-        <span class="zh">在 GitHub 查看</span><span class="en">View on GitHub</span>
-      </a>
+      <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub →</a>
+    </div>
+    <div class="reveal in d3">
       <button class="install-line" data-copy="go install github.com/blueberrycongee/wuu/cmd/wuu@latest" title="Copy">
         <span><span class="dollar">$</span> go install github.com/blueberrycongee/wuu/cmd/wuu@latest</span>
         <span class="copy-hint zh">复制</span><span class="copy-hint en">copy</span>
       </button>
     </div>
   </div>
-  <div class="scroll-cue" aria-hidden="true"></div>
+  <div class="hero-shot reveal in d3">
+    <div class="frame">
+      <img src="https://github.com/user-attachments/assets/2d9030aa-ca03-42b1-9333-f79cc5aff95b" alt="wuu desktop app" loading="eager">
+      <div class="fade"></div>
+    </div>
+  </div>
 </header>
 
-<section class="narrative">
-  <div class="narrow">
-    <div class="rule reveal"></div>
-    <p class="big reveal">
-      <span class="zh">wuu，读起来像「雾」。<span class="dim">软件开发的大多数时刻正是如此——意图清楚，路径模糊。</span>wuu 做的事很简单：走进那片雾，把它变成一次次干净的 diff。</span>
-      <span class="en">wuu sounds like <em>wù</em> — the Chinese word for fog. <span class="dim">Most moments in software are exactly that: the intent is clear, the path is not.</span> What wuu does is simple — it walks into the fog and comes back with clean diffs.</span>
-    </p>
-    <p class="follow reveal">
-      <span class="zh">它在你的本地仓库里工作：阅读和修改文件、执行命令、复盘失败、审查改动，还能接收文件与截图作为上下文。会话可以随时恢复、从检查点分叉——昨天没聊完的问题，今天接着聊。所有这些都通过 BYOK 模式运行：你带上自己的 API Key，接 Anthropic 或任何 OpenAI 兼容端点，没有中间商，也没有锁定。</span>
-      <span class="en">It works inside your local repository: reading and editing files, running commands, iterating on failures, reviewing changes, and taking files or screenshots as context. Sessions persist — resume yesterday's conversation, or fork from a checkpoint. All of it runs BYOK: bring your own API key, connect Anthropic or any OpenAI-compatible endpoint. No middleman, no lock-in.</span>
-    </p>
-  </div>
-</section>
-
 <section class="terminal-section">
-  <div class="narrow">
-    <div class="terminal reveal" id="terminal">
+  <div class="wrap term-grid">
+    <div>
+      <span class="kicker reveal">CLI</span>
+      <h2 class="title reveal">
+        <span class="zh">一条命令，<br>交给它一件事。</span>
+        <span class="en">One command.<br>Hand it something real.</span>
+      </h2>
+      <p class="lede reveal">
+        <span class="zh"><code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">wuu exec</code> 是非交互式入口：它自己读文件、跑测试、改代码、复盘失败，直到测试变绿。输出是流式 JSONL，脚本、CI、review 机器人和其他 agent 都能直接驱动它。</span>
+        <span class="en"><code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">wuu exec</code> is the non-interactive entrypoint: it reads files, runs tests, edits code, and iterates on failures until the tests go green. Output streams as JSONL, so scripts, CI, review bots, and other agents can drive it directly.</span>
+      </p>
+    </div>
+    <div class="terminal reveal d1" id="terminal">
       <div class="term-bar"><i></i><i></i><i></i><span>wuu — zsh</span></div>
       <div class="term-body" id="termBody"></div>
     </div>
@@ -379,8 +373,8 @@ footer { padding: 110px 0 60px; position: relative; overflow: hidden; }
   <div class="wrap">
     <span class="kicker reveal"><span class="zh">特性</span><span class="en">Features</span></span>
     <h2 class="title reveal">
-      <span class="zh">编排能力是运行时的一部分，<br>不是外挂。</span>
-      <span class="en">Orchestration is part of the runtime,<br>not bolted on.</span>
+      <span class="zh">编排能力是运行时的一部分，不是外挂。</span>
+      <span class="en">Orchestration is part of the runtime, not bolted on.</span>
     </h2>
     <p class="lede reveal">
       <span class="zh">单轮任务之外，wuu 能规划多步工作、委派子智能体、运行可持久化的工作流——这些都长在核心里。</span>
@@ -390,7 +384,7 @@ footer { padding: 110px 0 60px; position: relative; overflow: hidden; }
       <div class="feature reveal">
         <span class="num">01</span>
         <h3><span class="zh">BYOK，不锁定</span><span class="en">BYOK, no lock-in</span></h3>
-        <p><span class="zh">自带 API Key，支持 Anthropic 与任何 OpenAI 兼容端点——OpenAI、OpenRouter、one-api，或你机器上的本地网关。换模型只需改一行配置。</span><span class="en">Bring your own API key. Works with Anthropic and any OpenAI-compatible endpoint — OpenAI, OpenRouter, one-api, or a local gateway on your machine. Switching models is a one-line config change.</span></p>
+        <p><span class="zh">自带 API Key，支持 Anthropic 与任何 OpenAI 兼容端点——OpenAI、OpenRouter、one-api，或你机器上的本地网关。换模型只需改一行配置。</span><span class="en">Bring your own API key. Works with Anthropic and any OpenAI-compatible endpoint — OpenAI, OpenRouter, one-api, or a local gateway. Switching models is a one-line config change.</span></p>
       </div>
       <div class="feature reveal d1">
         <span class="num">02</span>
@@ -421,13 +415,12 @@ footer { padding: 110px 0 60px; position: relative; overflow: hidden; }
   </div>
 </section>
 
-<section class="interlude" id="interlude">
-  <div class="bg" data-parallax style="background-image:url('https://images.unsplash.com/photo-1519681393784-d120267933ba?w=2400&q=80&auto=format&fit=crop')"></div>
-  <div class="veil"></div>
-  <div class="narrow">
+<section class="statement">
+  <div class="glow" aria-hidden="true"></div>
+  <div class="wrap">
     <blockquote class="reveal">
-      <span class="zh">把任务交给它，去睡觉。<br>定时任务按 cron 醒来，工作流断点续跑，<br>记忆留到明天。</span>
-      <span class="en">Hand it the task, then go to sleep.<br>Scheduled runs wake on cron, workflows resume from checkpoints,<br>and memory is still there tomorrow.</span>
+      <span class="zh">把任务交给它，去睡觉。<br>定时任务按 cron 醒来，工作流断点续跑，记忆留到明天。</span>
+      <span class="en">Hand it the task, then go to sleep.<br>Scheduled runs wake on cron, workflows resume from checkpoints, and memory is still there tomorrow.</span>
     </blockquote>
     <span class="attribution reveal d1"><span class="zh">定时任务 · 工作流 · 持久记忆</span><span class="en">Scheduled tasks · Workflows · Persistent memory</span></span>
   </div>
@@ -518,13 +511,12 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
 </section>
 
 <footer>
-  <div class="footer-bg" aria-hidden="true"></div>
-  <div class="footer-veil" aria-hidden="true"></div>
+  <div class="footer-glow" aria-hidden="true"></div>
   <div class="footer-inner wrap">
     <div class="footer-cta">
       <h2 class="reveal">
-        <span class="zh">雾不会自己散。<br>带上你的 Key，来试试。</span>
-        <span class="en">The fog won't lift itself.<br>Bring your key and try it.</span>
+        <span class="zh">带上你的 Key，<br>把下一个任务交给 wuu。</span>
+        <span class="en">Bring your key.<br>Hand your next task to wuu.</span>
       </h2>
       <div class="hero-cta reveal d1">
         <a class="btn btn-solid" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub →</a>
@@ -541,9 +533,6 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
         <a href="https://github.com/blueberrycongee/wuu/blob/main/SECURITY.md" target="_blank" rel="noopener"><span class="zh">安全策略</span><span class="en">Security</span></a>
         &nbsp;·&nbsp;
         <a href="https://github.com/blueberrycongee/wuu/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
-      </span>
-      <span class="credits">
-        <span class="zh">摄影素材来自 </span><span class="en">Photography via </span><a href="https://unsplash.com" target="_blank" rel="noopener">Unsplash</a>
       </span>
     </div>
   </div>
@@ -586,25 +575,12 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
   }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' });
   document.querySelectorAll('.reveal:not(.in)').forEach(function (el) { io.observe(el); });
 
-  /* ---- gentle parallax on interlude ---- */
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var para = document.querySelector('[data-parallax]');
-  if (para && !reduced) {
-    window.addEventListener('scroll', function () {
-      var r = para.parentElement.getBoundingClientRect();
-      if (r.bottom < 0 || r.top > innerHeight) return;
-      var p = (r.top + r.height / 2 - innerHeight / 2) / innerHeight;
-      para.style.transform = 'translateY(' + (p * -46) + 'px) scale(1.12)';
-    }, { passive: true });
-  }
-
   /* ---- copy buttons ---- */
   document.querySelectorAll('[data-copy]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var text = btn.getAttribute('data-copy');
       var done = function () {
-        var old = btn.classList.contains('install-line');
-        if (old) {
+        if (btn.classList.contains('install-line')) {
           var hints = btn.querySelectorAll('.copy-hint');
           hints.forEach(function (h) { h.dataset.prev = h.textContent; h.textContent = '✓'; });
           setTimeout(function () { hints.forEach(function (h) { h.textContent = h.dataset.prev; }); }, 1500);
@@ -637,6 +613,7 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
     { type: 'cmd',  text: 'wuu exec resume --last "continue"', delay: 900 }
   ];
   var started = false;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function typeLine(i) {
     if (i >= script.length) { body.insertAdjacentHTML('beforeend', '<span class="line"><span class="ps">$</span> <span class="caret"></span></span>'); return; }
     var item = script[i];
