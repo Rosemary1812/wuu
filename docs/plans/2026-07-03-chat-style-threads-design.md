@@ -2,6 +2,7 @@
 
 Status: approved direction (2026-07-03). Extends
 `docs/plans/2026-07-03-resident-named-agents.md`.
+注：Phase 1/2 均已落地（2026-07-04 审计确认）。
 
 ## 1. Product model
 

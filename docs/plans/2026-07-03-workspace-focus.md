@@ -168,6 +168,8 @@ DM thread 的 turn 开始时,`internal/tools.Toolkit` 的执行根需要跟着�
     的持久焦点(通常是 home,因为常驻 agent 的自身焦点很少被设置)。
 - **压缩(compact)时的重声明**:见下方状态更新。
 - **前端渲染**:分割线 UI、`focus_workspace` 选择器等,`desktop/` 完全不碰。
+  注(2026-07-04):前端焦点选择器与分割线已于后续实现(ChatFocusChip、
+  ChatThreadView 的 focus 行),本节保留为历史记录。
 - **文件作用域收紧**:见 §5 末尾。
 
 ### 6.1 压缩后重声明——状态更新
@@ -226,6 +228,10 @@ DM thread 的 turn 开始时,`internal/tools.Toolkit` 的执行根需要跟着�
 
 1. `internal/appserver/participant_prompt.go` 一个字节都不动——焦点绝不进
    system prompt。
+   - **豁免说明(2026-07-04)**:participant_prompt.go 后因
+     `2026-07-03-sidebar-groups-andy-workspaces.md` §5/§6 的工作区清单特性被
+     修改,且 `2026-07-04-memory-redesign.md` 进一步修订其记忆段——"焦点不进
+     system prompt"的实质约束不变,字面意义的"一个字节不动"废止。
 2. 声明项必须走持久化路径(`appendChatMessage` + `session.AppendHistoryRecord`
    等价物),不允许只存在于内存 `threadState.History` 里。
 3. `focus_workspace` 请求为 `nil`(未传)时,历史必须与不传这个字段时完全一样
