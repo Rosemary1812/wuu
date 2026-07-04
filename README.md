@@ -2,35 +2,76 @@
 
 <p align="center">Open-source, BYOK AI coding agent — a Go core with a desktop app, a scriptable CLI, and built-in multi-agent orchestration.</p>
 
-<p align="center">
-  <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
-  <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
-</p>
-
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README_zh.md">简体中文</a> |
-  <a href="docs/exec.md">Docs</a> |
-  <a href="CONTRIBUTING.md">Contributing</a>
-</p>
+<div align="center">
+  <p>
+    <a href="README.md">English</a> |
+    <a href="README_zh.md">简体中文</a>
+  </p>
+  <p>
+    <a href="https://github.com/blueberrycongee/wuu/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/blueberrycongee/wuu/ci.yml?branch=main&style=flat-square&label=ci"></a>
+    <a href="https://github.com/blueberrycongee/wuu/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/blueberrycongee/wuu?style=flat-square"></a>
+    <a href="https://github.com/blueberrycongee/wuu/blob/main/go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/blueberrycongee/wuu?style=flat-square"></a>
+    <a href="https://github.com/blueberrycongee/wuu/graphs/commit-activity"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/blueberrycongee/wuu?style=flat-square"></a>
+  </p>
+</div>
 
 ---
 
-<img width="2272" height="2494" alt="image" src="https://github.com/user-attachments/assets/2d9030aa-ca03-42b1-9333-f79cc5aff95b" />
+<img width="2272" height="2494" alt="wuu desktop app" src="https://github.com/user-attachments/assets/2d9030aa-ca03-42b1-9333-f79cc5aff95b" />
 
 **wuu** is an open-source AI coding agent that works in your local repository. It reads and edits files, runs commands, reviews changes, and resumes sessions — all through a BYOK model that works with Anthropic and any OpenAI-compatible provider.
 
 Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, run durable workflows, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
 
-## Installation
+## Start Here
 
-Wuu does not have published release binaries yet. Install the CLI from source:
+| You want to... | Go to |
+|---|---|
+| Install and run your first task | [Install](#install) and [Quick Start](#quick-start) |
+| Use the desktop app | [Desktop App](#desktop-app) |
+| Drive wuu from scripts, CI, or another agent | [CLI and Automation](#cli-and-automation) and [`docs/exec.md`](docs/exec.md) |
+| Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
+| Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/app-server-protocol.md) |
+| Contribute | [Contributing](CONTRIBUTING.md) |
+
+## News
+
+- **2026-07-01** Tagged **v0.1.0** — the first versioned milestone: MIT license, contribution guidelines, security policy, and open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
+
+## Why wuu
+
+- **BYOK, no lock-in** — bring your own API key; works with Anthropic and any OpenAI-compatible endpoint, including local gateways.
+- **One core, many shells** — the Go core speaks JSON-RPC via `wuu app-server`; the desktop app is the first shell, and editor plugins can reuse the same core without forking it.
+- **Orchestration built in** — subagents, durable workflows, skills, persistent memory, and scheduled tasks are part of the runtime, not bolted on.
+- **Scriptable by design** — `wuu exec` streams JSONL, so CI jobs, review bots, and other agents can drive it programmatically.
+- **Sessions that persist** — resume previous turns, fork from a checkpoint, and keep context across sessions.
+
+## Install
+
+> [!IMPORTANT]
+> wuu is pre-1.0 and release binaries are not published yet — installing from source with `go install` is the reliable path today. The installer script fetches the latest tagged GitHub release and will work once releases are published. Interfaces, configuration, and desktop behavior may still change.
+
+Pick **one** install method:
+
+**Install from source with Go**
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
 ```
 
-Or run it directly from a checkout:
+**One-command installer** (downloads a release binary)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
+```
+
+The installer downloads to `~/.local/bin` by default. To use a different directory:
+
+```bash
+INSTALL_DIR=/usr/local/bin sh install.sh
+```
+
+**Run from a checkout**
 
 ```bash
 git clone https://github.com/blueberrycongee/wuu.git
@@ -38,22 +79,35 @@ cd wuu
 go run ./cmd/wuu --version
 ```
 
-## Quickstart
+Verify the install:
+
+```bash
+wuu --version
+```
+
+## Quick Start
+
+**1. Initialize**
 
 ```bash
 wuu init
+```
+
+**2. Run your first tasks**
+
+```bash
 wuu exec "describe this repo"
 wuu exec "fix the failing test"
 ```
 
-Attach local files when they are part of the task:
+**3. Attach local files when they are part of the task**
 
 ```bash
 wuu exec --file report.pdf "summarize this PDF"
 wuu exec --image screenshot.png "find the UI issue"
 ```
 
-Resume or inspect sessions:
+**4. Resume or inspect sessions**
 
 ```bash
 wuu exec resume --last "continue"
@@ -88,7 +142,8 @@ Wuu is split into a reusable **Go core** and a thin **shell**:
 - The **current shell** is the Electron desktop in `desktop/`, which spawns the core and owns the UI and native integrations.
 - **Future shells** (VS Code extension, JetBrains plugin, etc.) can consume the same core by spawning `wuu app-server` — no need to import or fork the Go code.
 
-See the [`app-server` protocol](docs/app-server-protocol.md) for the JSON-RPC interface.
+> [!TIP]
+> Building a new shell or integration? Start with the [`app-server` protocol](docs/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
 
 ## Desktop App
 
@@ -116,7 +171,7 @@ See [`docs/exec.md`](docs/exec.md) for JSONL output, attachments, resume, fork, 
 
 Wuu supports Anthropic and OpenAI-compatible providers such as OpenAI, OpenRouter, one-api, and local gateways. Bring your own API key — set the matching environment variable and point wuu at any compatible endpoint.
 
-Project config usually lives in `.wuu.json`; global config can live in `~/.config/wuu/config.json`.
+Project config usually lives in `.wuu.json`; global config lives in `~/.wuu/config.json` (set `WUU_HOME` to relocate the whole directory; the legacy `~/.config/wuu/config.json` is still read for backward compatibility).
 
 ```json
 {
@@ -144,16 +199,29 @@ export OPENROUTER_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 ```
 
-## Documentation
+For another provider, the same config shape applies:
 
-- [`wuu exec`](docs/exec.md)
-- [`app-server` protocol](docs/app-server-protocol.md)
-- [`jsonl-events`](docs/jsonl-events.md)
-- [Contributing](CONTRIBUTING.md)
+| Replace | Where |
+|---|---|
+| Provider config key | `providers.<provider>` |
+| Provider type | `providers.<provider>.type` (`anthropic` or `openai-compatible`) |
+| Endpoint URL, when needed | `providers.<provider>.base_url` |
+| API key env var name | `providers.<provider>.api_key_env` |
+| Model ID | `providers.<provider>.model` |
 
-## Status
+## Docs
 
-Wuu is pre-1.0 and under active development. Release binaries are not published yet. Interfaces, configuration, and desktop behavior may change.
+- Drive wuu from scripts, CI, or other agents: [`wuu exec`](docs/exec.md)
+- Parse the streaming output: [JSONL events](docs/jsonl-events.md)
+- Embed the core in a new shell: [`app-server` protocol](docs/app-server-protocol.md)
+- Consume Claude Code–compatible stream output: [cc-stream-json](docs/compat/cc-stream-json.md)
+- Set up a development environment: [Contributing](CONTRIBUTING.md)
+
+## Contributing
+
+PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, review, and contribution guidelines, and [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
+
+Wuu is pre-1.0 and under active development — if you hit rough edges, [open an issue](https://github.com/blueberrycongee/wuu/issues).
 
 ## Acknowledgments
 
@@ -166,6 +234,18 @@ Wuu's design draws heavily from — and stands on the shoulders of — these pro
 
 Thank you to the teams and communities behind these projects for the inspiration and ideas that helped make wuu possible.
 
+## Star History
+
+<div align="center">
+  <a href="https://star-history.com/#blueberrycongee/wuu&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date" />
+    </picture>
+  </a>
+</div>
+
 ## License
 
-MIT
+[MIT](LICENSE)
