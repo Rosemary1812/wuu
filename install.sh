@@ -5,7 +5,7 @@
 set -e
 
 REPO="blueberrycongee/wuu"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS.
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -68,6 +68,9 @@ fi
 # Extract.
 tar -xzf "${TMPDIR}/${FILENAME}" -C "$TMPDIR"
 
+# Create install directory if it doesn't exist.
+mkdir -p "$INSTALL_DIR"
+
 # Install.
 # Note: chmod must run with the same privilege as mv. Otherwise a
 # non-sudo chmod against a root-owned file fails under `set -e`,
@@ -87,3 +90,13 @@ rm -rf "$TMPDIR"
 echo ""
 echo "wuu v${VERSION} installed to ${INSTALL_DIR}/wuu"
 echo "Use the desktop GUI for interactive work, or run 'wuu run \"...\"' for one-shot CLI tasks."
+
+# Check if INSTALL_DIR is in PATH.
+case ":$PATH:" in
+  *:"$INSTALL_DIR":*) ;;
+  *)
+    echo ""
+    echo "Note: $INSTALL_DIR is not in your PATH."
+    echo "Add it with: export PATH=\"$INSTALL_DIR:\$PATH\""
+    ;;
+esac

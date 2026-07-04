@@ -22,6 +22,21 @@
  *   .settings-status-pill            semantic status badge
  * ========================================================================= */
 
+/* Component color tokens for settings.css. Light-theme values; the dark
+   theme overrides these in base.css theme blocks. */
+:root {
+  --settings-sidebar-glass-shadow: rgba(32, 38, 34, 0.045);
+  --settings-sidebar-gradient-1: rgba(255, 255, 255, 0.72);
+  --settings-sidebar-gradient-2: rgba(255, 255, 255, 0.14);
+  --settings-sidebar-gradient-3: rgba(209, 220, 211, 0.12);
+  --settings-sidebar-gradient-4: rgba(255, 255, 255, 0.44);
+  --settings-button-primary-hover: #000;
+  --settings-heatmap-level-1: #bad0f0;
+  --settings-heatmap-level-2: #7aaae0;
+  --settings-heatmap-level-3: #3d74cc;
+  --settings-heatmap-level-4: #1a4fa8;
+}
+
 .settings-shell {
   display: grid;
   position: relative;
@@ -48,7 +63,7 @@
   background: var(--sidebar-glass-bg);
   box-shadow:
     inset -1px 0 0 var(--sidebar-glass-highlight),
-    1px 0 18px rgba(32, 38, 34, 0.045);
+    1px 0 18px var(--settings-sidebar-glass-shadow);
   backdrop-filter: blur(26px) saturate(1.45);
   -webkit-backdrop-filter: blur(26px) saturate(1.45);
   padding: 16px 14px 20px;
@@ -59,8 +74,8 @@
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(105deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.14) 36%, rgba(209, 220, 211, 0.12) 100%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0) 28%);
+    linear-gradient(105deg, var(--settings-sidebar-gradient-1), var(--settings-sidebar-gradient-2) 36%, var(--settings-sidebar-gradient-3) 100%),
+    linear-gradient(180deg, var(--settings-sidebar-gradient-4), rgba(255, 255, 255, 0) 28%);
   content: "";
   opacity: 0.72;
   pointer-events: none;
@@ -451,7 +466,7 @@
 }
 
 .settings-button-primary:hover:not(:disabled) {
-  background: #000;
+  background: var(--settings-button-primary-hover);
 }
 
 .settings-button-ghost {
@@ -1063,22 +1078,22 @@
 /* Levels 1–4: blue scale */
 .settings-cache-heatmap-cell[data-level="1"],
 .settings-heatmap-legend-cell[data-level="1"] {
-  background: #bad0f0;
+  background: var(--settings-heatmap-level-1);
 }
 
 .settings-cache-heatmap-cell[data-level="2"],
 .settings-heatmap-legend-cell[data-level="2"] {
-  background: #7aaae0;
+  background: var(--settings-heatmap-level-2);
 }
 
 .settings-cache-heatmap-cell[data-level="3"],
 .settings-heatmap-legend-cell[data-level="3"] {
-  background: #3d74cc;
+  background: var(--settings-heatmap-level-3);
 }
 
 .settings-cache-heatmap-cell[data-level="4"],
 .settings-heatmap-legend-cell[data-level="4"] {
-  background: #1a4fa8;
+  background: var(--settings-heatmap-level-4);
 }
 
 /* Legend row */

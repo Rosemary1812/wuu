@@ -33,6 +33,8 @@ import type {
   SettingsUsageResponse
 } from "../shared/protocol";
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
+import { CliInstallSection } from "./CliInstallSection";
+import { ThemePreferenceControl } from "./ThemePreferenceSection";
 
 export type SettingsPage = "providers" | "advanced" | "general" | "usage";
 
@@ -1258,6 +1260,18 @@ function SettingsGeneralPage({
   return (
     <>
       <SettingsSection
+        title="外观"
+        description="选择界面主题。跟随系统会随操作系统的亮暗设置自动切换。"
+        testID="settings-appearance"
+      >
+        <SettingsCard>
+          <SettingsRow title="主题" description="立即生效，无需保存">
+            <ThemePreferenceControl />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
         title="常规配置"
         description="设置每次新会话都会继承的 Agent 行为。"
         testID="settings-general"
@@ -1483,6 +1497,8 @@ function SettingsGeneralPage({
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
+
+      <CliInstallSection />
     </>
   );
 }
