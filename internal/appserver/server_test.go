@@ -6485,6 +6485,176 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	}
 }
 
+func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "manual compact summary"}}
+	rt := newTestRuntime(t, client)
+	rt.StreamRunner.CompactKeepRecentTokens = 1
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatal("expected loaded thread")
+	}
+	th.mu.Lock()
+	th.History = append(th.History,
+		providers.ChatMessage{Role: "user", Content: "old request"},
+		providers.ChatMessage{Role: "assistant", Content: "old answer"},
+		providers.ChatMessage{Role: "user", Content: "newer request"},
+		providers.ChatMessage{Role: "assistant", Content: "newer answer"},
+	)
+	th.mu.Unlock()
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "compact-1",
+		"method": MethodThreadCompactStart,
+		"params": ThreadCompactStartParams{ThreadID: threadID},
+	})
+	if err != nil {
+		t.Fatalf("marshal compact request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/compact/start: %v", err)
+	}
+	started := remarshal[ThreadCompactStartResult](t, responseByID(t, parseOutput(t, out.String()), "compact-1")["result"])
+	if started.Turn.Kind != TurnKindCompact || started.Turn.Status != TurnStatusInProgress || len(started.Turn.Items) != 0 {
+		t.Fatalf("compact start should return an empty compact turn in progress, got %+v", started.Turn)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	if completed.Turn.Kind != TurnKindCompact || completed.Turn.Status != TurnStatusCompleted {
+		t.Fatalf("compact completion should keep compact kind, got %+v", completed.Turn)
+	}
+	if completed.Content != "" {
+		t.Fatalf("compact-only turn must not produce a normal assistant response, got %q", completed.Content)
+	}
+	for _, item := range completed.Turn.Items {
+		if item.Type == ThreadItemUserMessage || item.Type == ThreadItemAgentMessage {
+			t.Fatalf("compact turn must not contain user/assistant chat items, got %+v", completed.Turn.Items)
+		}
+	}
+	assertFakeClientRequestCount(t, client, 1)
+
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("load compacted history: %v", err)
+	}
+	visible := visibleMessagesForTest(persisted)
+	if len(visible) == 0 || visible[0].Role != "system" || !strings.Contains(visible[0].Content, "manual compact summary") {
+		t.Fatalf("expected compact summary to be persisted first, got %+v", visible)
+	}
+	for _, msg := range visible {
+		if msg.Role == "user" && strings.HasPrefix(strings.TrimSpace(msg.Content), "/compact") {
+			t.Fatalf("compact control command should not be persisted as a user message, got %+v", visible)
+		}
+	}
+}
+
+func TestServerTurnStartSlashCompactRoutesToCompactOnlyTurn(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "slash compact summary"}}
+	rt := newTestRuntime(t, client)
+	rt.StreamRunner.CompactKeepRecentTokens = 1
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatal("expected loaded thread")
+	}
+	th.mu.Lock()
+	th.History = append(th.History,
+		providers.ChatMessage{Role: "user", Content: "old request"},
+		providers.ChatMessage{Role: "assistant", Content: "old answer"},
+		providers.ChatMessage{Role: "user", Content: "newer request"},
+	)
+	th.mu.Unlock()
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "compact-compat",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "/compact 后续只保留结论"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn/start request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start /compact: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, out.String()), "compact-compat")
+	if resp["error"] != nil {
+		t.Fatalf("turn/start /compact returned error: %+v", resp["error"])
+	}
+	started := remarshal[TurnStartResult](t, resp["result"])
+	if started.Turn.Kind != TurnKindCompact || len(started.Turn.Items) != 0 {
+		t.Fatalf("turn/start /compact should return compact control turn, got %+v", started.Turn)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	if completed.Turn.Kind != TurnKindCompact || completed.Content != "" {
+		t.Fatalf("slash compact should complete without normal assistant response, got %+v", completed)
+	}
+	assertFakeClientRequestCount(t, client, 1)
+
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("load compacted history: %v", err)
+	}
+	for _, msg := range visibleMessagesForTest(persisted) {
+		if msg.Role == "user" && strings.HasPrefix(strings.TrimSpace(msg.Content), "/compact") {
+			t.Fatalf("slash compact prompt should not be persisted as a user message, got %+v", persisted)
+		}
+	}
+}
+
+func TestServerRejectsSteerForCompactTurn(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatal("expected loaded thread")
+	}
+	th.mu.Lock()
+	th.startCompactTurnLocked("compact-running", time.Now().UTC())
+	th.mu.Unlock()
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "steer-compact",
+		"method": MethodTurnSteer,
+		"params": TurnSteerParams{
+			ThreadID:       threadID,
+			ExpectedTurnID: "compact-running",
+			Prompt:         "please also do this",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal steer request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/steer: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, out.String()), "steer-compact")
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok || !strings.Contains(fmt.Sprint(errObj["message"]), "cannot steer a compact turn") {
+		t.Fatalf("expected compact steer rejection, got %+v", resp)
+	}
+}
+
 func TestServerThreadResumeReturnsLoadedRunningThread(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}

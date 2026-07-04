@@ -550,6 +550,7 @@ export type TerminalSessionEvent =
 
 export type ThreadStatus = "idle" | "in_progress";
 export type TurnStatus = "in_progress" | "completed" | "failed" | "interrupted";
+export type TurnKind = "user" | "internal" | "compact";
 export type TurnItemsView = "full";
 export type ThreadItemType =
   | "user_message"
@@ -1076,6 +1077,7 @@ export type CliInstallResult = {
 
 export type Turn = {
   id: string;
+  kind?: TurnKind;
   items: ThreadItem[];
   items_view: TurnItemsView;
   status: TurnStatus;
@@ -1661,6 +1663,7 @@ export type WuuDesktopApi = {
   // worktree). Mirrors the `thread/delete` RPC; running threads are rejected
   // server-side.
   deleteThread: (threadId: string) => Promise<{ thread_id: string }>;
+  compactThread: (threadId: string) => Promise<{ turn: Turn }>;
   startTurn: (
     threadId: string,
     prompt: string,

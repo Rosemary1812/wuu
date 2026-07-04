@@ -161,6 +161,7 @@ export function Composer({
   onStartNewThread,
   onOpenWorkspaceTool,
   onOpenContextComposition = () => {},
+  onCompactContext = () => {},
   onOpenInstructions = () => {},
   onOpenMemorySettings = () => {},
   onPasteAttachmentFiles,
@@ -235,6 +236,7 @@ export function Composer({
   onStartNewThread: () => void;
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
   onOpenContextComposition?: () => void;
+  onCompactContext?: () => void;
   onOpenInstructions?: () => void;
   // 打开 设置 → 记忆（/memory 指令）。
   onOpenMemorySettings?: () => void;
@@ -594,6 +596,9 @@ export function Composer({
         break;
       case "context":
         onOpenContextComposition();
+        break;
+      case "compact":
+        onCompactContext();
         break;
       case "instructions":
         onOpenInstructions();
@@ -1152,6 +1157,7 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     case "no-project":
       return <FolderX className="icon" />;
     case "context":
+    case "compact":
       return <PieChart className="icon" />;
     case "open-memory":
       return <Brain className="icon" />;

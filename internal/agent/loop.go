@@ -185,6 +185,12 @@ func RunToolLoop(
 	if cfg.ForceInitialCompact {
 		runCompactPass(CompactReasonManual, true)
 	}
+	if cfg.CompactOnly {
+		return LoopResult{
+			NewMessages:      newMessagesForReturn(messages, startLen, historyRewritten),
+			HistoryRewritten: historyRewritten,
+		}, nil
+	}
 
 	for stepIdx := 0; cfg.MaxSteps == 0 || stepIdx < cfg.MaxSteps; stepIdx++ {
 		if cfg.BeforeStep != nil {

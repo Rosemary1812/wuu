@@ -3754,6 +3754,7 @@ export function App(): JSX.Element {
         onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
+        onCompactContext={() => void compactActiveThread()}
         onOpenInstructions={openInstructions}
         onPasteAttachmentFiles={(files) => void attachComposerAttachmentFiles(files)}
         onRemoveFile={removeComposerFile}
@@ -6553,6 +6554,101 @@ export function App(): JSX.Element {
       return;
     }
     await sendComposerMessage(message, true);
+  }
+
+  async function compactActiveThread(): Promise<void> {
+    if (viewSwitchPending) {
+      return;
+    }
+    const currentState = appStateRef.current;
+    const targetThread = activeThreadForState(currentState);
+    if (!currentState.activeContext || !currentState.initialized) {
+      return;
+    }
+    if (!targetThread) {
+      setState((current) => ({ ...current, status: "先打开一个对话" }));
+      return;
+    }
+    if (targetThread.read_only) {
+      setState((current) => ({ ...current, status: "子任务会话只读" }));
+      return;
+    }
+    if (isGroupThread(targetThread)) {
+      setState((current) => ({
+        ...current,
+        status: "群聊没有可压缩的模型上下文",
+      }));
+      return;
+    }
+    if (isStateActiveThreadRunning(currentState)) {
+      setState((current) => ({ ...current, status: "当前任务运行中" }));
+      return;
+    }
+
+    enableConversationAutoFollow();
+    resetRunDebugEvents({
+      source: "client",
+      method: "client/compact",
+      detail: "开始压缩上下文",
+      tone: "running",
+      threadID: targetThread.id,
+    });
+    appStateRef.current = {
+      ...currentState,
+      running: true,
+      status: "正在压缩上下文",
+    };
+    setState((current) => ({
+      ...current,
+      running: true,
+      status: "正在压缩上下文",
+    }));
+
+    try {
+      const result = await window.wuu.compactThread(targetThread.id);
+      appStateRef.current = updateThreadByID(
+        appStateRef.current,
+        targetThread.id,
+        (thread) => upsertTurn(thread, result.turn),
+        { running: true, status: "正在压缩上下文" },
+      );
+      setState((current) =>
+        updateThreadByID(
+          current,
+          targetThread.id,
+          (thread) => upsertTurn(thread, result.turn),
+          { running: true, status: "正在压缩上下文" },
+        ),
+      );
+      appendRunDebugEvent({
+        source: "client",
+        method: "thread/compact/start response",
+        detail: "服务端已接受压缩请求",
+        tone: "running",
+        threadID: targetThread.id,
+        turnID: result.turn.id,
+      });
+    } catch (error) {
+      const rawMessage = rawErrorMessage(error, "compact failed");
+      const errorMessage = statusMessageForError(rawMessage, "compact failed");
+      appendRunDebugEvent({
+        source: "client",
+        method: "thread/compact/start failed",
+        detail: rawMessage,
+        tone: "error",
+        threadID: targetThread.id,
+      });
+      appStateRef.current = {
+        ...appStateRef.current,
+        running: false,
+        status: errorMessage,
+      };
+      setState((current) => ({
+        ...current,
+        running: false,
+        status: errorMessage,
+      }));
+    }
   }
 
   async function updateQueuedComposerMessage(

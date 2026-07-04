@@ -754,6 +754,11 @@ app.whenReady().then(async () => {
       thread_id: threadId,
     }),
   );
+  ipcMain.handle("wuu:thread-compact-start", (_event, threadId: string) =>
+    appServerClientPool.request<{ turn: Turn }>("thread/compact/start", {
+      thread_id: threadId,
+    }),
+  );
   ipcMain.handle(
     "wuu:thread-members-add",
     (_event, threadId: string, participantId: string) =>

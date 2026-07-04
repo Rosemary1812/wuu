@@ -78,11 +78,14 @@ type StreamRunner struct {
 	// The reactive context-overflow recovery still runs. Off by default.
 	DisableAutoCompact bool
 
-	// ForceInitialCompact runs one compact pass before the first model
-	// request of the next Run, bypassing the fill-rate threshold. Set per
-	// turn by the app server when the user sends /compact; it works even
-	// when DisableAutoCompact is on.
+	// ForceInitialCompact runs one compact pass at run entry, bypassing the
+	// fill-rate threshold. Explicit /compact pairs this with CompactOnly;
+	// recovery flows may still continue to a normal provider request. It works
+	// even when DisableAutoCompact is on.
 	ForceInitialCompact bool
+	// CompactOnly stops after the initial compact pass. This is for explicit
+	// control-plane compaction, not normal user prompts.
+	CompactOnly bool
 
 	// StreamingToolExecution, when true, starts executing read-only tools
 	// during model streaming (before the full response arrives). Off by default
@@ -242,6 +245,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		CompactThresholdPct:     r.CompactThresholdPct,
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
 		ForceInitialCompact:     r.ForceInitialCompact,
+		CompactOnly:             r.CompactOnly,
 		ToolPrune:               true,
 		BeforeStep:              beforeStep,
 		BeforeRequestContext:    r.BeforeRequestContext,

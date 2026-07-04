@@ -178,6 +178,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
   deleteThread: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-delete", threadId),
+  compactThread: (threadId: string) =>
+    ipcRenderer.invoke("wuu:thread-compact-start", threadId),
   renameThread: (threadId: string, title: string) =>
     ipcRenderer.invoke("wuu:thread-rename", threadId, title),
   revealSession: (threadId: string) =>

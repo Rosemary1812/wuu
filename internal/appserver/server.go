@@ -76,6 +76,7 @@ type threadState struct {
 	mu                  sync.Mutex
 	running             bool
 	currentTurn         string
+	currentTurnKind     TurnKind
 	runningProviderName string
 	runningModel        string
 	cancel              context.CancelFunc
@@ -306,6 +307,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadPin(req)
 	case MethodThreadArchive:
 		return s.handleThreadArchive(req)
+	case MethodThreadCompactStart:
+		return s.handleThreadCompactStart(ctx, req)
 	case MethodThreadRename:
 		return s.handleThreadRename(req)
 	case MethodThreadDelete:

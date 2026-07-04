@@ -82,6 +82,7 @@ func threadWorktreeInfo(path, baseHEAD, baseRepo string) *WorktreeInfo {
 
 func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
 	th.currentTurn = turnID
+	th.currentTurnKind = TurnKindUser
 	th.running = true
 	th.runningProviderName = th.ModelProvider
 	th.runningModel = th.Model
@@ -126,7 +127,16 @@ func (th *threadState) appendUserMessageTurnLocked(turnID string, userMsg provid
 }
 
 func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Turn {
+	return th.startInternalTurnWithKindLocked(turnID, TurnKindInternal, now)
+}
+
+func (th *threadState) startCompactTurnLocked(turnID string, now time.Time) Turn {
+	return th.startInternalTurnWithKindLocked(turnID, TurnKindCompact, now)
+}
+
+func (th *threadState) startInternalTurnWithKindLocked(turnID string, kind TurnKind, now time.Time) Turn {
 	th.currentTurn = turnID
+	th.currentTurnKind = kind
 	th.running = true
 	th.runningProviderName = th.ModelProvider
 	th.runningModel = th.Model
@@ -139,6 +149,7 @@ func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Tur
 
 	turn := Turn{
 		ID:        turnID,
+		Kind:      kind,
 		ItemsView: TurnItemsViewFull,
 		Status:    TurnStatusInProgress,
 		StartedAt: &now,
@@ -170,6 +181,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 		}
 		th.Turns = append(th.Turns, turn)
 		th.currentTurn = turnID
+		th.currentTurnKind = TurnKindInternal
 		th.running = true
 		th.runningProviderName = th.ModelProvider
 		th.runningModel = th.Model
@@ -193,6 +205,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	turn.Error = nil
 	th.Turns[index] = turn
 	th.currentTurn = turn.ID
+	th.currentTurnKind = TurnKindInternal
 	th.running = true
 	th.runningProviderName = th.ModelProvider
 	th.runningModel = th.Model
@@ -207,6 +220,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err error, now time.Time, finishReason, stopReason string, truncated bool) Turn {
 	th.running = false
 	th.currentTurn = ""
+	th.currentTurnKind = ""
 	th.runningProviderName = ""
 	th.runningModel = ""
 	th.cancel = nil

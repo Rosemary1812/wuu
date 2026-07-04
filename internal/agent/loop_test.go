@@ -531,6 +531,43 @@ func TestRunToolLoop_ForceInitialCompactRunsBelowThreshold(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_CompactOnlyStopsBeforeProviderRequest(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "should not be requested"}}}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "old request"},
+		{Role: "assistant", Content: "old answer"},
+	}
+	compactCalls := 0
+	res, err := RunToolLoop(context.Background(), history, LoopConfig{
+		Model:               "m",
+		ForceInitialCompact: true,
+		CompactOnly:         true,
+		Compact: func(_ context.Context, _ []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactCalls++
+			return []providers.ChatMessage{
+				{Role: "system", Content: "sys"},
+				{Role: "system", Content: compact.BuildSummaryContent("older history")},
+			}, nil
+		},
+	}, step)
+	if err != nil {
+		t.Fatalf("RunToolLoop: %v", err)
+	}
+	if compactCalls != 1 {
+		t.Fatalf("compact calls = %d, want 1", compactCalls)
+	}
+	if len(step.calls) != 0 {
+		t.Fatalf("compact-only turn must not send a normal provider request, got %+v", step.calls)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("compact-only turn should mark rewritten history when compaction changed messages")
+	}
+	if got := countMessagesContaining(res.NewMessages, "older history"); got != 1 {
+		t.Fatalf("returned history should contain compact summary once, got %d in %+v", got, res.NewMessages)
+	}
+}
+
 func TestRunToolLoop_ForceInitialCompactNoopReportsUnchanged(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
 	history := []providers.ChatMessage{

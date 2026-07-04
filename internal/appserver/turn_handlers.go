@@ -75,10 +75,14 @@ type turnRuntimeSnapshot struct {
 	ApprovalPolicy     string
 	ApprovalsReviewer  string
 	PermissionExplicit bool
-	// ForceCompact makes the turn run one compaction pass before its
-	// first model request (the /compact slash command). Rides the
-	// snapshot so it survives turn queueing.
+	// ForceCompact makes the turn run one compaction pass at entry. For
+	// control-plane /compact this is paired with CompactOnly; for recovery
+	// flows it can still precede a normal provider request. Rides the snapshot
+	// so it survives turn queueing.
 	ForceCompact bool
+	// CompactOnly stops after the forced compaction pass instead of sending a
+	// normal provider request. This is the control-plane /compact operation.
+	CompactOnly bool
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
@@ -116,15 +120,21 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	isGroup := th.Group
 	turnRunning := th.running
 	th.mu.Unlock()
-	if isGroup {
-		return s.handleGroupTurnStart(req, th, params, images, files)
-	}
 	if isResidentDM {
 		// Retire cleanup protocol: a retired participant's DM history stays
 		// browsable, but the conversation is frozen — no new turns.
 		if p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID); err == nil && p.RetiredAt != nil {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is retired; this conversation is read-only", firstNonEmpty(p.Name, dmParticipantID)))
 		}
+	}
+	if isManualCompactPrompt(params.Prompt) {
+		if len(images) > 0 || len(files) > 0 {
+			return s.writeResponse(req.ID, nil, errors.New("compact does not accept attachments"))
+		}
+		return s.startThreadCompactTurn(ctx, req, th)
+	}
+	if isGroup {
+		return s.handleGroupTurnStart(req, th, params, images, files)
 	}
 	// Workspace focus is a chat-style thread property (2026-07-03-workspace-focus.md
 	// §3); the group branch applies the same idempotent-declare helper inside
@@ -185,6 +195,91 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	return nil
 }
 
+func (s *Server) handleThreadCompactStart(ctx context.Context, req Request) error {
+	var params ThreadCompactStartParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	params.ThreadID = strings.TrimSpace(params.ThreadID)
+	if params.ThreadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	th, err := s.ensureResidentThread(params.ThreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.startThreadCompactTurn(ctx, req, th)
+}
+
+func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *threadState) error {
+	if th == nil {
+		return s.writeResponse(req.ID, nil, errors.New("thread not found"))
+	}
+	th.mu.Lock()
+	threadID := th.ID
+	readOnly := th.ReadOnly
+	isGroup := th.Group
+	running := th.running
+	th.mu.Unlock()
+	if readOnly {
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+	if isGroup {
+		return s.writeResponse(req.ID, nil, errors.New("group threads do not support context compaction"))
+	}
+	if running {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", threadID))
+	}
+	threadRuntime, err := s.ensureThreadRuntime(th)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	turnID := session.NewID()
+	turnCtx, cancel := context.WithCancel(ctx)
+	now := time.Now().UTC()
+	th.mu.Lock()
+	if th.ReadOnly {
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+	if th.Group {
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, errors.New("group threads do not support context compaction"))
+	}
+	if th.running {
+		threadID = th.ID
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", threadID))
+	}
+	history := cloneHistory(th.History)
+	th.cancel = cancel
+	turn := th.startCompactTurnLocked(turnID, now)
+	turnRuntime := turnRuntimeSnapshotLocked(th)
+	turnRuntime.ForceCompact = true
+	turnRuntime.CompactOnly = true
+	threadID = th.ID
+	th.mu.Unlock()
+
+	if err := s.writeResponse(req.ID, ThreadCompactStartResult{Turn: turn}, nil); err != nil {
+		cancel()
+		return err
+	}
+	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+		ThreadID: threadID,
+		Turn:     turn,
+	}); err != nil {
+		cancel()
+		return err
+	}
+
+	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
+	return nil
+}
+
 func (s *Server) handleTurnQueue(req Request) error {
 	var params TurnQueueParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -205,6 +300,12 @@ func (s *Server) handleTurnQueue(req Request) error {
 	}
 	if params.Prompt == "" && len(images) == 0 && len(files) == 0 {
 		return s.writeResponse(req.ID, nil, errors.New("prompt or attachment is required"))
+	}
+	if isManualCompactPrompt(params.Prompt) {
+		if len(images) > 0 || len(files) > 0 {
+			return s.writeResponse(req.ID, nil, errors.New("compact does not accept attachments"))
+		}
+		return s.writeResponse(req.ID, nil, errors.New("compact cannot be queued; wait for the current turn to finish"))
 	}
 	permissions, err := s.resolveTurnPermissions(params.PermissionMode)
 	if err != nil {
@@ -361,6 +462,10 @@ func (s *Server) handleTurnSteer(req Request) error {
 		actual := th.currentTurn
 		th.mu.Unlock()
 		return s.writeResponse(req.ID, nil, fmt.Errorf("expected active turn id `%s` but found `%s`", params.ExpectedTurnID, actual))
+	}
+	if th.currentTurnKind == TurnKindCompact {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, errors.New("cannot steer a compact turn"))
 	}
 	turnID := th.currentTurn
 	steerMsg := userMessageFromPrompt(params.Prompt, images, files)
@@ -960,6 +1065,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	// long-lived, so a /compact turn must not leave the force flag armed
 	// for the turns that follow it.
 	runner.ForceInitialCompact = turnRuntime.ForceCompact
+	runner.CompactOnly = turnRuntime.CompactOnly
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		toolPolicy := config.ToolPolicyConfig{}
 		if !turnRuntime.PermissionExplicit && s != nil && s.rt != nil {
@@ -1318,7 +1424,9 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		Truncated:           res.Truncated,
 		TracePath:           tracePath,
 	})
-	go s.generateThreadTitle(th.ID, titleHistory)
+	if !turnRuntime.CompactOnly {
+		go s.generateThreadTitle(th.ID, titleHistory)
+	}
 	s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
@@ -1724,6 +1832,7 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 		turnRuntime.PermissionExplicit = snapshot.PermissionExplicit
 	}
 	turnRuntime.ForceCompact = snapshot.ForceCompact
+	turnRuntime.CompactOnly = snapshot.CompactOnly
 	th.mu.Unlock()
 
 	return startedThreadTurn{
@@ -1780,6 +1889,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
 	snapshot.PermissionExplicit = entry.snapshot.PermissionExplicit
 	snapshot.ForceCompact = entry.snapshot.ForceCompact
+	snapshot.CompactOnly = entry.snapshot.CompactOnly
 	started, ok, err := s.startThreadUserTurn(ctx, th, entry.msg, snapshot, false, turnReadOnlyFail)
 	if err != nil || !ok {
 		return ok, err

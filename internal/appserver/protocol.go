@@ -51,6 +51,7 @@ const (
 	MethodThreadSearch             = "thread/search"
 	MethodThreadPin                = "thread/pin"
 	MethodThreadArchive            = "thread/archive"
+	MethodThreadCompactStart       = "thread/compact/start"
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
 	MethodThreadDelete             = "thread/delete"
@@ -1147,6 +1148,14 @@ type TurnStartResult struct {
 	Turn Turn `json:"turn"`
 }
 
+type ThreadCompactStartParams struct {
+	ThreadID string `json:"thread_id"`
+}
+
+type ThreadCompactStartResult struct {
+	Turn Turn `json:"turn"`
+}
+
 type TurnQueueParams struct {
 	ThreadID       string           `json:"thread_id"`
 	Prompt         string           `json:"prompt"`
@@ -1389,6 +1398,14 @@ const (
 	TurnStatusInterrupted TurnStatus = "interrupted"
 )
 
+type TurnKind string
+
+const (
+	TurnKindUser     TurnKind = "user"
+	TurnKindInternal TurnKind = "internal"
+	TurnKindCompact  TurnKind = "compact"
+)
+
 type TurnItemsView string
 
 const (
@@ -1478,6 +1495,7 @@ type ThreadBrowserState struct {
 
 type Turn struct {
 	ID                  string        `json:"id"`
+	Kind                TurnKind      `json:"kind,omitempty"`
 	Items               []ThreadItem  `json:"items"`
 	ItemsView           TurnItemsView `json:"items_view"`
 	Status              TurnStatus    `json:"status"`
@@ -1542,7 +1560,7 @@ const (
 )
 
 type ThreadItem struct {
-	ID           string                     `json:"id"`
+	ID string `json:"id"`
 	// Seq is the message's stable per-thread address (session_messages.seq),
 	// present on persisted chat messages. The chat view keys read receipts and
 	// reactions (both addressed by seq) to the bubble carrying the same seq.

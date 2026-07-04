@@ -75,28 +75,15 @@ var lightweightSlashCommandTemplates = []slashCommandTemplate{
 		Prompt:      "Prepare a pull request for the current branch.\n\nUser notes:\n{{args}}\n\nReview the diff, summarize the user-facing changes and verification, and create the PR when the branch is ready.",
 		PromptNoArg: "Prepare a pull request for the current branch. Review the diff, summarize the user-facing changes and verification, and create the PR when the branch is ready.",
 	},
-	{
-		// The compact command's real work happens outside the prompt: the
-		// turn-start path detects it (isManualCompactPrompt) and forces a
-		// compaction pass before the first model request of the turn. This
-		// template only shapes what the model sees AFTER that pass so it
-		// acknowledges briefly instead of reacting to a bare "/compact".
-		Name:        manualCompactSlashCommandName,
-		Aliases:     []string{"compress"},
-		Execution:   slashCommandExecutionInlinePrompt,
-		Prompt:      "The conversation context was just compacted at the user's request; older history is folded into the conversation summary above. Briefly confirm the compaction, then address these notes from the user:\n\n{{args}}\n\nDo not repeat previously delivered results.",
-		PromptNoArg: "The conversation context was just compacted at the user's request; older history is folded into the conversation summary above. Briefly confirm the compaction is done and ask what to do next. Do not start new work and do not repeat previously delivered results.",
-	},
 }
 
 // manualCompactSlashCommandName is the slash command that forces a
-// compaction pass on the turn it starts (see isManualCompactPrompt).
+// compact-only control turn (see isManualCompactPrompt).
 const manualCompactSlashCommandName = "compact"
 
 // isManualCompactPrompt reports whether the raw composer prompt is the
-// /compact slash command (or one of its aliases). The turn start/queue
-// paths use it to run a forced compaction before the first model
-// request of that turn.
+// /compact slash command (or one of its aliases). The turn start/queue paths
+// use it to route old raw slash input into the compact control operation.
 func isManualCompactPrompt(prompt string) bool {
 	display := strings.TrimSpace(prompt)
 	if !strings.HasPrefix(display, "/") || strings.HasPrefix(display, "//") {
@@ -106,8 +93,12 @@ func isManualCompactPrompt(prompt string) bool {
 	if !ok {
 		return false
 	}
-	template, ok := findLightweightSlashCommandTemplate(command)
-	return ok && template.Name == manualCompactSlashCommandName
+	switch strings.ToLower(strings.TrimSpace(command)) {
+	case manualCompactSlashCommandName, "compress":
+		return true
+	default:
+		return false
+	}
 }
 
 func renderLightweightSlashCommandPrompt(prompt string) (string, string, bool) {

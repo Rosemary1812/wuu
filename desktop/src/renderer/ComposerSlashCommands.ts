@@ -12,6 +12,7 @@ export type ComposerSlashCommandAction =
   | "context"
   | "instructions"
   | "open-memory"
+  | "compact"
   | "model"
   | "fast"
   | "effort"
@@ -248,10 +249,11 @@ export function buildComposerSlashCommands({
       title: "压缩上下文",
       description: "把较早的对话折叠成摘要，释放上下文窗口",
       tag: "会话",
-      kind: "prompt",
+      kind: "action",
+      action: "compact",
       aliases: ["compress"],
       keywords: ["compact", "context", "summary", "压缩", "上下文", "摘要", "瘦身"],
-      disabledReason: needsRuntime
+      disabledReason: needsRuntime ?? needsIdleThread
     },
     {
       id: "terminal",

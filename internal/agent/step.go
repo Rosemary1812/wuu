@@ -235,11 +235,15 @@ type LoopConfig struct {
 	// CompactKeepRecentTokens overrides the default recent raw-history budget
 	// kept after compaction. Zero means use the default.
 	CompactKeepRecentTokens int
-	// ForceInitialCompact runs one compact pass before the first model
-	// request of this Run, bypassing the fill-rate threshold (user-requested
-	// /compact). Requires Compact to be set; a failed or no-op forced pass
-	// does not suppress later proactive passes.
+	// ForceInitialCompact runs one compact pass at run entry, bypassing the
+	// fill-rate threshold. CompactOnly turns this into a control-plane compact
+	// turn; without CompactOnly the run continues to the provider request.
+	// Requires Compact to be set; a failed or no-op forced pass does not
+	// suppress later proactive passes.
 	ForceInitialCompact bool
+	// CompactOnly returns after the forced compact pass instead of sending a
+	// normal provider request. Used for control-plane /compact turns.
+	CompactOnly bool
 	// ToolPrune enables a lightweight, non-LLM tool-result prune pass that
 	// runs before each provider request. Old tool results beyond the protect
 	// threshold are replaced with compact placeholders in the request only;
