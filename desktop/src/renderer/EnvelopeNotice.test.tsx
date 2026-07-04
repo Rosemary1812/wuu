@@ -4,7 +4,11 @@
  * envelope router injected into a resident agent's DM thread must NOT
  * render as a user bubble — it renders as a collapsed meta line
  * ("收到来自「{title}」的 {n} 条消息") that expands to the original
- * envelope text on click.
+ * envelope text on click. The line also surfaces the envelope's
+ * structural facts (consistency plan 2026-07-04 §1 #12): a "点名"
+ * badge when any record is addressed, and "转发×N" when the highest
+ * hop is above 0 (0 = straight from the source thread, each resident
+ * relay increments it).
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -66,6 +70,55 @@ describe("EnvelopeNotice", () => {
     expect(toggle?.textContent).toContain("收到来自「发布排期讨论」的 3 条消息");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelector(".envelope-notice-body")).toBeNull();
+    // One record is addressed and the deepest record is 2 hops out.
+    expect(
+      container.querySelector(".envelope-notice-addressed")?.textContent,
+    ).toBe("点名");
+    expect(container.querySelector(".envelope-notice-hop")?.textContent).toBe(
+      "转发×2",
+    );
+  });
+
+  it("shows neither badge for a direct, unaddressed user message", () => {
+    const container = mount(
+      createElement(EnvelopeNotice, {
+        meta: [
+          {
+            source_thread_id: "thread-group",
+            source_thread_title: "发布排期讨论",
+            addressed: false,
+            hop: 0,
+          },
+        ],
+        text: "内容",
+      }),
+    );
+    expect(container.querySelector(".envelope-notice-addressed")).toBeNull();
+    expect(container.querySelector(".envelope-notice-hop")).toBeNull();
+  });
+
+  it("shows the addressed badge without a hop marker for a direct mention", () => {
+    const container = mount(
+      createElement(EnvelopeNotice, {
+        meta: [{ source_thread_title: "发布排期讨论", addressed: true, hop: 0 }],
+        text: "内容",
+      }),
+    );
+    expect(
+      container.querySelector(".envelope-notice-addressed")?.textContent,
+    ).toBe("点名");
+    expect(container.querySelector(".envelope-notice-hop")).toBeNull();
+  });
+
+  it("treats missing addressed/hop fields as direct and unaddressed", () => {
+    const container = mount(
+      createElement(EnvelopeNotice, {
+        meta: [{ source_thread_id: "thread-x" }],
+        text: "内容",
+      }),
+    );
+    expect(container.querySelector(".envelope-notice-addressed")).toBeNull();
+    expect(container.querySelector(".envelope-notice-hop")).toBeNull();
   });
 
   it("expands the original text on click and collapses on second click", () => {

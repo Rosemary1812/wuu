@@ -838,6 +838,28 @@
   stroke-width: var(--icon-stroke);
 }
 
+/* "点名" badge: the sender @-mentioned this agent in the source thread
+   (envelope addressed flag). Slightly heavier than the surrounding meta
+   text so a direct call-out reads at a glance. */
+.envelope-notice-addressed {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  color: var(--ink-soft);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+}
+
+/* "转发×N" marker: the message reached this agent through N resident
+   relays instead of straight from the source thread (envelope hop). */
+.envelope-notice-hop {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+}
+
 .envelope-notice-body {
   min-width: 0;
   padding: 10px 12px;
