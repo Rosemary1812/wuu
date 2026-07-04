@@ -461,7 +461,10 @@ func sortedKeys(m map[string]capability.Capability) []string {
 // TestCompile_MainOnlyTools locks in the surface-layer contract for tools
 // whose visibility differs between the main agent and workers. Inception is
 // intentionally direct on both surfaces because it rewrites only the current
-// agent's local conversation history.
+// agent's local conversation history. Orchestration belongs to the brain:
+// spawn_agent and the subagent management suite exist only on main-agent
+// surfaces; worker surfaces are pure executors whose sole task tool is
+// agent_report.
 func TestCompile_MainOnlyTools(t *testing.T) {
 	cases := []struct {
 		provider string
@@ -498,6 +501,28 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		}
 		if _, ok := workerSurface.DeferredTools["helpme"]; ok {
 			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)
+		}
+		// Workers are pure executors: no spawning, no subagent management.
+		for _, orchestration := range []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+			if _, ok := workerSurface.Tools[orchestration]; ok {
+				t.Errorf("%s/%s worker surface must NOT directly include %s", tt.provider, tt.model, orchestration)
+			}
+			if _, ok := workerSurface.DeferredTools[orchestration]; ok {
+				t.Errorf("%s/%s worker surface must NOT defer %s", tt.provider, tt.model, orchestration)
+			}
+			if _, ok := workerSurface.HiddenTools[orchestration]; ok {
+				t.Errorf("%s/%s worker surface must NOT hide %s — the suite is omitted entirely", tt.provider, tt.model, orchestration)
+			}
+		}
+		// The main-agent surface keeps the whole suite: spawn_agent visible,
+		// management tools deferred.
+		if mainSurface.Tools["spawn_agent"] != capability.CapabilityTaskSpawn {
+			t.Errorf("%s/%s main-agent direct spawn_agent capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["spawn_agent"], capability.CapabilityTaskSpawn)
+		}
+		for _, management := range []string{"send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+			if _, ok := mainSurface.DeferredTools[management]; !ok {
+				t.Errorf("%s/%s main-agent surface must defer %s", tt.provider, tt.model, management)
+			}
 		}
 		if _, ok := mainSurface.Tools["agent_report"]; ok {
 			t.Errorf("%s/%s main-agent surface must NOT directly include agent_report", tt.provider, tt.model)

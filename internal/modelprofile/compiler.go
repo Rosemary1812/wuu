@@ -44,8 +44,9 @@ const (
 
 // Compiler compiles a model profile into a tool surface. Compile is given a
 // forMainAgent flag so it can decide whether the surface should advertise,
-// hide, or omit main-agent-only recovery tools and worker-only handoff tools
-// such as agent_report. The surface is therefore consistent with the runtime
+// hide, or omit main-agent-only orchestration and recovery tools (the
+// spawn_agent suite, helpme) and worker-only handoff tools such as
+// agent_report. The surface is therefore consistent with the runtime
 // boundary instead of being filtered downstream.
 type Compiler interface {
 	Compile(p Profile, forMainAgent bool) capability.Surface
@@ -57,8 +58,11 @@ type DefaultCompiler struct{}
 
 // Compile implements Compiler. Both main agents and workers get the context
 // rewrite tool so each agent can compact its own local history. forMainAgent
-// still controls main-only recovery tools such as helpme and worker-only
-// handoff tools such as agent_report.
+// controls the orchestration boundary: execution capability is equal on both
+// surfaces, but orchestration belongs to the brain (the session main agent
+// and resident named agents, which clone the main surface). Main surfaces
+// get the task-orchestration suite plus helpme; worker surfaces are pure
+// executors and keep only the agent_report handoff tool.
 func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
@@ -74,6 +78,7 @@ func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface 
 	}
 	addInceptionTool(b)
 	if forMainAgent {
+		addTaskTools(b)
 		addHelpmeTool(b)
 	} else {
 		addWorkerReportTool(b)
@@ -218,7 +223,6 @@ func compileOpenAICodex(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
-	addTaskTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -235,7 +239,6 @@ func compileOpenAIGPT(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
-	addTaskTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -252,7 +255,6 @@ func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
-	addTaskTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -269,7 +271,6 @@ func compileGeneric(b *surfaceBuilder, p Profile) {
 	addSearchTools(b)
 	addBashFirstTools(b, p)
 	addWebTools(b)
-	addTaskTools(b)
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
@@ -309,6 +310,14 @@ func addWebTools(b *surfaceBuilder) {
 	b.addVisible("web_fetch", capability.CapabilityWebFetch)
 }
 
+// addTaskTools registers the main-agent-only orchestration suite: spawn_agent
+// as a visible tool plus the deferred subagent management tools. It is called
+// from DefaultCompiler.Compile only when forMainAgent is true. Worker surfaces
+// omit the whole suite — workers are pure executors and never recurse; their
+// only task tool is the agent_report handoff added by addWorkerReportTool.
+// Resident named-agent brains reuse the main-agent surface, so they keep the
+// suite. Runtime defense-in-depth (alwaysBlockedTools in
+// internal/agentcontrol/worker_types.go) is unchanged.
 func addTaskTools(b *surfaceBuilder) {
 	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
 	b.addDeferred("send_message", capability.CapabilityTaskCommunicate)
