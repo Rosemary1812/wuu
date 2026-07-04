@@ -54,6 +54,8 @@ describe("turns.css turn notice positioning", () => {
     expect(lines).toMatch(/content:\s*"";/);
     expect(lines).toMatch(/flex:\s*1 1 0;/);
     expect(lines).toMatch(/height:\s*1px;/);
+    expect(lines).toMatch(/background:\s*var\(--wuu-hairline\);/);
+    expect(lines).not.toMatch(/linear-gradient|transparent/);
   });
 
   it("keeps the notice text bare — tone colors the text, never a fill", () => {

@@ -5271,20 +5271,13 @@ pre {
 .turn-event-notice::before,
 .turn-event-notice::after {
   /* System events read as a broken divider: hairlines on both sides,
-     a single quiet line of text in the gap. The lines fade toward the
-     outer edges so the rule never hard-stops against the flow margin. */
+     a single quiet line of text in the gap. The hairlines use the same
+     full-length rule treatment as the assistant turn's top separator. */
   content: "";
   flex: 1 1 0;
   min-width: 24px;
   height: 1px;
-}
-
-.turn-event-notice::before {
-  background: linear-gradient(to right, transparent, var(--rule) 40%);
-}
-
-.turn-event-notice::after {
-  background: linear-gradient(to left, transparent, var(--rule) 40%);
+  background: var(--wuu-hairline);
 }
 
 .turn-event-detail {
