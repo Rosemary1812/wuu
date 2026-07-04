@@ -91,6 +91,13 @@ type AgentControl struct {
 	reportNudgeMu sync.Mutex
 	reportNudged  map[string]struct{}
 
+	// helpMeRecoveryMu guards helpMeRecoveries, the per-helper HelpMe
+	// recovery state registered at helpme spawn time and consumed once by
+	// the await-side history rewrite. Entries are lazily rehydrated from
+	// the session harness directory for cross-restart awaits.
+	helpMeRecoveryMu sync.Mutex
+	helpMeRecoveries map[string]HelpMeRecovery
+
 	participantMessagesMu  sync.Mutex
 	participantMessages    []chan<- ParticipantMessage
 	participantSpeech      map[string]struct{}

@@ -334,7 +334,7 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	})
 
 	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:        agentcontrol.DefaultSubagentType,
+		Type:        agentcontrol.HelpMeRecoveryWorkerType,
 		TaskName:    deriveAgentTaskName("helpme_recovery"),
 		Description: "HelpMe recovery",
 		Prompt:      prompt,
@@ -345,6 +345,23 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	// Register the RESOLVED brief (args first, history fallback, placeholder
+	// last) as first-class recovery state, keyed by the helper. The await
+	// side rebuilds the joint compact from it instead of re-parsing trace
+	// files, so the real user goal survives into the rewrite.
+	t.env.AgentControl.RegisterHelpMeRecovery(agentcontrol.HelpMeRecovery{
+		HelperID:   result.AgentID,
+		ParentPath: currentAgentPath(t.env),
+		Brief: agentcontrol.HelpMeRecoveryBrief{
+			OriginalGoal:         originalGoal,
+			Ask:                  ask,
+			Reason:               reason,
+			CurrentUnderstanding: strings.TrimSpace(args.CurrentUnderstanding),
+			Constraints:          trimStringSlice(args.Constraints),
+			FailedAttempts:       trimStringSlice(args.FailedAttempts),
+			Evidence:             trimStringSlice(args.Evidence),
+		},
+	})
 
 	response := helpMeResponse{
 		Action:    "helpme",
@@ -358,57 +375,15 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 		response.Report = &report
 	}
 	response.ReportMissing = helpMeReportMissing(response.Status, reportOK)
-	mainTracePath, err := writeHelpMeMainTrace(t.env, history, args, result, response.Report, response.ReportMissing)
-	if err != nil {
-		return "", err
-	}
-	response.MainTracePath = mainTracePath
-
-	if subagent.Status(response.Status) == subagent.StatusCompleted && reportOK {
-		parentEvidence := trimStringSlice(args.Evidence)
-		if mainTracePath != "" {
-			parentEvidence = append(parentEvidence, "Main pre-HelpMe trace: "+mainTracePath)
-		}
-		artifacts := trimStringSlice(report.Artifacts)
-		if mainTracePath != "" {
-			artifacts = append(artifacts, mainTracePath)
-		}
-		compactInput := compact.HelpMeJointCompactInput{
-			OriginalGoal:         originalGoal,
-			CurrentUnderstanding: args.CurrentUnderstanding,
-			Ask:                  ask,
-			Reason:               reason,
-			Constraints:          args.Constraints,
-			FailedAttempts:       args.FailedAttempts,
-			Evidence:             parentEvidence,
-			HelperStatus:         response.Status,
-			HelperAgentID:        response.AgentID,
-			HelperAgentPath:      response.AgentPath,
-			HelperResult:         response.Result,
-			HelperResultPath:     response.ResultPath,
-			HelperReportPath:     report.ReportPath,
-			HelperError:          response.Error,
-			ReportOutcome:        report.Outcome,
-			ReportSummary:        report.Summary,
-			ChangedFiles:         report.ChangedFiles,
-			WorkDone:             report.WorkDone,
-			Blockers:             report.Blockers,
-			Risks:                helpMeRisks(report.Risks, reportOK),
-			Verification:         report.Verification,
-			ReportEvidence:       helpMeEvidenceStrings(report.Evidence),
-			NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, response.NextSteps),
-			Artifacts:            artifacts,
-		}
-		content := compact.BuildHelpMeJointCompactContent(compactInput)
-		response.HistoryRewrite = &compact.HelpMeHistoryRewrite{
-			Kind:         compact.HelpMeHistoryRewriteKind,
-			Content:      content,
-			AgentID:      response.AgentID,
-			AgentPath:    response.AgentPath,
-			ResultPath:   response.ResultPath,
-			ReportPath:   report.ReportPath,
-			TraceSummary: "Main history was replaced by HelpMe joint compact; raw main trace is available via main_trace_path, and helper trace is available via agent_path, result_path, and report_path.",
-		}
+	// The main trace is a pure audit artifact now: the helper is already
+	// spawned and the recovery state is registered, so a failed write must
+	// not fail the call (a retry would only spawn an orphan duplicate).
+	mainTracePath, traceErr := writeHelpMeMainTrace(t.env, history, args, result, response.Report, response.ReportMissing)
+	if traceErr != nil {
+		response.NextSteps = append(response.NextSteps,
+			"Audit trace could not be written ("+traceErr.Error()+"); recovery proceeds normally, but main_trace_path is unavailable for this rescue.")
+	} else {
+		response.MainTracePath = mainTracePath
 	}
 
 	out, err := json.Marshal(response)
@@ -535,7 +510,7 @@ func buildHelpMePrompt(input helpMePromptInput) string {
 	var b strings.Builder
 	b.WriteString("# HelpMe Handoff Brief\n\n")
 	b.WriteString("Take over the task below using your own judgment. Treat this brief as context, then verify important facts from the workspace, runtime output, or other evidence before acting.\n\n")
-	b.WriteString("When you finish, submit one `agent_report` at the end with outcome, summary, changed_files, work_done, blockers, risks, verification, next_steps, and evidence/artifacts useful for continuing from your result.\n\n")
+	b.WriteString("Your final message is the deliverable the requester continues from: state the outcome, what changed, what remains, and the verifiable evidence behind each load-bearing claim.\n\n")
 	writeHelpMePromptField(&b, "Why this handoff is needed", input.Reason)
 	writeHelpMePromptField(&b, "User goal", input.OriginalGoal)
 	writeHelpMePromptField(&b, "Current context", input.CurrentUnderstanding)
@@ -1036,17 +1011,40 @@ func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsRes
 	if !isHelpMeAwaitResult(agentResult) || strings.TrimSpace(agentResult.Status) != string(subagent.StatusCompleted) || agentResult.ReportMissing {
 		return nil
 	}
+	// One-shot gate 1: a result another delivery path already handed to the
+	// model must not trigger a second wholesale rewrite — that would wipe
+	// all progress made after the first recovery.
+	if agentResult.ResultConsumed {
+		return nil
+	}
 	report, reportOK := env.AgentControl.AgentReportDetailsForTask(agentResult.AgentID)
 	if !reportOK {
 		return nil
 	}
+	// The audit trace is best-effort: use it for the brief only when no
+	// registered recovery exists (pre-recovery sessions), and for the
+	// trace-path reference whenever it is available.
 	trace, tracePath, traceOK := readHelpMeMainTraceForAgent(env.SessionDir, agentResult.AgentID)
-	if !traceOK {
+	recovery, recoveryOK := env.AgentControl.HelpMeRecoveryForHelper(agentResult.AgentID)
+	// One-shot gate 2: an already-applied recovery never rewrites again.
+	if recoveryOK && recovery.Applied {
 		return nil
 	}
+	if !recoveryOK {
+		if !traceOK {
+			return nil
+		}
+		// Legacy session: migrate the trace args into a recovery object so
+		// this rescue also becomes one-shot from here on.
+		recovery = agentcontrol.HelpMeRecovery{
+			HelperID: agentResult.AgentID,
+			Brief:    helpMeRecoveryBriefFromArgs(trace.Args),
+		}
+		env.AgentControl.RegisterHelpMeRecovery(recovery)
+	}
 
-	args := trace.Args
-	parentEvidence := trimStringSlice(args.Evidence)
+	brief := recovery.Brief
+	parentEvidence := trimStringSlice(brief.Evidence)
 	if tracePath != "" {
 		parentEvidence = append(parentEvidence, "Main pre-HelpMe trace: "+tracePath)
 	}
@@ -1054,19 +1052,19 @@ func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsRes
 	if tracePath != "" {
 		artifacts = append(artifacts, tracePath)
 	}
-	reason := strings.TrimSpace(args.Reason)
+	reason := strings.TrimSpace(brief.Reason)
 	if reason == "" {
 		reason = "The main agent requested a fresh-context recovery."
 	}
-	originalGoal := helpMeFirstNonEmpty(args.OriginalGoal, "Continue the user's current coding task.")
-	ask := helpMeFirstNonEmpty(args.Ask, originalGoal)
+	originalGoal := helpMeFirstNonEmpty(brief.OriginalGoal, "Continue the user's current coding task.")
+	ask := helpMeFirstNonEmpty(brief.Ask, originalGoal)
 	content := compact.BuildHelpMeJointCompactContent(compact.HelpMeJointCompactInput{
 		OriginalGoal:         originalGoal,
-		CurrentUnderstanding: args.CurrentUnderstanding,
+		CurrentUnderstanding: brief.CurrentUnderstanding,
 		Ask:                  ask,
 		Reason:               reason,
-		Constraints:          args.Constraints,
-		FailedAttempts:       args.FailedAttempts,
+		Constraints:          brief.Constraints,
+		FailedAttempts:       brief.FailedAttempts,
 		Evidence:             parentEvidence,
 		HelperStatus:         agentResult.Status,
 		HelperAgentID:        agentResult.AgentID,
@@ -1086,6 +1084,11 @@ func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsRes
 		NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
 		Artifacts:            artifacts,
 	})
+	// Consume the recovery atomically: if another await applied it between
+	// the gate above and here, drop this rewrite instead of double-firing.
+	if !env.AgentControl.MarkHelpMeRecoveryApplied(agentResult.AgentID) {
+		return nil
+	}
 	return &compact.HelpMeHistoryRewrite{
 		Kind:         compact.HelpMeHistoryRewriteKind,
 		Content:      content,
@@ -1094,6 +1097,18 @@ func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsRes
 		ResultPath:   agentResult.ResultPath,
 		ReportPath:   report.ReportPath,
 		TraceSummary: "Main history was replaced by a bounded HelpMe compact built from the helper report, result references, and the saved main trace; raw main/helper transcripts were not merged.",
+	}
+}
+
+func helpMeRecoveryBriefFromArgs(args helpMeArgs) agentcontrol.HelpMeRecoveryBrief {
+	return agentcontrol.HelpMeRecoveryBrief{
+		OriginalGoal:         strings.TrimSpace(args.OriginalGoal),
+		Ask:                  strings.TrimSpace(args.Ask),
+		Reason:               strings.TrimSpace(args.Reason),
+		CurrentUnderstanding: strings.TrimSpace(args.CurrentUnderstanding),
+		Constraints:          trimStringSlice(args.Constraints),
+		FailedAttempts:       trimStringSlice(args.FailedAttempts),
+		Evidence:             trimStringSlice(args.Evidence),
 	}
 }
 

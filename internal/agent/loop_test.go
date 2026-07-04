@@ -619,14 +619,19 @@ func TestRunToolLoop_PostToolRewriteAfterHelpMeKeepsValidHistory(t *testing.T) {
 	if err := providers.ValidateToolCallHistory(res.NewMessages); err != nil {
 		t.Fatalf("rewritten history must be provider-valid: %v\n%+v", err, res.NewMessages)
 	}
-	if got := len(res.NewMessages); got != 4 {
-		t.Fatalf("expected system prompt, HelpMe compact, inherited checkpoint, and final answer, got %d: %+v", got, res.NewMessages)
+	if got := len(res.NewMessages); got != 5 {
+		t.Fatalf("expected system prompt, HelpMe compact, inherited checkpoint, preserved unanswered ask, and final answer, got %d: %+v", got, res.NewMessages)
 	}
 	if res.NewMessages[1].Role != "system" || !strings.Contains(res.NewMessages[1].Content, compact.HelpMeJointCompactPrefix) {
 		t.Fatalf("expected HelpMe compact system message, got %+v", res.NewMessages[1])
 	}
 	if id, ok := compact.ContextAnchorIDFromMessage(res.NewMessages[2]); !ok || id != 0 || !res.NewMessages[2].Hidden {
 		t.Fatalf("expected inherited HelpMe checkpoint 0 before final answer, got %+v", res.NewMessages[2])
+	}
+	// "please recover" never got a visible assistant reply, so the rewrite
+	// preserves it after the checkpoint instead of swallowing it.
+	if res.NewMessages[3].Role != "user" || res.NewMessages[3].Content != "please recover" {
+		t.Fatalf("expected unanswered user ask preserved after checkpoint, got %+v", res.NewMessages[3])
 	}
 	for _, msg := range res.NewMessages {
 		if msg.Role == "tool" || len(msg.ToolCalls) > 0 {
@@ -636,11 +641,14 @@ func TestRunToolLoop_PostToolRewriteAfterHelpMeKeepsValidHistory(t *testing.T) {
 	if len(step.calls) != 2 {
 		t.Fatalf("expected second request after HelpMe rewrite, got %d calls", len(step.calls))
 	}
-	if got := len(step.calls[1].Messages); got != 3 {
-		t.Fatalf("expected rewritten request to contain two system messages plus inherited checkpoint, got %d: %+v", got, step.calls[1].Messages)
+	if got := len(step.calls[1].Messages); got != 4 {
+		t.Fatalf("expected rewritten request to contain two system messages, inherited checkpoint, and preserved ask, got %d: %+v", got, step.calls[1].Messages)
 	}
 	if id, ok := compact.ContextAnchorIDFromMessage(step.calls[1].Messages[2]); !ok || id != 0 {
 		t.Fatalf("expected second request to include inherited HelpMe checkpoint 0, got %+v", step.calls[1].Messages)
+	}
+	if step.calls[1].Messages[3].Role != "user" || step.calls[1].Messages[3].Content != "please recover" {
+		t.Fatalf("expected second request to end with the preserved unanswered ask, got %+v", step.calls[1].Messages)
 	}
 }
 

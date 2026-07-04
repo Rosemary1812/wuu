@@ -145,7 +145,10 @@ func HelpMeRewriteFromToolMessage(msg providers.ChatMessage) (HelpMeHistoryRewri
 	if !isHelpMeRewriteCarrier(msg.Name) {
 		return HelpMeHistoryRewrite{}, false, nil
 	}
-	if strings.EqualFold(strings.TrimSpace(msg.Name), AwaitAgentsToolName) && !strings.Contains(msg.Content, `"history_rewrite"`) {
+	// Cheap pre-check for every carrier (helpme included): tool errors and
+	// other non-JSON payloads carry the tool's name but no rewrite, and
+	// unmarshalling them would fail the whole turn.
+	if !strings.Contains(msg.Content, `"history_rewrite"`) {
 		return HelpMeHistoryRewrite{}, false, nil
 	}
 	var envelope helpMeToolEnvelope
@@ -192,6 +195,11 @@ func RewriteHistoryWithHelpMeCompact(messages []providers.ChatMessage, content s
 		DiscoveredTools: discovered,
 	})
 	rewritten = append(rewritten, BuildContextAnchorMessage(nextAnchorID))
+	// Align with the inception rewrite: user messages that arrived in the
+	// rewrite window without a visible assistant reply (for example while
+	// awaiting the helper) survive the wholesale replacement instead of
+	// being swallowed with the polluted context.
+	rewritten = append(rewritten, unansweredVisibleUserSuffix(conversation)...)
 	return rewritten
 }
 

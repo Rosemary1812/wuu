@@ -40,21 +40,13 @@ type WorkerType struct {
 
 const DefaultSubagentType = "general-purpose"
 
-var builtinWorkerTypes = map[string]WorkerType{
-	DefaultSubagentType: {
-		Name:             DefaultSubagentType,
-		Role:             "Generalist",
-		Description:      "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
-		AllowedTools:     nil,
-		OneShot:          false,
-		DefaultIsolation: IsolationInplace,
-		ContextScope:     "Self-contained task prompt plus repository memory and skills.",
-		OutputSchema:     "Final message is the deliverable: outcome, what was done, what changed, blockers, and verifiable evidence. agent_report is an optional structured handoff on top.",
-		SuccessCriteria: []string{
-			"Task scope is completed or clearly blocked.",
-			"Changed files and verification are reported with evidence.",
-		},
-		SystemPrompt: `You are a general-purpose sub-agent. Given the caller's prompt, use the available tools to complete the task. Complete the task fully; do not gold-plate, but do not leave it half-done.
+// HelpMeRecoveryWorkerType is the worker type the helpme tool spawns for a
+// fresh-context recovery. Its tool surface matches general-purpose; unlike
+// general-purpose it carries RequiresReport because the parent-side history
+// rewrite is built from the helper's structured agent_report handoff.
+const HelpMeRecoveryWorkerType = "helpme_recovery"
+
+const generalPurposeSystemPrompt = `You are a general-purpose sub-agent. Given the caller's prompt, use the available tools to complete the task. Complete the task fully; do not gold-plate, but do not leave it half-done.
 
 Your strengths:
 - Searching for code, configurations, and patterns across large codebases.
@@ -84,7 +76,39 @@ Response style:
 - Report like an engineer, not a salesperson. No fluff, no hedging, no vague optimism.
 - If something is broken, say it's broken and show the error.
 - If something is unverified, say it's unverified and say why (e.g., "tests not run because the project has no test suite").
-- Do not add pleasantries, summaries of the task description, or meta-commentary about your own process.`,
+- Do not add pleasantries, summaries of the task description, or meta-commentary about your own process.`
+
+var builtinWorkerTypes = map[string]WorkerType{
+	DefaultSubagentType: {
+		Name:             DefaultSubagentType,
+		Role:             "Generalist",
+		Description:      "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
+		AllowedTools:     nil,
+		OneShot:          false,
+		DefaultIsolation: IsolationInplace,
+		ContextScope:     "Self-contained task prompt plus repository memory and skills.",
+		OutputSchema:     "Final message is the deliverable: outcome, what was done, what changed, blockers, and verifiable evidence. agent_report is an optional structured handoff on top.",
+		SuccessCriteria: []string{
+			"Task scope is completed or clearly blocked.",
+			"Changed files and verification are reported with evidence.",
+		},
+		SystemPrompt: generalPurposeSystemPrompt,
+	},
+	HelpMeRecoveryWorkerType: {
+		Name:             HelpMeRecoveryWorkerType,
+		Role:             "HelpMe Recovery",
+		Description:      "Fresh-context recovery helper launched by the helpme tool after the parent got stuck; prefer calling helpme instead of spawning this type directly.",
+		AllowedTools:     nil,
+		OneShot:          false,
+		DefaultIsolation: IsolationInplace,
+		ContextScope:     "Self-contained HelpMe handoff brief (goal, ask, reason, constraints, failed attempts, evidence) plus repository memory and skills.",
+		OutputSchema:     "Final message is the deliverable. A structured agent_report handoff is additionally required — submitted at close, requested automatically if missing — because the parent's context rewrite is built from it.",
+		SuccessCriteria: []string{
+			"Recovery ask is completed or clearly blocked.",
+			"Changed files and verification are reported with evidence.",
+		},
+		SystemPrompt:   generalPurposeSystemPrompt + "\n" + reportClosingRule,
+		RequiresReport: true,
 	},
 	"verification": {
 		Name:            "verification",
