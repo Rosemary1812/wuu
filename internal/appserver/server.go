@@ -310,6 +310,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadRename(req)
 	case MethodThreadDelete:
 		return s.handleThreadDelete(req)
+	case MethodWorkspaceStateCleanup:
+		return s.handleWorkspaceStateCleanup(req)
 	case MethodThreadMembersRemove:
 		return s.handleThreadMembersRemove(req)
 	case MethodThreadRegenerateTitle:

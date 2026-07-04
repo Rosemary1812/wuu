@@ -333,6 +333,23 @@ app.whenReady().then(async () => {
     projectManager.remove(projectIDToRemove),
   );
   ipcMain.handle(
+    "wuu:project-cleanup-state",
+    (_event, projectId: string, projectPath: string) => {
+      // The removed workspace may still have a pooled app server; dispose
+      // it first so nothing recreates runtime state during the cleanup.
+      if (typeof projectPath === "string" && projectPath.trim() !== "") {
+        appServerClientPool.disposeWorkdirClient(projectPath);
+      }
+      return appServerClientPool.request<{
+        state_dir: string;
+        removed: boolean;
+        memory_archived: boolean;
+      }>("workspace/state/cleanup", {
+        workspace_id: projectId,
+      });
+    },
+  );
+  ipcMain.handle(
     "wuu:project-select-none",
     (_event, fresh?: boolean, cwd?: string) =>
       projectManager.selectNoProject(Boolean(fresh), cwd),

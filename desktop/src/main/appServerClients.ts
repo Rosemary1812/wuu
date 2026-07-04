@@ -81,6 +81,19 @@ export class AppServerClientPool {
     this.serverRequestRoutes.clear();
   }
 
+  /**
+   * Dispose the pooled app server (if any) that runs in the given workdir.
+   * Used when a project is removed and its local state is about to be
+   * cleaned up: the removed workspace's server must not stay alive and
+   * recreate runtime state mid-cleanup.
+   */
+  disposeWorkdirClient(workdir: string): void {
+    const client = this.clients.get(resolve(workdir));
+    if (client) {
+      this.disposeClient(client);
+    }
+  }
+
   private client(): AppServerClient {
     const context = this.getRuntimeContext();
     const workdir = resolve(context.cwd);

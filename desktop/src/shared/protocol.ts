@@ -1499,6 +1499,15 @@ export type WuuDesktopApi = {
   chooseProjectFolder: () => Promise<ProjectListResult>;
   selectProject: (projectId: string) => Promise<ProjectListResult>;
   removeProject: (projectId: string) => Promise<ProjectListResult>;
+  // Opt-in second step after removeProject: reclaim the removed workspace's
+  // local state directory. Non-memory state (session artifacts, goals,
+  // worktrees, runtime files) is deleted; memory directories are archived
+  // into `.archived/` inside the state dir, never hard-deleted. Mirrors the
+  // `workspace/state/cleanup` RPC.
+  cleanupProjectState: (
+    projectId: string,
+    projectPath: string,
+  ) => Promise<{ state_dir: string; removed: boolean; memory_archived: boolean }>;
   relocateProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean, cwd?: string) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;

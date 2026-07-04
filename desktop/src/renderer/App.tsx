@@ -4366,9 +4366,48 @@ export function App(): JSX.Element {
     }
   }
 
+  /**
+   * Opt-in second step of project removal: after the workspace leaves the
+   * sidebar, offer to reclaim its local state directory (session artifacts,
+   * goals, worktrees). Memory is archived into `.archived/` inside the
+   * state dir, never hard-deleted (self-consistency invariant 3). A
+   * declined dialog or a cleanup failure never undoes the removal itself.
+   */
+  async function offerRemovedProjectStateCleanup(
+    removedProject: DesktopProject | undefined,
+  ): Promise<void> {
+    if (!removedProject) {
+      return;
+    }
+    if (
+      !window.confirm(
+        "是否同时清理该项目的本地状态（会话/目标/工件）？记忆将保留归档。",
+      )
+    ) {
+      return;
+    }
+    try {
+      await window.wuu.cleanupProjectState(
+        removedProject.id,
+        removedProject.path,
+      );
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : "cleanup project state failed",
+      }));
+    }
+  }
+
   async function removeProject(projectId: string): Promise<void> {
     const requestID = beginViewSwitch("runtime", "remove-project");
     const outgoingDraft = currentPrimaryComposerDraft();
+    const removedProject = appStateRef.current.projects.find(
+      (project) => project.id === projectId,
+    );
     try {
       const projectState = await window.wuu.removeProject(projectId);
       if (
@@ -4383,6 +4422,7 @@ export function App(): JSX.Element {
           ...current,
           projects: projectState.projects,
         }));
+        void offerRemovedProjectStateCleanup(removedProject);
         return;
       }
       // The active workspace was removed; ensureRuntimeContext reconciled the
@@ -4398,6 +4438,7 @@ export function App(): JSX.Element {
           loadedState,
         ),
       );
+      void offerRemovedProjectStateCleanup(removedProject);
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
         return;
