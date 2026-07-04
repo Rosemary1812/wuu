@@ -16,6 +16,7 @@ import {
   findScrollParent,
   INITIAL_CHAT_WINDOW_ROWS,
 } from "./ChatThreadView";
+import { aggregateMarksBySeq } from "./MessageMarks";
 
 let mountedRoots: Root[] = [];
 let mountedContainers: HTMLElement[] = [];
@@ -56,6 +57,38 @@ function turns(items: Turn["items"]): ReadonlyArray<Pick<Turn, "id" | "items">> 
 }
 
 describe("ChatThreadView", () => {
+  it("renders a read-receipt ring and reaction chips when marks are provided", () => {
+    const marksBySeq = aggregateMarksBySeq([
+      { seq: 7, participant_id: "prt-a", kind: "seen", status: "completed" },
+      { seq: 7, participant_id: "prt-b", kind: "seen", status: "completed" },
+      { seq: 7, participant_id: "prt-c", kind: "reaction", reaction: "smug" },
+    ]);
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", seq: 7, type: "user_message", text: "上线了吗" },
+        ]),
+        marksBySeq,
+        readerCount: 2,
+      }),
+    );
+    const ring = container.querySelector(".chat-receipt-ring");
+    expect(ring).not.toBeNull();
+    expect(ring!.getAttribute("data-all-seen")).toBe("true");
+    expect(container.querySelector('[data-reaction="smug"]')).not.toBeNull();
+  });
+
+  it("renders no marks affordances when none are provided", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", seq: 7, type: "user_message", text: "上线了吗" },
+        ]),
+      }),
+    );
+    expect(container.querySelector(".chat-bubble-marks")).toBeNull();
+  });
+
   it("renders a participant row with default avatar, name, and bubble text", () => {
     const container = mount(
       createElement(ChatThreadView, {

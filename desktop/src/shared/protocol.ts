@@ -1277,6 +1277,10 @@ export type FocusMeta = {
 
 export type ThreadItem = {
   id: string;
+  // seq is the message's stable per-thread address (session_messages.seq).
+  // The chat view keys read receipts and reactions (both addressed by seq) to
+  // the bubble carrying the same seq. Absent for synthetic/unpersisted items.
+  seq?: number;
   source_id?: string;
   agent_id?: string;
   type: ThreadItemType;
@@ -1297,6 +1301,28 @@ export type ThreadItem = {
   participant?: ParticipantSummary;
   envelope_meta?: EnvelopeMeta;
   focus_meta?: FocusMeta;
+};
+
+// One read-receipt or reaction row for a message, addressed by (thread, seq).
+// Mirrors the backend message_marks wire (2026-07-04-read-receipts-and-
+// reactions.md §4/§5). kind="seen" carries status; kind="reaction" carries a key.
+export type MessageMarkWire = {
+  seq: number;
+  participant_id: string;
+  kind: "seen" | "reaction";
+  status?: "in_progress" | "completed" | "failed";
+  reaction?: string;
+  at_ms?: number;
+};
+
+// thread/marks result: every mark in a thread, fetched on chat-view load.
+export type ThreadMarksResult = {
+  marks: MessageMarkWire[];
+};
+
+// message/mark notification: one incremental mark change to patch a bubble.
+export type MessageMarkNotification = MessageMarkWire & {
+  thread_id: string;
 };
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";

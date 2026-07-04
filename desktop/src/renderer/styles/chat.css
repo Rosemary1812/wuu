@@ -224,3 +224,59 @@
   font-size: 13px;
   padding: 0 4px;
 }
+
+/* Read receipts + reactions (2026-07-04-read-receipts-and-reactions.md §6).
+   Rendered just under a bubble: a small progress ring for who has read, and
+   aggregated reaction chips. */
+.chat-bubble-marks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.chat-bubble-marks--user {
+  justify-content: flex-end;
+}
+
+.chat-receipt-ring {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+.chat-receipt-ring-track {
+  stroke: var(--ink-overlay-8);
+}
+/* blue fills as members finish reading; amber marks a member whose turn
+   failed, so a ring that never completes reads as "someone crashed". */
+.chat-receipt-ring-done {
+  stroke: var(--info);
+  transition: stroke-dasharray 0.3s ease;
+}
+.chat-receipt-ring-failed {
+  stroke: var(--warning);
+}
+
+.chat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chat-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-4);
+  border: 1px solid var(--hairline);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  cursor: default;
+}
+.chat-reaction-glyph {
+  font-size: 12px;
+}
+.chat-reaction-count {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}

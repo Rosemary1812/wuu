@@ -11,6 +11,9 @@ import { chatMessagesFromTurns, type ChatMessageRow } from "./AppState";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { EnvelopeNotice } from "./EnvelopeNotice";
+import { MessageReactions } from "./MessageReactions";
+import { ringModel, type MessageMarksView } from "./MessageMarks";
+import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
 
 // Distance (px) from the bottom of the scroll container within which the
@@ -81,6 +84,9 @@ export function ChatThreadView({
   turns,
   pendingMessages = [],
   busyParticipantIDs,
+  marksBySeq,
+  readerCount = 0,
+  resolveParticipantName,
 }: {
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
   /**
@@ -93,6 +99,16 @@ export function ChatThreadView({
    */
   pendingMessages?: ReadonlyArray<QueuedComposerMessage>;
   busyParticipantIDs?: ReadonlySet<string>;
+  /**
+   * Aggregated read receipts + reactions for this thread, keyed by message
+   * seq. Fed from thread/marks on load and patched by message/mark
+   * notifications (2026-07-04-read-receipts-and-reactions.md). Absent = the
+   * feature is off / not a chat thread, so no rings or chips render.
+   */
+  marksBySeq?: ReadonlyMap<number, MessageMarksView>;
+  /** How many members a message is broadcast to — the ring's denominator. */
+  readerCount?: number;
+  resolveParticipantName?: (id: string) => string;
 }): JSX.Element {
   const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -228,6 +244,11 @@ export function ChatThreadView({
           key={row.id}
           row={row}
           busyParticipantIDs={busyParticipantIDs}
+          marks={
+            row.item.seq ? marksBySeq?.get(row.item.seq) : undefined
+          }
+          readerCount={readerCount}
+          resolveParticipantName={resolveParticipantName}
         />
       ))}
       {pendingMessages.map((message) => (
@@ -289,9 +310,15 @@ function focusDividerLabel(meta: NonNullable<ChatMessageRow["item"]["focus_meta"
 function ChatRow({
   row,
   busyParticipantIDs,
+  marks,
+  readerCount = 0,
+  resolveParticipantName,
 }: {
   row: ChatMessageRow;
   busyParticipantIDs?: ReadonlySet<string>;
+  marks?: MessageMarksView;
+  readerCount?: number;
+  resolveParticipantName?: (id: string) => string;
 }): JSX.Element {
   if (row.kind === "focus") {
     const meta = row.item.focus_meta;
@@ -320,6 +347,19 @@ function ChatRow({
               <RichContent text={row.item.text} />
             ) : null}
           </div>
+          {marks ? (
+            <div className="chat-bubble-marks chat-bubble-marks--user">
+              <MessageReactions
+                reactions={marks.reactions}
+                resolveName={resolveParticipantName}
+              />
+              <ReadReceiptRing
+                ring={ringModel(marks.seen, readerCount)}
+                seen={marks.seen}
+                resolveName={resolveParticipantName}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -351,6 +391,14 @@ function ChatRow({
         <div className="chat-bubble">
           {row.item.text ? <RichContent text={row.item.text} /> : null}
         </div>
+        {marks && marks.reactions.length > 0 ? (
+          <div className="chat-bubble-marks">
+            <MessageReactions
+              reactions={marks.reactions}
+              resolveName={resolveParticipantName}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
