@@ -210,9 +210,13 @@ func (s *Server) handleTurnQueue(req Request) error {
 	}
 	th.mu.Lock()
 	readOnly := th.ReadOnly
+	isGroup := th.Group
 	th.mu.Unlock()
 	if readOnly {
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+	if isGroup {
+		return s.writeResponse(req.ID, nil, errors.New("group threads do not support queued turns"))
 	}
 
 	queueID := strings.TrimSpace(params.ClientID)
@@ -1698,6 +1702,12 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	th := s.thread(threadID)
 	if th == nil {
 		return false, fmt.Errorf("thread %q not found", threadID)
+	}
+	th.mu.Lock()
+	isGroup := th.Group
+	th.mu.Unlock()
+	if isGroup {
+		return false, errors.New("group threads do not support queued turns")
 	}
 	threadRuntime, err := s.ensureThreadRuntime(th)
 	if err != nil {

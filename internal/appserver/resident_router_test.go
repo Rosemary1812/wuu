@@ -209,6 +209,7 @@ func providersResponse(content string) providers.ChatResponse {
 func TestGroupTurnStartRoutesThroughAllChannelWithoutExplicitMembership(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
 
 	allID, err := srv.ensureAllChannel()

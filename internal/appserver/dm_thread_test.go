@@ -23,7 +23,9 @@ func withDMRuntime(t *testing.T) (*runtime.Session, *Server, string) {
 	rt := newTestRuntime(t, &fakeClient{})
 	wuuHome := t.TempDir()
 	rt.WuuHome = wuuHome
-	return rt, New(rt, &lockedBuffer{}), wuuHome
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	return rt, srv, wuuHome
 }
 
 func TestThreadStartWithDMParticipantTagsThread(t *testing.T) {

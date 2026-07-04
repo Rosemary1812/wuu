@@ -152,6 +152,10 @@ func TestGroupTurnStartCompletesWithoutProviderCallAndMarksMentionedAddressed(t 
 	if len(turn.Items) != 1 || turn.Items[0].Type != ThreadItemUserMessage {
 		t.Fatalf("expected exactly one user_message item, got %+v", turn.Items)
 	}
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethodForThread(t, msgs, NotificationTurnCompleted, group.ID)["params"])
+	if completed.Turn.ID != turn.ID || completed.Turn.Status != TurnStatusCompleted {
+		t.Fatalf("expected completed notification for group turn %q, got %+v", turn.ID, completed.Turn)
+	}
 
 	th := srv.thread(group.ID)
 	if th == nil {
@@ -185,6 +189,37 @@ func TestGroupTurnStartCompletesWithoutProviderCallAndMarksMentionedAddressed(t 
 	client.mu.Unlock()
 	if callCount == 0 {
 		t.Fatalf("expected the mentioned resident agent to run its own provider turn")
+	}
+}
+
+func TestGroupTurnQueueRejected(t *testing.T) {
+	client := &fakeClient{response: providersResponse("should not run")}
+	rt := newTestRuntime(t, client)
+	srv := New(rt, &lockedBuffer{})
+	group := startNamedGroupThreadForTest(t, srv, "release")
+
+	raw := fmt.Sprintf(`{"id":"queue","method":"turn/queue","params":{"thread_id":%q,"prompt":"queued group message"}}`, group.ID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("turn/queue: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	resp := responseByID(t, msgs, "queue")
+	errMsg := fmt.Sprint(resp["error"])
+	if !strings.Contains(errMsg, "group threads do not support queued turns") {
+		t.Fatalf("expected group queue rejection, got %+v", resp)
+	}
+	history, err := session.LoadHistoryRecords(rt.SessionDir, group.ID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("rejected group queue should not append history, got %+v", history)
+	}
+	client.mu.Lock()
+	callCount := len(client.requests)
+	client.mu.Unlock()
+	if callCount != 0 {
+		t.Fatalf("rejected group queue should not call provider, got %d calls", callCount)
 	}
 }
 

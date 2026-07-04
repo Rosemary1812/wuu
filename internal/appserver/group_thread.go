@@ -194,6 +194,12 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	}); err != nil {
 		return err
 	}
+	if err := s.writeNotification(NotificationTurnCompleted, TurnCompletedNotification{
+		ThreadID: th.ID,
+		Turn:     turn,
+	}); err != nil {
+		return err
+	}
 	s.routeUserMessageToResidents(th, userMsg, mentioned)
 	return nil
 }
