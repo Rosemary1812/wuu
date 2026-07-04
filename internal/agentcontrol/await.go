@@ -69,7 +69,7 @@ func (c *AgentControl) AwaitFrom(currentPath string, ctx context.Context, target
 
 	for {
 		result := c.awaitSnapshot(resolved)
-		if awaitComplete(result.Results) {
+		if c.awaitComplete(result.Results) {
 			c.claimAwaitedAgentResults(result.Results)
 			result.NextSteps = awaitAgentsNextSteps(result)
 			return result, nil
@@ -445,9 +445,22 @@ func shouldPreferHarnessStatus(status harness.TaskStatus) bool {
 	}
 }
 
-func awaitComplete(results []AwaitAgentResult) bool {
+// awaitComplete reports whether every awaited row is consumable. A row is
+// still in flight when its status is active, and also when a requires_report
+// run this process started shows a completed snapshot whose terminal
+// notification the consumer has not recorded yet: in that window the runtime
+// has not decided between accepting a structured report, launching the one
+// closing-turn nudge, and synthesizing a final_text report, so handing the
+// row to the parent would leak a report-less completion (and a one-shot exec
+// parent would exit and kill the closing turn mid-flight). Runs from
+// previous processes are never in that window, so rehydrated dormant results
+// settle on the persisted facts immediately.
+func (c *AgentControl) awaitComplete(results []AwaitAgentResult) bool {
 	for _, result := range results {
 		if isAwaitActiveStatus(result.Status) {
+			return false
+		}
+		if result.Status == string(harness.TaskStatusCompleted) && c.reportSettlementPending(result.AgentID) {
 			return false
 		}
 	}

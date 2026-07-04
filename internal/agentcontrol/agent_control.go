@@ -91,6 +91,21 @@ type AgentControl struct {
 	reportNudgeMu sync.Mutex
 	reportNudged  map[string]struct{}
 
+	// reportSettleMu guards reportUnsettled: requires_report runs STARTED BY
+	// THIS PROCESS whose completion adjudication has not been recorded yet.
+	// The manager flips a run's snapshot to completed before the (async)
+	// notification consumer decides between "structured report already
+	// filed", "start the one closing-turn nudge", and "synthesize a
+	// final_text report" — so a parent's await polling raw snapshots could
+	// slip through that window and walk away with a report-less result while
+	// the closing turn is still being launched. Marked before manager.Spawn
+	// (so no completion can be observed unmarked) and cleared by the consumer
+	// once the terminal notification is durably recorded. Deliberately not
+	// persisted: rehydrated or dormant runs from earlier processes must never
+	// wait on a consumer that is not coming.
+	reportSettleMu  sync.Mutex
+	reportUnsettled map[string]struct{}
+
 	// helpMeRecoveryMu guards helpMeRecoveries, the per-helper HelpMe
 	// recovery state registered at helpme spawn time and consumed once by
 	// the await-side history rewrite. Entries are lazily rehydrated from
@@ -711,6 +726,12 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		workerCtx = context.WithoutCancel(ctx)
 	}
 
+	// Mark the report-settlement window before the run can start: from here
+	// until the notification consumer records the terminal state, an await
+	// must treat a completed snapshot of this run as still in flight.
+	if wt.RequiresReport {
+		c.markReportSettlementPending(workerID)
+	}
 	sa, err := c.manager.Spawn(workerCtx, subagent.SpawnOptions{
 		ID:            workerID,
 		ParticipantID: participantID,
@@ -730,6 +751,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		Client:        req.ClientOverride,
 	})
 	if err != nil {
+		c.clearReportSettlement(workerID)
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
@@ -1965,6 +1987,12 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	if err != nil {
 		return err
 	}
+	// Same report-settlement window as the direct spawn path: mark before
+	// the queued run can start so await never consumes an unadjudicated
+	// completion.
+	if prepared.WorkerType.RequiresReport {
+		c.markReportSettlementPending(prepared.WorkerID)
+	}
 	_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
 		ID:             prepared.WorkerID,
 		ParticipantID:  participantID,
@@ -1985,6 +2013,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		Client:         clientOverride,
 	})
 	if err != nil {
+		c.clearReportSettlement(prepared.WorkerID)
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
@@ -2405,6 +2434,12 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 		return
 	}
 	c.recordHarnessStatus(n)
+	if isFinalSubAgentStatus(n.Status) {
+		// The terminal state (and, for completed runs, the structured or
+		// synthesized report) is durably recorded: settlement is decided,
+		// awaiting parents may consume this run now.
+		c.clearReportSettlement(n.AgentID)
+	}
 	meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
 	if !ok {
 		return
@@ -2417,6 +2452,64 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 		}
 		go c.maybeStartQueued(context.Background())
 	}
+}
+
+// markReportSettlementPending records that a requires_report run owned by
+// this process still awaits its completion adjudication. Set before the run
+// (or its closing turn) starts so an awaiting parent can never observe a
+// terminal snapshot in the window before the notification consumer decides
+// what to do with it.
+func (c *AgentControl) markReportSettlementPending(workerID string) {
+	if c == nil {
+		return
+	}
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return
+	}
+	c.reportSettleMu.Lock()
+	if c.reportUnsettled == nil {
+		c.reportUnsettled = make(map[string]struct{})
+	}
+	c.reportUnsettled[workerID] = struct{}{}
+	c.reportSettleMu.Unlock()
+}
+
+// clearReportSettlement marks a run's completion adjudication as done:
+// either its terminal notification was recorded (structured report accepted,
+// synthesized final_text report written, or a failed/cancelled run recorded
+// as such), or the run never started. Idempotent.
+func (c *AgentControl) clearReportSettlement(workerID string) {
+	if c == nil {
+		return
+	}
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return
+	}
+	c.reportSettleMu.Lock()
+	delete(c.reportUnsettled, workerID)
+	c.reportSettleMu.Unlock()
+}
+
+// reportSettlementPending reports whether a requires_report run started by
+// this process is still between "the manager flipped its snapshot terminal"
+// and "the notification consumer recorded that terminal state". await treats
+// a completed result in that window as still active. Runs from previous
+// processes are never pending here, so cross-restart awaits settle
+// immediately on the persisted facts.
+func (c *AgentControl) reportSettlementPending(workerID string) bool {
+	if c == nil {
+		return false
+	}
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return false
+	}
+	c.reportSettleMu.Lock()
+	_, pending := c.reportUnsettled[workerID]
+	c.reportSettleMu.Unlock()
+	return pending
 }
 
 // reportClosingNudge is the mechanical closing instruction sent to a
@@ -2462,8 +2555,12 @@ func (c *AgentControl) maybeNudgeReportClosing(n subagent.Notification) bool {
 	c.reportNudgeMu.Unlock()
 	if _, err := c.manager.FollowupForcingTool(context.Background(), n.AgentID, reportClosingNudge, "agent_report"); err != nil {
 		providers.DebugLogf("agentcontrol: report closing nudge for %s failed: %v", n.AgentID, err)
+		// The caller falls through to normal recording, which settles the run.
 		return false
 	}
+	// The closing turn is in flight; keep (re-assert) the settlement window
+	// until its own terminal notification is recorded.
+	c.markReportSettlementPending(n.AgentID)
 	return true
 }
 
@@ -2714,7 +2811,30 @@ func (c *AgentControl) rehydrateAgent(id string) (*subagent.SubAgent, error) {
 	if c.threads != nil {
 		_ = c.threads.Restore(meta)
 	}
+	// A process killed between the run's terminal snapshot and the
+	// notification consumer's recording (e.g. while a requires_report
+	// closing turn was in flight) leaves the harness task stuck "running"
+	// with no report. Reconcile the durable record with the snapshot's
+	// terminal truth so the run stops tombstoning; for completed runs this
+	// also synthesizes the final_text report the crash swallowed.
+	c.reconcileRehydratedHarnessStatus(sa.Snapshot())
 	return sa, nil
+}
+
+// reconcileRehydratedHarnessStatus settles the harness task/run records for
+// a rehydrated run whose persisted snapshot is terminal but whose harness
+// task never got its terminal recording (the recording process died first).
+// It replays the missed terminal notification through the normal recording
+// path, which is guarded against double-recording.
+func (c *AgentControl) reconcileRehydratedHarnessStatus(snap subagent.SubAgentSnapshot) {
+	if c == nil || c.harnessStore == nil || !isFinalSubAgentStatus(snap.Status) {
+		return
+	}
+	task, ok := c.harnessTask(snap.ID)
+	if !ok || isTerminalHarnessStatus(task.Status) {
+		return
+	}
+	c.recordHarnessStatus(subagent.Notification{AgentID: snap.ID, Status: snap.Status, Snapshot: snap})
 }
 
 // rehydratedThreadMeta rebuilds the thread metadata for a resumed run from

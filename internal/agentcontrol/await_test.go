@@ -4,12 +4,15 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
 // TestAwaitAlwaysCarriesResultTextAfterConsumption verifies the delivery
@@ -236,5 +239,318 @@ func TestNoTargetAwaitDoesNotRejoinDeliveredCompletedWithoutReport(t *testing.T)
 	}
 	if len(explicit.Results) != 1 || explicit.Results[0].Status != string(harness.TaskStatusCompleted) || !explicit.Results[0].ReportMissing {
 		t.Fatalf("explicit-target await should still report the completed task, got %+v", explicit)
+	}
+}
+
+// closingTurnBlockingClient completes the worker's first model turn
+// instantly with plain text (no agent_report), then blocks every later turn
+// — in these tests, the requires_report closing nudge — until release is
+// closed. started is closed when the second turn begins, giving tests a
+// deterministic hook for "the closing turn is in flight".
+type closingTurnBlockingClient struct {
+	mu      sync.Mutex
+	calls   int
+	started chan struct{}
+	release chan struct{}
+}
+
+func newClosingTurnBlockingClient() *closingTurnBlockingClient {
+	return &closingTurnBlockingClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (c *closingTurnBlockingClient) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{Content: "finished without filing a report"}, nil
+}
+
+func (c *closingTurnBlockingClient) StreamChat(ctx context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.mu.Lock()
+	c.calls++
+	call := c.calls
+	c.mu.Unlock()
+	ch := make(chan providers.StreamEvent, 2)
+	if call == 1 {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "finished without filing a report"}
+		ch <- providers.StreamEvent{Type: providers.EventDone}
+		close(ch)
+		return ch, nil
+	}
+	if call == 2 {
+		close(c.started)
+	}
+	go func() {
+		select {
+		case <-c.release:
+			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "closing turn text"}
+			ch <- providers.StreamEvent{Type: providers.EventDone}
+		case <-ctx.Done():
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+		}
+		close(ch)
+	}()
+	return ch, nil
+}
+
+// TestAwaitTreatsUnsettledRequiresReportCompletionAsActive is the
+// deterministic reproduction of the settlement window itself: the manager
+// has flipped a requires_report run to completed (the row below) but the
+// notification consumer has not adjudicated it yet (the run is still marked
+// pending, exactly as Spawn leaves it). await must keep waiting, and must
+// release the moment the consumer records the terminal state. Rows for runs
+// this process never started, and non-completed rows, are untouched.
+func TestAwaitTreatsUnsettledRequiresReportCompletionAsActive(t *testing.T) {
+	dir := t.TempDir()
+	c, err := New(Config{
+		Client:        &fakeClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, "wt"),
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+
+	completed := []AwaitAgentResult{{AgentID: "w1", Status: string(harness.TaskStatusCompleted)}}
+
+	// The window: spawn marked the run, the consumer has not settled it.
+	c.markReportSettlementPending("w1")
+	if c.awaitComplete(completed) {
+		t.Fatal("await must keep waiting while a requires_report completion is unsettled")
+	}
+	// Only completed rows wait on settlement; a failed run of the same id
+	// takes the normal path.
+	failed := []AwaitAgentResult{{AgentID: "w1", Status: string(harness.TaskStatusFailed)}}
+	if !c.awaitComplete(failed) {
+		t.Fatal("non-completed terminal rows must not wait on report settlement")
+	}
+	// The consumer recorded the terminal notification: settled.
+	c.clearReportSettlement("w1")
+	if !c.awaitComplete(completed) {
+		t.Fatal("await must release once the consumer settled the run")
+	}
+	// Runs this process never started (dormant/rehydrated) are never pending.
+	other := []AwaitAgentResult{{AgentID: "w-dormant", Status: string(harness.TaskStatusCompleted)}}
+	if !c.awaitComplete(other) {
+		t.Fatal("runs from previous processes must settle immediately")
+	}
+}
+
+// TestAwaitWaitsOutRequiresReportClosingTurn drives the full race end to
+// end: a requires_report worker completes its first turn without a report,
+// the runtime launches the mechanical closing turn (held open by the
+// blocking client), and an await running through all of it must not return
+// until the run's report is durably adjudicated — here the synthesized
+// final_text report after the closing turn also files nothing.
+func TestAwaitWaitsOutRequiresReportClosingTurn(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	client := newClosingTurnBlockingClient()
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-settle", "harness")
+	c, err := New(Config{
+		Client:        client,
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-await-settle",
+		HistoryDir:    filepath.Join(dir, ".wuu-state", "sessions", "sess-await-settle", "workers"),
+		ThreadDir:     filepath.Join(dir, ".wuu-state", "sessions", "sess-await-settle", "threads"),
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	t.Cleanup(func() {
+		select {
+		case <-client.release:
+		default:
+			close(client.release)
+		}
+	})
+
+	res, err := c.Spawn(context.Background(), SpawnRequest{
+		Type:     "reviewer",
+		TaskName: "review_settle",
+		Prompt:   "review this diff",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	select {
+	case <-client.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing turn never started")
+	}
+
+	done := make(chan AwaitAgentsResult, 1)
+	go func() {
+		awaited, aerr := c.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
+		if aerr != nil {
+			t.Errorf("AwaitFrom: %v", aerr)
+		}
+		done <- awaited
+	}()
+
+	// While the closing turn is in flight the run is not consumable: the
+	// first completion window and the running closing turn must both hold
+	// the await open.
+	select {
+	case awaited := <-done:
+		t.Fatalf("await returned while the closing turn was still in flight: %+v", awaited.Results)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	close(client.release)
+
+	var awaited AwaitAgentsResult
+	select {
+	case awaited = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("await did not return after the closing turn settled")
+	}
+	if len(awaited.Results) != 1 {
+		t.Fatalf("expected one await result, got %+v", awaited.Results)
+	}
+	got := awaited.Results[0]
+	if got.Status != string(harness.TaskStatusCompleted) {
+		t.Fatalf("await status = %q, want completed (%+v)", got.Status, got)
+	}
+	// The settlement invariant: by the time await hands the row to the
+	// parent, the run's report adjudication is durably recorded.
+	report, ok, err := c.HarnessStore().ReportForTask(res.AgentID)
+	if err != nil || !ok {
+		t.Fatalf("await returned before the report was adjudicated (ok=%v err=%v)", ok, err)
+	}
+	if harness.NormalizeReportKind(report.Kind) != harness.ReportKindFinalText {
+		t.Fatalf("expected synthesized final_text report, got %+v", report)
+	}
+	if got.ReportKind != string(harness.ReportKindFinalText) || got.ReportPath == "" {
+		t.Fatalf("await row must carry the adjudicated report facts, got %+v", got)
+	}
+	task, ok := c.harnessTask(res.AgentID)
+	if !ok || task.Status != harness.TaskStatusCompleted {
+		t.Fatalf("harness task must be terminal when await returns, got %+v ok=%v", task, ok)
+	}
+}
+
+// TestAwaitSettlesRehydratedRunKilledMidClosingTurn covers the crash
+// tombstone: a process dies while a requires_report closing turn is in
+// flight, leaving a terminal persisted snapshot but a harness task stuck
+// "running" with no report. A fresh process must not hang awaiting a
+// consumer decision that is never coming: the explicit await rehydrates the
+// run, reconciles the harness record to the snapshot's terminal truth,
+// synthesizes the swallowed final_text report, and returns promptly.
+func TestAwaitSettlesRehydratedRunKilledMidClosingTurn(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	historyDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-crash", "workers")
+	threadDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-crash", "threads")
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-crash", "harness")
+	config := func(client providers.StreamClient) Config {
+		return Config{
+			Client:        client,
+			DefaultModel:  "fake-model",
+			ParentRepo:    dir,
+			WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+			SessionID:     "sess-await-crash",
+			HistoryDir:    historyDir,
+			ThreadDir:     threadDir,
+			HarnessDir:    harnessDir,
+			WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		}
+	}
+
+	client := newClosingTurnBlockingClient()
+	first, err := New(config(client))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := first.Spawn(context.Background(), SpawnRequest{
+		Type:     "reviewer",
+		TaskName: "review_crash",
+		Prompt:   "review this diff",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	// Let the abandoned closing turn finish and persist BEFORE TempDir
+	// cleanup: the terminal notification is emitted strictly after the run's
+	// history write, so draining it removes the write/removal race.
+	t.Cleanup(func() {
+		ch := make(chan subagent.Notification, 16)
+		first.Manager().Subscribe(ch)
+		defer first.Manager().Unsubscribe(ch)
+		select {
+		case <-client.release:
+		default:
+			close(client.release)
+		}
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case n := <-ch:
+				if n.AgentID == res.AgentID && isFinalSubAgentStatus(n.Status) {
+					return
+				}
+			case <-deadline:
+				return
+			}
+		}
+	})
+	select {
+	case <-client.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing turn never started")
+	}
+	// Precondition for the tombstone: the consumer skipped recording (it
+	// started the nudge instead), so the harness task is still running and
+	// no report exists, while the persisted snapshot already says completed.
+	if task, ok := first.harnessTask(res.AgentID); !ok || task.Status != harness.TaskStatusRunning {
+		t.Fatalf("expected harness task stuck running mid closing turn, got %+v ok=%v", task, ok)
+	}
+	if _, ok, _ := first.HarnessStore().ReportForTask(res.AgentID); ok {
+		t.Fatal("no report should exist mid closing turn")
+	}
+	// "Kill" the process mid closing turn: stop the consumer and abandon
+	// the in-flight turn without letting it finish.
+	first.Close()
+
+	second, err := New(config(&fakeClient{resp: providers.ChatResponse{Content: "unused after crash"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(second.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	awaited, err := second.AwaitFrom(agentthread.RootPath, ctx, []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom after crash: %v", err)
+	}
+	if awaited.TimedOut {
+		t.Fatalf("await must settle a rehydrated dormant run immediately, got timeout: %+v", awaited.Results)
+	}
+	if len(awaited.Results) != 1 || awaited.Results[0].Status != string(harness.TaskStatusCompleted) {
+		t.Fatalf("expected completed rehydrated result, got %+v", awaited.Results)
+	}
+	// The tombstone is repaired: task terminal, swallowed report synthesized.
+	task, ok := second.harnessTask(res.AgentID)
+	if !ok || task.Status != harness.TaskStatusCompleted {
+		t.Fatalf("rehydration should reconcile the stuck harness task, got %+v ok=%v", task, ok)
+	}
+	report, ok, err := second.HarnessStore().ReportForTask(res.AgentID)
+	if err != nil || !ok || harness.NormalizeReportKind(report.Kind) != harness.ReportKindFinalText {
+		t.Fatalf("rehydration should synthesize the swallowed final_text report, got %+v ok=%v err=%v", report, ok, err)
+	}
+	if awaited.Results[0].ReportPath == "" {
+		t.Fatalf("await row should carry the reconciled report path, got %+v", awaited.Results[0])
 	}
 }
