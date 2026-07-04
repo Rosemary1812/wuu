@@ -1,6 +1,13 @@
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
@@ -222,11 +229,38 @@ function loadProjectStore(): ProjectStore {
   // canonical ~/.wuu/projects.json exists, it must be the only source of
   // truth so explicitly removed workspaces cannot be resurrected by an old
   // Electron store file.
-  const store = readProjectStoreFile(legacyProjectStorePath()) ?? {
+  const legacyPath = legacyProjectStorePath();
+  const store = readProjectStoreFile(legacyPath) ?? {
     projects: [],
   };
   writeProjectStoreFile(path, store);
+  archiveLegacyProjectStoreFile(legacyPath);
   return store;
+}
+
+function archiveLegacyProjectStoreFile(path: string): void {
+  if (!existsSync(path)) {
+    return;
+  }
+  try {
+    renameSync(path, legacyProjectStoreArchivePath(path));
+  } catch {
+    // Best effort: migration must not block startup if the legacy file is busy.
+  }
+}
+
+function legacyProjectStoreArchivePath(path: string): string {
+  const base = `${path}.migrated`;
+  if (!existsSync(base)) {
+    return base;
+  }
+  for (let index = 1; index < 1000; index += 1) {
+    const candidate = `${base}.${index}`;
+    if (!existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return `${base}.${Date.now()}`;
 }
 
 function readProjectStoreFile(path: string): ProjectStore | undefined {

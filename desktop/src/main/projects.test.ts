@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -71,8 +79,23 @@ function legacyStorePath(): string {
   return join(legacyUserData, "projects.json");
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function legacyArchiveNames(): Promise<string[]> {
+  return (await readdir(legacyUserData)).filter((name) =>
+    name.startsWith("projects.json.migrated"),
+  );
+}
+
 describe("ProjectManager project store migration", () => {
-  it("imports the legacy project store when the canonical store is missing", async () => {
+  it("imports and archives the legacy project store when the canonical store is missing", async () => {
     const legacyPath = await createProjectDir("legacy");
     const legacyProject = project("legacy", "legacy", legacyPath);
     await writeStore(legacyStorePath(), [legacyProject]);
@@ -84,6 +107,25 @@ describe("ProjectManager project store migration", () => {
     expect(
       JSON.parse(await readFile(canonicalStorePath(), "utf8")).projects,
     ).toHaveLength(1);
+    expect(await pathExists(legacyStorePath())).toBe(false);
+    expect(await legacyArchiveNames()).toHaveLength(1);
+  });
+
+  it("does not resurrect legacy projects after the canonical store is reset", async () => {
+    const legacyPath = await createProjectDir("legacy");
+    const legacyProject = project("legacy", "legacy", legacyPath);
+    await writeStore(legacyStorePath(), [legacyProject]);
+
+    const manager = new ProjectManager();
+    manager.load();
+    expect(manager.list().projects.map((item) => item.id)).toEqual(["legacy"]);
+
+    await rm(canonicalStorePath(), { force: true });
+    const resetManager = new ProjectManager();
+    resetManager.load();
+
+    expect(resetManager.list().projects.map((item) => item.id)).toEqual([]);
+    expect(await legacyArchiveNames()).toHaveLength(1);
   });
 
   it("does not re-merge legacy projects after the canonical store exists", async () => {
