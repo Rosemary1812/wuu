@@ -156,6 +156,14 @@ type Server struct {
 	participantMu           sync.Mutex
 	participantSummaryCache map[string]participant.Summary
 
+	// memoryOverviewCache memoizes the settings-panel overview essay per
+	// notebook, keyed by (scope, participant_id). An entry is served only
+	// while the notebook's MEMORY.md mtime is unchanged (memory-redesign
+	// §8.1); memory/chat drops the affected entries after a successful
+	// manager run.
+	memoryOverviewMu    sync.Mutex
+	memoryOverviewCache map[string]memoryOverviewCacheEntry
+
 	// guardianBreaker tracks recent auto-review denials so a runaway
 	// rejection loop can interrupt the host turn instead of burning LLM
 	// tokens on a broken path. Shared across turns; cleared via ClearTurn
@@ -183,6 +191,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingGoalContinuation:     make(map[string]bool),
 		drainingResidentAgent:        make(map[string]bool),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
+		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
 
 		guardianBreaker: guardian.NewRejectionCircuitBreaker(),
 	}
@@ -317,6 +326,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleParticipantRetire(req)
 	case MethodMemoryRead:
 		return s.handleMemoryRead(req)
+	case MethodMemoryOverview:
+		return s.handleMemoryOverview(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:
