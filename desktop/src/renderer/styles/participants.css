@@ -296,8 +296,23 @@
   background: var(--success);
 }
 
-.participant-roster-status[data-status="busy"] {
-  background: var(--warning);
+/* Busy DM counterpart reuses the running-session spinner instead of a
+ * static status color, so a working agent reads identically whether it is
+ * a session, a group chat, or a DM (sidebar-groups-andy-workspaces.md
+ * §1.1). Mirrors `.thread-row-spinner` — 9px "light notch on a dark ring"
+ * — since DM rows sit alongside thread/group rows in the sidebar. The
+ * `.participant-roster-row .participant-roster-main` qualifiers lift this
+ * above the `.has-unread` status-dot recolor so a busy row spins rather
+ * than showing the unread fill, matching `.thread-row.running`, which
+ * hides its unread dot while the spinner runs. */
+.participant-roster-row .participant-roster-main .participant-roster-status[data-status="busy"] {
+  width: 9px;
+  height: 9px;
+  background: transparent;
+  border: 1.5px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
+  border-top-color: var(--sidebar-thread-spinner-notch);
+  box-sizing: border-box;
+  animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
 
 .participant-roster-status[data-status="error"] {

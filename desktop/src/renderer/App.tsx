@@ -199,6 +199,7 @@ import {
   sameRuntimeContext,
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
+  serverEventTargetsGlobalThread,
   shouldResetToNoProjectForNewThread,
   sessionTabForLoadedRuntime,
   sessionTabForParticipant,
@@ -1402,7 +1403,14 @@ export function App(): JSX.Element {
       if (!mounted) {
         return;
       }
-      if (!serverEventTargetsActiveContext(event, appStateRef.current)) {
+      // Workspace-scoped events (project sessions/files/terminals) stay bound
+      // to the active context, but global-collaboration threads (DM/group) run
+      // under whichever app-server client started them and must pass through so
+      // the roster's busy/unread stays live across project switches (issue #9).
+      if (
+        !serverEventTargetsActiveContext(event, appStateRef.current) &&
+        !serverEventTargetsGlobalThread(event, appStateRef.current)
+      ) {
         return;
       }
       recordRunDebugEvent(event);

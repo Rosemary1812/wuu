@@ -390,6 +390,51 @@ function serverEventTargetsActiveContext(
   return event.workdir === state.activeContext?.cwd;
 }
 
+/**
+ * True when a server event carries a global-collaboration thread (DM or
+ * group). Such events are stamped with the originating app-server client's
+ * workdir, which may not be the active context's cwd (the conversation can
+ * run under a backgrounded project client). They must bypass the workdir
+ * gate so the roster's busy/unread state — derived from state.threads —
+ * stays live across project switches (issue #9).
+ *
+ * Thread lifecycle notifications carry the full Thread, so we classify from
+ * its markers directly. turn/* and item/* carry only a thread_id, so we
+ * match it against a global thread already known to state (its thread/started
+ * always precedes its turn/item events, so the thread is present by then).
+ */
+function serverEventTargetsGlobalThread(
+  event: ServerEvent,
+  state: AppState,
+): boolean {
+  if (event.kind !== "notification") {
+    return false;
+  }
+  const params = event.message.params as Record<string, unknown> | undefined;
+  const thread = params?.thread;
+  if (isThread(thread)) {
+    return threadIsGlobalCollaboration(thread);
+  }
+  const threadID = threadIDFromParams(params);
+  if (!threadID) {
+    return false;
+  }
+  for (const candidate of [
+    state.thread,
+    state.secondaryThread,
+    ...state.threads,
+  ]) {
+    if (
+      candidate &&
+      candidate.id === threadID &&
+      threadIsGlobalCollaboration(candidate)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 type StreamingNotificationHandling =
   | "state"
   | "stream"
@@ -644,16 +689,27 @@ function reduceNotification(
       if (!thread) {
         return state;
       }
-      if (!threadMatchesActiveContext(thread, state.activeContext)) {
+      // Global-collaboration threads (DM/group) are homed off the project
+      // tree, so they never match the active context; they still upsert so
+      // the roster's busy/unread state stays live (issue #9).
+      if (
+        !threadMatchesActiveContext(thread, state.activeContext) &&
+        !threadIsGlobalCollaboration(thread)
+      ) {
         return state;
       }
       const knownThread = state.threads.some((item) => item.id === thread.id);
       const updatesVisibleThread =
         state.thread?.id === thread.id ||
         state.secondaryThread?.id === thread.id;
+      // A backgrounded DM/group must not hijack the main pane on auto-activate;
+      // it is only upserted into state.threads for the sidebar.
       const activateThread =
         state.thread?.id === thread.id ||
-        (state.allowThreadAutoActivation && !state.thread && !knownThread);
+        (state.allowThreadAutoActivation &&
+          !state.thread &&
+          !knownThread &&
+          !threadIsGlobalCollaboration(thread));
       return {
         ...state,
         thread: activateThread ? thread : state.thread,
@@ -670,7 +726,11 @@ function reduceNotification(
     }
     case "thread/updated": {
       const thread = params?.thread as Thread | undefined;
-      if (!thread || !threadMatchesActiveContext(thread, state.activeContext)) {
+      if (
+        !thread ||
+        (!threadMatchesActiveContext(thread, state.activeContext) &&
+          !threadIsGlobalCollaboration(thread))
+      ) {
         return state;
       }
       return updateThreadByID(state, thread.id, (current) => ({
@@ -1597,6 +1657,29 @@ export function isDMThread(
  */
 export function isGroupThread(thread: { group?: boolean }): boolean {
   return thread.group === true;
+}
+
+/**
+ * Threads that belong to the global collaboration layer rather than to a
+ * single project/workspace: DM conversations with a named participant and
+ * chat-style group channels. Unlike project sessions these are homed off
+ * the project tree (a DM's cwd is the agent's home; a group's is the
+ * runtime root), so their events must NOT be filtered by the active
+ * workspace's workdir/cwd — see serverEventTargetsGlobalThread and the
+ * thread lifecycle reducers. Named-agent busy/unread badges derive from
+ * state.threads, so dropping these events (issue #9) leaves the roster
+ * stale until the next context switch.
+ */
+export function threadIsGlobalCollaboration(thread: {
+  dm_participant_id?: string;
+  group?: boolean;
+  workspace_kind?: string;
+}): boolean {
+  return (
+    isDMThread(thread) ||
+    isGroupThread(thread) ||
+    thread.workspace_kind === "dm"
+  );
 }
 
 /**
@@ -3194,6 +3277,7 @@ export {
   sameRuntimeContext,
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
+  serverEventTargetsGlobalThread,
   shouldResetToNoProjectForNewThread,
   sessionTabDraftForThread,
   sessionTabDraftForThreadID,

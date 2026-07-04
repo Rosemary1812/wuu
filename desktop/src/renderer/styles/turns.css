@@ -6901,6 +6901,7 @@ pre {
   .thread-row.pending-switch::before,
   .thread-row.running::before,
   .thread-row-spinner,
+  .participant-roster-row .participant-roster-main .participant-roster-status[data-status="busy"],
   .session-tab.running .session-tab-status,
   .session-tab.pending-switch .session-tab-status,
   .turn-progress.in_progress .turn-progress-label svg,

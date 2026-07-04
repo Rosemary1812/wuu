@@ -1040,6 +1040,7 @@ export function AppSidebar({
                               <button
                                 type="button"
                                 className="participant-roster-main"
+                                aria-busy={isBusy}
                                 onClick={() => onSelectParticipant(participant)}
                               >
                                 <span
