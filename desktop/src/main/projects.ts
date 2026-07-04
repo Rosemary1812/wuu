@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -78,16 +79,20 @@ export class ProjectManager {
       throw new Error("selected project is not a directory");
     }
     const now = new Date().toISOString();
-    const id = projectID(resolvedPath);
+    // Dedup by path — a project is one folder — but the id is a stable, opaque
+    // UUID minted once and never derived from the path, so relocating the
+    // folder (via relocate, not re-add) keeps the same identity and its
+    // workspace state + conversation history stay connected.
     const existingIndex = this.store.projects.findIndex(
-      (project) => project.id === id,
+      (project) => resolve(project.path) === resolvedPath,
     );
+    const existing =
+      existingIndex >= 0 ? this.store.projects[existingIndex] : undefined;
     const project: DesktopProject = {
-      id,
+      id: existing ? existing.id : newProjectID(),
       name: projectName(resolvedPath),
       path: resolvedPath,
-      created_at:
-        existingIndex >= 0 ? this.store.projects[existingIndex].created_at : now,
+      created_at: existing ? existing.created_at : now,
       updated_at: now,
     };
     if (existingIndex >= 0) {
@@ -97,7 +102,7 @@ export class ProjectManager {
     }
     this.store.active_context = {
       kind: "project",
-      project_id: id,
+      project_id: project.id,
       cwd: resolvedPath,
     };
     this.save();
@@ -310,8 +315,8 @@ function allocateNoProjectCwd(): string {
   return dir;
 }
 
-function projectID(projectPath: string): string {
-  return Buffer.from(resolve(projectPath)).toString("base64url");
+function newProjectID(): string {
+  return randomUUID();
 }
 
 function projectName(projectPath: string): string {

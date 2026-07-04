@@ -89,10 +89,15 @@ export class AppServerClientPool {
   private client(): AppServerClient {
     const context = this.getRuntimeContext();
     const workdir = resolve(context.cwd);
+    // Only registered projects carry a stable id; the no-project (对话)
+    // workspace stays path-keyed (its scratch dir never moves).
+    const workspaceId =
+      context.kind === "project" ? context.project_id : "";
     let client = this.clients.get(workdir);
     if (!client) {
       client = new AppServerClient(
         workdir,
+        workspaceId,
         (source, event) => this.emitServerEvent(source, event),
         () => this.evictIdleClients(),
       );
@@ -174,6 +179,11 @@ class AppServerClient {
 
   constructor(
     readonly workdir: string,
+    // Stable workspace identity for a registered project, forwarded to the
+    // app-server so its state dir and session listing survive the project
+    // moving on disk. Empty for the no-project (对话) workspace, which stays
+    // keyed by its (fixed) path.
+    readonly workspaceId: string,
     private readonly emit: (
       client: AppServerClient,
       event: AppServerClientEvent,
@@ -252,15 +262,20 @@ class AppServerClient {
       return;
     }
     const command = resolveWuuCommand(this.workdir);
-    this.child = spawnChild(
-      command.command,
-      [...command.args, "app-server", "--workdir", this.workdir],
-      {
-        cwd: command.cwd,
-        env: process.env,
-        stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
+    const appServerArgs = [
+      ...command.args,
+      "app-server",
+      "--workdir",
+      this.workdir,
+    ];
+    if (this.workspaceId.trim() !== "") {
+      appServerArgs.push("--workspace-id", this.workspaceId);
+    }
+    this.child = spawnChild(command.command, appServerArgs, {
+      cwd: command.cwd,
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.readStdout(chunk));
