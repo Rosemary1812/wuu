@@ -1,7 +1,7 @@
 # 工作焦点(Workspace Focus)— 设计与实施计划
 
 日期:2026-07-03
-状态:设计定稿(DM 部分实施中;群聊部分留待后续)
+状态:设计定稿(DM、群聊、信封携带焦点均已实施;压缩后重声明见 §6 状态更新)
 性质:**本文档同时是给实施 agent 的强约束提示词。**
 
 ## 0. 动机:缓存纪律优先于便利
@@ -133,22 +133,46 @@ DM thread 的 turn 开始时,`internal/tools.Toolkit` 的执行根需要跟着�
 活"(bash cwd、相对路径解析、搜索根),不改变"能不能读/写别的注册工作区"。收紧
 读写范围不在本次范围内,契约里也没有要求。
 
-## 6. 刻意留给后续的工作
+## 6. 后续工作的状态
 
-- **群聊分支**:`th.Group` 线程如何声明/继承焦点(是每个成员各自的焦点,还是
-  群共享一个焦点?)——本文档判定函数写成 thread-kind 无关,群聊 worker 接线时
-  应该能直接复用 §3 的 `focusChanged`/`normalizeFocusWorkspace` 等辅助函数,
-  但具体挂载点、群内广播语义留给该 worker 设计。
-- **信封携带焦点**:`MessageEnvelope`/`envelopeMetaRecord` 目前不携带发送方的
-  焦点上下文;如果后续想让"resident A 把消息路由给 resident B"时带上"A 当时
-  聚焦在哪个工作区",需要扩展信封结构,本次不做。
-- **压缩(compact)时的重声明**:`internal/compact` 把历史压成摘要后,焦点声明
-  项和其余历史一起被摘要吸收;摘要本身不特别提及当前焦点。如果观察到压缩后
-  模型"忘记"了焦点(比如又开始满工作区乱翻),后续需要在压缩摘要生成时补一句
-  "当前焦点:X",或者在摘要之后强制重新注入一条声明项。本次不做,先观察实际
-  影响。
+- **群聊分支**(已实施):`th.Group` 线程复用与 DM 完全相同的
+  `applyTurnWorkspaceFocus`(§3 的判定/声明函数本就是 thread-kind 无关)。群
+  没有"每个成员各自的焦点"这回事——焦点是 thread 的属性,和 DM 一样是单个
+  `session.Session.FocusWorkspace` 值,声明项落进群自己的持久历史,群里的每个
+  成员读群 transcript 时都能看到同一条分割线。`handleGroupTurnStart`
+  (`internal/appserver/group_thread.go`)在记录调用方自己的消息之前调用它,和
+  `handleTurnStart` 的 DM 分支顺序一致。
+- **信封携带焦点**(已实施):`MessageEnvelope`(`internal/appserver/envelope.go`)
+  加了 `Workspace string` 字段,值 = 来源 thread 路由那一刻的存储焦点
+  (`""`/`"~"`/工作区名三态,同 §1)。`routeUserMessageToResidents`(用户消息路由)
+  和 `routeParticipantMessageToResidents`(agent 消息路由,`internal/appserver/resident_router.go`)
+  都在读 `source.FocusWorkspace` 时把它顺手填进信封——这两处是全部信封构造点。
+  `MessageEnvelope.Prompt()` 渲染的 `<incoming_message>` 属性列表相应增加可选的
+  `workspace="..."`:`""` 不带该属性(信封已经很紧凑,没有焦点就不占字节);
+  `"~"` 渲染成 `workspace="home"`(比 `"~"` 对模型更好读);具体工作区名原样输出。
+  信封是自包含的,每条都带,不做"只在变化时声明"的差量——常驻大脑的收件箱
+  交错着来自多个来源 thread 的消息,各自的焦点互相独立,没有单一"当前焦点"可
+  比对,差量设计在这里没有意义。
+  另见 `docs/plans/2026-07-03-resident-named-agents.md` §4.1 "2026-07-03 增补三"
+  (信封格式改动的权威记录,红线 6 要求先改那份文档)。
+  - **信封驱动 turn 的 cwd**(已实施,`drainResidentAgent` /
+    `applyEnvelopeBatchCWD`,均在 `internal/appserver/resident_router.go`):
+    排空一批信封起 turn 前,收集这批信封的 `Workspace` 值,去重后如果恰好剩
+    一个非 `""`/非 `"~"` 的工作区名,就把这次 turn 的工具执行根切到该工作区;
+    否则(没有信封声明工作区、多个信封分歧、或唯一剩下的值就是 `"~"`)保持
+    agent home。这条规则只影响*这一个*信封驱动 turn 的 cwd——它既不会覆盖、
+    也不会读取该常驻 DM thread 自己持久化的 `focus_workspace`(那是用户直接
+    对话时声明的焦点,语义上和"我这次醒来是因为收到了别人的消息"完全不同),
+    也不会往该 DM 的历史里注入任何声明项。一旦这个信封批次处理完、下一次
+    `ensureThreadRuntime` 在空闲态运行,cwd 会按 §5 的规则重新落回该 DM 自己
+    的持久焦点(通常是 home,因为常驻 agent 的自身焦点很少被设置)。
+- **压缩(compact)时的重声明**:见下方状态更新。
 - **前端渲染**:分割线 UI、`focus_workspace` 选择器等,`desktop/` 完全不碰。
 - **文件作用域收紧**:见 §5 末尾。
+
+### 6.1 压缩后重声明——状态更新
+
+见 §7(新增)"压缩后重声明"一节的完整设计与实施记录。
 
 ## 7. 红线
 

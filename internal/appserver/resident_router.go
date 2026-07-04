@@ -12,6 +12,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
 const (
@@ -78,6 +79,7 @@ func (s *Server) routeUserMessageToResidents(source *threadState, msg providers.
 		Hop:            0,
 		Text:           strings.TrimSpace(chatMessageDisplayContent(msg)),
 		CreatedAt:      time.Now().UTC(),
+		Workspace:      source.FocusWorkspace,
 	}
 	source.mu.Unlock()
 	s.routeEnvelopes(source, env, mentioned)
@@ -97,6 +99,7 @@ func (s *Server) routeParticipantMessageToResidents(source *threadState, msg age
 		Hop:                 msg.Hop,
 		Text:                strings.TrimSpace(msg.Text),
 		CreatedAt:           firstNonZeroTime(msg.CreatedAt, time.Now().UTC()),
+		Workspace:           source.FocusWorkspace,
 	}
 	source.mu.Unlock()
 	if env.Hop <= 0 {
@@ -239,6 +242,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechWithHops(participantID, residentSpeechHopsByThread(envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
+		s.applyEnvelopeBatchCWD(th, threadRuntime, envs)
 	}
 	userMsg := residentEnvelopeUserMessage(envs, ids)
 	started, ok, err := s.startResidentTurn(context.Background(), th, userMsg, turnRuntimeSnapshot{}, false, turnReadOnlyIgnore)
@@ -261,6 +265,58 @@ func (s *Server) drainResidentAgent(participantID string) {
 
 func (s *Server) runResidentEnvelopeTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, envs []MessageEnvelope) {
 	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, nil, envs)
+}
+
+// applyEnvelopeBatchCWD sets an envelope-drain turn's tool execution root
+// from the workspace focus the incoming batch carries
+// (2026-07-03-workspace-focus.md "carry source-thread workspace focus on
+// envelopes"): if every envelope in the batch agrees on exactly one
+// non-home workspace, tools run rooted there for this turn; otherwise
+// (no envelope names a workspace, several disagree, or the single shared
+// value is home) tools stay at the resident's agent home.
+//
+// This is deliberately independent of the DM thread's own persisted focus:
+// ensureThreadRuntime already applied that (via configureResidentThreadRuntime)
+// before this call for the thread's *own* direct-conversation turns, and
+// this override replaces it for this specific envelope-driven turn only.
+// It never mutates th.FocusWorkspace or the session store, and it never
+// injects a focus declaration item — the source threads' focus is not this
+// thread's own declared focus, just where this batch of work happens to
+// point the resident's tools for the duration of one turn.
+func (s *Server) applyEnvelopeBatchCWD(th *threadState, threadRuntime *runtime.ThreadRuntime, envs []MessageEnvelope) {
+	if s == nil || s.rt == nil || th == nil || threadRuntime == nil || threadRuntime.Toolkit == nil {
+		return
+	}
+	th.mu.Lock()
+	homeRoot := th.CWD
+	th.mu.Unlock()
+	roster, err := workspaces.List(s.rt.WuuHome)
+	if err != nil {
+		roster = nil
+	}
+	threadRuntime.Toolkit.SetRootDir(focusWorkspaceRoot(envelopeBatchWorkspace(envs), homeRoot, roster))
+}
+
+// envelopeBatchWorkspace resolves the single workspace focus shared by an
+// entire batch of routed envelopes. "" (no override) is returned unless
+// every envelope in the batch that names a non-home workspace names the
+// same one — ambiguity resolves to "no override" rather than guessing.
+func envelopeBatchWorkspace(envs []MessageEnvelope) string {
+	seen := make(map[string]bool)
+	for _, env := range envs {
+		ws := strings.TrimSpace(env.Workspace)
+		if ws == "" || ws == focusWorkspaceHome {
+			continue
+		}
+		seen[ws] = true
+	}
+	if len(seen) != 1 {
+		return ""
+	}
+	for ws := range seen {
+		return ws
+	}
+	return ""
 }
 
 func residentEnvelopeUserMessage(envs []MessageEnvelope, consumedIDs []string) providers.ChatMessage {

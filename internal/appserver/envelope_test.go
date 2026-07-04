@@ -53,3 +53,43 @@ func TestCoalesceEnvelopesLeavesSingleEnvelopeUnprefixed(t *testing.T) {
 		t.Fatalf("single envelope prompt missing envelope: %q", got)
 	}
 }
+
+// TestMessageEnvelopePromptWorkspaceAttribute covers the workspace
+// attribute added by 2026-07-03-workspace-focus.md "carry source-thread
+// workspace focus on envelopes": "" (no focus declared) omits the
+// attribute entirely, "~" (home) renders as workspace="home", and any
+// other value is a registered workspace name rendered verbatim.
+func TestMessageEnvelopePromptWorkspaceAttribute(t *testing.T) {
+	base := MessageEnvelope{
+		SourceThreadID: "thread-1",
+		SourceTitle:    "Room",
+		SenderKind:     "user",
+		SenderName:     "User",
+		Text:           "hi",
+	}
+
+	for _, tc := range []struct {
+		name      string
+		workspace string
+		wantAttr  string // "" means the attribute must be absent
+	}{
+		{"no focus declared", "", ""},
+		{"home", "~", `workspace="home"`},
+		{"named workspace", "acme", `workspace="acme"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := base
+			env.Workspace = tc.workspace
+			got := env.Prompt()
+			if tc.wantAttr == "" {
+				if strings.Contains(got, "workspace=") {
+					t.Fatalf("expected no workspace attribute, got %q", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantAttr) {
+				t.Fatalf("Prompt() = %q, want it to contain %q", got, tc.wantAttr)
+			}
+		})
+	}
+}

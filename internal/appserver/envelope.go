@@ -21,18 +21,52 @@ type MessageEnvelope struct {
 	Hop                 int       `json:"hop"`
 	Text                string    `json:"text"`
 	CreatedAt           time.Time `json:"created_at"`
+	// Workspace snapshots the source thread's stored workspace focus at
+	// routing time (2026-07-03-workspace-focus.md "carry source-thread
+	// workspace focus on envelopes"): "" for all registered workspaces, "~"
+	// for the source thread's home directory, otherwise a registered
+	// workspace name. The envelope is self-contained and carries this on
+	// every message rather than only on change, because a resident's inbox
+	// interleaves messages from many source threads with independent focus
+	// state — there is no single "current focus" to diff against.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // Prompt renders the envelope into the user-role message injected into
 // the resident thread. Format is load-bearing: the resident system prompt
-// teaches the agent to read these attributes.
+// teaches the agent to read these attributes. The workspace attribute is
+// omitted entirely when the source thread has no focus declared ("all
+// registered workspaces"); "~" (home) renders as workspace="home".
 func (e MessageEnvelope) Prompt() string {
-	return fmt.Sprintf(
-		"<incoming_message thread=%q thread_id=%q from=%q sender=%q addressed=%q hop=%q>\n%s\n</incoming_message>",
+	attrs := fmt.Sprintf(
+		"thread=%q thread_id=%q from=%q sender=%q addressed=%q hop=%q",
 		e.SourceTitle, e.SourceThreadID, e.SenderKind, e.SenderName,
 		strconv.FormatBool(e.Addressed), strconv.Itoa(e.Hop),
-		strings.TrimSpace(e.Text),
 	)
+	if ws := envelopeWorkspaceAttr(e.Workspace); ws != "" {
+		attrs += fmt.Sprintf(" workspace=%q", ws)
+	}
+	return fmt.Sprintf(
+		"<incoming_message %s>\n%s\n</incoming_message>",
+		attrs, strings.TrimSpace(e.Text),
+	)
+}
+
+// envelopeWorkspaceAttr renders MessageEnvelope.Workspace into the
+// <incoming_message workspace="..."> attribute value. "" (all workspaces)
+// has no attribute at all; focusWorkspaceHome ("~") reads more plainly to
+// the agent as "home"; any other value is a registered workspace name,
+// rendered verbatim.
+func envelopeWorkspaceAttr(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	switch workspace {
+	case "":
+		return ""
+	case focusWorkspaceHome:
+		return "home"
+	default:
+		return workspace
+	}
 }
 
 func coalesceEnvelopes(envs []MessageEnvelope) string {

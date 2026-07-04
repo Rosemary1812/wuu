@@ -13,6 +13,7 @@
 - **缓存纪律**：MEMORY.md 内嵌 system prompt 的缓存失效问题记入 §5 实施留意。
 - **§10 修正**：held draft 推迟理由修正（过期场景存在，推迟是频率未知）；effort 挡位搁置；群级 facilitator 角色 v2 占位。
 - **2026-07-03 增补二**（`2026-07-03-sidebar-groups-andy-workspaces.md`）：§5 提示词新增 "Building teams and groups" 与 "Workspaces and file scope" 两段；§6 矩阵增补群管理工具与文件范围行。默认组队 agent Andy、`create_group`/`add_group_member` 契约、工作区白名单强制的完整设计见该文档。
+- **2026-07-03 增补三**（`2026-07-03-workspace-focus.md` "信封携带焦点"，已实施）：`MessageEnvelope` 加 `Workspace` 字段，快照来源 thread 路由时刻的存储焦点；`Prompt()` 渲染的 `<incoming_message>` 属性列表相应增加可选的 `workspace="..."`（`""` 不带该属性，`"~"` 渲染为 `workspace="home"`）。信封自包含、每条都带，不做差量——收件人是一个跨多来源交错收信的常驻大脑，没有单一"当前焦点"可比对。见 §4.1。同一设计文档还定义了 `drainResidentAgent` 排空信封批次时的 turn cwd 规则：批次内所有信封一致指向同一具体工作区时，本 turn 的工具执行根切到该工作区；否则（无信封声明工作区、多个信封分歧、或唯一值是 `"~"`/home）保持 agent home。这只影响信封驱动 turn 的 cwd，不写回、也不声明该常驻 DM thread 自己的 `focus_workspace`——那是用户直接对话的语义，与信封路由无关。
 
 ---
 
@@ -156,17 +157,29 @@ type MessageEnvelope struct {
     Hop                 int       `json:"hop"`         // 0 = user-originated
     Text                string    `json:"text"`
     CreatedAt           time.Time `json:"created_at"`
+    // Workspace snapshots the source thread's stored workspace focus at
+    // routing time ("" = all workspaces, "~" = source thread's home,
+    // otherwise a registered workspace name). See "2026-07-03 增补三" above.
+    Workspace           string    `json:"workspace,omitempty"`
 }
 
 // Prompt renders the envelope into the user-role message injected into
 // the resident thread. Format is load-bearing: the system prompt (§5)
-// teaches the agent to read these attributes.
+// teaches the agent to read these attributes. The workspace attribute is
+// omitted when Workspace is "" (no focus declared on the source thread);
+// "~" (home) renders as workspace="home"; anything else renders verbatim.
 func (e MessageEnvelope) Prompt() string {
-    return fmt.Sprintf(
-        "<incoming_message thread=%q thread_id=%q from=%q sender=%q addressed=%q hop=%q>\n%s\n</incoming_message>",
+    attrs := fmt.Sprintf(
+        "thread=%q thread_id=%q from=%q sender=%q addressed=%q hop=%q",
         e.SourceTitle, e.SourceThreadID, e.SenderKind, e.SenderName,
         strconv.FormatBool(e.Addressed), strconv.Itoa(e.Hop),
-        strings.TrimSpace(e.Text),
+    )
+    if ws := envelopeWorkspaceAttr(e.Workspace); ws != "" {
+        attrs += fmt.Sprintf(" workspace=%q", ws)
+    }
+    return fmt.Sprintf(
+        "<incoming_message %s>\n%s\n</incoming_message>",
+        attrs, strings.TrimSpace(e.Text),
     )
 }
 ```
