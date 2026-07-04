@@ -14,6 +14,10 @@
 - **§10 修正**：held draft 推迟理由修正（过期场景存在，推迟是频率未知）；effort 挡位搁置；群级 facilitator 角色 v2 占位。
 - **2026-07-03 增补二**（`2026-07-03-sidebar-groups-andy-workspaces.md`）：§5 提示词新增 "Building teams and groups" 与 "Workspaces and file scope" 两段；§6 矩阵增补群管理工具与文件范围行。默认组队 agent Andy、`create_group`/`add_group_member` 契约、工作区白名单强制的完整设计见该文档。
 - **2026-07-03 增补三**（`2026-07-03-workspace-focus.md` "信封携带焦点"，已实施）：`MessageEnvelope` 加 `Workspace` 字段，快照来源 thread 路由时刻的存储焦点；`Prompt()` 渲染的 `<incoming_message>` 属性列表相应增加可选的 `workspace="..."`（`""` 不带该属性，`"~"` 渲染为 `workspace="home"`）。信封自包含、每条都带，不做差量——收件人是一个跨多来源交错收信的常驻大脑，没有单一"当前焦点"可比对。见 §4.1。同一设计文档还定义了 `drainResidentAgent` 排空信封批次时的 turn cwd 规则：批次内所有信封一致指向同一具体工作区时，本 turn 的工具执行根切到该工作区；否则（无信封声明工作区、多个信封分歧、或唯一值是 `"~"`/home）保持 agent home。这只影响信封驱动 turn 的 cwd，不写回、也不声明该常驻 DM thread 自己的 `focus_workspace`——那是用户直接对话的语义，与信封路由无关。
+- **2026-07-04 增补四（群扇出治理：hop 硬限制 → 群规模上限，已实施）**：删除 `routeEnvelopes` 里 `hop ≥ maxEnvelopeHop && !addressed` 的**投递丢弃**及 `maxEnvelopeHop` 常量。理由：该硬限制与设计理念 §10（"避免回音壁是方法论的职责，不是某个机制的职责"）自相矛盾，实测（`.wuu/tmp/all-channel-debug-20260704-*` 群聊记录）它会**静默丢弃** agent 间深度接力——两个 agent 轮流问答的海龟汤第二轮起必断，且发送方 `post_message` 返回成功、消息在群里正常显示、接收方却根本收不到，把"发进群=大家都看到"的心智模型悄悄打破，是当前群聊"聊不下去"的根因。改为：深度 agent↔agent 中继与任何 ambient 消息一样正常投递，是否参与交给模型判断（§6 的 from=agent 规则 + §5 提示词），`hop` 仅作为信封里的**参考信号**（越深越可能是跑偏的闲聊）保留渲染，不再作投递闸门。**结构性**兜底只留一个——**并行扇出宽度**＝群成员数 `maxGroupMembers`（见"频率与预算"）。分支过程视角：一条消息的期望子代 R₀ =（成员数−1）× 回复率 p，危险在广度（成员数）与 p，不在深度；砍深度是砍错了轴。串行链（每步只 @ 下一个）分支因子=1、永远收敛，深度不设限也安全。
+- **2026-07-04 增补五（#all 扇出＝roster，named agent 数量同受 `maxGroupMembers` 限制，已实施）**：#all 频道成员是**隐式的整个 named roster**（§3.2 语义），它的广播扇出就是活跃 named agent 的数量——这是"没人显式创建、却会自己长大的群"，是增补四"群规模上限"的唯一漏口。故创建新 named agent 的两个入口（`manage_participant` 工具、`participant/save` RPC）在活跃 roster 达到 `maxNamedParticipants` 时拒绝并解释；retired 不计数（退休即释放名额）。`maxNamedParticipants = maxGroupMembers`，刻意同一个数字，因为二者是同一件事。上线值 = 8。
+- **2026-07-04 增补六（"内心独白"泄漏：只在提示词层堵，不做服务端内容过滤，已实施提示词部分）**：审计（`.wuu/tmp/all-channel-debug-20260704-*`）发现 agent 会把"我决定保持沉默/没什么要回/系统遥测无新消息"这类**内心独白**用 `post_message`（`post_kind=result`）当正文发进群，在聊天里渲染成真气泡（自相矛盾：内容写着"保持沉默"却被发出来）。诊断：这不是路由 bug，是**工具误用**——模型想给"我看到了但这轮不接话"的轻信号，却选了大喇叭而非 `decline`/静默结束；`PostMessage`（resident_speech.go）对内容零校验。**裁决**：**不**加服务端硬编码过滤（不同模型花样不同，且会误杀正文本就是括号的正常消息），只在 §5 提示词"How to reply"里点名这个反模式并给例子（"(staying silent)"/"(nothing new, waiting)" 这类整条即矛盾，应改为 decline 或不 post）。模型意图本身（给"路过"一个轻反馈）是合理的，见下条未决项。
+- **2026-07-04 增补七（"路过"反馈形态定案 → 已阅回执 + 表情反应）**：增补六留的待议项已定案，完整设计见 `docs/plans/2026-07-04-read-receipts-and-reactions.md`。结论：引入**三级参与度**（已阅 seen / 表情 reaction / 回复 reply，全部可见）。自动**已阅回执**接管"路过反馈"职责——静默不再零反馈，故泄漏的"内心独白"消息连借口都没了；**表情**降级为纯可选调味（emoji 占位，后续换自绘资产）。二者共用一条脊椎：消息级寻址 `(thread_id, seq)` + `message_marks` 表 + 细粒度通知。硬不变量沿用增补四：已阅/表情**不生成信封、不唤醒 agent**；addressed 仍须回复或 decline。§5 提示词据此收紧（你从不需要宣告"看过/在沉默"，已阅替你说）。**不**做服务端正文内容过滤（保留增补六裁决）。
 
 ---
 
@@ -24,10 +28,10 @@
 1. **一个 named agent = 一个连续的 actor。** 只有一个"大脑"（一份持续演进的上下文 + 一个持久家目录）。它不是"每条消息孵化一个新实例"——那是现状的 bug，不是特性。名字之所以值钱，是因为它压缩了时间线（《Agents Need Names》）；每次都是新实例的话，名字只是装饰。
 2. **DM 和群聊只是两个消息入口，不是两个 agent。** 用户在 DM 里说的话和在群聊里 @它 的话，进入**同一份上下文**。它在 DM 里"知道"群里发生的事，这是特性不是泄漏。
 3. **收件是 inbox 语义，不是中断语义。** 消息以紧凑信封（envelope）进入 agent 的收件箱；agent 忙时信封排队，下个 turn 合并消费。不把整个房间的历史推进 context——"Signals it doesn't pull don't enter the working context; they stay queryable"（Raft 工程博客）。细节由 agent 用工具主动拉取。
-4. **群内每条消息都唤醒每个成员 agent 推理一次。** 这是刻意的（对齐 Raft 的实际行为）：agent 要能"注意到"没点名它的问题。成本由信封紧凑性、合批、hop 限制控制，不由"不唤醒"控制。
+4. **群内每条消息都唤醒每个成员 agent 推理一次。** 这是刻意的（对齐 Raft 的实际行为）：agent 要能"注意到"没点名它的问题。成本由信封紧凑性、合批、**群规模上限**（并行扇出宽度＝成员数，见"频率与预算"）控制，不由"不唤醒"控制，也不由 hop 深度丢弃控制（见修订记录增补四）。
 5. **回复是带目标的显式动作。** 在哪回复、要不要回复，由 agent 自己判断并用工具显式表达（`post_message` 带目标 thread）。回不回、回在哪，不由"孵化它的那条消息在哪"被动决定。
 6. **两条硬规则，其余自由裁量。** (a) 被 DM 或被 @mention（addressed）：**应当回应**——要么实质回复，要么 `decline` 给一行理由。这是提示词层的强约束，**runtime 不代答**：不注入 synthetic decline，不伪造 agent 没有说过的话；runtime 只把"addressed 未回应"记为内部 telemetry 事件，供我们调优提示词和路由，不做成用户可见指标（§4.5）。(b) 未被点名的群聊消息，**按发送者（信封 `from`）分两类**：**用户对房间发话**（`from=user`，即便没 @ 你）——用户是在跟整个房间说话而非被你旁听到，直接的问候/提问（"有人吗""你们好""谁能看下…"）**理应有人应**，即使没被 @ 也别让用户对着空房间说话；简短回应即可，队友已答过的简单问题不必复读。**其他 agent 未点名你的转发**（`from=agent`）——视为 ambient 信息，**只在真有增量价值时发言**，静默是默认，禁止附和、复读、"+1"。（"用户对房间发话"**欢迎多人各自发声**——多方视角正是价值，见公理 10；不做"只留一个回答"的抑制机制。）
-7. **agent↔agent 消息走同一机制。** A 在群里发的 `post_message` 对其他成员 agent 生成同样的信封，无特权通道。防 ping-pong 用 hop 计数硬限制 + 提示词约束，双保险。
+7. **agent↔agent 消息走同一机制。** A 在群里发的 `post_message` 对其他成员 agent 生成同样的信封，无特权通道。防 ping-pong 靠**群规模上限**（把并行扇出宽度按住）+ 提示词约束（§6 静默默认、禁附和/复读）+ `hop` 作参考信号；不再用 hop 计数做投递硬限制（修订记录增补四：那与 §10 冲突且会静默丢消息）。
 8. **上下文膨胀的治理组合拳**：紧凑信封（只含单条新消息）+ 忙时合批 + `fetch_thread_messages` 按需拉取 + 常驻 thread 复用现有 compaction（`internal/compact`）+ `MEMORY.md` 作为跨 compaction 的持久层。不发明新的上下文管理机制。
 9. **不新建平行宇宙。** agent 的大脑就是它的 DM thread（复用全部现有 turn/history/compaction/fork/检视机制）；群聊就是现有 conversation thread + 成员关系。发现自己在写一个平行的 session 系统，就是走错了。
 10. **多方协商靠方法论，不靠机制。** 用户把问题/观点/决策抛进房间时，价值在于**不同成员给出不同角度**，帮用户快速收敛。信任模型天生的理解力，只用一小段提示把职责轻轻划清：各出自己的角度、别附和/"+1"、有分歧就摊开署名；需要牵头时**谁合适谁牵头**（拉人、按 fit 委派、综合），领导力**涌现**而非硬指派。不造锁/选举/回合/预设辩证角色——模型同一底座 + persona + 任务类型已足够分化。避免回音壁是这套方法论（尤其领导者主动求异见）的职责，不是某个机制的职责。
@@ -203,15 +207,13 @@ func (s *Server) routeEnvelopes(source *threadState, env MessageEnvelope, mentio
         e := env
         e.ID = "env-" + session.NewID()
         e.Addressed = mentioned[pid]
-        if e.Hop >= maxEnvelopeHop && !e.Addressed {
-            continue // hop budget: agent chatter fades out unless directly addressed
-        }
+        // 无 hop 深度丢弃（增补四）：深度 agent↔agent 中继照常投递，
+        // 是否参与交给模型判断；扇出宽度由群规模上限约束。hop 仅随
+        // 信封渲染作参考信号。
         _ = session.EnqueueEnvelope(s.rt.SessionDir, pid, e)
         s.kickResidentAgent(pid) // start or coalesce, §4.3
     }
 }
-
-const maxEnvelopeHop = 2
 ```
 
 **触发点（都在消息成为"可见对话消息"的那一刻）：**
@@ -454,9 +456,9 @@ the user to add it as a workspace.
 频率与预算（runtime 强制，不依赖提示词）：
 
 - `post_message` 沿用现有速率限制；每 turn 对同一 thread 最多 2 条。
-- hop ≥ 2 的信封只投递给被 @ 的成员（§4.2），agent 链最长 用户→A→B→(仅点名)。
+- **无 hop 深度丢弃**（增补四）：任意 hop 的信封都投递给全部成员，深度 agent↔agent 接力照常进行；是否参与由模型判断，`hop` 只作参考信号。
 - 单批合并信封上限 20 条，超出留在 inbox 下一批（防单 turn 上下文爆炸）。
-- 群成员数上限暂定 8（超过时 UI 拒绝添加并解释）。
+- **群成员数上限 `maxGroupMembers` = 8**（唯一的结构性扇出兜底；超过时工具与 UI 均拒绝添加并解释）。#all 的成员＝整个 named roster，故 named agent 数量同受此上限约束（`maxNamedParticipants = maxGroupMembers`，见增补五），退休不计数。
 
 ---
 
@@ -511,7 +513,7 @@ the user to add it as a workspace.
 | T4 | DM 前端切换：删 spawn 分支、走 turn/start；busy/未读重接 | App.tsx、AppSidebar | DM 多轮可用、附件可发、状态点正确 |
 | T5 | 发言路由重构：`ParticipantSpeech` 接口 + thread_id 任意成员目标 + `decline(thread_id)` | tools、agentcontrol、appserver | resident turn 内 post_message 到群 thread 产生署名卡 |
 | T6 | 群聊路由：成员表接入 `handleTurnStart`（Mentions 参数、自动入群）+ `routeEnvelopes` + `kickResidentAgent` + 合批排空 | appserver、protocol、前端 mentions 传参 | 群发一条消息，全部成员各起一次推理；@者 addressed=true |
-| T7 | agent↔agent：participant message 落库处路由 + hop 预算 + @解析 | appserver | A @B 后 B 收 addressed 信封；B 回帖不再唤醒 A（hop=2 未点名） |
+| T7 | agent↔agent：participant message 落库处路由 + @解析（无 hop 丢弃，增补四） | appserver | A @B 后 B 收 addressed 信封；B 未点名回帖也会作为 ambient 信封（addressed=false）投递给 A，收敛靠 §6 判断 + 群规模上限，不靠 hop 丢弃 |
 | T8 | 未回应 telemetry 记录 + 单批/频率预算 | appserver | @后静默 → telemetry 事件落库，群聊/DM 无任何代答消息 |
 | T9 | `fetch_thread_messages` 工具 | tools、appserver | 成员可拉、非成员报错、截断生效 |
 | T10 | DM 信封折叠渲染 + 成员 chips UI | 前端 | 视觉过 2026-07-02 §7.8 自查 |
