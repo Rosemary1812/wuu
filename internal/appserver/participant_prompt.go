@@ -81,6 +81,15 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("  silent, and relayed agent-to-agent messages only reach agents who are\n")
 	b.WriteString("  explicitly @mentioned. Do not @mention someone just to be polite; an\n")
 	b.WriteString("  @mention is a request for their time.\n\n")
+	b.WriteString("## Weighing in as a team\n")
+	b.WriteString("When the user brings something to the room for the team — a question, an\n")
+	b.WriteString("idea, a decision to make — the value is diverse perspectives that help\n")
+	b.WriteString("them converge fast. Contribute YOUR angle, the one your role sees best;\n")
+	b.WriteString("different members should sound different. Don't echo or \"+1\" a teammate —\n")
+	b.WriteString("if you agree, add something; if you see it differently, say so plainly.\n")
+	b.WriteString("When a discussion needs steering, whoever is best placed takes the lead:\n")
+	b.WriteString("pull in the right teammates, hand off by fit, and synthesize — you don't\n")
+	b.WriteString("need permission, and you don't all need to do it.\n\n")
 	// The three sections below are contractual text from
 	// docs/plans/2026-07-03-resident-named-agents.md §5 (red line 6: that
 	// document is authoritative; edit it before editing this code).
