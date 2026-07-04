@@ -17,6 +17,7 @@ import {
   chatMessagesFromTurns,
   composerDraftHasContent,
   conversationPaneThreadsByID,
+  conversationSearchContextLabel,
   groupThreadSummaries,
   pinnedThreadSummaries,
   createThreadSessionTab,
@@ -2685,5 +2686,53 @@ describe("applyLoadedRuntimeWithDraftCarry (R2: draft follows a pill switch)", (
       (tab) => tab.id === next.activeSessionTabID,
     );
     expect(draftOf(resultNewTab!)).toBe("");
+  });
+});
+
+describe("conversationSearchContextLabel (R4: no raw scratch paths in the UI)", () => {
+  // A no-project (scratch) thread's cwd is an internal
+  // ~/.wuu/scratch/<date> directory (allocateNoProjectCwd in
+  // src/main/projects.ts) — not something a user ever named or should see
+  // spelled out in the conversation search results.
+  const scratchThread: Thread = {
+    ...threadWithUserTexts(["scratch prompt"]),
+    id: "scratch-thread",
+    cwd: "/Users/test/.wuu/scratch/2026-07-03",
+  };
+
+  it("shows the project name for a thread that belongs to a registered project", () => {
+    const project: DesktopProject = {
+      id: "proj-1",
+      name: "MyApp",
+      path: "/repo/myapp",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      id: "project-thread",
+      cwd: project.path,
+    };
+    expect(conversationSearchContextLabel(thread, [project])).toBe("MyApp");
+  });
+
+  it("labels a no-project (scratch) thread 无项目 instead of its raw scratch directory name", () => {
+    const label = conversationSearchContextLabel(scratchThread, []);
+    expect(label).toBe("无项目");
+    expect(label).not.toContain("2026-07-03");
+    expect(label).not.toContain("scratch");
+  });
+
+  it("still says 无项目 when other registered projects exist but none match this thread's cwd", () => {
+    const otherProject: DesktopProject = {
+      id: "proj-2",
+      name: "OtherApp",
+      path: "/repo/other",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    expect(
+      conversationSearchContextLabel(scratchThread, [otherProject]),
+    ).toBe("无项目");
   });
 });

@@ -1404,13 +1404,20 @@ function formatHourMinute(date: Date): string {
   });
 }
 
+// R4: threads that don't belong to any registered project are almost
+// always no-project scratch conversations, whose cwd is an internal
+// ~/.wuu/scratch/<date> directory (see allocateNoProjectCwd in
+// src/main/projects.ts). Falling back to that directory's basename used to
+// surface the raw date-stamped folder name in the search result's context
+// label — a wuu implementation detail nobody asked to see. "无项目" reads
+// the same way the sidebar's scratch group already does.
 function conversationSearchContextLabel(
   thread: Thread,
   projects: DesktopProject[],
 ): string {
   const projectPath = threadProjectPath(thread);
   const project = projects.find((candidate) => candidate.path === projectPath);
-  return project?.name ?? fileNameFromPath(projectPath) ?? "wuu";
+  return project?.name ?? "无项目";
 }
 
 function pinnedThreads(threads: Thread[]): Thread[] {
