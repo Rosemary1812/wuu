@@ -6,6 +6,7 @@ import {
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveWuuCommand } from "./wuuCommand";
 import type {
   AppServerNotification,
   AppServerRequest,
@@ -33,12 +34,6 @@ type AppServerClientEvent =
 type ServerRequestRoute = {
   client: AppServerClient;
   serverID: string;
-};
-
-type WuuCommand = {
-  command: string;
-  args: string[];
-  cwd: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -261,7 +256,11 @@ class AppServerClient {
     if (this.child && !this.child.killed) {
       return;
     }
-    const command = resolveWuuCommand(this.workdir);
+    const command = resolveWuuCommand(
+      process.env,
+      this.workdir,
+      wuuSourceRoot(),
+    );
     const appServerArgs = [
       ...command.args,
       "app-server",
@@ -441,22 +440,6 @@ class AppServerClient {
       this.runningThreadIDs.delete(value.id);
     }
   }
-}
-
-function resolveWuuCommand(workdir: string): WuuCommand {
-  if (process.env.WUU_BIN) {
-    return { command: process.env.WUU_BIN, args: [], cwd: workdir };
-  }
-  const sourceRoot = wuuSourceRoot();
-  if (sourceRoot && process.env.WUU_DESKTOP_USE_GO_RUN === "1") {
-    return { command: "go", args: ["run", "./cmd/wuu"], cwd: sourceRoot };
-  }
-  for (const candidate of [join(workdir, "bin", "wuu"), join(workdir, "wuu")]) {
-    if (existsSync(candidate)) {
-      return { command: candidate, args: [], cwd: workdir };
-    }
-  }
-  return { command: "wuu", args: [], cwd: workdir };
 }
 
 function wuuSourceRoot(): string | undefined {
