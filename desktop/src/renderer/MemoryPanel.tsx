@@ -244,7 +244,7 @@ export function MemoryPanel({
                 role: "assistant" as const,
                 text: "",
                 error: isMemoryBackendMissing(error)
-                  ? `${BACKEND_NOT_READY_TEXT}，这条消息没有生效。`
+                  ? `${BACKEND_NOT_READY_TEXT}，这条消息未生效。`
                   : errorMessage(error),
               }
             : entry,
@@ -324,7 +324,7 @@ export function MemoryPanel({
         {!notebookReady ? (
           <div className="settings-card">
             <div className="settings-empty">
-              还没有在职的同事。先在侧边栏创建一位 named agent。
+              还没有同事，先在侧边栏创建一位。
             </div>
           </div>
         ) : (
@@ -344,7 +344,7 @@ export function MemoryPanel({
               <div className="settings-memory-chat-log">
                 {chatEntries.length === 0 ? (
                   <div className="settings-memory-chat-hint">
-                    直接说想记住或忘掉什么，管理 agent 会替你改这本笔记本。
+                    想记住或忘掉什么，直接说。
                   </div>
                 ) : (
                   chatEntries.map((entry) => (
@@ -415,11 +415,7 @@ function MemoryOverviewView({
   }
   const { result } = overview;
   if (!result.essay_md.trim()) {
-    return (
-      <div className="settings-empty">
-        这本笔记本还是空的——先在会话里聊出点值得记的东西。
-      </div>
-    );
+    return <div className="settings-empty">这本笔记本还是空的。</div>;
   }
   return (
     <div className="settings-memory-overview">
@@ -513,7 +509,7 @@ function MemoryChatEntryView({ entry }: { entry: ChatEntry }): JSX.Element {
           <RichContent text={entry.text} />
           {entry.changedFiles && entry.changedFiles.length > 0 ? (
             <details className="settings-memory-changes">
-              <summary>已更新 {entry.changedFiles.length} 个记忆文件</summary>
+              <summary>变更了 {entry.changedFiles.length} 个记忆文件</summary>
               <ul>
                 {entry.changedFiles.map((file) => (
                   <li key={file.path}>
@@ -560,7 +556,7 @@ function MemoryBackendMissingNotice(): JSX.Element {
       className="settings-empty settings-memory-unavailable"
       data-testid="memory-backend-missing"
     >
-      {BACKEND_NOT_READY_TEXT}——当前内核还没有记忆面板服务，升级后这里会亮起来。
+      {BACKEND_NOT_READY_TEXT}，升级内核后可用。
     </div>
   );
 }

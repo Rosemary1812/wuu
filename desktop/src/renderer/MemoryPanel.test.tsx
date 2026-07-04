@@ -232,7 +232,7 @@ describe("MemoryPanel 同事 tab", () => {
       await Promise.resolve();
     });
 
-    expect(rootText()).toContain("还没有在职的同事");
+    expect(rootText()).toContain("还没有同事");
     // The initial user-scope fetch is the only call — no participant fetch
     // without a participant to target.
     expect(stub.getMemoryOverview).toHaveBeenCalledTimes(1);
@@ -281,7 +281,7 @@ describe("MemoryPanel chat", () => {
 
     expect(rootText()).not.toContain("整理中");
     expect(rootText()).toContain("已删除关于旧项目路径的那条记忆。");
-    expect(rootText()).toContain("已更新 2 个记忆文件");
+    expect(rootText()).toContain("变更了 2 个记忆文件");
     expect(rootText()).toContain("memory/old-project-path.md");
     // 契约：chat 返回后自动重新拉取 overview（初始 1 次 + 刷新 1 次）。
     expect(stub.getMemoryOverview).toHaveBeenCalledTimes(2);

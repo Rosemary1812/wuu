@@ -127,6 +127,7 @@ function mount(props: {
   participant?: ParticipantProfile;
   mode: "new" | "edit";
   providers?: ProviderSummary[];
+  archived?: boolean;
   onSave?: (params: Parameters<typeof ParticipantProfilePanel>[0]["onSave"] extends (p: infer P) => void ? P : never) => void;
   onRetire?: (id: string) => void;
 }): void {
@@ -139,6 +140,7 @@ function mount(props: {
         mode={props.mode}
         participant={props.participant}
         providers={props.providers}
+        archived={props.archived}
         onClose={() => {}}
         onSave={props.onSave ?? (() => {})}
         onFeedback={() => {}}
@@ -458,12 +460,20 @@ describe("ParticipantProfilePanel — identity and model", () => {
   });
 });
 
-describe("ParticipantProfilePanel — retire two-step", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
+describe("ParticipantProfilePanel — archive confirm dialog", () => {
+  function archiveButton(): HTMLButtonElement | undefined {
+    return Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "归档此同事",
+    );
+  }
 
-  it("does not fire onRetire on first click; switches copy to a danger '确认退役' label", () => {
+  function dialogButton(label: string): HTMLButtonElement | undefined {
+    return Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === label,
+    );
+  }
+
+  it("opens the confirm dialog without firing onRetire", () => {
     const onRetire = vi.fn();
     mount({
       mode: "edit",
@@ -472,22 +482,21 @@ describe("ParticipantProfilePanel — retire two-step", () => {
       onRetire,
     });
 
-    const retireButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "退役",
-    );
-    expect(retireButton).toBeDefined();
+    const trigger = archiveButton();
+    expect(trigger).toBeDefined();
     act(() => {
-      retireButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(onRetire).not.toHaveBeenCalled();
-    const confirm = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "确认退役",
+    expect(container.textContent).toContain(
+      "Ta 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。",
     );
-    expect(confirm).toBeDefined();
+    expect(dialogButton("归档")).toBeDefined();
+    expect(dialogButton("再想想")).toBeDefined();
   });
 
-  it("fires onRetire with the participant id on the second click", () => {
+  it("fires onRetire with the participant id on 归档 and closes the dialog", () => {
     const onRetire = vi.fn();
     mount({
       mode: "edit",
@@ -496,25 +505,23 @@ describe("ParticipantProfilePanel — retire two-step", () => {
       onRetire,
     });
 
-    const retireButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "退役",
-    )!;
     act(() => {
-      retireButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      archiveButton()!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
-
-    const confirm = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "确认退役",
-    )!;
     act(() => {
-      confirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      dialogButton("归档")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
 
     expect(onRetire).toHaveBeenCalledTimes(1);
     expect(onRetire).toHaveBeenCalledWith("agent-42");
+    expect(dialogButton("再想想")).toBeUndefined();
   });
 
-  it("reverts the confirm label to 退役 after the 5s timeout", () => {
+  it("closes the dialog without firing onRetire on 再想想", () => {
     const onRetire = vi.fn();
     mount({
       mode: "edit",
@@ -523,34 +530,31 @@ describe("ParticipantProfilePanel — retire two-step", () => {
       onRetire,
     });
 
-    const retireButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "退役",
-    )!;
     act(() => {
-      retireButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      archiveButton()!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    act(() => {
+      dialogButton("再想想")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
 
-    expect(
-      Array.from(container.querySelectorAll("button")).some(
-        (button) => button.textContent?.trim() === "确认退役",
-      ),
-    ).toBe(true);
-
-    act(() => {
-      vi.advanceTimersByTime(5_000);
-    });
-
-    expect(
-      Array.from(container.querySelectorAll("button")).some(
-        (button) => button.textContent?.trim() === "退役",
-      ),
-    ).toBe(true);
-    expect(
-      Array.from(container.querySelectorAll("button")).some(
-        (button) => button.textContent?.trim() === "确认退役",
-      ),
-    ).toBe(false);
     expect(onRetire).not.toHaveBeenCalled();
+    expect(dialogButton("归档")).toBeUndefined();
+  });
+
+  it("shows the 已归档 receipt when archived is set", () => {
+    mount({
+      mode: "edit",
+      participant: participantFixture(),
+      providers: providersFixture(),
+      archived: true,
+    });
+
+    expect(container.textContent).toContain("已归档");
+    expect(archiveButton()).toBeUndefined();
   });
 });
 

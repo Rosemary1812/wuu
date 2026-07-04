@@ -1,4 +1,5 @@
 import {
+  Archive,
   Camera,
   ImagePlus,
   Loader2,
@@ -14,6 +15,7 @@ import type {
   ParticipantSaveParams,
   ProviderSummary,
 } from "../shared/protocol";
+import { Modal } from "./Modal";
 
 export type ParticipantResetScope = "restart" | "session" | "full";
 
@@ -30,7 +32,6 @@ export const PARTICIPANT_ROLES = [
 ];
 
 const AVATAR_MAX_BYTES = 512 * 1024;
-const RETIRE_CONFIRM_TIMEOUT_MS = 5_000;
 
 type ParticipantProfileForm = {
   name: string;
@@ -99,6 +100,7 @@ export function ParticipantProfilePanel({
   feedbackSubmitting,
   resettingScope,
   retiring,
+  archived,
   onClose,
   onSave,
   onFeedback,
@@ -114,6 +116,9 @@ export function ParticipantProfilePanel({
   feedbackSubmitting?: boolean;
   resettingScope?: ParticipantResetScope;
   retiring?: boolean;
+  // archived flips on after a successful archive; the panel shows the
+  // "已归档" receipt while the parent schedules the close.
+  archived?: boolean;
   onClose: () => void;
   onSave: (params: ParticipantSaveParams) => void;
   onFeedback: (text: string) => void;
@@ -125,9 +130,8 @@ export function ParticipantProfilePanel({
   );
   const [feedback, setFeedback] = useState("");
   const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
-  const [retireArmed, setRetireArmed] = useState(false);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const retireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Monotonic token used to ignore stale FileReader results when the user
   // rapidly picks multiple files.
   const avatarReadTokenRef = useRef(0);
@@ -136,21 +140,8 @@ export function ParticipantProfilePanel({
     setForm(formFromParticipant(participant));
     setFeedback("");
     setAvatarError(undefined);
-    setRetireArmed(false);
-    if (retireTimerRef.current) {
-      clearTimeout(retireTimerRef.current);
-      retireTimerRef.current = null;
-    }
+    setArchiveConfirmOpen(false);
   }, [participant?.id, mode]);
-
-  useEffect(
-    () => () => {
-      if (retireTimerRef.current) {
-        clearTimeout(retireTimerRef.current);
-      }
-    },
-    [],
-  );
 
   const providerOptions = useMemo(
     () =>
@@ -293,26 +284,11 @@ export function ParticipantProfilePanel({
     setFeedback("");
   }
 
-  function armRetire(): void {
-    if (retireTimerRef.current) {
-      clearTimeout(retireTimerRef.current);
-    }
-    setRetireArmed(true);
-    retireTimerRef.current = setTimeout(() => {
-      setRetireArmed(false);
-      retireTimerRef.current = null;
-    }, RETIRE_CONFIRM_TIMEOUT_MS);
-  }
-
-  function confirmRetire(): void {
+  function confirmArchive(): void {
     if (!participant?.id) {
       return;
     }
-    if (retireTimerRef.current) {
-      clearTimeout(retireTimerRef.current);
-      retireTimerRef.current = null;
-    }
-    setRetireArmed(false);
+    setArchiveConfirmOpen(false);
     onRetire(participant.id);
   }
 
@@ -334,7 +310,15 @@ export function ParticipantProfilePanel({
         </button>
       </header>
       <div className="participant-profile-body">
-        {loading ? (
+        {archived ? (
+          <div
+            className="participant-profile-state participant-profile-archived"
+            role="status"
+          >
+            <Archive aria-hidden="true" />
+            <span>已归档</span>
+          </div>
+        ) : loading ? (
           <div className="participant-profile-state" role="status">
             <Loader2 className="participant-profile-spinner" aria-hidden="true" />
             <span>加载中</span>
@@ -420,7 +404,7 @@ export function ParticipantProfilePanel({
                 />
               </label>
               <label className="participant-profile-field">
-                <span>一句话</span>
+                <span>一句话介绍</span>
                 <input
                   data-field="tagline"
                   value={form.tagline}
@@ -488,7 +472,7 @@ export function ParticipantProfilePanel({
               className="participant-profile-section"
               aria-labelledby="participant-profile-memory"
             >
-              <h3 id="participant-profile-memory">Memory</h3>
+              <h3 id="participant-profile-memory">记忆</h3>
               <textarea
                 className="participant-profile-memory"
                 data-field="memory"
@@ -505,7 +489,7 @@ export function ParticipantProfilePanel({
                 className="participant-profile-section"
                 aria-labelledby="participant-profile-track"
               >
-                <h3 id="participant-profile-track">Track record</h3>
+                <h3 id="participant-profile-track">任务履历</h3>
                 {trackRecord.length === 0 ? (
                   <p className="participant-profile-empty">暂无记录</p>
                 ) : (
@@ -534,7 +518,7 @@ export function ParticipantProfilePanel({
                 className="participant-profile-section"
                 aria-labelledby="participant-profile-feedback"
               >
-                <h3 id="participant-profile-feedback">Feedback</h3>
+                <h3 id="participant-profile-feedback">反馈</h3>
                 <textarea
                   className="participant-profile-feedback"
                   value={feedback}
@@ -590,21 +574,19 @@ export function ParticipantProfilePanel({
                   )}
                   <button
                     type="button"
-                    className={
-                      retireArmed
-                        ? "participant-profile-text-action danger"
-                        : "participant-profile-text-action"
-                    }
+                    className="participant-profile-text-action"
                     disabled={retiring}
-                    onClick={retireArmed ? confirmRetire : armRetire}
+                    onClick={() => setArchiveConfirmOpen(true)}
                   >
                     {retiring ? (
                       <Loader2
                         className="participant-profile-spinner"
                         aria-hidden="true"
                       />
-                    ) : null}
-                    <span>{retireArmed ? "确认退役" : "退役"}</span>
+                    ) : (
+                      <Archive aria-hidden="true" />
+                    )}
+                    <span>归档此同事</span>
                   </button>
                 </div>
               </section>
@@ -612,24 +594,54 @@ export function ParticipantProfilePanel({
           </>
         )}
       </div>
-      <footer className="participant-profile-footer">
-        <button
-          type="button"
-          className="participant-profile-action primary"
-          disabled={!canSave}
-          onClick={submitSave}
-        >
-          {saving ? (
-            <Loader2
-              className="participant-profile-spinner"
-              aria-hidden="true"
-            />
-          ) : (
-            <Save aria-hidden="true" />
-          )}
-          <span>保存</span>
-        </button>
-      </footer>
+      {archiveConfirmOpen ? (
+        <Modal
+          ariaLabel="归档此同事"
+          icon={<Archive className="icon-lg" />}
+          title="归档此同事"
+          subtitle="Ta 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。"
+          onClose={() => setArchiveConfirmOpen(false)}
+          panelClassName="participant-archive-dialog"
+          footer={
+            <>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setArchiveConfirmOpen(false)}
+              >
+                再想想
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={confirmArchive}
+              >
+                归档
+              </button>
+            </>
+          }
+        />
+      ) : null}
+      {archived ? null : (
+        <footer className="participant-profile-footer">
+          <button
+            type="button"
+            className="participant-profile-action primary"
+            disabled={!canSave}
+            onClick={submitSave}
+          >
+            {saving ? (
+              <Loader2
+                className="participant-profile-spinner"
+                aria-hidden="true"
+              />
+            ) : (
+              <Save aria-hidden="true" />
+            )}
+            <span>保存</span>
+          </button>
+        </footer>
+      )}
     </aside>
   );
 }

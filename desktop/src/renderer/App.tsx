@@ -489,7 +489,13 @@ type ParticipantPanelState = {
   feedbackSubmitting?: boolean;
   resettingScope?: ParticipantResetScope;
   retiring?: boolean;
+  // archived marks a successful archive; the panel shows the "已归档"
+  // receipt until the scheduled close below clears it.
+  archived?: boolean;
 };
+
+// How long the "已归档" receipt stays visible before the panel closes.
+const PARTICIPANT_ARCHIVED_NOTICE_MS = 1_500;
 
 type ParticipantTeamTemplate = {
   version: 1;
@@ -3475,15 +3481,23 @@ export function App(): JSX.Element {
         setParticipants((current) =>
           current.filter((entry) => entry.id !== participantID),
         );
-        setParticipantPanel(undefined);
+        // Keep the panel open briefly with the "已归档" receipt, then close.
+        setParticipantPanel((current) =>
+          current ? { ...current, retiring: false, archived: true } : current,
+        );
         void refreshParticipants();
+        window.setTimeout(() => {
+          setParticipantPanel((current) =>
+            current?.archived ? undefined : current,
+          );
+        }, PARTICIPANT_ARCHIVED_NOTICE_MS);
       } catch (error) {
         setParticipantPanel((current) =>
           current
             ? {
                 ...current,
                 retiring: false,
-                error: desktopApiErrorMessage(error, "无法退役 Agent"),
+                error: desktopApiErrorMessage(error, "无法归档 Agent"),
               }
             : current,
         );
@@ -7798,6 +7812,7 @@ export function App(): JSX.Element {
             feedbackSubmitting={participantPanel.feedbackSubmitting}
             resettingScope={participantPanel.resettingScope}
             retiring={participantPanel.retiring}
+            archived={participantPanel.archived}
             onClose={() => setParticipantPanel(undefined)}
             onSave={handleParticipantSave}
             onFeedback={handleParticipantFeedback}
