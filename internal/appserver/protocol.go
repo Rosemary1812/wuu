@@ -88,15 +88,16 @@ const (
 	// the time window ("all", "7d", "30d", "90d"); empty defaults to "all".
 	MethodSettingsUsage = "settings/usage"
 
-	NotificationThreadStarted = "thread/started"
-	NotificationThreadResumed = "thread/resumed"
-	NotificationThreadUpdated = "thread/updated"
-	NotificationTurnStarted   = "turn/started"
-	NotificationTurnQueued    = "turn/queued"
-	NotificationTurnDequeued  = "turn/dequeued"
-	NotificationTurnEvent     = "turn/event"
-	NotificationTurnError     = "turn/error"
-	NotificationTurnCompleted = "turn/completed"
+	NotificationThreadStarted      = "thread/started"
+	NotificationThreadResumed      = "thread/resumed"
+	NotificationThreadUpdated      = "thread/updated"
+	NotificationParticipantUpdated = "participant/updated"
+	NotificationTurnStarted        = "turn/started"
+	NotificationTurnQueued         = "turn/queued"
+	NotificationTurnDequeued       = "turn/dequeued"
+	NotificationTurnEvent          = "turn/event"
+	NotificationTurnError          = "turn/error"
+	NotificationTurnCompleted      = "turn/completed"
 	// NotificationTurnUsage carries cumulative input/output token counts
 	// for an in-flight turn so live UIs can render a real-time generation
 	// speed gauge. Appserver-side throttles to a small number of pushes
@@ -894,6 +895,11 @@ type ParticipantRetireParams struct {
 
 type ParticipantRetireResult struct {
 	Participant ParticipantProfile `json:"participant"`
+}
+
+type ParticipantUpdatedNotification struct {
+	ParticipantID string              `json:"participant_id,omitempty"`
+	Participant   *ParticipantProfile `json:"participant,omitempty"`
 }
 
 type ContextCompositionCategory struct {

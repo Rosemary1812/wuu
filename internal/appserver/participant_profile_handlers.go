@@ -68,6 +68,13 @@ func (s *Server) handleParticipantList(req Request) error {
 	return s.writeResponse(req.ID, ParticipantListResult{Participants: profiles}, nil)
 }
 
+func (s *Server) notifyParticipantUpdated(profile ParticipantProfile) error {
+	return s.writeNotification(NotificationParticipantUpdated, ParticipantUpdatedNotification{
+		ParticipantID: profile.ID,
+		Participant:   &profile,
+	})
+}
+
 func (s *Server) handleParticipantSave(req Request) error {
 	var params ParticipantSaveParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -147,7 +154,10 @@ func (s *Server) handleParticipantSave(req Request) error {
 	if isNew {
 		result.ArchivedPredecessorID = s.archivedPredecessorID(p.Name, p.ID)
 	}
-	return s.writeResponse(req.ID, result, nil)
+	if err := s.writeResponse(req.ID, result, nil); err != nil {
+		return err
+	}
+	return s.notifyParticipantUpdated(profile)
 }
 
 // archivedPredecessorID implements the same-name rebuild guard: when a NEW
@@ -215,7 +225,10 @@ func (s *Server) handleParticipantFeedback(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, ParticipantFeedbackResult{Participant: profile}, nil)
+	if err := s.writeResponse(req.ID, ParticipantFeedbackResult{Participant: profile}, nil); err != nil {
+		return err
+	}
+	return s.notifyParticipantUpdated(profile)
 }
 
 func (s *Server) handleParticipantReset(req Request) error {
@@ -263,7 +276,10 @@ func (s *Server) handleParticipantReset(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, ParticipantResetResult{Participant: profile}, nil)
+	if err := s.writeResponse(req.ID, ParticipantResetResult{Participant: profile}, nil); err != nil {
+		return err
+	}
+	return s.notifyParticipantUpdated(profile)
 }
 
 func (s *Server) handleParticipantRetire(req Request) error {
@@ -302,7 +318,10 @@ func (s *Server) handleParticipantRetire(req Request) error {
 	// useful to the caller and the participant is no longer in the
 	// active roster. The DB row remains for audit/history.
 	profile.AvatarImage = ""
-	return s.writeResponse(req.ID, ParticipantRetireResult{Participant: profile}, nil)
+	if err := s.writeResponse(req.ID, ParticipantRetireResult{Participant: profile}, nil); err != nil {
+		return err
+	}
+	return s.notifyParticipantUpdated(profile)
 }
 
 func (s *Server) participantProfile(p participant.Participant) (ParticipantProfile, error) {

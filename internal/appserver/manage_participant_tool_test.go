@@ -33,12 +33,14 @@ func executeManageParticipant(t *testing.T, srv *Server, agentID, args string) (
 	}
 	kit.SetSessionDir(rt.SessionDir)
 	c, err := agentcontrol.New(agentcontrol.Config{
-		Client:        providers.AdaptStreamClient(&fakeClient{}),
-		DefaultModel:  "fake-model",
-		ParentRepo:    rt.RootDir,
-		WorktreeRoot:  filepath.Join(rt.RootDir, ".wuu", "worktrees"),
-		SessionID:     "sess-" + agentID,
-		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return nil, nil },
+		Client:       providers.AdaptStreamClient(&fakeClient{}),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-" + agentID,
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return nil, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("agentcontrol.New: %v", err)
@@ -78,6 +80,11 @@ func TestManageParticipantToolSaveCreatesNamedParticipant(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("Mira not found in active named participants: %+v", all)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	updated := remarshal[ParticipantUpdatedNotification](t, notificationByMethod(t, msgs, NotificationParticipantUpdated)["params"])
+	if updated.ParticipantID != found.ID || updated.Participant == nil || updated.Participant.Name != "Mira" {
+		t.Fatalf("participant/updated should carry Mira, got %+v", updated)
 	}
 	if found.Role != "reviewer" {
 		t.Errorf("role = %q, want reviewer", found.Role)
@@ -253,12 +260,14 @@ func TestManageParticipantToolRetireSelfRejected(t *testing.T) {
 	}
 	kit.SetSessionDir(rt.SessionDir)
 	c, err := agentcontrol.New(agentcontrol.Config{
-		Client:        providers.AdaptStreamClient(&fakeClient{}),
-		DefaultModel:  "fake-model",
-		ParentRepo:    rt.RootDir,
-		WorktreeRoot:  filepath.Join(rt.RootDir, ".wuu", "worktrees"),
-		SessionID:     "sess-self",
-		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return nil, nil },
+		Client:       providers.AdaptStreamClient(&fakeClient{}),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-self",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return nil, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("agentcontrol.New: %v", err)
@@ -331,12 +340,14 @@ func TestManageParticipantSetAgentParticipantIDRoundTrip(t *testing.T) {
 	srv := New(rt, &lockedBuffer{})
 
 	c, err := agentcontrol.New(agentcontrol.Config{
-		Client:        providers.AdaptStreamClient(&fakeClient{}),
-		DefaultModel:  "fake-model",
-		ParentRepo:    rt.RootDir,
-		WorktreeRoot:  filepath.Join(rt.RootDir, ".wuu", "worktrees"),
-		SessionID:     "sess-bind",
-		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return nil, nil },
+		Client:       providers.AdaptStreamClient(&fakeClient{}),
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    "sess-bind",
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return nil, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("agentcontrol.New: %v", err)

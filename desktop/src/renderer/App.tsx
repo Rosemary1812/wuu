@@ -1380,6 +1380,17 @@ export function App(): JSX.Element {
       if (!mounted) {
         return;
       }
+      if (
+        event.kind === "notification" &&
+        event.message.method === "participant/updated"
+      ) {
+        void refreshParticipants().catch((error) => {
+          setState((current) => ({
+            ...current,
+            status: desktopApiErrorMessage(error, "无法刷新 Agents"),
+          }));
+        });
+      }
       // Workspace-scoped events (project sessions/files/terminals) stay bound
       // to the active context, but global-collaboration threads (DM/group) run
       // under whichever app-server client started them and must pass through so
@@ -1455,7 +1466,7 @@ export function App(): JSX.Element {
         gitRefreshTimerRef.current = undefined;
       }
     };
-  }, []);
+  }, [refreshParticipants]);
 
   useEffect(() => {
     if (!state.initialized || !state.activeContext) {

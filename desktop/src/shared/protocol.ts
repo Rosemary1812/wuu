@@ -720,6 +720,11 @@ export type ParticipantRetireResult = {
   participant: ParticipantProfile;
 };
 
+export type ParticipantUpdatedNotification = {
+  participant_id?: string;
+  participant?: ParticipantProfile;
+};
+
 // ---------------------------------------------------------------------------
 // Memory panel (设置 → 记忆). Wire contract fixed ahead of implementation by
 // docs/plans/2026-07-04-memory-redesign.md §8.2. The three RPCs are served

@@ -10,6 +10,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -167,6 +168,13 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 		// participant starts fresh.
 		result.ArchivedPredecessorID = r.server.archivedPredecessorID(entry.Name, entry.ID)
 	}
+	if profile, err := r.server.participantProfile(entry); err == nil {
+		if err := r.server.notifyParticipantUpdated(profile); err != nil {
+			providers.DebugLogf("notify participant update for %q: %v", entry.ID, err)
+		}
+	} else {
+		providers.DebugLogf("load participant profile for %q after roster save: %v", entry.ID, err)
+	}
 	return result, nil
 }
 
@@ -193,6 +201,18 @@ func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name stri
 	// freeze), shared with the participant/retire RPC.
 	if err := r.server.retireNamedParticipant(*target); err != nil {
 		return agentcontrol.RosterEntry{}, err
+	}
+	if updated, err := session.GetParticipant(r.sessionDir(), target.ID); err == nil {
+		if profile, err := r.server.participantProfile(updated); err == nil {
+			profile.AvatarImage = ""
+			if err := r.server.notifyParticipantUpdated(profile); err != nil {
+				providers.DebugLogf("notify participant retire for %q: %v", target.ID, err)
+			}
+		} else {
+			providers.DebugLogf("load participant profile for %q after roster retire: %v", target.ID, err)
+		}
+	} else {
+		providers.DebugLogf("load participant %q after roster retire: %v", target.ID, err)
 	}
 	return agentcontrol.RosterEntry{
 		ID:      target.ID,

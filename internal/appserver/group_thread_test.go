@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -250,6 +252,7 @@ func addThreadMemberForTest(t *testing.T, srv *Server, reqID, threadID, particip
 func TestThreadMembersAddAddsGroupMember(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 	group := startNamedGroupThreadForTest(t, srv, "release")
@@ -272,6 +275,84 @@ func TestThreadMembersAddAddsGroupMember(t *testing.T) {
 	if len(members) != 2 || members[0] != ivy || members[1] != bea {
 		t.Fatalf("expected persisted members to include Ivy and Bea, got %+v", members)
 	}
+}
+
+func TestThreadMembersAddBroadcastsAndWelcomesMember(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			providersResponse("大家好，我是 Bea。"),
+			providersResponse(""),
+		},
+	}
+	rt := newTestRuntime(t, client)
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+
+	resp := addThreadMemberForTest(t, srv, "add-welcome", group.ID, bea)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/members/add returned error: %v", errMsg)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	var updated *ThreadUpdatedNotification
+	for _, raw := range notificationsByMethod(msgs, NotificationThreadUpdated) {
+		params := remarshal[ThreadUpdatedNotification](t, raw["params"])
+		if params.Thread.ID == group.ID {
+			updated = &params
+			break
+		}
+	}
+	if updated == nil {
+		t.Fatalf("expected thread/updated for group %q, got %+v", group.ID, msgs)
+	}
+	memberIDs := make(map[string]bool, len(updated.Thread.Members))
+	for _, member := range updated.Thread.Members {
+		memberIDs[member.ID] = true
+	}
+	if !memberIDs[ivy] || !memberIDs[bea] {
+		t.Fatalf("thread/updated should carry the new group member, got %+v", updated.Thread.Members)
+	}
+	waitForGroupParticipantMessage(t, srv, group.ID, bea, "大家好")
+}
+
+func waitForGroupParticipantMessage(t *testing.T, srv *Server, threadID, participantID, text string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if groupParticipantMessageExists(srv, threadID, participantID, text) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for participant %q message containing %q in group %q", participantID, text, threadID)
+}
+
+func groupParticipantMessageExists(srv *Server, threadID, participantID, text string) bool {
+	th := srv.thread(threadID)
+	if th == nil {
+		return false
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	for _, turn := range th.Turns {
+		for _, item := range turn.Items {
+			if item.Type != ThreadItemParticipantMsg {
+				continue
+			}
+			if item.Participant == nil || item.Participant.ID != participantID {
+				continue
+			}
+			if strings.Contains(item.Text, text) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestThreadMembersAddIsIdempotent(t *testing.T) {

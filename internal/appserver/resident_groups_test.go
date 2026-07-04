@@ -92,6 +92,7 @@ func TestResidentCreateGroupBudgetAndReservedTitle(t *testing.T) {
 
 func TestResidentAddGroupMemberSemantics(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	iris := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
 	bea := saveNamedParticipant(t, srv.rt, "Bea", "reviewer", "")
 	outsider := saveNamedParticipant(t, srv.rt, "Out", "reviewer", "")
@@ -171,6 +172,7 @@ func TestAllChannelCannotBeRenamedOrArchived(t *testing.T) {
 
 func TestResidentAddGroupMemberBudgetAndCap(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	iris := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
 	dmID := startResidentDMForTest(t, srv, iris)
 	kit := residentToolkitForTest(t, srv, dmID)

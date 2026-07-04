@@ -147,6 +147,13 @@ func (m *residentGroupManager) AddGroupMember(ctx context.Context, threadID, par
 	if err := session.AddThreadMember(sessionDir, threadID, participantID); err != nil {
 		return fmt.Errorf("add_group_member: %w", err)
 	}
+	thread, err := m.server.threadAfterMetadataUpdate(meta)
+	if err != nil {
+		return fmt.Errorf("add_group_member: reload thread: %w", err)
+	}
+	if err := m.server.notifyGroupMemberAdded(thread, participantID); err != nil {
+		return fmt.Errorf("add_group_member: notify thread updated: %w", err)
+	}
 	return nil
 }
 

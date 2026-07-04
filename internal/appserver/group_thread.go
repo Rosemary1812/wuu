@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -227,6 +228,65 @@ func (s *Server) notifyThreadUpdated(thread Thread) error {
 	})
 }
 
+func (s *Server) notifyGroupMemberAdded(thread Thread, participantID string) error {
+	if err := s.notifyThreadUpdated(thread); err != nil {
+		return err
+	}
+	if err := s.enqueueGroupMemberWelcomeEnvelope(thread, participantID); err != nil {
+		providers.DebugLogf("enqueue group welcome for %q in %q: %v", participantID, thread.ID, err)
+	}
+	return nil
+}
+
+func (s *Server) enqueueGroupMemberWelcomeEnvelope(thread Thread, participantID string) error {
+	participantID = strings.TrimSpace(participantID)
+	if s == nil || s.rt == nil || participantID == "" {
+		return nil
+	}
+	if s.participantRetired(participantID) {
+		return nil
+	}
+	title := groupWelcomeTitle(thread)
+	now := time.Now().UTC()
+	env := MessageEnvelope{
+		ID:             "env-" + session.NewID(),
+		SourceThreadID: thread.ID,
+		SourceTitle:    title,
+		SenderKind:     "system",
+		SenderName:     "Wuu",
+		Addressed:      true,
+		Hop:            0,
+		Text:           fmt.Sprintf("你已加入「%s」群聊。请在群里发一条简短招呼，告诉大家你能帮什么。", title),
+		CreatedAt:      now,
+		Workspace:      thread.FocusWorkspace,
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("marshal group welcome envelope: %w", err)
+	}
+	if _, err := session.EnqueueResidentEnvelope(s.rt.SessionDir, session.ResidentEnvelope{
+		ID:            env.ID,
+		ParticipantID: participantID,
+		EnvelopeJSON:  data,
+		CreatedAt:     now,
+	}); err != nil {
+		return err
+	}
+	s.kickResidentAgent(participantID)
+	return nil
+}
+
+func groupWelcomeTitle(thread Thread) string {
+	title := strings.TrimSpace(thread.Title)
+	if title == "" {
+		title = strings.TrimSpace(thread.Preview)
+	}
+	if title == "" {
+		title = "群聊"
+	}
+	return strings.TrimPrefix(title, "#")
+}
+
 // notifyOutboundBatch flushes notifications that were built while holding a
 // threadState lock (applyStreamEventLocked / takePendingSteersLocked).
 // Those builders only have the bare snapshot, so any thread/updated in the
@@ -332,7 +392,10 @@ func (s *Server) handleThreadMembersAdd(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, ThreadMembersAddResult{Thread: thread}, nil)
+	if err := s.writeResponse(req.ID, ThreadMembersAddResult{Thread: thread}, nil); err != nil {
+		return err
+	}
+	return s.notifyGroupMemberAdded(thread, participantID)
 }
 
 // handleThreadMembersRemove implements `thread/members/remove`: the user
