@@ -20,8 +20,10 @@ import {
   conversationSearchContextLabel,
   groupThreadSummaries,
   pinnedThreadSummaries,
+  createDraftSessionTab,
   createThreadSessionTab,
   focusWorkspaceSendValue,
+  sessionTabLabel,
   handleStreamingNotification,
   initialState,
   isGroupThread,
@@ -2734,5 +2736,51 @@ describe("conversationSearchContextLabel (R4: no raw scratch paths in the UI)", 
     expect(
       conversationSearchContextLabel(scratchThread, [otherProject]),
     ).toBe("无项目");
+  });
+});
+
+describe("sessionTabLabel (draft tabs read as their workspace)", () => {
+  const project: DesktopProject = {
+    id: "p1",
+    name: "acme-web",
+    path: "/repo/acme-web",
+    created_at: "2026-07-04T00:00:00.000Z",
+    updated_at: "2026-07-04T00:00:00.000Z",
+  };
+  const state: AppState = { ...initialState, projects: [project] };
+
+  it("labels a project draft tab with the project name", () => {
+    const tab = createDraftSessionTab("draft:initial:project:p1", {
+      kind: "project",
+      project_id: "p1",
+      cwd: "/repo/acme-web",
+    });
+    expect(sessionTabLabel(tab, state)).toBe("acme-web");
+  });
+
+  it("labels a no-project draft tab as 对话", () => {
+    const tab = createDraftSessionTab("draft:initial:no_project:/scratch", {
+      kind: "no_project",
+      cwd: "/scratch",
+    });
+    expect(sessionTabLabel(tab, state)).toBe("对话");
+  });
+
+  it("does not surface the typed prompt in the draft label", () => {
+    const tab = createDraftSessionTab(
+      "draft:initial:project:p1",
+      { kind: "project", project_id: "p1", cwd: "/repo/acme-web" },
+      { prompt: "please refactor the auth module", images: [], files: [] },
+    );
+    expect(sessionTabLabel(tab, state)).toBe("acme-web");
+  });
+
+  it("falls back to the cwd basename when the project is gone (removed/relocated)", () => {
+    const tab = createDraftSessionTab("draft:initial:project:ghost", {
+      kind: "project",
+      project_id: "ghost",
+      cwd: "/repo/orphaned-dir",
+    });
+    expect(sessionTabLabel(tab, state)).toBe("orphaned-dir");
   });
 });

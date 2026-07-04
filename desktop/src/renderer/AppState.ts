@@ -2211,10 +2211,28 @@ function threadForTab(state: AppState, threadID: string): Thread | undefined {
   return state.threads.find((thread) => thread.id === threadID);
 }
 
+// workspaceNameForContext resolves the display name of the workspace a tab is
+// bound to: the registered project's name for a project context, or "对话" for
+// the shared no-project workspace. A project context whose project has been
+// removed/relocated (so it is no longer in state.projects) falls back to the
+// cwd basename so the tab still reads as *something* rather than blank.
+function workspaceNameForContext(context: RuntimeContext, state: AppState): string {
+  if (context.kind === "no_project") {
+    return "对话";
+  }
+  const project = state.projects.find(
+    (candidate) => candidate.id === context.project_id,
+  );
+  return project?.name || fileNameFromPath(context.cwd) || "项目";
+}
+
 function sessionTabLabel(tab: SessionTab, state: AppState): string {
   if (tab.kind === "draft") {
-    const draftTitle = tab.prompt.trim().split(/\s+/).slice(0, 8).join(" ");
-    return draftTitle || tab.title;
+    // A draft (unsent) tab is labelled by its workspace — the project name or
+    // "对话" — not the typed prompt. Each workspace has at most one draft tab,
+    // so the name is unambiguous; once the draft is sent it becomes a thread
+    // tab and switches to the conversation title (below).
+    return workspaceNameForContext(tab.context, state);
   }
   if (tab.kind === "file") {
     return tab.title || fileNameFromPath(tab.path);
