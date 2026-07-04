@@ -65,6 +65,106 @@ func TestAwaitAlwaysCarriesResultTextAfterConsumption(t *testing.T) {
 	}
 }
 
+// TestAwaitFromRehydratesAcrossRestart simulates a process restart: a first
+// AgentControl runs a worker to completion (with a submitted report), and a
+// fresh instance pointed at the same state dirs must let await_agents see
+// that dormant run — the same lazy rehydration send_message/followup_task
+// already get — instead of reporting not_found. Targetless awaits must not
+// rehydrate anything.
+func TestAwaitFromRehydratesAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	historyDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-restart", "workers")
+	threadDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-restart", "threads")
+	harnessDir := filepath.Join(dir, ".wuu-state", "sessions", "sess-await-restart", "harness")
+	config := func(client providers.StreamClient) Config {
+		return Config{
+			Client:        client,
+			DefaultModel:  "fake-model",
+			ParentRepo:    dir,
+			WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+			SessionID:     "sess-await-restart",
+			HistoryDir:    historyDir,
+			ThreadDir:     threadDir,
+			HarnessDir:    harnessDir,
+			WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+		}
+	}
+
+	first, err := New(config(&fakeClient{resp: providers.ChatResponse{Content: "done before restart"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := first.Spawn(context.Background(), SpawnRequest{
+		Type:        DefaultSubagentType,
+		TaskName:    "await_restart",
+		Prompt:      "finish before the restart",
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("first spawn: %v", err)
+	}
+	if res.Status != "completed" {
+		t.Fatalf("expected completed first run, got %s", res.Status)
+	}
+	report, err := first.RecordAgentReport(res.AgentID, res.AgentPath, AgentReportRequest{
+		Outcome: "completed",
+		Summary: "Finished before the restart.",
+	})
+	if err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	waitForHarnessEvent(t, first.HarnessStore(), harness.EventRunCompleted, res.AgentID)
+	first.Close()
+
+	// Fresh AgentControl over the same state dirs stands in for a restart.
+	second, err := New(config(&fakeClient{resp: providers.ChatResponse{Content: "unused after restart"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(second.Close)
+	if second.Manager().Get(res.AgentID) != nil {
+		t.Fatal("restarted manager should not track the dead run before rehydration")
+	}
+
+	// A targetless await never scans history: the dormant run stays dormant.
+	blank, err := second.AwaitFrom(agentthread.RootPath, context.Background(), nil)
+	if err != nil {
+		t.Fatalf("targetless AwaitFrom: %v", err)
+	}
+	if len(blank.Results) != 0 {
+		t.Fatalf("targetless await after restart should see no active children, got %+v", blank.Results)
+	}
+	if second.Manager().Get(res.AgentID) != nil {
+		t.Fatal("targetless await must not rehydrate dormant runs")
+	}
+
+	awaited, err := second.AwaitFrom(agentthread.RootPath, context.Background(), []string{res.AgentID})
+	if err != nil {
+		t.Fatalf("AwaitFrom across restart: %v", err)
+	}
+	if len(awaited.Results) != 1 {
+		t.Fatalf("expected one await result, got %+v", awaited.Results)
+	}
+	got := awaited.Results[0]
+	if got.Status == "not_found" {
+		t.Fatalf("explicit await should rehydrate the dormant run, got not_found: %+v", got)
+	}
+	if got.Status != string(harness.TaskStatusCompleted) {
+		t.Fatalf("await status = %q, want %q (result %+v)", got.Status, harness.TaskStatusCompleted, got)
+	}
+	if got.AgentID != res.AgentID {
+		t.Fatalf("await agent id = %q, want %q", got.AgentID, res.AgentID)
+	}
+	if got.ReportPath != report.ReportPath {
+		t.Fatalf("await report path = %q, want %q", got.ReportPath, report.ReportPath)
+	}
+	if second.Manager().Get(res.AgentID) == nil {
+		t.Fatal("explicit await should leave the rehydrated run addressable for follow-ups")
+	}
+}
+
 func TestAwaitAgentsNextStepsDoNotMentionWorkflowForPlainResults(t *testing.T) {
 	result := AwaitAgentsResult{
 		Results: []AwaitAgentResult{{Status: string(harness.TaskStatusCompleted)}},

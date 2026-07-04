@@ -191,6 +191,21 @@ func (c *AgentControl) resolveAwaitTargets(currentPath string, targets []string)
 				ok = true
 			}
 		}
+		if !ok {
+			// Cross-restart parity with send_message/followup_task: an
+			// explicitly addressed run the live manager no longer tracks
+			// may still have a persisted snapshot. Rehydrate it lazily so
+			// await reports its terminal state instead of not_found.
+			// Rehydration failures (no snapshot, pre-resume version,
+			// missing working directory, ...) keep the not_found path.
+			// Only explicit targets rehydrate; targetless awaits never
+			// scan history (see activeDescendantTargets).
+			if sa, err := c.rehydrateAgent(target); err == nil && sa != nil {
+				snap := sa.Snapshot()
+				meta = metadataFromSnapshot(snap)
+				ok = true
+			}
+		}
 		key := strings.TrimSpace(target)
 		if ok {
 			key = meta.ID
