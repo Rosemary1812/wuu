@@ -69,7 +69,8 @@ recovery := {
 
 实现为三份有界产物的组装，任何时刻不需要把两份长历史放进同一个窗口：
 
-1. **父侧执行摘要**：helpme 调用时用现有 compact 分块机制（块 + 滚动摘要）对父历史做机器抽取，抽取 prompt 按决策日志结构（目标/决策点/路径与结局）。产物同时喂给帮手（比自报更可信的交接）和 recovery 对象。与帮手执行并行，通常不增加 wall time。args 降级为可选提示。
+1. **父侧执行摘要**：helpme 调用时用现有 compact 分块机制（块 + 滚动摘要）对父历史做机器抽取，抽取 prompt 按决策日志结构（目标/决策点/路径与结局）。产物同时喂给帮手（比自报更可信的交接）和 recovery 对象。args 降级为可选提示。
+   时序修正（实施定案）：抽取在 spawn **之前同步**完成——产物必须进帮手的 handoff brief，并行就做不到这一点。代价是 helpme 调用前置一次抽取（硬超时 90s，失败/超时降级为 args+历史回退的 brief，救援永不因此失败）。已知限界：抽取沿用 compact 的每消息 500 字符截断，超长工具输出的尾部错误可能不进日志，放宽属后续项。
 2. **帮手侧执行摘要**：即其收尾 `agent_report`（运行时强制、schema 有界、帮手在自己完整上下文在场时自己写）。父方永不摄入帮手原始历史。
 3. **joint compact**：纯字符串组装（1）+（2）+ 目标 + 验证指针，不调模型、不受窗口约束。
 
@@ -81,8 +82,10 @@ recovery := {
 
 1. 先落 subagent 层通用修复：await 复水接入（独立价值，非 HelpMe 专属）。【已落地 b0ab47d5】
 2. 新增 `helpme_recovery` worker 类型（RequiresReport）+ recovery 状态对象与持久化 + 一次性消费门 + trace 降级审计 + compact 加固。【已落地 beb4d873】
-3. 修复 await 与 RequiresReport 收尾轮的完成竞态（live 实测发现：await 在通知消费者启动收尾轮之前的窗口放行，exec 进程退出杀死收尾轮，报告未入库、rewrite 静默不触发、harness 任务卡 running）。【进行中】
-4. 内容层 phase 2：父侧执行摘要抽取 + recovery.Brief 扩展 + 组装器改造 + 抽取 prompt。
-5. 删旧路径尾款（trace 回读仅保留迁移读取）与文档收敛。
+3. 修复 await 与 RequiresReport 收尾轮的完成竞态（live 实测发现：await 在通知消费者启动收尾轮之前的窗口放行，exec 进程退出杀死收尾轮，报告未入库、rewrite 静默不触发、harness 任务卡 running）。修复为 spawn 时刻置位的结算状态机 + 复水对账合成被吞报告。【已落地 05c62c2c】
+4. 内容层 phase 2：父侧执行摘要抽取（BuildHelpMeParentJournal）+ recovery.ParentExecutionJournal + 组装器主记录渲染 + 抽取 prompt。【已落地 6bfe757f，live 验证：日志逐字引用用户原话并进入 joint compact】
+5. 删旧路径尾款（trace 回读仅保留迁移读取）与文档收敛。【本文档即收敛记录】
+
+后续项备查：model_roles 的 recovery_summarizer 角色（长窗口/便宜模型做抽取）；机械触发信号（reminder 级建议）；wait:true 同步模式；抽取的每消息 500 字符截断放宽。
 
 与 completion contract 重设计（另一线并行工作）的关系：本设计只消费其产出（RequiresReport、无条件投递、快照 spawn 参数），无方向冲突。
