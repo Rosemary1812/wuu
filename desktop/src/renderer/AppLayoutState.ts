@@ -26,6 +26,14 @@ export const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
 const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
 const WORKSPACE_RIGHT_PANEL_STEP = 32;
 const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
+// The fork/split view (源会话 | 分叉) is proportional rather than a fixed pixel
+// panel, so its divider is stored as the left pane's share of the container
+// width. Clamped away from the extremes so neither pane collapses to unusable.
+export const CONVERSATION_SPLIT_DEFAULT_PERCENT = 50;
+export const CONVERSATION_SPLIT_MIN_PERCENT = 20;
+export const CONVERSATION_SPLIT_MAX_PERCENT = 80;
+const CONVERSATION_SPLIT_STEP = 4;
+const CONVERSATION_SPLIT_PERCENT_KEY = "wuu.desktop.conversationSplitLeftPercent";
 
 type SidebarResizeSession = {
   startX: number;
@@ -49,6 +57,15 @@ type RightPanelResizeSession = {
   startX: number;
   startWidth: number;
   currentWidth: number;
+};
+
+type SplitResizeSession = {
+  startX: number;
+  startPercent: number;
+  // Captured at pointerdown so mid-drag moves can convert a pixel delta into a
+  // percentage without measuring the container every frame.
+  containerWidth: number;
+  currentPercent: number;
 };
 
 type WindowPointerResizeController<Session> = {
@@ -100,6 +117,15 @@ function initialWorkspaceRightPanelWidth(): number {
     WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH,
     WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
     WORKSPACE_RIGHT_PANEL_MAX_WIDTH
+  );
+}
+
+function initialConversationSplitPercent(): number {
+  return storedWidth(
+    CONVERSATION_SPLIT_PERCENT_KEY,
+    CONVERSATION_SPLIT_DEFAULT_PERCENT,
+    CONVERSATION_SPLIT_MIN_PERCENT,
+    CONVERSATION_SPLIT_MAX_PERCENT
   );
 }
 
@@ -234,6 +260,11 @@ export function useAppLayoutState({
   handleSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   handleSettingsSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   resetSettingsSidebarWidth: () => void;
+  splitLeftPercent: number;
+  resizingSplit: boolean;
+  startSplitResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  handleSplitSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  resetSplitPercent: () => void;
 } {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(initialSettingsSidebarWidth);
@@ -244,8 +275,11 @@ export function useAppLayoutState({
   const [resizingRightPanel, setResizingRightPanel] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelAnimating, setRightPanelAnimating] = useState(false);
+  const [splitLeftPercent, setSplitLeftPercent] = useState(initialConversationSplitPercent);
+  const [resizingSplit, setResizingSplit] = useState(false);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
+  const splitResizeSessionRef = useRef<SplitResizeSession | null>(null);
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
@@ -338,9 +372,26 @@ export function useAppLayoutState({
     [effectiveSidebarWidth, layoutRootRef]
   );
 
+  const writeLiveSplitPercent = useCallback(
+    (nextPercent: number): void => {
+      const root = layoutRootRef?.current;
+      if (!root) {
+        return;
+      }
+      const clampedPercent = clamp(
+        nextPercent,
+        CONVERSATION_SPLIT_MIN_PERCENT,
+        CONVERSATION_SPLIT_MAX_PERCENT
+      );
+      root.style.setProperty("--conversation-split-left", `${clampedPercent}%`);
+    },
+    [layoutRootRef]
+  );
+
   const sidebarLive = useLiveWidthWriter(writeLiveSidebarWidth);
   const settingsSidebarLive = useLiveWidthWriter(writeLiveSettingsSidebarWidth);
   const rightPanelLive = useLiveWidthWriter(writeLiveWorkspaceRightPanelWidth);
+  const splitLive = useLiveWidthWriter(writeLiveSplitPercent);
 
   const applySidebarWidth = useCallback(
     (nextWidth: number): void => {
@@ -372,6 +423,12 @@ export function useAppLayoutState({
     [effectiveSidebarWidth]
   );
 
+  const applySplitPercent = useCallback((nextPercent: number): void => {
+    setSplitLeftPercent(
+      clamp(nextPercent, CONVERSATION_SPLIT_MIN_PERCENT, CONVERSATION_SPLIT_MAX_PERCENT)
+    );
+  }, []);
+
   const setRightPanelOpenWithMotion = useCallback(
     (open: boolean): void => {
       if (rightPanelOpen !== open) {
@@ -396,6 +453,10 @@ export function useAppLayoutState({
   }, [workspaceRightPanelWidth]);
 
   useEffect(() => {
+    window.localStorage.setItem(CONVERSATION_SPLIT_PERCENT_KEY, String(splitLeftPercent));
+  }, [splitLeftPercent]);
+
+  useEffect(() => {
     return () => {
       if (sidebarMotionTimerRef.current !== undefined) {
         window.clearTimeout(sidebarMotionTimerRef.current);
@@ -406,8 +467,9 @@ export function useAppLayoutState({
       sidebarLive.cancel();
       settingsSidebarLive.cancel();
       rightPanelLive.cancel();
+      splitLive.cancel();
     };
-  }, [sidebarLive, settingsSidebarLive, rightPanelLive]);
+  }, [sidebarLive, settingsSidebarLive, rightPanelLive, splitLive]);
 
   const handleSidebarResizeMove = useCallback(
     (event: PointerEvent, session: SidebarResizeSession): void => {
@@ -499,6 +561,39 @@ export function useAppLayoutState({
     onEnd: handleRightPanelResizeEnd,
   });
 
+  const handleSplitResizeMove = useCallback(
+    (event: PointerEvent, session: SplitResizeSession): void => {
+      const deltaPercent =
+        session.containerWidth > 0
+          ? ((event.clientX - session.startX) / session.containerWidth) * 100
+          : 0;
+      const nextPercent = session.startPercent + deltaPercent;
+      session.currentPercent = nextPercent;
+      splitLive.schedule(nextPercent);
+    },
+    [splitLive]
+  );
+
+  const handleSplitResizeEnd = useCallback(
+    (session: SplitResizeSession | null): void => {
+      if (session) {
+        splitLive.flush();
+        applySplitPercent(session.currentPercent);
+      } else {
+        splitLive.cancel();
+      }
+      setResizingSplit(false);
+    },
+    [applySplitPercent, splitLive]
+  );
+
+  useWindowPointerResize({
+    resizing: resizingSplit,
+    sessionRef: splitResizeSessionRef,
+    onMove: handleSplitResizeMove,
+    onEnd: handleSplitResizeEnd,
+  });
+
   useEffect(() => {
     function handleResize(): void {
       setWorkspaceRightPanelWidth((current) =>
@@ -515,7 +610,7 @@ export function useAppLayoutState({
   // (ConversationScrollState, AutoFollowScroll, ConversationTurnRail) stop
   // forcing layout + scrollTop writes on every pointermove.
   useEffect(() => {
-    if (!resizingSidebar && !resizingRightPanel) {
+    if (!resizingSidebar && !resizingRightPanel && !resizingSplit) {
       return undefined;
     }
     const root = document.documentElement;
@@ -523,7 +618,7 @@ export function useAppLayoutState({
     return () => {
       root.classList.remove(WINDOW_RESIZING_CLASS);
     };
-  }, [resizingSidebar, resizingRightPanel]);
+  }, [resizingSidebar, resizingRightPanel, resizingSplit]);
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0) {
@@ -588,6 +683,42 @@ export function useAppLayoutState({
 
   function resetWorkspaceRightPanelWidth(): void {
     applyWorkspaceRightPanelWidth(WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH);
+  }
+
+  function startSplitResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const container = event.currentTarget.parentElement;
+    const containerWidth = container?.clientWidth ?? window.innerWidth;
+    splitResizeSessionRef.current = {
+      startX: event.clientX,
+      startPercent: splitLeftPercent,
+      containerWidth,
+      currentPercent: splitLeftPercent
+    };
+    setResizingSplit(true);
+  }
+
+  function handleSplitSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      applySplitPercent(splitLeftPercent - CONVERSATION_SPLIT_STEP);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      applySplitPercent(splitLeftPercent + CONVERSATION_SPLIT_STEP);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      applySplitPercent(CONVERSATION_SPLIT_MIN_PERCENT);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      applySplitPercent(CONVERSATION_SPLIT_MAX_PERCENT);
+    }
+  }
+
+  function resetSplitPercent(): void {
+    applySplitPercent(CONVERSATION_SPLIT_DEFAULT_PERCENT);
   }
 
   function toggleSidebar(): void {
@@ -670,6 +801,11 @@ export function useAppLayoutState({
     toggleSidebar,
     handleSidebarSeparatorKey,
     handleSettingsSidebarSeparatorKey,
-    resetSettingsSidebarWidth
+    resetSettingsSidebarWidth,
+    splitLeftPercent,
+    resizingSplit,
+    startSplitResize,
+    handleSplitSeparatorKey,
+    resetSplitPercent
   };
 }

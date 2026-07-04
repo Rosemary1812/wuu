@@ -2463,12 +2463,53 @@
 }
 
 .conversation-split {
+  position: relative;
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--conversation-split-left, 50%)) minmax(0, 1fr);
   gap: 1px;
   background: var(--surface-3);
+}
+
+.conversation-split-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--conversation-split-left, 50%);
+  z-index: 6;
+  width: 12px;
+  cursor: col-resize;
+  outline: 0;
+  transform: translateX(-50%);
+  -webkit-app-region: no-drag;
+}
+
+.conversation-split-resizer::before {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  content: "";
+  transform: translateX(-50%);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.conversation-split-resizer:hover::before,
+.conversation-split-resizer:focus-visible::before,
+.resizing-split .conversation-split-resizer::before {
+  background: var(--sidebar-resizer-hover-bg);
+  box-shadow: 0 0 0 1px var(--sidebar-resizer-hover-ring);
+}
+
+.resizing-split {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .conversation-split-pane {

@@ -228,6 +228,8 @@ import {
   type TurnStreamStatus,
 } from "./AppState";
 import {
+  CONVERSATION_SPLIT_MAX_PERCENT,
+  CONVERSATION_SPLIT_MIN_PERCENT,
   RIGHT_PANEL_MOTION_MS,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -704,6 +706,11 @@ export function App(): JSX.Element {
     handleSidebarSeparatorKey,
     handleSettingsSidebarSeparatorKey,
     resetSettingsSidebarWidth,
+    splitLeftPercent,
+    resizingSplit,
+    startSplitResize,
+    handleSplitSeparatorKey,
+    resetSplitPercent,
   } = useAppLayoutState({
     layoutRootRef: appShellRef,
     settingsLayoutRootRef: settingsShellRef,
@@ -2166,13 +2173,14 @@ export function App(): JSX.Element {
     sidebarAnimating ? " sidebar-animating" : ""
   }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
     resizingRightPanel ? " resizing-right-panel" : ""
-  }${rightPanelOpen ? " right-panel-open" : ""}`;
+  }${rightPanelOpen ? " right-panel-open" : ""}${resizingSplit ? " resizing-split" : ""}`;
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
     "--sidebar-open-width": `${sidebarWidth}px`,
     "--sidebar-motion-duration": `${SIDEBAR_MOTION_MS}ms`,
     "--workspace-panel-motion-duration": `${RIGHT_PANEL_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
+    "--conversation-split-left": `${splitLeftPercent}%`,
     "--environment-panel-width": ENVIRONMENT_PANEL_WIDTH_CSS,
     "--environment-panel-reserved-width": "372px",
     "--environment-panel-edge-gap": "18px",
@@ -8058,6 +8066,19 @@ export function App(): JSX.Element {
                 {splitConversation && state.thread && state.secondaryThread ? (
                   <div className="conversation-split">
                     {renderConversationSplitPane(state.thread, "primary")}
+                    <div
+                      className="conversation-split-resizer"
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="调整左右对话宽度"
+                      aria-valuemin={CONVERSATION_SPLIT_MIN_PERCENT}
+                      aria-valuemax={CONVERSATION_SPLIT_MAX_PERCENT}
+                      aria-valuenow={Math.round(splitLeftPercent)}
+                      tabIndex={0}
+                      onPointerDown={startSplitResize}
+                      onDoubleClick={resetSplitPercent}
+                      onKeyDown={handleSplitSeparatorKey}
+                    />
                     {renderConversationSplitPane(
                       state.secondaryThread,
                       "secondary",
