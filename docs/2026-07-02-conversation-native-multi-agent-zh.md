@@ -3,6 +3,8 @@
 日期：2026-07-02
 状态：调研 + 提案（未实施）
 
+> **思想架构文档（历史）**：本文是调研总纲，具体契约以下游文档（resident-named-agents / chat-style-threads / sidebar-groups）与代码为准。
+
 ---
 
 ## 0. 一句话结论
