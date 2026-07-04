@@ -63,11 +63,26 @@ recovery := {
 
 删除清单：`RewriteHistoryWithHelpMeCompact`（并入 inception 原语）、helpme 侧的载体名模式匹配与无预检的 JSON 解析、`HelpMeTool.Execute` 死分支、trace 回读路径（`readHelpMeMainTraceForAgent` 仅保留给旧文件的迁移读取）。
 
+## 内容层（phase 2）：双源决策日志，替代自报简报
+
+自报简报是结构性弱点：被污染的 agent 写出的简报带着它的错误框架（让病人自己写病历），且实测里模型会把可选字段留空导致 compact 退化为占位符。方向修正——joint compact 不是"父的自我陈述 + 帮手的报告"，而是**两个 agent 执行过程的决策日志**：目标 / 决策原因 / 执行路径（失败与成功都保留，失败路径显式标注为负知识）。与传统 compact 的两点差异：双源；负知识必须显式保留（传统摘要倾向把失败尝试当噪音丢弃）。
+
+实现为三份有界产物的组装，任何时刻不需要把两份长历史放进同一个窗口：
+
+1. **父侧执行摘要**：helpme 调用时用现有 compact 分块机制（块 + 滚动摘要）对父历史做机器抽取，抽取 prompt 按决策日志结构（目标/决策点/路径与结局）。产物同时喂给帮手（比自报更可信的交接）和 recovery 对象。与帮手执行并行，通常不增加 wall time。args 降级为可选提示。
+2. **帮手侧执行摘要**：即其收尾 `agent_report`（运行时强制、schema 有界、帮手在自己完整上下文在场时自己写）。父方永不摄入帮手原始历史。
+3. **joint compact**：纯字符串组装（1）+（2）+ 目标 + 验证指针，不调模型、不受窗口约束。
+
+边界情形（双方上下文均逼近极限、同 provider）：父侧靠分块 map-reduce（每次调用只有一块+滚动摘要）；帮手侧干净起步、自带 auto-compact、交付物被 report schema 限界；块预算从 provider 窗口推导（`compact.Budget`）。可选杠杆：`model_roles` 加 `recovery_summarizer` 角色换长窗口/便宜模型做抽取，零架构改动。降级链：抽取失败退回 args+report 组装，救援永不因摘要失败而阻塞。
+
+触发机制维持人类反馈为主触发（提示词引导"用户说还是不对时考虑 helpme"）；机械信号（连续验证失败、同文件反复改-测循环）将来可作为 reminder 级建议，不做自动触发。
+
 ## 迁移顺序
 
-1. 先落 subagent 层通用修复：await 复水接入（独立价值，非 HelpMe 专属）。
-2. 新增 `helpme_recovery` worker 类型（RequiresReport）+ recovery 状态对象与持久化。
-3. 切换重写通道到 inception 锚定原语，加一次性消费门。
-4. 删旧路径与死代码，迁移测试。
+1. 先落 subagent 层通用修复：await 复水接入（独立价值，非 HelpMe 专属）。【已落地 b0ab47d5】
+2. 新增 `helpme_recovery` worker 类型（RequiresReport）+ recovery 状态对象与持久化 + 一次性消费门 + trace 降级审计 + compact 加固。【已落地 beb4d873】
+3. 修复 await 与 RequiresReport 收尾轮的完成竞态（live 实测发现：await 在通知消费者启动收尾轮之前的窗口放行，exec 进程退出杀死收尾轮，报告未入库、rewrite 静默不触发、harness 任务卡 running）。【进行中】
+4. 内容层 phase 2：父侧执行摘要抽取 + recovery.Brief 扩展 + 组装器改造 + 抽取 prompt。
+5. 删旧路径尾款（trace 回读仅保留迁移读取）与文档收敛。
 
 与 completion contract 重设计（另一线并行工作）的关系：本设计只消费其产出（RequiresReport、无条件投递、快照 spawn 参数），无方向冲突。
