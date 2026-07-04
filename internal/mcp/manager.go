@@ -73,7 +73,7 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	var client *Client
 	var err error
 	if cfg.URL != "" {
-		client, err = ConnectSSE(cfg)
+		client, err = ConnectRemote(cfg)
 	} else {
 		client, err = ConnectStdio(cfg)
 	}

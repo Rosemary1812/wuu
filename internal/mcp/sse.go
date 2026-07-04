@@ -45,11 +45,11 @@ func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SS
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("sse connect: %w", err)
+		return nil, fmt.Errorf("sse connect GET %s: %w", endpoint, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("sse connect: %s", resp.Status)
+		return nil, fmt.Errorf("sse connect GET %s: %s", endpoint, resp.Status)
 	}
 	return &SSETransport{
 		endpoint: endpoint,

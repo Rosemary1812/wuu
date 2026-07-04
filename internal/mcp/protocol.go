@@ -1,8 +1,10 @@
 // Package mcp implements a lightweight Model Context Protocol client.
 //
-// It supports stdio and SSE transports, tool discovery, and invocation.
-// The design keeps Wuu's transport layer small while preserving the common
-// stdio and SSE semantics expected by coding-agent harnesses.
+// It supports stdio, streamable HTTP (MCP spec revision 2025-03-26+), and
+// legacy SSE transports, plus tool discovery and invocation. The design
+// keeps Wuu's transport layer small while preserving the semantics expected
+// by coding-agent harnesses. See streamable_http.go for the remote transport
+// selection and SSE fallback rules.
 package mcp
 
 import (
