@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  RIGHT_PANEL_MOTION_MS,
   SIDEBAR_DEFAULT_WIDTH,
   WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH,
   useAppLayoutState
@@ -14,6 +15,7 @@ interface Harness {
   workspaceRightPanelWidth: ReturnType<
     typeof useAppLayoutState
   >["workspaceRightPanelWidth"];
+  rightPanelAnimating: ReturnType<typeof useAppLayoutState>["rightPanelAnimating"];
   startSidebarResize: ReturnType<typeof useAppLayoutState>["startSidebarResize"];
   startRightPanelResize: ReturnType<typeof useAppLayoutState>["startRightPanelResize"];
   setRightPanelOpenWithMotion: ReturnType<
@@ -44,6 +46,7 @@ function renderHookHarness(): void {
       sidebarWidth: hook.sidebarWidth,
       sidebarCollapsed: hook.sidebarCollapsed,
       workspaceRightPanelWidth: hook.workspaceRightPanelWidth,
+      rightPanelAnimating: hook.rightPanelAnimating,
       startSidebarResize: hook.startSidebarResize,
       startRightPanelResize: hook.startRightPanelResize,
       setRightPanelOpenWithMotion: hook.setRightPanelOpenWithMotion
@@ -76,6 +79,7 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  vi.useRealTimers();
 });
 
 describe("useAppLayoutState window-resizing class", () => {
@@ -113,6 +117,23 @@ describe("useAppLayoutState window-resizing class", () => {
       window.dispatchEvent(new Event("pointerup", { bubbles: true }));
     });
     expect(document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)).toBe(false);
+  });
+
+  it("clears right-panel animation after the motion window", () => {
+    vi.useFakeTimers();
+    renderHookHarness();
+    expect(latest).not.toBeNull();
+    expect(latest!.rightPanelAnimating).toBe(false);
+
+    act(() => {
+      latest!.setRightPanelOpenWithMotion(true);
+    });
+    expect(latest!.rightPanelAnimating).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
+    });
+    expect(latest!.rightPanelAnimating).toBe(false);
   });
 
   it("does not add the class for non-primary-button pointerdowns on the sidebar", () => {

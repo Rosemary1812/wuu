@@ -469,6 +469,8 @@ export function useAppLayoutState({
     window.localStorage.setItem(CONVERSATION_SPLIT_PERCENT_KEY, String(splitLeftPercent));
   }, [splitLeftPercent]);
 
+  // This is unmount cleanup. The live writer objects are recreated during
+  // render; depending on them would cancel panel motion timers mid-animation.
   useEffect(() => {
     return () => {
       if (sidebarMotionTimerRef.current !== undefined) {
@@ -482,7 +484,7 @@ export function useAppLayoutState({
       rightPanelLive.cancel();
       splitLive.cancel();
     };
-  }, [sidebarLive, settingsSidebarLive, rightPanelLive, splitLive]);
+  }, [sidebarLive.cancel, settingsSidebarLive.cancel, rightPanelLive.cancel, splitLive.cancel]);
 
   const handleSidebarResizeMove = useCallback(
     (event: PointerEvent, session: SidebarResizeSession): void => {
