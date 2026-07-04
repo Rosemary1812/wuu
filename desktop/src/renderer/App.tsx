@@ -64,9 +64,11 @@ import {
   composerFileFromFile,
   composerImagePlaceholder,
   createComposerMessage,
+  createOptimisticCompactTurn,
   createOptimisticTurn,
   dropOptimisticTurn,
   earlierStartedAt,
+  failOptimisticCompactTurn,
   inputFilesFromComposer,
   inputImagesFromComposer,
   isComposerImageFile,
@@ -6625,19 +6627,48 @@ export function App(): JSX.Element {
       status: "正在压缩上下文",
     }));
 
+    const optimisticTurn = createOptimisticCompactTurn(Date.now());
+    const optimisticTurnID = optimisticTurn.id;
+    appStateRef.current = updateThreadByID(
+      appStateRef.current,
+      targetThread.id,
+      (thread) => upsertTurn(thread, optimisticTurn),
+      { running: true, status: "正在压缩上下文" },
+    );
+    setState((current) =>
+      updateThreadByID(
+        current,
+        targetThread.id,
+        (thread) => upsertTurn(thread, optimisticTurn),
+        { running: true, status: "正在压缩上下文" },
+      ),
+    );
+
     try {
       const result = await window.wuu.compactThread(targetThread.id);
       appStateRef.current = updateThreadByID(
         appStateRef.current,
         targetThread.id,
-        (thread) => upsertTurn(thread, result.turn),
+        (thread) =>
+          replaceOptimisticTurn(
+            thread,
+            optimisticTurnID,
+            result.turn,
+            upsertTurn,
+          ),
         { running: true, status: "正在压缩上下文" },
       );
       setState((current) =>
         updateThreadByID(
           current,
           targetThread.id,
-          (thread) => upsertTurn(thread, result.turn),
+          (thread) =>
+            replaceOptimisticTurn(
+              thread,
+              optimisticTurnID,
+              result.turn,
+              upsertTurn,
+            ),
           { running: true, status: "正在压缩上下文" },
         ),
       );
@@ -6659,16 +6690,40 @@ export function App(): JSX.Element {
         tone: "error",
         threadID: targetThread.id,
       });
+      const failedTurn = failOptimisticCompactTurn(
+        optimisticTurn,
+        rawMessage,
+        Date.now(),
+      );
       appStateRef.current = {
-        ...appStateRef.current,
+        ...updateThreadByID(
+          appStateRef.current,
+          targetThread.id,
+          (thread) =>
+            replaceOptimisticTurn(
+              thread,
+              optimisticTurnID,
+              failedTurn,
+              upsertTurn,
+            ),
+        ),
         running: false,
         status: errorMessage,
       };
-      setState((current) => ({
-        ...current,
-        running: false,
-        status: errorMessage,
-      }));
+      setState((current) =>
+        updateThreadByID(
+          current,
+          targetThread.id,
+          (thread) =>
+            replaceOptimisticTurn(
+              thread,
+              optimisticTurnID,
+              failedTurn,
+              upsertTurn,
+            ),
+          { running: false, status: errorMessage },
+        ),
+      );
     }
   }
 

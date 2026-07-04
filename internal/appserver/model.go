@@ -17,6 +17,12 @@ type outboundNotification struct {
 	params any
 }
 
+const (
+	manualContextCompactionReason         = "manual"
+	manualContextCompactionInProgressText = "Manual context compaction in progress."
+	manualContextCompactionFailedText     = "Manual context compaction failed; history is unchanged."
+)
+
 func newThreadState(id string, history []providers.ChatMessage, rtProvider, model, cwd string, persistHistory bool, now time.Time) *threadState {
 	return &threadState{
 		ID:             id,
@@ -135,8 +141,15 @@ func (th *threadState) startCompactTurnLocked(turnID string, displayMsg provider
 	if strings.EqualFold(displayMsg.Role, "user") && strings.TrimSpace(chatMessageDisplayContent(displayMsg)) != "" {
 		item := chatMessageItem(th.nextItemIDLocked(turnID), displayMsg)
 		turn.Items = append(turn.Items, item)
-		th.replaceTurnLocked(turn)
 	}
+	turn.Items = append(turn.Items, ThreadItem{
+		ID:     th.nextItemIDLocked(turnID),
+		Type:   ThreadItemContextCompaction,
+		Status: ThreadItemStatusInProgress,
+		Text:   manualContextCompactionInProgressText,
+		Reason: manualContextCompactionReason,
+	})
+	th.replaceTurnLocked(turn)
 	return turn
 }
 
@@ -245,6 +258,10 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	th.toolItems = make(map[string]string)
 
 	turn := th.ensureTurnLocked(turnID, now)
+	if turn.Kind == TurnKindCompact && status == TurnStatusFailed {
+		th.finishPendingContextCompactionLocked(turnID, ThreadItemStatusFailed, manualContextCompactionFailedText, now)
+		turn = th.ensureTurnLocked(turnID, now)
+	}
 	turn.Status = status
 	if err != nil {
 		turn.Error = &TurnError{Message: err.Error()}
@@ -541,15 +558,20 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		// the stored one — otherwise the idempotent no-op path would leave
 		// the agent with no focus reminder anywhere in its live context.
 		th.focusDeclarationStale = true
-		item := ThreadItem{
-			ID:     th.nextItemIDLocked(turnID),
-			Type:   ThreadItemContextCompaction,
-			Status: ThreadItemStatusCompleted,
-			Text:   ev.Content,
-			Reason: ev.CompactReason,
+		item, replacesPending := th.pendingContextCompactionItemLocked(turnID, now)
+		if !replacesPending {
+			item.ID = th.nextItemIDLocked(turnID)
+			item.Type = ThreadItemContextCompaction
 		}
+		item.Status = contextCompactionStatusForContent(ev.Content)
+		item.Text = ev.Content
+		item.Reason = ev.CompactReason
 		th.upsertItemLocked(turnID, item, now)
-		out = append(out, itemStarted(th.ID, turnID, item, now), itemCompleted(th.ID, turnID, item, now))
+		if replacesPending {
+			out = append(out, itemCompleted(th.ID, turnID, item, now))
+		} else {
+			out = append(out, itemStarted(th.ID, turnID, item, now), itemCompleted(th.ID, turnID, item, now))
+		}
 	case providers.EventError:
 		msg := "stream error"
 		if ev.Error != nil {
@@ -565,6 +587,50 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		out = append(out, itemStarted(th.ID, turnID, item, now), itemCompleted(th.ID, turnID, item, now))
 	}
 	return out
+}
+
+func (th *threadState) pendingContextCompactionItemLocked(turnID string, now time.Time) (ThreadItem, bool) {
+	turn := th.ensureTurnLocked(turnID, now)
+	for i := len(turn.Items) - 1; i >= 0; i-- {
+		item := turn.Items[i]
+		if item.Type == ThreadItemContextCompaction && item.Status == ThreadItemStatusInProgress {
+			return item, true
+		}
+	}
+	return ThreadItem{}, false
+}
+
+func (th *threadState) finishPendingContextCompactionLocked(turnID string, status ThreadItemStatus, text string, now time.Time) {
+	item, ok := th.pendingContextCompactionItemLocked(turnID, now)
+	if !ok {
+		item = ThreadItem{
+			ID:   th.nextItemIDLocked(turnID),
+			Type: ThreadItemContextCompaction,
+		}
+	}
+	item.Status = status
+	item.Text = text
+	if strings.TrimSpace(item.Reason) == "" {
+		item.Reason = manualContextCompactionReason
+	}
+	th.upsertItemLocked(turnID, item, now)
+}
+
+func contextCompactionStatusForContent(content string) ThreadItemStatus {
+	if isCompactFailureNoticeContent(content) {
+		return ThreadItemStatusFailed
+	}
+	return ThreadItemStatusCompleted
+}
+
+func isCompactFailureNoticeContent(content string) bool {
+	normalized := strings.TrimSpace(strings.TrimLeft(content, "✦*• \t"))
+	lower := strings.ToLower(normalized)
+	return strings.HasPrefix(lower, "manual context compaction failed") ||
+		strings.HasPrefix(lower, "context compaction failed") ||
+		strings.HasPrefix(lower, "proactive compact failed") ||
+		strings.HasPrefix(lower, "context-overflow compact failed") ||
+		strings.HasPrefix(lower, "compact failed")
 }
 
 func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatMessage, now time.Time) []outboundNotification {

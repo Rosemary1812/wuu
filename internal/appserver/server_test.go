@@ -6521,11 +6521,14 @@ func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
 		t.Fatalf("thread/compact/start: %v", err)
 	}
 	started := remarshal[ThreadCompactStartResult](t, responseByID(t, parseOutput(t, out.String()), "compact-1")["result"])
-	if started.Turn.Kind != TurnKindCompact || started.Turn.Status != TurnStatusInProgress || len(started.Turn.Items) != 1 {
-		t.Fatalf("compact start should return a compact turn with the user command item, got %+v", started.Turn)
+	if started.Turn.Kind != TurnKindCompact || started.Turn.Status != TurnStatusInProgress || len(started.Turn.Items) != 2 {
+		t.Fatalf("compact start should return a compact turn with the user command and progress items, got %+v", started.Turn)
 	}
 	if started.Turn.Items[0].Type != ThreadItemUserMessage || started.Turn.Items[0].Text != "/compact" {
 		t.Fatalf("compact turn should display the triggering slash command, got %+v", started.Turn.Items)
+	}
+	if started.Turn.Items[1].Type != ThreadItemContextCompaction || started.Turn.Items[1].Status != ThreadItemStatusInProgress || started.Turn.Items[1].Reason != "manual" {
+		t.Fatalf("compact turn should immediately display an in-progress compaction item, got %+v", started.Turn.Items)
 	}
 
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
@@ -6538,6 +6541,9 @@ func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
 	}
 	if len(completed.Turn.Items) == 0 || completed.Turn.Items[0].Type != ThreadItemUserMessage || completed.Turn.Items[0].Text != "/compact" {
 		t.Fatalf("completed compact turn should retain user command item, got %+v", completed.Turn.Items)
+	}
+	if len(completed.Turn.Items) < 2 || completed.Turn.Items[1].Type != ThreadItemContextCompaction || completed.Turn.Items[1].Status != ThreadItemStatusCompleted || completed.Turn.Items[1].Reason != "manual" {
+		t.Fatalf("completed compact turn should update the progress item to completed, got %+v", completed.Turn.Items)
 	}
 	for _, item := range completed.Turn.Items {
 		if item.Type == ThreadItemAgentMessage {
@@ -6559,6 +6565,60 @@ func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
 			t.Fatalf("compact control command should not be persisted as a user message, got %+v", visible)
 		}
 	}
+}
+
+func TestServerThreadCompactStartMarksFailedCompactItem(t *testing.T) {
+	client := &fakeClient{err: fmt.Errorf("compact exploded")}
+	rt := newTestRuntime(t, client)
+	rt.StreamRunner.CompactKeepRecentTokens = 1
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatal("expected loaded thread")
+	}
+	th.mu.Lock()
+	th.History = append(th.History,
+		providers.ChatMessage{Role: "user", Content: "old request"},
+		providers.ChatMessage{Role: "assistant", Content: "old answer"},
+		providers.ChatMessage{Role: "user", Content: "newer request"},
+		providers.ChatMessage{Role: "assistant", Content: "newer answer"},
+	)
+	th.mu.Unlock()
+
+	raw, err := json.Marshal(map[string]any{
+		"id":     "compact-failed",
+		"method": MethodThreadCompactStart,
+		"params": ThreadCompactStartParams{ThreadID: threadID},
+	})
+	if err != nil {
+		t.Fatalf("marshal compact request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/compact/start: %v", err)
+	}
+	started := remarshal[ThreadCompactStartResult](t, responseByID(t, parseOutput(t, out.String()), "compact-failed")["result"])
+	if len(started.Turn.Items) < 2 || started.Turn.Items[1].Type != ThreadItemContextCompaction || started.Turn.Items[1].Status != ThreadItemStatusInProgress {
+		t.Fatalf("compact start should display an in-progress item, got %+v", started.Turn.Items)
+	}
+
+	msgs := waitForMethod(t, out, NotificationTurnCompleted)
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
+	if completed.Turn.Kind != TurnKindCompact || completed.Turn.Status != TurnStatusCompleted {
+		t.Fatalf("failed compact attempt should still complete the compact-only control turn, got %+v", completed.Turn)
+	}
+	if len(completed.Turn.Items) < 2 || completed.Turn.Items[1].Type != ThreadItemContextCompaction || completed.Turn.Items[1].Status != ThreadItemStatusFailed {
+		t.Fatalf("failed compact should update the progress item to failed, got %+v", completed.Turn.Items)
+	}
+	if !strings.Contains(completed.Turn.Items[1].Text, "failed") {
+		t.Fatalf("failed compact item should keep the failure notice, got %+v", completed.Turn.Items[1])
+	}
+	assertFakeClientRequestCount(t, client, 1)
 }
 
 func TestServerTurnStartSlashCompactRoutesToCompactOnlyTurn(t *testing.T) {
@@ -6600,11 +6660,14 @@ func TestServerTurnStartSlashCompactRoutesToCompactOnlyTurn(t *testing.T) {
 		t.Fatalf("turn/start /compact returned error: %+v", resp["error"])
 	}
 	started := remarshal[TurnStartResult](t, resp["result"])
-	if started.Turn.Kind != TurnKindCompact || len(started.Turn.Items) != 1 {
+	if started.Turn.Kind != TurnKindCompact || len(started.Turn.Items) != 2 {
 		t.Fatalf("turn/start /compact should return compact control turn, got %+v", started.Turn)
 	}
 	if started.Turn.Items[0].Type != ThreadItemUserMessage || started.Turn.Items[0].Text != "/compact 后续只保留结论" {
 		t.Fatalf("turn/start /compact should display the user's raw slash command, got %+v", started.Turn.Items)
+	}
+	if started.Turn.Items[1].Type != ThreadItemContextCompaction || started.Turn.Items[1].Status != ThreadItemStatusInProgress {
+		t.Fatalf("turn/start /compact should immediately display a compaction progress item, got %+v", started.Turn.Items)
 	}
 
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
@@ -6614,6 +6677,9 @@ func TestServerTurnStartSlashCompactRoutesToCompactOnlyTurn(t *testing.T) {
 	}
 	if len(completed.Turn.Items) == 0 || completed.Turn.Items[0].Type != ThreadItemUserMessage || completed.Turn.Items[0].Text != "/compact 后续只保留结论" {
 		t.Fatalf("completed slash compact should retain raw command item, got %+v", completed.Turn.Items)
+	}
+	if len(completed.Turn.Items) < 2 || completed.Turn.Items[1].Type != ThreadItemContextCompaction || completed.Turn.Items[1].Status != ThreadItemStatusCompleted {
+		t.Fatalf("completed slash compact should update the progress item to completed, got %+v", completed.Turn.Items)
 	}
 	assertFakeClientRequestCount(t, client, 1)
 

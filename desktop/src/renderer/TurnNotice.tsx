@@ -107,6 +107,7 @@ export function ContextCompactionNotice({
   // item flips to completed the host swaps to the established icon + copy
   // layout.
   if (status === "in_progress") {
+    const title = contextCompactionProgressTitle(text, reason);
     return (
       <aside
         className="turn-notice turn-event-notice context-compaction-notice is-progress"
@@ -115,13 +116,13 @@ export function ContextCompactionNotice({
       >
         <span className="turn-event-content">
           <strong className="turn-event-title live-progress-chip">
-          正在自动压缩上下文
+            {title}
           </strong>
         </span>
       </aside>
     );
   }
-  const detail = contextCompactionDetail(text, reason);
+  const detail = contextCompactionDetail(text, reason, status);
   // The inline notice is a compact label. The full breakdown is moved to
   // the `title` attribute so it is available on hover without taking a
   // second visual line.
@@ -133,17 +134,37 @@ export function ContextCompactionNotice({
       title={detail}
     >
       <span className="turn-event-content">
-        <strong className="turn-event-title">{contextCompactionTitle(text, reason)}</strong>
+        <strong className="turn-event-title">
+          {contextCompactionTitle(text, reason, status)}
+        </strong>
         <span className="turn-event-detail">{detail}</span>
       </span>
     </aside>
   );
 }
 
-function contextCompactionTitle(text?: string, reason?: string): string {
+function contextCompactionProgressTitle(text?: string, reason?: string): string {
+  if (isManualCompact(reason, normalizeContextCompactionText(text))) {
+    return "正在压缩上下文";
+  }
   const normalized = normalizeContextCompactionText(text);
+  return normalized || "正在自动压缩上下文";
+}
+
+function contextCompactionTitle(
+  text?: string,
+  reason?: string,
+  status?: ThreadItemStatus,
+): string {
+  const normalized = normalizeContextCompactionText(text);
+  if (status === "failed") {
+    return "压缩失败";
+  }
   if (isFailedCompactNotice(normalized)) {
-    return "上下文压缩失败";
+    return "压缩失败";
+  }
+  if (isUnchangedCompactNotice(normalized)) {
+    return "无需压缩";
   }
   if (isInceptionCompact(reason, normalized)) {
     return "已续接上下文";
@@ -151,16 +172,29 @@ function contextCompactionTitle(text?: string, reason?: string): string {
   if (isHelpMeCompact(reason, normalized)) {
     return "已合并求助结果";
   }
+  if (isManualCompact(reason, normalized)) {
+    return "压缩成功";
+  }
   return "上下文已压缩";
 }
 
-function contextCompactionDetail(text?: string, reason?: string): string {
+function contextCompactionDetail(
+  text?: string,
+  reason?: string,
+  status?: ThreadItemStatus,
+): string {
   const normalized = normalizeContextCompactionText(text);
+  if (status === "failed") {
+    return "压缩没有完成，当前对话仍保留原上下文。";
+  }
   if (!normalized) {
     return "已整理较早对话，后续回复会继续沿用保留下来的关键信息。";
   }
   if (isFailedCompactNotice(normalized)) {
-    return "自动压缩没有完成，当前对话仍保留原上下文。";
+    return "压缩没有完成，当前对话仍保留原上下文。";
+  }
+  if (isUnchangedCompactNotice(normalized)) {
+    return "当前对话还没有足够的历史需要整理，原上下文保持不变。";
   }
   if (isInceptionCompact(reason, normalized)) {
     return "已生成续接摘要，后续回复会沿用保留下来的任务状态。";
@@ -183,7 +217,20 @@ function normalizeContextCompactionText(text?: string): string {
 }
 
 function isFailedCompactNotice(text: string): boolean {
-  return /^(?:Context compaction|Proactive compact|Context-overflow compact|Compact) failed\b/i.test(text);
+  return /^(?:Manual context compaction|Context compaction|Proactive compact|Context-overflow compact|Compact) failed\b/i.test(
+    text,
+  );
+}
+
+function isUnchangedCompactNotice(text: string): boolean {
+  return /^Nothing to compact yet\b/i.test(text);
+}
+
+function isManualCompact(reason: string | undefined, text: string): boolean {
+  return (
+    reason === "manual" ||
+    /^Manual(?:ly)?\s+(?:context\s+)?compact/i.test(text)
+  );
 }
 
 function isInceptionCompact(reason: string | undefined, text: string): boolean {
@@ -196,7 +243,7 @@ function isHelpMeCompact(reason: string | undefined, text: string): boolean {
 
 function parseContextCompactionNotice(text: string): string | undefined {
   const match = text.match(
-    /^(Recovered from context overflow\s+[—-]\s+compacted|HelpMe recovered and compacted|Inception rewrote|Compacted)\s+history:\s*(\d+)\s*(?:→|->)\s*(\d+)\s+messages(?:\s+\(was\s+~?([^)]+)\))?$/i,
+    /^(Recovered from context overflow\s+[—-]\s+compacted|HelpMe recovered and compacted|Inception rewrote|Manually compacted|Compacted)\s+history:\s*(\d+)\s*(?:→|->)\s*(\d+)\s+messages(?:\s+\(was\s+~?([^)]+)\))?$/i,
   );
   if (!match) {
     return undefined;

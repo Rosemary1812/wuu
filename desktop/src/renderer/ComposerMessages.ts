@@ -433,6 +433,50 @@ export function createOptimisticTurn(
   };
 }
 
+export function createOptimisticCompactTurn(nowMs: number): Turn {
+  const id = nextOptimisticTurnID();
+  return {
+    id,
+    kind: "compact",
+    status: "in_progress",
+    started_at: new Date(nowMs).toISOString(),
+    items_view: "full",
+    items: [
+      {
+        id: `${id}-compact`,
+        type: "context_compaction",
+        status: "in_progress",
+        text: "正在压缩上下文",
+        reason: "manual",
+      },
+    ],
+  };
+}
+
+export function failOptimisticCompactTurn(
+  turn: Turn,
+  errorMessage: string,
+  nowMs: number,
+): Turn {
+  return {
+    ...turn,
+    status: "completed",
+    completed_at: new Date(nowMs).toISOString(),
+    items: turn.items.map((item) =>
+      item.type === "context_compaction"
+        ? {
+            ...item,
+            status: "failed",
+            text:
+              errorMessage ||
+              "Manual context compaction failed; history is unchanged.",
+            reason: item.reason || "manual",
+          }
+        : item,
+    ),
+  };
+}
+
 /**
  * Return the earlier of two ISO timestamps. Used to keep the optimistic
  * started_at (which captures the user's click moment) when the real turn

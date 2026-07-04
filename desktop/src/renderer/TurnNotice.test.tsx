@@ -82,6 +82,21 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-notice-icon")).toBeNull();
   });
 
+  it("uses the manual compact progress label for slash compact", () => {
+    const host = mount(
+      <ContextCompactionNotice
+        status="in_progress"
+        reason="manual"
+        text="Manual context compaction in progress."
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "正在压缩上下文",
+    );
+    expect(host.querySelector(".live-progress-chip")).not.toBeNull();
+  });
+
   it("renders the established icon + copy layout when status is completed", () => {
     const host = mount(
       <ContextCompactionNotice
@@ -100,6 +115,40 @@ describe("ContextCompactionNotice", () => {
     const detail = host.querySelector(".turn-event-detail");
     expect(detail?.textContent).toContain("18 条消息整理为 5 条");
     expect(host.querySelector(".turn-notice-icon")).toBeNull();
+  });
+
+  it("labels manual compact completion as success", () => {
+    const host = mount(
+      <ContextCompactionNotice
+        status="completed"
+        reason="manual"
+        text="✦ Manually compacted history: 18 → 5 messages (was ~12k tokens)"
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "压缩成功",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "18 条消息整理为 5 条",
+    );
+  });
+
+  it("labels failed manual compact status as failed", () => {
+    const host = mount(
+      <ContextCompactionNotice
+        status="failed"
+        reason="manual"
+        text="Manual context compaction failed; history is unchanged."
+      />,
+    );
+
+    expect(host.querySelector(".turn-event-title")?.textContent).toBe(
+      "压缩失败",
+    );
+    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+      "当前对话仍保留原上下文",
+    );
   });
 
   it("falls back to the completed layout when status is omitted", () => {
@@ -169,7 +218,7 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "上下文压缩失败",
+      "压缩失败",
     );
     expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
       "当前对话仍保留原上下文",

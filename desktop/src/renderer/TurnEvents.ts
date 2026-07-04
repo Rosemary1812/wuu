@@ -16,6 +16,7 @@ export type TurnEventKind =
   | "internal_error"
   | "context_compacting"
   | "context_compacted"
+  | "context_compaction_failed"
   | "missing_final_answer";
 
 export type TurnEventSource = "turn" | "item";
@@ -28,7 +29,10 @@ export type TurnEventDisplay =
       notice: UserFacingErrorDisplay;
     }
   | {
-      kind: "context_compacting" | "context_compacted";
+      kind:
+        | "context_compacting"
+        | "context_compacted"
+        | "context_compaction_failed";
       source: "item";
       presentation: "context_compaction";
       text?: string;
@@ -55,6 +59,9 @@ export function turnEventForTurn(
       presentation: "notice",
       notice: userFacingErrorForMissingReply(),
     };
+  }
+  if (turn.kind === "compact" && hasContextCompactionOutcome(turn)) {
+    return undefined;
   }
   const rawMessage = turn.error?.message || latestTurnItemError(turn);
   const baseDisplay =
@@ -157,9 +164,20 @@ function turnEventKindForNotice(display: UserFacingErrorDisplay): TurnEventKind 
 function contextCompactionKind(
   _text: string | undefined,
   status: ThreadItemStatus | undefined,
-): "context_compacting" | "context_compacted" {
+): "context_compacting" | "context_compacted" | "context_compaction_failed" {
   if (status === "in_progress") {
     return "context_compacting";
   }
+  if (status === "failed") {
+    return "context_compaction_failed";
+  }
   return "context_compacted";
+}
+
+function hasContextCompactionOutcome(turn: Turn): boolean {
+  return turn.items.some(
+    (item) =>
+      item.type === "context_compaction" &&
+      (item.status === "completed" || item.status === "failed"),
+  );
 }
