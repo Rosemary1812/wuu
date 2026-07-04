@@ -630,6 +630,11 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	} else if info.Exposure != ToolExposureHidden {
 		t.Fatalf("ordinary worker decline exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 	}
+	if info, ok := kit.ToolInfo("react"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "react")
+	} else if info.Exposure != ToolExposureHidden {
+		t.Fatalf("ordinary worker react exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
 	if info, ok := kit.ToolInfo("manage_participant"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "manage_participant")
 	} else if info.Exposure != ToolExposureHidden {
@@ -660,6 +665,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	if !containsProfileDef(kit.Definitions(), "decline") {
 		t.Fatalf("authorized participant surface should advertise decline: %v", sortedProfileDefNames(kit.Definitions()))
 	}
+	if !containsProfileDef(kit.Definitions(), "react") {
+		t.Fatalf("authorized participant surface should advertise react: %v", sortedProfileDefNames(kit.Definitions()))
+	}
 	if !containsProfileDef(kit.Definitions(), "manage_participant") {
 		t.Fatalf("authorized participant surface should advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
 	}
@@ -675,6 +683,11 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 		t.Fatalf("ToolInfo(%q) not found", "decline")
 	} else if info.Exposure != ToolExposureDirect || info.Risk != ToolRiskLow {
 		t.Fatalf("authorized decline info = %+v, want direct low-risk", info)
+	}
+	if info, ok := kit.ToolInfo("react"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "react")
+	} else if info.Exposure != ToolExposureDirect || info.Risk != ToolRiskLow {
+		t.Fatalf("authorized react info = %+v, want direct low-risk", info)
 	}
 	if info, ok := kit.ToolInfo("manage_participant"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "manage_participant")
