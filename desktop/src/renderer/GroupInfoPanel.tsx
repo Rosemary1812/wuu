@@ -5,6 +5,7 @@ import type {
   ParticipantSummary,
   Thread,
 } from "../shared/protocol";
+import { DefaultAvatarMark } from "./DefaultAvatar";
 import type { EnvironmentPanelMotionState } from "./EnvironmentPanel";
 
 export function GroupInfoPanel({
@@ -187,7 +188,11 @@ function ParticipantAvatar({
       aria-label={status ? `${name} ${busy ? "正在响应" : "在线"}` : undefined}
       aria-hidden={status ? undefined : true}
     >
-      {image ? <img src={image} alt="" /> : name.charAt(0)}
+      {image ? (
+        <img src={image} alt="" />
+      ) : (
+        <DefaultAvatarMark seed={participant.id || name} />
+      )}
       {status ? (
         <span className="group-info-avatar-status" data-status={status} />
       ) : null}

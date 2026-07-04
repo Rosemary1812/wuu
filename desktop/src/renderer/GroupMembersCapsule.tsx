@@ -1,5 +1,6 @@
 import { UsersRound } from "lucide-react";
 import type { ParticipantSummary } from "../shared/protocol";
+import { DefaultAvatarMark } from "./DefaultAvatar";
 
 export function GroupMembersCapsule({
   members,
@@ -70,7 +71,11 @@ function GroupMemberAvatar({
   const status = busy ? "busy" : "online";
   return (
     <span className="group-members-capsule-avatar">
-      {image ? <img src={image} alt="" /> : name.charAt(0)}
+      {image ? (
+        <img src={image} alt="" />
+      ) : (
+        <DefaultAvatarMark seed={member.id || name} />
+      )}
       <span className="group-members-capsule-status" data-status={status} />
     </span>
   );

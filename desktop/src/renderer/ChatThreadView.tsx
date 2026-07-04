@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ParticipantSummary, Turn } from "../shared/protocol";
 import { chatMessagesFromTurns, type ChatMessageRow } from "./AppState";
+import { DefaultAvatarMark } from "./DefaultAvatar";
 import { EnvelopeNotice } from "./EnvelopeNotice";
 import { RichContent } from "./RichContent";
 
@@ -300,7 +301,11 @@ function ChatAvatar({
   const name = participant?.name?.trim() || "参与者";
   return (
     <div className="chat-avatar" aria-hidden="true">
-      {avatarImage ? <img src={avatarImage} alt="" /> : name.charAt(0)}
+      {avatarImage ? (
+        <img src={avatarImage} alt="" />
+      ) : (
+        <DefaultAvatarMark seed={participant?.id || name} />
+      )}
     </div>
   );
 }

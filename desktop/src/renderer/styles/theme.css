@@ -427,3 +427,35 @@
   font-weight: var(--weight-medium);
   box-shadow: var(--shadow-soft);
 }
+
+/*
+ * Default avatar palette, dark redefinitions. Light values live in
+ * styles/default-avatar.css; here the tint drops to a dark ground and
+ * the mark brightens so each emblem stays legible on dark paper.
+ */
+:root[data-theme="dark"] {
+  --avatar-0-bg: hsl(14 29% 21%);
+  --avatar-0-fg: hsl(14 61% 67%);
+  --avatar-1-bg: hsl(33 31% 21%);
+  --avatar-1-fg: hsl(33 65% 67%);
+  --avatar-2-bg: hsl(52 24% 21%);
+  --avatar-2-fg: hsl(52 50% 64%);
+  --avatar-3-bg: hsl(96 20% 21%);
+  --avatar-3-fg: hsl(96 42% 64%);
+  --avatar-4-bg: hsl(150 20% 21%);
+  --avatar-4-fg: hsl(150 42% 67%);
+  --avatar-5-bg: hsl(182 21% 21%);
+  --avatar-5-fg: hsl(182 44% 67%);
+  --avatar-6-bg: hsl(202 24% 21%);
+  --avatar-6-fg: hsl(202 50% 67%);
+  --avatar-7-bg: hsl(222 23% 21%);
+  --avatar-7-fg: hsl(222 48% 67%);
+  --avatar-8-bg: hsl(250 21% 21%);
+  --avatar-8-fg: hsl(250 44% 67%);
+  --avatar-9-bg: hsl(288 18% 21%);
+  --avatar-9-fg: hsl(288 38% 67%);
+  --avatar-10-bg: hsl(322 20% 21%);
+  --avatar-10-fg: hsl(322 42% 67%);
+  --avatar-11-bg: hsl(350 26% 21%);
+  --avatar-11-fg: hsl(350 55% 67%);
+}

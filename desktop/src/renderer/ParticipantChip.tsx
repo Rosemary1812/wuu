@@ -1,4 +1,5 @@
 import type { ParticipantSummary } from "../shared/protocol";
+import { DefaultAvatarMark } from "./DefaultAvatar";
 
 export type ParticipantChipProps = {
   /**
@@ -45,7 +46,11 @@ export function ParticipantChip({
   return (
     <span className={className} title={role ? `${name} · ${role}` : name}>
       <span className="participant-chip-avatar" aria-hidden="true">
-        {avatarImage ? <img src={avatarImage} alt="" /> : name.charAt(0)}
+        {avatarImage ? (
+          <img src={avatarImage} alt="" />
+        ) : (
+          <DefaultAvatarMark seed={participant?.id || name} />
+        )}
       </span>
       <span className="participant-chip-name">{name}</span>
       {role ? (

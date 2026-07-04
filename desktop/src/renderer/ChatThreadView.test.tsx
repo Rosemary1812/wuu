@@ -56,7 +56,7 @@ function turns(items: Turn["items"]): ReadonlyArray<Pick<Turn, "id" | "items">> 
 }
 
 describe("ChatThreadView", () => {
-  it("renders a participant row with initial avatar, name, and bubble text", () => {
+  it("renders a participant row with default avatar, name, and bubble text", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
@@ -72,12 +72,12 @@ describe("ChatThreadView", () => {
     );
     const row = container.querySelector(".chat-row");
     expect(row).not.toBeNull();
-    expect(container.querySelector(".chat-avatar")?.textContent).toBe("N");
+    expect(container.querySelector(".chat-avatar .default-avatar")).not.toBeNull();
     expect(container.querySelector(".chat-sender-name")?.textContent).toBe("Noel");
     expect(container.querySelector(".chat-bubble")?.textContent).toContain("早上好");
   });
 
-  it("falls back to the first character of the name when there is no avatar image", () => {
+  it("falls back to a generated default avatar when there is no avatar image", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
@@ -91,7 +91,8 @@ describe("ChatThreadView", () => {
         ]),
       }),
     );
-    expect(container.querySelector(".chat-avatar")?.textContent).toBe("小");
+    expect(container.querySelector(".chat-avatar .default-avatar")).not.toBeNull();
+    expect(container.querySelector(".chat-avatar img")).toBeNull();
   });
 
   it("renders an <img> when avatar_image is a data URL", () => {
