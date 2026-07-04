@@ -70,6 +70,7 @@ function renderSidebar({
   onExportParticipants = () => {},
   onSelectParticipant = () => {},
   onCreateParticipant = () => {},
+  onStartNewThread = () => {},
 }: {
   projectMenuOpen?: boolean;
   pinnedThreads?: ThreadSummary[];
@@ -80,6 +81,7 @@ function renderSidebar({
   onExportParticipants?: () => void;
   onSelectParticipant?: (participant: ParticipantProfile) => void;
   onCreateParticipant?: () => void;
+  onStartNewThread?: () => void;
 } = {}): void {
   const state: AppState = {
     ...initialState,
@@ -125,7 +127,7 @@ function renderSidebar({
         searchOpen={false}
         debugFixturesVisible={false}
         sectionOrder={[SIDEBAR_SECTION_AGENTS, SCRATCH_PSEUDO_PROJECT_ID]}
-        onStartNewThread={() => {}}
+        onStartNewThread={onStartNewThread}
         onOpenSkillsTab={() => {}}
         onToggleConversationSearch={() => {}}
         onSeedConversationFixture={() => {}}
@@ -193,6 +195,29 @@ describe("AppSidebar layout", () => {
     expect(primaryNav?.querySelector(".project-add-menu")).not.toBeNull();
     expect(settings?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
     expect(settings?.textContent).toBe("设置");
+  });
+
+  // R1: this is the sidebar's own "新对话" entry (as opposed to a
+  // project row's hover "+" or the session-tab strip's "+"). App.tsx wires
+  // it to startNewThread({ resetToNoProject: true }) so it always lands on
+  // a fresh no-project draft, regardless of which project is active; this
+  // test just pins that the button fires the callback AppSidebar was given
+  // (the reset decision itself is unit-tested in AppState.test.ts via
+  // shouldResetToNoProjectForNewThread).
+  it("fires onStartNewThread when the primary-nav 新对话 button is clicked", () => {
+    let started = 0;
+    renderSidebar({ onStartNewThread: () => { started += 1; } });
+
+    const primaryNav = container.querySelector(".primary-nav");
+    const newThreadButton = Array.from(
+      primaryNav?.querySelectorAll("button.nav-item") ?? [],
+    ).find((button) => button.textContent?.includes("新对话"));
+    expect(newThreadButton).toBeTruthy();
+
+    act(() => {
+      (newThreadButton as HTMLButtonElement).click();
+    });
+    expect(started).toBe(1);
   });
 
   it("renders pinned sessions above the project list", () => {

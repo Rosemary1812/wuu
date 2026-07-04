@@ -199,6 +199,7 @@ import {
   sameRuntimeContext,
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
+  shouldResetToNoProjectForNewThread,
   sessionTabForLoadedRuntime,
   sessionTabForParticipant,
   sessionTabDraftForThread,
@@ -3748,7 +3749,7 @@ export function App(): JSX.Element {
         onSelectGitBranch={(branch) => void checkoutBranch(branch)}
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
-        onStartNewThread={() => void startNewThread()}
+        onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
         onOpenInstructions={openInstructions}
@@ -5068,7 +5069,9 @@ export function App(): JSX.Element {
     }
   }
 
-  async function startNewThread(): Promise<void> {
+  async function startNewThread(
+    options: { resetToNoProject?: boolean } = {},
+  ): Promise<void> {
     if (!state.activeContext) {
       return;
     }
@@ -5079,8 +5082,11 @@ export function App(): JSX.Element {
     setComposerImages([]);
     setComposerFiles([]);
     if (
-      state.activeContext.kind === "no_project" &&
-      (state.thread || state.secondaryThread)
+      shouldResetToNoProjectForNewThread(
+        state.activeContext,
+        Boolean(state.thread || state.secondaryThread),
+        options.resetToNoProject ?? false,
+      )
     ) {
       await useNoProject(true);
       return;
@@ -7359,7 +7365,7 @@ export function App(): JSX.Element {
           debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
         }
         sectionOrder={sidebarSectionOrder}
-        onStartNewThread={() => void startNewThread()}
+        onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
         onOpenSkillsTab={openSkillsTab}
         onToggleConversationSearch={toggleConversationSearch}
         onSeedConversationFixture={seedConversationFixture}

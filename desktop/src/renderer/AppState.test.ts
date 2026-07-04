@@ -33,13 +33,14 @@ import {
   reduceServerEvent,
   resolveThreadRuntimeContext,
   scratchThreadSummaries,
-  workspacePanelContext,
+  shouldResetToNoProjectForNewThread,
   sortThreads,
   summarizeThreadsForSidebar,
   threadBelongsToProject,
   threadProjectPath,
   threadSessionTabID,
   turnStreamStatusForThread,
+  workspacePanelContext,
   type SessionTab,
   type ThreadSummary,
 } from "./AppState";
@@ -2423,5 +2424,79 @@ describe("sidebar pin/archive matrix", () => {
     expect(
       scratchThreadSummaries(all, []).map((thread) => thread.id),
     ).toEqual(["scratch-live"]);
+  });
+});
+
+describe("shouldResetToNoProjectForNewThread (new-thread entry semantics)", () => {
+  // R1: the sidebar "新对话" button and the composer's "/新建对话" slash
+  // command both pass resetToNoProject=true and must land on a fresh
+  // no-project context even when a project is currently active — that's
+  // the "sidebar entry always produces a no_project draft" contract.
+  it("sidebar/composer entry (resetToNoProject=true) resets out of an active project", () => {
+    expect(
+      shouldResetToNoProjectForNewThread(
+        { kind: "project" },
+        /* hasActiveThread */ false,
+        /* resetToNoProject */ true,
+      ),
+    ).toBe(true);
+  });
+
+  it("sidebar/composer entry (resetToNoProject=true) resets even mid-thread in a project", () => {
+    expect(
+      shouldResetToNoProjectForNewThread(
+        { kind: "project" },
+        /* hasActiveThread */ true,
+        /* resetToNoProject */ true,
+      ),
+    ).toBe(true);
+  });
+
+  // R1: the session-tab strip's "+" passes resetToNoProject=false (the
+  // default) and must keep inheriting the active project — that's the
+  // "tab + inherits" contract.
+  it("tab-strip entry (resetToNoProject=false) inherits the active project", () => {
+    expect(
+      shouldResetToNoProjectForNewThread(
+        { kind: "project" },
+        /* hasActiveThread */ false,
+        /* resetToNoProject */ false,
+      ),
+    ).toBe(false);
+  });
+
+  it("tab-strip entry (resetToNoProject=false) inherits a project even mid-thread", () => {
+    expect(
+      shouldResetToNoProjectForNewThread(
+        { kind: "project" },
+        /* hasActiveThread */ true,
+        /* resetToNoProject */ false,
+      ),
+    ).toBe(false);
+  });
+
+  // Pre-existing behavior, unrelated to resetToNoProject: starting a new
+  // thread while already sitting on an active no-project thread always
+  // gets a fresh scratch directory rather than continuing to write into
+  // the current thread's workspace.
+  it("no-project context with an active thread always resets, regardless of resetToNoProject", () => {
+    expect(
+      shouldResetToNoProjectForNewThread({ kind: "no_project" }, true, false),
+    ).toBe(true);
+    expect(
+      shouldResetToNoProjectForNewThread({ kind: "no_project" }, true, true),
+    ).toBe(true);
+  });
+
+  it("no-project context with only a draft (no active thread) does not force a reset", () => {
+    expect(
+      shouldResetToNoProjectForNewThread({ kind: "no_project" }, false, false),
+    ).toBe(false);
+  });
+
+  it("returns false with no active context regardless of the other flags", () => {
+    expect(shouldResetToNoProjectForNewThread(undefined, true, true)).toBe(
+      false,
+    );
   });
 });
