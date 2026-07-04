@@ -810,6 +810,24 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending ON resident_inbox(participant_id, created_at) WHERE consumed_at IS NULL`,
+		// message_marks backs read receipts + message reactions
+		// (2026-07-04-read-receipts-and-reactions.md §4): one row per
+		// (message, participant, kind). kind='seen' carries a lifecycle
+		// status (in_progress|completed|failed); kind='reaction' carries a
+		// reaction key in payload. A message is addressed by (session_id, seq).
+		`CREATE TABLE IF NOT EXISTS message_marks (
+			session_id     TEXT NOT NULL,
+			seq            INTEGER NOT NULL,
+			participant_id TEXT NOT NULL,
+			kind           TEXT NOT NULL,
+			status         TEXT NOT NULL DEFAULT '',
+			payload        TEXT NOT NULL DEFAULT '',
+			at             INTEGER NOT NULL,
+			PRIMARY KEY (session_id, seq, participant_id, kind),
+			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_marks_message ON message_marks(session_id, seq)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
