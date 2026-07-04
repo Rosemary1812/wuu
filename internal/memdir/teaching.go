@@ -88,6 +88,19 @@ func WorkerTeaching(dir string) string {
 	}, "\n")
 }
 
+// ManagerTeaching returns the notebook-format rules shared with the
+// settings-panel memory manager agent (memory-redesign contract §8.3): the
+// four memory types, the two-step save, and the What-NOT-to-save gate,
+// without the audience-specific header lines of Session/ResidentTeaching.
+// Exported so the appserver panel agent reuses the canonical wording
+// instead of duplicating it.
+func ManagerTeaching() string {
+	lines := append([]string{}, typesSection...)
+	lines = append(lines, howToSaveSection...)
+	lines = append(lines, whatNotToSaveSection...)
+	return strings.Join(lines, "\n")
+}
+
 // UserIndexNotice returns the read-only preamble a resident named agent sees
 // above the injected user-notebook index.
 func UserIndexNotice() string {

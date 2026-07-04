@@ -380,6 +380,208 @@ func TestMemoryOverviewEmptyNotebook(t *testing.T) {
 	}
 }
 
+func TestMemoryChatUserScopeSavesMemoryAndReportsChangedFiles(t *testing.T) {
+	topic := "---\nname: reply-style\ndescription: 用户喜欢简短回复\ntype: user\n---\n\n喜欢简短的中文回复。\n"
+	index := "- [回复风格](reply-style.md) — 喜欢简短回复\n"
+	client := &fakeClient{responses: []providers.ChatResponse{
+		{ToolCalls: []providers.ToolCall{
+			{ID: "t1", Name: "write_file", Arguments: fmt.Sprintf(`{"path":"reply-style.md","content":%q}`, topic)},
+			{ID: "t2", Name: "write_file", Arguments: fmt.Sprintf(`{"path":"MEMORY.md","content":%q}`, index)},
+		}},
+		providersResponse("已保存你的回复风格偏好。"),
+	}}
+	srv, home := newMemoryPanelServer(t, client)
+
+	resp := callMemoryRPC(t, srv, "chat-1", MethodMemoryChat,
+		`{"scope":"user","message":"记住我喜欢简短回复"}`)
+	result := remarshal[MemoryChatResult](t, resp["result"])
+	if result.ReplyMD != "已保存你的回复风格偏好。" {
+		t.Fatalf("reply_md = %q", result.ReplyMD)
+	}
+	want := []MemoryChangedFile{
+		{Path: "memory/MEMORY.md", Action: "created"},
+		{Path: "memory/reply-style.md", Action: "created"},
+	}
+	if len(result.ChangedFiles) != len(want) {
+		t.Fatalf("changed_files = %+v, want %+v", result.ChangedFiles, want)
+	}
+	for i := range want {
+		if result.ChangedFiles[i] != want[i] {
+			t.Fatalf("changed_files[%d] = %+v, want %+v", i, result.ChangedFiles[i], want[i])
+		}
+	}
+	userDir := memdir.UserMemdir(home)
+	if got, err := os.ReadFile(filepath.Join(userDir, "reply-style.md")); err != nil || string(got) != topic {
+		t.Fatalf("topic file on disk = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(userDir, "MEMORY.md")); err != nil || string(got) != index {
+		t.Fatalf("index on disk = %q, %v", got, err)
+	}
+
+	// Manager toolset and prompt discipline.
+	req := client.requests[0]
+	wantTools := []string{"edit_file", "glob", "list_files", "read_file", "write_file"}
+	if got := requestToolNames(req); strings.Join(got, ",") != strings.Join(wantTools, ",") {
+		t.Fatalf("manager toolset = %v, want %v", got, wantTools)
+	}
+	system := req.Messages[0].Content
+	for _, needle := range []string{"What NOT to save", "两步保存纪律", userDir, "中文一句话"} {
+		if !strings.Contains(system, needle) {
+			t.Fatalf("manager system prompt is missing %q:\n%s", needle, system)
+		}
+	}
+}
+
+func TestMemoryChatReportsModifiedIndex(t *testing.T) {
+	client := &fakeClient{}
+	srv, home := newMemoryPanelServer(t, client)
+	userDir := memdir.UserMemdir(home)
+	indexPath := writeMemoryFile(t, userDir, "MEMORY.md",
+		"- [回复风格](reply-style.md) — 喜欢简短回复\n- [旧条目](old.md) — 已过时\n")
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(indexPath, past, past); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	client.responses = []providers.ChatResponse{
+		{ToolCalls: []providers.ToolCall{
+			{ID: "t1", Name: "read_file", Arguments: `{"path":"MEMORY.md"}`},
+		}},
+		{ToolCalls: []providers.ToolCall{
+			{ID: "t2", Name: "write_file", Arguments: `{"path":"MEMORY.md","content":"- [回复风格](reply-style.md) — 喜欢简短回复\n"}`},
+		}},
+		providersResponse("已删除旧条目的索引行。"),
+	}
+
+	resp := callMemoryRPC(t, srv, "chat-mod", MethodMemoryChat,
+		`{"scope":"user","message":"删掉旧条目"}`)
+	result := remarshal[MemoryChatResult](t, resp["result"])
+	if len(result.ChangedFiles) != 1 ||
+		result.ChangedFiles[0] != (MemoryChangedFile{Path: "memory/MEMORY.md", Action: "modified"}) {
+		t.Fatalf("changed_files = %+v, want one modified memory/MEMORY.md", result.ChangedFiles)
+	}
+}
+
+func TestMemoryChatParticipantScopeRootsAndEscapeRejection(t *testing.T) {
+	client := &fakeClient{}
+	srv, home := newMemoryPanelServer(t, client)
+	ivy := saveNamedParticipant(t, srv.rt, "Ivy", "reviewer", "")
+	userDir := memdir.UserMemdir(home)
+	notebook := memdir.ParticipantMemdir(home, ivy)
+	escapePath := filepath.Join(home, "escape.md")
+	client.responses = []providers.ChatResponse{
+		{ToolCalls: []providers.ToolCall{
+			// Relative path → participant notebook (the chat root dir).
+			{ID: "t1", Name: "write_file", Arguments: `{"path":"lesson.md","content":"---\nname: lesson\ndescription: 教训\ntype: lesson\n---\n\n先跑测试。\n"}`},
+			// The user notebook is inside the whitelist in participant scope.
+			{ID: "t2", Name: "write_file", Arguments: fmt.Sprintf(`{"path":%q,"content":"note\n"}`, filepath.Join(userDir, "user-note.md"))},
+			// Outside both notebooks → FileScopeRoots must reject.
+			{ID: "t3", Name: "write_file", Arguments: fmt.Sprintf(`{"path":%q,"content":"escaped\n"}`, escapePath)},
+		}},
+		providersResponse("已为 Ivy 记下教训，并更新了用户笔记。"),
+	}
+
+	resp := callMemoryRPC(t, srv, "chat-p", MethodMemoryChat,
+		fmt.Sprintf(`{"scope":"participant","participant_id":%q,"message":"记一条教训"}`, ivy))
+	result := remarshal[MemoryChatResult](t, resp["result"])
+	want := []MemoryChangedFile{
+		{Path: "memory/user-note.md", Action: "created"},
+		{Path: filepath.ToSlash(filepath.Join("participants", ivy, "memory", "lesson.md")), Action: "created"},
+	}
+	if len(result.ChangedFiles) != len(want) {
+		t.Fatalf("changed_files = %+v, want %+v", result.ChangedFiles, want)
+	}
+	for i := range want {
+		if result.ChangedFiles[i] != want[i] {
+			t.Fatalf("changed_files[%d] = %+v, want %+v", i, result.ChangedFiles[i], want[i])
+		}
+	}
+	if _, err := os.Stat(filepath.Join(notebook, "lesson.md")); err != nil {
+		t.Fatalf("participant topic file missing: %v", err)
+	}
+	if _, err := os.Stat(escapePath); !os.IsNotExist(err) {
+		t.Fatalf("escape write outside the notebooks must not land, stat err=%v", err)
+	}
+	if !requestMessagesContain(client.requests[1], "outside the allowed file scope") {
+		t.Fatalf("escape write should surface a file-scope rejection to the model: %+v", client.requests[1].Messages)
+	}
+	if !strings.Contains(client.requests[0].Messages[0].Content, notebook) {
+		t.Fatalf("participant-scope manager prompt should name the identity notebook %q", notebook)
+	}
+}
+
+func TestMemoryChatInvalidatesOverviewCache(t *testing.T) {
+	client := &fakeClient{responses: []providers.ChatResponse{
+		providersResponse("第一版概览"),
+		providersResponse("没有需要修改的内容。"),
+		providersResponse("第二版概览"),
+	}}
+	srv, home := newMemoryPanelServer(t, client)
+	writeMemoryFile(t, memdir.UserMemdir(home), "MEMORY.md", "- [条目](topic.md) — 钩子\n")
+
+	first := remarshal[MemoryOverviewResult](t,
+		callMemoryRPC(t, srv, "inv-1", MethodMemoryOverview, `{"scope":"user"}`)["result"])
+	if first.Cached || first.EssayMD != "第一版概览" {
+		t.Fatalf("unexpected first overview: %+v", first)
+	}
+	hit := remarshal[MemoryOverviewResult](t,
+		callMemoryRPC(t, srv, "inv-2", MethodMemoryOverview, `{"scope":"user"}`)["result"])
+	if !hit.Cached {
+		t.Fatalf("second overview should hit the cache: %+v", hit)
+	}
+
+	chatResp := callMemoryRPC(t, srv, "inv-chat", MethodMemoryChat, `{"scope":"user","message":"看看有什么"}`)
+	rawChat, ok := chatResp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected chat result, got %+v", chatResp)
+	}
+	if files, ok := rawChat["changed_files"].([]any); !ok || len(files) != 0 {
+		t.Fatalf(`changed_files must be an empty JSON array when nothing changed: %+v`, rawChat["changed_files"])
+	}
+
+	// The chat run touched nothing (index mtime unchanged), yet the cache
+	// must have been invalidated: the next overview regenerates.
+	again := remarshal[MemoryOverviewResult](t,
+		callMemoryRPC(t, srv, "inv-3", MethodMemoryOverview, `{"scope":"user"}`)["result"])
+	if again.Cached || again.EssayMD != "第二版概览" {
+		t.Fatalf("overview after chat should regenerate: %+v", again)
+	}
+	if len(client.requests) != 3 {
+		t.Fatalf("expected 3 model calls (overview, chat, overview), got %d", len(client.requests))
+	}
+}
+
+func TestMemoryChatValidation(t *testing.T) {
+	client := &fakeClient{response: providersResponse("ok")}
+	srv, _ := newMemoryPanelServer(t, client)
+	retired := saveNamedParticipant(t, srv.rt, "Old", "reviewer", "")
+	if err := session.RetireParticipant(srv.rt.SessionDir, retired); err != nil {
+		t.Fatalf("retire participant: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		params  string
+		wantErr string
+	}{
+		{"empty message", `{"scope":"user","message":"  "}`, "message is required"},
+		{"unknown scope", `{"scope":"all","message":"hi"}`, "unknown memory scope"},
+		{"participant scope without id", `{"scope":"participant","message":"hi"}`, "participant_id is required"},
+		{"participant not found", `{"scope":"participant","participant_id":"prt-missing","message":"hi"}`, "participant not found"},
+		{"retired participant", fmt.Sprintf(`{"scope":"participant","participant_id":%q,"message":"hi"}`, retired), "retired"},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := callMemoryRPC(t, srv, fmt.Sprintf("chat-val-%d", i), MethodMemoryChat, tc.params)
+			if errStr := memoryRPCError(t, resp); !containsString(errStr, tc.wantErr) {
+				t.Fatalf("error = %q, want it to mention %q", errStr, tc.wantErr)
+			}
+		})
+	}
+	if len(client.requests) != 0 {
+		t.Fatalf("validation failures must never reach the model, got %d calls", len(client.requests))
+	}
+}
+
 func TestMemoryOverviewRejectsInvalidScopes(t *testing.T) {
 	client := &fakeClient{response: providersResponse("essay")}
 	srv, _ := newMemoryPanelServer(t, client)

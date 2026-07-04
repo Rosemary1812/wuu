@@ -328,6 +328,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleMemoryRead(req)
 	case MethodMemoryOverview:
 		return s.handleMemoryOverview(req)
+	case MethodMemoryChat:
+		return s.handleMemoryChat(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:

@@ -25,6 +25,8 @@ import (
 const (
 	memoryOverviewTimeout  = 90 * time.Second
 	memoryOverviewMaxSteps = 4
+	memoryChatTimeout      = 120 * time.Second
+	memoryChatMaxSteps     = 8
 )
 
 // memoryOverviewCacheEntry memoizes one generated overview essay. It stays
@@ -211,6 +213,107 @@ func memoryOverviewUserPrompt(indexContent string) string {
 		index = "（索引为空——这本笔记本还没有任何记忆条目。）"
 	}
 	return "以下是这本笔记本的 " + memdir.EntrypointName + " 索引内容：\n\n" + index + "\n\n请按模板生成概览短文。"
+}
+
+// handleMemoryChat serves the panel's management chat: the manager agent
+// edits the REAL notebook files with the ordinary file tools inside a
+// FileScopeRoots whitelist of the user notebook (plus, in participant
+// scope, that agent's identity notebook). changed_files is computed by
+// diffing (path → mtime,size) snapshots of the whitelisted notebooks taken
+// before and after the run; a successful run drops the affected overview
+// cache entries so the panel essay regenerates.
+func (s *Server) handleMemoryChat(req Request) error {
+	var params MemoryChatParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	message := strings.TrimSpace(params.Message)
+	if message == "" {
+		return s.writeResponse(req.ID, nil, errors.New("message is required"))
+	}
+	dir, err := s.memoryNotebook(params.Scope, params.ParticipantID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	userDir := memdir.UserMemdir(strings.TrimSpace(s.rt.WuuHome))
+	roots := []string{userDir}
+	if params.Scope == MemoryScopeParticipant {
+		roots = append(roots, dir)
+	}
+	for _, root := range roots {
+		if err := memdir.EnsureDir(root); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+
+	before := snapshotMemoryRoots(roots)
+	reply, err := s.runMemoryChatAgent(params.Scope, dir, userDir, roots, message)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	changed := diffMemorySnapshots(before, snapshotMemoryRoots(roots), s.rt.WuuHome)
+
+	// The manager may have rewritten topic files without moving the index
+	// mtime, so mtime-keyed caching alone is not enough: drop every
+	// overview entry this run could have affected.
+	s.invalidateMemoryOverview(MemoryScopeUser, "")
+	if params.Scope == MemoryScopeParticipant {
+		s.invalidateMemoryOverview(MemoryScopeParticipant, strings.TrimSpace(params.ParticipantID))
+	}
+	return s.writeResponse(req.ID, MemoryChatResult{ReplyMD: reply, ChangedFiles: changed}, nil)
+}
+
+// runMemoryChatAgent performs the manager agent run: base RunToolLoop with
+// read+write file tools, relative paths anchored in the target notebook,
+// and the whitelist limited to the notebook roots.
+func (s *Server) runMemoryChatAgent(scope, targetDir, userDir string, roots []string, message string) (string, error) {
+	client, model, cfg, err := s.memoryPanelModel()
+	if err != nil {
+		return "", err
+	}
+	messages := []providers.ChatMessage{
+		{Role: "system", Content: memoryChatSystemPrompt(scope, targetDir, userDir)},
+		{Role: "user", Content: message},
+	}
+	executor := newMemoryPanelExecutor(targetDir, roots, true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), memoryChatTimeout)
+	defer cancel()
+	cfg.Tools = executor
+	cfg.Model = model
+	cfg.MaxSteps = memoryChatMaxSteps
+	result, err := agent.RunToolLoop(ctx, messages, cfg, memoryPanelStep{client: client})
+	if err != nil {
+		return "", fmt.Errorf("memory manager agent: %w", err)
+	}
+	reply := strings.TrimSpace(result.Content)
+	if reply == "" {
+		reply = "已处理，但管理 agent 没有返回说明。"
+	}
+	return reply, nil
+}
+
+func memoryChatSystemPrompt(scope, targetDir, userDir string) string {
+	target := fmt.Sprintf("当前管理的是用户记忆笔记本：`%s`。", userDir)
+	if scope == MemoryScopeParticipant {
+		target = fmt.Sprintf(
+			"当前管理的是一位常驻同事 agent 的身份笔记本：`%s`。用户记忆笔记本 `%s` 也在你的可写范围内，但除非用户的指令明确涉及它，否则不要改动它。",
+			targetDir, userDir)
+	}
+	return strings.Join([]string{
+		"你是设置页记忆面板的管理 agent。用户通过面板对话框对一本记忆笔记本下达管理指令；你用文件工具（read_file、list_files、glob、write_file、edit_file）直接修改真实的笔记本文件，修改立即生效。相对路径以当前笔记本目录为根；你的文件访问被硬性限制在笔记本目录内。",
+		target,
+		"",
+		"笔记本格式与守则：",
+		memdir.ManagerTeaching(),
+		"",
+		"两步保存纪律（任何修改都必须保持索引与正文一致）：",
+		"- 新增或修改一条记忆：先写/改主题文件，再同步更新 " + memdir.EntrypointName + " 中对应的索引行。",
+		"- 删除一条记忆：清空对应主题文件的正文（工具不能删除文件，用 write_file 写入空内容即可），并删除 " + memdir.EntrypointName + " 中对应的索引行。",
+		"- 绝不把记忆正文直接写进 " + memdir.EntrypointName + "；修改前先读取要改的文件。",
+		"",
+		"回复要求：完成后用中文一句话说明你做了什么（保存/修改/删除了哪条记忆）；如果没有需要修改的内容或指令不清楚，也用一句话说明原因。不要输出多余的解释或文件内容。",
+	}, "\n")
 }
 
 // memoryPanelStep is the one-round-trip Step for the panel agents: a plain
