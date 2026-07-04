@@ -28,6 +28,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 	"github.com/blueberrycongee/wuu/internal/subagent"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
@@ -883,10 +884,20 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		runner = threadRuntime.StreamRunner
 	}
 	residentParticipantID := ""
+	turnWorktreePath := ""
 	if th != nil {
 		th.mu.Lock()
 		residentParticipantID = strings.TrimSpace(th.DMParticipantID)
+		turnWorktreePath = strings.TrimSpace(th.WorktreePath)
 		th.mu.Unlock()
+	}
+	// Fork-to-worktree step 5: bind the thread's isolated checkout into the
+	// tool execution context. All turn variants funnel through here, so a
+	// worktree-bound thread's file/shell tools switch their execution CWD to
+	// the checkout (after their ordinary sandbox checks) even when the
+	// runtime happens to be rooted at the parent repo.
+	if turnWorktreePath != "" {
+		ctx = toolctx.WithWorktreePath(ctx, turnWorktreePath)
 	}
 	turnPermissions := turnRuntime.permissions()
 	turnRuntime = turnRuntime.withPermissions(turnPermissions)

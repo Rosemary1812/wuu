@@ -4750,6 +4750,115 @@ func TestServerThreadForkToWorktree(t *testing.T) {
 	}
 }
 
+// TestServerWorktreeBoundTurnExecutesInWorktree covers fork-to-worktree step
+// 5: the turn entry injects the session's persisted worktree binding into the
+// tool execution context, so even when a worktree-bound thread's runtime ends
+// up rooted at the parent repo (CWD drift), file tools physically execute
+// inside the isolated checkout — never the parent repo the user believes is
+// protected.
+func TestServerWorktreeBoundTurnExecutesInWorktree(t *testing.T) {
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{Content: "first answer"},
+			{ToolCalls: []providers.ToolCall{{
+				ID:        "call-worktree-write",
+				Name:      "write_file",
+				Arguments: `{"path":"ctx-isolated.txt","content":"worktree only\n"}`,
+			}}},
+			{Content: "wrote in worktree"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	initAppserverGitRepo(t, rt.RootDir)
+	stateDir := filepath.Join(rt.RootDir, ".wuu", "state")
+	rt.StateDir = stateDir
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	kit.SetStateDir(stateDir)
+	rt.Toolkit = kit
+	rt.StreamRunner.Tools = kit
+	manager, err := process.NewManager(rt.RootDir, filepath.Join(stateDir, "runtime"))
+	if err != nil {
+		t.Fatalf("process.NewManager: %v", err)
+	}
+	rt.ProcessManager = manager
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	startReq, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "first prompt"},
+	})
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), startReq); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, waitForMethod(t, out, NotificationTurnCompleted), NotificationTurnCompleted)["params"])
+
+	forkReq, err := json.Marshal(map[string]any{
+		"id":     "3",
+		"method": MethodThreadFork,
+		"params": ThreadForkParams{
+			ThreadID: threadID,
+			TurnID:   completed.Turn.ID,
+			Mode:     "worktree",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal fork request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), forkReq); err != nil {
+		t.Fatalf("thread/fork: %v", err)
+	}
+	result := remarshal[ThreadForkResult](t, responseByID(t, parseOutput(t, out.String()), "3")["result"])
+	fork := result.Thread
+	if result.Worktree == nil || strings.TrimSpace(result.Worktree.Path) == "" {
+		t.Fatalf("expected worktree info in fork result: %+v", result)
+	}
+
+	// Simulate runtime-root drift: the in-memory thread loses its worktree
+	// CWD, as if the runtime had been (re)built against the parent repo. The
+	// session metadata still binds the worktree, and that binding — not the
+	// incidental CWD — must decide where tools execute.
+	forkTh := srv.thread(fork.ID)
+	if forkTh == nil {
+		t.Fatalf("fork thread %q not resident", fork.ID)
+	}
+	forkTh.mu.Lock()
+	forkTh.CWD = rt.RootDir
+	forkTh.mu.Unlock()
+
+	forkTurnReq, err := json.Marshal(map[string]any{
+		"id":     "4",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: fork.ID, Prompt: "write the isolated file"},
+	})
+	if err != nil {
+		t.Fatalf("marshal fork turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), forkTurnReq); err != nil {
+		t.Fatalf("turn/start on fork: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, fork.ID, 1)
+
+	if _, err := os.Stat(filepath.Join(result.Worktree.Path, "ctx-isolated.txt")); err != nil {
+		t.Fatalf("worktree-bound turn should write inside the checkout: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(rt.RootDir, "ctx-isolated.txt")); !os.IsNotExist(err) {
+		t.Fatalf("parent repo must stay untouched, stat err=%v", err)
+	}
+}
+
 func TestServerThreadEditMessageRewindsToUserMessage(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	if err := os.MkdirAll(rt.SessionDir, 0o755); err != nil {
