@@ -5264,7 +5264,7 @@ pre {
   gap: 14px;
   color: var(--ink-tertiary);
   width: 100%;
-  max-width: min(680px, calc(100% - 32px));
+  max-width: 100%;
   margin-inline: auto;
 }
 

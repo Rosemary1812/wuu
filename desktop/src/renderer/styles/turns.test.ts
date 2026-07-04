@@ -46,7 +46,8 @@ describe("turns.css turn notice positioning", () => {
     const body = cssRuleBody(".turn-notice");
     // Full width so the ::before/::after hairlines have room to stretch.
     expect(body).toMatch(/width:\s*100%;/);
-    expect(body).toMatch(/max-width:\s*min\(680px,\s*calc\(100% - 32px\)\);/);
+    expect(body).toMatch(/max-width:\s*100%;/);
+    expect(body).not.toMatch(/680px/);
     expect(body).toMatch(/margin-inline:\s*auto;/);
     // The side hairlines exist (not display: none) and flex to fill.
     const lines = cssRuleBody(".turn-event-notice::before,\n.turn-event-notice::after");
