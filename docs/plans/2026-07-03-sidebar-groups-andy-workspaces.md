@@ -1,7 +1,7 @@
 # 侧栏基线修复、群聊入口、Andy 与工作区范围 — 设计
 
 日期：2026-07-03
-状态：设计定稿（未实施）
+状态：已实施
 上游：`2026-07-03-resident-named-agents.md`（公理与 §5 常驻提示词——本文新增的提示词段已同步进该文档，红线 6 适用）、`2026-07-03-chat-style-threads-design.md`（聊天视图与群契约——本文 §2 修订其侧栏描述，§3-§4 兑现其 "out of scope" 段）。
 
 四项已裁决的取舍（2026-07-03，与用户确认）：
@@ -70,7 +70,7 @@ add_group_member(thread_id, participant_id)
 
 约束：
 
-- **不给 agent 移人/解散/改名工具**。移除成员走用户 UI（`thread/members/remove` 已有）；`# all` 是系统保证的频道，agent 与用户都不可解散或改名。
+- **不给 agent 移人/解散/改名工具**。移除成员走用户 UI（`thread/members/remove`，后端 handler 于 2026-07-04 补齐，此前仅前端接线）；`# all` 是系统保证的频道，agent 与用户都不可解散或改名。
 - **频率预算**（runtime 强制）：沿用 `post_message` 的速率限制器；每 turn 建群 ≤ 1、拉人 ≤ 8 次；群成员上限 8（resident 文档 §6 已定）不变，超限报错。
 - **提示词约束**（进 §5，见 §6）：建群须有持续性目的，优先复用既有群，禁止为一次性问题建群。
 - 任务 run（`participant/start`）与普通 subagent **不授予**这两个工具（resident 文档 §6 矩阵已增行）。

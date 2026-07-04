@@ -1,7 +1,7 @@
 # 常驻 Named Agent：一个大脑、一个收件箱、带目标的发言
 
 日期：2026-07-03
-状态：设计定稿（未实施）
+状态：已实施（2026-07-03）；记忆相关段落（§5 的 MEMORY.md 表述）由 docs/plans/2026-07-04-memory-redesign.md 修订，以该文档为准
 性质：**本文档同时是给实施 agent 的强约束提示词。实施时不得偏离第 0 章的设计理念与第 8 章的红线；凡与本文冲突的现有实现，以本文为准修改实现，而不是修改本文。**
 
 前置阅读：`docs/2026-07-02-conversation-native-multi-agent-zh.md`（调研与 Phase 1-5 总纲，本文是其 Phase 4/5 的修订与细化）。前端一切视觉规范以该文第 7 章为准，本文不重复。
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS thread_members (
 前端 wire 契约（§7.4 的 chips UI 依赖）：
 
 - `Thread` 增加可选字段 `members: ParticipantSummary[]`——成员表的 participant 快照（named only）。无成员的 thread 与 DM thread 该字段缺失或为空，前端不渲染 chips 行。
-- 新 RPC `thread/members/remove`，params `{thread_id, participant_id}`，result `{thread}`（成员更新后的完整 Thread，前端按 pin/archive 同款 upsert 回 state）。显式添加走 composer @（T6 自动入群），本期不做单独的 add RPC。
+- 新 RPC `thread/members/remove`，params `{thread_id, participant_id}`，result `{thread}`（成员更新后的完整 Thread，前端按 pin/archive 同款 upsert 回 state）。显式添加走 composer @（T6 自动入群），本期不做单独的 add RPC。注：后端 handler 于 2026-07-04 补齐（此前仅前端接线）。
 - `turn/start` 增加可选字段 `mentions: string[]`（participant_id，对应 §4.2 的 `TurnStartParams.Mentions`）。前端从 prompt 文本解析 roster 名字的 `@Name` 全词匹配得到 ID 列表，**仅在非空时附带该字段**——server 端 JSON 解码 DisallowUnknownFields，空 mentions 省略字段保证后端未落地前普通发送不受影响。
 
 ### 3.2 新表：持久收件箱
@@ -322,6 +322,8 @@ DM 直连消息：回复 = 对本 DM 的 `post_message`；本批含 DM 消息而
 ---
 
 ## 5. 常驻 system prompt（全文，实施时逐字落地）
+
+**修订说明（2026-07-04）**：本节的记忆相关表述（"Keep durable notes in MEMORY.md"、`## Memory` 注入段等）已由 `2026-07-04-memory-redesign.md` §5 修订，以该文档为准；本节其余部分继续有效。
 
 放 `internal/appserver/participant_prompt.go`，函数 `residentParticipantSystemPrompt(p participant.Participant, memory string) string`。每 turn 重建（memory 更新次 turn 生效）。**这份提示词是公理 1-8 的对 agent 表达，修改措辞需回到本文档同步。**
 
