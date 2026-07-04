@@ -15,6 +15,30 @@
   vertical-align: baseline;
 }
 
+/* 16px avatar cell inside the chip: uploaded image when the summary
+   carries avatar_image, otherwise the name's first letter. Mirrors
+   .chat-avatar (chat.css) at chip scale. */
+.participant-chip-avatar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-6);
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.participant-chip-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .participant-chip-name {
   min-width: 0;
   overflow: hidden;

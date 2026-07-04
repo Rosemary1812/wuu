@@ -5,7 +5,9 @@
  * spans (skipping the role when empty). Without one it falls back to
  * legacy `Agent` fields: name comes from fallbackTaskName, then
  * fallbackType, then the literal "agent"; the role is the fallbackType
- * (suppressed when it would duplicate the name).
+ * (suppressed when it would duplicate the name). The 16px avatar cell
+ * is always present: an <img> when the summary carries avatar_image,
+ * otherwise the resolved name's first letter.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
@@ -63,11 +65,27 @@ describe("ParticipantChip", () => {
   it("renders name and role from the participant summary", () => {
     mount({ participant: reviewer });
     expect(chip()).not.toBeNull();
-    expect(chip()!.querySelector(".participant-chip-avatar")).toBeNull();
     expect(spanText(".participant-chip-name")).toBe("Reviewer·auth");
     expect(spanText(".participant-chip-role")).toBe("reviewer");
     expect(chip()!.textContent).toContain("Reviewer·auth");
     expect(chip()!.textContent).toContain("reviewer");
+  });
+
+  it("renders the avatar image when the summary carries avatar_image", () => {
+    const dataUrl = "data:image/png;base64,iVBORw0KGgo=";
+    mount({ participant: { ...reviewer, avatar_image: dataUrl } });
+    const img = chip()!.querySelector<HTMLImageElement>(
+      ".participant-chip-avatar img",
+    );
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe(dataUrl);
+    expect(spanText(".participant-chip-avatar")).toBe("");
+  });
+
+  it("falls back to the name's first letter when there is no avatar image", () => {
+    mount({ participant: reviewer });
+    expect(chip()!.querySelector(".participant-chip-avatar img")).toBeNull();
+    expect(spanText(".participant-chip-avatar")).toBe("R");
   });
 
   it("omits the role span when the summary lacks it", () => {
@@ -87,7 +105,8 @@ describe("ParticipantChip", () => {
 
   it("falls back to the task name and type when participant is missing", () => {
     mount({ fallbackType: "explore", fallbackTaskName: "检查左侧树" });
-    expect(chip()!.querySelector(".participant-chip-avatar")).toBeNull();
+    expect(chip()!.querySelector(".participant-chip-avatar img")).toBeNull();
+    expect(spanText(".participant-chip-avatar")).toBe("检");
     expect(spanText(".participant-chip-name")).toBe("检查左侧树");
     expect(spanText(".participant-chip-role")).toBe("explore");
   });
@@ -101,7 +120,7 @@ describe("ParticipantChip", () => {
   it("shows the literal agent when there is no identity at all", () => {
     mount({});
     expect(spanText(".participant-chip-name")).toBe("agent");
-    expect(chip()!.querySelector(".participant-chip-avatar")).toBeNull();
+    expect(spanText(".participant-chip-avatar")).toBe("a");
     expect(chip()!.querySelector(".participant-chip-role")).toBeNull();
   });
 });

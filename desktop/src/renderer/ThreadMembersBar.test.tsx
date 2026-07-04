@@ -55,6 +55,23 @@ describe("ThreadMembersBar", () => {
     expect(container.textContent).toContain("阿蓝");
   });
 
+  it("renders the member avatar image inside its chip", () => {
+    const dataUrl = "data:image/png;base64,iVBORw0KGgo=";
+    const container = mount(
+      createElement(ThreadMembersBar, {
+        members: [
+          { id: "participant-3", name: "小紫", kind: "named", avatar_image: dataUrl },
+        ],
+        onRemove: () => {},
+      }),
+    );
+    const img = container.querySelector<HTMLImageElement>(
+      ".participant-chip-avatar img",
+    );
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe(dataUrl);
+  });
+
   it("renders nothing when there are no members", () => {
     const container = mount(
       createElement(ThreadMembersBar, { members: [], onRemove: () => {} }),

@@ -584,9 +584,15 @@ export type ParticipantSummary = {
   kind: string;
   role?: string;
   // avatar_image is an uploaded image data URL (see
-  // ParticipantProfile.avatar_image). Optional because the lightweight
-  // wire summary embedded in thread items and agents does not always
-  // carry it.
+  // ParticipantProfile.avatar_image). The backend fills it for every
+  // summary resolved from the participant store — chat bubbles, group
+  // thread members, typing rows — but caps the embedded payload at
+  // 64KB raw bytes (appserver participantSummaryAvatarMaxBytes):
+  // summaries are duplicated into each thread item they attribute, so
+  // larger uploads degrade to the initial-letter avatar here while
+  // still rendering in full-profile surfaces (profile panel,
+  // participant/list). Optional because synthesized fallback summaries
+  // (legacy rows, ephemeral snapshots) never carry it.
   avatar_image?: string;
 };
 
