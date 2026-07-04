@@ -21,6 +21,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/memdir"
+	"github.com/blueberrycongee/wuu/internal/modelbudget"
+	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -482,6 +484,8 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 	if apiModel == "" {
 		apiModel = modelName
 	}
+	pinnedBudget := modelbudget.Budget{}
+	havePinnedBudget := false
 	if rawPin := strings.TrimSpace(p.Model); rawPin != "" {
 		pinProvider, _ := parseParticipantModelPin(rawPin)
 		modelOverride, clientOverride, err := resolveParticipantModelOverride(
@@ -503,6 +507,14 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		if clientOverride != nil {
 			client = clientOverride
 		}
+		// A pinned model may have a different context window than the global
+		// default the thread runner was cloned with. Resolve the pinned
+		// model's real budget the same way the Session model switcher does
+		// (handleConfigAdvancedUpdate) so proactive compaction and the
+		// context meter both key off this agent's actual window rather than
+		// the default's. An unknown window leaves the cloned global budget in
+		// place instead of zeroing the ceiling.
+		pinnedBudget, havePinnedBudget = s.residentModelBudget(providerName, modelName)
 	}
 	if threadRuntime.StreamRunner != nil {
 		if client != nil {
@@ -513,6 +525,11 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		}
 		threadRuntime.StreamRunner.APIModel = apiModel
 		threadRuntime.StreamRunner.UpdateSystemPrompt(prompt)
+		if havePinnedBudget {
+			threadRuntime.StreamRunner.ContextWindowOverride = pinnedBudget.ContextWindowTokens
+			threadRuntime.StreamRunner.MaxInputTokens = pinnedBudget.InputLimitTokens
+			threadRuntime.StreamRunner.OutputReserveTokens = pinnedBudget.OutputReserveTokens
+		}
 	}
 	if threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantIdentity(participantID)
@@ -552,6 +569,36 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 	}
 	th.mu.Unlock()
 	return nil
+}
+
+// residentModelBudget resolves the context/input budget for a resident DM
+// thread's actual (provider, model) using the same pipeline the Session model
+// switcher uses (handleConfigAdvancedUpdate): load config, resolve + enrich the
+// provider, then ResolveModelBudget. It returns ok=false when the model's
+// window is unknown (or config cannot be read) so callers keep whatever budget
+// the thread runner already carries instead of zeroing the ceiling — which
+// would disable proactive compaction entirely.
+func (s *Server) residentModelBudget(providerName, modelName string) (modelbudget.Budget, bool) {
+	providerName = strings.TrimSpace(providerName)
+	modelName = strings.TrimSpace(modelName)
+	if s == nil || s.rt == nil || providerName == "" || modelName == "" {
+		return modelbudget.Budget{}, false
+	}
+	cfg, _, err := config.LoadPath(s.rt.ConfigPath)
+	if err != nil {
+		return modelbudget.Budget{}, false
+	}
+	providerCfg, resolvedName, err := cfg.ResolveProvider(providerName)
+	if err != nil {
+		return modelbudget.Budget{}, false
+	}
+	providerCfg = s.withCachedCodexModels(resolvedName, providerCfg)
+	_, ruleProviderCfg := modelcatalog.EnrichProvider(resolvedName, providerCfg, modelName)
+	budget := runtime.ResolveModelBudget(modelName, ruleProviderCfg, cfg.Agent.MaxContextTokens)
+	if budget.ContextWindowTokens <= 0 && budget.InputLimitTokens <= 0 {
+		return modelbudget.Budget{}, false
+	}
+	return budget, true
 }
 
 func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) *threadRuntimeSubscription {

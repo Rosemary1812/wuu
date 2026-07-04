@@ -245,6 +245,69 @@ func startDMThreadForPinTest(t *testing.T, srv *Server, out *lockedBuffer, parti
 	return remarshal[ThreadStartResult](t, resp["result"]).Thread.ID
 }
 
+// TestResidentDMModelPinAppliesPinnedModelContextBudget pins a named agent to
+// a model whose provider declares its own context window and asserts the DM
+// thread's runner adopts that window. Without the fix the runner keeps the
+// global default's window, so proactive compaction and the context meter would
+// both key off the wrong ceiling (issue: pinned-model budget not propagated).
+func TestResidentDMModelPinAppliesPinnedModelContextBudget(t *testing.T) {
+	currentClient := &recordingClient{id: "current"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "event: message_start\ndata: {\"type\":\"message_start\"}\n\n")
+		fmt.Fprintf(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0}\n\n")
+		fmt.Fprintf(w, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n")
+		fmt.Fprintf(w, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+		fmt.Fprintf(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}\n\n")
+		fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	t.Cleanup(server.Close)
+
+	const pinnedWindow = 321_000
+	rt := buildParticipantPinRuntime(t, providers.AdaptStreamClient(currentClient), "fake-provider", map[string]config.ProviderConfig{
+		"alt-provider": {
+			Type:          "anthropic",
+			BaseURL:       server.URL,
+			APIKey:        "test-key",
+			Model:         "alt-default",
+			ContextWindow: pinnedWindow,
+		},
+	})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+
+	// Precondition: the global runner has no window, so any non-zero window on
+	// the thread runner can only come from the pinned model's resolved budget.
+	if got := rt.StreamRunner.ContextWindowOverride; got != 0 {
+		t.Fatalf("precondition: global runner window = %d, want 0", got)
+	}
+
+	participantID := saveNamedParticipant(t, rt, "andy", "reviewer", "alt-provider:pinned-model")
+	threadID := startDMThreadForPinTest(t, srv, out, participantID)
+
+	raw := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"do review"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForTurnCompletedForThread(t, out, threadID)
+
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatalf("dm thread %q not resident", threadID)
+	}
+	th.mu.Lock()
+	execRuntime := th.execRuntime
+	th.mu.Unlock()
+	if execRuntime == nil || execRuntime.StreamRunner == nil {
+		t.Fatalf("dm thread has no configured runner")
+	}
+	if got := execRuntime.StreamRunner.ContextWindowOverride; got != pinnedWindow {
+		t.Fatalf("thread runner context window = %d, want pinned %d (compaction + meter would use the wrong ceiling)", got, pinnedWindow)
+	}
+}
+
 func TestParseParticipantModelPin(t *testing.T) {
 	cases := []struct {
 		raw       string
