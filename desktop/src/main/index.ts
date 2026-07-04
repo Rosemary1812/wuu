@@ -29,6 +29,12 @@ import type {
   InstructionsListResult,
   MCPListResult,
   MCPServerActionResult,
+  MemoryChatParams,
+  MemoryChatResult,
+  MemoryOverviewParams,
+  MemoryOverviewResult,
+  MemoryReadParams,
+  MemoryReadResult,
   ParticipantFeedbackResult,
   ParticipantListResult,
   ParticipantResetResult,
@@ -645,6 +651,28 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:participant-retire", (_event, participantId: string) =>
     appServerClientPool.request<ParticipantRetireResult>("participant/retire", {
       participant_id: participantId,
+    }),
+  );
+  // 记忆面板 RPC（memory-redesign.md §8.2）。participant_id 只在
+  // participant scope 下附带，避免后端 DisallowUnknownFields 之外的
+  // 空字段歧义；user scope 的请求只带 scope。
+  ipcMain.handle("wuu:memory-overview", (_event, params: MemoryOverviewParams) =>
+    appServerClientPool.request<MemoryOverviewResult>("memory/overview", {
+      scope: params.scope,
+      ...(params.participant_id ? { participant_id: params.participant_id } : {}),
+    }),
+  );
+  ipcMain.handle("wuu:memory-chat", (_event, params: MemoryChatParams) =>
+    appServerClientPool.request<MemoryChatResult>("memory/chat", {
+      scope: params.scope,
+      message: params.message,
+      ...(params.participant_id ? { participant_id: params.participant_id } : {}),
+    }),
+  );
+  ipcMain.handle("wuu:memory-read", (_event, params: MemoryReadParams) =>
+    appServerClientPool.request<MemoryReadResult>("memory/read", {
+      scope: params.scope,
+      ...(params.participant_id ? { participant_id: params.participant_id } : {}),
     }),
   );
   ipcMain.handle("wuu:thread-list-sub", (_event, threadId: string) =>

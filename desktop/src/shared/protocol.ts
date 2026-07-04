@@ -714,6 +714,76 @@ export type ParticipantRetireResult = {
   participant: ParticipantProfile;
 };
 
+// ---------------------------------------------------------------------------
+// Memory panel (设置 → 记忆). Wire contract fixed ahead of implementation by
+// docs/plans/2026-07-04-memory-redesign.md §8.2. The three RPCs are served
+// by the M2 memory-panel backend; a backend without M2 rejects them with an
+// "unknown method" error, which the renderer maps to a
+// "记忆面板后端尚未就绪" placeholder instead of crashing.
+
+// MemoryScope selects which notebook an RPC targets: "user" is the user
+// notebook (~/.wuu/memory), "participant" is a named agent's identity
+// notebook (~/.wuu/participants/<id>/memory). participant scope requires
+// participant_id.
+export type MemoryScope = "user" | "participant";
+
+export type MemoryOverviewParams = {
+  scope: MemoryScope;
+  participant_id?: string;
+};
+
+// memory/overview result: the structured essay the overview agent generated
+// from the real notebook (one LLM pass). cached indicates the backend served
+// its (notebook, index mtime) cache instead of regenerating.
+export type MemoryOverviewResult = {
+  essay_md: string;
+  generated_at: string;
+  source_mtime: string;
+  cached: boolean;
+};
+
+export type MemoryChatParams = {
+  scope: MemoryScope;
+  participant_id?: string;
+  message: string;
+};
+
+export type MemoryChangedFileAction = "created" | "modified" | "deleted";
+
+export type MemoryChangedFile = {
+  path: string;
+  action: MemoryChangedFileAction;
+};
+
+// memory/chat result: the manager agent's natural-language reply plus the
+// real files it touched (topic files and/or the MEMORY.md index).
+export type MemoryChatResult = {
+  reply_md: string;
+  changed_files: MemoryChangedFile[];
+};
+
+export type MemoryReadParams = {
+  scope: MemoryScope;
+  participant_id?: string;
+};
+
+// One real memory file in the notebook. `type` mirrors the file's
+// frontmatter; canonical values are user | feedback | reference | lesson but
+// it stays a string so entries written by newer backends still render.
+export type MemoryFileInfo = {
+  name: string;
+  description: string;
+  type: string;
+  mtime: string;
+};
+
+// memory/read result: the raw MEMORY.md index plus the file inventory —
+// no LLM involved; the panel's "查看原文" audit/fallback view.
+export type MemoryReadResult = {
+  index_md: string;
+  files: MemoryFileInfo[];
+};
+
 export type WorktreeInfo = {
   path: string;
   base_head?: string;
@@ -1514,6 +1584,11 @@ export type WuuDesktopApi = {
     scope: "restart" | "session" | "full"
   ) => Promise<ParticipantResetResult>;
   retireParticipant: (participantId: string) => Promise<ParticipantRetireResult>;
+  // 记忆面板（设置 → 记忆）。契约见 memory-redesign.md §8.2；后端 M2
+  // 未落地时三个方法都会以 unknown method 错误拒绝，面板渲染占位态。
+  getMemoryOverview: (params: MemoryOverviewParams) => Promise<MemoryOverviewResult>;
+  sendMemoryChat: (params: MemoryChatParams) => Promise<MemoryChatResult>;
+  readMemoryRaw: (params: MemoryReadParams) => Promise<MemoryReadResult>;
   listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
   openConversationSubthread: (
     threadId: string,

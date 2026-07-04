@@ -153,6 +153,10 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:participant-reset", participantId, scope),
   retireParticipant: (participantId) =>
     ipcRenderer.invoke("wuu:participant-retire", participantId),
+  getMemoryOverview: (params) =>
+    ipcRenderer.invoke("wuu:memory-overview", params),
+  sendMemoryChat: (params) => ipcRenderer.invoke("wuu:memory-chat", params),
+  readMemoryRaw: (params) => ipcRenderer.invoke("wuu:memory-read", params),
   listConversationSubthreads: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-list-sub", threadId),
   openConversationSubthread: (threadId: string, options) =>
