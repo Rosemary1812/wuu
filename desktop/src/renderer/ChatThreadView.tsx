@@ -332,8 +332,14 @@ function ChatRow({
     const label = meta ? focusDividerLabel(meta) : "⬒ 全部工作区";
     return (
       <div className="chat-row chat-row--focus">
-        <div className="chat-focus-divider" role="separator" aria-label={label}>
-          <span className="chat-focus-divider-label">{label}</span>
+        <div
+          className="chat-inline-divider chat-focus-divider"
+          role="separator"
+          aria-label={label}
+        >
+          <span className="chat-inline-divider-label chat-focus-divider-label">
+            {label}
+          </span>
         </div>
       </div>
     );

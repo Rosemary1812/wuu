@@ -2,7 +2,7 @@
  * Tests for the DM envelope meta row (docs/plans/
  * 2026-07-03-resident-named-agents.md §7.3). A user message that the
  * envelope router injected into a resident agent's DM thread must NOT
- * render as a user bubble — it renders as a collapsed meta line
+ * render as a user bubble — it renders as a collapsed line-flanked meta row
  * ("收到来自「{title}」的 {n} 条消息") that expands to the original
  * envelope text on click. The line also surfaces the envelope's
  * structural facts (consistency plan 2026-07-04 §1 #12): a "点名"
@@ -67,8 +67,11 @@ describe("EnvelopeNotice", () => {
       ".envelope-notice-toggle",
     );
     expect(toggle).not.toBeNull();
+    expect(toggle?.classList.contains("chat-inline-divider")).toBe(true);
+    expect(container.querySelector(".envelope-notice-icon")).toBeNull();
     expect(toggle?.textContent).toContain("收到来自「发布排期讨论」的 3 条消息");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.getAttribute("aria-label")).toContain("展开");
     expect(container.querySelector(".envelope-notice-body")).toBeNull();
     // One record is addressed and the deepest record is 2 hops out.
     expect(
@@ -135,6 +138,7 @@ describe("EnvelopeNotice", () => {
       toggle?.click();
     });
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.getAttribute("aria-label")).toContain("收起");
     const body = container.querySelector(".envelope-notice-body");
     expect(body?.textContent).toContain("原始信封内容");
     act(() => {

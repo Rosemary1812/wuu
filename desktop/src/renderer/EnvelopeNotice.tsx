@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Mail } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { EnvelopeMeta } from "../shared/protocol";
 
@@ -52,23 +52,25 @@ export function EnvelopeNotice({
     <div className="envelope-notice">
       <button
         type="button"
-        className="envelope-notice-toggle"
+        className="chat-inline-divider envelope-notice-toggle"
         aria-expanded={expanded}
+        aria-label={`${label}，${expanded ? "收起" : "展开"}`}
         onClick={() => setExpanded((previous) => !previous)}
       >
-        <Mail className="envelope-notice-icon" aria-hidden="true" />
-        <span>{label}</span>
-        {addressed ? (
-          <span className="envelope-notice-addressed">点名</span>
-        ) : null}
-        {maxHop > 0 ? (
-          <span className="envelope-notice-hop">转发×{maxHop}</span>
-        ) : null}
-        {expanded ? (
-          <ChevronDown className="envelope-notice-chevron" aria-hidden="true" />
-        ) : (
-          <ChevronRight className="envelope-notice-chevron" aria-hidden="true" />
-        )}
+        <span className="chat-inline-divider-label envelope-notice-label">
+          <span className="envelope-notice-title">{label}</span>
+          {addressed ? (
+            <span className="envelope-notice-addressed">点名</span>
+          ) : null}
+          {maxHop > 0 ? (
+            <span className="envelope-notice-hop">转发×{maxHop}</span>
+          ) : null}
+          {expanded ? (
+            <ChevronDown className="envelope-notice-chevron" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="envelope-notice-chevron" aria-hidden="true" />
+          )}
+        </span>
       </button>
       {expanded ? <div className="envelope-notice-body">{text}</div> : null}
     </div>

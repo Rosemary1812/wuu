@@ -32,23 +32,20 @@
   justify-items: end;
 }
 
-.chat-row--envelope {
-  grid-template-columns: 1fr;
-}
-
 .chat-row--decline {
   grid-template-columns: 1fr;
 }
 
-.chat-row--focus {
+.chat-row--focus,
+.chat-row--envelope {
   grid-template-columns: 1fr;
   padding: 2px 0;
 }
 
-/* Workspace-focus divider — same centered, line-flanked form factor as
- * a date separator: a short label with a hairline rule on either side,
+/* Chat inline divider — same centered, line-flanked form factor as a
+ * date separator: a short label with a hairline rule on either side,
  * quiet enough not to compete with the surrounding bubbles. */
-.chat-focus-divider {
+.chat-inline-divider {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -56,17 +53,19 @@
   font-size: 12px;
 }
 
-.chat-focus-divider::before,
-.chat-focus-divider::after {
+.chat-inline-divider::before,
+.chat-inline-divider::after {
   content: "";
   flex: 1 1 auto;
   height: 1px;
   background: var(--ink-overlay-8);
 }
 
-.chat-focus-divider-label {
+.chat-inline-divider-label {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  max-width: min(520px, 100%);
   white-space: nowrap;
 }
 

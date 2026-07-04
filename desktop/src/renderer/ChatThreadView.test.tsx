@@ -360,6 +360,11 @@ describe("ChatThreadView focus divider rows", () => {
     );
     const row = container.querySelector(".chat-row--focus");
     expect(row).not.toBeNull();
+    expect(
+      container.querySelector(".chat-focus-divider")?.classList.contains(
+        "chat-inline-divider",
+      ),
+    ).toBe(true);
     expect(container.querySelector(".chat-focus-divider-label")?.textContent).toBe(
       "⬒ 全部工作区",
     );
