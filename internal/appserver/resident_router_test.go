@@ -465,3 +465,48 @@ func startGroupThreadWithReqIDForTest(t *testing.T, srv *Server, reqID string) s
 	}
 	return remarshal[ThreadStartResult](t, resp["result"]).Thread.ID
 }
+
+func TestResidentEnvelopeDisplayContentIsRawText(t *testing.T) {
+	// Display content is the message text only. The source ("from all") is
+	// context, carried in EnvelopeMeta and rendered separately by the chat
+	// view — it must not leak into the transcript as an "Incoming message
+	// from …:" prefix (the DM bug).
+	got := residentEnvelopeDisplayContent([]MessageEnvelope{
+		{SourceTitle: "all", Text: "你们好"},
+	})
+	if got != "你们好" {
+		t.Fatalf("display content = %q, want raw text %q", got, "你们好")
+	}
+	if strings.Contains(got, "Incoming message from") {
+		t.Fatalf("display content leaked source framing: %q", got)
+	}
+	// Multiple envelopes join their raw texts, still with no framing.
+	multi := residentEnvelopeDisplayContent([]MessageEnvelope{
+		{SourceTitle: "all", Text: "hi"},
+		{SourceTitle: "all", Text: "there"},
+	})
+	if multi != "hi\n\nthere" {
+		t.Fatalf("multi display content = %q, want %q", multi, "hi\n\nthere")
+	}
+}
+
+func TestChatMessageItemCarriesEnvelopeMeta(t *testing.T) {
+	// A user ThreadItem must carry envelope_meta to the wire, so the chat view
+	// renders an envelope notice instead of a plain user bubble that reads as
+	// if the user typed the routed-in message.
+	meta := json.RawMessage(`[{"id":"e1","source_thread_title":"all"}]`)
+	item := chatMessageItem("item-1", providers.ChatMessage{
+		Role:           "user",
+		DisplayContent: "你们好",
+		EnvelopeMeta:   meta,
+	})
+	if len(item.EnvelopeMeta) == 0 {
+		t.Fatalf("chatMessageItem dropped EnvelopeMeta")
+	}
+	if string(item.EnvelopeMeta) != string(meta) {
+		t.Fatalf("EnvelopeMeta = %s, want %s", item.EnvelopeMeta, meta)
+	}
+	if item.Text != "你们好" {
+		t.Fatalf("item.Text = %q, want %q", item.Text, "你们好")
+	}
+}

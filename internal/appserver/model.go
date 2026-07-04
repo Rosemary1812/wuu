@@ -1065,15 +1065,16 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	switch msg.Role {
 	case "user":
 		return ThreadItem{
-			ID:        id,
-			SourceID:  msg.ClientID,
-			Type:      ThreadItemUserMessage,
-			Status:    ThreadItemStatusCompleted,
-			Role:      "user",
-			Text:      chatMessageDisplayContent(msg),
-			Images:    threadItemImages(msg.Images),
-			Files:     threadItemFiles(msg.Files),
-			FocusMeta: append(json.RawMessage(nil), msg.FocusMeta...),
+			ID:           id,
+			SourceID:     msg.ClientID,
+			Type:         ThreadItemUserMessage,
+			Status:       ThreadItemStatusCompleted,
+			Role:         "user",
+			Text:         chatMessageDisplayContent(msg),
+			Images:       threadItemImages(msg.Images),
+			Files:        threadItemFiles(msg.Files),
+			EnvelopeMeta: append(json.RawMessage(nil), msg.EnvelopeMeta...),
+			FocusMeta:    append(json.RawMessage(nil), msg.FocusMeta...),
 		}
 	case "assistant":
 		if strings.TrimSpace(msg.Content) != "" {

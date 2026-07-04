@@ -3,7 +3,6 @@ package appserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -329,12 +328,22 @@ func residentEnvelopeUserMessage(envs []MessageEnvelope, consumedIDs []string) p
 	}
 }
 
+// residentEnvelopeDisplayContent is the UI-facing text of an envelope user
+// message: the raw message text ONLY. The source — which group/thread it was
+// routed in from — is context, carried structurally in EnvelopeMeta and
+// rendered separately by the chat view's envelope notice. It must never be
+// baked into the text as an "Incoming message from …:" prefix, which would leak
+// internal framing into the transcript (issue: group messages showed as
+// "Incoming message from all: …" in a DM). The model still receives the full
+// framing via MessageEnvelope.Prompt (Content), independent of this.
 func residentEnvelopeDisplayContent(envs []MessageEnvelope) string {
-	if len(envs) == 1 {
-		env := envs[0]
-		return strings.TrimSpace(fmt.Sprintf("Incoming message from %s: %s", firstNonEmpty(env.SourceTitle, env.SourceThreadID, "conversation"), env.Text))
+	texts := make([]string, 0, len(envs))
+	for _, env := range envs {
+		if t := strings.TrimSpace(env.Text); t != "" {
+			texts = append(texts, t)
+		}
 	}
-	return fmt.Sprintf("You received %d messages while busy.", len(envs))
+	return strings.Join(texts, "\n\n")
 }
 
 func envelopeMetaJSON(envs []MessageEnvelope) json.RawMessage {

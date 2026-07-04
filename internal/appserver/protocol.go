@@ -1426,6 +1426,13 @@ type ThreadItem struct {
 	// Participant attributes this item to a conversation participant.
 	// Populated for agent-originated items; nil means the thread owner.
 	Participant *participant.Summary `json:"participant,omitempty"`
+	// EnvelopeMeta marks a user_message item as a message routed in from
+	// another thread (a group channel or another agent's DM). The chat view
+	// renders items carrying it as a collapsed "收到来自…的消息" notice rather
+	// than a user bubble, keeping the message's source (context) decoupled
+	// from its text (content). Shape: an array of {id, source_thread_id,
+	// source_thread_title, ...} records. Plumbed alongside FocusMeta.
+	EnvelopeMeta json.RawMessage `json:"envelope_meta,omitempty"`
 	// FocusMeta marks a user_message item as a workspace-focus declaration
 	// (2026-07-03-workspace-focus.md §3.1). Shape:
 	// {kind:"all"|"home"|"workspace", name?, root?}. The chat view renders
