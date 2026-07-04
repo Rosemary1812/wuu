@@ -407,6 +407,201 @@ func TestThreadWireCarriesFocusWorkspace(t *testing.T) {
 	}
 }
 
+// --- Group thread focus declarations (2026-07-03-workspace-focus.md §6) ---
+//
+// Group threads reuse applyTurnWorkspaceFocus unchanged (it is deliberately
+// thread-kind agnostic); handleGroupTurnStart just calls it before recording
+// the caller's own message. These tests mirror the DM focus tests above but
+// exercise the group turn/start branch, which never invokes the provider.
+
+func TestGroupTurnFocusFirstSetInjectsDeclaration(t *testing.T) {
+	srv, out, _, workspaceRoot := newFocusTestServer(t, &fakeClient{})
+	group := startNamedGroupThreadForTest(t, srv, "launch-planning")
+
+	resp := startFocusTurn(t, srv, "turn-1", group.ID, "hello team", strPtr("acme"))
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("turn/start returned error: %v", errMsg)
+	}
+	turn := remarshal[TurnStartResult](t, resp["result"]).Turn
+	if turn.Status != TurnStatusCompleted {
+		t.Fatalf("expected group turn to complete synchronously, got %q", turn.Status)
+	}
+	if len(turn.Items) != 1 || turn.Items[0].Type != ThreadItemUserMessage || turn.Items[0].Text != "hello team" {
+		t.Fatalf("expected exactly the user message item on the response turn, got %+v", turn.Items)
+	}
+
+	// The declaration is persisted right before this turn's user message, as
+	// a separate synthetic turn (same shape as the DM path).
+	records, err := session.LoadHistoryRecords(srv.rt.SessionDir, group.ID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	declIdx, userIdx := -1, -1
+	for i, rec := range records {
+		if len(rec.FocusMeta) > 0 && declIdx == -1 {
+			declIdx = i
+		}
+		if rec.Role == "user" && rec.Content == "hello team" {
+			userIdx = i
+		}
+	}
+	if declIdx == -1 {
+		t.Fatalf("no focus declaration persisted; records=%+v", records)
+	}
+	if userIdx == -1 || declIdx > userIdx {
+		t.Fatalf("declaration (idx %d) must precede the user message (idx %d)", declIdx, userIdx)
+	}
+	decl := records[declIdx]
+	wantContent := fmt.Sprintf("[focus: acme — %s]", workspaceRoot)
+	if decl.Role != "user" || decl.Content != wantContent {
+		t.Fatalf("declaration = %q (role %q), want %q", decl.Content, decl.Role, wantContent)
+	}
+	var meta focusMeta
+	if err := json.Unmarshal(decl.FocusMeta, &meta); err != nil {
+		t.Fatalf("decode focus meta %s: %v", decl.FocusMeta, err)
+	}
+	if meta.Kind != focusMetaKindWorkspace || meta.Name != "acme" || meta.Root != workspaceRoot {
+		t.Fatalf("focus meta = %+v, want workspace/acme/%s", meta, workspaceRoot)
+	}
+
+	sess, ok, err := session.Find(srv.rt.SessionDir, group.ID)
+	if err != nil || !ok {
+		t.Fatalf("session.Find: %v (ok=%v)", err, ok)
+	}
+	if sess.FocusWorkspace != "acme" {
+		t.Fatalf("session focus = %q, want %q", sess.FocusWorkspace, "acme")
+	}
+
+	// The synthetic declaration turn reached the wire with focus_meta on its
+	// user item, same as the DM path, so the chat view can render a divider
+	// for every member reading the group transcript.
+	foundWireDecl := false
+	for _, msg := range parseOutput(t, out.String()) {
+		if msg["method"] != NotificationTurnStarted || msg["id"] != nil {
+			continue
+		}
+		params := remarshal[TurnStartedNotification](t, msg["params"])
+		if params.ThreadID != group.ID || len(params.Turn.Items) == 0 {
+			continue
+		}
+		item := params.Turn.Items[0]
+		if len(item.FocusMeta) > 0 {
+			foundWireDecl = true
+			if item.Type != ThreadItemUserMessage || item.Text != wantContent {
+				t.Fatalf("wire declaration item = %+v, want user_message %q", item, wantContent)
+			}
+		}
+	}
+	if !foundWireDecl {
+		t.Fatalf("no turn/started notification carried a focus_meta item; output:\n%s", out.String())
+	}
+}
+
+func TestGroupTurnFocusRepeatIsIdempotent(t *testing.T) {
+	srv, _, _, _ := newFocusTestServer(t, &fakeClient{})
+	group := startNamedGroupThreadForTest(t, srv, "release")
+
+	if resp := startFocusTurn(t, srv, "turn-1", group.ID, "first", strPtr("acme")); resp["error"] != nil {
+		t.Fatalf("first turn/start: %v", resp["error"])
+	}
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, group.ID)); got != 1 {
+		t.Fatalf("declarations after first set = %d, want 1", got)
+	}
+
+	// Same focus again: nothing new may enter history.
+	if resp := startFocusTurn(t, srv, "turn-2", group.ID, "second", strPtr("acme")); resp["error"] != nil {
+		t.Fatalf("second turn/start: %v", resp["error"])
+	}
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, group.ID)); got != 1 {
+		t.Fatalf("declarations after repeat = %d, want 1 (idempotent)", got)
+	}
+
+	// Omitting the field entirely also changes nothing.
+	if resp := startFocusTurn(t, srv, "turn-3", group.ID, "third", nil); resp["error"] != nil {
+		t.Fatalf("third turn/start: %v", resp["error"])
+	}
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, group.ID)); got != 1 {
+		t.Fatalf("declarations after omitted param = %d, want 1", got)
+	}
+	sess, _, err := session.Find(srv.rt.SessionDir, group.ID)
+	if err != nil {
+		t.Fatalf("session.Find: %v", err)
+	}
+	if sess.FocusWorkspace != "acme" {
+		t.Fatalf("focus after omitted param = %q, want %q", sess.FocusWorkspace, "acme")
+	}
+}
+
+func TestGroupTurnFocusSwitchInjectsNewDeclaration(t *testing.T) {
+	srv, _, _, _ := newFocusTestServer(t, &fakeClient{})
+	group := startNamedGroupThreadForTest(t, srv, "release")
+
+	if resp := startFocusTurn(t, srv, "turn-1", group.ID, "first", strPtr("acme")); resp["error"] != nil {
+		t.Fatalf("first turn/start: %v", resp["error"])
+	}
+	if resp := startFocusTurn(t, srv, "turn-2", group.ID, "second", strPtr("~")); resp["error"] != nil {
+		t.Fatalf("second turn/start: %v", resp["error"])
+	}
+
+	decls := focusDeclarationRecords(t, srv.rt.SessionDir, group.ID)
+	if len(decls) != 2 {
+		t.Fatalf("declarations after switch = %d, want 2", len(decls))
+	}
+	if decls[1].Content != "[focus: home directory only]" {
+		t.Fatalf("home declaration = %q, want %q", decls[1].Content, "[focus: home directory only]")
+	}
+	var meta focusMeta
+	if err := json.Unmarshal(decls[1].FocusMeta, &meta); err != nil {
+		t.Fatalf("decode focus meta: %v", err)
+	}
+	if meta.Kind != focusMetaKindHome || meta.Root != group.CWD {
+		t.Fatalf("home focus meta = %+v, want kind=home root=%s", meta, group.CWD)
+	}
+	sess, _, err := session.Find(srv.rt.SessionDir, group.ID)
+	if err != nil {
+		t.Fatalf("session.Find: %v", err)
+	}
+	if sess.FocusWorkspace != "~" {
+		t.Fatalf("focus after switch = %q, want %q", sess.FocusWorkspace, "~")
+	}
+}
+
+func TestGroupTurnFocusUnknownWorkspaceErrors(t *testing.T) {
+	srv, _, _, _ := newFocusTestServer(t, &fakeClient{})
+	group := startNamedGroupThreadForTest(t, srv, "release")
+
+	resp := startFocusTurn(t, srv, "turn-1", group.ID, "hello", strPtr("no-such-workspace"))
+	errMsg, ok := resp["error"]
+	if !ok {
+		t.Fatalf("expected error for unknown workspace, got %+v", resp)
+	}
+	if errStr := fmt.Sprint(errMsg); !strings.Contains(errStr, "no-such-workspace") {
+		t.Fatalf("error should name the rejected workspace, got %q", errStr)
+	}
+
+	// Nothing was persisted: no declaration, focus unchanged, and the
+	// rejected turn's own user message never landed in history either.
+	if got := len(focusDeclarationRecords(t, srv.rt.SessionDir, group.ID)); got != 0 {
+		t.Fatalf("declarations after rejected focus = %d, want 0", got)
+	}
+	sess, _, err := session.Find(srv.rt.SessionDir, group.ID)
+	if err != nil {
+		t.Fatalf("session.Find: %v", err)
+	}
+	if sess.FocusWorkspace != "" {
+		t.Fatalf("focus after rejected switch = %q, want empty", sess.FocusWorkspace)
+	}
+	records, err := session.LoadHistoryRecords(srv.rt.SessionDir, group.ID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	for _, rec := range records {
+		if rec.Content == "hello" {
+			t.Fatalf("rejected focus turn must not persist the user message either: %+v", records)
+		}
+	}
+}
+
 func TestDMTurnFocusRootsToolkitAtWorkspace(t *testing.T) {
 	client := &fakeClient{responses: []providers.ChatResponse{{Content: "one"}, {Content: "two"}}}
 	srv, out, rt, workspaceRoot := newFocusTestServer(t, client)

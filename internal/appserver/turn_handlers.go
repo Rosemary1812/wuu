@@ -106,12 +106,13 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if isGroup {
 		return s.handleGroupTurnStart(req, th, params, images, files)
 	}
-	// Workspace focus is a chat-style thread property; only the DM branch
-	// is wired today (2026-07-03-workspace-focus.md §3 — the group branch
-	// is a follow-up). Work sessions ignore the field entirely. Applied
-	// before ensureThreadRuntime so the toolkit root reflects the new
-	// focus for this very turn; a busy thread fails fast so a rejected
-	// turn cannot leave an orphan focus declaration behind.
+	// Workspace focus is a chat-style thread property (2026-07-03-workspace-focus.md
+	// §3); the group branch applies the same idempotent-declare helper inside
+	// handleGroupTurnStart itself (it returned above). Work sessions ignore
+	// the field entirely. Applied before ensureThreadRuntime so the toolkit
+	// root reflects the new focus for this very turn; a busy thread fails
+	// fast so a rejected turn cannot leave an orphan focus declaration
+	// behind.
 	if isResidentDM && params.FocusWorkspace != nil {
 		if turnRunning {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))

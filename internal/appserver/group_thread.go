@@ -131,7 +131,27 @@ func (s *Server) createGroupThreadState(id, title string, now time.Time) (*threa
 // marked addressed. Reuses the existing envelope routing machinery
 // (routeUserMessageToResidents / routeEnvelopes) so member resident agents
 // wake up exactly as they do for any other thread's user turn.
+//
+// Workspace focus (2026-07-03-workspace-focus.md §3, §6) is handled here
+// too: group threads share the DM branch's idempotent-declare helper
+// (applyTurnWorkspaceFocus is deliberately thread-kind agnostic). A group
+// thread never runs a model turn, but the declaration item is still
+// persisted into its history as a completed synthetic turn ahead of the
+// caller's message, exactly like a DM — the chat view renders it as a
+// divider for every member reading the group transcript.
 func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnStartParams, images []providers.InputImage, files []providers.InputFile) error {
+	th.mu.Lock()
+	turnRunning := th.running
+	th.mu.Unlock()
+	if params.FocusWorkspace != nil {
+		if turnRunning {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", th.ID))
+		}
+		if err := s.applyTurnWorkspaceFocus(th, params.FocusWorkspace); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
+
 	mentioned, err := s.prepareThreadMentions(th, params.Mentions)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
