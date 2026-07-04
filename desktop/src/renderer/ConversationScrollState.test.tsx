@@ -525,29 +525,31 @@ describe("useConversationScrollState — dock composer height", () => {
     expect(pane.style.getPropertyValue("--dock-composer-height")).toBe("452px");
   });
 
-  it("folds the pill cluster height into --bottom-dock-height, and falls back to the composer height alone once the cluster unmounts", () => {
+  it("reserves the pill cluster band in --bottom-dock-height and keeps it stable across the pill mount/unmount", () => {
     const { pane, dockComposer } = mountDockComposerProbe();
     stubRectHeight(dockComposer, 168);
     flushResizeObserversFor(dockComposer);
     expect(pane.style.getPropertyValue("--dock-composer-height")).toBe("168px");
-    // No pill cluster mounted: the combined token matches the composer
-    // height alone (mirrors the CSS fallback `var(--bottom-dock-height,
-    // var(--dock-composer-height))`).
-    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("168px");
+    // No pill cluster mounted yet, but the band is reserved from the seeded
+    // default so the message flow's bottom padding is stable:
+    // 168px composer + 12px gap + 38px reserved pill cluster band.
+    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
 
+    // Pill cluster mounts (the user scrolled away): the ResizeObserver adopts
+    // the real rendered height, still 218px here since it matches the seed.
     setBottomOverlayVisible(true);
     const overlay = queryBottomOverlay();
     if (!overlay) throw new Error("bottom overlay did not mount");
     stubRectHeight(overlay, 38);
     flushResizeObserversFor(overlay);
-    // 168px composer + 12px gap + 38px pill cluster.
     expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
 
+    // Pill cluster unmounts at the instant the user reaches the bottom. The
+    // reservation must NOT collapse back to the composer height: collapsing it
+    // shrinks the message flow's scrollHeight and jumps the conversation as the
+    // user lands at the bottom. This is the regression this test guards.
     setBottomOverlayVisible(false);
-    // Cluster unmounted (e.g. the user scrolled back to latest and the
-    // plan finished): the reservation collapses back to the composer
-    // height alone so the message flow's padding shrinks back down.
-    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("168px");
+    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
   });
 });
 
