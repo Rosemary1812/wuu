@@ -212,6 +212,13 @@ func NewSession(opts Options) (*Session, error) {
 	memdirEnabled := profileMemoryEnabled && !cfg.Memory.Disable
 	var memdirTeaching, memdirWorkerTeaching, memdirIndex string
 	if memdirEnabled {
+		// One-time lazy migration of the retired memory surfaces
+		// (entries.jsonl, flat participant MEMORY.md, agent-home orphans)
+		// into notebook topic files + index lines (contract §7). After the
+		// first successful run the marker file makes this a single stat().
+		if err := memdir.Migrate(wuuHome); err != nil {
+			providers.DebugLogf("memdir migration: %v", err)
+		}
 		userNotebook := memdir.UserMemdir(wuuHome)
 		if err := memdir.EnsureDir(userNotebook); err != nil {
 			providers.DebugLogf("ensure user memory notebook: %v", err)
