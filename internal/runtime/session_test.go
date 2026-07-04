@@ -2543,6 +2543,51 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	}
 }
 
+// TestWorkerDeferredToolCatalogPromptForToolkit locks in consistency-repair
+// #13: worker prompts carry a deferred-tool catalog generated against the
+// worker surface — deferred executor tools listed, the main-agent-only
+// orchestration suite absent.
+func TestWorkerDeferredToolCatalogPromptForToolkit(t *testing.T) {
+	kit, err := tools.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New toolkit: %v", err)
+	}
+	// The session toolkit holds the MAIN surface; the helper must still
+	// produce a worker-scoped catalog from it.
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+
+	catalog, err := workerDeferredToolCatalogPromptForToolkit(kit, "openai", "gpt-5-codex", true, false)
+	if err != nil {
+		t.Fatalf("workerDeferredToolCatalogPromptForToolkit: %v", err)
+	}
+	if catalog == "" {
+		t.Fatal("worker deferred tool catalog must not be empty when tool search is enabled")
+	}
+	for _, want := range []string{"session_memory", "thread_get", "create_goal", "schedule_cron"} {
+		if !strings.Contains(catalog, want) {
+			t.Errorf("worker catalog must list deferred executor tool %s:\n%s", want, catalog)
+		}
+	}
+	for _, orchestration := range []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+		if strings.Contains(catalog, orchestration) {
+			t.Errorf("worker catalog must not list orchestration tool %s:\n%s", orchestration, catalog)
+		}
+	}
+
+	// The helper must not disturb the source toolkit's main surface.
+	if _, ok := kit.ActiveSurface().Tools["spawn_agent"]; !ok {
+		t.Error("source toolkit must keep its main-agent surface after catalog generation")
+	}
+
+	disabled, err := workerDeferredToolCatalogPromptForToolkit(kit, "openai", "gpt-5-codex", false, false)
+	if err != nil {
+		t.Fatalf("workerDeferredToolCatalogPromptForToolkit (tool search off): %v", err)
+	}
+	if disabled != "" {
+		t.Fatalf("catalog must be empty when worker tool search is disabled, got:\n%s", disabled)
+	}
+}
+
 func TestMCPToolOverridesFromConfig(t *testing.T) {
 	readOnly := true
 	concurrencySafe := false

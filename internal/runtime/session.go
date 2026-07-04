@@ -312,7 +312,16 @@ func NewSession(opts Options) (*Session, error) {
 		workerRetry := providerfactory.SubAgentRetryConfig()
 		workerToolProviderName := roleSelections.Worker.RuleProvider
 		workerToolModeModel := roleSelections.Worker.APIModel
+		_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingForProvider(cfg.Agent, roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions)
 		workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
+		// Fill the worker deferred-tool catalog the same way mainSurface is
+		// filled above (consistency-repair #13: this was left empty while the
+		// worker prompt taught catalog lookups through tool_search).
+		workerDeferredCatalog, catErr := workerDeferredToolCatalogPromptForToolkit(toolkit, workerToolProviderName, workerToolModeModel, workerToolSearchEnabled, experimentalDeferredBundles)
+		if catErr != nil {
+			return nil, catErr
+		}
+		workerToolSurface.DeferredToolCatalog = workerDeferredCatalog
 		workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
@@ -364,7 +373,6 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
-				_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingForProvider(cfg.Agent, roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions)
 				wkit.SetToolSearchEnabled(workerToolSearchEnabled)
 				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 				wkit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
@@ -745,7 +753,15 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			workerModelBudget := s.WorkerModelBudget
 			workerToolProviderName := s.ModelRoles.Worker.RuleProvider
 			workerToolModeModel := workerModel
+			_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingModeForProvider(s.ToolLoadingPreference, s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions)
 			workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
+			// Fill the worker deferred-tool catalog like the session build
+			// path does (consistency-repair #13).
+			workerDeferredCatalog, catErr := workerDeferredToolCatalogPromptForToolkit(s.Toolkit, workerToolProviderName, workerToolModeModel, workerToolSearchEnabled, s.ExperimentalDeferredBundles)
+			if catErr != nil {
+				return nil, catErr
+			}
+			workerToolSurface.DeferredToolCatalog = workerDeferredCatalog
 			// Thread creation is an allowed prompt-prefix change point, so
 			// the worker base prompt reads the user notebook index fresh.
 			workerBaseSystemPrompt := buildWorkerBasePrompt(
@@ -814,7 +830,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetAgentControl(control)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
-					_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingModeForProvider(s.ToolLoadingPreference, s.ModelRoles.Worker.RuleProviderConfig, workerToolModeModel, s.ModelRoles.Worker.ProviderOptions)
 					workerKit.SetToolSearchEnabled(workerToolSearchEnabled)
 					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
 					workerKit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
@@ -1896,6 +1911,28 @@ func deferredToolCatalogPromptForToolkit(kit *tools.Toolkit) (string, error) {
 		return "", nil
 	}
 	return kit.DeferredToolCatalogSystemSection()
+}
+
+// workerDeferredToolCatalogPromptForToolkit computes the deferred-tool
+// catalog section for the worker surface (consistency-repair #13: worker
+// prompts taught tool_search catalog lookups while their catalog stayed
+// empty). It reuses the exact generator that fills
+// mainSurface.DeferredToolCatalog, but on a throwaway in-memory clone of the
+// session toolkit configured with the worker-compiled surface, so entries are
+// filtered by the worker's own exposure buckets (no orchestration suite,
+// worker tool-search setting).
+func workerDeferredToolCatalogPromptForToolkit(kit *tools.Toolkit, providerName, model string, toolSearchEnabled, experimentalDeferredBundles bool) (string, error) {
+	if kit == nil {
+		return "", nil
+	}
+	wkit, err := kit.CloneForRoot("")
+	if err != nil {
+		return "", err
+	}
+	wkit.ConfigureSurfaceForProviderModel(providerName, model, false)
+	wkit.SetToolSearchEnabled(toolSearchEnabled)
+	wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
+	return wkit.DeferredToolCatalogSystemSection()
 }
 
 // compiledSurfaceForProviderModel is the worker-only entry point in
