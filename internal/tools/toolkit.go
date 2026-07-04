@@ -221,7 +221,6 @@ func (t *Toolkit) rebuildRegistry() {
 		NewListFilesTool(e),
 		NewEditFileTool(e),
 		NewApplyPatchTool(e),
-		NewCheckpointTool(e),
 		// Search
 		NewGrepTool(e),
 		NewGlobTool(e),

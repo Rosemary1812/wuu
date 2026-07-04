@@ -67,7 +67,7 @@ func displayCapabilityForKnownToolName(name string) string {
 		return "file.read"
 	case "list_files":
 		return "file.list"
-	case "write_file", "edit_file", "apply_patch", "checkpoint":
+	case "write_file", "edit_file", "apply_patch":
 		return "file.edit"
 	case "grep":
 		return "search.grep"

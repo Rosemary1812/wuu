@@ -465,54 +465,6 @@ func Catalog() []Task {
 			Verify:        verifySubAgentWorkerFile,
 		},
 		{
-			ID:          "checkpoint_rollback",
-			Name:        "Rollback with a workspace checkpoint",
-			Description: "Main agent must create a file checkpoint, make a bad edit, restore it, and leave a marker.",
-			Prompt: "Read target.txt first so you have its file_sha. Then call checkpoint with action=create, checkpoint_id='before_bad_edit', " +
-				"and paths ['target.txt','scratch.txt']. After the checkpoint exists, use apply_patch to overwrite target.txt with bad content and create " +
-				"scratch.txt with temporary content. Then call checkpoint with action=restore and checkpoint_id='before_bad_edit' to restore the checkpoint. " +
-				"After restore, use apply_patch to write checkpoint_result.txt containing CHECKPOINT_ROLLBACK_DONE. The final state must keep target.txt at its original content and scratch.txt must be absent.",
-			RequiredTools: []string{"read_file", "checkpoint", "apply_patch"},
-			RequiredToolCalls: []ToolCallRequirement{
-				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}, ArgsContains: []string{"scratch.txt"}},
-				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"target.txt"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"scratch.txt"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"checkpoint_result.txt"}},
-			},
-			RequiredToolSequence: []ToolCallRequirement{
-				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "create", "checkpoint_id": "before_bad_edit"}, ArgsContains: []string{"scratch.txt"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"target.txt", "scratch.txt"}},
-				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore", "checkpoint_id": "before_bad_edit"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"checkpoint_result.txt"}},
-			},
-			Setup:  setupCheckpointRollback,
-			Verify: verifyCheckpointRollback,
-		},
-		{
-			ID:          "patch_journal_rollback",
-			Name:        "Rollback with an apply_patch journal",
-			Description: "Main agent must use apply_patch's patch journal artifact to roll back an applied patch.",
-			Prompt: "Read target.txt first so you have its file_sha. Then use apply_patch to overwrite target.txt with bad content and create " +
-				"scratch.txt with temporary content. From the apply_patch result, take patch_journal_path or manifest_path and call checkpoint with " +
-				"action=restore_patch_journal to roll back that applied patch journal. After restore, use apply_patch to write patch_journal_result.txt " +
-				"containing PATCH_JOURNAL_ROLLBACK_DONE. The final state must keep target.txt at its original content and scratch.txt must be absent.",
-			RequiredTools: []string{"read_file", "apply_patch", "checkpoint"},
-			RequiredToolCalls: []ToolCallRequirement{
-				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore_patch_journal"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"target.txt"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"scratch.txt"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"patch_journal_result.txt"}},
-			},
-			RequiredToolSequence: []ToolCallRequirement{
-				{ToolName: "apply_patch", ArgsContains: []string{"target.txt", "scratch.txt"}},
-				{ToolName: "checkpoint", ArgumentEquals: map[string]string{"action": "restore_patch_journal"}},
-				{ToolName: "apply_patch", ArgsContains: []string{"patch_journal_result.txt"}},
-			},
-			Setup:  setupCheckpointRollback,
-			Verify: verifyPatchJournalRollback,
-		},
-		{
 			ID:          "agent_led_workflow_team",
 			Name:        "Run an agent-led workflow team",
 			Description: "Main agent must record a Workflow Team, create a saved-profile member, spawn workers, await them, and complete the run.",
@@ -690,12 +642,6 @@ printf 'version: external\n' > target.txt
 
 func setupEmptyTask(root string) error {
 	return writeFiles(root, map[string]string{".keep": ""})
-}
-
-func setupCheckpointRollback(root string) error {
-	return writeFiles(root, map[string]string{
-		"target.txt": "status: original\nowner: eval\n",
-	})
 }
 
 func setupMCPReadOnlyConcurrency(root string) error {
@@ -1021,63 +967,6 @@ func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, 
 	evidence.Passed = true
 	evidence.Summary = "observed sub-agent worker marker"
 	return passVerification("observed sub-agent worker marker", evidence), nil
-}
-
-func verifyCheckpointRollback(_ context.Context, root, _ string) (Verification, error) {
-	return verifyRollbackState(root, "checkpoint_result.txt", "CHECKPOINT_ROLLBACK_DONE", "checkpoint rollback marker")
-}
-
-func verifyPatchJournalRollback(_ context.Context, root, _ string) (Verification, error) {
-	return verifyRollbackState(root, "patch_journal_result.txt", "PATCH_JOURNAL_ROLLBACK_DONE", "patch journal rollback marker")
-}
-
-func verifyRollbackState(root, markerPath, markerText, markerCheck string) (Verification, error) {
-	target, err := os.ReadFile(filepath.Join(root, "target.txt"))
-	targetEvidence := VerificationEvidence{Check: "checkpoint restored target", Path: "target.txt", Expected: "status: original\nowner: eval"}
-	if err != nil {
-		targetEvidence.Passed = false
-		targetEvidence.Summary = "target.txt was not readable"
-		return failVerification("target.txt was not readable", targetEvidence), nil
-	}
-	targetEvidence.Observed = verificationObserved(string(target))
-	if string(target) != "status: original\nowner: eval\n" {
-		targetEvidence.Passed = false
-		targetEvidence.Summary = "target.txt was not restored"
-		return failVerification("target.txt was not restored to original content", targetEvidence), nil
-	}
-	targetEvidence.Passed = true
-	targetEvidence.Summary = "target.txt restored to original content"
-	scratchEvidence := VerificationEvidence{Check: "checkpoint removed scratch", Path: "scratch.txt", Expected: "file absent"}
-	if _, err := os.Stat(filepath.Join(root, "scratch.txt")); err == nil {
-		scratchEvidence.Passed = false
-		scratchEvidence.Observed = "file exists"
-		scratchEvidence.Summary = "scratch.txt still exists after restore"
-		return failVerification("scratch.txt still exists after restore", targetEvidence, scratchEvidence), nil
-	} else if !os.IsNotExist(err) {
-		scratchEvidence.Passed = false
-		scratchEvidence.Observed = err.Error()
-		scratchEvidence.Summary = "scratch.txt could not be checked"
-		return failVerification("scratch.txt could not be checked", targetEvidence, scratchEvidence), nil
-	}
-	scratchEvidence.Passed = true
-	scratchEvidence.Observed = "file absent"
-	scratchEvidence.Summary = "scratch.txt absent after restore"
-	data, err := os.ReadFile(filepath.Join(root, markerPath))
-	markerEvidence := VerificationEvidence{Check: markerCheck, Path: markerPath, Expected: "contains " + markerText}
-	if err != nil {
-		markerEvidence.Passed = false
-		markerEvidence.Summary = markerPath + " was not written"
-		return failVerification(markerPath+" was not written", targetEvidence, scratchEvidence, markerEvidence), nil
-	}
-	markerEvidence.Observed = verificationObserved(string(data))
-	if !strings.Contains(string(data), markerText) {
-		markerEvidence.Passed = false
-		markerEvidence.Summary = "missing rollback marker"
-		return failVerification(markerPath+" does not contain "+markerText, targetEvidence, scratchEvidence, markerEvidence), nil
-	}
-	markerEvidence.Passed = true
-	markerEvidence.Summary = "observed rollback marker"
-	return passVerification("observed "+markerCheck+" and restored files", targetEvidence, scratchEvidence, markerEvidence), nil
 }
 
 func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification, error) {

@@ -778,8 +778,7 @@ func TestRunEvalListDoesNotRequireConfig(t *testing.T) {
 		!strings.Contains(output, "stale_read_guard") ||
 		!strings.Contains(output, "mcp_readonly_concurrency") ||
 		!strings.Contains(output, "mcp_live_discovery") ||
-		!strings.Contains(output, "multi_agent_worker") ||
-		!strings.Contains(output, "checkpoint_rollback") {
+		!strings.Contains(output, "multi_agent_worker") {
 		t.Fatalf("expected built-in eval tasks, got %q", output)
 	}
 }
@@ -806,7 +805,7 @@ func TestResolveEvalTasksAllFiltersByActiveSurface(t *testing.T) {
 			t.Fatalf("OpenAI default eval tasks missing %s: %v", want, sortedEvalTaskIDs(openaiTasks))
 		}
 	}
-	for _, excluded := range []string{"stale_read_guard", "mcp_live_discovery", "mcp_readonly_concurrency", "checkpoint_rollback", "patch_journal_rollback"} {
+	for _, excluded := range []string{"stale_read_guard", "mcp_live_discovery", "mcp_readonly_concurrency"} {
 		if openaiIDs[excluded] {
 			t.Fatalf("OpenAI default eval tasks must not include %s: %v", excluded, sortedEvalTaskIDs(openaiTasks))
 		}
@@ -823,7 +822,7 @@ func TestResolveEvalTasksAllFiltersByActiveSurface(t *testing.T) {
 			t.Fatalf("Claude default eval tasks missing %s: %v", want, sortedEvalTaskIDs(claudeTasks))
 		}
 	}
-	for _, excluded := range []string{"patch_review_risk", "checkpoint_rollback", "patch_journal_rollback"} {
+	for _, excluded := range []string{"patch_review_risk"} {
 		if claudeIDs[excluded] {
 			t.Fatalf("Claude default eval tasks must not include %s: %v", excluded, sortedEvalTaskIDs(claudeTasks))
 		}

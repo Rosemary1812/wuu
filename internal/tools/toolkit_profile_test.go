@@ -113,17 +113,10 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		t.Fatalf("helpme exposure = %s, want %s", info.Exposure, ToolExposureDirect)
 	}
 
-	for _, name := range []string{"checkpoint"} {
-		if containsProfileDef(defs, name) {
-			t.Fatalf("non-surface tool %s should not be visible, got %v", name, sortedProfileDefNames(defs))
-		}
-		info, ok := kit.ToolInfo(name)
-		if !ok {
-			t.Fatalf("ToolInfo(%q) not found", name)
-		}
-		if info.Exposure != ToolExposureHidden {
-			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureHidden)
-		}
+	// The orphaned `checkpoint` tool (registered but never bucketed into any
+	// profile surface) was retired entirely; only its absence matters now.
+	if _, ok := kit.ToolInfo("checkpoint"); ok {
+		t.Fatalf("checkpoint tool should no longer be registered")
 	}
 	if _, ok := kit.ToolInfo("repo_map"); ok {
 		t.Fatalf("repo_map should not be registered as a model tool")

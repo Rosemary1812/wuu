@@ -74,7 +74,7 @@ func defaultCommandPolicyCapability(surface capability.Surface, toolName string,
 		return capability.CapabilityFileRead
 	case "list_files":
 		return capability.CapabilityFileList
-	case "write_file", "edit_file", "apply_patch", "checkpoint":
+	case "write_file", "edit_file", "apply_patch":
 		return capability.CapabilityFileEdit
 	}
 	switch info.Kind {

@@ -48,10 +48,6 @@ func (DefaultAutoModeClassifier) Classify(_ context.Context, request AutoModeCla
 		switch info.Name {
 		case "write_file", "edit_file", "apply_patch":
 			return autoModeAllow("workspace file edit"), nil
-		case "checkpoint":
-			if info.Risk == ToolRiskLow {
-				return autoModeAllow("checkpoint metadata or rollback artifact"), nil
-			}
 		}
 	case ToolKindTest:
 		if info.Risk == ToolRiskMedium {
