@@ -158,7 +158,7 @@ func (s *Server) applyTurnWorkspaceFocus(th *threadState, requested *string) err
 	now := time.Now().UTC()
 	th.mu.Lock()
 	if th.PersistHistory {
-		if err := appendChatMessage(s.rt.SessionDir, th.ID, declMsg); err != nil {
+		if _, err := appendChatMessage(s.rt.SessionDir, th.ID, declMsg); err != nil {
 			th.mu.Unlock()
 			return err
 		}

@@ -183,7 +183,7 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 			return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
 		}
 		if th.PersistHistory {
-			if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
+			if _, err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
 				th.mu.Unlock()
 				return s.writeResponse(req.ID, nil, err)
 			}

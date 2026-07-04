@@ -288,10 +288,10 @@ WHERE id = ?`, consumedAt.UnixMilli(), id); err != nil {
 	return nil
 }
 
-func AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, sessionID string, rec HistoryRecord, ids []string, consumedAt time.Time) error {
+func AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, sessionID string, rec HistoryRecord, ids []string, consumedAt time.Time) (int, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
-		return errors.New("session_id is required")
+		return 0, errors.New("session_id is required")
 	}
 	cleanIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -307,7 +307,7 @@ func AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, sessionID string, r
 
 	db, err := openStore(sessDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer db.Close()
 
@@ -316,29 +316,30 @@ func AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, sessionID string, r
 
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin history append resident consume: %w", err)
+		return 0, fmt.Errorf("begin history append resident consume: %w", err)
 	}
 	defer tx.Rollback()
 	if ok, err := sessionExistsTx(tx, sessionID); err != nil {
-		return err
+		return 0, err
 	} else if !ok {
-		return fmt.Errorf("%w: %q", ErrSessionNotFound, sessionID)
+		return 0, fmt.Errorf("%w: %q", ErrSessionNotFound, sessionID)
 	}
-	if err := appendHistoryRecordTx(tx, sessionID, rec); err != nil {
-		return err
+	seq, err := appendHistoryRecordTx(tx, sessionID, rec)
+	if err != nil {
+		return 0, err
 	}
 	for _, id := range cleanIDs {
 		if _, err := tx.Exec(`
 UPDATE resident_inbox
 SET consumed_at = COALESCE(consumed_at, ?)
 WHERE id = ?`, consumedAt.UnixMilli(), id); err != nil {
-			return fmt.Errorf("mark resident envelope consumed: %w", err)
+			return 0, fmt.Errorf("mark resident envelope consumed: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit history append resident consume: %w", err)
+		return 0, fmt.Errorf("commit history append resident consume: %w", err)
 	}
-	return nil
+	return seq, nil
 }
 
 func requireActiveNamedParticipant(q sqlRowQuerier, participantID string) error {

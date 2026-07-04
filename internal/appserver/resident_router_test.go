@@ -90,6 +90,12 @@ func TestResidentRouterUserMessageFansOutToThreadMembers(t *testing.T) {
 	if beaMeta.SourceThreadID != groupID || beaMeta.Addressed || beaMeta.Hop != 0 {
 		t.Fatalf("Bea envelope meta = %+v", beaMeta)
 	}
+	// The envelope carries the source user message's seq (its stable address)
+	// so read receipts and reactions can point back at it. Both members' copies
+	// of the same source message must agree on the seq, and it must be real.
+	if ivyMeta.SourceSeq <= 0 || ivyMeta.SourceSeq != beaMeta.SourceSeq {
+		t.Fatalf("envelope SourceSeq: Ivy=%d Bea=%d, want equal and > 0", ivyMeta.SourceSeq, beaMeta.SourceSeq)
+	}
 }
 
 func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *testing.T) {

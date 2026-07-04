@@ -168,7 +168,7 @@ func TestAppendHistoryRecordAndConsumeResidentEnvelopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := json.RawMessage(`[{"source_thread_id":"group-1","addressed":true,"hop":0}]`)
-	if err := AppendHistoryRecordAndConsumeResidentEnvelopes(dir, "thread-1", HistoryRecord{
+	if _, err := AppendHistoryRecordAndConsumeResidentEnvelopes(dir, "thread-1", HistoryRecord{
 		Role:         "user",
 		Content:      "incoming",
 		EnvelopeMeta: meta,

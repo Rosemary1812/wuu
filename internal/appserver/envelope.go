@@ -19,8 +19,14 @@ type MessageEnvelope struct {
 	SenderParticipantID string    `json:"sender_participant_id,omitempty"`
 	Addressed           bool      `json:"addressed"`
 	Hop                 int       `json:"hop"`
-	Text                string    `json:"text"`
-	CreatedAt           time.Time `json:"created_at"`
+	// SourceSeq is the seq of the source message in SourceThreadID — its
+	// stable per-thread address. Carried so a resident's read receipt (turn
+	// completed/failed on this message) and its optional reaction can point
+	// back at the exact message. 0 when the source seq was unknown at routing
+	// time (e.g. a non-persisted or non-group-chat message).
+	SourceSeq int       `json:"source_seq,omitempty"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
 	// Workspace snapshots the source thread's stored workspace focus at
 	// routing time (2026-07-03-workspace-focus.md "carry source-thread
 	// workspace focus on envelopes"): "" for all registered workspaces, "~"

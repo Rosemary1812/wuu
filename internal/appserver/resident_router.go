@@ -26,6 +26,7 @@ type envelopeMetaRecord struct {
 	SourceThreadTitle   string    `json:"source_thread_title,omitempty"`
 	Addressed           bool      `json:"addressed"`
 	Hop                 int       `json:"hop"`
+	SourceSeq           int       `json:"source_seq,omitempty"`
 	SenderParticipantID string    `json:"sender_participant_id,omitempty"`
 	CreatedAt           time.Time `json:"created_at,omitempty"`
 }
@@ -58,7 +59,7 @@ func (s *Server) prepareThreadMentions(th *threadState, mentions []string) (map[
 	return mentioned, nil
 }
 
-func (s *Server) routeUserMessageToResidents(source *threadState, msg providers.ChatMessage, mentioned map[string]bool) {
+func (s *Server) routeUserMessageToResidents(source *threadState, msg providers.ChatMessage, mentioned map[string]bool, sourceSeq int) {
 	if source == nil || msg.Hidden || strings.TrimSpace(chatMessageDisplayContent(msg)) == "" {
 		return
 	}
@@ -73,6 +74,7 @@ func (s *Server) routeUserMessageToResidents(source *threadState, msg providers.
 		SenderKind:     "user",
 		SenderName:     "User",
 		Hop:            0,
+		SourceSeq:      sourceSeq,
 		Text:           strings.TrimSpace(chatMessageDisplayContent(msg)),
 		CreatedAt:      time.Now().UTC(),
 		Workspace:      source.FocusWorkspace,
@@ -81,7 +83,7 @@ func (s *Server) routeUserMessageToResidents(source *threadState, msg providers.
 	s.routeEnvelopes(source, env, mentioned)
 }
 
-func (s *Server) routeParticipantMessageToResidents(source *threadState, msg agentcontrol.ParticipantMessage, displayName string) {
+func (s *Server) routeParticipantMessageToResidents(source *threadState, msg agentcontrol.ParticipantMessage, displayName string, sourceSeq int) {
 	if source == nil || strings.TrimSpace(msg.Text) == "" || strings.EqualFold(strings.TrimSpace(msg.Kind), "decline") {
 		return
 	}
@@ -93,6 +95,7 @@ func (s *Server) routeParticipantMessageToResidents(source *threadState, msg age
 		SenderName:          firstNonEmpty(displayName, msg.TaskName, msg.AgentType, msg.AgentID, "Participant"),
 		SenderParticipantID: strings.TrimSpace(msg.ParticipantID),
 		Hop:                 msg.Hop,
+		SourceSeq:           sourceSeq,
 		Text:                strings.TrimSpace(msg.Text),
 		CreatedAt:           firstNonZeroTime(msg.CreatedAt, time.Now().UTC()),
 		Workspace:           source.FocusWorkspace,
@@ -371,6 +374,7 @@ func envelopeMetaJSON(envs []MessageEnvelope) json.RawMessage {
 			SourceThreadTitle:   env.SourceTitle,
 			Addressed:           env.Addressed,
 			Hop:                 env.Hop,
+			SourceSeq:           env.SourceSeq,
 			SenderParticipantID: env.SenderParticipantID,
 			CreatedAt:           env.CreatedAt,
 		})

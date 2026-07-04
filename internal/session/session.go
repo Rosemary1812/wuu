@@ -572,9 +572,18 @@ func MostRecentForCWD(sessDir, cwd, workspaceID string) (string, error) {
 
 // AppendHistoryRecord appends one durable history record to a session.
 func AppendHistoryRecord(sessDir, id string, rec HistoryRecord) error {
+	_, err := AppendHistoryRecordReturningSeq(sessDir, id, rec)
+	return err
+}
+
+// AppendHistoryRecordReturningSeq is AppendHistoryRecord but also returns the
+// seq assigned to the new record — its stable address within the thread, which
+// callers stamp onto routed envelopes so read receipts and reactions can point
+// back at this exact message.
+func AppendHistoryRecordReturningSeq(sessDir, id string, rec HistoryRecord) (int, error) {
 	db, err := openStore(sessDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer db.Close()
 
@@ -583,21 +592,22 @@ func AppendHistoryRecord(sessDir, id string, rec HistoryRecord) error {
 
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin history append: %w", err)
+		return 0, fmt.Errorf("begin history append: %w", err)
 	}
 	defer tx.Rollback()
 	if ok, err := sessionExistsTx(tx, id); err != nil {
-		return err
+		return 0, err
 	} else if !ok {
-		return fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+		return 0, fmt.Errorf("%w: %q", ErrSessionNotFound, id)
 	}
-	if err := appendHistoryRecordTx(tx, id, rec); err != nil {
-		return err
+	seq, err := appendHistoryRecordTx(tx, id, rec)
+	if err != nil {
+		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit history append: %w", err)
+		return 0, fmt.Errorf("commit history append: %w", err)
 	}
-	return nil
+	return seq, nil
 }
 
 // RewriteHistoryRecords replaces a session's durable history records.
@@ -1109,12 +1119,18 @@ func sessionExistsTx(tx *sql.Tx, id string) (bool, error) {
 	return count > 0, nil
 }
 
-func appendHistoryRecordTx(tx *sql.Tx, id string, rec HistoryRecord) error {
+// appendHistoryRecordTx inserts a record with the next per-session seq and
+// returns that seq. seq is the message's stable address within the thread
+// (used by message_marks for read receipts and reactions).
+func appendHistoryRecordTx(tx *sql.Tx, id string, rec HistoryRecord) (int, error) {
 	var nextSeq int
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM session_messages WHERE session_id = ?`, id).Scan(&nextSeq); err != nil {
-		return fmt.Errorf("next history sequence: %w", err)
+		return 0, fmt.Errorf("next history sequence: %w", err)
 	}
-	return insertHistoryRecordTx(tx, id, nextSeq, rec)
+	if err := insertHistoryRecordTx(tx, id, nextSeq, rec); err != nil {
+		return 0, err
+	}
+	return nextSeq, nil
 }
 
 func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) error {

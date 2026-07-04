@@ -150,8 +150,9 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		ThreadID:      msg.ThreadID,
 		At:            now,
 	}
+	var sourceSeq int
 	if strings.TrimSpace(s.rt.SessionDir) != "" {
-		if err := session.AppendHistoryRecord(s.rt.SessionDir, threadID, session.HistoryRecord{
+		seq, err := session.AppendHistoryRecordReturningSeq(s.rt.SessionDir, threadID, session.HistoryRecord{
 			Role:          rec.Role,
 			Content:       rec.Content,
 			ClientID:      rec.ClientID,
@@ -160,9 +161,11 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 			PostKind:      rec.PostKind,
 			ThreadID:      rec.ThreadID,
 			At:            rec.At,
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
+		sourceSeq = seq
 		if meta, ok, findErr := session.Find(s.rt.SessionDir, threadID); findErr == nil && ok {
 			_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
 		}
@@ -198,7 +201,7 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		CompletedAtMS: now.UnixMilli(),
 	})
 	_ = s.notifyThreadUpdated(thread)
-	s.routeParticipantMessageToResidents(th, msg, name)
+	s.routeParticipantMessageToResidents(th, msg, name, sourceSeq)
 	return nil
 }
 

@@ -204,15 +204,19 @@ func loadAgentHistory(path string) (persistedAgentHistory, error) {
 	return rec, nil
 }
 
-func appendChatMessage(sessDir, id string, msg providers.ChatMessage) error {
+// appendChatMessage persists a chat message and returns the seq assigned to
+// it — the message's stable address within the thread, which group routing
+// stamps onto envelopes so read receipts and reactions can point back at this
+// exact message. Returns seq 0 when the message is not persisted.
+func appendChatMessage(sessDir, id string, msg providers.ChatMessage) (int, error) {
 	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || !shouldPersistMessage(msg) {
-		return nil
+		return 0, nil
 	}
 	rec := persistedMessageFromChatMessage(msg)
 	if len(msg.ConsumeResidentEnvelopeIDs) > 0 {
 		return sessionstore.AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, id, historyRecordFromPersistedMessage(rec), msg.ConsumeResidentEnvelopeIDs, rec.At)
 	}
-	return sessionstore.AppendHistoryRecord(sessDir, id, historyRecordFromPersistedMessage(rec))
+	return sessionstore.AppendHistoryRecordReturningSeq(sessDir, id, historyRecordFromPersistedMessage(rec))
 }
 
 func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error {

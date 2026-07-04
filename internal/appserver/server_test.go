@@ -6256,7 +6256,7 @@ func TestSQLiteHistoryRoundTripsMessagePayloads(t *testing.T) {
 			InputSchema: map[string]any{"type": "object"},
 		}},
 	}
-	if err := appendChatMessage(rt.SessionDir, sess.ID, msg); err != nil {
+	if _, err := appendChatMessage(rt.SessionDir, sess.ID, msg); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
 
@@ -6295,10 +6295,10 @@ func TestSQLiteRewriteChatHistoryReplacesMessagesAndPreservesTokenUsage(t *testi
 		t.Fatalf("create session: %v", err)
 	}
 
-	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "old user"}); err != nil {
+	if _, err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "old user"}); err != nil {
 		t.Fatalf("append old user: %v", err)
 	}
-	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
+	if _, err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "old assistant"}); err != nil {
 		t.Fatalf("append old assistant: %v", err)
 	}
 	if err := appendTokenUsage(rt.SessionDir, sess.ID, "anthropic", "claude-sonnet-4-6", providers.TokenUsage{InputTokens: 11, OutputTokens: 7, CacheCreationTokens: 5, CacheReadTokens: 3}, 18); err != nil {
@@ -6334,10 +6334,10 @@ func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "inspect"}); err != nil {
+	if _, err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "inspect"}); err != nil {
 		t.Fatalf("append user: %v", err)
 	}
-	if err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "done"}); err != nil {
+	if _, err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "done"}); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
 	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 19_600, CacheReadTokens: 113_000}, 88_000); err != nil {

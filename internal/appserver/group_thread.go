@@ -165,6 +165,7 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	}
 
 	now := time.Now().UTC()
+	var userMsgSeq int
 	th.mu.Lock()
 	if th.ReadOnly {
 		th.mu.Unlock()
@@ -175,10 +176,12 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	// as a completed turn — standard chat semantics, never a queue error
 	// (issue #10). A stale running flag must not make a message bounce.
 	if th.PersistHistory {
-		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
+		seq, err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg)
+		if err != nil {
 			th.mu.Unlock()
 			return s.writeResponse(req.ID, nil, err)
 		}
+		userMsgSeq = seq
 	}
 	history := cloneHistory(th.History)
 	history = append(history, userMsg)
@@ -201,7 +204,7 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	}); err != nil {
 		return err
 	}
-	s.routeUserMessageToResidents(th, userMsg, mentioned)
+	s.routeUserMessageToResidents(th, userMsg, mentioned, userMsgSeq)
 	return nil
 }
 

@@ -53,6 +53,10 @@ type startedThreadTurn struct {
 	turn    Turn
 	runtime turnRuntimeSnapshot
 	history []providers.ChatMessage
+	// userMsgSeq is the persisted seq of this turn's user message (0 when not
+	// persisted). Carried so group/member routing can stamp it onto envelopes
+	// for read receipts and reactions.
+	userMsgSeq int
 }
 
 type turnReadOnlyPolicy int
@@ -176,7 +180,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 
 	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
 	if !isResidentDM {
-		s.routeUserMessageToResidents(th, userMsg, mentioned)
+		s.routeUserMessageToResidents(th, userMsg, mentioned, started.userMsgSeq)
 	}
 	return nil
 }
@@ -1698,12 +1702,15 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 			return startedThreadTurn{}, false, nil
 		}
 	}
+	var userMsgSeq int
 	if th.PersistHistory {
-		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
+		seq, err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg)
+		if err != nil {
 			th.mu.Unlock()
 			cancel()
 			return startedThreadTurn{}, false, err
 		}
+		userMsgSeq = seq
 	}
 	history := cloneHistory(th.History)
 	history = append(history, userMsg)
@@ -1719,12 +1726,13 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 	th.mu.Unlock()
 
 	return startedThreadTurn{
-		ctx:     turnCtx,
-		cancel:  cancel,
-		turnID:  turnID,
-		turn:    turn,
-		runtime: turnRuntime,
-		history: history,
+		ctx:        turnCtx,
+		cancel:     cancel,
+		turnID:     turnID,
+		turn:       turn,
+		runtime:    turnRuntime,
+		history:    history,
+		userMsgSeq: userMsgSeq,
 	}, true, nil
 }
 
@@ -2353,7 +2361,7 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 		}
 	} else {
 		for _, msg := range res.NewMessages {
-			if err := appendChatMessage(s.rt.SessionDir, th.ID, msg); err != nil {
+			if _, err := appendChatMessage(s.rt.SessionDir, th.ID, msg); err != nil {
 				return err
 			}
 		}
