@@ -332,6 +332,12 @@ func (s *Server) ensureResidentDMThread(participantID string) (*threadState, err
 	if err != nil {
 		return nil, err
 	}
+	// Existing DM threads for a retired participant remain loadable above
+	// (frozen read-only at load); creating a brand-new DM for one is a
+	// contradiction — the identity is archived.
+	if p.RetiredAt != nil {
+		return nil, fmt.Errorf("participant %q is retired; no new DM thread can be created", firstNonEmpty(p.Name, participantID))
+	}
 	th, err := s.createResidentDMThreadState(p, session.NewID(), time.Now().UTC())
 	if err != nil {
 		return nil, err
@@ -380,11 +386,13 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 		}
 	}
 	systemPrompt := s.rt.StreamRunner.SystemPrompt
+	dmRetired := false
 	if participantID := strings.TrimSpace(metadata.DMParticipantID); participantID != "" {
 		p, err := session.GetParticipant(s.rt.SessionDir, participantID)
 		if err != nil {
 			return nil, err
 		}
+		dmRetired = p.RetiredAt != nil
 		systemPrompt, err = s.residentPromptForParticipant(p)
 		if err != nil {
 			return nil, err
@@ -409,6 +417,12 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 	}
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, threadCWD)
 	applySessionMetadata(th, metadata)
+	// Retire cleanup protocol: a retired participant's DM is frozen
+	// read-only. ReadOnly is not persisted per-session, so the freeze is
+	// derived from the participant row every time the thread loads.
+	if dmRetired {
+		th.ReadOnly = true
+	}
 	return th, nil
 }
 

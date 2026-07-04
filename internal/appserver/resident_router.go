@@ -138,6 +138,12 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 		if participantID == "" || participantID == strings.TrimSpace(base.SenderParticipantID) {
 			continue
 		}
+		// Membership queries already exclude retired participants; this
+		// guards the race where a member retires between the membership
+		// read and the enqueue (retire cleanup protocol).
+		if s.participantRetired(participantID) {
+			continue
+		}
 		env := base
 		env.ID = "env-" + session.NewID()
 		env.Addressed = mentioned[participantID]
@@ -198,6 +204,13 @@ func (s *Server) finishResidentDrain(participantID string) {
 func (s *Server) drainResidentAgent(participantID string) {
 	defer s.finishResidentDrain(participantID)
 	if s == nil || s.rt == nil {
+		return
+	}
+	// A retired resident never drains again: its pending envelopes were
+	// dropped by the retire transaction and its DM thread is frozen. A
+	// stale kick must not resurrect a DM runtime for it.
+	if s.participantRetired(participantID) {
+		providers.DebugLogf("skip resident drain for retired participant %q", participantID)
 		return
 	}
 	th, err := s.ensureResidentDMThread(participantID)

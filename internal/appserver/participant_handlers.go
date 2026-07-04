@@ -144,6 +144,11 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		if p.Kind != participant.KindNamed {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is not a named agent", participantID))
 		}
+		// GetParticipant intentionally returns retired rows (audit/history);
+		// starting a run for one is rejected here (retire cleanup protocol).
+		if p.RetiredAt != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is retired and cannot be started", firstNonEmpty(p.Name, participantID)))
+		}
 		if subagentType == "" {
 			subagentType = p.Role
 		}

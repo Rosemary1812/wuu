@@ -104,12 +104,20 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	th.mu.Lock()
-	isResidentDM := strings.TrimSpace(th.DMParticipantID) != ""
+	dmParticipantID := strings.TrimSpace(th.DMParticipantID)
+	isResidentDM := dmParticipantID != ""
 	isGroup := th.Group
 	turnRunning := th.running
 	th.mu.Unlock()
 	if isGroup {
 		return s.handleGroupTurnStart(req, th, params, images, files)
+	}
+	if isResidentDM {
+		// Retire cleanup protocol: a retired participant's DM history stays
+		// browsable, but the conversation is frozen — no new turns.
+		if p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID); err == nil && p.RetiredAt != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is retired; this conversation is read-only", firstNonEmpty(p.Name, dmParticipantID)))
+		}
 	}
 	// Workspace focus is a chat-style thread property (2026-07-03-workspace-focus.md
 	// §3); the group branch applies the same idempotent-declare helper inside

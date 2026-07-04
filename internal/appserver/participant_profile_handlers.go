@@ -237,12 +237,14 @@ func (s *Server) handleParticipantRetire(req Request) error {
 	if p.Kind != participant.KindNamed {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is not a named agent (kind=%s)", id, p.Kind))
 	}
-	if err := session.RetireParticipant(s.rt.SessionDir, id); err != nil {
+	// Full cleanup protocol: store retire transaction, directory archival
+	// (participants/<id>/ and agents/<id>/home move under .archived/ — never
+	// deleted), and DM thread freeze. See retireNamedParticipant.
+	if err := s.retireNamedParticipant(p); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	s.invalidateParticipantSummary(id)
-	// Reload so the profile reflects the new RetiredAt timestamp set by
-	// the store.
+	// Reload so the profile reflects the new RetiredAt timestamp and the
+	// archived workspace path set by the cleanup.
 	updated, err := session.GetParticipant(s.rt.SessionDir, id)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)

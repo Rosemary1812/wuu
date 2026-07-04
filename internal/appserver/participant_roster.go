@@ -182,10 +182,11 @@ func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name stri
 	if target == nil {
 		return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: participant %q is not active", name)
 	}
-	if err := session.RetireParticipant(r.sessionDir(), target.ID); err != nil {
+	// Full cleanup protocol (store transaction + directory archival + DM
+	// freeze), shared with the participant/retire RPC.
+	if err := r.server.retireNamedParticipant(*target); err != nil {
 		return agentcontrol.RosterEntry{}, err
 	}
-	r.server.invalidateParticipantSummary(target.ID)
 	return agentcontrol.RosterEntry{
 		ID:      target.ID,
 		Name:    target.Name,
