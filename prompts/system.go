@@ -19,12 +19,14 @@ func System() string {
 	return strings.TrimSpace(system)
 }
 
-// SystemMain returns the main-agent-only path-selection map. Most tools
-// and durable-state concepts listed here (update_plan, create_goal,
-// start_workflow, spawn_agent, helpme, write_memory, read_memory) are
-// not on a worker's tool surface, so this section must not be embedded
-// in a subagent's system prompt. Inception is available to workers, but
-// its worker-facing usage guidance lives in the tool description instead.
+// SystemMain returns the main-agent-only path-selection map. Orchestration
+// belongs to the brain: spawn_agent, helpme, and the subagent management
+// suite are compiled out of worker surfaces, so this section must not be
+// embedded in a subagent's system prompt. Of the other tools it mentions,
+// update_plan and inception stay visible to workers (their worker-facing
+// guidance lives in the tool descriptions), create_goal and start_workflow
+// stay deferred behind tool_search on the worker surface, and
+// read_memory/write_memory are retired everywhere (memory redesign).
 // config.DefaultSystemPrompt() joins System() and SystemMain() for the
 // main agent; config.WorkerSystemPrompt() returns only System() for
 // spawned subagents.

@@ -865,10 +865,16 @@ func DefaultSystemPrompt() string {
 
 // WorkerSystemPrompt returns the system prompt used to seed spawned
 // subagents. It contains only the universal base sections; the main-only
-// orchestration map is excluded because the tools and durable state
-// concepts listed there (update_plan, create_goal, start_workflow,
-// spawn_agent, helpme, inception, write_memory, read_memory) are not
-// part of a worker's tool surface.
+// orchestration map is excluded because orchestration belongs to the brain:
+// spawn_agent, helpme, and the subagent management suite (send_message,
+// followup_task, await_agents, close_agent, list_agents) are compiled out
+// of worker surfaces entirely (internal/modelprofile/compiler.go). Of the
+// other tools the map mentions, update_plan and inception stay visible on
+// worker surfaces and create_goal/start_workflow stay deferred behind
+// tool_search — their worker-facing guidance lives in the tool descriptions
+// and the worker's deferred-tool catalog, not in the orchestration map.
+// read_memory/write_memory are retired on every surface (memory-redesign
+// §6: durable memory is a file directory written with plain file tools).
 func WorkerSystemPrompt() string {
 	return prompts.System()
 }
