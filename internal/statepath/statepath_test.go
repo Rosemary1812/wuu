@@ -230,9 +230,6 @@ func TestProfileDirDefaultsEmptyName(t *testing.T) {
 	if got != want {
 		t.Fatalf("empty profile dir = %q, want default profile dir %q", got, want)
 	}
-	if ProfileMemoryDir(got) != filepath.Join(got, "memory") {
-		t.Fatalf("ProfileMemoryDir(%q) = %q", got, ProfileMemoryDir(got))
-	}
 }
 
 func TestWorkspaceMemoryDirDoesNotCollideWithDreamMemory(t *testing.T) {

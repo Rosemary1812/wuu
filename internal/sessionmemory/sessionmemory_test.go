@@ -74,39 +74,30 @@ func TestAppendReplaceReadAndStatus(t *testing.T) {
 	}
 }
 
-func TestContextBlocksSkipsMissingAndInjectsExistingFiles(t *testing.T) {
+func TestRequestContextBlocksSkipsMissingAndInjectsExistingFiles(t *testing.T) {
 	workspaceState := filepath.Join(t.TempDir(), "workspace-state")
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 
-	if blocks := ContextBlocks(workspaceState, sessionArtifact); len(blocks) != 0 {
+	if blocks := RequestContextBlocks(workspaceState, sessionArtifact); len(blocks) != 0 {
 		t.Fatalf("missing memory files should not inject blocks: %+v", blocks)
 	}
 
-	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetProjectMemory, "# Project Memory\n\nDurable project fact."); err != nil {
-		t.Fatalf("ReplaceTarget project: %v", err)
-	}
 	if _, _, err := ReplaceTarget(workspaceState, sessionArtifact, TargetNotes, "# Session Notes\n\nRemember to verify workflow memory."); err != nil {
 		t.Fatalf("ReplaceTarget notes: %v", err)
 	}
 
-	blocks := ContextBlocks(workspaceState, sessionArtifact)
-	if len(blocks) != 2 {
-		t.Fatalf("blocks len = %d, want 2: %+v", len(blocks), blocks)
+	blocks := RequestContextBlocks(workspaceState, sessionArtifact)
+	if len(blocks) != 1 {
+		t.Fatalf("blocks len = %d, want 1: %+v", len(blocks), blocks)
 	}
-	kinds := map[wuucontext.BlockKind]bool{}
-	sources := map[string]bool{}
-	for _, block := range blocks {
-		kinds[block.Kind] = true
-		sources[block.Source] = true
-		if block.TokenBudget <= 0 {
-			t.Fatalf("block missing token budget: %+v", block)
-		}
+	if blocks[0].Kind != wuucontext.BlockTaskState {
+		t.Fatalf("unexpected block kind: %+v", blocks)
 	}
-	if !kinds[wuucontext.BlockMemory] || !kinds[wuucontext.BlockTaskState] {
-		t.Fatalf("unexpected block kinds: %+v", blocks)
+	if blocks[0].Source != "session.notes:notes" {
+		t.Fatalf("unexpected block source: %+v", blocks)
 	}
-	if !sources["workspace.memory:project_memory"] || !sources["session.notes:notes"] {
-		t.Fatalf("unexpected block sources: %+v", blocks)
+	if blocks[0].TokenBudget <= 0 {
+		t.Fatalf("block missing token budget: %+v", blocks[0])
 	}
 }
 
@@ -140,7 +131,7 @@ func TestRequestContextBlocksExcludesProjectMemory(t *testing.T) {
 	}
 }
 
-func TestContextBlocksPrefersSummaryOverLegacyCheckpoint(t *testing.T) {
+func TestRequestContextBlocksPrefersSummaryOverLegacyCheckpoint(t *testing.T) {
 	workspaceState := filepath.Join(t.TempDir(), "workspace-state")
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 
@@ -151,7 +142,7 @@ func TestContextBlocksPrefersSummaryOverLegacyCheckpoint(t *testing.T) {
 		t.Fatalf("ReplaceTarget summary: %v", err)
 	}
 
-	blocks := ContextBlocks(workspaceState, sessionArtifact)
+	blocks := RequestContextBlocks(workspaceState, sessionArtifact)
 	if len(blocks) != 1 {
 		t.Fatalf("blocks len = %d, want 1: %+v", len(blocks), blocks)
 	}

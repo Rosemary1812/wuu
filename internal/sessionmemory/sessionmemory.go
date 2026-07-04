@@ -23,10 +23,9 @@ const (
 	defaultFileMode = 0o644
 	defaultDirMode  = 0o755
 
-	projectMemoryTokenBudget = 10000
-	checkpointTokenBudget    = 11000
-	notesTokenBudget         = 4000
-	dreamErrorMaxBytes       = 4096
+	checkpointTokenBudget = 11000
+	notesTokenBudget      = 4000
+	dreamErrorMaxBytes    = 4096
 )
 
 const (
@@ -335,24 +334,13 @@ func ReplaceTarget(workspaceStateDir, sessionArtifactDir, target, content string
 	return path, len([]rune(content)), nil
 }
 
-func ContextBlocks(workspaceStateDir, sessionArtifactDir string) []wuucontext.Block {
-	return contextBlocks(workspaceStateDir, sessionArtifactDir, true)
-}
-
 // RequestContextBlocks returns only memory that should ride along with each model request.
 // Workspace project memory is durable knowledge and stays available through the tool.
+// (A ContextBlocks variant that also injected project memory was removed as
+// dead code — nothing outside its own tests ever called it.)
 func RequestContextBlocks(workspaceStateDir, sessionArtifactDir string) []wuucontext.Block {
-	return contextBlocks(workspaceStateDir, sessionArtifactDir, false)
-}
-
-func contextBlocks(workspaceStateDir, sessionArtifactDir string, includeProjectMemory bool) []wuucontext.Block {
 	paths := PathsFor(workspaceStateDir, sessionArtifactDir)
 	var blocks []wuucontext.Block
-	if includeProjectMemory {
-		if block, ok := fileBlock(TargetProjectMemory, paths.ProjectMemory, wuucontext.BlockMemory, "Workspace project memory", "workspace.memory", projectMemoryTokenBudget); ok {
-			blocks = append(blocks, block)
-		}
-	}
 	summaryInjected := false
 	if block, ok := fileBlock(TargetSummary, paths.Summary, wuucontext.BlockTaskState, "Session summary", "session.summary", checkpointTokenBudget); ok {
 		blocks = append(blocks, block)

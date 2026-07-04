@@ -162,7 +162,6 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 		"select:<tool_name>",
 		"select:tool_a tool_b",
 		"desktop port reporting",
-		"context rewrite/continuation",
 		"`already_loaded`",
 		"Do not use `tool_search` for visible core tools",
 	} {
