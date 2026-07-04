@@ -325,6 +325,8 @@ DM 直连消息：回复 = 对本 DM 的 `post_message`；本批含 DM 消息而
 
 **修订说明（2026-07-04）**：本节的记忆相关表述（"Keep durable notes in MEMORY.md"、`## Memory` 注入段等）已由 `2026-07-04-memory-redesign.md` §5 修订，以该文档为准；本节其余部分继续有效。
 
+**修订说明（2026-07-04，一致性修补 #3①：resident 工具引导）**：常驻大脑提示词在 `## Building teams and groups` 与 `## Workspaces and file scope` 之间新增 `## Your tools` 段（≤12 行），内容三点：(1) resident 持有本会话完整的主 agent 工具面；(2) spawn_agent 可把重活/并行活派给无名 worker，worker 是纯执行体，不能再派发 agent、也不能向参与者发言——编排权只属大脑（一致性总纲 §0 公理 5-6）；(3) deferred 工具先用 tool_search 加载 schema 再调用。该段之后原样注入会话级 deferred 工具目录；目录文本作为参数传入 `residentParticipantSystemPrompt`，复用 `mainSurface.DeferredToolCatalog` 的现成生成路径。目录为空（tool_search 关闭）时整段连同目录一并省略。`participant/start` 任务派发路径（`namedParticipantPrompt`）传空目录，因此任务运行提示词不含此段——任务运行跑在 worker 工具面上，没有 spawn_agent，提示词不得撒谎。
+
 放 `internal/appserver/participant_prompt.go`，函数 `residentParticipantSystemPrompt(p participant.Participant, memory string) string`。每 turn 重建（memory 更新次 turn 生效）。**这份提示词是公理 1-8 的对 agent 表达，修改措辞需回到本文档同步。**
 
 **实施留意——缓存纪律（2026-07-03）**：MEMORY.md 内嵌于 system prompt 且每 turn 重建，意味着每次 memory 写入都会使 resident thread 的整个缓存前缀失效，长历史按全价重读。实施时二选一：(a) 约束 memory 写入的生效时机（批量/低频，接受变更时一次性重建）；(b) 把 MEMORY.md 移出 system prompt，作为上下文靠后的注入块或由 agent 工具自拉。另注意低频群的唤醒间隔常大于缓存 TTL，缓存并非总能兜底——公理 4 的成本可持续性依赖这条纪律。

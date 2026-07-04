@@ -19,7 +19,14 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		Tagline: "随时开工的常驻搭档",
 	}
 	notebook := "/home/u/.wuu/participants/p-andy/memory"
-	got := residentParticipantSystemPrompt(p, notebook, "- [Quote style](quote.md) — always quote first", "- [User role](user_role.md) — data scientist", []workspaces.Workspace{
+	catalog := strings.Join([]string{
+		"# Deferred Tool Catalog",
+		"",
+		"<available-deferred-tools>",
+		"- send_message: Send a follow-up message to a running agent. [tags: agent, writes]",
+		"</available-deferred-tools>",
+	}, "\n")
+	got := residentParticipantSystemPrompt(p, notebook, "- [Quote style](quote.md) — always quote first", "- [User role](user_role.md) — data scientist", catalog, []workspaces.Workspace{
 		{Name: "wuu", Root: "/repos/wuu"},
 		{Name: "", Root: "/repos/unnamed"},
 	})
@@ -100,6 +107,19 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"question; prefer reusing an existing group. When the user asks for a",
 		"team, you may also create new named teammates with manage_participant.",
 		"",
+		"## Your tools",
+		"You carry this session's full tool surface — the same file, search,",
+		"terminal, and web tools as the workspace main agent, plus the resident",
+		"speech and group tools described above.",
+		"- spawn_agent: delegate heavy or parallel work to anonymous workers.",
+		"  Workers are pure executors — they cannot spawn agents or message",
+		"  participants; orchestration stays here, in your brain.",
+		"- Deferred tools load on demand: find and load a schema with",
+		"  tool_search, then call the tool. The catalog below lists what",
+		"  tool_search can load in this session.",
+		"",
+		catalog,
+		"",
 		"## Workspaces and file scope",
 		"The user's registered workspaces (name — root path):",
 		"- wuu — /repos/wuu",
@@ -137,9 +157,12 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 
 func TestResidentParticipantSystemPromptOmitsEmptySections(t *testing.T) {
 	p := participant.Participant{Name: "Noel", Role: "reviewer", Tagline: "find regressions"}
-	got := residentParticipantSystemPrompt(p, "", "   \n  ", " ", nil)
+	got := residentParticipantSystemPrompt(p, "", "   \n  ", " ", "  \n ", nil)
 	if strings.Contains(got, "## Memory\n") {
 		t.Errorf("prompt must not include memory section when memory is empty:\n%s", got)
+	}
+	if strings.Contains(got, "## Your tools") {
+		t.Errorf("prompt must not include tool guidance when the deferred catalog is empty:\n%s", got)
 	}
 	if strings.Contains(got, "## What you know about the user") {
 		t.Errorf("prompt must not include user-index section when index is empty:\n%s", got)
@@ -188,6 +211,43 @@ func TestResidentPromptForParticipantReadsProjectsStore(t *testing.T) {
 	}
 	if info, err := os.Stat(notebook); err != nil || !info.IsDir() {
 		t.Errorf("identity notebook dir must be created for the prompt's dir-exists promise: %v", err)
+	}
+}
+
+func TestResidentPromptInjectsDeferredToolCatalog(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = t.TempDir()
+	srv := New(rt, &lockedBuffer{})
+	participantID := saveNamedParticipant(t, rt, "Noel", "reviewer", "")
+	p, err := session.GetParticipant(rt.SessionDir, participantID)
+	if err != nil {
+		t.Fatalf("load participant: %v", err)
+	}
+
+	// Without a session catalog the brain prompt omits the section.
+	prompt, err := srv.residentPromptForParticipant(p)
+	if err != nil {
+		t.Fatalf("residentPromptForParticipant: %v", err)
+	}
+	if strings.Contains(prompt, "## Your tools") {
+		t.Errorf("prompt must omit tool guidance without a deferred catalog:\n%s", prompt)
+	}
+
+	// Resident brains clone the main surface, so the main catalog is taught.
+	rt.DeferredToolCatalogPrompt = "# Deferred Tool Catalog\n\n<available-deferred-tools>\n- send_message: Send a follow-up message. [tags: agent, writes]\n</available-deferred-tools>"
+	prompt, err = srv.residentPromptForParticipant(p)
+	if err != nil {
+		t.Fatalf("residentPromptForParticipant: %v", err)
+	}
+	for _, want := range []string{
+		"## Your tools",
+		"orchestration stays here, in your brain.",
+		"<available-deferred-tools>",
+		"- send_message: Send a follow-up message. [tags: agent, writes]",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt must inject tool guidance and catalog, missing %q:\n%s", want, prompt)
+		}
 	}
 }
 
@@ -274,5 +334,10 @@ func TestNamedParticipantPromptAppendsRequestToResidentPrompt(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "\n\n## Request\ndo the thing") {
 		t.Errorf("task prompt must append one trimmed request section:\n%s", got)
+	}
+	// Task runs execute on the worker surface (no spawn_agent), so the
+	// brain-only tool guidance must not leak into the dispatch prompt.
+	if strings.Contains(got, "## Your tools") || strings.Contains(got, "spawn_agent") {
+		t.Errorf("task dispatch prompt must not carry brain-only tool guidance:\n%s", got)
 	}
 }

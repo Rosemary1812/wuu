@@ -15,8 +15,13 @@ import (
 // memoryDir is the agent's identity notebook (absolute path; "" hides the
 // notebook line and teaching), memory is the injected identity index
 // content, and userIndex is the read-only user notebook index
-// (memory-redesign §5.3).
-func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memory, userIndex string, registered []workspaces.Workspace) string {
+// (memory-redesign §5.3). deferredCatalog is the session-level deferred
+// tool catalog section (mainSurface.DeferredToolCatalog — resident brains
+// clone the main-agent surface); when non-empty it enables the "## Your
+// tools" guidance section (resident doc §5, 2026-07-04 revision #3①).
+// The participant/start task-run path passes "" because task runs execute
+// on the worker surface, which has no spawn_agent.
+func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memory, userIndex, deferredCatalog string, registered []workspaces.Workspace) string {
 	memoryDir = strings.TrimSpace(memoryDir)
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %s, a resident named agent in this workspace. You are a\n", strings.TrimSpace(p.Name))
@@ -95,6 +100,24 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("ongoing purpose — a project, a standing topic — never for a one-off\n")
 	b.WriteString("question; prefer reusing an existing group. When the user asks for a\n")
 	b.WriteString("team, you may also create new named teammates with manage_participant.\n\n")
+	if deferredCatalog = strings.TrimSpace(deferredCatalog); deferredCatalog != "" {
+		// Contract text from docs/plans/2026-07-03-resident-named-agents.md
+		// §5 (2026-07-04 revision, consistency-repair #3①): resident brains
+		// carry the full main-agent surface; orchestration stays in the
+		// brain; deferred tools load through tool_search.
+		b.WriteString("## Your tools\n")
+		b.WriteString("You carry this session's full tool surface — the same file, search,\n")
+		b.WriteString("terminal, and web tools as the workspace main agent, plus the resident\n")
+		b.WriteString("speech and group tools described above.\n")
+		b.WriteString("- spawn_agent: delegate heavy or parallel work to anonymous workers.\n")
+		b.WriteString("  Workers are pure executors — they cannot spawn agents or message\n")
+		b.WriteString("  participants; orchestration stays here, in your brain.\n")
+		b.WriteString("- Deferred tools load on demand: find and load a schema with\n")
+		b.WriteString("  tool_search, then call the tool. The catalog below lists what\n")
+		b.WriteString("  tool_search can load in this session.\n\n")
+		b.WriteString(deferredCatalog)
+		b.WriteString("\n\n")
+	}
 	b.WriteString("## Workspaces and file scope\n")
 	b.WriteString("The user's registered workspaces (name — root path):\n")
 	b.WriteString(renderWorkspaceManifest(registered))
@@ -150,13 +173,16 @@ func namedParticipantPrompt(p participant.Participant, memory, prompt string, re
 	// Task runs reuse the resident persona. The identity notebook path is
 	// derived from the participant workspace when known; the user index is
 	// omitted here because spawned runs already receive the read-only user
-	// memory block in their worker base prompt.
+	// memory block in their worker base prompt. The deferred catalog is
+	// omitted too: task runs execute on the worker surface (no spawn_agent,
+	// own worker catalog in the base prompt), so the brain-only "## Your
+	// tools" section must not render here.
 	memoryDir := ""
 	if workspace := strings.TrimSpace(p.Workspace); workspace != "" {
 		memoryDir = filepath.Join(workspace, "memory")
 	}
 	var b strings.Builder
-	b.WriteString(strings.TrimRight(residentParticipantSystemPrompt(p, memoryDir, memory, "", registered), "\n"))
+	b.WriteString(strings.TrimRight(residentParticipantSystemPrompt(p, memoryDir, memory, "", "", registered), "\n"))
 	b.WriteString("\n\n## Request\n")
 	b.WriteString(strings.TrimSpace(prompt))
 	return b.String()
@@ -204,7 +230,14 @@ func (s *Server) residentPromptForParticipant(p participant.Participant) (string
 			providers.DebugLogf("read user memory index for resident prompt: %v", err)
 		}
 	}
-	return residentParticipantSystemPrompt(p, memoryDir, memory, userIndex, s.registeredWorkspaces()), nil
+	// Resident brains clone the main-agent tool surface, so the session's
+	// main deferred-tool catalog is the right one to teach (resident doc §5,
+	// 2026-07-04 revision #3①).
+	deferredCatalog := ""
+	if s != nil && s.rt != nil {
+		deferredCatalog = s.rt.DeferredToolCatalogPrompt
+	}
+	return residentParticipantSystemPrompt(p, memoryDir, memory, userIndex, deferredCatalog, s.registeredWorkspaces()), nil
 }
 
 // registeredWorkspaces reads the user's workspace roster from the desktop's
