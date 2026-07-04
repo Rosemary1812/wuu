@@ -183,15 +183,18 @@ func (s *Server) handleParticipantReset(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("participant_id is required"))
 	}
 	scope := strings.ToLower(strings.TrimSpace(params.Scope))
-	if scope == "" {
-		scope = "restart"
+	// The "restart" scope was retired: it was an empty case that reported
+	// success without doing anything, and a named agent is one continuous
+	// brain with no per-DM runtime to restart (consistency repair plan §1
+	// #6). Reject it explicitly until the frontend button is removed.
+	if scope == "restart" {
+		return s.writeResponse(req.ID, nil, errors.New("restart scope is no longer supported"))
 	}
 	p, err := session.GetParticipant(s.rt.SessionDir, id)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	switch scope {
-	case "restart":
 	case "session":
 		if err := appendParticipantMemory(p.Workspace, "\n\n## Session reset\n- Runtime state reset.\n"); err != nil {
 			return s.writeResponse(req.ID, nil, err)
