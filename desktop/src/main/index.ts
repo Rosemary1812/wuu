@@ -323,6 +323,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
     projectManager.select(projectIDToSelect),
   );
+  ipcMain.handle("wuu:project-remove", (_event, projectIDToRemove: string) =>
+    projectManager.remove(projectIDToRemove),
+  );
   ipcMain.handle(
     "wuu:project-select-none",
     (_event, fresh?: boolean, cwd?: string) =>

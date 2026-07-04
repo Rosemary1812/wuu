@@ -4350,6 +4350,50 @@ export function App(): JSX.Element {
     }
   }
 
+  async function removeProject(projectId: string): Promise<void> {
+    const requestID = beginViewSwitch("runtime", "remove-project");
+    const outgoingDraft = currentPrimaryComposerDraft();
+    try {
+      const projectState = await window.wuu.removeProject(projectId);
+      if (
+        sameRuntimeContext(projectState.active_context, state.activeContext)
+      ) {
+        // The removed workspace wasn't the active one: just drop it from the
+        // sidebar list, leaving the current conversation untouched.
+        if (!finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          projects: projectState.projects,
+        }));
+        return;
+      }
+      // The active workspace was removed; ensureRuntimeContext reconciled the
+      // context down to the shared 对话 workspace. Load and switch to it.
+      const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) =>
+        withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        ),
+      );
+    } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "remove workspace failed",
+      }));
+    }
+  }
+
   async function useNoProject(fresh: boolean): Promise<void> {
     if (!fresh && state.activeContext?.kind === "no_project") {
       closeProjectMenus();
@@ -7404,6 +7448,7 @@ export function App(): JSX.Element {
         onSelectProjectThread={(projectID, threadID) =>
           void selectProjectThread(projectID, threadID)
         }
+        onRemoveProject={(id) => void removeProject(id)}
         onReorderSections={setSidebarSectionOrder}
         onPointerEnter={openSidebarDrawer}
         onPointerLeave={closeSidebarDrawer}

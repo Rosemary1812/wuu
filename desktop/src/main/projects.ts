@@ -115,6 +115,21 @@ export class ProjectManager {
     return this.list();
   }
 
+  remove(projectIDToRemove: string): ProjectListResult {
+    this.load();
+    this.store.projects = this.store.projects.filter(
+      (project) => project.id !== projectIDToRemove,
+    );
+    // If the removed project was the active context, ensureRuntimeContext
+    // (called by list()) reconciles the now-dangling project_id down to the
+    // shared 对话 workspace. This is an explicit user removal, not a silent
+    // fallback masking a missing directory. The project's threads stay in the
+    // sessions DB (they simply stop matching any registered project), so
+    // re-adding the folder restores them.
+    this.save();
+    return this.list();
+  }
+
   selectNoProject(fresh: boolean, cwd?: string): ProjectListResult {
     this.load();
     if (!fresh && cwd) {

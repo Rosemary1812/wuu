@@ -149,6 +149,7 @@ function renderSidebar({
         onToggleProjectCollapsed={() => {}}
         onStartNewThreadForProject={() => {}}
         onSelectProjectThread={() => {}}
+        onRemoveProject={() => {}}
         onOpenSettings={() => {}}
       />,
     );

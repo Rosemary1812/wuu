@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
-import { ProjectList, ThreadRowTitle } from "./ThreadSidebar";
+import { ProjectGroup, ProjectList, ThreadRowTitle } from "./ThreadSidebar";
 import type { DesktopProject, Thread } from "../shared/protocol";
 import { SCRATCH_PSEUDO_PROJECT_ID, summarizeThreadsForSidebar } from "./AppState";
 
@@ -500,5 +500,97 @@ describe("ProjectList", () => {
     );
     expect(middleRow?.getAttribute("aria-label")).not.toContain("分叉自其他会话");
     expect(leafRow).not.toBeNull();
+  });
+});
+
+describe("ProjectGroup remove workspace", () => {
+  function makeProject(id: string, name: string, path: string): DesktopProject {
+    return {
+      id,
+      name,
+      path,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+  }
+
+  const baseProps = {
+    activeID: undefined,
+    pendingProjectID: undefined,
+    collapsedProjectIDs: new Set<string>(),
+    expandedProjectIDs: new Set<string>(),
+    collapsingProjectIDs: new Set<string>(),
+    threadsByProjectID: {},
+    activeThreadID: undefined,
+    pendingThreadID: undefined,
+    archiveConfirmThreadID: undefined,
+    lastViewedTurnByThreadID: {},
+    scratchPseudoProjectID: SCRATCH_PSEUDO_PROJECT_ID,
+    scratchPseudoActive: false,
+    onToggleProjectCollapsed: () => {},
+    onStartNewThread: () => {},
+    onSelectThread: () => {},
+    onToggleThreadPinned: () => {},
+    onArchiveThread: () => {},
+    onClearArchiveConfirm: () => {},
+  };
+
+  function openContextMenu(): void {
+    const header = container.querySelector(".sidebar-section-header-group");
+    expect(header).not.toBeNull();
+    act(() => {
+      header?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      );
+    });
+  }
+
+  it("opens a 移除工作区 menu on a real project row and reports the id", () => {
+    const removed: string[] = [];
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectGroup
+          {...baseProps}
+          project={makeProject("project-1", "wuu", "/repo/wuu")}
+          onRemoveProject={(id) => removed.push(id)}
+        />,
+      );
+    });
+
+    openContextMenu();
+    expect(document.body.querySelector(".thread-row-context-menu")).not.toBeNull();
+    const item = Array.from(
+      document.body.querySelectorAll(".thread-row-context-menu-item"),
+    ).find((el) => el.textContent === "移除工作区");
+    expect(item).not.toBeUndefined();
+
+    act(() => {
+      item?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(removed).toEqual(["project-1"]);
+  });
+
+  it("offers no context menu on the 对话 scratch pseudo row", () => {
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectGroup
+          {...baseProps}
+          project={makeProject(SCRATCH_PSEUDO_PROJECT_ID, "对话", "")}
+          onRemoveProject={() => {}}
+        />,
+      );
+    });
+
+    openContextMenu();
+    expect(document.body.querySelector(".thread-row-context-menu")).toBeNull();
   });
 });

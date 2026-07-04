@@ -91,6 +91,7 @@ export function SidebarSection({
   emptyNote,
   children,
   onToggle,
+  onContextMenu,
 }: {
   expanded: boolean;
   iconKind: string;
@@ -115,6 +116,10 @@ export function SidebarSection({
   // to animate (a 0→0 grid transition would otherwise vanish).
   emptyNote?: ReactNode;
   onToggle: () => void;
+  // Optional right-click handler for the header row. Project rows use it to
+  // open the "移除工作区" context menu; sections without it (置顶 / Agents /
+  // 对话 / 群聊) simply have no custom context menu.
+  onContextMenu?: (event: React.MouseEvent) => void;
   children?: ReactNode;
 }): JSX.Element {
   // Pulled from the SortableSection provider so the header <button>
@@ -215,7 +220,7 @@ export function SidebarSection({
     .join(" ");
   return (
     <>
-      <div className="sidebar-section-header-group">
+      <div className="sidebar-section-header-group" onContextMenu={onContextMenu}>
         <button
           className={headerClassName}
           type="button"

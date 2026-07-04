@@ -338,6 +338,7 @@ export function AppSidebar({
   onToggleProjectCollapsed,
   onStartNewThreadForProject,
   onSelectProjectThread,
+  onRemoveProject,
   onReorderSections,
   onPointerEnter,
   onPointerLeave,
@@ -424,6 +425,7 @@ export function AppSidebar({
   onToggleProjectCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
+  onRemoveProject: (id: string) => void;
   // Fires when the user drops a reorderable sidebar section in a new
   // position. The next array is the FULL sectionOrder with the moved
   // entry swapped into place. App.tsx persists this via the same
@@ -1137,6 +1139,7 @@ export function AppSidebar({
                   onToggleThreadPinned={onTogglePinned}
                   onArchiveThread={onArchiveThread}
                   onClearArchiveConfirm={onClearArchiveConfirm}
+                  onRemoveProject={onRemoveProject}
                 />
               </SortableSection>
             );

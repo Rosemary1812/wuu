@@ -136,6 +136,7 @@ export function ProjectGroup({
   onToggleThreadPinned,
   onArchiveThread,
   onClearArchiveConfirm,
+  onRemoveProject,
 }: {
   project: DesktopProject;
   activeID?: string;
@@ -156,10 +157,18 @@ export function ProjectGroup({
   onToggleThreadPinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
+  // Remove a real workspace from the sidebar. Absent for the 对话 scratch
+  // pseudo project (and never wired for 群聊 / Agents, which are separate
+  // sections), so those can never be removed.
+  onRemoveProject?: (id: string) => void;
 }): JSX.Element {
   const [visibleThreadCount, setVisibleThreadCount] = useState<number>(
     PROJECT_THREAD_INITIAL_VISIBLE_COUNT,
   );
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   function showMoreProjectThreads(): void {
     setVisibleThreadCount(
@@ -220,6 +229,14 @@ export function ProjectGroup({
         unread={projectHasUnread}
         loading={pendingProject}
         onToggle={() => onToggleProjectCollapsed(project.id)}
+        onContextMenu={
+          isScratchPseudo || !onRemoveProject
+            ? undefined
+            : (event) => {
+                event.preventDefault();
+                setContextMenu({ x: event.clientX, y: event.clientY });
+              }
+        }
         newItemButton={
           <button
             className="sidebar-row-icon-button project-row-new-thread"
@@ -250,6 +267,19 @@ export function ProjectGroup({
           />
         )}
       </SidebarSection>
+      {contextMenu ? (
+        <ThreadContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={[
+            {
+              label: "移除工作区",
+              onSelect: () => onRemoveProject?.(project.id),
+            },
+          ]}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
     </div>
   );
 }
