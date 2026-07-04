@@ -316,6 +316,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadMembersAdd(req)
 	case MethodThreadMembersRemove:
 		return s.handleThreadMembersRemove(req)
+	case MethodThreadMarks:
+		return s.handleThreadMarks(req)
 	case MethodThreadRegenerateTitle:
 		return s.handleThreadRegenerateTitle(ctx, req)
 	case MethodParticipantStart:

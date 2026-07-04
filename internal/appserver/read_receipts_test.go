@@ -44,6 +44,47 @@ func routeUserMessageAndSourceSeq(t *testing.T, srv *Server, groupID, member str
 	return seq
 }
 
+// thread/marks returns both read-receipt and reaction rows for a thread so the
+// chat view can render on load.
+func TestThreadMarksRPCReturnsSeenAndReactions(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	andy := saveNamedParticipant(t, rt, "Andy", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	if err := session.AddThreadMember(rt.SessionDir, groupID, andy); err != nil {
+		t.Fatalf("AddThreadMember: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, 2, andy, session.SeenStatusCompleted, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.SetMessageReaction(rt.SessionDir, groupID, 2, andy, "smug", now); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := fmt.Sprintf(`{"id":"marks","method":"thread/marks","params":{"thread_id":%q}}`, groupID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/marks: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "marks")
+	if resp["error"] != nil {
+		t.Fatalf("thread/marks error: %v", resp["error"])
+	}
+	result := remarshal[ThreadMarksResult](t, resp["result"])
+	var seenOK, reactOK bool
+	for _, m := range result.Marks {
+		if m.Kind == session.MessageMarkKindSeen && m.Seq == 2 && m.ParticipantID == andy && m.Status == session.SeenStatusCompleted {
+			seenOK = true
+		}
+		if m.Kind == session.MessageMarkKindReaction && m.Seq == 2 && m.ParticipantID == andy && m.Reaction == "smug" {
+			reactOK = true
+		}
+	}
+	if !seenOK || !reactOK {
+		t.Fatalf("thread/marks missing rows: seen=%v react=%v marks=%+v", seenOK, reactOK, result.Marks)
+	}
+}
+
 // A completed resident turn resolves the read receipt to "completed" — the
 // real "seen".
 func TestReadReceiptCompletedOnResidentTurn(t *testing.T) {

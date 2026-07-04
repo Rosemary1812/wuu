@@ -56,6 +56,7 @@ const (
 	MethodThreadDelete             = "thread/delete"
 	MethodThreadMembersAdd         = "thread/members/add"
 	MethodThreadMembersRemove      = "thread/members/remove"
+	MethodThreadMarks              = "thread/marks"
 	MethodWorkspaceStateCleanup    = "workspace/state/cleanup"
 	MethodParticipantStart         = "participant/start"
 	MethodParticipantList          = "participant/list"
