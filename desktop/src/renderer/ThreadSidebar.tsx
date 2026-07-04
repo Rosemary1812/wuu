@@ -137,6 +137,7 @@ export function ProjectGroup({
   onArchiveThread,
   onClearArchiveConfirm,
   onRemoveProject,
+  onRelocateProject,
 }: {
   project: DesktopProject;
   activeID?: string;
@@ -161,6 +162,9 @@ export function ProjectGroup({
   // pseudo project (and never wired for 群聊 / Agents, which are separate
   // sections), so those can never be removed.
   onRemoveProject?: (id: string) => void;
+  // Point a real workspace at a new folder (keeping its stable id, so its
+  // state and history reconnect). The remedy for a moved/deleted directory.
+  onRelocateProject?: (id: string) => void;
 }): JSX.Element {
   const [visibleThreadCount, setVisibleThreadCount] = useState<number>(
     PROJECT_THREAD_INITIAL_VISIBLE_COUNT,
@@ -237,7 +241,7 @@ export function ProjectGroup({
         loading={pendingProject}
         onToggle={() => onToggleProjectCollapsed(project.id)}
         onContextMenu={
-          isScratchPseudo || !onRemoveProject
+          isScratchPseudo || (!onRemoveProject && !onRelocateProject)
             ? undefined
             : (event) => {
                 event.preventDefault();
@@ -280,6 +284,10 @@ export function ProjectGroup({
           x={contextMenu.x}
           y={contextMenu.y}
           items={[
+            {
+              label: "重新定位…",
+              onSelect: () => onRelocateProject?.(project.id),
+            },
             {
               label: "移除工作区",
               onSelect: () => onRemoveProject?.(project.id),

@@ -1423,6 +1423,7 @@ export type WuuDesktopApi = {
   chooseProjectFolder: () => Promise<ProjectListResult>;
   selectProject: (projectId: string) => Promise<ProjectListResult>;
   removeProject: (projectId: string) => Promise<ProjectListResult>;
+  relocateProject: (projectId: string) => Promise<ProjectListResult>;
   selectNoProject: (fresh?: boolean, cwd?: string) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;
   listGitChanges: () => Promise<GitChangesResult>;

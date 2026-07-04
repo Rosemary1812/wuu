@@ -4398,6 +4398,53 @@ export function App(): JSX.Element {
     }
   }
 
+  async function relocateProject(projectId: string): Promise<void> {
+    const requestID = beginViewSwitch("runtime", "relocate-project");
+    const outgoingDraft = currentPrimaryComposerDraft();
+    const previousCwd = appStateRef.current.activeContext?.cwd;
+    const wasActive = appStateRef.current.activeProjectId === projectId;
+    try {
+      const projectState = await window.wuu.relocateProject(projectId);
+      const newCwd = projectState.active_context?.cwd;
+      // Reload the runtime only when the ACTIVE project's cwd actually moved.
+      // A cancelled folder picker or relocating a non-active project just
+      // refreshes the list. sameRuntimeContext can't gate this — it compares
+      // by project_id, which a relocation deliberately keeps unchanged.
+      if (!wasActive || newCwd === previousCwd) {
+        if (!finishViewSwitch(requestID)) {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          projects: projectState.projects,
+        }));
+        return;
+      }
+      const loadedState = await loadRuntime(projectState);
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      restoreLoadedRuntimeComposerDraft(loadedState);
+      setState((current) =>
+        withLoadedRuntimeSessionTab(
+          persistActiveSessionTabDraft(current, outgoingDraft),
+          loadedState,
+        ),
+      );
+    } catch (error) {
+      if (!finishViewSwitch(requestID)) {
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : "relocate workspace failed",
+      }));
+    }
+  }
+
   async function useNoProject(fresh: boolean): Promise<void> {
     if (!fresh && state.activeContext?.kind === "no_project") {
       closeProjectMenus();
@@ -7453,6 +7500,7 @@ export function App(): JSX.Element {
           void selectProjectThread(projectID, threadID)
         }
         onRemoveProject={(id) => void removeProject(id)}
+        onRelocateProject={(id) => void relocateProject(id)}
         onReorderSections={setSidebarSectionOrder}
         onPointerEnter={openSidebarDrawer}
         onPointerLeave={closeSidebarDrawer}

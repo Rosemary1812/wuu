@@ -578,6 +578,33 @@ describe("ProjectGroup remove workspace", () => {
     expect(removed).toEqual(["project-1"]);
   });
 
+  it("offers a 重新定位 menu item on a real project row and reports the id", () => {
+    const relocated: string[] = [];
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectGroup
+          {...baseProps}
+          project={makeProject("project-1", "wuu", "/repo/wuu")}
+          onRelocateProject={(id) => relocated.push(id)}
+        />,
+      );
+    });
+
+    openContextMenu();
+    const item = Array.from(
+      document.body.querySelectorAll(".thread-row-context-menu-item"),
+    ).find((el) => el.textContent === "重新定位…");
+    expect(item).not.toBeUndefined();
+
+    act(() => {
+      item?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(relocated).toEqual(["project-1"]);
+  });
+
   it("offers no context menu on the 对话 scratch pseudo row", () => {
     act(() => {
       root = createRoot(container);

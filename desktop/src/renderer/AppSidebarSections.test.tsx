@@ -192,6 +192,7 @@ function renderSidebar(options: RenderOptions): void {
         onStartNewThreadForProject={onStartNewThreadForProject}
         onSelectProjectThread={() => {}}
         onRemoveProject={() => {}}
+        onRelocateProject={() => {}}
         onOpenSettings={() => {}}
       />,
     );
@@ -946,6 +947,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onStartNewThreadForProject: () => {},
             onSelectProjectThread: () => {},
             onRemoveProject: () => {},
+            onRelocateProject: () => {},
             onReorderSections: (next: string[]) => {
               received = next;
             },

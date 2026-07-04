@@ -402,6 +402,20 @@ app.whenReady().then(async () => {
     }
     return projectManager.add(projectPath);
   });
+  ipcMain.handle(
+    "wuu:project-relocate",
+    async (_event, projectIDToRelocate: string) => {
+      const projectPath = await showProjectDirectoryDialog({
+        title: "重新定位工作区",
+        buttonLabel: "定位到此文件夹",
+        properties: ["openDirectory"],
+      });
+      if (!projectPath) {
+        return projectManager.list();
+      }
+      return projectManager.relocate(projectIDToRelocate, projectPath);
+    },
+  );
   ipcMain.handle("wuu:initialize", async () => {
     const result = await appServerClientPool.request<InitializeResult>("initialize");
     if (result.core) {

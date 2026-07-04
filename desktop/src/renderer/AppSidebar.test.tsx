@@ -150,6 +150,7 @@ function renderSidebar({
         onStartNewThreadForProject={() => {}}
         onSelectProjectThread={() => {}}
         onRemoveProject={() => {}}
+        onRelocateProject={() => {}}
         onOpenSettings={() => {}}
       />,
     );

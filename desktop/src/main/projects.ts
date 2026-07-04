@@ -141,6 +141,42 @@ export class ProjectManager {
     return this.list();
   }
 
+  relocate(projectIDToRelocate: string, newPath: string): ProjectListResult {
+    this.load();
+    const resolvedPath = resolve(newPath);
+    if (!isDirectory(resolvedPath)) {
+      throw new Error("selected relocation target is not a directory");
+    }
+    const index = this.store.projects.findIndex(
+      (project) => project.id === projectIDToRelocate,
+    );
+    if (index < 0) {
+      throw new Error("project not found");
+    }
+    // Keep the stable id; only the path (and derived name) move. Because the
+    // workspace state dir and its sessions are keyed by the id, everything
+    // reconnects at the new location — this is the remedy for a moved folder.
+    this.store.projects[index] = {
+      ...this.store.projects[index],
+      name: projectName(resolvedPath),
+      path: resolvedPath,
+      updated_at: new Date().toISOString(),
+    };
+    const active = this.store.active_context;
+    if (
+      active?.kind === "project" &&
+      active.project_id === projectIDToRelocate
+    ) {
+      this.store.active_context = {
+        kind: "project",
+        project_id: projectIDToRelocate,
+        cwd: resolvedPath,
+      };
+    }
+    this.save();
+    return this.list();
+  }
+
   selectNoProject(fresh: boolean, cwd?: string): ProjectListResult {
     this.load();
     if (!fresh && cwd) {
