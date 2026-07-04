@@ -315,6 +315,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleParticipantReset(req)
 	case MethodParticipantRetire:
 		return s.handleParticipantRetire(req)
+	case MethodMemoryRead:
+		return s.handleMemoryRead(req)
 	case MethodTurnStart:
 		return s.handleTurnStart(ctx, req)
 	case MethodTurnQueue:
