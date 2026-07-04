@@ -217,6 +217,11 @@ type ChatMessage struct {
 	ParticipantName string          `json:"participant_name,omitempty"`
 	PostKind        string          `json:"post_kind,omitempty"`
 	EnvelopeMeta    json.RawMessage `json:"envelope_meta,omitempty"`
+	// Seq is the message's stable per-thread address (session_messages.seq),
+	// populated when history is loaded from the store. App-level only; provider
+	// adapters ignore it. Carried so chat-view items can map read receipts and
+	// reactions (keyed by seq) to the right bubble. 0 = unknown/not persisted.
+	Seq int `json:"seq,omitempty"`
 	// FocusMeta carries the structured {kind,name,root} metadata for a
 	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
 	// Mirrors EnvelopeMeta's plumbing but is semantically distinct: envelope

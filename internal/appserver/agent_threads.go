@@ -178,6 +178,7 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 	if th == nil {
 		return nil
 	}
+	rec.Seq = sourceSeq
 	th.mu.Lock()
 	turn, item, createdTurn := th.appendParticipantMessageLocked(rec, now, s.resolveParticipantSummary)
 	thread := th.snapshotLocked()

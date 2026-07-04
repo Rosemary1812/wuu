@@ -183,6 +183,7 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 		}
 		userMsgSeq = seq
 	}
+	userMsg.Seq = userMsgSeq
 	history := cloneHistory(th.History)
 	history = append(history, userMsg)
 	th.History = history

@@ -1543,6 +1543,11 @@ const (
 
 type ThreadItem struct {
 	ID           string                     `json:"id"`
+	// Seq is the message's stable per-thread address (session_messages.seq),
+	// present on persisted chat messages. The chat view keys read receipts and
+	// reactions (both addressed by seq) to the bubble carrying the same seq.
+	// 0/absent for synthetic or not-yet-persisted items.
+	Seq          int                        `json:"seq,omitempty"`
 	SourceID     string                     `json:"source_id,omitempty"`
 	AgentID      string                     `json:"agent_id,omitempty"`
 	Type         ThreadItemType             `json:"type"`

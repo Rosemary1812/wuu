@@ -1712,6 +1712,7 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 		}
 		userMsgSeq = seq
 	}
+	userMsg.Seq = userMsgSeq
 	history := cloneHistory(th.History)
 	history = append(history, userMsg)
 	th.History = history

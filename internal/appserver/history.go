@@ -37,6 +37,10 @@ type persistedFile struct {
 }
 
 type persistedMessage struct {
+	// Seq is the message's per-thread address, carried in-memory so chat-view
+	// items can map read receipts and reactions to the right bubble. Not
+	// serialized to the store's message columns (seq is the row's own key).
+	Seq                 int                                `json:"seq,omitempty"`
 	Role                string                             `json:"role"`
 	Content             string                             `json:"content"`
 	DisplayContent      string                             `json:"display_content,omitempty"`
@@ -128,6 +132,7 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 			continue
 		}
 		msg := providers.ChatMessage{
+			Seq:               rec.Seq,
 			Role:              role,
 			Name:              rec.Name,
 			ClientID:          rec.ClientID,
@@ -269,6 +274,7 @@ func appendTokenUsage(sessDir, id, provider, model string, usage providers.Token
 
 func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage {
 	out := persistedMessage{
+		Seq:               msg.Seq,
 		Role:              strings.ToLower(msg.Role),
 		Content:           msg.Content,
 		DisplayContent:    msg.DisplayContent,
@@ -539,6 +545,7 @@ func participantModelContextMessage(rec persistedMessage) (providers.ChatMessage
 	b.WriteString("\n</participant_message>")
 
 	return providers.ChatMessage{
+		Seq:             rec.Seq,
 		Role:            "user",
 		Name:            participantModelContextMessageName,
 		ClientID:        rec.ClientID,
@@ -578,6 +585,7 @@ func participantPersistedMessageFromModelContext(msg providers.ChatMessage) (per
 		name = "Participant"
 	}
 	return persistedMessage{
+		Seq:           msg.Seq,
 		Role:          "participant",
 		Content:       content,
 		ClientID:      msg.ClientID,

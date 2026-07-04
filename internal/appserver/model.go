@@ -1066,6 +1066,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	case "user":
 		return ThreadItem{
 			ID:           id,
+			Seq:          msg.Seq,
 			SourceID:     msg.ClientID,
 			Type:         ThreadItemUserMessage,
 			Status:       ThreadItemStatusCompleted,
@@ -1112,6 +1113,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 
 func chatMessageFromPersistedMessage(rec persistedMessage) providers.ChatMessage {
 	msg := providers.ChatMessage{
+		Seq:               rec.Seq,
 		Role:              strings.ToLower(strings.TrimSpace(rec.Role)),
 		Name:              rec.Name,
 		ClientID:          rec.ClientID,
@@ -1184,6 +1186,7 @@ func participantMessageItem(id string, rec persistedMessage, resolve participant
 	}
 	item := ThreadItem{
 		ID:       id,
+		Seq:      rec.Seq,
 		SourceID: rec.ClientID,
 		AgentID:  participantMessageAgentID(rec),
 		Type:     ThreadItemParticipantMsg,

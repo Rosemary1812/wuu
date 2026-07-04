@@ -86,6 +86,10 @@ type WorktreeInfo struct {
 // HistoryRecord is the durable session message shape. App-server remains
 // responsible for provider-specific ChatMessage conversion.
 type HistoryRecord struct {
+	// Seq is the record's per-session sequence (session_messages.seq), its
+	// stable address within the thread. Output-only: populated by the load
+	// path, ignored on write (insertHistoryRecordTx assigns seq itself).
+	Seq                 int             `json:"seq,omitempty"`
 	Role                string          `json:"role"`
 	Content             string          `json:"content"`
 	DisplayContent      string          `json:"display_content,omitempty"`
@@ -1154,7 +1158,7 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 
 func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
 	query := `
-		SELECT role, content, display_content, phase, client_id, hidden, steered, reasoning_content,
+		SELECT seq, role, content, display_content, phase, client_id, hidden, steered, reasoning_content,
 	       provider_item_id, provider_item_model,
 		       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
@@ -1180,6 +1184,7 @@ WHERE session_id = ?`
 		var reasoningBlocks, images, files, toolCalls, discoveredTools, envelopeMeta, focusMeta string
 		var at sql.NullString
 		if err := rows.Scan(
+			&rec.Seq,
 			&rec.Role, &rec.Content, &rec.DisplayContent, &rec.Phase, &rec.ClientID, &hidden, &steered, &rec.ReasoningContent,
 			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
