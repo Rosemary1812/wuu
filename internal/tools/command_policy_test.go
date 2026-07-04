@@ -382,7 +382,7 @@ func TestDefaultCommandPolicyAskDoesNotOverrideExplicitDeny(t *testing.T) {
 	}
 }
 
-func TestFullAccessBypassesDefaultCommandPolicyDenyExplain(t *testing.T) {
+func TestUnconfinedBypassesDefaultCommandPolicyDenyExplain(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -393,7 +393,7 @@ func TestFullAccessBypassesDefaultCommandPolicyDenyExplain(t *testing.T) {
 		t.Fatal("missing full_access policy")
 	}
 	kit.SetToolPolicy(policy)
-	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+	kit.SetBoundary(UnconfinedBoundary())
 
 	for _, command := range []string{"env", "git checkout main"} {
 		t.Run(command, func(t *testing.T) {
@@ -407,7 +407,7 @@ func TestFullAccessBypassesDefaultCommandPolicyDenyExplain(t *testing.T) {
 				kit.toolPolicy.Decide(info),
 			)
 			if got.Action != ToolPolicyAllow {
-				t.Fatalf("full_access should bypass default command-policy hard block for %q, got %+v", command, got)
+				t.Fatalf("unconfined should bypass default command-policy hard block for %q, got %+v", command, got)
 			}
 		})
 	}
@@ -426,7 +426,7 @@ func TestFullAccessDefaultCommandPolicyBypassDoesNotOverrideExplicitDeny(t *test
 			"bash": ToolPolicyDeny,
 		},
 	})
-	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+	kit.SetBoundary(UnconfinedBoundary())
 
 	info := ToolInfo{Name: "bash", Kind: ToolKindShell, Risk: ToolRiskHigh}
 	got := kit.applyDefaultCommandPolicyDecision(

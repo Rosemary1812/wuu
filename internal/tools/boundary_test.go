@@ -2,6 +2,7 @@ package tools
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,5 +57,29 @@ func TestBoundaryGuardsAreHardDenyOnly(t *testing.T) {
 	err := b.Check(ToolInfo{Name: "bash", Kind: ToolKindShell}, providers.ToolCall{Name: "bash"})
 	if !errors.Is(err, want) {
 		t.Fatalf("boundary should return guard denial, got %v", err)
+	}
+}
+
+func TestSetBoundaryControlsPathConfinement(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetFileScopeRoots([]string{root})
+
+	kit.SetBoundary(StandardBoundary())
+	if _, err := kit.env.ResolvePath(outside); err == nil || !strings.Contains(err.Error(), "outside the allowed file scope") {
+		t.Fatalf("standard boundary should reject outside path, got %v", err)
+	}
+
+	kit.SetBoundary(UnconfinedBoundary())
+	resolved, err := kit.env.ResolvePath(outside)
+	if err != nil {
+		t.Fatalf("unconfined boundary should allow outside path: %v", err)
+	}
+	if resolved != outside {
+		t.Fatalf("resolved path = %q, want %q", resolved, outside)
 	}
 }

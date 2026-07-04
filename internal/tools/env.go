@@ -200,6 +200,9 @@ type Env struct {
 	// Tools use it to align hard runtime behavior with the selected product
 	// permission mode.
 	PermissionProfile string
+	// Unconfined is the explicit escape hatch for lifting path confinement.
+	// Default false means file tools stay inside FileScopeRoots/RootDir.
+	Unconfined bool
 
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
@@ -410,7 +413,7 @@ func (e *Env) WebEvidenceEntries() []webEvidenceEntry {
 }
 
 func (e *Env) BypassToolHardProtections() bool {
-	return e != nil && strings.TrimSpace(e.PermissionProfile) == PermissionProfileDangerFullAccess
+	return e != nil && e.Unconfined
 }
 
 func (e *Env) RedactToolOutput(text string) string {
@@ -420,9 +423,8 @@ func (e *Env) RedactToolOutput(text string) string {
 	return redactToolOutput(text)
 }
 
-// ResolvePath resolves a user-supplied relative or absolute path. Normal
-// permission profiles constrain it to the workspace; full access returns the
-// resolved path without applying Wuu's workspace boundary.
+// ResolvePath resolves a user-supplied relative or absolute path. Path
+// confinement is always enforced unless the runtime is explicitly unconfined.
 func (e *Env) ResolvePath(input string) (string, error) {
 	candidate := strings.TrimSpace(input)
 	if candidate == "" {

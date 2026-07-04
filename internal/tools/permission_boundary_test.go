@@ -119,7 +119,7 @@ func TestPermissionBoundaryWorkspaceWriteBlocksDestructiveActions(t *testing.T) 
 	}
 }
 
-func TestPermissionBoundaryFullAccessBypassesToolHardProtections(t *testing.T) {
+func TestUnconfinedBoundaryBypassesToolHardProtections(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("SECRET=visible\n"), 0o600); err != nil {
@@ -139,7 +139,7 @@ func TestPermissionBoundaryFullAccessBypassesToolHardProtections(t *testing.T) {
 		t.Fatal("missing full_access policy")
 	}
 	kit.SetToolPolicy(policy)
-	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+	kit.SetBoundary(UnconfinedBoundary())
 
 	outsideFile := filepath.Join(outside, "outside.txt")
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{

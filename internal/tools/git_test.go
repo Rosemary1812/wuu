@@ -391,9 +391,9 @@ func TestToolkit_Git_CommitRejectsSensitiveStagedPaths(t *testing.T) {
 	}
 }
 
-func TestToolkit_Git_FullAccessAllowsSensitiveStageAndCommitWithoutConfirmation(t *testing.T) {
+func TestToolkit_Git_UnconfinedAllowsSensitiveStageAndCommitWithoutConfirmation(t *testing.T) {
 	kit, root := setupGitRepo(t)
-	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+	kit.SetBoundary(UnconfinedBoundary())
 	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
 	if !ok {
 		t.Fatal("missing full_access policy")
@@ -404,13 +404,13 @@ func TestToolkit_Git_FullAccessAllowsSensitiveStageAndCommitWithoutConfirmation(
 	p := gitCall(t, kit, "add", ".env")
 	requireGitAction(t, p, "add")
 	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != ".env" {
-		t.Fatalf("full_access git add should stage sensitive path, staged: %q", got)
+		t.Fatalf("unconfined git add should stage sensitive path, staged: %q", got)
 	}
 
 	p = gitCall(t, kit, "commit", "-m", "Add env")
 	requireGitAction(t, p, "commit")
 	if p["exit_code"].(float64) != 0 {
-		t.Fatalf("full_access git commit should run without extra confirmation: %+v", p)
+		t.Fatalf("unconfined git commit should run without extra confirmation: %+v", p)
 	}
 	if log := runBash(t, root, "git log --format=%s -1"); !strings.Contains(log, "Add env") {
 		t.Fatalf("expected full_access commit in log, got %q", log)
@@ -562,9 +562,9 @@ func TestToolkit_Git_RedactsSensitiveDiffContent(t *testing.T) {
 	}
 }
 
-func TestToolkit_Git_FullAccessDoesNotRedactSensitiveDiffContent(t *testing.T) {
+func TestToolkit_Git_UnconfinedDoesNotRedactSensitiveDiffContent(t *testing.T) {
 	kit, root := setupGitRepo(t)
-	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+	kit.SetBoundary(UnconfinedBoundary())
 	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
 	if !ok {
 		t.Fatal("missing full_access policy")
@@ -576,10 +576,10 @@ func TestToolkit_Git_FullAccessDoesNotRedactSensitiveDiffContent(t *testing.T) {
 	p := gitCall(t, kit, "diff")
 	output := p["output"].(string)
 	if !strings.Contains(output, "old-secret-value") || !strings.Contains(output, "new-secret-value") {
-		t.Fatalf("full_access git diff should expose sensitive content, got: %q", output)
+		t.Fatalf("unconfined git diff should expose sensitive content, got: %q", output)
 	}
 	if redacted, _ := p["redacted"].(bool); redacted {
-		t.Fatalf("full_access git diff should not mark output redacted: %+v", p)
+		t.Fatalf("unconfined git diff should not mark output redacted: %+v", p)
 	}
 }
 

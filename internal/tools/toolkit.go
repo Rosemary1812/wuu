@@ -59,6 +59,7 @@ type Toolkit struct {
 	discoveryMu             sync.Mutex
 	discoveredToolsByCall   map[string][]providers.LoadableToolDefinition
 	toolPolicy              ToolPolicy
+	boundary                WorkspaceBoundary
 	permissionBoundary      PermissionBoundary
 	extensionSurfacePolicy  ExtensionSurfacePolicy
 	autoModeClassifier      AutoModeClassifier
@@ -112,7 +113,13 @@ func New(rootDir string) (*Toolkit, error) {
 		StateDir:          stateDir,
 		ToolSearchEnabled: true,
 	}
-	t := &Toolkit{env: env, toolSearchEnabled: true, autoModeClassifier: DefaultAutoModeClassifier{}, approvalStore: NewToolApprovalStore()}
+	t := &Toolkit{
+		env:                env,
+		toolSearchEnabled:  true,
+		boundary:           StandardBoundary(),
+		autoModeClassifier: DefaultAutoModeClassifier{},
+		approvalStore:      NewToolApprovalStore(),
+	}
 	t.rebuildRegistry()
 	t.SetEditToolMode(EditToolModeText)
 	return t, nil
@@ -148,6 +155,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		RootDir:                     abs,
 		StateDir:                    t.env.StateDir,
 		PermissionProfile:           t.env.PermissionProfile,
+		Unconfined:                  t.env.Unconfined,
 		SessionID:                   t.env.SessionID,
 		SessionDir:                  t.env.SessionDir,
 		GoalRuntime:                 t.env.GoalRuntime,
@@ -179,6 +187,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	clone := &Toolkit{
 		env:                    &env,
 		toolPolicy:             t.toolPolicy,
+		boundary:               t.boundary,
 		permissionBoundary:     t.permissionBoundary,
 		extensionSurfacePolicy: t.extensionSurfacePolicy,
 		autoModeClassifier:     t.autoModeClassifier,
@@ -540,6 +549,18 @@ func (t *Toolkit) SetPermissionBoundary(boundary PermissionBoundary) {
 	t.permissionBoundary = boundary
 	if t != nil && t.env != nil {
 		t.env.PermissionProfile = normalizePermissionBoundaryProfile(boundary.Profile)
+	}
+}
+
+// SetBoundary installs the single authority gate for this runtime. It also
+// wires Env.Unconfined so path confinement in ResolvePath tracks the boundary.
+func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
+	if t == nil {
+		return
+	}
+	t.boundary = boundary
+	if t.env != nil {
+		t.env.Unconfined = !boundary.Enforce
 	}
 }
 

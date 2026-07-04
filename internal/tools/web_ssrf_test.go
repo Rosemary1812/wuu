@@ -259,7 +259,7 @@ func TestWebFetchExecuteBlocksResolvedInternal(t *testing.T) {
 	}
 }
 
-func TestWebFetchFullAccessAllowsInternal(t *testing.T) {
+func TestWebFetchUnconfinedAllowsInternal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("full-access-local"))
 	}))
@@ -269,7 +269,7 @@ func TestWebFetchFullAccessAllowsInternal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.SetPermissionBoundary(PermissionBoundaryForProfile(PermissionProfileDangerFullAccess))
+	kit.SetBoundary(UnconfinedBoundary())
 
 	out, err := kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "fetch-local",
@@ -280,6 +280,6 @@ func TestWebFetchFullAccessAllowsInternal(t *testing.T) {
 		t.Fatalf("web_fetch: %v", err)
 	}
 	if strings.Contains(out, "blocked") || !strings.Contains(out, "full-access-local") {
-		t.Fatalf("full access should fetch local URL, got: %s", out)
+		t.Fatalf("unconfined should fetch local URL, got: %s", out)
 	}
 }
