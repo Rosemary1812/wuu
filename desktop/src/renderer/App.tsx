@@ -118,7 +118,7 @@ import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
-import { ChatThreadView } from "./ChatThreadView";
+import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
@@ -2105,6 +2105,20 @@ export function App(): JSX.Element {
     }
     return ids;
   }, [state.thread, state.secondaryThread, state.threads]);
+  // Chat read receipts + reactions render participant ids; resolve them to
+  // names for the ring/chip hovers. chatReaderCount is the ring denominator —
+  // the named roster (exact for #all; a slight overestimate for sub-groups,
+  // whose ring may then not reach 100%). Both feed ChatThreadViewContainer.
+  const resolveParticipantName = useMemo(() => {
+    const byID = new Map<string, string>();
+    for (const participant of participants) {
+      if (participant.id) {
+        byID.set(participant.id, participant.name?.trim() || participant.id);
+      }
+    }
+    return (id: string): string => byID.get(id) ?? id;
+  }, [participants]);
+  const chatReaderCount = participants.length;
   // The active thread's dm_participant_id (when set) drives the highlight
   // in the agent roster. When the active thread is a DM the matching
   // participant row renders as active; for non-DM threads the highlight
@@ -8218,6 +8232,8 @@ export function App(): JSX.Element {
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
                 busyParticipantIDs={busyParticipantIDs}
+                resolveParticipantName={resolveParticipantName}
+                chatReaderCount={chatReaderCount}
                 pendingChatMessagesByThread={pendingComposerMessagesByThread}
                 pendingToolApproval={state.pendingToolApproval}
                 turnStreamStatus={state.turnStreamStatus}
@@ -8427,6 +8443,8 @@ type CachedConversationPanesProps = {
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
   busyParticipantIDs: ReadonlySet<string>;
+  resolveParticipantName: (id: string) => string;
+  chatReaderCount: number;
   /**
    * Per-thread composer messages queued while the agent is mid-turn.
    * Chat-style panes render the thread's `queued` entries as in-transcript
@@ -8476,6 +8494,8 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onOpenFileDiff,
   turnStreamStatus,
   busyParticipantIDs,
+  resolveParticipantName,
+  chatReaderCount,
   pendingChatMessagesByThread,
   pendingToolApproval,
   onResolveToolApproval,
@@ -8544,7 +8564,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                 <ConversationGridGuides />
               ) : null}
               {isChatStyleThread ? (
-                <ChatThreadView
+                <ChatThreadViewContainer
                   // Give the chat-style windowing its own reveal state per
                   // thread (ChatThreadView.tsx's hiddenOlderCount) instead
                   // of carrying over whatever the previously active thread
@@ -8553,8 +8573,11 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   // cache, so this mostly documents the intent and guards
                   // the eviction/recreate path explicitly.
                   key={threadID}
+                  threadID={threadID}
                   turns={threadTurns}
                   busyParticipantIDs={busyParticipantIDs}
+                  resolveParticipantName={resolveParticipantName}
+                  readerCount={chatReaderCount}
                   // Sends queued while the agent is mid-turn render as
                   // in-transcript "发送中" bubbles instead of the composer
                   // queue strip (chat send semantics, issue #10).

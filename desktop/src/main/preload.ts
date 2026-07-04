@@ -174,6 +174,10 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-members-add", threadId, participantId),
   removeThreadMember: (threadId: string, participantId: string) =>
     ipcRenderer.invoke("wuu:thread-members-remove", threadId, participantId),
+  getThreadMarks: (
+    threadId: string,
+  ): Promise<import("../shared/protocol").ThreadMarksResult> =>
+    ipcRenderer.invoke("wuu:thread-marks", threadId),
   archiveThread: (threadId: string, archived: boolean) =>
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
   deleteThread: (threadId: string) =>

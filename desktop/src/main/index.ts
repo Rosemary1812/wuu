@@ -55,6 +55,7 @@ import type {
   ThreadEditMessageResult,
   ThreadForkResult,
   ThreadListSubResult,
+  ThreadMarksResult,
   ThreadOpenSubResult,
   ThreadResolveSubResult,
   ThreadStartParams,
@@ -774,6 +775,11 @@ app.whenReady().then(async () => {
         thread_id: threadId,
         participant_id: participantId,
       }),
+  );
+  ipcMain.handle("wuu:thread-marks", (_event, threadId: string) =>
+    appServerClientPool.request<ThreadMarksResult>("thread/marks", {
+      thread_id: threadId,
+    }),
   );
   ipcMain.handle(
     "wuu:thread-rename",

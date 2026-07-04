@@ -1658,6 +1658,9 @@ export type WuuDesktopApi = {
     threadId: string,
     participantId: string,
   ) => Promise<{ thread: Thread }>;
+  // Read receipts + reactions for a chat thread, keyed by message seq. Live
+  // changes arrive via onServerEvent as "message/mark" notifications.
+  getThreadMarks: (threadId: string) => Promise<ThreadMarksResult>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   // Permanently deletes a conversation (history, artifacts, and any fork
   // worktree). Mirrors the `thread/delete` RPC; running threads are rejected
