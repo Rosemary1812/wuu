@@ -67,6 +67,26 @@ describe("GroupMembersCapsule", () => {
     expect(img!.getAttribute("src")).toBe(dataUrl);
   });
 
+  it("marks busy members on avatar status dots", () => {
+    const container = mount(
+      createElement(GroupMembersCapsule, {
+        members,
+        busyParticipantIDs: new Set(["participant-2"]),
+      }),
+    );
+
+    const dots = container.querySelectorAll(".group-members-capsule-status");
+    expect(dots).toHaveLength(3);
+    expect(dots[0]?.getAttribute("data-status")).toBe("online");
+    expect(dots[1]?.getAttribute("data-status")).toBe("busy");
+    expect(dots[2]?.getAttribute("data-status")).toBe("online");
+    expect(
+      container
+        .querySelector(".group-members-capsule")
+        ?.getAttribute("aria-label"),
+    ).toContain("阿蓝（正在响应）");
+  });
+
   it("opens group info when clicked", () => {
     const onOpen = vi.fn();
     const container = mount(

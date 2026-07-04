@@ -188,6 +188,7 @@ export function Composer({
   chatFocusValue,
   onSelectChatFocus,
   groupMembers,
+  busyParticipantIDs,
   onOpenGroupInfo
 }: {
   variant?: ComposerVariant;
@@ -272,6 +273,7 @@ export function Composer({
   chatFocusValue?: string;
   onSelectChatFocus?: (value: string) => void;
   groupMembers?: ParticipantSummary[];
+  busyParticipantIDs?: ReadonlySet<string>;
   onOpenGroupInfo?: () => void;
 }): JSX.Element {
   const statusText = composerStatusText(status);
@@ -1004,6 +1006,7 @@ export function Composer({
                 {groupMembers ? (
                   <GroupMembersCapsule
                     members={groupMembers}
+                    busyParticipantIDs={busyParticipantIDs}
                     onOpen={onOpenGroupInfo}
                   />
                 ) : null}

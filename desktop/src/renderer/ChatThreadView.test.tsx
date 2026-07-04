@@ -68,7 +68,6 @@ describe("ChatThreadView", () => {
             participant: noel,
           },
         ]),
-        typingParticipants: [],
       }),
     );
     const row = container.querySelector(".chat-row");
@@ -90,7 +89,6 @@ describe("ChatThreadView", () => {
             participant: { id: "prt-x", name: "小青", kind: "resident" },
           },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelector(".chat-avatar")?.textContent).toBe("小");
@@ -113,7 +111,6 @@ describe("ChatThreadView", () => {
             },
           },
         ]),
-        typingParticipants: [],
       }),
     );
     const img = container.querySelector(".chat-avatar img");
@@ -127,7 +124,6 @@ describe("ChatThreadView", () => {
         turns: turns([
           { id: "item-1", type: "user_message", text: "明天上线吗" },
         ]),
-        typingParticipants: [],
       }),
     );
     const row = container.querySelector(".chat-row--user");
@@ -149,7 +145,6 @@ describe("ChatThreadView", () => {
             ],
           },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelector(".envelope-notice")).not.toBeNull();
@@ -167,24 +162,10 @@ describe("ChatThreadView", () => {
             participant: noel,
           },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelector(".chat-decline-line")).not.toBeNull();
     expect(container.querySelector(".chat-bubble")).toBeNull();
-  });
-
-  it("renders a typing row per typing participant with an aria-label", () => {
-    const container = mount(
-      createElement(ChatThreadView, {
-        turns: turns([]),
-        typingParticipants: [noel],
-      }),
-    );
-    const typingRow = container.querySelector(".chat-typing-row");
-    expect(typingRow).not.toBeNull();
-    expect(typingRow?.getAttribute("aria-label")).toBe("Noel 正在输入");
-    expect(container.querySelectorAll(".chat-typing-dot").length).toBe(3);
   });
 
   it("never renders transcript-only items (agent_message)", () => {
@@ -193,7 +174,6 @@ describe("ChatThreadView", () => {
         turns: turns([
           { id: "item-1", type: "agent_message", text: "SECRET-TRANSCRIPT-TEXT" },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(container.textContent).not.toContain("SECRET-TRANSCRIPT-TEXT");
@@ -213,7 +193,6 @@ describe("ChatThreadView focus divider rows", () => {
             focus_meta: { kind: "all" },
           },
         ]),
-        typingParticipants: [],
       }),
     );
     const row = container.querySelector(".chat-row--focus");
@@ -233,7 +212,6 @@ describe("ChatThreadView focus divider rows", () => {
             focus_meta: { kind: "home" },
           },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelector(".chat-focus-divider-label")?.textContent).toBe(
@@ -251,7 +229,6 @@ describe("ChatThreadView focus divider rows", () => {
             focus_meta: { kind: "workspace", name: "wuu", root: "/home/user/wuu" },
           },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelector(".chat-focus-divider-label")?.textContent).toBe(
@@ -269,7 +246,6 @@ describe("ChatThreadView focus divider rows", () => {
             focus_meta: { kind: "workspace", root: "/home/user/scratch" },
           },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(
@@ -281,7 +257,6 @@ describe("ChatThreadView focus divider rows", () => {
         turns: turns([
           { id: "item-1", type: "user_message", focus_meta: { kind: "workspace" } },
         ]),
-        typingParticipants: [],
       }),
     );
     expect(
@@ -303,7 +278,6 @@ describe("ChatThreadView focus divider rows", () => {
     const { container } = mountRoot(
       createElement(ChatThreadView, {
         turns: [{ id: "turn-bulk", items }],
-        typingParticipants: [],
       }),
     );
     // 91 total rows, window 80 -> 11 hidden, 80 rendered — the extra
@@ -423,7 +397,6 @@ describe("ChatThreadView windowing", () => {
     const { container } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(500),
-        typingParticipants: [],
       }),
     );
     const rows = container.querySelectorAll(".chat-row--user");
@@ -438,7 +411,6 @@ describe("ChatThreadView windowing", () => {
     const { container } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(500),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelectorAll(".chat-row--user").length).toBe(80);
@@ -455,7 +427,6 @@ describe("ChatThreadView windowing", () => {
     const { container, root } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(500),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelectorAll(".chat-row--user").length).toBe(80);
@@ -464,7 +435,6 @@ describe("ChatThreadView windowing", () => {
       root.render(
         createElement(ChatThreadView, {
           turns: manyUserMessages(501),
-          typingParticipants: [],
         }),
       );
     });
@@ -482,7 +452,6 @@ describe("ChatThreadView windowing", () => {
     const { container, root } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(500),
-        typingParticipants: [],
       }),
     );
     // 500 rows -> 420 hidden. Shrinking to 100 rows leaves the old
@@ -498,7 +467,6 @@ describe("ChatThreadView windowing", () => {
       root.render(
         createElement(ChatThreadView, {
           turns: manyUserMessages(100),
-          typingParticipants: [],
         }),
       );
     });
@@ -516,7 +484,6 @@ describe("ChatThreadView windowing", () => {
       createElement(ChatThreadView, {
         key: "thread-a",
         turns: manyUserMessages(500),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelectorAll(".chat-row--user").length).toBe(80);
@@ -529,7 +496,6 @@ describe("ChatThreadView windowing", () => {
         createElement(ChatThreadView, {
           key: "thread-b",
           turns: manyUserMessages(500),
-          typingParticipants: [],
         }),
       );
     });
@@ -544,7 +510,6 @@ describe("ChatThreadView windowing", () => {
     const { container } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(5),
-        typingParticipants: [],
       }),
     );
     expect(container.querySelectorAll(".chat-row--user").length).toBe(5);
@@ -578,7 +543,6 @@ describe("ChatThreadView windowing", () => {
       root.render(
         createElement(ChatThreadView, {
           turns: manyUserMessages(500),
-          typingParticipants: [],
         }),
       );
     });

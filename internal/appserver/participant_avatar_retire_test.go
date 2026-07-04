@@ -382,8 +382,8 @@ func TestParticipantAvatarImageRejectsOversizedPreDecode(t *testing.T) {
 }
 
 // resolveParticipantSummary embeds the workspace avatar as a data URL so
-// chat bubbles, group member chips, and group typing rows light up without
-// a profile round-trip (consistency-repair-plan §1 #11). The embed is
+// chat bubbles and group member summaries render avatars without a profile
+// round-trip (consistency-repair-plan §1 #11). The embed is
 // capped at participantSummaryAvatarMaxBytes: summaries are duplicated
 // into every thread item they attribute, so oversized avatars degrade to
 // the initial-letter fallback instead of inflating history payloads.

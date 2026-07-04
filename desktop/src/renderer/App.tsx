@@ -46,7 +46,6 @@ import type {
   InputImage,
   ParticipantProfile,
   ParticipantSaveParams,
-  ParticipantSummary,
   PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
@@ -987,28 +986,6 @@ export function App(): JSX.Element {
       ),
     [state.threads, state.thread, state.secondaryThread],
   );
-  // Participant IDs whose resident DM thread is currently running — the
-  // signal chat-style DM/group panes use to show a typing indicator
-  // (chat-style-threads-design.md §2). Scoped to state.threads (not the
-  // busyParticipantIDs union above) so a dispatched task run alone does
-  // not light up a chat typing row that has nothing to do with the DM.
-  const busyDMThreadParticipantIDs = useMemo(
-    () => busyDMParticipantIDs(state.threads),
-    [state.threads],
-  );
-  const participantSummariesByID = useMemo(() => {
-    const map = new Map<string, ParticipantSummary>();
-    for (const participant of participants) {
-      map.set(participant.id, {
-        id: participant.id,
-        name: participant.name,
-        kind: participant.kind,
-        role: participant.role,
-        avatar_image: participant.avatar_image,
-      });
-    }
-    return map;
-  }, [participants]);
   const openTurnFileDiffPanel = useStableCallback(
     (threadID: string, selection: TurnFileDiffSelection) => {
       openWorkspaceDiffTab({ threadID, path: selection.path, selection });
@@ -3786,6 +3763,7 @@ export function App(): JSX.Element {
         groupMembers={
           activeThreadIsGroup ? (activeThread?.members ?? []) : undefined
         }
+        busyParticipantIDs={busyParticipantIDs}
         onOpenGroupInfo={openEnvironmentPanel}
       />
     );
@@ -7944,6 +7922,7 @@ export function App(): JSX.Element {
             )
           }
           participants={participants}
+          busyParticipantIDs={busyParticipantIDs}
           onAddThreadMember={(threadID, participantID) =>
             addThreadMemberByID(threadID, participantID)
           }
@@ -8084,8 +8063,6 @@ export function App(): JSX.Element {
                 turnStreamStatus={state.turnStreamStatus}
                 onResolveToolApproval={handleCachedPaneResolveToolApproval}
                 onOpenFileDiff={handleCachedPaneOpenFileDiff}
-                busyDMParticipantIDs={busyDMThreadParticipantIDs}
-                participantSummariesByID={participantSummariesByID}
               />
             )}
               </>
@@ -8304,14 +8281,6 @@ type CachedConversationPanesProps = {
     approval: PendingToolApproval,
     decision: "approved" | "approved_for_session" | "denied",
   ) => void;
-  /**
-   * Participant IDs whose resident DM thread is currently running — drives
-   * the chat-style typing indicator for DM (and group) panes
-   * (chat-style-threads-design.md §2).
-   */
-  busyDMParticipantIDs: ReadonlySet<string>;
-  /** Roster lookup used to resolve chat-view avatars and typing rows. */
-  participantSummariesByID: ReadonlyMap<string, ParticipantSummary>;
 };
 
 const CachedConversationPanes = memo(function CachedConversationPanes({
@@ -8340,8 +8309,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   turnStreamStatus,
   pendingToolApproval,
   onResolveToolApproval,
-  busyDMParticipantIDs: busyDMThreadParticipantIDs,
-  participantSummariesByID,
 }: CachedConversationPanesProps): JSX.Element {
   return (
     <div className="cached-conversation-panes">
@@ -8395,24 +8362,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
             <ForkWorktreeNotice thread={thread} />
           ) : null;
         const isChatStyleThread = isDMThread(thread) || isGroupThread(thread);
-        // DM: a single typing row for the counterpart participant when
-        // its resident thread is running. Group: one row per member
-        // whose resident DM thread is running (chat-style-threads-
-        // design.md §2).
-        const chatTypingParticipants: ParticipantSummary[] = isGroupThread(
-          thread,
-        )
-          ? (thread.members ?? []).filter((member) =>
-              busyDMThreadParticipantIDs.has(member.id),
-            )
-          : isDMThread(thread) &&
-              thread.dm_participant_id &&
-              busyDMThreadParticipantIDs.has(thread.dm_participant_id)
-            ? [participantSummariesByID.get(thread.dm_participant_id)].filter(
-                (participant): participant is ParticipantSummary =>
-                  Boolean(participant),
-              )
-            : [];
         return (
           <div
             key={threadID}
@@ -8435,7 +8384,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   // the eviction/recreate path explicitly.
                   key={threadID}
                   turns={threadTurns}
-                  typingParticipants={chatTypingParticipants}
                 />
               ) : (
               <ConversationTurnList

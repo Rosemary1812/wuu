@@ -1073,6 +1073,22 @@
   object-fit: cover;
 }
 
+.group-members-capsule-status {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--bg-soft, var(--paper));
+  border-radius: var(--radius-pill);
+  background: var(--success);
+}
+
+.group-members-capsule-status[data-status="busy"] {
+  background: color-mix(in srgb, var(--warning) 56%, #ffd166);
+}
+
 .group-members-capsule-more {
   background: var(--surface-3);
   color: var(--ink-muted);

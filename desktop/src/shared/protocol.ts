@@ -585,8 +585,8 @@ export type ParticipantSummary = {
   role?: string;
   // avatar_image is an uploaded image data URL (see
   // ParticipantProfile.avatar_image). The backend fills it for every
-  // summary resolved from the participant store — chat bubbles, group
-  // thread members, typing rows — but caps the embedded payload at
+  // summary resolved from the participant store — chat bubbles and group
+  // thread members — but caps the embedded payload at
   // 64KB raw bytes (appserver participantSummaryAvatarMaxBytes):
   // summaries are duplicated into each thread item they attribute, so
   // larger uploads degrade to the initial-letter avatar here while

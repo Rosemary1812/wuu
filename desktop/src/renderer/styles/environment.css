@@ -335,6 +335,7 @@
 }
 
 .group-info-avatar {
+  position: relative;
   display: inline-flex;
   width: 28px;
   height: 28px;
@@ -353,6 +354,22 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.group-info-avatar-status {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--surface-1);
+  border-radius: var(--radius-pill);
+  background: var(--success);
+}
+
+.group-info-avatar-status[data-status="busy"] {
+  background: color-mix(in srgb, var(--warning) 56%, #ffd166);
 }
 
 .group-info-remove-button {

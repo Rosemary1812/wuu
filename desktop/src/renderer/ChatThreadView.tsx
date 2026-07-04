@@ -77,15 +77,13 @@ export function findScrollParent(start: Element | null): HTMLElement | null {
  */
 export function ChatThreadView({
   turns,
-  typingParticipants,
 }: {
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
-  typingParticipants: ReadonlyArray<ParticipantSummary>;
 }): JSX.Element {
   const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
-  const rowCount = rows.length + typingParticipants.length;
+  const rowCount = rows.length;
 
   // Count of the oldest rows currently withheld from the DOM. 0 means the
   // whole history is rendered (either it was never longer than the
@@ -195,8 +193,8 @@ export function ChatThreadView({
     if (distanceFromBottom <= AUTO_FOLLOW_THRESHOLD_PX) {
       container.scrollTop = container.scrollHeight;
     }
-    // rowCount changes whenever a message or typing indicator is added or
-    // removed; that is the only signal that should trigger auto-follow.
+    // rowCount changes whenever a real chat row is added or removed; that is
+    // the only signal that should trigger auto-follow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowCount]);
 
@@ -213,9 +211,6 @@ export function ChatThreadView({
       ) : null}
       {visibleRows.map((row) => (
         <ChatRow key={row.id} row={row} />
-      ))}
-      {typingParticipants.map((participant) => (
-        <ChatTypingRow key={`typing:${participant.id}`} participant={participant} />
       ))}
     </div>
   );
@@ -306,27 +301,6 @@ function ChatAvatar({
   return (
     <div className="chat-avatar" aria-hidden="true">
       {avatarImage ? <img src={avatarImage} alt="" /> : name.charAt(0)}
-    </div>
-  );
-}
-
-function ChatTypingRow({
-  participant,
-}: {
-  participant: ParticipantSummary;
-}): JSX.Element {
-  const name = participant.name.trim() || "参与者";
-  return (
-    <div className="chat-row chat-row--participant chat-typing-row" aria-label={`${name} 正在输入`}>
-      <ChatAvatar participant={participant} />
-      <div className="chat-bubble-group">
-        <div className="chat-sender-name">{name}</div>
-        <div className="chat-bubble chat-typing-bubble">
-          <span className="chat-typing-dot" />
-          <span className="chat-typing-dot" />
-          <span className="chat-typing-dot" />
-        </div>
-      </div>
     </div>
   );
 }

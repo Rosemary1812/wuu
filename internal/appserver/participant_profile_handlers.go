@@ -28,16 +28,16 @@ const (
 	// is skipped silently rather than blocking the profile read.
 	participantAvatarReadMaxBytes = 1024 * 1024
 	// participantSummaryAvatarMaxBytes caps the avatar bytes embedded
-	// into wire participant summaries (chat bubbles, group member chips,
-	// typing rows — resolveParticipantSummary). Unlike the profile read,
+	// into wire participant summaries (chat bubbles and group member chips
+	// — resolveParticipantSummary). Unlike the profile read,
 	// a summary is duplicated into every thread item it attributes, so a
 	// full-size upload (512KB → ~683KB as base64) would multiply into
 	// hundreds of MB on a long group history resume. 64KB raw (~85KB as
 	// base64) comfortably covers a properly sized square avatar (a 256px
 	// png/webp is typically 10-50KB) while keeping even a pathological
 	// resume payload bounded. Larger uploads still render wherever the
-	// full profile is loaded (profile panel, participant/list roster,
-	// and the DM typing row which resolves through that roster) — only
+	// full profile is loaded (profile panel and participant/list roster)
+	// — only
 	// the inline summaries fall back to the initial-letter avatar.
 	participantSummaryAvatarMaxBytes = 64 * 1024
 )
