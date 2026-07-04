@@ -210,18 +210,38 @@ header.hero {
 }
 .card:hover::before { opacity: 1; }
 
-/* terminal */
-.terminal { font-family: var(--mono); font-size: 13px; line-height: 1.85; box-shadow: 0 30px 80px -30px rgba(0,0,0,.7); }
-.term-bar { display: flex; align-items: center; gap: 8px; padding: 13px 17px; border-bottom: 1px solid var(--line); }
-.term-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
-.term-bar span { margin-left: 10px; font-size: 12px; color: var(--text-2); letter-spacing: .06em; }
-.term-body { padding: 18px 20px 24px; min-height: 290px; color: var(--text-1); }
-.term-body .ps { color: var(--accent); }
-.term-body .cmd { color: var(--text-0); }
-.term-body .ok { color: #9fc79f; }
-.term-body .dim { color: var(--text-2); }
-.term-body .line { display: block; white-space: pre-wrap; word-break: break-word; }
-.caret { display: inline-block; width: 8px; height: 15px; background: var(--text-0); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
+/* chat demo (desktop app mock) */
+.chat { box-shadow: 0 30px 80px -30px rgba(0,0,0,.7); display: flex; flex-direction: column; }
+.chat-bar { display: flex; align-items: center; gap: 8px; padding: 13px 17px; border-bottom: 1px solid var(--line); }
+.chat-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
+.chat-bar span { margin-left: 10px; font-size: 12px; color: var(--text-2); letter-spacing: .06em; }
+.chat-body {
+  padding: 22px 20px; min-height: 300px; font-size: 14px;
+  display: flex; flex-direction: column; gap: 11px; align-items: flex-start;
+}
+.chat-body .msg-user {
+  align-self: flex-end; max-width: 85%;
+  background: var(--bg-2); border: 1px solid var(--line-strong);
+  border-radius: 14px 14px 4px 14px; padding: 9px 15px;
+  color: var(--text-0); line-height: 1.6;
+}
+.chat-body .proc { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); line-height: 1.7; }
+.chat-body .ok { font-family: var(--mono); font-size: 12.5px; color: #9fc79f; }
+.chat-body .sum { color: var(--text-1); line-height: 1.8; max-width: 95%; }
+.chat-input {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding: 13px 17px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  color: var(--text-2); font-size: 13.5px;
+}
+.chat-input .send {
+  flex: none; width: 27px; height: 27px; border-radius: 50%;
+  background: var(--bg-2); border: 1px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--text-1);
+}
+.caret { display: inline-block; width: 2px; height: 15px; background: var(--text-0); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* subagent fan-out visual */
@@ -406,8 +426,8 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
       <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub →</a>
     </div>
     <div class="reveal in d3">
-      <button class="install-line" data-copy="go install github.com/blueberrycongee/wuu/cmd/wuu@latest" title="Copy">
-        <span><span class="dollar">$</span> go install github.com/blueberrycongee/wuu/cmd/wuu@latest</span>
+      <button class="install-line" data-copy="git clone https://github.com/blueberrycongee/wuu.git" title="Copy">
+        <span><span class="dollar">$</span> git clone https://github.com/blueberrycongee/wuu.git</span>
         <span class="copy-hint zh">复制</span><span class="copy-hint en">copy</span>
       </button>
       <p class="trust">
@@ -446,9 +466,13 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
         <p class="mini"><span class="zh">修 bug · 写功能 · 重构 · 迁移</span><span class="en">Bug fixes · Features · Refactors · Migrations</span></p>
       </div>
       <div class="cap-visual reveal d1">
-        <div class="card terminal" id="terminal">
-          <div class="term-bar"><i></i><i></i><i></i><span>wuu — zsh</span></div>
-          <div class="term-body" id="termBody"></div>
+        <div class="card chat" id="chatDemo">
+          <div class="chat-bar"><i></i><i></i><i></i><span>wuu</span></div>
+          <div class="chat-body" id="chatBody"></div>
+          <div class="chat-input">
+            <span><span class="zh">向 wuu 提问，或输入 / 选择命令</span><span class="en">Ask wuu, or type / for commands</span></span>
+            <span class="send">↑</span>
+          </div>
         </div>
       </div>
     </div>
@@ -524,23 +548,23 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
   <div class="wrap">
     <span class="kicker reveal"><span class="zh">用法</span><span class="en">How you use it</span></span>
     <h2 class="title reveal">
-      <span class="zh">想聊就开桌面端，<br>想自动化就用命令行。</span>
-      <span class="en">A desktop app when you want to talk.<br>A CLI when you want to automate.</span>
+      <span class="zh">你用界面，<br>agent 用接口。</span>
+      <span class="en">A GUI for you.<br>An interface for agents.</span>
     </h2>
     <p class="lede reveal">
-      <span class="zh">两边是同一个 agent，会话互通：桌面端开始的工作，命令行里可以接着跑，反过来也一样。</span>
-      <span class="en">It's the same agent on both sides, and sessions carry over: start in the app, continue from the command line — or the other way around.</span>
+      <span class="zh">wuu 是一个桌面应用——你在窗口里交代任务、看过程、审改动。同样的能力也通过接口暴露出来，给 CI 和其他 agent 调用。</span>
+      <span class="en">wuu is a desktop app — you hand over tasks, watch the process, and review changes in a window. The same capabilities are also exposed through an interface for CI and other agents to call.</span>
     </p>
     <div class="surface-grid">
       <div class="card surface reveal">
         <span class="step">01</span>
-        <h3><span class="zh">桌面应用</span><span class="en">Desktop app</span></h3>
-        <p><span class="zh">适合边讨论边做的工作：多标签会话、完整的过程记录、逐文件的改动审查，随时打断和追问。</span><span class="en">For work that needs a conversation: tabbed sessions, full process logs, file-by-file change review — interrupt and follow up anytime.</span></p>
+        <h3><span class="zh">桌面应用——你的入口</span><span class="en">The desktop app — your way in</span></h3>
+        <p><span class="zh">多标签会话、完整的过程记录、逐文件的改动审查，随时打断和追问。日常工作全部在这里完成。</span><span class="en">Tabbed sessions, full process logs, file-by-file change review — interrupt and follow up anytime. This is where all your day-to-day work happens.</span></p>
       </div>
       <div class="card surface reveal d1">
         <span class="step">02</span>
-        <h3><span class="zh">命令行与 CI</span><span class="en">Command line &amp; CI</span></h3>
-        <p><span class="zh"><code class="inline">wuu exec "..."</code> 一条命令跑任务，<code class="inline">resume --last</code> 接着昨天的会话；输出是流式 JSONL，脚本和 CI 拿来就能用。</span><span class="en">Run a task with <code class="inline">wuu exec "..."</code>, pick up yesterday's session with <code class="inline">resume --last</code>. Output streams as JSONL — ready for scripts and CI.</span></p>
+        <h3><span class="zh">wuu exec——给 agent 的接口</span><span class="en">wuu exec — the interface for agents</span></h3>
+        <p><span class="zh">不是给人敲的命令，而是把 wuu 的能力暴露给程序：CI 流水线、review 机器人，甚至别的 agent（比如 Claude Code）都能调用它干活，输出是机器友好的 JSONL。</span><span class="en">Not a command for humans to type — it exposes wuu's capabilities to programs. CI pipelines, review bots, even other agents (like Claude Code) can put it to work, with machine-friendly JSONL output.</span></p>
       </div>
       <div class="card surface reveal d2">
         <span class="step">03</span>
@@ -562,31 +586,31 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
       <div class="step-row reveal">
         <div class="n">1</div>
         <div>
-          <h3><span class="zh">安装</span><span class="en">Install</span></h3>
-          <p><span class="zh">wuu 处于 pre-1.0 阶段，目前推荐用 Go 从源码安装。</span><span class="en">wuu is pre-1.0 — installing from source with Go is the reliable path today.</span></p>
-          <div class="codeblock"><button class="copy-btn" data-copy="go install github.com/blueberrycongee/wuu/cmd/wuu@latest">copy</button><span class="dollar">$</span> go install github.com/blueberrycongee/wuu/cmd/wuu@latest</div>
+          <h3><span class="zh">把桌面应用跑起来</span><span class="en">Run the desktop app</span></h3>
+          <p><span class="zh">wuu 处于 pre-1.0 阶段，桌面应用目前从源码启动。</span><span class="en">wuu is pre-1.0 — the desktop app currently runs from source.</span></p>
+          <div class="codeblock"><button class="copy-btn" data-copy="git clone https://github.com/blueberrycongee/wuu.git
+cd wuu/desktop
+npm install && npm run dev">copy</button><span class="dollar">$</span> git clone https://github.com/blueberrycongee/wuu.git
+<span class="dollar">$</span> cd wuu/desktop
+<span class="dollar">$</span> npm install && npm run dev</div>
         </div>
       </div>
       <div class="step-row reveal">
         <div class="n">2</div>
         <div>
-          <h3><span class="zh">配置你的模型</span><span class="en">Point it at your model</span></h3>
-          <p><span class="zh">初始化后，在配置里填上你的 provider 与 API Key 环境变量——Anthropic 或任何 OpenAI 兼容端点。</span><span class="en">After init, set your provider and API-key env var in the config — Anthropic or any OpenAI-compatible endpoint.</span></p>
-          <div class="codeblock"><button class="copy-btn" data-copy="wuu init
-export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</span> wuu init
-<span class="dollar">$</span> export ANTHROPIC_API_KEY="..."</div>
+          <h3><span class="zh">接上你的 Key</span><span class="en">Connect your key</span></h3>
+          <p><span class="zh">在配置里填上你的 provider——Anthropic 或任何 OpenAI 兼容端点，API Key 走环境变量。</span><span class="en">Set your provider in the config — Anthropic or any OpenAI-compatible endpoint, with your API key in an env var.</span></p>
+          <div class="codeblock"><button class="copy-btn" data-copy="export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</span> export ANTHROPIC_API_KEY="..."
+<span class="c"># <span class="zh">provider 配置见 ~/.wuu/config.json 或项目内 .wuu.json</span><span class="en">provider config lives in ~/.wuu/config.json or a project .wuu.json</span></span></div>
         </div>
       </div>
       <div class="step-row reveal">
         <div class="n">3</div>
         <div>
-          <h3><span class="zh">交给它一件事</span><span class="en">Hand it something real</span></h3>
-          <p><span class="zh">从描述仓库开始，到修一个失败的测试，再到把整份计划书变成实现。</span><span class="en">Start with describing the repo, move on to fixing a failing test, then hand it a whole plan to implement.</span></p>
-          <div class="codeblock"><button class="copy-btn" data-copy='wuu exec "fix the failing test"'>copy</button><span class="dollar">$</span> wuu exec "describe this repo"
-<span class="dollar">$</span> wuu exec "fix the failing test"
-<span class="dollar">$</span> wuu exec --file plan.md "implement this plan"
-<span class="c"># <span class="zh">昨天的会话，今天接着聊</span><span class="en">pick up yesterday's session</span></span>
-<span class="dollar">$</span> wuu exec resume --last "continue"</div>
+          <h3><span class="zh">在窗口里交给它第一件事</span><span class="en">Hand it your first task in the window</span></h3>
+          <p><span class="zh">打开一个会话，像发消息一样交代任务：「描述一下这个仓库」「修一下这个失败的测试」。看着它跑完，在改动面板里逐文件确认。</span><span class="en">Open a session and hand over a task like you'd send a message: "describe this repo", "fix the failing test". Watch it run, then review the changes file by file.</span></p>
+          <div class="codeblock"><button class="copy-btn" data-copy='wuu exec --json "review the current diff"'>copy</button><span class="c"># <span class="zh">想在 CI 或其他 agent 里调用同样的能力：</span><span class="en">to call the same capabilities from CI or another agent:</span></span>
+<span class="dollar">$</span> wuu exec --json "review the current diff"</div>
         </div>
       </div>
     </div>
@@ -615,7 +639,11 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
       </details>
       <details>
         <summary><span class="zh">和 Cursor、Claude Code 有什么区别？</span><span class="en">How is it different from Cursor or Claude Code?</span><i></i></summary>
-        <p><span class="zh">最大的区别是完全开源和 BYOK：没有订阅费，不锁定某一家模型，代码可以自己审计。形态上同时提供桌面应用和可脚本化的 CLI，多智能体编排和定时任务是内置的。</span><span class="en">The big differences are full open source and BYOK: no subscription, no lock-in to one model vendor, and code you can audit yourself. It ships both a desktop app and a scriptable CLI, with multi-agent orchestration and scheduled tasks built in.</span></p>
+        <p><span class="zh">最大的区别是完全开源和 BYOK：没有订阅费，不锁定某一家模型，代码可以自己审计。形态上它是一个独立的桌面应用，不依附于某个编辑器，多智能体编排和定时任务是内置的。</span><span class="en">The big differences are full open source and BYOK: no subscription, no lock-in to one model vendor, and code you can audit yourself. It's a standalone desktop app rather than an editor plugin, with multi-agent orchestration and scheduled tasks built in.</span></p>
+      </details>
+      <details>
+        <summary><span class="zh">既然是桌面应用，为什么还有个 CLI？</span><span class="en">If it's a desktop app, why is there a CLI?</span><i></i></summary>
+        <p><span class="zh"><code class="inline">wuu exec</code> 不是给人用的入口，而是给程序的接口：CI 流水线、review 机器人和其他 agent 通过它调用 wuu 的能力，输出是机器友好的 JSONL。人用桌面端就好。</span><span class="en"><code class="inline">wuu exec</code> isn't an entry point for humans — it's an interface for programs. CI pipelines, review bots, and other agents use it to call wuu's capabilities, with machine-friendly JSONL output. Humans should just use the desktop app.</span></p>
       </details>
       <details>
         <summary><span class="zh">它能记住我的项目和习惯吗？</span><span class="en">Does it remember my project and preferences?</span><i></i></summary>
@@ -667,7 +695,7 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
       </h2>
       <div class="hero-cta reveal d1">
         <a class="btn btn-solid" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub →</a>
-        <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu/blob/main/docs/exec.md" target="_blank" rel="noopener">
+        <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu#readme" target="_blank" rel="noopener">
           <span class="zh">阅读文档</span><span class="en">Read the docs</span>
         </a>
       </div>
@@ -780,59 +808,61 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
     });
   });
 
-  /* ---- terminal typing demo ---- */
-  var body = document.getElementById('termBody');
+  /* ---- desktop chat demo ---- */
+  var body = document.getElementById('chatBody');
   var isZh = function () { return doc.getAttribute('data-lang') === 'zh'; };
   var script = [
-    { type: 'cmd',  text: 'wuu exec "fix the failing test"' },
-    { type: 'dim',  zh: '· 读取 internal/appserver/group_thread_test.go', en: '· reading internal/appserver/group_thread_test.go' },
-    { type: 'dim',  zh: '· 运行 go test ./internal/appserver/ — 1 个失败', en: '· running go test ./internal/appserver/ — 1 failure' },
-    { type: 'dim',  zh: '· 编辑 group_thread.go — 补上轮次完成时的状态迁移', en: '· editing group_thread.go — fixing turn-completion state transition' },
-    { type: 'dim',  zh: '· 重新运行测试', en: '· re-running tests' },
-    { type: 'ok',   zh: '✓ ok  github.com/blueberrycongee/wuu/internal/appserver  0.84s', en: '✓ ok  github.com/blueberrycongee/wuu/internal/appserver  0.84s' },
-    { type: 'plain',zh: '修复完成：轮次完成事件之前没有清空活跃发言者，导致断言失败。已修改 1 个文件，测试全部通过。', en: 'Fixed: the turn-completion event never cleared the active speaker, so the assertion failed. One file changed, all tests green.' },
-    { type: 'cmd',  text: 'wuu exec resume --last "continue"', delay: 900 }
+    { type: 'user', zh: '修一下这个失败的测试', en: 'Fix the failing test' },
+    { type: 'proc', zh: '· 读取 internal/appserver/group_thread_test.go', en: '· reading internal/appserver/group_thread_test.go' },
+    { type: 'proc', zh: '· 运行测试 — 1 个失败', en: '· running tests — 1 failure' },
+    { type: 'proc', zh: '· 编辑 group_thread.go — 补上轮次完成时的状态迁移', en: '· editing group_thread.go — fixing turn-completion state transition' },
+    { type: 'proc', zh: '· 重新运行测试', en: '· re-running tests' },
+    { type: 'ok',   zh: '✓ 测试全部通过 · 0.84s', en: '✓ all tests green · 0.84s' },
+    { type: 'sum',  zh: '修好了：轮次完成事件之前没有清空活跃发言者，导致断言失败。只改了 1 个文件，你可以在改动面板里逐行确认。', en: "Fixed: the turn-completion event never cleared the active speaker, so the assertion failed. One file changed — review it line by line in the changes panel.", delay: 900 }
   ];
   var started = false;
-  function typeLine(i) {
-    if (i >= script.length) { body.insertAdjacentHTML('beforeend', '<span class="line"><span class="ps">$</span> <span class="caret"></span></span>'); return; }
+  function playStep(i) {
+    if (i >= script.length) return;
     var item = script[i];
-    var text = item.text || (isZh() ? item.zh : item.en);
-    var line = document.createElement('span');
-    line.className = 'line';
-    body.appendChild(line);
-    if (item.type === 'cmd') {
-      line.innerHTML = '<span class="ps">$</span> <span class="cmd"></span><span class="caret"></span>';
-      var target = line.querySelector('.cmd'), caret = line.querySelector('.caret'), j = 0;
+    var text = isZh() ? item.zh : item.en;
+    var el = document.createElement('div');
+    if (item.type === 'user') {
+      el.className = 'msg-user';
+      el.innerHTML = '<span class="t"></span><span class="caret"></span>';
+      body.appendChild(el);
+      var target = el.querySelector('.t'), caret = el.querySelector('.caret'), j = 0;
       (function tick() {
-        if (j <= text.length) { target.textContent = text.slice(0, j++); setTimeout(tick, 34 + Math.random() * 46); }
-        else { caret.remove(); setTimeout(function () { typeLine(i + 1); }, 420); }
+        if (j <= text.length) { target.textContent = text.slice(0, j++); setTimeout(tick, 55 + Math.random() * 60); }
+        else { caret.remove(); setTimeout(function () { playStep(i + 1); }, 500); }
       })();
     } else {
-      line.className += ' ' + (item.type === 'plain' ? '' : item.type);
-      line.textContent = text;
-      line.style.opacity = 0;
-      line.style.transition = 'opacity .4s';
-      requestAnimationFrame(function () { line.style.opacity = 1; });
-      setTimeout(function () { typeLine(i + 1); }, item.delay || 620);
+      el.className = item.type;
+      el.textContent = text;
+      el.style.opacity = 0;
+      el.style.transition = 'opacity .4s';
+      body.appendChild(el);
+      requestAnimationFrame(function () { el.style.opacity = 1; });
+      setTimeout(function () { playStep(i + 1); }, item.delay || 650);
     }
   }
-  var termIO = new IntersectionObserver(function (entries) {
+  var chatIO = new IntersectionObserver(function (entries) {
     if (entries[0].isIntersecting && !started) {
       started = true;
-      termIO.disconnect();
+      chatIO.disconnect();
       if (reduced) {
         script.forEach(function (item) {
-          var text = item.text || (isZh() ? item.zh : item.en);
-          var cls = item.type === 'cmd' ? 'cmd' : item.type === 'plain' ? '' : item.type;
-          body.insertAdjacentHTML('beforeend', '<span class="line ' + cls + '">' + (item.type === 'cmd' ? '<span class="ps">$</span> ' : '') + text + '</span>');
+          var text = isZh() ? item.zh : item.en;
+          var el = document.createElement('div');
+          el.className = item.type === 'user' ? 'msg-user' : item.type;
+          el.textContent = text;
+          body.appendChild(el);
         });
       } else {
-        setTimeout(function () { typeLine(0); }, 350);
+        setTimeout(function () { playStep(0); }, 350);
       }
     }
   }, { threshold: 0.35 });
-  termIO.observe(document.getElementById('terminal'));
+  chatIO.observe(document.getElementById('chatDemo'));
 })();
 </script>
 </body>
