@@ -8,6 +8,7 @@ import (
 )
 
 func TestAuthStore_RoundTrip(t *testing.T) {
+	t.Setenv("WUU_HOME", "")
 	home := t.TempDir()
 	if err := SaveAuthKey(home, "openai", "sk-test-key-123"); err != nil {
 		t.Fatalf("SaveAuthKey: %v", err)
@@ -19,7 +20,9 @@ func TestAuthStore_RoundTrip(t *testing.T) {
 	if key != "sk-test-key-123" {
 		t.Fatalf("expected sk-test-key-123, got %q", key)
 	}
-	path := filepath.Join(home, ".config", "wuu", "auth.json")
+	// The credential store now lives in the unified wuu home, not the legacy
+	// ~/.config/wuu directory.
+	path := filepath.Join(home, ".wuu", "auth.json")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat auth.json: %v", err)

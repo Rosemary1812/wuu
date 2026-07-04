@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/prompts"
 )
 
 const (
-	localPrimaryConfig   = ".wuu.json"
-	localFallbackConfig  = "wuu.json"
-	globalConfigRelative = ".config/wuu/config.json"
+	localPrimaryConfig  = ".wuu.json"
+	localFallbackConfig = "wuu.json"
 
 	DefaultAgentName = "default"
 
@@ -55,9 +55,16 @@ type HookEntry struct {
 
 // MCPServerConfig configures one MCP server connection.
 type MCPServerConfig struct {
-	Command       string                     `json:"command,omitempty"`
-	Args          []string                   `json:"args,omitempty"`
-	URL           string                     `json:"url,omitempty"`
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	URL     string   `json:"url,omitempty"`
+	// Transport selects the wire protocol for URL servers: "http" (streamable
+	// HTTP per the MCP spec, alias "streamable-http") or "sse" (legacy
+	// HTTP+SSE). Empty means auto: try streamable HTTP first, fall back to SSE
+	// when the endpoint rejects the initialize POST with an HTTP 4xx. The
+	// names follow Claude Code's .mcp.json `type` convention. Ignored for
+	// stdio (command) servers.
+	Transport     string                     `json:"transport,omitempty"`
 	Env           map[string]string          `json:"env,omitempty"`
 	Headers       map[string]string          `json:"headers,omitempty"`
 	OAuth         *MCPOAuthConfig            `json:"oauth,omitempty"`
@@ -90,6 +97,11 @@ type Config struct {
 	// connects to each server at startup (in the background) and exposes
 	// its tools to the agent.
 	MCPServers map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
+	// MCPJson gates and approves Claude Code project-level `.mcp.json` servers.
+	// `.mcp.json` entries are never loaded until approved here (recommended in
+	// `.wuu/settings.local.json`). See mcpjson.go. It is a pointer so an unset
+	// section stays out of serialized templates.
+	MCPJson *MCPJsonTrust `json:"mcp_json,omitempty"`
 }
 
 // MemoryConfig overrides the defaults for memory file discovery. All fields
@@ -380,7 +392,9 @@ type GeneralSettingsUpdate struct {
 	MCPEnabledToggles  map[string]*bool // server name → enabled; nil = skip
 }
 
-// Load reads config with priority: .wuu.json, wuu.json, ~/.config/wuu/config.json.
+// Load reads config with priority: .wuu.json, wuu.json, then the unified user
+// config (~/.wuu/config.json, or WUU_HOME/config.json), then the legacy
+// ~/.config/wuu/config.json for backward compatibility.
 func Load() (Config, string, error) {
 	workdir, err := os.Getwd()
 	if err != nil {
@@ -389,14 +403,26 @@ func Load() (Config, string, error) {
 	return LoadFrom(workdir, os.Getenv("HOME"))
 }
 
-// LoadFrom reads config from deterministic directories (test-friendly).
+// LoadFrom reads config from deterministic directories (test-friendly). The
+// global lookup order is the unified user config first (~/.wuu/config.json, or
+// WUU_HOME/config.json) then the legacy ~/.config/wuu/config.json. Before the
+// global read it performs a one-time, non-destructive migration of any legacy
+// config.json/auth.json into the unified home. Passing an empty home (for
+// example via --ignore-user-config) skips the global lookup and migration
+// entirely.
 func LoadFrom(workdir, home string) (Config, string, error) {
 	candidates := []string{
 		filepath.Join(workdir, localPrimaryConfig),
 		filepath.Join(workdir, localFallbackConfig),
 	}
 	if home != "" {
-		candidates = append(candidates, filepath.Join(home, globalConfigRelative))
+		migrateLegacyGlobalStore(home)
+		if newPath, err := statepath.ConfigPath(home); err == nil && newPath != "" {
+			candidates = append(candidates, newPath)
+		}
+		if legacyPath := statepath.LegacyConfigPath(home); legacyPath != "" {
+			candidates = append(candidates, legacyPath)
+		}
 	}
 
 	for _, candidate := range candidates {
@@ -405,10 +431,27 @@ func LoadFrom(workdir, home string) (Config, string, error) {
 			if readErr != nil {
 				return Config{}, "", readErr
 			}
+			// Overlay the project-scoped settings layers (if any) on top of
+			// the selected base config. projectRoot is workdir, the same
+			// directory used to look up the project config above. When no
+			// layer files exist this is a no-op and cfg is returned unchanged,
+			// preserving the pre-layering pick-first behavior exactly.
+			layered, appliedLayers, layerErr := applyProjectSettingsLayers(candidate, workdir, cfg)
+			if layerErr != nil {
+				return Config{}, "", layerErr
+			}
+			cfg = layered
+			// Read and translate Claude Code's project-level `.mcp.json`, if
+			// present. Approved servers (per the mcp_json trust section, now
+			// fully merged into cfg above) are merged into cfg.MCPServers. This
+			// is a no-op when the file is absent. workdir is the project root,
+			// the same directory used for the settings layers above.
+			applyMCPJsonServers(&cfg, workdir)
 			applyDefaults(&cfg)
 			if validateErr := cfg.Validate(); validateErr != nil {
 				return Config{}, "", validateErr
 			}
+			logSettingsLayerDebug(candidate, appliedLayers)
 			return cfg, candidate, nil
 		}
 	}
@@ -441,12 +484,21 @@ func readConfig(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
 	}
+	return decodeConfig(data, path)
+}
 
+// decodeConfig parses config bytes with the same strict semantics as the
+// on-disk reader: unknown fields are rejected (DisallowUnknownFields) and the
+// legacy Codex credential-reuse defaults are applied from the raw provider
+// objects. sourcePath only labels parse errors. It is shared by readConfig and
+// the settings-layer merger (settings_layer.go) so both honor identical schema
+// strictness.
+func decodeConfig(data []byte, sourcePath string) (Config, error) {
 	var cfg Config
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
-		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
+		return Config{}, fmt.Errorf("parse config %s: %w", sourcePath, err)
 	}
 	var raw struct {
 		Providers map[string]map[string]json.RawMessage `json:"providers"`

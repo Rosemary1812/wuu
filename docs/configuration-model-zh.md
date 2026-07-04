@@ -4,7 +4,7 @@
 
 ## 设计原则
 
-配置文件是完整来源。Wuu 读取严格 JSON，未知字段会报错；agent 应该直接编辑 `.wuu.json` 或 `~/.config/wuu/config.json`，不要写 Wuu 不认识的 OpenCode/Claude Code 原字段。
+配置文件是完整来源。Wuu 读取严格 JSON，未知字段会报错；agent 应该直接编辑 `.wuu.json` 或 `~/.wuu/config.json`，不要写 Wuu 不认识的 OpenCode/Claude Code 原字段。
 
 桌面 Settings 是高频入口。UI 只暴露安全、常用、能即时解释的字段；复杂模型目录、权限细则、hook、MCP 连接细节、实验开关由用户或 agent 手动添加。
 
@@ -16,7 +16,33 @@ Wuu 的读取顺序是：
 
 1. 工作区 `.wuu.json`
 2. 工作区 `wuu.json`
-3. 用户全局 `~/.config/wuu/config.json`
+3. 用户全局 `~/.wuu/config.json`（统一目录）
+4. 旧位置 `~/.config/wuu/config.json`（向后兼容）
+
+所有用户级文件（`config.json`、`auth.json`、用户级 `AGENTS.md` 等）现在统一收进 `~/.wuu/`。设 `WUU_HOME` 环境变量会把整个目录（配置 + 状态）一起搬走，语义对齐 Claude Code 的 `CLAUDE_CONFIG_DIR`。写入一律写新位置；首次检测到新位置缺失而旧位置 `~/.config/wuu/` 存在时，Wuu 会把 `config.json` / `auth.json` 非破坏性地复制到新位置（`auth.json` 保持 `0600`），并在 stderr 打一行迁移提示，旧文件原样保留不删除。
+
+### 项目级 settings 分层
+
+上面的 pick-first 选出「基础配置」之后，Wuu 会把项目级的两层 settings 依次 deep-merge 叠加上去（存在才叠加，顺序为优先级从低到高）：
+
+1. `<projectRoot>/.wuu/settings.json` —— 团队共享层，进 git，和队友一起提交
+2. `<projectRoot>/.wuu/settings.local.json` —— 个人本机层，优先级最高，应 gitignore
+
+`projectRoot` 与项目配置查找用的是同一个目录（工作区根）。这套「共享 + 本地」两层叠加对齐 Claude Code 的 `.claude/settings.json` + `.claude/settings.local.json` 习惯，方便迁移用户复用团队 / 个人分离的心智模型。
+
+叠加是纯增量的，不改变原有 pick-first：两层都不存在时，加载结果与叠加前完全一致。基础配置可以是任意 pick-first 命中的来源（`.wuu.json`、`wuu.json`、全局 `config.json`、旧位置），叠加层始终盖在其之上；叠加层永远不会成为「基础配置」本身。
+
+合并语义是 JSON deep-merge：
+
+- 对象（map）递归合并，只覆盖出现的 key，基础层里未被提及的字段保留。
+- 标量和数组整体替换（后层覆盖前层），数组不做元素级合并。
+- 优先级：`settings.local.json` > `settings.json` > 基础配置。
+
+叠加层复用 `config.json` 的 schema（即 `Config` 结构），并保持同样严格的解析：出现未知字段会报错。
+
+**共享层的凭证安全约束**：`.wuu/settings.json` 来自仓库、可能由他人编写，因此其中的明文凭证字段会被忽略，并在 stderr 打一行警告 —— 具体是 `providers.<name>.api_key` 和 `providers.<name>.auth_token`；通过环境变量间接引用的 `api_key_env` / `auth_token_env` 允许保留。个人本机层 `settings.local.json` 是可信来源，不受此限制，可以写明文凭证。这条规则对齐 Claude Code「密钥只信任用户级来源」的做法。要把共享层提交进 git，需要在 `.gitignore` 里为它开一个例外（当前仓库忽略了整个 `.wuu/`，可补一行 `!.wuu/settings.json`）；`settings.local.json` 应保持 gitignore。
+
+设 `WUU_DEBUG` 环境变量后，Wuu 会在 stderr 打印本次实际叠加了哪些层，便于排查。`LoadFrom` 返回的 config 路径仍指向可写的「基础配置」文件，叠加来源只通过该 debug 日志暴露，不改变返回路径的含义（下游用它做配置写回）。
 
 `wuu exec --config <path>` 可以指定单次运行使用的配置文件；`--env KEY=VALUE`、`--allow-tool`、`--deny-tool` 是单次运行覆盖，不写回配置。
 
@@ -75,6 +101,7 @@ Wuu 的读取顺序是：
 | `agent` | Agent 运行时配置对象 | 可省略；省略后套用 Agent 默认值 | 部分默认可见，部分高级页，复杂字段手动 |
 | `memory` | 记忆发现、长期记忆和后台整理配置 | 可省略；记忆默认开启 | 记忆开关默认可见，其余手动 |
 | `mcp_servers` | MCP server 名到连接配置的对象 | 可省略；没有 MCP | 已配置 server 的开关和状态可见，新增/细节手动 |
+| `mcp_json` | Claude Code `.mcp.json` server 的信任门槛（`enable_all`/`enabled`/`disabled`） | 可省略；`.mcp.json` server 默认不启用 | 文件手动，推荐写在 `.wuu/settings.local.json` |
 | `hooks` | hook 事件名到 hook 列表的对象 | 可省略；没有 hook | 文件手动 |
 
 ### Provider 字段：`providers.<name>`
@@ -172,7 +199,7 @@ Wuu 的读取顺序是：
 | --- | --- | --- | --- |
 | `filenames` | 文件名数组，按优先级扫描 | `["AGENTS.md", "AGENTS.override.md", "CLAUDE.md"]` | 文件手动 |
 | `project_root_markers` | 根目录标记数组 | `[".git", ".hg", ".jj", ".svn"]` | 文件手动 |
-| `user_dirs` | 用户级记忆目录数组，支持 `~` | `["~/.config/wuu"]` | 文件手动 |
+| `user_dirs` | 用户级记忆目录数组，支持 `~` | `["~/.wuu", "~/.config/wuu"]`（统一目录 + 旧位置） | 文件手动 |
 | `include_legacy_memory` | `true` / `false` | `false` | 文件手动 |
 | `disable` | `true` / `false` | `false` | 常规页默认可见为“记忆”开关 |
 | `nudge_interval` | 成功用户轮数；`0` 关闭后台 reviewer | `10` | 文件手动 |
@@ -187,6 +214,7 @@ Wuu 的读取顺序是：
 | `command` | 本地 MCP server 可执行命令 | 空；本地 server 需要 | 文件手动 |
 | `args` | 命令参数数组 | 空 | 文件手动 |
 | `url` | 远程 MCP server URL | 空；远程 server 需要 | 文件手动 |
+| `transport` | 远程 server 传输协议：`"http"`（streamable HTTP，MCP 规范 2025-03-26+ 的标准远程传输，别名 `"streamable-http"`）或 `"sse"`（旧版 HTTP+SSE）。省略 = 自动：先以 streamable HTTP POST initialize，被 4xx（如 405/404）拒绝时自动回退 SSE（规范推荐的客户端向后兼容策略）；显式指定则不回退。对 stdio（`command`）server 无效 | 空（自动） | 文件手动 |
 | `env` | 本地 server 环境变量 map | 空 | 文件手动 |
 | `headers` | 远程 server header map | 空 | 文件手动 |
 | `oauth.client_id` | OAuth client id | 空 | 文件手动 |
@@ -197,6 +225,44 @@ Wuu 的读取顺序是：
 | `tool_overrides.<tool>.read_only` | 布尔，修正 MCP tool 元数据 | 空，使用 server 声明 | 文件手动 |
 | `tool_overrides.<tool>.concurrency_safe` | 布尔，修正并发安全元数据 | 空，使用 server 声明 | 文件手动 |
 | `tool_overrides.<tool>.capability` | capability 字符串，例如 `search.semantic`、`file.edit` | 空，使用 server 声明 | 文件手动 |
+
+### Claude Code `.mcp.json` 兼容与信任门槛：`mcp_json`
+
+Claude Code 仓库根部常有 `<projectRoot>/.mcp.json`，形如
+`{"mcpServers": {"<name>": {...}}}`。LoadFrom 完成分层合并后会读取该文件（`projectRoot`
+即工作区目录），把**已批准**的 server 翻译进 `mcp_servers` 复用现有 MCP 启动路径。
+
+这是 Claude Code 写的文件，解析**宽松**：未知字段一律忽略（与 Wuu 自己配置的严格模式相反），
+只映射 Wuu 认识的字段。无法翻译的条目（未知 transport、缺 command/url、JSON 损坏）跳过并在 stderr
+打一行提示。缺少 `.mcp.json` 时零行为变化。
+
+**字段翻译表**（Wuu 的 transport 命名与 Claude Code 的 `type` 一致，远程条目一一对应翻译；
+`type` 是显式声明，翻译后直连对应传输、不做自动回退）：
+
+| `.mcp.json` 字段 | 条件 | 翻译到 `mcp_servers.<name>` |
+| --- | --- | --- |
+| `command` / `args` / `env` | `type` 省略或 `"stdio"` | `command` / `args` / `env`（stdio） |
+| `url` / `headers` | `type: "sse"` | `url` / `headers` / `transport: "sse"`（旧版 HTTP+SSE） |
+| `url` / `headers` | `type: "http"` | `url` / `headers` / `transport: "http"`（streamable HTTP） |
+| 其它 `type`（`ws`、`sdk`、`sse-ide` 等） | — | 跳过并告警 |
+
+`${VAR}` 与 `${VAR:-default}` 展开对齐 Claude Code：作用于 command、每个 arg、env 值、url、每个
+header 值；变量缺失且无默认值时保留原字面量 `${VAR}` 并告警（**仍然加载**该 server）。
+
+**信任门槛（核心）**：`.mcp.json` 里的 server **默认不启用**，必须经 `mcp_json` 小节批准才会进
+`mcp_servers`。推荐写在个人层 `.wuu/settings.local.json`（不进 git），也可写在任意配置层。语义对齐
+Claude Code 的 `enableAllProjectMcpServers` / `enabledMcpjsonServers` / `disabledMcpjsonServers`。
+
+| 字段 | 填写方式 | 默认值 | UI 策略 |
+| --- | --- | --- | --- |
+| `mcp_json.enable_all` | 布尔；批准 `.mcp.json` 里的所有 server（`disabled` 除外） | `false` | 文件手动（推荐写在 settings.local.json） |
+| `mcp_json.enabled` | 字符串数组；批准指定名字的 server | 空 | 文件手动 |
+| `mcp_json.disabled` | 字符串数组；拒绝指定名字的 server，优先级高于 `enabled` 和 `enable_all` | 空 | 文件手动 |
+
+优先级：名字与原生 `mcp_servers` 冲突时原生胜出，`.mcp.json` 同名条目忽略并告警；`disabled` 优先于
+`enabled` 和 `enable_all`。未批准（pending）的 server 会在 stderr 聚合成一行提示（列出名字并告诉你去
+`.wuu/settings.local.json` 的 `mcp_json.enabled` 批准）；被 `disabled` 拒绝的 server 静默不提示。为
+防止 app-server 反复 reload 刷屏，同一进程内每个 (文件, 名字, 类别) 的提示只打一次。
 
 ### Hook 字段：`hooks.<event>[]`
 

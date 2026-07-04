@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-)
 
-const authRelativePath = ".config/wuu/auth.json"
+	"github.com/blueberrycongee/wuu/internal/statepath"
+)
 
 type authStore struct {
 	Keys       map[string]string `json:"keys"`
@@ -125,12 +125,21 @@ func LoadCodexOAuth(home string) (CodexOAuthState, error) {
 	return *store.CodexOAuth, nil
 }
 
+// authPath resolves the canonical auth store location inside the unified wuu
+// home (~/.wuu/auth.json, or WUU_HOME/auth.json). It performs a one-time,
+// non-destructive migration of any legacy ~/.config/wuu/auth.json into the new
+// location so both reads and writes converge on the unified store.
 func authPath(home string) (string, error) {
 	resolvedHome, err := requireHomeDir(home)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(resolvedHome, authRelativePath), nil
+	newPath, err := statepath.AuthPath(resolvedHome)
+	if err != nil {
+		return "", err
+	}
+	migrateGlobalFile(newPath, statepath.LegacyAuthPath(resolvedHome), 0o600, "auth.json")
+	return newPath, nil
 }
 
 func requireHomeDir(home string) (string, error) {
