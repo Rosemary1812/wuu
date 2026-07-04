@@ -2285,21 +2285,31 @@ describe("chatMessagesFromTurns", () => {
 });
 
 describe("chatFocusValueForThread", () => {
+  const registered = [{ name: "wuu" }];
+
   it("returns the empty string (全部工作区) when there is no active thread", () => {
-    expect(chatFocusValueForThread(undefined, {})).toBe("");
+    expect(chatFocusValueForThread(undefined, {}, registered)).toBe("");
   });
 
   it("falls back to the thread's own focus_workspace when unset in this session", () => {
     expect(
-      chatFocusValueForThread({ id: "thread-1", focus_workspace: "~" }, {}),
+      chatFocusValueForThread(
+        { id: "thread-1", focus_workspace: "~" },
+        {},
+        registered,
+      ),
     ).toBe("~");
     expect(
-      chatFocusValueForThread({ id: "thread-1", focus_workspace: "wuu" }, {}),
+      chatFocusValueForThread(
+        { id: "thread-1", focus_workspace: "wuu" },
+        {},
+        registered,
+      ),
     ).toBe("wuu");
   });
 
   it("defaults to the empty string when the thread has never set a focus", () => {
-    expect(chatFocusValueForThread({ id: "thread-1" }, {})).toBe("");
+    expect(chatFocusValueForThread({ id: "thread-1" }, {}, registered)).toBe("");
   });
 
   it("prefers the in-session override for the thread over the thread's own value", () => {
@@ -2307,6 +2317,7 @@ describe("chatFocusValueForThread", () => {
       chatFocusValueForThread(
         { id: "thread-1", focus_workspace: "wuu" },
         { "thread-1": "~" },
+        registered,
       ),
     ).toBe("~");
   });
@@ -2316,8 +2327,30 @@ describe("chatFocusValueForThread", () => {
       chatFocusValueForThread(
         { id: "thread-1", focus_workspace: "wuu" },
         { "thread-2": "~" },
+        registered,
       ),
     ).toBe("wuu");
+  });
+
+  it("falls back to 全部工作区 when the focused project is no longer registered", () => {
+    // The DM was focused on "gone", but that workspace has since been removed
+    // (or moved away), so it drops out of the roster and the focus resolves to
+    // the union — from thread.focus_workspace...
+    expect(
+      chatFocusValueForThread(
+        { id: "thread-1", focus_workspace: "gone" },
+        {},
+        registered,
+      ),
+    ).toBe("");
+    // ...and from a stale in-session override too.
+    expect(
+      chatFocusValueForThread(
+        { id: "thread-1", focus_workspace: "wuu" },
+        { "thread-1": "gone" },
+        registered,
+      ),
+    ).toBe("");
   });
 });
 

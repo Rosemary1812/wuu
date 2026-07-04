@@ -3754,7 +3754,11 @@ export function App(): JSX.Element {
         participants={participants}
         chatFocusValue={
           activeThread && (isDMThread(activeThread) || isGroupThread(activeThread))
-            ? chatFocusValueForThread(activeThread, chatFocusOverrides)
+            ? chatFocusValueForThread(
+                activeThread,
+                chatFocusOverrides,
+                state.projects,
+              )
             : undefined
         }
         onSelectChatFocus={(value) => {

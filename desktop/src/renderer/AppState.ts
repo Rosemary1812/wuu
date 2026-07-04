@@ -1832,11 +1832,24 @@ function escapeRegExp(value: string): string {
 export function chatFocusValueForThread(
   thread: Pick<Thread, "id" | "focus_workspace"> | undefined,
   overrides: Readonly<Record<string, string>>,
+  projects: readonly Pick<DesktopProject, "name">[],
 ): string {
   if (!thread) {
     return "";
   }
-  return overrides[thread.id] ?? thread.focus_workspace ?? "";
+  const resolved = overrides[thread.id] ?? thread.focus_workspace ?? "";
+  const trimmed = resolved.trim();
+  // "" (全部工作区 / the union of all registered workspaces) and "~" (仅个人
+  //空间) are reserved values that are always valid. A named-project focus
+  // instead falls back to the union when that project is no longer registered
+  // — moved away or removed via 移除工作区 — so the chip, the menu's checked
+  // state, and the value resolved for the thread all agree the focus is now
+  // "全部工作区", and the stale project quietly drops out of the picker.
+  if (trimmed === "" || trimmed === "~") {
+    return resolved;
+  }
+  const known = projects.some((project) => project.name === trimmed);
+  return known ? resolved : "";
 }
 
 /**
