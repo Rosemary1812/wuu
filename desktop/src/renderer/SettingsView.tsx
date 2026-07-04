@@ -48,6 +48,7 @@ const COPY_RESET_MS = 1500;
 export function SettingsView({
   initialized,
   initialPage,
+  memoryFocusParticipantID,
   running,
   usage,
   runningProviderNames,
@@ -73,6 +74,8 @@ export function SettingsView({
 }: {
   initialized?: InitializeResult;
   initialPage?: SettingsPage;
+  // 记忆页打开时预选的同事笔记本（档案面板跳转带过来）。
+  memoryFocusParticipantID?: string;
   running: boolean;
   usage?: SettingsUsageResponse;
   runningProviderNames?: readonly string[];
@@ -580,7 +583,10 @@ export function SettingsView({
                 onCopyVersion={copyVersionInfo}
               />
             ) : activePage === "memory" ? (
-              <MemoryPanel participants={participants ?? []} />
+              <MemoryPanel
+                participants={participants ?? []}
+                focusParticipantID={memoryFocusParticipantID}
+              />
             ) : (
               <SettingsUsagePage
                 usage={usage}

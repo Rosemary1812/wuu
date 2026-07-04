@@ -87,6 +87,23 @@ describe("composer slash commands", () => {
     });
   });
 
+  it("routes /memory to the memory settings action instead of instructions", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false
+    });
+
+    const memory = commands.find((command) => command.name === "memory");
+    expect(memory?.kind).toBe("action");
+    expect(memory?.action).toBe("open-memory");
+    expect(memory?.disabledReason).toBeUndefined();
+
+    const instructions = commands.find((command) => command.name === "instructions");
+    expect(instructions?.action).toBe("instructions");
+    expect(instructions?.aliases).not.toContain("memory");
+  });
+
   it("adds user-invocable skills to slash results", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },

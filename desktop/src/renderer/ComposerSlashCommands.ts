@@ -11,6 +11,7 @@ export type ComposerSlashCommandAction =
   | "no-project"
   | "context"
   | "instructions"
+  | "open-memory"
   | "model"
   | "fast"
   | "effort"
@@ -181,9 +182,19 @@ export function buildComposerSlashCommands({
       tag: "视图",
       kind: "action",
       action: "instructions",
-      aliases: ["memory", "agents"],
-      keywords: ["instructions", "memory", "agents", "claude", "指令", "记忆"],
+      aliases: ["agents"],
+      keywords: ["instructions", "agents", "claude", "指令"],
       disabledReason: needsRuntime
+    },
+    {
+      id: "memory",
+      name: "memory",
+      title: "打开记忆面板",
+      description: "查看并修改 Wuu 记住的内容（设置 → 记忆）",
+      tag: "配置",
+      kind: "action",
+      action: "open-memory",
+      keywords: ["memory", "notebook", "记忆", "笔记本"]
     },
     {
       id: "commit",

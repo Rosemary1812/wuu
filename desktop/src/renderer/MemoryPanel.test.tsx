@@ -93,10 +93,18 @@ function installMemoryStub(overrides: Partial<MemoryStub> = {}): MemoryStub {
   return stub;
 }
 
-function mount(participants: ParticipantProfile[] = []): void {
+function mount(
+  participants: ParticipantProfile[] = [],
+  focusParticipantID?: string,
+): void {
   act(() => {
     root = createRoot(container);
-    root!.render(<MemoryPanel participants={participants} />);
+    root!.render(
+      <MemoryPanel
+        participants={participants}
+        focusParticipantID={focusParticipantID}
+      />,
+    );
   });
 }
 
@@ -217,6 +225,23 @@ describe("MemoryPanel 同事 tab", () => {
       scope: "participant",
       participant_id: "p-1",
     });
+  });
+
+  it("preselects the focused participant notebook when focusParticipantID is set", async () => {
+    const stub = installMemoryStub();
+    mount(participantsFixture(), "p-2");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(stub.getMemoryOverview).toHaveBeenCalledWith({
+      scope: "participant",
+      participant_id: "p-2",
+    });
+    const select = container.querySelector(
+      "[data-testid=\"memory-agent-select\"]",
+    ) as HTMLSelectElement | null;
+    expect(select?.value).toBe("p-2");
   });
 
   it("shows an empty state instead of a request when no named agent exists", async () => {

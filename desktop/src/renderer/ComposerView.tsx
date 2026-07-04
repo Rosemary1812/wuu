@@ -1,5 +1,6 @@
 import {
   AtSign,
+  Brain,
   Bug,
   ChevronDown,
   ChevronRight,
@@ -159,6 +160,7 @@ export function Composer({
   onOpenWorkspaceTool,
   onOpenContextComposition = () => {},
   onOpenInstructions = () => {},
+  onOpenMemorySettings = () => {},
   onPasteAttachmentFiles,
   onRemoveFile,
   onRemoveImage,
@@ -230,6 +232,8 @@ export function Composer({
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
   onOpenContextComposition?: () => void;
   onOpenInstructions?: () => void;
+  // 打开 设置 → 记忆（/memory 指令）。
+  onOpenMemorySettings?: () => void;
   onPasteAttachmentFiles: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
@@ -587,6 +591,9 @@ export function Composer({
         break;
       case "instructions":
         onOpenInstructions();
+        break;
+      case "open-memory":
+        onOpenMemorySettings();
         break;
       case "model":
         onToggleCodexRuntimeMenu("model");
@@ -1127,6 +1134,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
       return <FolderX className="icon" />;
     case "context":
       return <PieChart className="icon" />;
+    case "open-memory":
+      return <Brain className="icon" />;
     case "fast":
       return <Zap className="icon" />;
     case "model":

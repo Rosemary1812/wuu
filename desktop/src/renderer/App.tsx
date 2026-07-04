@@ -121,10 +121,7 @@ import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { ChatThreadView } from "./ChatThreadView";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
-import {
-  ParticipantProfilePanel,
-  type ParticipantResetScope,
-} from "./ParticipantProfilePanel";
+import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -487,7 +484,9 @@ type ParticipantPanelState = {
   error?: string;
   saving?: boolean;
   feedbackSubmitting?: boolean;
-  resettingScope?: ParticipantResetScope;
+  // feedbackReply mirrors the memory manager agent's reply_md for the last
+  // feedback submission (memory/chat, participant scope).
+  feedbackReply?: string;
   retiring?: boolean;
   // archived marks a successful archive; the panel shows the "已归档"
   // receipt until the scheduled close below clears it.
@@ -761,6 +760,10 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
+  // 设置 → 记忆 打开时预选的同事笔记本（档案面板「在记忆面板中管理」）。
+  const [settingsMemoryFocusID, setSettingsMemoryFocusID] = useState<
+    string | undefined
+  >(undefined);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
@@ -3379,6 +3382,8 @@ export function App(): JSX.Element {
     })();
   }
 
+  // 反馈直接写进该同事的身份笔记本：memory/chat（participant scope），
+  // 由管理 agent 落盘并返回一句话回执（memory-redesign.md §8.2）。
   function handleParticipantFeedback(text: string): void {
     const participant = participantPanel?.participant;
     if (!participant) {
@@ -3389,22 +3394,24 @@ export function App(): JSX.Element {
         ? {
             ...current,
             feedbackSubmitting: true,
+            feedbackReply: undefined,
             error: undefined,
           }
         : current,
     );
     void (async () => {
       try {
-        const result = await window.wuu.sendParticipantFeedback(participant.id, text);
-        setParticipants((current) =>
-          replaceParticipantProfile(current, result.participant),
-        );
+        const result = await window.wuu.sendMemoryChat({
+          scope: "participant",
+          participant_id: participant.id,
+          message: `用户反馈：${text}`,
+        });
         setParticipantPanel((current) =>
           current
             ? {
                 ...current,
-                participant: result.participant,
                 feedbackSubmitting: false,
+                feedbackReply: result.reply_md,
               }
             : current,
         );
@@ -3415,49 +3422,6 @@ export function App(): JSX.Element {
                 ...current,
                 feedbackSubmitting: false,
                 error: desktopApiErrorMessage(error, "无法写入反馈"),
-              }
-            : current,
-        );
-      }
-    })();
-  }
-
-  function handleParticipantReset(scope: ParticipantResetScope): void {
-    const participant = participantPanel?.participant;
-    if (!participant) {
-      return;
-    }
-    setParticipantPanel((current) =>
-      current
-        ? {
-            ...current,
-            resettingScope: scope,
-            error: undefined,
-          }
-        : current,
-    );
-    void (async () => {
-      try {
-        const result = await window.wuu.resetParticipant(participant.id, scope);
-        setParticipants((current) =>
-          replaceParticipantProfile(current, result.participant),
-        );
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                participant: result.participant,
-                resettingScope: undefined,
-              }
-            : current,
-        );
-      } catch (error) {
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                resettingScope: undefined,
-                error: desktopApiErrorMessage(error, "无法 reset Agent"),
               }
             : current,
         );
@@ -3738,6 +3702,7 @@ export function App(): JSX.Element {
           setSettingsInitialPage("providers");
           setSettingsOpen(true);
         }}
+        onOpenMemorySettings={() => openMemorySettings()}
         onOpenSkillsCatalog={openSkillsTab}
         onSelectProject={(id) => void selectProjectForNewThread(id)}
         onSelectNoProject={() => void useNoProject(false)}
@@ -4039,6 +4004,14 @@ export function App(): JSX.Element {
       setSettingsInitialPage("providers");
       setSettingsOpen(true);
     }
+  }
+
+  // 打开 设置 → 记忆；带 participantID 时预选该同事的身份笔记本。
+  function openMemorySettings(participantID?: string): void {
+    closeProjectMenus();
+    setSettingsMemoryFocusID(participantID);
+    setSettingsInitialPage("memory");
+    setSettingsOpen(true);
   }
 
   function closeProjectMenus(): void {
@@ -7419,6 +7392,7 @@ export function App(): JSX.Element {
       <SettingsView
         initialized={state.initialized}
         initialPage={settingsInitialPage}
+        memoryFocusParticipantID={settingsMemoryFocusID}
         running={viewContextSwitchPending}
         runningProviderNames={runningProviderNames}
         participants={participants}
@@ -7432,7 +7406,10 @@ export function App(): JSX.Element {
         sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
         resizingSidebar={resizingSidebar}
         shellRef={settingsShellRef}
-        onBack={() => setSettingsOpen(false)}
+        onBack={() => {
+          setSettingsOpen(false);
+          setSettingsMemoryFocusID(undefined);
+        }}
         onSave={updateRuntimeSettings}
         onRemoveProvider={removeProvider}
         onAdvancedSave={updateAdvancedSettings}
@@ -7810,13 +7787,15 @@ export function App(): JSX.Element {
             error={participantPanel.error}
             saving={participantPanel.saving}
             feedbackSubmitting={participantPanel.feedbackSubmitting}
-            resettingScope={participantPanel.resettingScope}
+            feedbackReply={participantPanel.feedbackReply}
             retiring={participantPanel.retiring}
             archived={participantPanel.archived}
             onClose={() => setParticipantPanel(undefined)}
             onSave={handleParticipantSave}
             onFeedback={handleParticipantFeedback}
-            onReset={handleParticipantReset}
+            onOpenMemoryPanel={(participantID) =>
+              openMemorySettings(participantID)
+            }
             onRetire={handleParticipantRetire}
           />
         ) : null}

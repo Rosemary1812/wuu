@@ -2,9 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  MemoryReadResult,
   ParticipantProfile,
   ProviderModelSummary,
   ProviderSummary,
+  WuuDesktopApi,
 } from "../shared/protocol";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 
@@ -12,9 +14,38 @@ let container: HTMLDivElement;
 let root: Root | null = null;
 const pendingInputCleanups: Array<() => void> = [];
 
+// 编辑模式挂载即拉取 memory/read（只读记忆摘要），所以每个测试都需要
+// window.wuu 桩；镜像 MemoryPanel.test.tsx 的安装/清理方式。
+function memoryReadFixture(
+  overrides: Partial<MemoryReadResult> = {},
+): MemoryReadResult {
+  return {
+    index_md: "- [协作教训](lessons.md) — 先读后写",
+    files: [
+      {
+        name: "lessons.md",
+        description: "协作教训",
+        type: "lesson",
+        mtime: "2026-07-03T08:00:00Z",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function installMemoryStub(
+  readMemoryRaw = vi.fn().mockResolvedValue(memoryReadFixture()),
+): ReturnType<typeof vi.fn> {
+  const stub = { readMemoryRaw } as unknown as WuuDesktopApi;
+  (globalThis as { wuu?: WuuDesktopApi }).wuu = stub;
+  (window as unknown as { wuu: WuuDesktopApi }).wuu = stub;
+  return readMemoryRaw;
+}
+
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
+  installMemoryStub();
 });
 
 afterEach(() => {
@@ -27,6 +58,8 @@ afterEach(() => {
     const cleanup = pendingInputCleanups.pop();
     cleanup?.();
   }
+  delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
+  delete (window as { wuu?: WuuDesktopApi }).wuu;
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -128,7 +161,9 @@ function mount(props: {
   mode: "new" | "edit";
   providers?: ProviderSummary[];
   archived?: boolean;
+  feedbackReply?: string;
   onSave?: (params: Parameters<typeof ParticipantProfilePanel>[0]["onSave"] extends (p: infer P) => void ? P : never) => void;
+  onOpenMemoryPanel?: (id: string) => void;
   onRetire?: (id: string) => void;
 }): void {
   if (root === null) {
@@ -141,10 +176,11 @@ function mount(props: {
         participant={props.participant}
         providers={props.providers}
         archived={props.archived}
+        feedbackReply={props.feedbackReply}
         onClose={() => {}}
         onSave={props.onSave ?? (() => {})}
         onFeedback={() => {}}
-        onReset={() => {}}
+        onOpenMemoryPanel={props.onOpenMemoryPanel ?? (() => {})}
         onRetire={props.onRetire ?? (() => {})}
       />,
     );
@@ -220,7 +256,6 @@ describe("ParticipantProfilePanel — identity and model", () => {
         name: "Mira",
         tagline: "Catches typos",
         role: "reviewer",
-        memory: "Remember: read first.",
       }),
       providers: providersFixture(),
     });
@@ -237,15 +272,15 @@ describe("ParticipantProfilePanel — identity and model", () => {
     const modelSelect = container.querySelector<HTMLSelectElement>(
       "select[data-field='model']",
     );
-    const memory = container.querySelector<HTMLTextAreaElement>(
-      "textarea[data-field='memory']",
-    );
 
     expect(nameInput?.value).toBe("Mira");
     expect(taglineInput?.value).toBe("Catches typos");
     expect(roleSelect?.value).toBe("reviewer");
     expect(modelSelect?.value).toBe("anthropic:claude-sonnet-4-7");
-    expect(memory?.value).toBe("Remember: read first.");
+    // 旧 Memory 编辑框已随扁平记忆退役，不再渲染。
+    expect(
+      container.querySelector("textarea[data-field='memory']"),
+    ).toBeNull();
 
     // The model <select> must have a "follow global" first option and an
     // <optgroup> per provider.
@@ -457,6 +492,98 @@ describe("ParticipantProfilePanel — identity and model", () => {
     expect(firstParams.avatar_image).toMatch(/^data:image\/png/);
     expect(secondParams.avatar_image).toBeUndefined();
     expect(secondParams.clear_avatar_image).toBeUndefined();
+  });
+});
+
+describe("ParticipantProfilePanel — read-only memory summary", () => {
+  it("renders the memory/read index for the participant notebook", async () => {
+    const readMemoryRaw = installMemoryStub();
+    mount({
+      mode: "edit",
+      participant: participantFixture({ id: "agent-7" }),
+      providers: providersFixture(),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(readMemoryRaw).toHaveBeenCalledWith({
+      scope: "participant",
+      participant_id: "agent-7",
+    });
+    expect(
+      container.querySelector("[data-testid='participant-memory-summary']"),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("协作教训");
+    expect(container.textContent).toContain("在记忆面板中管理");
+  });
+
+  it("shows a one-line empty state when the index is empty", async () => {
+    installMemoryStub(
+      vi.fn().mockResolvedValue(memoryReadFixture({ index_md: "", files: [] })),
+    );
+    mount({
+      mode: "edit",
+      participant: participantFixture(),
+      providers: providersFixture(),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("还没有关于 Ta 的记忆。");
+  });
+
+  it("degrades to the not-ready line when the backend lacks memory/read", async () => {
+    installMemoryStub(
+      vi.fn().mockRejectedValue(new Error('unknown method "memory/read"')),
+    );
+    mount({
+      mode: "edit",
+      participant: participantFixture(),
+      providers: providersFixture(),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("记忆服务尚未就绪。");
+  });
+
+  it("fires onOpenMemoryPanel with the participant id", async () => {
+    const onOpenMemoryPanel = vi.fn();
+    mount({
+      mode: "edit",
+      participant: participantFixture({ id: "agent-7" }),
+      providers: providersFixture(),
+      onOpenMemoryPanel,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const manageButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "在记忆面板中管理",
+    );
+    expect(manageButton).toBeDefined();
+    act(() => {
+      manageButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenMemoryPanel).toHaveBeenCalledWith("agent-7");
+  });
+
+  it("shows the feedback reply line when provided", async () => {
+    mount({
+      mode: "edit",
+      participant: participantFixture(),
+      providers: providersFixture(),
+      feedbackReply: "已记入身份笔记本。",
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("已记入身份笔记本。");
   });
 });
 

@@ -1,9 +1,9 @@
 import {
   Archive,
+  Brain,
   Camera,
   ImagePlus,
   Loader2,
-  RotateCcw,
   Save,
   Send,
   Trash2,
@@ -11,13 +11,14 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  MemoryReadResult,
   ParticipantProfile,
   ParticipantSaveParams,
   ProviderSummary,
 } from "../shared/protocol";
+import { ImagePreviewProvider } from "./ImagePreview";
 import { Modal } from "./Modal";
-
-export type ParticipantResetScope = "restart" | "session" | "full";
+import { RichContent } from "./RichContent";
 
 export const PARTICIPANT_ROLES = [
   "general-purpose",
@@ -38,12 +39,31 @@ type ParticipantProfileForm = {
   role: string;
   tagline: string;
   model: string;
-  memory: string;
   // avatarImage is the data URL chosen in this session, if any.
   avatarImage?: string;
   // clearAvatarImage flags the intent to drop the previously uploaded image.
   clearAvatarImage: boolean;
 };
+
+// Read-only mirror of the participant's identity notebook (memory/read).
+// The old editable Memory textarea wrote the retired flat-file path; the
+// notebook is now managed through 设置 → 记忆 (memory-redesign.md §8).
+type MemorySummaryState =
+  | { status: "loading" }
+  | { status: "ready"; result: MemoryReadResult }
+  | { status: "unavailable" }
+  | { status: "error"; message: string };
+
+function memoryErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// Same substring check as MemoryPanel: a backend without the memory panel
+// service rejects memory/* with an "unknown method" error wrapped by the
+// Electron invoke bridge.
+function isMemoryBackendMissing(error: unknown): boolean {
+  return /unknown method|method not found/i.test(memoryErrorMessage(error));
+}
 
 function formFromParticipant(
   participant?: ParticipantProfile,
@@ -53,7 +73,6 @@ function formFromParticipant(
     role: participant?.role ?? "reviewer",
     tagline: participant?.tagline ?? "",
     model: participant?.model ?? "",
-    memory: participant?.memory ?? "",
     avatarImage: undefined,
     clearAvatarImage: false,
   };
@@ -98,13 +117,13 @@ export function ParticipantProfilePanel({
   error,
   saving,
   feedbackSubmitting,
-  resettingScope,
+  feedbackReply,
   retiring,
   archived,
   onClose,
   onSave,
   onFeedback,
-  onReset,
+  onOpenMemoryPanel,
   onRetire,
 }: {
   participant?: ParticipantProfile;
@@ -114,7 +133,9 @@ export function ParticipantProfilePanel({
   error?: string;
   saving?: boolean;
   feedbackSubmitting?: boolean;
-  resettingScope?: ParticipantResetScope;
+  // feedbackReply is the memory manager agent's reply_md for the last
+  // submitted feedback, shown as a one-line receipt.
+  feedbackReply?: string;
   retiring?: boolean;
   // archived flips on after a successful archive; the panel shows the
   // "已归档" receipt while the parent schedules the close.
@@ -122,7 +143,8 @@ export function ParticipantProfilePanel({
   onClose: () => void;
   onSave: (params: ParticipantSaveParams) => void;
   onFeedback: (text: string) => void;
-  onReset: (scope: ParticipantResetScope) => void;
+  // Jumps to 设置 → 记忆 with this participant's notebook preselected.
+  onOpenMemoryPanel: (participantId: string) => void;
   onRetire: (participantId: string) => void;
 }): JSX.Element {
   const [form, setForm] = useState<ParticipantProfileForm>(() =>
@@ -131,10 +153,14 @@ export function ParticipantProfilePanel({
   const [feedback, setFeedback] = useState("");
   const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [memorySummary, setMemorySummary] = useState<MemorySummaryState>({
+    status: "loading",
+  });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Monotonic token used to ignore stale FileReader results when the user
   // rapidly picks multiple files.
   const avatarReadTokenRef = useRef(0);
+  const participantID = participant?.id ?? "";
 
   useEffect(() => {
     setForm(formFromParticipant(participant));
@@ -142,6 +168,34 @@ export function ParticipantProfilePanel({
     setAvatarError(undefined);
     setArchiveConfirmOpen(false);
   }, [participant?.id, mode]);
+
+  useEffect(() => {
+    if (mode !== "edit" || !participantID) {
+      return;
+    }
+    let cancelled = false;
+    setMemorySummary({ status: "loading" });
+    void window.wuu
+      .readMemoryRaw({ scope: "participant", participant_id: participantID })
+      .then((result) => {
+        if (!cancelled) {
+          setMemorySummary({ status: "ready", result });
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setMemorySummary(
+          isMemoryBackendMissing(error)
+            ? { status: "unavailable" }
+            : { status: "error", message: memoryErrorMessage(error) },
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, participantID]);
 
   const providerOptions = useMemo(
     () =>
@@ -254,7 +308,6 @@ export function ParticipantProfilePanel({
       role: form.role.trim(),
       tagline: form.tagline.trim(),
       model: form.model.trim(),
-      memory: form.memory,
     };
     if (form.avatarImage) {
       params.avatar_image = form.avatarImage;
@@ -468,21 +521,23 @@ export function ParticipantProfilePanel({
               </label>
             </section>
 
-            <section
-              className="participant-profile-section"
-              aria-labelledby="participant-profile-memory"
-            >
-              <h3 id="participant-profile-memory">记忆</h3>
-              <textarea
-                className="participant-profile-memory"
-                data-field="memory"
-                value={form.memory}
-                onChange={(event) =>
-                  updateField("memory", event.currentTarget.value)
-                }
-                rows={8}
-              />
-            </section>
+            {mode === "edit" && participantID ? (
+              <section
+                className="participant-profile-section"
+                aria-labelledby="participant-profile-memory"
+              >
+                <h3 id="participant-profile-memory">记忆</h3>
+                <MemorySummaryView state={memorySummary} />
+                <button
+                  type="button"
+                  className="participant-profile-text-action"
+                  onClick={() => onOpenMemoryPanel(participantID)}
+                >
+                  <Brain aria-hidden="true" />
+                  <span>在记忆面板中管理</span>
+                </button>
+              </section>
+            ) : null}
 
             {mode === "edit" ? (
               <section
@@ -541,6 +596,14 @@ export function ParticipantProfilePanel({
                   )}
                   <span>写入反馈</span>
                 </button>
+                {feedbackReply ? (
+                  <p
+                    className="participant-profile-feedback-reply"
+                    role="status"
+                  >
+                    {feedbackReply}
+                  </p>
+                ) : null}
               </section>
             ) : null}
 
@@ -551,27 +614,6 @@ export function ParticipantProfilePanel({
               >
                 <h3 id="participant-profile-manage">管理</h3>
                 <div className="participant-profile-reset-actions">
-                  {(["restart", "session", "full"] as ParticipantResetScope[]).map(
-                    (scope) => (
-                      <button
-                        key={scope}
-                        type="button"
-                        className="participant-profile-text-action"
-                        disabled={Boolean(resettingScope) || retiring}
-                        onClick={() => onReset(scope)}
-                      >
-                        {resettingScope === scope ? (
-                          <Loader2
-                            className="participant-profile-spinner"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <RotateCcw aria-hidden="true" />
-                        )}
-                        <span>{scope}</span>
-                      </button>
-                    ),
-                  )}
                   <button
                     type="button"
                     className="participant-profile-text-action"
@@ -595,31 +637,9 @@ export function ParticipantProfilePanel({
         )}
       </div>
       {archiveConfirmOpen ? (
-        <Modal
-          ariaLabel="归档此同事"
-          icon={<Archive className="icon-lg" />}
-          title="归档此同事"
-          subtitle="Ta 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。"
-          onClose={() => setArchiveConfirmOpen(false)}
-          panelClassName="participant-archive-dialog"
-          footer={
-            <>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setArchiveConfirmOpen(false)}
-              >
-                再想想
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={confirmArchive}
-              >
-                归档
-              </button>
-            </>
-          }
+        <ArchiveConfirmDialog
+          onCancel={() => setArchiveConfirmOpen(false)}
+          onConfirm={confirmArchive}
         />
       ) : null}
       {archived ? null : (
@@ -643,5 +663,67 @@ export function ParticipantProfilePanel({
         </footer>
       )}
     </aside>
+  );
+}
+
+function ArchiveConfirmDialog({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}): JSX.Element {
+  return (
+    <Modal
+      ariaLabel="归档此同事"
+      icon={<Archive className="icon-lg" />}
+      title="归档此同事"
+      subtitle="Ta 的记忆和对话将完整归档，私聊变为只读；之后可以随时复职。"
+      onClose={onCancel}
+      panelClassName="participant-archive-dialog"
+      footer={
+        <>
+          <button className="secondary-button" type="button" onClick={onCancel}>
+            再想想
+          </button>
+          <button className="primary-button" type="button" onClick={onConfirm}>
+            归档
+          </button>
+        </>
+      }
+    />
+  );
+}
+
+function MemorySummaryView({
+  state,
+}: {
+  state: MemorySummaryState;
+}): JSX.Element {
+  if (state.status === "loading") {
+    return <p className="participant-profile-empty">加载中…</p>;
+  }
+  if (state.status === "unavailable") {
+    return <p className="participant-profile-empty">记忆服务尚未就绪。</p>;
+  }
+  if (state.status === "error") {
+    return (
+      <p className="participant-profile-error" role="alert">
+        {state.message}
+      </p>
+    );
+  }
+  if (!state.result.index_md.trim()) {
+    return <p className="participant-profile-empty">还没有关于 Ta 的记忆。</p>;
+  }
+  return (
+    <div
+      className="participant-profile-memory-summary"
+      data-testid="participant-memory-summary"
+    >
+      <ImagePreviewProvider>
+        <RichContent text={state.result.index_md} />
+      </ImagePreviewProvider>
+    </div>
   );
 }

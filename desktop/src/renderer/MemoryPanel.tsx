@@ -107,11 +107,18 @@ function timestampLabel(value?: string): string {
 
 export function MemoryPanel({
   participants,
+  focusParticipantID,
 }: {
   participants: ParticipantProfile[];
+  // 预选某位同事的笔记本（档案面板「在记忆面板中管理」跳转带过来）。
+  focusParticipantID?: string;
 }): JSX.Element {
-  const [scope, setScope] = useState<MemoryScope>("user");
-  const [selectedParticipantID, setSelectedParticipantID] = useState("");
+  const [scope, setScope] = useState<MemoryScope>(
+    focusParticipantID ? "participant" : "user",
+  );
+  const [selectedParticipantID, setSelectedParticipantID] = useState(
+    focusParticipantID ?? "",
+  );
   // 递增以强制重拉 overview（chat 成功后、点「重试」时）；原文视图打开
   // 时共用同一个 nonce，一并刷新。
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -142,6 +149,15 @@ export function MemoryPanel({
     setChatEntries([]);
     setChatDraft("");
   }, [notebookKey]);
+
+  // 跳转焦点变化时切到对应同事的笔记本（初始值已在 useState 里消化，
+  // 这里兜住同一面板实例被复用的情况）。
+  useEffect(() => {
+    if (focusParticipantID) {
+      setScope("participant");
+      setSelectedParticipantID(focusParticipantID);
+    }
+  }, [focusParticipantID]);
 
   useEffect(() => {
     if (!notebookReady) {

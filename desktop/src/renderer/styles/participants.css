@@ -568,7 +568,6 @@
 
 .participant-profile-field input,
 .participant-profile-field select,
-.participant-profile-memory,
 .participant-profile-feedback {
   width: 100%;
   min-width: 0;
@@ -587,7 +586,6 @@
   padding: 0 10px;
 }
 
-.participant-profile-memory,
 .participant-profile-feedback {
   resize: vertical;
   padding: 9px 10px;
@@ -599,10 +597,23 @@
 
 .participant-profile-field input:focus,
 .participant-profile-field select:focus,
-.participant-profile-memory:focus,
 .participant-profile-feedback:focus {
   border-color: var(--hairline-strong);
   outline: 0;
+}
+
+/* 只读记忆摘要：memory/read 索引的直接渲染（管理入口在 设置 → 记忆）。 */
+.participant-profile-memory-summary {
+  color: var(--ink);
+  font-size: var(--font-sm);
+  line-height: var(--line-body);
+}
+
+.participant-profile-feedback-reply {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
 }
 
 .participant-profile-empty {
