@@ -129,6 +129,36 @@ func (m *Manager) defaultsSnapshot() managerDefaults {
 	}
 }
 
+// RuntimeDefaults is the exported subset of the manager's worker defaults
+// needed by out-of-band model calls that run beside the worker runtime (for
+// example the HelpMe parent-journal extraction): the shared stream client,
+// the session's default model, and the context budget dimensions used to
+// chunk long inputs.
+type RuntimeDefaults struct {
+	Client              providers.StreamClient
+	Model               string
+	ContextWindow       int
+	MaxInputTokens      int
+	OutputReserveTokens int
+}
+
+// RuntimeDefaults returns a snapshot of the manager's current defaults. The
+// values track UpdateDefaults, so callers should fetch a fresh snapshot per
+// use instead of caching one.
+func (m *Manager) RuntimeDefaults() RuntimeDefaults {
+	if m == nil {
+		return RuntimeDefaults{}
+	}
+	d := m.defaultsSnapshot()
+	return RuntimeDefaults{
+		Client:              d.client,
+		Model:               d.model,
+		ContextWindow:       d.contextWindow,
+		MaxInputTokens:      d.maxInputTokens,
+		OutputReserveTokens: d.outputReserve,
+	}
+}
+
 // Subscribe registers a channel that will receive notifications when
 // sub-agent statuses change. The channel must be drained promptly;
 // notifications are dropped if the channel is full (to avoid blocking

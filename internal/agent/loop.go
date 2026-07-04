@@ -423,9 +423,9 @@ func RunToolLoop(
 		// parallel; write tools run serially.
 		//
 		// The tool's execution context carries the current `messages`
-		// slice (via withHistory) so tools like spawn_agent can fork
+		// slice (via ContextWithHistory) so tools like spawn_agent can fork
 		// from the parent agent's current history.
-		toolCtx := withHistory(ctx, messages)
+		toolCtx := ContextWithHistory(ctx, messages)
 		toolRuntime := result.ToolRuntime
 		if toolRuntime == nil {
 			toolRuntime = NewTurnToolRuntime(cfg.Tools)
@@ -788,12 +788,13 @@ func toolErrorNextSuggestions(message string) []string {
 // struct as the key guarantees no collisions with other ctx values.
 type historyContextKey struct{}
 
-// withHistory attaches a snapshot of the parent agent's current
+// ContextWithHistory attaches a snapshot of the parent agent's current
 // message history to ctx so a tool can later retrieve it via
-// HistoryFromContext. The slice is shared by reference — tools must
-// treat it as read-only and copy if they need to retain it past the
-// Execute call.
-func withHistory(ctx context.Context, history []providers.ChatMessage) context.Context {
+// HistoryFromContext. RunToolLoop installs it for every tool execution;
+// it is exported so tests and embedders can construct equivalent tool
+// contexts. The slice is shared by reference — tools must treat it as
+// read-only and copy if they need to retain it past the Execute call.
+func ContextWithHistory(ctx context.Context, history []providers.ChatMessage) context.Context {
 	return context.WithValue(ctx, historyContextKey{}, history)
 }
 

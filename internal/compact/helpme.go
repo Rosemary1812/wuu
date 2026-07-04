@@ -40,30 +40,35 @@ type helpMeToolEnvelope struct {
 // HelpMeJointCompactInput is the structured material used to build the
 // replacement context after a fresh helper agent finishes.
 type HelpMeJointCompactInput struct {
-	OriginalGoal         string
-	CurrentUnderstanding string
-	Ask                  string
-	Reason               string
-	Constraints          []string
-	FailedAttempts       []string
-	Evidence             []string
-	HelperStatus         string
-	HelperAgentID        string
-	HelperAgentPath      string
-	HelperResult         string
-	HelperResultPath     string
-	HelperReportPath     string
-	HelperError          string
-	ReportOutcome        string
-	ReportSummary        string
-	ChangedFiles         []string
-	WorkDone             []string
-	Blockers             []string
-	Risks                []string
-	Verification         []string
-	ReportEvidence       []string
-	NextSteps            []string
-	Artifacts            []string
+	OriginalGoal string
+	// ParentExecutionJournal is the machine-extracted decision journal of
+	// the parent's run (BuildHelpMeParentJournal). When present it is the
+	// primary parent-side record and the self-reported fields below render
+	// as supplementary material.
+	ParentExecutionJournal string
+	CurrentUnderstanding   string
+	Ask                    string
+	Reason                 string
+	Constraints            []string
+	FailedAttempts         []string
+	Evidence               []string
+	HelperStatus           string
+	HelperAgentID          string
+	HelperAgentPath        string
+	HelperResult           string
+	HelperResultPath       string
+	HelperReportPath       string
+	HelperError            string
+	ReportOutcome          string
+	ReportSummary          string
+	ChangedFiles           []string
+	WorkDone               []string
+	Blockers               []string
+	Risks                  []string
+	Verification           []string
+	ReportEvidence         []string
+	NextSteps              []string
+	Artifacts              []string
 }
 
 func BuildHelpMeJointCompactContent(input HelpMeJointCompactInput) string {
@@ -72,6 +77,16 @@ func BuildHelpMeJointCompactContent(input HelpMeJointCompactInput) string {
 	b.WriteString("\nThis context was rewritten after a HelpMe recovery. Treat this as the current task state. Do not repeat the ruled-out parent-agent paths unless new evidence changes them.\n\n")
 
 	writeHelpMeField(&b, "Original user goal", input.OriginalGoal)
+	if journal := strings.TrimSpace(input.ParentExecutionJournal); journal != "" {
+		// The machine-extracted journal is the primary parent-side record:
+		// unlike the self-reported fields it does not carry the stuck
+		// agent's framing. Render it first and demote the self-report.
+		b.WriteString("## Parent execution journal (machine-extracted)\n")
+		b.WriteString(truncateHelpMeSection(journal))
+		b.WriteString("\n\n")
+		b.WriteString("## Parent self-reported brief (supplementary)\n")
+		b.WriteString("The journal above is the primary record; the parent-authored fields below may carry the stuck agent's own framing.\n\n")
+	}
 	writeHelpMeField(&b, "Parent rescue reason", input.Reason)
 	writeHelpMeField(&b, "Parent understanding before recovery", input.CurrentUnderstanding)
 	writeHelpMeField(&b, "Recovery ask given to helper", input.Ask)

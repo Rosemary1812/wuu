@@ -44,8 +44,14 @@ type HelpMeRecovery struct {
 	HelperID      string              `json:"helper_id"`
 	ParentPath    string              `json:"parent_path,omitempty"`
 	Brief         HelpMeRecoveryBrief `json:"brief"`
-	Applied       bool                `json:"applied,omitempty"`
-	CreatedAt     time.Time           `json:"created_at"`
+	// ParentExecutionJournal is the machine-extracted decision journal of
+	// the parent's run at rescue time (goal, key decisions, paths taken
+	// with outcomes). When present it is the primary parent-side handoff
+	// carrier and the self-reported Brief is supplementary. Empty when the
+	// extraction was skipped, timed out, or failed.
+	ParentExecutionJournal string    `json:"parent_execution_journal,omitempty"`
+	Applied                bool      `json:"applied,omitempty"`
+	CreatedAt              time.Time `json:"created_at"`
 }
 
 // RegisterHelpMeRecovery records the resolved recovery state for a spawned

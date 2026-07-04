@@ -81,8 +81,9 @@ func TestHelpMeRecoveryLazyLoadsAcrossInstances(t *testing.T) {
 
 	first := newHelpMeRecoveryControl(t, dir, harnessDir)
 	first.RegisterHelpMeRecovery(HelpMeRecovery{
-		HelperID: "helper-restart",
-		Brief:    HelpMeRecoveryBrief{OriginalGoal: "survive the restart", Ask: "keep the resolved goal"},
+		HelperID:               "helper-restart",
+		ParentExecutionJournal: "### Paths taken\n- guard patch - ruled out",
+		Brief:                  HelpMeRecoveryBrief{OriginalGoal: "survive the restart", Ask: "keep the resolved goal"},
 	})
 	path := filepath.Join(harnessDir, helpMeRecoveryDirName, "helper-restart.json")
 	if _, err := os.Stat(path); err != nil {
@@ -98,6 +99,9 @@ func TestHelpMeRecoveryLazyLoadsAcrossInstances(t *testing.T) {
 	}
 	if rec.Brief.OriginalGoal != "survive the restart" || rec.Applied {
 		t.Fatalf("rehydrated recovery lost state: %+v", rec)
+	}
+	if rec.ParentExecutionJournal != "### Paths taken\n- guard patch - ruled out" {
+		t.Fatalf("rehydrated recovery lost the parent journal: %+v", rec)
 	}
 	if !second.MarkHelpMeRecoveryApplied("helper-restart") {
 		t.Fatal("first apply after restart must succeed")

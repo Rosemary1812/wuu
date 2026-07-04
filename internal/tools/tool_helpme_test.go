@@ -3,9 +3,11 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -196,8 +198,13 @@ func (helpMeFakeToolkit) Execute(context.Context, providers.ToolCall) (string, e
 
 func newHelpMeTestControl(t *testing.T, dir, sessionDir string) *agentcontrol.AgentControl {
 	t.Helper()
+	return newHelpMeTestControlWithClient(t, dir, sessionDir, &helpMeFakeStreamClient{content: "helper looked with fresh eyes"})
+}
+
+func newHelpMeTestControlWithClient(t *testing.T, dir, sessionDir string, client providers.StreamClient) *agentcontrol.AgentControl {
+	t.Helper()
 	c, err := agentcontrol.New(agentcontrol.Config{
-		Client:       &helpMeFakeStreamClient{content: "helper looked with fresh eyes"},
+		Client:       client,
 		DefaultModel: "fake-model",
 		ParentRepo:   dir,
 		WorktreeRoot: filepath.Join(dir, "wt"),
@@ -217,7 +224,12 @@ func newHelpMeTestControl(t *testing.T, dir, sessionDir string) *agentcontrol.Ag
 
 func executeHelpMe(t *testing.T, env *Env, argsJSON string) helpMeResponse {
 	t.Helper()
-	out, err := NewHelpMeTool(env).Execute(context.Background(), argsJSON)
+	return executeHelpMeCtx(t, context.Background(), env, argsJSON)
+}
+
+func executeHelpMeCtx(t *testing.T, ctx context.Context, env *Env, argsJSON string) helpMeResponse {
+	t.Helper()
+	out, err := NewHelpMeTool(env).Execute(ctx, argsJSON)
 	if err != nil {
 		t.Fatalf("helpme execute: %v", err)
 	}
@@ -245,6 +257,223 @@ func waitForHelperReport(t *testing.T, c *agentcontrol.AgentControl, agentID str
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("helper %s never settled with a report", agentID)
+}
+
+// journalFakeStreamClient serves both the parent-journal extraction and the
+// helper worker turns from one fake. Extraction requests are recognized by
+// their dedicated system message ("decision journals"); they can succeed
+// with canned journal content, fail, or block until the caller's timeout.
+type journalFakeStreamClient struct {
+	mu             sync.Mutex
+	requests       []providers.ChatRequest
+	journalContent string
+	workerContent  string
+	failJournal    bool
+	blockJournal   bool
+}
+
+func (f *journalFakeStreamClient) isJournalRequest(req providers.ChatRequest) bool {
+	return len(req.Messages) > 0 && strings.Contains(req.Messages[0].Content, "decision journals")
+}
+
+func (f *journalFakeStreamClient) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	f.mu.Lock()
+	f.requests = append(f.requests, req)
+	f.mu.Unlock()
+	if f.isJournalRequest(req) {
+		if f.failJournal {
+			return providers.ChatResponse{}, errors.New("journal extraction backend down")
+		}
+		if f.blockJournal {
+			<-ctx.Done()
+			return providers.ChatResponse{}, ctx.Err()
+		}
+		return providers.ChatResponse{Content: f.journalContent}, nil
+	}
+	return providers.ChatResponse{Content: f.workerContent}, nil
+}
+
+func (f *journalFakeStreamClient) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	resp, err := f.Chat(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan providers.StreamEvent, 2)
+	if resp.Content != "" {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: resp.Content}
+	}
+	ch <- providers.StreamEvent{Type: providers.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+func (f *journalFakeStreamClient) recordedRequests() []providers.ChatRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]providers.ChatRequest(nil), f.requests...)
+}
+
+const cannedParentJournal = "### User goal\n\"fix the flaky login test\"\n\n### Paths taken\n- patched the router guard - ruled out"
+
+var journalTestHistory = []providers.ChatMessage{
+	{Role: "user", Content: "fix the flaky login test"},
+	{Role: "assistant", Content: "I patched the router guard but the test still fails."},
+}
+
+// TestBuildHelpMePromptRendersParentJournal locks the handoff brief shape:
+// the machine-extracted journal renders as its own section with the
+// negative-knowledge framing.
+func TestBuildHelpMePromptRendersParentJournal(t *testing.T) {
+	prompt := buildHelpMePrompt(helpMePromptInput{
+		Reason:                 "stuck",
+		OriginalGoal:           "fix the flaky login test",
+		ParentExecutionJournal: cannedParentJournal,
+		Ask:                    "find the real cause",
+	})
+	for _, want := range []string{"## Parent execution journal", "Machine-extracted", "ruled out", "patched the router guard"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("HelpMe prompt missing journal material %q:\n%s", want, prompt)
+		}
+	}
+	if !strings.Contains(buildHelpMePrompt(helpMePromptInput{OriginalGoal: "g", Ask: "a"}), "User goal") {
+		t.Fatal("sanity: prompt builder broke without journal")
+	}
+	if strings.Contains(buildHelpMePrompt(helpMePromptInput{OriginalGoal: "g", Ask: "a"}), "Parent execution journal") {
+		t.Fatal("journal section must not render when the extraction was skipped")
+	}
+}
+
+// TestHelpMeExecuteExtractsAndAppliesParentJournal drives the double-source
+// chain end to end: the helpme call machine-extracts the parent journal via
+// the worker runtime's default client, feeds it to the helper's handoff
+// brief, persists it on the recovery object, and the await-side joint
+// compact renders it as the primary parent-side record.
+func TestHelpMeExecuteExtractsAndAppliesParentJournal(t *testing.T) {
+	dir := t.TempDir()
+	sessionDir := filepath.Join(dir, "session")
+	client := &journalFakeStreamClient{journalContent: cannedParentJournal, workerContent: "helper found the real cause"}
+	c := newHelpMeTestControlWithClient(t, dir, sessionDir, client)
+	env := &Env{AgentControl: c, SessionDir: sessionDir}
+
+	ctx := agent.ContextWithHistory(context.Background(), journalTestHistory)
+	response := executeHelpMeCtx(t, ctx, env, `{"reason":"two failed attempts","ask":"find the real cause"}`)
+
+	// (a) The recovery object carries and persists the journal.
+	rec, ok := c.HelpMeRecoveryForHelper(response.AgentID)
+	if !ok || !strings.Contains(rec.ParentExecutionJournal, "ruled out") {
+		t.Fatalf("recovery missing parent journal: %+v ok=%v", rec, ok)
+	}
+	data, err := os.ReadFile(filepath.Join(sessionDir, "harness", "helpme-recovery", response.AgentID+".json"))
+	if err != nil {
+		t.Fatalf("read persisted recovery: %v", err)
+	}
+	if !strings.Contains(string(data), "parent_execution_journal") || !strings.Contains(string(data), "ruled out") {
+		t.Fatalf("persisted recovery missing journal:\n%s", data)
+	}
+
+	// Let the async helper run settle so its model requests are recorded.
+	waitForHelperReport(t, c, response.AgentID)
+
+	// (b) The helper's handoff brief carries the journal section.
+	var spawnPrompt string
+	for _, req := range client.recordedRequests() {
+		for _, msg := range req.Messages {
+			if msg.Role == "user" && strings.Contains(msg.Content, "# HelpMe Handoff Brief") {
+				spawnPrompt = msg.Content
+			}
+		}
+	}
+	if spawnPrompt == "" {
+		t.Fatal("helper spawn prompt not observed")
+	}
+	for _, want := range []string{"## Parent execution journal", "patched the router guard - ruled out"} {
+		if !strings.Contains(spawnPrompt, want) {
+			t.Fatalf("helper brief missing journal %q:\n%s", want, spawnPrompt)
+		}
+	}
+	// The resolved goal came from history, proving extraction did not
+	// displace the existing brief resolution.
+	if !strings.Contains(spawnPrompt, "fix the flaky login test") {
+		t.Fatalf("helper brief lost the history-resolved goal:\n%s", spawnPrompt)
+	}
+
+	// (c) The await-side joint compact renders the journal as primary.
+	if _, err := c.RecordAgentReport(response.AgentID, response.AgentPath, agentcontrol.AgentReportRequest{
+		Outcome: "completed",
+		Summary: "real bug was token refresh ordering",
+	}); err != nil {
+		t.Fatalf("RecordAgentReport: %v", err)
+	}
+	out, err := NewAwaitAgentsTool(env).Execute(context.Background(), `{"targets":["`+response.AgentID+`"]}`)
+	if err != nil {
+		t.Fatalf("await: %v", err)
+	}
+	var awaited awaitAgentsToolResponse
+	if err := json.Unmarshal([]byte(out), &awaited); err != nil {
+		t.Fatalf("decode await: %v\n%s", err, out)
+	}
+	if awaited.HistoryRewrite == nil {
+		t.Fatalf("await must carry the rewrite:\n%s", out)
+	}
+	content := awaited.HistoryRewrite.Content
+	journalIdx := strings.Index(content, "## Parent execution journal (machine-extracted)")
+	supplementaryIdx := strings.Index(content, "## Parent self-reported brief (supplementary)")
+	if journalIdx < 0 || supplementaryIdx < 0 || journalIdx > supplementaryIdx {
+		t.Fatalf("joint compact must render the journal before the demoted self-report:\n%s", content)
+	}
+	if !strings.Contains(content, "patched the router guard - ruled out") {
+		t.Fatalf("joint compact lost journal content:\n%s", content)
+	}
+}
+
+// TestHelpMeExecuteDegradesWhenJournalExtractionFails locks the degrade
+// contract: an extraction error never fails the helpme call; the rescue
+// falls back to the resolved self-reported brief with no journal anywhere.
+func TestHelpMeExecuteDegradesWhenJournalExtractionFails(t *testing.T) {
+	dir := t.TempDir()
+	sessionDir := filepath.Join(dir, "session")
+	client := &journalFakeStreamClient{failJournal: true, workerContent: "helper still ran"}
+	c := newHelpMeTestControlWithClient(t, dir, sessionDir, client)
+	env := &Env{AgentControl: c, SessionDir: sessionDir}
+
+	ctx := agent.ContextWithHistory(context.Background(), journalTestHistory)
+	response := executeHelpMeCtx(t, ctx, env, `{"reason":"stuck","ask":"find the real cause"}`)
+	rec, ok := c.HelpMeRecoveryForHelper(response.AgentID)
+	if !ok {
+		t.Fatal("recovery must still register when extraction fails")
+	}
+	if rec.ParentExecutionJournal != "" {
+		t.Fatalf("failed extraction must leave the journal empty, got %q", rec.ParentExecutionJournal)
+	}
+	if rec.Brief.OriginalGoal != "fix the flaky login test" {
+		t.Fatalf("degraded rescue must keep the resolved brief, got %+v", rec.Brief)
+	}
+}
+
+// TestHelpMeExecuteDegradesWhenJournalExtractionTimesOut proves the hard
+// wall-clock bound: a hanging extraction backend delays the call by at most
+// the timeout and then degrades, instead of wedging the rescue.
+func TestHelpMeExecuteDegradesWhenJournalExtractionTimesOut(t *testing.T) {
+	dir := t.TempDir()
+	sessionDir := filepath.Join(dir, "session")
+	client := &journalFakeStreamClient{blockJournal: true, workerContent: "helper still ran"}
+	c := newHelpMeTestControlWithClient(t, dir, sessionDir, client)
+	env := &Env{AgentControl: c, SessionDir: sessionDir}
+
+	restore := helpMeJournalTimeout
+	helpMeJournalTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { helpMeJournalTimeout = restore })
+
+	ctx := agent.ContextWithHistory(context.Background(), journalTestHistory)
+	start := time.Now()
+	response := executeHelpMeCtx(t, ctx, env, `{"reason":"stuck","ask":"find the real cause"}`)
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("helpme blocked far beyond the journal timeout: %v", elapsed)
+	}
+	rec, ok := c.HelpMeRecoveryForHelper(response.AgentID)
+	if !ok || rec.ParentExecutionJournal != "" {
+		t.Fatalf("timed-out extraction must degrade to an empty journal, got %+v ok=%v", rec, ok)
+	}
 }
 
 // TestHelpMeExecuteSurvivesTraceWriteFailure locks the audit downgrade: when

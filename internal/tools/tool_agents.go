@@ -323,14 +323,20 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	if reason == "" {
 		reason = "The main agent requested a fresh-context recovery."
 	}
+	// Machine-extract the parent's decision journal as the primary handoff
+	// carrier: the self-reported args carry the stuck agent's framing, the
+	// extraction does not. Bounded by a hard timeout; any failure degrades
+	// to the resolved-brief-only rescue and never fails the call.
+	journal := extractHelpMeParentJournal(ctx, t.env, history)
 	prompt := buildHelpMePrompt(helpMePromptInput{
-		Reason:               reason,
-		OriginalGoal:         originalGoal,
-		CurrentUnderstanding: strings.TrimSpace(args.CurrentUnderstanding),
-		Ask:                  ask,
-		FailedAttempts:       trimStringSlice(args.FailedAttempts),
-		Constraints:          trimStringSlice(args.Constraints),
-		Evidence:             trimStringSlice(args.Evidence),
+		Reason:                 reason,
+		OriginalGoal:           originalGoal,
+		ParentExecutionJournal: journal,
+		CurrentUnderstanding:   strings.TrimSpace(args.CurrentUnderstanding),
+		Ask:                    ask,
+		FailedAttempts:         trimStringSlice(args.FailedAttempts),
+		Constraints:            trimStringSlice(args.Constraints),
+		Evidence:               trimStringSlice(args.Evidence),
 	})
 
 	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
@@ -350,8 +356,9 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 	// side rebuilds the joint compact from it instead of re-parsing trace
 	// files, so the real user goal survives into the rewrite.
 	t.env.AgentControl.RegisterHelpMeRecovery(agentcontrol.HelpMeRecovery{
-		HelperID:   result.AgentID,
-		ParentPath: currentAgentPath(t.env),
+		HelperID:               result.AgentID,
+		ParentPath:             currentAgentPath(t.env),
+		ParentExecutionJournal: journal,
 		Brief: agentcontrol.HelpMeRecoveryBrief{
 			OriginalGoal:         originalGoal,
 			Ask:                  ask,
@@ -497,13 +504,14 @@ func decodeHelpMeStringList(raw json.RawMessage, field string) ([]string, error)
 }
 
 type helpMePromptInput struct {
-	Reason               string
-	OriginalGoal         string
-	CurrentUnderstanding string
-	Ask                  string
-	FailedAttempts       []string
-	Constraints          []string
-	Evidence             []string
+	Reason                 string
+	OriginalGoal           string
+	ParentExecutionJournal string
+	CurrentUnderstanding   string
+	Ask                    string
+	FailedAttempts         []string
+	Constraints            []string
+	Evidence               []string
 }
 
 func buildHelpMePrompt(input helpMePromptInput) string {
@@ -513,6 +521,12 @@ func buildHelpMePrompt(input helpMePromptInput) string {
 	b.WriteString("Your final message is the deliverable the requester continues from: state the outcome, what changed, what remains, and the verifiable evidence behind each load-bearing claim.\n\n")
 	writeHelpMePromptField(&b, "Why this handoff is needed", input.Reason)
 	writeHelpMePromptField(&b, "User goal", input.OriginalGoal)
+	if journal := strings.TrimSpace(input.ParentExecutionJournal); journal != "" {
+		b.WriteString("## Parent execution journal\n")
+		b.WriteString("Machine-extracted from the requester's transcript; more reliable than the self-reported fields below. Paths marked ruled out or low-confidence are negative knowledge - do not retry them without new evidence.\n\n")
+		b.WriteString(journal)
+		b.WriteString("\n\n")
+	}
 	writeHelpMePromptField(&b, "Current context", input.CurrentUnderstanding)
 	writeHelpMePromptList(&b, "Tried or low-confidence paths", input.FailedAttempts)
 	writeHelpMePromptList(&b, "Constraints to preserve", input.Constraints)
@@ -520,6 +534,38 @@ func buildHelpMePrompt(input helpMePromptInput) string {
 	writeHelpMePromptField(&b, "Task to complete", input.Ask)
 	b.WriteString("Work in the current workspace when inspection or changes are needed. If you change files, keep the change scoped and run the most relevant verification you can.\n")
 	return strings.TrimSpace(b.String())
+}
+
+// helpMeJournalTimeout is the hard wall-clock bound on the synchronous
+// parent-journal extraction inside a helpme call. On expiry the rescue
+// degrades to the resolved self-reported brief. A variable (not const) so
+// tests can shorten it.
+var helpMeJournalTimeout = 90 * time.Second
+
+// extractHelpMeParentJournal machine-extracts the parent's decision journal
+// using the worker runtime's default client and model. Every failure mode —
+// no runtime, no client, empty history, extraction error, timeout — degrades
+// to "" so the helpme call itself never fails because of the extraction.
+func extractHelpMeParentJournal(ctx context.Context, env *Env, history []providers.ChatMessage) string {
+	if env == nil || env.AgentControl == nil || len(history) == 0 {
+		return ""
+	}
+	defaults := env.AgentControl.Manager().RuntimeDefaults()
+	if defaults.Client == nil || strings.TrimSpace(defaults.Model) == "" {
+		return ""
+	}
+	jctx, cancel := context.WithTimeout(ctx, helpMeJournalTimeout)
+	defer cancel()
+	journal, err := compact.BuildHelpMeParentJournal(jctx, defaults.Client, defaults.Model, compact.Budget{
+		ContextTokens:       defaults.ContextWindow,
+		InputTokens:         defaults.MaxInputTokens,
+		OutputReserveTokens: defaults.OutputReserveTokens,
+	}, history)
+	if err != nil {
+		providers.DebugLogf("helpme: parent journal extraction degraded to self-reported brief: %v", err)
+		return ""
+	}
+	return journal
 }
 
 func writeHelpMePromptField(b *strings.Builder, label, value string) {
@@ -1059,30 +1105,31 @@ func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsRes
 	originalGoal := helpMeFirstNonEmpty(brief.OriginalGoal, "Continue the user's current coding task.")
 	ask := helpMeFirstNonEmpty(brief.Ask, originalGoal)
 	content := compact.BuildHelpMeJointCompactContent(compact.HelpMeJointCompactInput{
-		OriginalGoal:         originalGoal,
-		CurrentUnderstanding: brief.CurrentUnderstanding,
-		Ask:                  ask,
-		Reason:               reason,
-		Constraints:          brief.Constraints,
-		FailedAttempts:       brief.FailedAttempts,
-		Evidence:             parentEvidence,
-		HelperStatus:         agentResult.Status,
-		HelperAgentID:        agentResult.AgentID,
-		HelperAgentPath:      agentResult.AgentPath,
-		HelperResult:         agentResult.Result,
-		HelperResultPath:     agentResult.ResultPath,
-		HelperReportPath:     report.ReportPath,
-		HelperError:          agentResult.Error,
-		ReportOutcome:        report.Outcome,
-		ReportSummary:        report.Summary,
-		ChangedFiles:         report.ChangedFiles,
-		WorkDone:             report.WorkDone,
-		Blockers:             report.Blockers,
-		Risks:                helpMeRisks(report.Risks, reportOK),
-		Verification:         report.Verification,
-		ReportEvidence:       helpMeEvidenceStrings(report.Evidence),
-		NextSteps:            helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
-		Artifacts:            artifacts,
+		OriginalGoal:           originalGoal,
+		ParentExecutionJournal: recovery.ParentExecutionJournal,
+		CurrentUnderstanding:   brief.CurrentUnderstanding,
+		Ask:                    ask,
+		Reason:                 reason,
+		Constraints:            brief.Constraints,
+		FailedAttempts:         brief.FailedAttempts,
+		Evidence:               parentEvidence,
+		HelperStatus:           agentResult.Status,
+		HelperAgentID:          agentResult.AgentID,
+		HelperAgentPath:        agentResult.AgentPath,
+		HelperResult:           agentResult.Result,
+		HelperResultPath:       agentResult.ResultPath,
+		HelperReportPath:       report.ReportPath,
+		HelperError:            agentResult.Error,
+		ReportOutcome:          report.Outcome,
+		ReportSummary:          report.Summary,
+		ChangedFiles:           report.ChangedFiles,
+		WorkDone:               report.WorkDone,
+		Blockers:               report.Blockers,
+		Risks:                  helpMeRisks(report.Risks, reportOK),
+		Verification:           report.Verification,
+		ReportEvidence:         helpMeEvidenceStrings(report.Evidence),
+		NextSteps:              helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
+		Artifacts:              artifacts,
 	})
 	// Consume the recovery atomically: if another await applied it between
 	// the gate above and here, drop this rewrite instead of double-firing.
