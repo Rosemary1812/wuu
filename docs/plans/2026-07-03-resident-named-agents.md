@@ -26,7 +26,7 @@
 3. **收件是 inbox 语义，不是中断语义。** 消息以紧凑信封（envelope）进入 agent 的收件箱；agent 忙时信封排队，下个 turn 合并消费。不把整个房间的历史推进 context——"Signals it doesn't pull don't enter the working context; they stay queryable"（Raft 工程博客）。细节由 agent 用工具主动拉取。
 4. **群内每条消息都唤醒每个成员 agent 推理一次。** 这是刻意的（对齐 Raft 的实际行为）：agent 要能"注意到"没点名它的问题。成本由信封紧凑性、合批、hop 限制控制，不由"不唤醒"控制。
 5. **回复是带目标的显式动作。** 在哪回复、要不要回复，由 agent 自己判断并用工具显式表达（`post_message` 带目标 thread）。回不回、回在哪，不由"孵化它的那条消息在哪"被动决定。
-6. **两条硬规则，其余自由裁量。** (a) 被 DM 或被 @mention（addressed）：**应当回应**——要么实质回复，要么 `decline` 给一行理由。这是提示词层的强约束，**runtime 不代答**：不注入 synthetic decline，不伪造 agent 没有说过的话；runtime 只把"addressed 未回应"记为内部 telemetry 事件，供我们调优提示词和路由，不做成用户可见指标（§4.5）。(b) 未被点名的群聊消息：**只在真有增量价值时发言**，静默是合法结果，禁止附和、复读、"+1"。
+6. **两条硬规则，其余自由裁量。** (a) 被 DM 或被 @mention（addressed）：**应当回应**——要么实质回复，要么 `decline` 给一行理由。这是提示词层的强约束，**runtime 不代答**：不注入 synthetic decline，不伪造 agent 没有说过的话；runtime 只把"addressed 未回应"记为内部 telemetry 事件，供我们调优提示词和路由，不做成用户可见指标（§4.5）。(b) 未被点名的群聊消息，**按发送者（信封 `from`）分两类**：**用户对房间发话**（`from=user`，即便没 @ 你）——用户是在跟整个房间说话而非被你旁听到，直接的问候/提问（"有人吗""你们好""谁能看下…"）**理应有人应**，即使没被 @ 也别让用户对着空房间说话；简短回应即可，队友已答过的简单问题不必复读。**其他 agent 未点名你的转发**（`from=agent`）——视为 ambient 信息，**只在真有增量价值时发言**，静默是默认，禁止附和、复读、"+1"。（"用户对房间发话"允许多人自然响应；避免刷屏由提交期的乐观并发/让出机制收口，见 §4.5 待补的 held-draft，而非靠强制沉默。）
 7. **agent↔agent 消息走同一机制。** A 在群里发的 `post_message` 对其他成员 agent 生成同样的信封，无特权通道。防 ping-pong 用 hop 计数硬限制 + 提示词约束，双保险。
 8. **上下文膨胀的治理组合拳**：紧凑信封（只含单条新消息）+ 忙时合批 + `fetch_thread_messages` 按需拉取 + 常驻 thread 复用现有 compaction（`internal/compact`）+ `MEMORY.md` 作为跨 compaction 的持久层。不发明新的上下文管理机制。
 9. **不新建平行宇宙。** agent 的大脑就是它的 DM thread（复用全部现有 turn/history/compaction/fork/检视机制）；群聊就是现有 conversation thread + 成员关系。发现自己在写一个平行的 session 系统，就是走错了。
