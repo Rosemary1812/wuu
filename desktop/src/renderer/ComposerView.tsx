@@ -874,7 +874,21 @@ export function Composer({
             </button>
             <div className="composer-bar">
               <div className="composer-bar-left">
-                {variant === "hero" ? (
+                {chatFocusValue !== undefined && onSelectChatFocus ? (
+                  // Chat-style (DM/group) threads swap the project control
+                  // for the work-focus chip in the same leading slot. The
+                  // project pill / "打开项目" button switches the whole
+                  // app's project context — activating it from inside a DM
+                  // yanks the user out of the conversation — so it must
+                  // not render here at all, in either variant; the focus
+                  // chip is the only scope control a chat thread offers.
+                  <ChatFocusChip
+                    value={chatFocusValue}
+                    projects={projects}
+                    disabled={readOnly}
+                    onChange={onSelectChatFocus}
+                  />
+                ) : variant === "hero" ? (
                   <div className="hero-project-pill-anchor composer-project-control" ref={menuRef}>
                     <button
                       className="hero-project-pill"
@@ -974,14 +988,6 @@ export function Composer({
                     </FloatingMenuPortal>
                   ) : null}
                 </div>
-                {chatFocusValue !== undefined && onSelectChatFocus ? (
-                  <ChatFocusChip
-                    value={chatFocusValue}
-                    projects={projects}
-                    disabled={readOnly}
-                    onChange={onSelectChatFocus}
-                  />
-                ) : null}
               </div>
               <div className="composer-bar-right">
                 <ComposerTokenGauge

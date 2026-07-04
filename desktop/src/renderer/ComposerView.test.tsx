@@ -1425,6 +1425,53 @@ describe("Composer chat focus chip", () => {
   it("does not render at all for non-chat threads (chatFocusValue undefined)", () => {
     renderComposer({ projects });
     expect(container.querySelector(".chat-focus-chip")).toBeNull();
+    // The regular project control keeps its leading slot untouched.
+    expect(
+      container.querySelector(".composer-bar-left .composer-project-control"),
+    ).not.toBeNull();
+  });
+
+  it("replaces the dock '+ 打开项目' button and takes the leading slot in chat threads", () => {
+    renderComposer({
+      variant: "dock",
+      projects,
+      chatFocusValue: "",
+      onSelectChatFocus: vi.fn(),
+    });
+    const leftGroup = container.querySelector(".composer-bar-left");
+    // The old control switches the whole app's project context — it must
+    // not exist anywhere in a chat composer, not merely be out-ranked.
+    expect(leftGroup?.querySelector(".composer-project-control")).toBeNull();
+    expect(
+      container.querySelector("button[aria-label=\"打开项目\"]"),
+    ).toBeNull();
+    expect(
+      leftGroup?.firstElementChild?.classList.contains("chat-focus-menu-anchor"),
+    ).toBe(true);
+    expect(leftGroup?.querySelector(".chat-focus-chip")).not.toBeNull();
+  });
+
+  it("replaces the hero project pill and takes the leading slot in chat threads", () => {
+    renderComposer({
+      variant: "hero",
+      projects,
+      chatFocusValue: "",
+      onSelectChatFocus: vi.fn(),
+    });
+    const leftGroup = container.querySelector(".composer-bar-left");
+    expect(container.querySelector(".hero-project-pill")).toBeNull();
+    expect(container.querySelector(".hero-project-pill-anchor")).toBeNull();
+    expect(leftGroup?.querySelector(".composer-project-control")).toBeNull();
+    expect(
+      leftGroup?.firstElementChild?.classList.contains("chat-focus-menu-anchor"),
+    ).toBe(true);
+    expect(leftGroup?.querySelector(".chat-focus-chip")).not.toBeNull();
+  });
+
+  it("keeps the hero project pill for non-chat hero composers", () => {
+    renderComposer({ variant: "hero", projects });
+    expect(container.querySelector(".hero-project-pill")).not.toBeNull();
+    expect(container.querySelector(".chat-focus-chip")).toBeNull();
   });
 
   it("renders the default (全部工作区) state as a bare icon with no visible label", () => {
