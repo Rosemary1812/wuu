@@ -202,6 +202,106 @@ func removeThreadMemberForTest(t *testing.T, srv *Server, reqID, threadID, parti
 	return responseByID(t, msgs, reqID)
 }
 
+func addThreadMemberForTest(t *testing.T, srv *Server, reqID, threadID, participantID string) map[string]any {
+	t.Helper()
+	raw := fmt.Sprintf(`{"id":%q,"method":"thread/members/add","params":{"thread_id":%q,"participant_id":%q}}`, reqID, threadID, participantID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/members/add: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	return responseByID(t, msgs, reqID)
+}
+
+func TestThreadMembersAddAddsGroupMember(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+
+	resp := addThreadMemberForTest(t, srv, "add", group.ID, bea)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/members/add returned error: %v", errMsg)
+	}
+	thread := remarshal[ThreadMembersAddResult](t, resp["result"]).Thread
+	if len(thread.Members) != 2 || thread.Members[0].ID != ivy || thread.Members[1].ID != bea {
+		t.Fatalf("expected result thread members to include Ivy and Bea, got %+v", thread.Members)
+	}
+	members, err := session.ListThreadMembers(rt.SessionDir, group.ID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers: %v", err)
+	}
+	if len(members) != 2 || members[0] != ivy || members[1] != bea {
+		t.Fatalf("expected persisted members to include Ivy and Bea, got %+v", members)
+	}
+}
+
+func TestThreadMembersAddIsIdempotent(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+
+	resp := addThreadMemberForTest(t, srv, "add-existing", group.ID, ivy)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/members/add existing member returned error: %v", errMsg)
+	}
+	thread := remarshal[ThreadMembersAddResult](t, resp["result"]).Thread
+	if len(thread.Members) != 1 || thread.Members[0].ID != ivy {
+		t.Fatalf("expected result thread members to stay as Ivy, got %+v", thread.Members)
+	}
+}
+
+func TestThreadMembersAddRejectsAllChannel(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+
+	allID, err := srv.ensureAllChannel()
+	if err != nil {
+		t.Fatalf("ensureAllChannel: %v", err)
+	}
+
+	resp := addThreadMemberForTest(t, srv, "add-all", allID, ivy)
+	errMsg, ok := resp["error"]
+	if !ok {
+		t.Fatalf("expected error adding a member to #all, got: %+v", resp)
+	}
+	errStr := fmt.Sprint(errMsg)
+	if !strings.Contains(errStr, "all channel") {
+		t.Fatalf("error should mention the all channel, got %q", errStr)
+	}
+}
+
+func TestThreadMembersAddRejectsMemberCap(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	for i := 0; i < maxGroupMembers; i++ {
+		id := saveNamedParticipant(t, rt, fmt.Sprintf("Member %d", i), "reviewer", "")
+		if err := session.AddThreadMember(rt.SessionDir, group.ID, id); err != nil {
+			t.Fatalf("AddThreadMember %d: %v", i, err)
+		}
+	}
+	overflow := saveNamedParticipant(t, rt, "Overflow", "reviewer", "")
+
+	resp := addThreadMemberForTest(t, srv, "add-overflow", group.ID, overflow)
+	errMsg, ok := resp["error"]
+	if !ok {
+		t.Fatalf("expected error adding beyond member cap, got: %+v", resp)
+	}
+	errStr := fmt.Sprint(errMsg)
+	if !strings.Contains(errStr, "max 8") {
+		t.Fatalf("error should mention the member cap, got %q", errStr)
+	}
+}
+
 func TestThreadMembersRemoveRemovesGroupMember(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})

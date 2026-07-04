@@ -1617,6 +1617,10 @@ export type WuuDesktopApi = {
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
+  addThreadMember: (
+    threadId: string,
+    participantId: string,
+  ) => Promise<{ thread: Thread }>;
   removeThreadMember: (
     threadId: string,
     participantId: string,

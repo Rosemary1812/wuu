@@ -270,6 +270,65 @@ func (s *Server) threadMemberIDsForGroup(threadID string, group bool, title stri
 	return session.ListThreadMembers(s.rt.SessionDir, threadID)
 }
 
+// handleThreadMembersAdd implements `thread/members/add`: the user adds a
+// named participant to a group thread's explicit roster. The #all channel is
+// rejected because its membership is implicit — the entire named roster,
+// with no thread_members rows to add. The result thread is wrapped through
+// threadWithGroupMembers (via threadAfterMetadataUpdate →
+// threadWithChildAgents) so the frontend member list updates from the
+// response instead of going stale.
+func (s *Server) handleThreadMembersAdd(req Request) error {
+	var params ThreadMembersMutationParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	threadID := strings.TrimSpace(params.ThreadID)
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	participantID := strings.TrimSpace(params.ParticipantID)
+	if participantID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("participant_id is required"))
+	}
+	meta, ok, err := session.Find(s.rt.SessionDir, threadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !ok {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("%w: %q", session.ErrSessionNotFound, threadID))
+	}
+	if !meta.Group {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q is not a group thread", threadID))
+	}
+	if isAllChannelThread(meta.Group, meta.Title) {
+		return s.writeResponse(req.ID, nil, errors.New("the all channel includes every named agent; members cannot be added"))
+	}
+	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	for _, memberID := range members {
+		if strings.TrimSpace(memberID) == participantID {
+			thread, err := s.threadAfterMetadataUpdate(meta)
+			if err != nil {
+				return s.writeResponse(req.ID, nil, err)
+			}
+			return s.writeResponse(req.ID, ThreadMembersAddResult{Thread: thread}, nil)
+		}
+	}
+	if len(members) >= maxGroupMembers {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has %d members (max %d)", threadID, len(members), maxGroupMembers))
+	}
+	if err := session.AddThreadMember(s.rt.SessionDir, threadID, participantID); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread, err := s.threadAfterMetadataUpdate(meta)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, ThreadMembersAddResult{Thread: thread}, nil)
+}
+
 // handleThreadMembersRemove implements `thread/members/remove`: the user
 // removes a named participant from a group thread's explicit roster. The
 // #all channel is rejected because its membership is implicit — the entire
@@ -278,7 +337,7 @@ func (s *Server) threadMemberIDsForGroup(threadID string, group bool, title stri
 // threadWithChildAgents) so the frontend member chips update from the
 // response instead of going stale.
 func (s *Server) handleThreadMembersRemove(req Request) error {
-	var params ThreadMembersRemoveParams
+	var params ThreadMembersMutationParams
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}

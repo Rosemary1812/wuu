@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { InitializeResult } from "../shared/protocol";
+import type { InitializeResult, Thread } from "../shared/protocol";
 import { initialState, type AppState } from "./AppState";
 import { EnvironmentSideStack } from "./EnvironmentSideStack";
 
@@ -48,18 +48,38 @@ function initialized(): InitializeResult {
   };
 }
 
-function renderStack(): void {
+function groupThread(): Thread {
+  return {
+    id: "thread-group",
+    preview: "讨论群聊信息",
+    title: "前端小队",
+    model_provider: "test",
+    model: "test-model",
+    cwd: "/repo",
+    status: "idle",
+    group: true,
+    created_at: "2026-07-04T00:00:00Z",
+    updated_at: "2026-07-04T00:00:00Z",
+    turns: [],
+    members: [
+      { id: "participant-1", name: "小青", kind: "named", role: "评审" },
+    ],
+  };
+}
+
+function renderStack(stateOverrides: Partial<AppState> = {}): void {
   const state: AppState = {
     ...initialState,
     initialized: initialized(),
+    ...stateOverrides,
   };
 
   act(() => {
     root = createRoot(container);
     root.render(
       <EnvironmentSideStack
-        visible
-        mounted
+        visible={true}
+        mounted={true}
         state={state}
         panelRef={createRef<HTMLDivElement>()}
         closing={false}
@@ -74,6 +94,9 @@ function renderStack(): void {
         onOpenReview={() => {}}
         onOpenCommit={() => {}}
         onOpenPullRequest={() => {}}
+        participants={[
+          { id: "participant-1", name: "小青", kind: "named", role: "评审" },
+        ]}
       />,
     );
   });
@@ -93,5 +116,14 @@ describe("EnvironmentSideStack", () => {
 
     expect(rule).toContain("overflow: visible");
     expect(rule).not.toContain("overflow: hidden");
+  });
+
+  it("renders group info instead of session environment rows for group threads", () => {
+    renderStack({ thread: groupThread() });
+
+    expect(container.querySelector(".group-info-panel")).not.toBeNull();
+    expect(container.textContent).toContain("群聊信息");
+    expect(container.textContent).toContain("#前端小队");
+    expect(container.textContent).not.toContain("创建拉取请求");
   });
 });

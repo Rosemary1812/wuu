@@ -164,62 +164,6 @@
   text-decoration: underline;
 }
 
-/* Group-thread member chips row rendered directly under the titlebar.
- * The × removal affordance stays invisible until the member item is
- * hovered or the button itself is focused. */
-.thread-members-bar {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--paper);
-}
-
-.thread-members-item {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 2px;
-}
-
-.thread-members-remove {
-  appearance: none;
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--ink-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 120ms ease, background-color 120ms ease;
-}
-
-.thread-members-item:hover .thread-members-remove,
-.thread-members-remove:focus-visible {
-  opacity: 1;
-}
-
-.thread-members-remove:hover,
-.thread-members-remove:focus-visible {
-  background: var(--surface-2);
-  color: var(--ink);
-  outline: 0;
-}
-
-.thread-members-remove svg {
-  width: 12px;
-  height: 12px;
-  stroke-width: var(--icon-stroke);
-}
-
 .participant-decline-line {
   margin: 4px 0 18px;
   color: var(--ink-muted);

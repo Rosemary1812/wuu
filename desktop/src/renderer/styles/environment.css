@@ -169,6 +169,240 @@
   overflow: auto;
 }
 
+.group-info-panel-body {
+  gap: 14px;
+  padding: 2px 2px 4px;
+}
+
+.group-info-summary {
+  display: grid;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-3);
+  padding: 2px 4px 14px;
+}
+
+.group-info-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.group-info-field > span,
+.group-info-members-heading span {
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+.group-info-field strong {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+}
+
+.group-info-field p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.group-info-members {
+  display: grid;
+  min-height: 0;
+  gap: 8px;
+}
+
+.group-info-members-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.group-info-members-heading h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+}
+
+.group-info-add-button,
+.group-info-remove-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.group-info-add-button {
+  width: 28px;
+  height: 28px;
+}
+
+.group-info-add-button:hover:not(:disabled),
+.group-info-add-button:focus-visible {
+  background: var(--surface-2);
+  color: var(--ink);
+  outline: 0;
+}
+
+.group-info-add-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.group-info-add-list {
+  display: grid;
+  gap: 2px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  padding: 4px;
+}
+
+.group-info-add-row,
+.group-info-member-row {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.group-info-add-row {
+  grid-template-columns: 16px 28px minmax(0, 1fr);
+  min-height: 38px;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+
+.group-info-add-row:hover:not(:disabled),
+.group-info-add-row:focus-visible,
+.group-info-member-row:hover {
+  background: var(--surface-2);
+  outline: 0;
+}
+
+.group-info-add-row:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.group-info-add-row span,
+.group-info-member-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.group-info-add-row strong,
+.group-info-member-text strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-info-add-row em,
+.group-info-member-text em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-info-member-list {
+  display: grid;
+  min-height: 0;
+  gap: 2px;
+  overflow: auto;
+}
+
+.group-info-member-row {
+  grid-template-columns: 28px minmax(0, 1fr) 24px;
+  min-height: 42px;
+  padding: 6px 4px;
+}
+
+.group-info-avatar {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--ink);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+}
+
+.group-info-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.group-info-remove-button {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+
+.group-info-member-row:hover .group-info-remove-button,
+.group-info-remove-button:focus-visible {
+  opacity: 1;
+}
+
+.group-info-remove-button:hover,
+.group-info-remove-button:focus-visible {
+  background: var(--surface-3);
+  color: var(--ink);
+  outline: 0;
+}
+
+.group-info-add-button svg,
+.group-info-remove-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.group-info-empty {
+  border-radius: var(--radius-sm);
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  padding: 12px 4px;
+}
+
 @keyframes environment-plan-item-in {
   from {
     opacity: 0;

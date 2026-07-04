@@ -54,6 +54,7 @@ const (
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
 	MethodThreadDelete             = "thread/delete"
+	MethodThreadMembersAdd         = "thread/members/add"
 	MethodThreadMembersRemove      = "thread/members/remove"
 	MethodWorkspaceStateCleanup    = "workspace/state/cleanup"
 	MethodParticipantStart         = "participant/start"
@@ -65,23 +66,23 @@ const (
 	// Memory panel RPCs (设置 → 记忆). Wire contract fixed ahead of
 	// implementation by docs/plans/2026-07-04-memory-redesign.md §8.2 and
 	// mirrored field-for-field by desktop/src/shared/protocol.ts.
-	MethodMemoryOverview           = "memory/overview"
-	MethodMemoryChat               = "memory/chat"
-	MethodMemoryRead               = "memory/read"
-	MethodTurnStart                = "turn/start"
-	MethodTurnQueue                = "turn/queue"
-	MethodTurnUpdateQueued         = "turn/update-queued"
-	MethodTurnDequeue              = "turn/dequeue"
-	MethodTurnSteer                = "turn/steer"
-	MethodTurnUnsteer              = "turn/unsteer"
-	MethodTurnInterrupt            = "turn/interrupt"
-	MethodProcessList              = "process/list"
-	MethodProcessStop              = "process/stop"
-	MethodMCPList                  = "mcp/list"
-	MethodMCPConnect               = "mcp/connect"
-	MethodMCPDisconnect            = "mcp/disconnect"
-	MethodMCPRefresh               = "mcp/refresh"
-	MethodShutdown                 = "shutdown"
+	MethodMemoryOverview   = "memory/overview"
+	MethodMemoryChat       = "memory/chat"
+	MethodMemoryRead       = "memory/read"
+	MethodTurnStart        = "turn/start"
+	MethodTurnQueue        = "turn/queue"
+	MethodTurnUpdateQueued = "turn/update-queued"
+	MethodTurnDequeue      = "turn/dequeue"
+	MethodTurnSteer        = "turn/steer"
+	MethodTurnUnsteer      = "turn/unsteer"
+	MethodTurnInterrupt    = "turn/interrupt"
+	MethodProcessList      = "process/list"
+	MethodProcessStop      = "process/stop"
+	MethodMCPList          = "mcp/list"
+	MethodMCPConnect       = "mcp/connect"
+	MethodMCPDisconnect    = "mcp/disconnect"
+	MethodMCPRefresh       = "mcp/refresh"
+	MethodShutdown         = "shutdown"
 	// MethodSettingsUsage returns the aggregated per-provider/model token
 	// usage snapshot for the desktop settings page. Range filter selects
 	// the time window ("all", "7d", "30d", "90d"); empty defaults to "all".
@@ -1008,14 +1009,18 @@ type WorkspaceStateCleanupResult struct {
 	MemoryArchived bool `json:"memory_archived"`
 }
 
-// ThreadMembersRemoveParams is the input for the `thread/members/remove`
-// method: the user removes a named participant from a group thread's
-// explicit roster. Only group threads with explicit thread_members rows are
-// eligible — the #all channel's membership is implicit (every named
-// participant) and is rejected.
-type ThreadMembersRemoveParams struct {
+// ThreadMembersMutationParams is the input for the user-owned
+// `thread/members/add` and `thread/members/remove` methods. Only group
+// threads with explicit thread_members rows are eligible — the #all
+// channel's membership is implicit (every named participant) and is
+// rejected.
+type ThreadMembersMutationParams struct {
 	ThreadID      string `json:"thread_id"`
 	ParticipantID string `json:"participant_id"`
+}
+
+type ThreadMembersAddResult struct {
+	Thread Thread `json:"thread"`
 }
 
 type ThreadMembersRemoveResult struct {

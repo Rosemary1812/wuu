@@ -44,6 +44,7 @@ import type {
   GitStatusResult,
   InitializeResult,
   ParticipantProfile,
+  ParticipantSummary,
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
@@ -90,6 +91,7 @@ import { ComposerTokenGauge } from "./ComposerTokenGauge";
 import { ComposerContextMeter } from "./ComposerContextMeter";
 import type { TurnContextUsage } from "./AppState";
 import type { ComposerGoalSummary } from "../shared/protocol";
+import { GroupMembersCapsule } from "./GroupMembersCapsule";
 
 type CollapsedComposerPromptBlock = {
   id: string;
@@ -184,7 +186,9 @@ export function Composer({
   queryHistory = [],
   participants = [],
   chatFocusValue,
-  onSelectChatFocus
+  onSelectChatFocus,
+  groupMembers,
+  onOpenGroupInfo
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -267,6 +271,8 @@ export function Composer({
   // state (App.tsx chatFocusOverrides + Thread.focus_workspace echo).
   chatFocusValue?: string;
   onSelectChatFocus?: (value: string) => void;
+  groupMembers?: ParticipantSummary[];
+  onOpenGroupInfo?: () => void;
 }): JSX.Element {
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
@@ -995,6 +1001,12 @@ export function Composer({
                     </FloatingMenuPortal>
                   ) : null}
                 </div>
+                {groupMembers ? (
+                  <GroupMembersCapsule
+                    members={groupMembers}
+                    onOpen={onOpenGroupInfo}
+                  />
+                ) : null}
               </div>
               <div className="composer-bar-right">
                 <ComposerTokenGauge

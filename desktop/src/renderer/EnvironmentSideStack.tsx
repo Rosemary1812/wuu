@@ -1,11 +1,16 @@
 import type { RefObject } from "react";
-import type { Agent, PlanUpdate } from "../shared/protocol";
-import type { AppState } from "./AppState";
+import type {
+  Agent,
+  ParticipantProfile,
+  PlanUpdate,
+} from "../shared/protocol";
+import { activeThreadForState, isGroupThread, type AppState } from "./AppState";
 import {
   EnvironmentPanel,
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
+import { GroupInfoPanel } from "./GroupInfoPanel";
 
 export type SubagentRowSummary = Pick<
   Agent,
@@ -50,6 +55,9 @@ export function EnvironmentSideStack({
   onToggleSubagentPinned,
   onArchiveSubagent,
   onClearSubagentArchiveConfirm,
+  participants = [],
+  onAddThreadMember,
+  onRemoveThreadMember,
 }: {
   visible: boolean;
   mounted: boolean;
@@ -92,9 +100,45 @@ export function EnvironmentSideStack({
   onToggleSubagentPinned?: (agent: SubagentRowSummary) => void;
   onArchiveSubagent?: (agent: SubagentRowSummary) => void;
   onClearSubagentArchiveConfirm?: (agentID: string) => void;
+  participants?: ParticipantProfile[];
+  onAddThreadMember?: (
+    threadID: string,
+    participantID: string,
+  ) => Promise<void> | void;
+  onRemoveThreadMember?: (
+    threadID: string,
+    participantID: string,
+  ) => Promise<void> | void;
 }): JSX.Element | null {
   if ((!visible && !mounted) || !state.initialized) {
     return null;
+  }
+
+  const thread = activeThreadForState(state);
+  if (thread && isGroupThread(thread)) {
+    return (
+      <div className="environment-side-stack">
+        <GroupInfoPanel
+          panelRef={panelRef}
+          motionState={closing ? "closing" : motionState}
+          thread={thread}
+          members={thread.members ?? []}
+          participants={participants}
+          onClose={onClose}
+          onAddMember={
+            onAddThreadMember
+              ? (participantID) => onAddThreadMember(thread.id, participantID)
+              : undefined
+          }
+          onRemoveMember={
+            onRemoveThreadMember
+              ? (participantID) =>
+                  onRemoveThreadMember(thread.id, participantID)
+              : undefined
+          }
+        />
+      </div>
+    );
   }
 
   return (

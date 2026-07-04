@@ -273,7 +273,6 @@ import {
 import { ApprovalGalleryPanel } from "./ApprovalGalleryPanel";
 import { ChipGalleryPanel } from "./ChipGalleryPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
-import { ThreadMembersBar } from "./ThreadMembersBar";
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
   isRecord,
@@ -933,6 +932,7 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const activeThreadIsGroup = Boolean(activeThread && isGroupThread(activeThread));
   const composerInitialized = useMemo(
     () =>
       initializedForSelectedPermissionMode(
@@ -3775,6 +3775,10 @@ export function App(): JSX.Element {
             [threadID]: value,
           }));
         }}
+        groupMembers={
+          activeThreadIsGroup ? (activeThread?.members ?? []) : undefined
+        }
+        onOpenGroupInfo={openEnvironmentPanel}
       />
     );
   }
@@ -4672,6 +4676,10 @@ export function App(): JSX.Element {
       closeEnvironmentPanel({ dismissed: true });
       return;
     }
+    openEnvironmentPanel();
+  }
+
+  function openEnvironmentPanel(): void {
     setEnvironmentPanelOpen(true);
     setEnvironmentPanelDismissed(false);
     setRuntimeMenuOpen(false);
@@ -6166,6 +6174,32 @@ export function App(): JSX.Element {
         ...current,
         status:
           error instanceof Error ? error.message : "remove thread member failed",
+      }));
+    }
+  }
+
+  async function addThreadMemberByID(
+    threadID: string,
+    participantID: string,
+  ): Promise<void> {
+    try {
+      const result = await window.wuu.addThreadMember(threadID, participantID);
+      updateCachedSidebarThread(result.thread);
+      setState((current) => ({
+        ...current,
+        thread: current.thread?.id === threadID ? result.thread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === threadID
+            ? result.thread
+            : current.secondaryThread,
+        threads: upsertThread(current.threads, result.thread),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "add thread member failed",
       }));
     }
   }
@@ -7822,7 +7856,13 @@ export function App(): JSX.Element {
               className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
               type="button"
               aria-label={
-                environmentPanelVisible ? "隐藏环境信息" : "显示环境信息"
+                environmentPanelVisible
+                  ? activeThreadIsGroup
+                    ? "隐藏群聊信息"
+                    : "隐藏环境信息"
+                  : activeThreadIsGroup
+                    ? "显示群聊信息"
+                    : "显示环境信息"
               }
               aria-pressed={environmentPanelVisible}
               onClick={toggleEnvironmentPanel}
@@ -7840,18 +7880,6 @@ export function App(): JSX.Element {
             </button>
           </div>
         </header>
-
-        {state.thread?.members?.length ? (
-          <ThreadMembersBar
-            members={state.thread.members}
-            onRemove={(participantId) => {
-              const threadID = state.thread?.id;
-              if (threadID) {
-                void removeThreadMemberByID(threadID, participantId);
-              }
-            }}
-          />
-        ) : null}
 
         <ConversationTurnRail
           turns={turns}
@@ -7906,6 +7934,13 @@ export function App(): JSX.Element {
             setArchiveConfirmSubagentID((current) =>
               current === id ? undefined : current,
             )
+          }
+          participants={participants}
+          onAddThreadMember={(threadID, participantID) =>
+            addThreadMemberByID(threadID, participantID)
+          }
+          onRemoveThreadMember={(threadID, participantID) =>
+            removeThreadMemberByID(threadID, participantID)
           }
         />
 

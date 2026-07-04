@@ -755,6 +755,14 @@ app.whenReady().then(async () => {
     }),
   );
   ipcMain.handle(
+    "wuu:thread-members-add",
+    (_event, threadId: string, participantId: string) =>
+      appServerClientPool.request<{ thread: Thread }>("thread/members/add", {
+        thread_id: threadId,
+        participant_id: participantId,
+      }),
+  );
+  ipcMain.handle(
     "wuu:thread-members-remove",
     (_event, threadId: string, participantId: string) =>
       appServerClientPool.request<{ thread: Thread }>("thread/members/remove", {
