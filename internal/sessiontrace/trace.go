@@ -38,9 +38,6 @@ type TurnRecord struct {
 	APIModel            string              `json:"api_model,omitempty"`
 	ModelProfile        *ModelProfileRecord `json:"model_profile,omitempty"`
 	PermissionMode      string              `json:"permission_mode,omitempty"`
-	PermissionProfile   string              `json:"permission_profile,omitempty"`
-	ApprovalPolicy      string              `json:"approval_policy,omitempty"`
-	ApprovalsReviewer   string              `json:"approvals_reviewer,omitempty"`
 	StartedAt           *time.Time          `json:"started_at,omitempty"`
 	CompletedAt         *time.Time          `json:"completed_at,omitempty"`
 	DurationMS          *int64              `json:"duration_ms,omitempty"`
@@ -308,7 +305,6 @@ type ToolPolicyBlockSummary struct {
 	Risk            string `json:"risk,omitempty"`
 	ErrorKind       string `json:"error_kind,omitempty"`
 	ArgumentsSHA256 string `json:"arguments_sha256,omitempty"`
-	ApprovalRef     string `json:"approval_ref,omitempty"`
 	RevisionBefore  string `json:"revision_before,omitempty"`
 	ModelNextAction string `json:"model_next_action,omitempty"`
 }
@@ -597,18 +593,8 @@ func toolResultActionKey(toolName, action string) string {
 func (summary *ReplaySummary) addToolPolicyBlock(record tools.ToolExecutionRecord) {
 	action := strings.TrimSpace(string(record.PolicyAction))
 	errorKind := strings.TrimSpace(record.ErrorKind)
-	autoModeBlocked := record.PolicyAction == tools.ToolPolicyAutoClassify &&
-		(errorKind == "auto_mode_denied" ||
-			errorKind == "auto_classifier_unavailable" ||
-			errorKind == "auto_classifier_error")
 	if record.PolicyAction != tools.ToolPolicyDeny &&
-		record.PolicyAction != tools.ToolPolicyRequireApproval &&
-		!autoModeBlocked &&
-		errorKind != "policy_denied" &&
-		errorKind != "approval_required" &&
-		errorKind != "auto_mode_denied" &&
-		errorKind != "auto_classifier_unavailable" &&
-		errorKind != "auto_classifier_error" {
+		errorKind != "boundary_denied" {
 		return
 	}
 	toolName := strings.TrimSpace(record.Name)
@@ -626,7 +612,6 @@ func (summary *ReplaySummary) addToolPolicyBlock(record tools.ToolExecutionRecor
 		Risk:            strings.TrimSpace(string(record.Risk)),
 		ErrorKind:       errorKind,
 		ArgumentsSHA256: strings.TrimSpace(record.ArgumentsSHA256),
-		ApprovalRef:     strings.TrimSpace(record.ApprovalRef),
 		RevisionBefore:  strings.TrimSpace(record.RevisionBefore),
 		ModelNextAction: modelNextActionForPolicyBlock(record.PolicyAction, errorKind),
 	})
@@ -634,12 +619,8 @@ func (summary *ReplaySummary) addToolPolicyBlock(record tools.ToolExecutionRecor
 
 func modelNextActionForPolicyBlock(action tools.ToolPolicyAction, errorKind string) string {
 	switch {
-	case action == tools.ToolPolicyRequireApproval || errorKind == "approval_required":
-		return "ask the user for approval or choose a lower-risk alternative"
-	case action == tools.ToolPolicyAutoClassify || errorKind == "auto_mode_denied" || errorKind == "auto_classifier_unavailable" || errorKind == "auto_classifier_error":
-		return "ask the user for approval or choose a lower-risk alternative"
-	case action == tools.ToolPolicyDeny || errorKind == "policy_denied":
-		return "choose a lower-risk tool or explain that policy blocks the requested action"
+	case action == tools.ToolPolicyDeny || errorKind == "boundary_denied":
+		return "explain the workspace boundary denial or use a path/action inside the allowed boundary"
 	default:
 		return ""
 	}

@@ -289,8 +289,8 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				Kind:            "shell",
 				Risk:            "high",
 				PolicyAction:    "deny",
-				PolicyReason:    "risk policy",
-				ErrorKind:       "policy_denied",
+				PolicyReason:    "workspace boundary",
+				ErrorKind:       "boundary_denied",
 				ArgumentsSHA256: strings.Repeat("c", 64),
 				RevisionBefore:  "rev-before",
 				Success:         false,
@@ -299,11 +299,10 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				CallID:          "call-process",
 				Kind:            "process",
 				Risk:            "high",
-				PolicyAction:    "require_approval",
-				PolicyReason:    "risk policy",
-				ErrorKind:       "approval_required",
+				PolicyAction:    "deny",
+				PolicyReason:    "workspace boundary",
+				ErrorKind:       "boundary_denied",
 				ArgumentsSHA256: strings.Repeat("d", 64),
-				ApprovalRef:     "/tmp/state/sessions/eval-task-1/approvals/call-process.json",
 				RevisionBefore:  "rev-before",
 				Success:         false,
 			}},
@@ -357,12 +356,10 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	}
 	if summary.ToolSummary.ByKind["file"] != 3 ||
 		summary.ToolSummary.ByRisk["high"] != 3 ||
-		summary.ToolSummary.ByPolicyAction["deny"] != 1 ||
-		summary.ToolSummary.ByPolicyAction["require_approval"] != 1 ||
+		summary.ToolSummary.ByPolicyAction["deny"] != 2 ||
 		summary.ToolSummary.ByResultAction["apply_patch:apply"] != 1 ||
 		summary.ToolSummary.ByResultAction["run_shell:restore"] != 1 ||
-		summary.ToolSummary.ByErrorKind["policy_denied"] != 1 ||
-		summary.ToolSummary.ByErrorKind["approval_required"] != 1 {
+		summary.ToolSummary.ByErrorKind["boundary_denied"] != 2 {
 		t.Fatalf("replay tool summary missing dimensions: %+v", summary.ToolSummary)
 	}
 	if len(summary.ToolSummary.PolicyBlocks) != 2 {
@@ -371,18 +368,18 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if block := summary.ToolSummary.PolicyBlocks[0]; block.ToolName != "run_shell" ||
 		block.CallID != "call-shell" ||
 		block.PolicyAction != "deny" ||
-		block.PolicyReason != "risk policy" ||
-		block.ErrorKind != "policy_denied" ||
+		block.PolicyReason != "workspace boundary" ||
+		block.ErrorKind != "boundary_denied" ||
 		block.ArgumentsSHA256 != strings.Repeat("c", 64) ||
 		block.RevisionBefore != "rev-before" ||
-		!strings.Contains(block.ModelNextAction, "lower-risk tool") {
+		!strings.Contains(block.ModelNextAction, "workspace boundary") {
 		t.Fatalf("deny policy block missing replay detail: %+v", block)
 	}
 	if block := summary.ToolSummary.PolicyBlocks[1]; block.ToolName != "start_process" ||
-		block.PolicyAction != "require_approval" ||
-		block.ApprovalRef != "/tmp/state/sessions/eval-task-1/approvals/call-process.json" ||
-		!strings.Contains(block.ModelNextAction, "approval") {
-		t.Fatalf("approval policy block missing replay detail: %+v", block)
+		block.PolicyAction != "deny" ||
+		block.ErrorKind != "boundary_denied" ||
+		!strings.Contains(block.ModelNextAction, "workspace boundary") {
+		t.Fatalf("boundary policy block missing replay detail: %+v", block)
 	}
 	if len(summary.ToolSummary.RepeatedArguments) != 1 ||
 		summary.ToolSummary.RepeatedArguments[0].ToolName != "read_file" ||

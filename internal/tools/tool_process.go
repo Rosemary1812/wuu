@@ -73,19 +73,9 @@ func (t *StartProcessTool) ValidateInput(argsJSON string) error {
 	return nil
 }
 
-func (t *StartProcessTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return nil
-	}
-	return []ToolPermissionRequest{shellPermissionRequest("start_process", args.Command)}
-}
-
 func (t *StartProcessTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "start_process", Description: "Start a managed background OS process. Use this instead of run_shell or shell '&' for dev servers, watch modes, and other long-lived commands. Commands that dump environment variables or touch sensitive credential paths are rejected unless full access is active.",
+		Name: "start_process", Description: "Start a managed background OS process. Use this instead of run_shell or shell '&' for dev servers, watch modes, and other long-lived commands.",
 		InputSchema: objectSchema(
 			map[string]any{
 				"command":    stringSchema("Command to run. Do not append '&'; this tool already keeps the process in the background."),
@@ -118,26 +108,6 @@ func (t *StartProcessTool) Execute(ctx context.Context, argsJSON string) (string
 	}
 	if args.Command == "" {
 		return "", errors.New("start_process requires command")
-	}
-	if !t.env.BypassToolHardProtections() {
-		if shellCommandInvokesGit(args.Command) {
-			return "", errors.New("start_process refuses to execute git commands because git operations should be short-lived and non-interactive. Use bash action=run for normal git status/diff/log/add/commit workflows: error_kind=unsupported_tool_path model_next_action=\"retry with bash action=run for short-lived git\"")
-		}
-		if shellCommandUsesUnsupportedWrapper(args.Command) {
-			return "", errors.New("start_process refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-		}
-		if shellCommandDumpsEnvironment(args.Command) {
-			return "", errors.New("start_process refuses to print process environment variables because they may contain secrets")
-		}
-		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-			return "", errors.New("start_process refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
-		}
-		if shellCommandInvokesDestructiveCommand(args.Command) {
-			return "", errors.New("start_process refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-		}
-		if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
-			return "", errors.New("start_process refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
-		}
 	}
 	args.OwnerKind = defaultProcessOwnerKind(t.env, args.OwnerKind)
 	if strings.TrimSpace(args.OwnerID) == "" {

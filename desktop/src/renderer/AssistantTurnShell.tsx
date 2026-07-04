@@ -8,7 +8,6 @@ import {
   useState,
 } from "react";
 import type {
-  PendingToolApproval,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
@@ -25,7 +24,6 @@ import { turnEventForItem } from "./TurnEvents";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
 import { formatDuration, useLiveNow } from "./TurnProgress";
 import { ProcessSurface } from "./ProcessSurface";
-import { ToolApprovalCard } from "./ToolApprovalCard";
 import {
   turnHasAssistantOutput,
   turnProgressContent,
@@ -62,10 +60,6 @@ export function AssistantTurnShell({
   onForkMessage,
   onCollapseComplete,
   onNoticeAction,
-  pendingApproval,
-  onApproveTool,
-  onApproveToolForSession,
-  onDenyTool,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -79,10 +73,6 @@ export function AssistantTurnShell({
   onForkMessage?: (turnID: string, itemID: string) => void;
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
-  pendingApproval?: PendingToolApproval;
-  onApproveTool?: () => void;
-  onApproveToolForSession?: () => void;
-  onDenyTool?: () => void;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -165,21 +155,6 @@ export function AssistantTurnShell({
           sources={turnSources}
           onOpenSource={handleOpenSource}
           {...entryProps}
-        />
-      ) : null}
-      {/*
-        Pending tool approval renders here when its call_id matches an
-        item in this turn. It is intentionally rendered outside the
-        process fold so the user still sees the decision surface when
-        the fold collapses on turn settle. The fold being open or closed
-        is independent of whether an approval needs the user's input.
-      */}
-      {pendingApproval && onApproveTool && onApproveToolForSession && onDenyTool ? (
-        <ToolApprovalCard
-          approval={pendingApproval}
-          onApprove={onApproveTool}
-          onApproveForSession={onApproveToolForSession}
-          onDeny={onDenyTool}
         />
       ) : null}
       {hasAnswer ? (

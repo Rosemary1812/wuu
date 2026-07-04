@@ -133,7 +133,6 @@ function renderSidebar({
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
-        onOpenApprovalGallery={() => {}}
         onSelectThread={() => {}}
         onSelectParticipant={onSelectParticipant}
         onEditParticipant={() => {}}

@@ -107,23 +107,6 @@ func (t *BashTool) ValidateInput(argsJSON string) error {
 	return nil
 }
 
-func (t *BashTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
-	var args bashArgs
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return nil
-	}
-	switch normalizeBashAction(args) {
-	case bashActionStartBackground:
-		return []ToolPermissionRequest{backgroundPermissionRequest(args.Command)}
-	case bashActionListBackground:
-		return []ToolPermissionRequest{backgroundProcessPermissionRequest("*")}
-	case bashActionReadBackground, bashActionWriteBackground, bashActionStopBackground:
-		return []ToolPermissionRequest{backgroundProcessPermissionRequest(args.ProcessID)}
-	default:
-		return []ToolPermissionRequest{shellPermissionRequest("bash", args.Command)}
-	}
-}
-
 func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
@@ -263,27 +246,6 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("bash requires command")
 	}
-	if !t.env.BypassToolHardProtections() {
-		if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-			return "", fmt.Errorf("bash refuses unsafe git command (%s). Use safe shell git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe git shell command")
-		}
-		if shellCommandUsesUnsupportedWrapper(args.Command) {
-			return "", errors.New("bash refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-		}
-		if shellCommandDumpsEnvironment(args.Command) {
-			return "", errors.New("bash refuses to print process environment variables because they may contain secrets")
-		}
-		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-			return "", fmt.Errorf("bash refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
-		}
-		if shellCommandInvokesDestructiveCommand(args.Command) {
-			return "", errors.New("bash refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-		}
-		if shellCommandInvokesPackageOrNetworkMutation(args.Command) && !shellCommandPackageOrNetworkMutationCoveredByCommandPolicy(args.Command) {
-			return "", errors.New("bash refuses to execute package, network, or external mutation commands; use dedicated web tools or ask the user for explicit approval")
-		}
-	}
-
 	command := strings.TrimSpace(args.Command)
 	runCWD, err := resolveShellWorkingDir(ctx, t.env, args.CWD)
 	if err != nil {
@@ -416,26 +378,6 @@ func (e repeatedBashVerificationFailureError) Error() string {
 func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (string, error) {
 	if strings.TrimSpace(args.Command) == "" {
 		return "", errors.New("bash requires command")
-	}
-	if !t.env.BypassToolHardProtections() {
-		if shellCommandInvokesGit(args.Command) {
-			return "", errors.New("bash background mode refuses to execute git commands because git operations should be short-lived and non-interactive. Use action=run with a safe git shell command")
-		}
-		if shellCommandUsesUnsupportedWrapper(args.Command) {
-			return "", errors.New("bash background mode refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-		}
-		if shellCommandDumpsEnvironment(args.Command) {
-			return "", errors.New("bash background mode refuses to print process environment variables because they may contain secrets")
-		}
-		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-			return "", errors.New("bash background mode refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
-		}
-		if shellCommandInvokesDestructiveCommand(args.Command) {
-			return "", errors.New("bash background mode refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-		}
-		if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
-			return "", errors.New("bash background mode refuses to execute package, network, or external mutation commands; use a bounded bash run or ask the user for explicit approval")
-		}
 	}
 	args.OwnerKind = defaultProcessOwnerKind(t.env, args.OwnerKind)
 	if strings.TrimSpace(args.OwnerID) == "" {

@@ -18,11 +18,6 @@ type Notification struct {
 	Params json.RawMessage
 }
 
-const (
-	notificationApprovalRequested = "exec/approval/requested"
-	notificationApprovalResolved  = "exec/approval/resolved"
-)
-
 type ServerRequest struct {
 	ID     json.RawMessage `json:"id"`
 	Method string          `json:"method"`
@@ -35,20 +30,6 @@ type ServerRequestResult struct {
 }
 
 type ServerRequestHandler func(context.Context, ServerRequest) ServerRequestResult
-
-type approvalRequestedNotification struct {
-	RequestID string                        `json:"request_id"`
-	Method    string                        `json:"method"`
-	Request   appserver.ToolApprovalRequest `json:"request"`
-}
-
-type approvalResolvedNotification struct {
-	RequestID string `json:"request_id"`
-	Method    string `json:"method"`
-	Decision  string `json:"decision,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
 
 type protocolResponse struct {
 	result json.RawMessage
@@ -196,10 +177,6 @@ func (c *ProtocolClient) readLoop() {
 
 func (c *ProtocolClient) handleServerRequest(msg protocolEnvelope) {
 	req := ServerRequest{ID: msg.ID, Method: strings.TrimSpace(msg.Method), Params: msg.Params}
-	if req.Method == appserver.MethodToolApprovalRequest {
-		c.emitApprovalRequested(req)
-	}
-
 	result := ServerRequestResult{
 		Error: &appserver.ResponseError{
 			Code:    "non_interactive_unavailable",
@@ -209,50 +186,11 @@ func (c *ProtocolClient) handleServerRequest(msg protocolEnvelope) {
 	if c.requestHandler != nil {
 		result = c.requestHandler(c.ctx, req)
 	}
-	if req.Method == appserver.MethodToolApprovalRequest {
-		c.emitApprovalResolved(req, result)
-	}
 	_ = c.writeJSON(protocolEnvelope{
 		ID:     msg.ID,
 		Result: marshalServerRequestResult(result.Result),
 		Error:  result.Error,
 	})
-}
-
-func (c *ProtocolClient) emitApprovalRequested(req ServerRequest) {
-	var request appserver.ToolApprovalRequest
-	_ = json.Unmarshal(req.Params, &request)
-	c.emitSyntheticNotification(notificationApprovalRequested, approvalRequestedNotification{
-		RequestID: rawIDString(req.ID),
-		Method:    req.Method,
-		Request:   request,
-	})
-}
-
-func (c *ProtocolClient) emitApprovalResolved(req ServerRequest, result ServerRequestResult) {
-	resolved := approvalResolvedNotification{RequestID: rawIDString(req.ID), Method: req.Method}
-	if result.Error != nil {
-		resolved.Error = result.Error.Message
-	} else {
-		var response appserver.ToolApprovalResponse
-		if raw, ok := result.Result.(json.RawMessage); ok {
-			_ = json.Unmarshal(raw, &response)
-		} else {
-			data, _ := json.Marshal(result.Result)
-			_ = json.Unmarshal(data, &response)
-		}
-		resolved.Decision = strings.TrimSpace(response.Decision)
-		resolved.Reason = strings.TrimSpace(response.Reason)
-	}
-	c.emitSyntheticNotification(notificationApprovalResolved, resolved)
-}
-
-func rawIDString(raw json.RawMessage) string {
-	var id string
-	if err := json.Unmarshal(raw, &id); err == nil {
-		return id
-	}
-	return strings.TrimSpace(string(raw))
 }
 
 func (c *ProtocolClient) emitSyntheticNotification(method string, params any) {

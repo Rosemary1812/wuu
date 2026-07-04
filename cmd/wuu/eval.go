@@ -767,7 +767,6 @@ func evalToolObservations(records []tools.ToolExecutionRecord) []evalharness.Too
 			ResultBudgeted:       record.ResultBudgeted,
 			ResultRef:            record.ResultRef,
 			ArtifactRefs:         append([]string(nil), record.ArtifactRefs...),
-			ApprovalRef:          record.ApprovalRef,
 			PatchRiskSummary:     evalPatchRiskObservation(record.PatchRiskSummary),
 			ResultEnvelope:       &envelope,
 		})
@@ -1799,7 +1798,7 @@ func formatDelimitedValues(values []string, separator string) string {
 func formatEvalPolicyBlocks(values []evalharness.ToolPolicyBlockSummary) string {
 	parts := make([]string, 0, len(values))
 	for _, value := range values {
-		if part := formatPolicyBlockLabel(value.ToolName, value.CallID, value.PolicyAction, value.ErrorKind, value.ApprovalRef); part != "" {
+		if part := formatPolicyBlockLabel(value.ToolName, value.CallID, value.PolicyAction, value.ErrorKind); part != "" {
 			parts = append(parts, part)
 		}
 	}
@@ -1809,14 +1808,14 @@ func formatEvalPolicyBlocks(values []evalharness.ToolPolicyBlockSummary) string 
 func formatSessionPolicyBlocks(values []sessiontrace.ToolPolicyBlockSummary) string {
 	parts := make([]string, 0, len(values))
 	for _, value := range values {
-		if part := formatPolicyBlockLabel(value.ToolName, value.CallID, value.PolicyAction, value.ErrorKind, value.ApprovalRef); part != "" {
+		if part := formatPolicyBlockLabel(value.ToolName, value.CallID, value.PolicyAction, value.ErrorKind); part != "" {
 			parts = append(parts, part)
 		}
 	}
 	return strings.Join(parts, ",")
 }
 
-func formatPolicyBlockLabel(toolName, callID, action, errorKind, approvalRef string) string {
+func formatPolicyBlockLabel(toolName, callID, action, errorKind string) string {
 	toolName = strings.TrimSpace(toolName)
 	if toolName == "" {
 		return ""
@@ -1831,9 +1830,6 @@ func formatPolicyBlockLabel(toolName, callID, action, errorKind, approvalRef str
 	label := strings.Join(parts, ":")
 	if callID = strings.TrimSpace(callID); callID != "" {
 		label += ":call_id=" + callID
-	}
-	if approvalRef = strings.TrimSpace(approvalRef); approvalRef != "" {
-		label += ":approval_ref=" + approvalRef
 	}
 	return label
 }

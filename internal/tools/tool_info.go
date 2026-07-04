@@ -128,9 +128,6 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if isMemoryToolName(name) && !hasAnyMemory(t.env) {
 		return ToolExposureHidden
 	}
-	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
-		return ToolExposureHidden
-	}
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {

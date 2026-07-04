@@ -789,10 +789,8 @@ func extractToolErrorKind(message string) string {
 func toolErrorNextSuggestions(message string) []string {
 	kind := extractToolErrorKind(message)
 	switch kind {
-	case "approval_required":
-		return []string{"ask the user for approval or choose a lower-risk alternative"}
-	case "policy_denied":
-		return []string{"choose a lower-risk tool or explain that policy blocks the requested action"}
+	case "boundary_denied":
+		return []string{"explain that the target is outside the reachable workspace boundary and ask the user to add it as a workspace if needed"}
 	}
 	if strings.Contains(message, "safe_retry=") {
 		return []string{"follow safe_retry after refreshing the relevant file, command, or workspace evidence"}

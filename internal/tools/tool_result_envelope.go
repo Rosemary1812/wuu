@@ -22,8 +22,6 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 			"classification_reason": record.ClassificationReason,
 			"policy_action":         string(record.PolicyAction),
 			"policy_reason":         record.PolicyReason,
-			"auto_mode_decision":    string(record.AutoModeDecision),
-			"auto_mode_reason":      record.AutoModeReason,
 			"read_only":             record.ReadOnly,
 			"concurrency_safe":      record.ConcurrencySafe,
 			"duration_ms":           record.DurationMS,
@@ -57,9 +55,6 @@ func (record ToolExecutionRecord) ResultEnvelope() toolresult.Envelope {
 	if len(record.AlreadyLoadedDeferredTools) > 0 {
 		envelope.Data["already_loaded_deferred_tools"] = append([]string(nil), record.AlreadyLoadedDeferredTools...)
 	}
-	if record.ApprovalRef != "" {
-		envelope.Data["approval_ref"] = record.ApprovalRef
-	}
 	if record.PatchRiskSummary != nil {
 		envelope.Data["patch_risk_summary"] = record.PatchRiskSummary
 	}
@@ -85,15 +80,7 @@ func toolResultNextSuggestions(record ToolExecutionRecord) []string {
 		}
 		switch record.PolicyAction {
 		case ToolPolicyDeny:
-			return []string{"choose a lower-risk tool or explain that policy blocks the requested action"}
-		case ToolPolicyRequireApproval:
-			return []string{"ask the user for approval or choose a lower-risk alternative"}
-		case ToolPolicyAutoClassify:
-			if record.ErrorKind == "auto_mode_denied" ||
-				record.ErrorKind == "auto_classifier_unavailable" ||
-				record.ErrorKind == "auto_classifier_error" {
-				return []string{"ask the user for approval or choose a lower-risk alternative"}
-			}
+			return []string{"explain the workspace boundary denial or use a path/action inside the allowed boundary"}
 		}
 		return []string{"inspect the redacted error summary and retry with corrected inputs or a safer tool"}
 	}

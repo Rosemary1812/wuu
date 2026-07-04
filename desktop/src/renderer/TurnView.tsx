@@ -3,7 +3,6 @@
 import type {
   InputFile,
   InputImage,
-  PendingToolApproval,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
@@ -44,10 +43,6 @@ export function TurnView({
   onNoticeAction,
   onOpenFileDiff,
   streamStatus,
-  pendingApproval,
-  onApproveTool,
-  onApproveToolForSession,
-  onDenyTool,
   isLatestTurn,
 }: {
   turn: Turn;
@@ -72,10 +67,6 @@ export function TurnView({
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
   streamStatus?: TurnStreamStatus;
-  pendingApproval?: PendingToolApproval;
-  onApproveTool?: () => void;
-  onApproveToolForSession?: () => void;
-  onDenyTool?: () => void;
   isLatestTurn?: boolean;
 }): JSX.Element {
   const actionableAgentMessageID =
@@ -164,10 +155,6 @@ export function TurnView({
           onNoticeAction={onNoticeAction}
           onOpenAgent={onOpenAgent}
           onOpenSubthread={onOpenSubthread}
-          pendingApproval={pendingApproval}
-          onApproveTool={onApproveTool}
-          onApproveToolForSession={onApproveToolForSession}
-          onDenyTool={onDenyTool}
         />
       ) : null}
       {isLatestTurn ? (

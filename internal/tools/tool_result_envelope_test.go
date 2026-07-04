@@ -23,13 +23,12 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 		RevisionBefore:       "git:before:worktree:aaa",
 		RevisionAfter:        "git:after:worktree:bbb",
 		Success:              false,
-		Error:                "authorization: bearer secret-token error_kind=approval_required",
-		ErrorKind:            "approval_required",
+		Error:                "authorization: bearer secret-token error_kind=boundary_denied",
+		ErrorKind:            "boundary_denied",
 		RawOutputBytes:       1024,
 		ReturnedOutputBytes:  256,
 		ResultBudgeted:       true,
 		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
-		ApprovalRef:          "/tmp/wuu/approvals/call_1.json",
 		PatchRiskSummary:     &ToolPatchRisk{FileCount: 2, HunkCount: 2, RiskLevel: "medium", MultiFile: true},
 	}
 
@@ -54,7 +53,7 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	if !strings.Contains(string(raw), `"error_present":true`) {
 		t.Fatalf("envelope should retain error presence without raw error: %s", string(raw))
 	}
-	if !strings.Contains(string(raw), `"error_kind":"approval_required"`) {
+	if !strings.Contains(string(raw), `"error_kind":"boundary_denied"`) {
 		t.Fatalf("envelope should include error kind: %s", string(raw))
 	}
 	if !strings.Contains(string(raw), `"revision_before":"git:before:worktree:aaa"`) || !strings.Contains(string(raw), `"revision_after":"git:after:worktree:bbb"`) {
@@ -68,9 +67,6 @@ func TestToolExecutionRecordResultEnvelopeIsMetadataOnly(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"result_action":"restore"`) {
 		t.Fatalf("envelope should include result action: %s", string(raw))
-	}
-	if !strings.Contains(string(raw), `"approval_ref":"/tmp/wuu/approvals/call_1.json"`) {
-		t.Fatalf("envelope should include approval ref: %s", string(raw))
 	}
 	if !strings.Contains(string(raw), `"patch_risk_summary"`) || !strings.Contains(string(raw), `"risk_level":"medium"`) {
 		t.Fatalf("envelope should include patch risk summary: %s", string(raw))

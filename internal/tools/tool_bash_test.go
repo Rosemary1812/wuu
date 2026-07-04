@@ -171,7 +171,7 @@ func TestBashRunResolvesLocalNpxTypecheckRunnerWithProjectOptionOrder(t *testing
 	}
 }
 
-func TestBashRunRejectsNonTypecheckNpxTsc(t *testing.T) {
+func TestBashRunExecutesLocalNpxTscCommands(t *testing.T) {
 	root := t.TempDir()
 	runnerPath := filepath.Join(root, "desktop", "node_modules", ".bin", "tsc")
 	mustWriteFile(t, runnerPath, "#!/usr/bin/env bash\nprintf ran > tsc-ran.txt\n")
@@ -195,11 +195,15 @@ func TestBashRunRejectsNonTypecheckNpxTsc(t *testing.T) {
 			Name:      "bash",
 			Arguments: `{"command":"` + command + `","scope":"targeted"}`,
 		})
-		if err == nil || !strings.Contains(err.Error(), "package, network, or external mutation commands") {
-			t.Fatalf("expected non-typecheck npx tsc rejection for %q, got %v", command, err)
+		if err != nil {
+			t.Fatalf("expected local npx tsc command to run for %q, got %v", command, err)
 		}
-		if _, statErr := os.Stat(filepath.Join(root, "desktop", "tsc-ran.txt")); !os.IsNotExist(statErr) {
-			t.Fatalf("non-typecheck npx tsc should not execute local runner for %q, stat err=%v", command, statErr)
+		marker := filepath.Join(root, "desktop", "tsc-ran.txt")
+		if got := mustReadFile(t, marker); got != "ran" {
+			t.Fatalf("local npx tsc marker for %q = %q, want ran", command, got)
+		}
+		if err := os.Remove(marker); err != nil {
+			t.Fatalf("remove marker: %v", err)
 		}
 	}
 }
@@ -481,22 +485,4 @@ func canonicalTestPath(t *testing.T, path string) string {
 		path = evaluated
 	}
 	return filepath.Clean(path)
-}
-
-func TestBashPermissionRequestsUseCapabilities(t *testing.T) {
-	tool := NewBashTool(&Env{})
-	runReqs := tool.PermissionRequests(`{"command":"git status --short"}`)
-	if len(runReqs) != 1 || runReqs[0].Permission != "command.bash" {
-		t.Fatalf("run permission request = %+v, want command.bash", runReqs)
-	}
-	backgroundReqs := tool.PermissionRequests(`{"action":"start_background","command":"npm run dev"}`)
-	if len(backgroundReqs) != 1 || backgroundReqs[0].Permission != "command.background" {
-		t.Fatalf("background permission request = %+v, want command.background", backgroundReqs)
-	}
-	rules := ToolPermissionRuleSet{
-		{Permission: "bash", Pattern: "git status *", Action: ToolPermissionAllow},
-	}
-	if decision, ok := rules.Decide(runReqs[0]); !ok || decision.Action != ToolPermissionAllow {
-		t.Fatalf("legacy bash permission alias should match command.bash request: decision=%+v ok=%v", decision, ok)
-	}
 }

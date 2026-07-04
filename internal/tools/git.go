@@ -43,10 +43,8 @@ type fileEntry struct {
 }
 
 type gitInvocation struct {
-	Subcommand          string
-	Args                []string
-	ConfirmUserApproved bool
-	ConfirmRemoteWrite  bool
+	Subcommand string
+	Args       []string
 }
 
 // ── subcommand whitelists ───────────────────────────────────────────
@@ -444,10 +442,6 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if err := requireGitWriteConfirmation(invocation, allowSensitive); err != nil {
-		return "", err
-	}
-
 	// Structured output for git status.
 	if invocation.Subcommand == "status" {
 		return gitStatus(env, ctx, invocation.Args)
@@ -488,10 +482,8 @@ func gitExecute(env *Env, ctx context.Context, argsJSON string) (string, error) 
 
 func parseGitInvocation(argsJSON string, allowSensitive bool) (gitInvocation, error) {
 	var args struct {
-		Subcommand          string   `json:"subcommand"`
-		Args                []string `json:"args"`
-		ConfirmUserApproved bool     `json:"confirm_user_approved"`
-		ConfirmRemoteWrite  bool     `json:"confirm_remote_write"`
+		Subcommand string   `json:"subcommand"`
+		Args       []string `json:"args"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return gitInvocation{}, err
@@ -535,41 +527,9 @@ func parseGitInvocation(argsJSON string, allowSensitive bool) (gitInvocation, er
 	}
 
 	return gitInvocation{
-		Subcommand:          subcmd,
-		Args:                remainingArgs,
-		ConfirmUserApproved: args.ConfirmUserApproved,
-		ConfirmRemoteWrite:  args.ConfirmRemoteWrite,
+		Subcommand: subcmd,
+		Args:       remainingArgs,
 	}, nil
-}
-
-func requireGitWriteConfirmation(invocation gitInvocation, allowSensitive bool) error {
-	if allowSensitive {
-		return nil
-	}
-	switch invocation.Subcommand {
-	case "add":
-		if invocation.ConfirmUserApproved {
-			return nil
-		}
-		return errors.New("git add requires confirm_user_approved=true after explicit user approval to stage specific paths: error_kind=approval_required model_next_action=\"ask the user before staging, or if the current request already explicitly asked to stage/commit these paths, retry with confirm_user_approved=true after reviewing git status/diff\"")
-	case "restore --staged":
-		if invocation.ConfirmUserApproved {
-			return nil
-		}
-		return errors.New("git restore --staged requires confirm_user_approved=true after explicit user approval to change the index: error_kind=approval_required model_next_action=\"ask the user before unstaging, or if the current request already explicitly asked to adjust staged changes, retry with confirm_user_approved=true after reviewing git status\"")
-	case "commit":
-		if invocation.ConfirmUserApproved {
-			return nil
-		}
-		return errors.New("git commit requires confirm_user_approved=true after explicit user approval: error_kind=approval_required model_next_action=\"ask the user before creating a commit or report the staged diff without committing\"")
-	case "push":
-		if invocation.ConfirmUserApproved && invocation.ConfirmRemoteWrite {
-			return nil
-		}
-		return errors.New("git push requires confirm_user_approved=true and confirm_remote_write=true after explicit user approval: error_kind=approval_required model_next_action=\"ask the user before pushing to a remote or stop after reporting the local commit\"")
-	default:
-		return nil
-	}
 }
 
 // runGit executes a git command and returns the standard JSON envelope.

@@ -30,48 +30,36 @@ const (
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
 // execution. It deliberately excludes arguments and output content.
 type ToolExecutionRecord struct {
-	Name                             string               `json:"name"`
-	StepIndex                        *int                 `json:"step_index,omitempty"`
-	CallID                           string               `json:"call_id,omitempty"`
-	ArgumentsSHA256                  string               `json:"arguments_sha256,omitempty"`
-	ResultAction                     string               `json:"result_action,omitempty"`
-	Kind                             ToolKind             `json:"kind"`
-	Exposure                         ToolExposure         `json:"exposure"`
-	Risk                             ToolRisk             `json:"risk"`
-	ClassificationReason             string               `json:"classification_reason,omitempty"`
-	PolicyAction                     ToolPolicyAction     `json:"policy_action"`
-	PolicyReason                     string               `json:"policy_reason,omitempty"`
-	AutoModeDecision                 AutoModeDecision     `json:"auto_mode_decision,omitempty"`
-	AutoModeReason                   string               `json:"auto_mode_reason,omitempty"`
-	ReadOnly                         bool                 `json:"read_only"`
-	ConcurrencySafe                  bool                 `json:"concurrency_safe"`
-	StartedAt                        time.Time            `json:"started_at"`
-	DurationMS                       int64                `json:"duration_ms"`
-	RevisionBefore                   string               `json:"revision_before,omitempty"`
-	RevisionAfter                    string               `json:"revision_after,omitempty"`
-	Success                          bool                 `json:"success"`
-	Error                            string               `json:"error,omitempty"`
-	ErrorKind                        string               `json:"error_kind,omitempty"`
-	RawOutputBytes                   int                  `json:"raw_output_bytes"`
-	ReturnedOutputBytes              int                  `json:"returned_output_bytes"`
-	ResultBudgeted                   bool                 `json:"result_budgeted"`
-	ResultRef                        string               `json:"result_ref,omitempty"`
-	ArtifactRefs                     []string             `json:"artifact_refs,omitempty"`
-	LoadedDeferredTools              []string             `json:"loaded_deferred_tools,omitempty"`
-	NewlyLoadedDeferredTools         []string             `json:"newly_loaded_deferred_tools,omitempty"`
-	AlreadyLoadedDeferredTools       []string             `json:"already_loaded_deferred_tools,omitempty"`
-	ToolSurfaceChanged               bool                 `json:"tool_surface_changed,omitempty"`
-	ApprovalRef                      string               `json:"approval_ref,omitempty"`
-	ApprovalDecision                 ToolApprovalDecision `json:"approval_decision,omitempty"`
-	ApprovalReason                   string               `json:"approval_reason,omitempty"`
-	ApprovalSource                   string               `json:"approval_source,omitempty"`
-	ApprovalRiskLevel                GuardianRiskLevel    `json:"approval_risk_level,omitempty"`
-	ApprovalReviewModel              string               `json:"approval_review_model,omitempty"`
-	ApprovalReviewRole               string               `json:"approval_review_role,omitempty"`
-	ApprovalReviewOutcome            string               `json:"approval_review_outcome,omitempty"`
-	ApprovalReviewRequestFingerprint string               `json:"approval_review_request_fingerprint,omitempty"`
-	ApprovalReviewDurationMS         int64                `json:"approval_review_duration_ms,omitempty"`
-	PatchRiskSummary                 *ToolPatchRisk       `json:"patch_risk_summary,omitempty"`
+	Name                       string           `json:"name"`
+	StepIndex                  *int             `json:"step_index,omitempty"`
+	CallID                     string           `json:"call_id,omitempty"`
+	ArgumentsSHA256            string           `json:"arguments_sha256,omitempty"`
+	ResultAction               string           `json:"result_action,omitempty"`
+	Kind                       ToolKind         `json:"kind"`
+	Exposure                   ToolExposure     `json:"exposure"`
+	Risk                       ToolRisk         `json:"risk"`
+	ClassificationReason       string           `json:"classification_reason,omitempty"`
+	PolicyAction               ToolPolicyAction `json:"policy_action"`
+	PolicyReason               string           `json:"policy_reason,omitempty"`
+	ReadOnly                   bool             `json:"read_only"`
+	ConcurrencySafe            bool             `json:"concurrency_safe"`
+	StartedAt                  time.Time        `json:"started_at"`
+	DurationMS                 int64            `json:"duration_ms"`
+	RevisionBefore             string           `json:"revision_before,omitempty"`
+	RevisionAfter              string           `json:"revision_after,omitempty"`
+	Success                    bool             `json:"success"`
+	Error                      string           `json:"error,omitempty"`
+	ErrorKind                  string           `json:"error_kind,omitempty"`
+	RawOutputBytes             int              `json:"raw_output_bytes"`
+	ReturnedOutputBytes        int              `json:"returned_output_bytes"`
+	ResultBudgeted             bool             `json:"result_budgeted"`
+	ResultRef                  string           `json:"result_ref,omitempty"`
+	ArtifactRefs               []string         `json:"artifact_refs,omitempty"`
+	LoadedDeferredTools        []string         `json:"loaded_deferred_tools,omitempty"`
+	NewlyLoadedDeferredTools   []string         `json:"newly_loaded_deferred_tools,omitempty"`
+	AlreadyLoadedDeferredTools []string         `json:"already_loaded_deferred_tools,omitempty"`
+	ToolSurfaceChanged         bool             `json:"tool_surface_changed,omitempty"`
+	PatchRiskSummary           *ToolPatchRisk   `json:"patch_risk_summary,omitempty"`
 }
 
 type ToolPatchRisk struct {
@@ -87,32 +75,13 @@ type ToolPatchRisk struct {
 	ReviewHint     string         `json:"review_hint,omitempty"`
 }
 
-type toolApprovalRequest struct {
-	ID                   string           `json:"id"`
-	ToolName             string           `json:"tool_name"`
-	CallID               string           `json:"call_id,omitempty"`
-	Kind                 ToolKind         `json:"kind"`
-	Risk                 ToolRisk         `json:"risk"`
-	PolicyAction         ToolPolicyAction `json:"policy_action"`
-	PolicyReason         string           `json:"policy_reason,omitempty"`
-	ClassificationReason string           `json:"classification_reason,omitempty"`
-	ReadOnly             bool             `json:"read_only"`
-	Destructive          bool             `json:"destructive"`
-	CreatedAt            time.Time        `json:"created_at"`
-	Revision             string           `json:"revision,omitempty"`
-	ArgumentsSHA256      string           `json:"arguments_sha256,omitempty"`
-	ArgumentsPreview     string           `json:"arguments_preview,omitempty"`
-	Capability           string           `json:"capability,omitempty"`
-	CapabilityObject     string           `json:"capability_object,omitempty"`
-	CapabilityAction     string           `json:"capability_action,omitempty"`
-	CapabilityRule       string           `json:"capability_rule,omitempty"`
-	ModelNextAction      string           `json:"model_next_action"`
-	ApprovalOptions      []string         `json:"approval_options"`
-}
-
 type toolTelemetry struct {
 	mu      sync.RWMutex
 	records []ToolExecutionRecord
+}
+
+type InputValidatingTool interface {
+	ValidateInput(argsJSON string) error
 }
 
 func (t *toolTelemetry) record(record ToolExecutionRecord) {
@@ -136,68 +105,28 @@ func (t *Toolkit) ToolTelemetry() []ToolExecutionRecord {
 
 func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall, tool Tool) (string, error) {
 	info := buildToolInfoForArgs(tool, t.toolExposure(call.Name), call.Arguments)
-	decision := t.toolPolicy.Decide(info)
 	startedAt := time.Now()
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
-	approvalRef := ""
-	approvalReview := ToolApprovalReview{}
+	decision := ToolPolicyDecision{Action: ToolPolicyAllow, Reason: "workspace boundary"}
 
 	if err := validateToolArgumentsJSON(call.Arguments); err != nil {
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
 		return "", err
 	}
 	if validator, ok := tool.(InputValidatingTool); ok {
 		if err := validator.ValidateInput(call.Arguments); err != nil {
-			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
 			return "", err
 		}
 	}
 
-	if err := t.extensionSurfacePolicy.Check(info); err != nil {
+	if err := t.boundary.Check(info, call); err != nil {
 		decision.Action = ToolPolicyDeny
-		decision.Reason = "extension surface policy"
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		decision.Reason = "workspace boundary"
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
 		return "", err
 	}
 
-	if err := t.permissionBoundary.Check(info); err != nil {
-		decision.Action = ToolPolicyDeny
-		decision.Reason = "permission boundary"
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
-		return "", err
-	}
-
-	decision = t.applyDefaultCommandPolicyDecision(call, info, decision)
-
-	if permissionDecision, matched, permApprovalRef, permApprovalReview, err := t.applyPermissionRuleDecision(ctx, call, tool, info, decision, startedAt, revisionBefore); err != nil {
-		decision = permissionDecision
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, permApprovalRef, permApprovalReview, err)
-		return "", err
-	} else if matched {
-		decision = permissionDecision
-		approvalRef = permApprovalRef
-		approvalReview = permApprovalReview
-	} else {
-		if autoDecision, err := t.applyAutoModeDecision(ctx, call, info, decision); err != nil {
-			decision = autoDecision
-			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
-			return "", err
-		} else {
-			decision = autoDecision
-		}
-		if err := decision.blockingError(call.Name); err != nil {
-			approvalRef = t.persistApprovalRequest(call, info, decision, startedAt, revisionBefore)
-			var approvalErr error
-			approvalReview, approvalErr = t.requestToolApproval(ctx, call, info, decision, startedAt, revisionBefore, approvalRef, nil, nil)
-			if approvalErr != nil {
-				if errors.Is(approvalErr, errToolApprovalReviewerUnavailable) {
-					approvalErr = err
-				}
-				t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, approvalRef, approvalReview, approvalErr)
-				return "", approvalErr
-			}
-		}
-	}
 	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); priorRepeats >= repeatedToolInputPriorLimit {
 		err := repeatedToolInputError{
 			ToolName:        call.Name,
@@ -206,7 +135,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 			PriorRepeats:    priorRepeats,
 			MaxPriorRepeats: repeatedToolInputPriorLimit,
 		}
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, "", ToolApprovalReview{}, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
 		return "", err
 	}
 
@@ -223,7 +152,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, approvalRef, approvalReview, err)
+	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, err)
 
 	return returned, err
 }
@@ -241,40 +170,6 @@ func validateToolArgumentsJSON(raw string) error {
 		return errors.New("tool arguments must be a JSON object")
 	}
 	return nil
-}
-
-func (t *Toolkit) applyAutoModeDecision(ctx context.Context, call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision) (ToolPolicyDecision, error) {
-	if decision.Action != ToolPolicyAutoClassify {
-		return decision, nil
-	}
-	if t == nil || t.autoModeClassifier == nil {
-		decision.AutoModeDecision = AutoModeDecisionDeny
-		decision.AutoModeReason = "auto classifier is unavailable"
-		return decision, autoModeBlockError(call.Name, decision, "auto_classifier_unavailable")
-	}
-	workspaceRoot := ""
-	if t.env != nil {
-		workspaceRoot = t.env.RootDir
-	}
-	result, err := t.autoModeClassifier.Classify(ctx, AutoModeClassifyRequest{
-		ToolName:      call.Name,
-		CallID:        call.ID,
-		ArgumentsJSON: call.Arguments,
-		WorkspaceRoot: workspaceRoot,
-		Info:          info,
-	})
-	if err != nil {
-		decision.AutoModeDecision = AutoModeDecisionDeny
-		decision.AutoModeReason = "auto classifier failed: " + strings.TrimSpace(err.Error())
-		return decision, autoModeBlockError(call.Name, decision, "auto_classifier_error")
-	}
-	result = normalizeAutoModeResult(result)
-	decision.AutoModeDecision = result.Decision
-	decision.AutoModeReason = result.Reason
-	if result.Decision != AutoModeDecisionAllow {
-		return decision, autoModeBlockError(call.Name, decision, "auto_mode_denied")
-	}
-	return decision, nil
 }
 
 type repeatedToolInputError struct {
@@ -352,61 +247,44 @@ func (t *Toolkit) recordToolExecution(
 	returned string,
 	resultRef string,
 	resultBudgeted bool,
-	approvalRef string,
-	approvalReview ToolApprovalReview,
 	err error,
 ) {
 	artifactRefs := extractToolArtifactRefs(result, resultRef)
 	loadedDeferredTools, newlyLoadedDeferredTools, alreadyLoadedDeferredTools, toolSurfaceChanged := extractToolSearchLoadMetadata(call.Name, result)
-	if approvalRef != "" {
-		artifactRefs = appendUniqueString(artifactRefs, approvalRef)
-	}
 	var stepIndexPtr *int
 	if stepIndex, ok := toolctx.StepIndex(ctx); ok {
 		value := stepIndex
 		stepIndexPtr = &value
 	}
 	record := ToolExecutionRecord{
-		Name:                             call.Name,
-		StepIndex:                        stepIndexPtr,
-		CallID:                           call.ID,
-		ArgumentsSHA256:                  toolArgumentsSHA256(call.Arguments),
-		ResultAction:                     extractToolResultAction(result),
-		Kind:                             info.Kind,
-		Exposure:                         info.Exposure,
-		Risk:                             info.Risk,
-		ClassificationReason:             info.Reason,
-		PolicyAction:                     decision.Action,
-		PolicyReason:                     decision.Reason,
-		AutoModeDecision:                 decision.AutoModeDecision,
-		AutoModeReason:                   decision.AutoModeReason,
-		ReadOnly:                         info.ReadOnly,
-		ConcurrencySafe:                  info.ConcurrencySafe,
-		StartedAt:                        startedAt,
-		DurationMS:                       time.Since(startedAt).Milliseconds(),
-		RevisionBefore:                   revisionBefore,
-		RevisionAfter:                    revisionAfter,
-		Success:                          err == nil,
-		RawOutputBytes:                   len(result),
-		ReturnedOutputBytes:              len(returned),
-		ResultBudgeted:                   resultBudgeted,
-		ResultRef:                        resultRef,
-		ArtifactRefs:                     artifactRefs,
-		LoadedDeferredTools:              loadedDeferredTools,
-		NewlyLoadedDeferredTools:         newlyLoadedDeferredTools,
-		AlreadyLoadedDeferredTools:       alreadyLoadedDeferredTools,
-		ToolSurfaceChanged:               toolSurfaceChanged,
-		ApprovalRef:                      approvalRef,
-		ApprovalDecision:                 approvalReview.Decision,
-		ApprovalReason:                   approvalReview.Reason,
-		ApprovalSource:                   approvalReview.Source,
-		ApprovalRiskLevel:                approvalReview.RiskLevel,
-		ApprovalReviewModel:              approvalReview.ReviewModel,
-		ApprovalReviewRole:               approvalReview.ReviewRole,
-		ApprovalReviewOutcome:            approvalReview.ReviewOutcome,
-		ApprovalReviewRequestFingerprint: approvalReview.ReviewRequestFingerprint,
-		ApprovalReviewDurationMS:         approvalReview.ReviewDurationMS,
-		PatchRiskSummary:                 extractToolPatchRisk(call.Name, result),
+		Name:                       call.Name,
+		StepIndex:                  stepIndexPtr,
+		CallID:                     call.ID,
+		ArgumentsSHA256:            toolArgumentsSHA256(call.Arguments),
+		ResultAction:               extractToolResultAction(result),
+		Kind:                       info.Kind,
+		Exposure:                   info.Exposure,
+		Risk:                       info.Risk,
+		ClassificationReason:       info.Reason,
+		PolicyAction:               decision.Action,
+		PolicyReason:               decision.Reason,
+		ReadOnly:                   info.ReadOnly,
+		ConcurrencySafe:            info.ConcurrencySafe,
+		StartedAt:                  startedAt,
+		DurationMS:                 time.Since(startedAt).Milliseconds(),
+		RevisionBefore:             revisionBefore,
+		RevisionAfter:              revisionAfter,
+		Success:                    err == nil,
+		RawOutputBytes:             len(result),
+		ReturnedOutputBytes:        len(returned),
+		ResultBudgeted:             resultBudgeted,
+		ResultRef:                  resultRef,
+		ArtifactRefs:               artifactRefs,
+		LoadedDeferredTools:        loadedDeferredTools,
+		NewlyLoadedDeferredTools:   newlyLoadedDeferredTools,
+		AlreadyLoadedDeferredTools: alreadyLoadedDeferredTools,
+		ToolSurfaceChanged:         toolSurfaceChanged,
+		PatchRiskSummary:           extractToolPatchRisk(call.Name, result),
 	}
 	if err != nil {
 		record.Error = err.Error()
@@ -497,80 +375,6 @@ func sanitizeShortToolValue(value string, limit int) string {
 		}
 	}
 	return strings.Trim(b.String(), "-._")
-}
-
-func (t *Toolkit) persistApprovalRequest(call providers.ToolCall, info ToolInfo, decision ToolPolicyDecision, createdAt time.Time, revision string) string {
-	if t == nil || t.env == nil || strings.TrimSpace(t.env.SessionDir) == "" || decision.Action != ToolPolicyRequireApproval {
-		return ""
-	}
-	id := approvalRequestID(call, createdAt)
-	capabilityFields := t.approvalCapabilityFields(call.Name, call.Arguments, info, decision)
-	request := toolApprovalRequest{
-		ID:                   id,
-		ToolName:             call.Name,
-		CallID:               call.ID,
-		Kind:                 info.Kind,
-		Risk:                 info.Risk,
-		PolicyAction:         decision.Action,
-		PolicyReason:         decision.Reason,
-		ClassificationReason: info.Reason,
-		ReadOnly:             info.ReadOnly,
-		Destructive:          info.Destructive,
-		CreatedAt:            createdAt.UTC(),
-		Revision:             revision,
-		ArgumentsSHA256:      toolArgumentsSHA256(call.Arguments),
-		ArgumentsPreview:     approvalArgumentsPreview(call.Arguments),
-		Capability:           string(capabilityFields.Capability),
-		CapabilityObject:     capabilityFields.Object,
-		CapabilityAction:     capabilityFields.Action,
-		CapabilityRule:       capabilityFields.Rule,
-		ModelNextAction:      "ask the user for approval or choose a lower-risk alternative",
-		ApprovalOptions:      []string{"ask_user", "choose_lower_risk_alternative", "stop"},
-	}
-	data, err := json.MarshalIndent(request, "", "  ")
-	if err != nil {
-		return ""
-	}
-	dir := filepath.Join(t.env.SessionDir, "approvals")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return ""
-	}
-	path := filepath.Join(dir, id+".json")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return ""
-	}
-	return path
-}
-
-func approvalRequestID(call providers.ToolCall, createdAt time.Time) string {
-	base := strings.TrimSpace(call.ID)
-	if base == "" {
-		base = fmt.Sprintf("%s-%d", strings.TrimSpace(call.Name), createdAt.UnixNano())
-	}
-	base = safeArtifactToken(base)
-	if base == "" {
-		base = fmt.Sprintf("approval-%d", createdAt.UnixNano())
-	}
-	return base
-}
-
-func safeArtifactToken(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-' || r == '_' || r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('-')
-		}
-	}
-	return strings.Trim(b.String(), "-.")
 }
 
 func appendUniqueString(values []string, value string) []string {

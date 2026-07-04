@@ -43,3 +43,22 @@ func TestListEmptyHome(t *testing.T) {
 		t.Fatalf("empty home should be empty, got %+v err=%v", list, err)
 	}
 }
+
+func TestBoundaryRootsIncludesRuntimeWorkspacesTempAndExtras(t *testing.T) {
+	home := t.TempDir()
+	store := `{"projects":[{"name":"wuu","path":"/repos/wuu"},{"name":"other","path":"/repos/other"}]}`
+	if err := os.WriteFile(filepath.Join(home, "projects.json"), []byte(store), 0o644); err != nil {
+		t.Fatalf("write projects.json: %v", err)
+	}
+
+	roots := BoundaryRoots("/runtime/root", home, "  ", "/session/artifacts", "/memory")
+	want := []string{"/runtime/root", "/repos/wuu", "/repos/other", os.TempDir(), "/session/artifacts", "/memory"}
+	if len(roots) != len(want) {
+		t.Fatalf("BoundaryRoots length = %d, want %d: %+v", len(roots), len(want), roots)
+	}
+	for i := range want {
+		if roots[i] != want[i] {
+			t.Fatalf("BoundaryRoots[%d] = %q, want %q (all=%+v)", i, roots[i], want[i], roots)
+		}
+	}
+}

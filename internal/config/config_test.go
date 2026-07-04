@@ -413,116 +413,33 @@ func TestTemplateJSONDoesNotSerializeBuiltInSystemPrompt(t *testing.T) {
 func TestDefaultConfigUsesPermissionModeAsPolicySource(t *testing.T) {
 	cfg := Default()
 	permissions := ResolveAgentPermissions(cfg.Agent)
-	if permissions.Mode != PermissionModeAgent ||
-		permissions.PermissionProfile != PermissionProfileWorkspaceWrite ||
-		permissions.ApprovalPolicy != ApprovalPolicyOnRequest ||
-		permissions.ApprovalsReviewer != ApprovalsReviewerUser {
+	if permissions.Mode != PermissionModeStandard {
 		t.Fatalf("default permissions = %+v", permissions)
 	}
 }
 
-func TestToolPolicyProfileForPermissionModeDefaultsEmptyMode(t *testing.T) {
-	if got := ToolPolicyProfileForPermissionMode(""); got != PermissionModeAgent {
-		t.Fatalf("empty permission mode tool policy profile = %q, want agent", got)
-	}
-}
-
-func TestPermissionPresetsUseCodexStyleAxes(t *testing.T) {
+func TestNormalizePermissionModeUsesThreeStateAuthority(t *testing.T) {
 	tests := []struct {
-		mode     string
-		profile  string
-		approval string
-		reviewer string
+		in   string
+		want string
 	}{
-		{
-			mode:     PermissionModeReadOnly,
-			profile:  PermissionProfileReadOnly,
-			approval: ApprovalPolicyOnRequest,
-			reviewer: ApprovalsReviewerUser,
-		},
-		{
-			mode:     PermissionModeAgent,
-			profile:  PermissionProfileWorkspaceWrite,
-			approval: ApprovalPolicyOnRequest,
-			reviewer: ApprovalsReviewerUser,
-		},
-		{
-			mode:     PermissionModeAutoReview,
-			profile:  PermissionProfileWorkspaceWrite,
-			approval: ApprovalPolicyOnRequest,
-			reviewer: ApprovalsReviewerAutoReview,
-		},
-		{
-			mode:     PermissionModeFullAccess,
-			profile:  PermissionProfileDangerFullAccess,
-			approval: ApprovalPolicyNever,
-			reviewer: ApprovalsReviewerUser,
-		},
+		{in: "", want: PermissionModeStandard},
+		{in: PermissionModeStandard, want: PermissionModeStandard},
+		{in: PermissionModeReadOnly, want: PermissionModeReadOnly},
+		{in: PermissionModeUnconfined, want: PermissionModeUnconfined},
+		{in: "not-a-mode", want: PermissionModeStandard},
 	}
-
 	for _, tt := range tests {
-		got, ok := PermissionPresetForMode(tt.mode)
-		if !ok {
-			t.Fatalf("%s preset missing", tt.mode)
-		}
-		if got.Mode != tt.mode ||
-			got.PermissionProfile != tt.profile ||
-			got.ApprovalPolicy != tt.approval ||
-			got.ApprovalsReviewer != tt.reviewer {
-			t.Fatalf("%s preset = %+v", tt.mode, got)
+		if got := NormalizePermissionMode(tt.in); got != tt.want {
+			t.Fatalf("NormalizePermissionMode(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
 
-func TestApplyPermissionModePresetRewritesAxesAndClearsToolPolicy(t *testing.T) {
-	agent := AgentConfig{
-		PermissionMode:    PermissionModeFullAccess,
-		PermissionProfile: PermissionProfileDangerFullAccess,
-		ApprovalPolicy:    ApprovalPolicyNever,
-		ApprovalsReviewer: ApprovalsReviewerUser,
-		ToolPolicy: ToolPolicyConfig{
-			Tools: map[string]string{"bash": "allow"},
-			Risks: map[string]string{"high": "deny"},
-		},
-	}
-
-	permissions, err := ApplyPermissionModePreset(&agent, PermissionModeReadOnly)
-	if err != nil {
-		t.Fatalf("ApplyPermissionModePreset: %v", err)
-	}
-	if permissions.Mode != PermissionModeReadOnly ||
-		agent.PermissionMode != PermissionModeReadOnly ||
-		agent.PermissionProfile != PermissionProfileReadOnly ||
-		agent.ApprovalPolicy != ApprovalPolicyOnRequest ||
-		agent.ApprovalsReviewer != ApprovalsReviewerUser {
-		t.Fatalf("read_only preset not applied: permissions=%+v agent=%+v", permissions, agent)
-	}
-	if agent.ToolPolicy.DefaultAction != "" || len(agent.ToolPolicy.Tools) != 0 || len(agent.ToolPolicy.Risks) != 0 {
-		t.Fatalf("permission preset should clear stale tool policy: %+v", agent.ToolPolicy)
-	}
-}
-
-func TestResolvePermissionModePresetRejectsInvalidMode(t *testing.T) {
-	if _, err := ResolvePermissionModePreset("not-a-mode"); err == nil {
-		t.Fatal("expected invalid permission mode error")
-	}
-}
-
-func TestAutoReviewKeepsAgentBoundaryAndOnlyChangesReviewer(t *testing.T) {
-	agent, ok := PermissionPresetForMode(PermissionModeAgent)
-	if !ok {
-		t.Fatal("agent preset missing")
-	}
-	autoReview, ok := PermissionPresetForMode(PermissionModeAutoReview)
-	if !ok {
-		t.Fatal("auto_review preset missing")
-	}
-	if autoReview.PermissionProfile != agent.PermissionProfile ||
-		autoReview.ApprovalPolicy != agent.ApprovalPolicy {
-		t.Fatalf("auto_review should share agent boundary and approval policy: agent=%+v auto_review=%+v", agent, autoReview)
-	}
-	if autoReview.ApprovalsReviewer != ApprovalsReviewerAutoReview {
-		t.Fatalf("auto_review reviewer = %q, want auto_review", autoReview.ApprovalsReviewer)
+func TestResolveAgentPermissionsKeepsOnlyMode(t *testing.T) {
+	permissions := ResolveAgentPermissions(AgentConfig{PermissionMode: PermissionModeReadOnly})
+	if permissions.Mode != PermissionModeReadOnly {
+		t.Fatalf("permissions = %+v, want read_only", permissions)
 	}
 }
 
@@ -699,7 +616,7 @@ func TestConfig_MCPToolOverrides(t *testing.T) {
 	}
 }
 
-func TestConfig_ToolPolicy(t *testing.T) {
+func TestConfig_IgnoresLegacyPermissionKeys(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
@@ -714,6 +631,13 @@ func TestConfig_ToolPolicy(t *testing.T) {
   },
   "agent": {
     "system_prompt": "test",
+    "permission_mode": "full_access",
+    "permission_profile": "danger_full_access",
+    "approval_policy": "never",
+    "approvals_reviewer": "auto_review",
+    "permission_rules": {
+      "bash": "ask"
+    },
     "tool_policy": {
       "default_action": "allow",
       "tools": {
@@ -738,84 +662,8 @@ func TestConfig_ToolPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
-	if cfg.Agent.ToolPolicy.DefaultAction != "allow" {
-		t.Fatalf("default_action = %q, want allow", cfg.Agent.ToolPolicy.DefaultAction)
-	}
-	if cfg.Agent.ToolPolicy.Tools["run_shell"] != "require_approval" {
-		t.Fatalf("run_shell action = %q, want require_approval", cfg.Agent.ToolPolicy.Tools["run_shell"])
-	}
-	if cfg.Agent.ToolPolicy.Kinds["web"] != "allow" {
-		t.Fatalf("web action = %q, want allow", cfg.Agent.ToolPolicy.Kinds["web"])
-	}
-	if cfg.Agent.ToolPolicy.Risks["medium"] != "auto_classify" {
-		t.Fatalf("medium risk action = %q, want auto_classify", cfg.Agent.ToolPolicy.Risks["medium"])
-	}
-	if cfg.Agent.ToolPolicy.Risks["high"] != "deny" {
-		t.Fatalf("high risk action = %q, want deny", cfg.Agent.ToolPolicy.Risks["high"])
-	}
-}
-
-func TestConfig_ToolPolicyRejectsProfileField(t *testing.T) {
-	workdir := t.TempDir()
-	configPath := filepath.Join(workdir, ".wuu.json")
-	jsonData := `{
-  "default_provider": "main",
-  "providers": {
-    "main": {
-      "type": "openai-compatible",
-      "base_url": "https://example.com",
-      "api_key": "sk-test",
-      "model": "gpt-test"
-    }
-  },
-  "agent": {
-    "system_prompt": "test",
-    "tool_policy": {
-      "profile": "reckless"
-    }
-  }
-}`
-
-	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	_, _, err := LoadFrom(workdir, "")
-	if err == nil || !strings.Contains(err.Error(), `unknown field "profile"`) {
-		t.Fatalf("expected tool_policy.profile to be rejected, got %v", err)
-	}
-}
-
-func TestConfig_ToolPolicyRejectsInvalidAction(t *testing.T) {
-	workdir := t.TempDir()
-	configPath := filepath.Join(workdir, ".wuu.json")
-	jsonData := `{
-  "default_provider": "main",
-  "providers": {
-    "main": {
-      "type": "openai-compatible",
-      "base_url": "https://example.com",
-      "api_key": "sk-test",
-      "model": "gpt-test"
-    }
-  },
-  "agent": {
-    "system_prompt": "test",
-    "tool_policy": {
-      "risks": {
-        "high": "maybe"
-      }
-    }
-  }
-}`
-
-	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	_, _, err := LoadFrom(workdir, "")
-	if err == nil || !strings.Contains(err.Error(), "agent.tool_policy.risks.high") {
-		t.Fatalf("expected invalid policy action error, got %v", err)
+	if cfg.Agent.PermissionMode != PermissionModeStandard {
+		t.Fatalf("legacy full_access should normalize to standard, got %q", cfg.Agent.PermissionMode)
 	}
 }
 
@@ -1787,7 +1635,7 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 	}
 }
 
-func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
+func TestUpdateProviderRuntimePersistsPermissionMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".wuu.json")
 	orig := `{
@@ -1811,7 +1659,7 @@ func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mode := PermissionModeAutoReview
+	mode := PermissionModeUnconfined
 	if err := UpdateProviderRuntime(path, "old", "old-model", nil, nil, nil, nil, nil, &mode); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
@@ -1820,15 +1668,18 @@ func TestUpdateProviderRuntimePersistsPermissionModePreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if cfg.Agent.ToolPolicy.DefaultAction != "" || len(cfg.Agent.ToolPolicy.Tools) != 0 || len(cfg.Agent.ToolPolicy.Risks) != 0 {
-		t.Fatalf("permission mode should clear old tool policy config: %+v", cfg.Agent.ToolPolicy)
-	}
 	permissions := ResolveAgentPermissions(cfg.Agent)
-	if permissions.Mode != PermissionModeAutoReview ||
-		permissions.PermissionProfile != PermissionProfileWorkspaceWrite ||
-		permissions.ApprovalPolicy != ApprovalPolicyOnRequest ||
-		permissions.ApprovalsReviewer != ApprovalsReviewerAutoReview {
+	if permissions.Mode != PermissionModeUnconfined {
 		t.Fatalf("permission mode not persisted: %+v", permissions)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	for _, legacyKey := range []string{"tool_policy", "permission_profile", "approval_policy", "approvals_reviewer", "permission_rules"} {
+		if strings.Contains(string(raw), legacyKey) {
+			t.Fatalf("legacy permission key %q should be removed from config:\n%s", legacyKey, raw)
+		}
 	}
 }
 

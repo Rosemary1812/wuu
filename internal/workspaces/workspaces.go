@@ -89,3 +89,16 @@ func FileScopeRoots(homeRoot, wuuHome string) []string {
 	}
 	return roots
 }
+
+// BoundaryRoots returns the complete reachable file scope for a runtime: its
+// own root, every registered workspace, the system temp directory, and
+// caller-owned extras such as memory notebooks or session artifact dirs.
+func BoundaryRoots(runtimeRoot, wuuHome string, extra ...string) []string {
+	roots := FileScopeRoots(runtimeRoot, wuuHome)
+	for _, root := range extra {
+		if root = strings.TrimSpace(root); root != "" {
+			roots = append(roots, root)
+		}
+	}
+	return roots
+}

@@ -67,28 +67,6 @@ func gitCall(t *testing.T, kit *Toolkit, subcmd string, args ...string) map[stri
 	return p
 }
 
-func gitCallConfirmed(t *testing.T, kit *Toolkit, subcmd string, args ...string) map[string]any {
-	t.Helper()
-	payload := map[string]any{
-		"subcommand":            subcmd,
-		"args":                  args,
-		"confirm_user_approved": true,
-	}
-	if subcmd == "push" {
-		payload["confirm_remote_write"] = true
-	}
-	aj, _ := json.Marshal(payload)
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "git", Arguments: string(aj)})
-	if err != nil {
-		t.Fatalf("git %s %v: %v", subcmd, args, err)
-	}
-	var p map[string]any
-	if err := json.Unmarshal([]byte(resp), &p); err != nil {
-		t.Fatalf("parse: %v\nraw: %s", err, resp)
-	}
-	return p
-}
-
 func requireGitWorkspaceRevision(t *testing.T, p map[string]any) string {
 	t.Helper()
 	rev, ok := p["workspace_revision"].(string)
@@ -111,24 +89,6 @@ func requireGitAction(t *testing.T, p map[string]any, want string) {
 func gitErr(t *testing.T, kit *Toolkit, subcmd string, args ...string) string {
 	t.Helper()
 	aj, _ := json.Marshal(map[string]any{"subcommand": subcmd, "args": args})
-	_, err := kit.Execute(context.Background(), providers.ToolCall{Name: "git", Arguments: string(aj)})
-	if err == nil {
-		t.Fatalf("expected error for git %s %v", subcmd, args)
-	}
-	return err.Error()
-}
-
-func gitErrConfirmed(t *testing.T, kit *Toolkit, subcmd string, args ...string) string {
-	t.Helper()
-	payload := map[string]any{
-		"subcommand":            subcmd,
-		"args":                  args,
-		"confirm_user_approved": true,
-	}
-	if subcmd == "push" {
-		payload["confirm_remote_write"] = true
-	}
-	aj, _ := json.Marshal(payload)
 	_, err := kit.Execute(context.Background(), providers.ToolCall{Name: "git", Arguments: string(aj)})
 	if err == nil {
 		t.Fatalf("expected error for git %s %v", subcmd, args)
@@ -235,7 +195,7 @@ func TestToolkit_Git_MultiWordSubcommands(t *testing.T) {
 func TestToolkit_Git_CommitAllowedOnStagedChanges(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	runBash(t, root, "printf 'next\n' > staged.txt && git add staged.txt")
-	p := gitCallConfirmed(t, kit, "commit", "-m", "Add staged file")
+	p := gitCall(t, kit, "commit", "-m", "Add staged file")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("commit: %v", p)
 	}
@@ -257,7 +217,7 @@ func TestToolkit_Git_AddStagesExplicitPaths(t *testing.T) {
 	runBash(t, root, "printf 'dirty\n' >> hello.txt")
 	runBash(t, root, "printf 'new\n' > new.txt")
 
-	p := gitCallConfirmed(t, kit, "add", "hello.txt", "new.txt")
+	p := gitCall(t, kit, "add", "hello.txt", "new.txt")
 	requireGitAction(t, p, "add")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("git add: %+v", p)
@@ -280,27 +240,12 @@ func TestToolkit_Git_AddAcceptsLiteralPathCharacters(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	runBash(t, root, "printf 'new\n' > 'hello (copy).txt'")
 
-	p := gitCallConfirmed(t, kit, "add", "hello (copy).txt")
+	p := gitCall(t, kit, "add", "hello (copy).txt")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("git add literal path: %+v", p)
 	}
 	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "hello (copy).txt" {
 		t.Fatalf("staged file = %q, want literal path", got)
-	}
-}
-
-func TestToolkit_Git_AddRequiresUserApproval(t *testing.T) {
-	kit, root := setupGitRepo(t)
-	runBash(t, root, "printf 'dirty\n' >> hello.txt")
-
-	msg := gitErr(t, kit, "add", "hello.txt")
-	if !strings.Contains(msg, "error_kind=approval_required") ||
-		!strings.Contains(msg, "confirm_user_approved=true") ||
-		!strings.Contains(msg, "staging") {
-		t.Fatalf("expected add approval guidance, got: %s", msg)
-	}
-	if got := strings.TrimSpace(runBash(t, root, "git diff --cached --name-only")); got != "" {
-		t.Fatalf("git add should not run without approval, staged: %q", got)
 	}
 }
 
@@ -314,7 +259,7 @@ func TestToolkit_Git_AddRejectsBroadOrMagicPathspecs(t *testing.T) {
 		{":(glob)*.go"},
 		{"-A"},
 	} {
-		msg := gitErrConfirmed(t, kit, "add", args...)
+		msg := gitErr(t, kit, "add", args...)
 		if !strings.Contains(msg, "explicit") &&
 			!strings.Contains(msg, "literal") &&
 			!strings.Contains(msg, "workspace") &&
@@ -328,7 +273,7 @@ func TestToolkit_Git_AddRejectsSensitivePathsBeforeStaging(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	runBash(t, root, "mkdir -p config && printf 'API_KEY=secret-value\n' > config/.env")
 
-	msg := gitErrConfirmed(t, kit, "add", "config")
+	msg := gitErr(t, kit, "add", "config")
 	if !strings.Contains(msg, "sensitive path") || !strings.Contains(msg, "explicit secret handling") {
 		t.Fatalf("expected sensitive path staging guidance, got: %q", msg)
 	}
@@ -344,7 +289,7 @@ func TestToolkit_Git_RestoreStagedUnstagesExplicitPaths(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	runBash(t, root, "printf 'dirty\n' >> hello.txt && git add hello.txt")
 
-	p := gitCallConfirmed(t, kit, "restore --staged", "hello.txt")
+	p := gitCall(t, kit, "restore --staged", "hello.txt")
 	requireGitAction(t, p, "restore_staged")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("git restore --staged: %+v", p)
@@ -364,7 +309,7 @@ func TestToolkit_Git_RestoreStagedUnstagesExplicitPaths(t *testing.T) {
 
 func TestToolkit_Git_CommitWithoutStagedChangesFailsCleanly(t *testing.T) {
 	kit, _ := setupGitRepo(t)
-	p := gitCallConfirmed(t, kit, "commit", "-m", "Nothing to commit")
+	p := gitCall(t, kit, "commit", "-m", "Nothing to commit")
 	if p["exit_code"].(float64) == 0 {
 		t.Fatalf("expected non-zero exit for empty commit: %v", p)
 	}
@@ -378,7 +323,7 @@ func TestToolkit_Git_CommitRejectsSensitiveStagedPaths(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	runBash(t, root, "printf 'API_KEY=staged-secret-value\n' > .env && git add .env")
 
-	msg := gitErrConfirmed(t, kit, "commit", "-m", "Add env")
+	msg := gitErr(t, kit, "commit", "-m", "Add env")
 	if !strings.Contains(msg, "staged sensitive path") || !strings.Contains(msg, "explicit secret handling") {
 		t.Fatalf("expected sensitive staged path guidance, got: %q", msg)
 	}
@@ -394,11 +339,6 @@ func TestToolkit_Git_CommitRejectsSensitiveStagedPaths(t *testing.T) {
 func TestToolkit_Git_UnconfinedAllowsSensitiveStageAndCommitWithoutConfirmation(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	kit.SetBoundary(UnconfinedBoundary())
-	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
-	if !ok {
-		t.Fatal("missing full_access policy")
-	}
-	kit.SetToolPolicy(policy)
 	runBash(t, root, "printf 'API_KEY=full-access-secret\n' > .env")
 
 	p := gitCall(t, kit, "add", ".env")
@@ -413,7 +353,7 @@ func TestToolkit_Git_UnconfinedAllowsSensitiveStageAndCommitWithoutConfirmation(
 		t.Fatalf("unconfined git commit should run without extra confirmation: %+v", p)
 	}
 	if log := runBash(t, root, "git log --format=%s -1"); !strings.Contains(log, "Add env") {
-		t.Fatalf("expected full_access commit in log, got %q", log)
+		t.Fatalf("expected unconfined commit in log, got %q", log)
 	}
 }
 
@@ -435,7 +375,7 @@ func TestToolkit_Git_CommitAllowsNormalMessageForms(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	runBash(t, root, "printf 'next\n' > staged.txt && git add staged.txt")
 
-	p := gitCallConfirmed(t, kit, "commit",
+	p := gitCall(t, kit, "commit",
 		"-m", "Subject with spaces",
 		"-m", "Body mentions \"quoted text\" and shell-looking text $(ignored); still a message.",
 	)
@@ -452,7 +392,7 @@ func TestToolkit_Git_CommitAllowsMessageFileAndAmend(t *testing.T) {
 	runBash(t, root, "printf 'From message file\n\nBody\n' > msg.txt")
 	runBash(t, root, "printf 'next\n' > staged.txt && git add staged.txt")
 
-	p := gitCallConfirmed(t, kit, "commit", "-F", "msg.txt")
+	p := gitCall(t, kit, "commit", "-F", "msg.txt")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("commit with -F failed: %+v", p)
 	}
@@ -460,7 +400,7 @@ func TestToolkit_Git_CommitAllowsMessageFileAndAmend(t *testing.T) {
 		t.Fatalf("unexpected commit message from file:\n%s", log)
 	}
 
-	p = gitCallConfirmed(t, kit, "commit", "--amend", "-m", "Amended subject")
+	p = gitCall(t, kit, "commit", "--amend", "-m", "Amended subject")
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("commit --amend -m failed: %+v", p)
 	}
@@ -483,31 +423,16 @@ func TestToolkit_Git_CommitRejectsUnsafeMessageFile(t *testing.T) {
 	}
 }
 
-func TestToolkit_Git_CommitRequiresUserApproval(t *testing.T) {
-	kit, root := setupGitRepo(t)
-	runBash(t, root, "printf 'next\n' > staged.txt && git add staged.txt")
-
-	msg := gitErr(t, kit, "commit", "-m", "Add staged file")
-	if !strings.Contains(msg, "error_kind=approval_required") ||
-		!strings.Contains(msg, "confirm_user_approved=true") ||
-		!strings.Contains(msg, "ask the user") {
-		t.Fatalf("expected commit approval guidance, got: %s", msg)
-	}
-	if log := runBash(t, root, "git log --format=%s"); strings.Contains(log, "Add staged file") {
-		t.Fatalf("commit should not run without explicit approval")
-	}
-}
-
 func TestToolkit_Git_PushValidation(t *testing.T) {
 	kit, root, _ := setupGitRemoteRepo(t)
 
-	p := gitCallConfirmed(t, kit, "push")
+	p := gitCall(t, kit, "push")
 	if p["exit_code"].(float64) == 0 {
 		t.Fatalf("plain push without upstream should fail at runtime in fresh repo: %v", p)
 	}
 
 	branch := strings.TrimSpace(runBash(t, root, "git rev-parse --abbrev-ref HEAD"))
-	p = gitCallConfirmed(t, kit, "push", "-u", "origin", branch)
+	p = gitCall(t, kit, "push", "-u", "origin", branch)
 	if p["exit_code"].(float64) != 0 {
 		t.Fatalf("push -u origin branch should be allowed and succeed: %v", p)
 	}
@@ -519,18 +444,6 @@ func TestToolkit_Git_PushValidation(t *testing.T) {
 	msg = gitErr(t, kit, "push", "origin", "otherbranch")
 	if !strings.Contains(msg, "only supports") && !strings.Contains(msg, "only allows") {
 		t.Fatalf("push origin otherbranch: got %s", msg)
-	}
-}
-
-func TestToolkit_Git_PushRequiresUserApproval(t *testing.T) {
-	kit, root, _ := setupGitRemoteRepo(t)
-	branch := strings.TrimSpace(runBash(t, root, "git rev-parse --abbrev-ref HEAD"))
-
-	msg := gitErr(t, kit, "push", "-u", "origin", branch)
-	if !strings.Contains(msg, "error_kind=approval_required") ||
-		!strings.Contains(msg, "confirm_remote_write=true") ||
-		!strings.Contains(msg, "ask the user") {
-		t.Fatalf("expected push approval guidance, got: %s", msg)
 	}
 }
 
@@ -565,11 +478,6 @@ func TestToolkit_Git_RedactsSensitiveDiffContent(t *testing.T) {
 func TestToolkit_Git_UnconfinedDoesNotRedactSensitiveDiffContent(t *testing.T) {
 	kit, root := setupGitRepo(t)
 	kit.SetBoundary(UnconfinedBoundary())
-	policy, ok := PolicyForProfile(ToolPolicyProfileFullAccess)
-	if !ok {
-		t.Fatal("missing full_access policy")
-	}
-	kit.SetToolPolicy(policy)
 	runBash(t, root, "printf 'API_KEY=old-secret-value\n' > .env && git add .env && git commit -qm env")
 	runBash(t, root, "printf 'API_KEY=new-secret-value\n' > .env")
 

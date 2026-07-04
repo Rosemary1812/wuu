@@ -75,7 +75,6 @@ import {
   ProjectPickerMenu,
   RuntimePicker,
   permissionModeFromSummary,
-  permissionModeHasAdvancedOverrides,
   permissionModeOption
 } from "./ComposerRuntimeMenus";
 import { useComposerQueryHistory } from "./ComposerQueryHistory";
@@ -322,10 +321,9 @@ export function Composer({
     [activeContext, compactDisabledReason, initialized, running, slashSkills]
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
-  const permissionModeHasOverrides = permissionModeHasAdvancedOverrides(initialized?.tool_policy, initialized?.permissions);
   const permissionMode = permissionModeFromSummary(initialized?.permissions);
   const permissionOption = permissionModeOption(permissionMode);
-  const permissionChipLabel = permissionModeHasOverrides ? "自定义权限" : permissionOption.chipLabel;
+  const permissionChipLabel = permissionOption.chipLabel;
   const projectPillLabel = heroProjectPillLabel(activeContext, activeProject);
   const projectPillTitle =
     activeContext?.kind === "project" && activeProject?.path
@@ -1001,7 +999,6 @@ export function Composer({
                     >
                       <AccessMenu
                         permissions={initialized?.permissions}
-                        policy={initialized?.tool_policy}
                         disabled={!initialized || readOnly || running}
                         onSelect={onSelectPermissionMode}
                       />

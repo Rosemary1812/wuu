@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -49,10 +48,7 @@ func newFakeControllerBatches(batches ...[]Notification) *fakeController {
 			Model:           "test-model",
 			WorkspaceRoot:   "/repo",
 			Permissions: appserver.PermissionSummary{
-				Mode:              "agent",
-				PermissionProfile: "workspace_write",
-				ApprovalPolicy:    "on_request",
-				ApprovalsReviewer: "user",
+				Mode: "standard",
 			},
 		},
 		thread:  appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},
@@ -635,99 +631,6 @@ func TestRunIgnoresChildTurnErrorUntilRootCompletes(t *testing.T) {
 	result := events[len(events)-1]
 	if result["type"] != "result" || result["status"] != "completed" || result["final_message"] != "parent handled child failure" {
 		t.Fatalf("exec should let root turn decide after child error, got %+v\n%s", result, stdout.String())
-	}
-}
-
-func TestRunApprovalUnavailableReturnsPermissionExit(t *testing.T) {
-	controller := newFakeController(
-		notification(notificationApprovalRequested, approvalRequestedNotification{
-			RequestID: "server-1",
-			Method:    appserver.MethodToolApprovalRequest,
-			Request:   appserver.ToolApprovalRequest{ID: "approval-1", ToolName: "write_file", Risk: "high"},
-		}),
-		notification(notificationApprovalResolved, approvalResolvedNotification{
-			RequestID: "server-1",
-			Method:    appserver.MethodToolApprovalRequest,
-			Error:     "non-interactive exec cannot handle app-server request",
-		}),
-		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{ThreadID: "thread-1", Turn: appserver.Turn{ID: "turn-1"}, Content: "approval required"}),
-	)
-	var stdout bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		Prompt:     "write file",
-		JSON:       true,
-		Stdout:     &stdout,
-		Controller: controller,
-	})
-	if ExitCode(err) != ExitPermissionDenied {
-		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
-	}
-	events := parseJSONLines(t, stdout.String())
-	types := eventTypes(events)
-	for _, want := range []string{"approval_requested", "approval_resolved", "result"} {
-		if !containsString(types, want) {
-			t.Fatalf("missing %s in events %#v\n%s", want, types, stdout.String())
-		}
-	}
-	result := events[len(events)-1]
-	if result["status"] != "permission_denied" {
-		t.Fatalf("unexpected result: %+v", result)
-	}
-}
-
-func TestProtocolClientHandlesApprovalRequest(t *testing.T) {
-	serverToClientR, serverToClientW := io.Pipe()
-	clientToServerR, clientToServerW := io.Pipe()
-	defer serverToClientR.Close()
-	defer serverToClientW.Close()
-	defer clientToServerR.Close()
-	defer clientToServerW.Close()
-
-	client := NewProtocolClientWithServerRequestHandler(context.Background(), serverToClientR, clientToServerW, func(_ context.Context, req ServerRequest) ServerRequestResult {
-		if req.Method != appserver.MethodToolApprovalRequest {
-			t.Fatalf("unexpected request method: %s", req.Method)
-		}
-		return ServerRequestResult{Result: appserver.ToolApprovalResponse{Decision: "approved", Reason: "test"}}
-	})
-	request := appserver.ToolApprovalRequest{ID: "approval-1", ToolName: "write_file"}
-	rawParams, err := json.Marshal(request)
-	if err != nil {
-		t.Fatalf("marshal params: %v", err)
-	}
-	go func() {
-		_ = json.NewEncoder(serverToClientW).Encode(protocolEnvelope{
-			ID:     json.RawMessage(`"server-1"`),
-			Method: appserver.MethodToolApprovalRequest,
-			Params: rawParams,
-		})
-	}()
-
-	var response protocolEnvelope
-	if err := json.NewDecoder(clientToServerR).Decode(&response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if response.Error != nil {
-		t.Fatalf("unexpected response error: %+v", response.Error)
-	}
-	var approval appserver.ToolApprovalResponse
-	if err := json.Unmarshal(response.Result, &approval); err != nil {
-		t.Fatalf("decode approval response: %v", err)
-	}
-	if approval.Decision != "approved" {
-		t.Fatalf("approval decision = %q", approval.Decision)
-	}
-	seen := []string{}
-	for len(seen) < 2 {
-		select {
-		case notification := <-client.Notifications():
-			seen = append(seen, notification.Method)
-		default:
-			t.Fatalf("missing approval notifications, saw %#v", seen)
-		}
-	}
-	if !reflect.DeepEqual(seen, []string{notificationApprovalRequested, notificationApprovalResolved}) {
-		t.Fatalf("approval notifications = %#v", seen)
 	}
 }
 

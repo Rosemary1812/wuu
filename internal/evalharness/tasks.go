@@ -225,7 +225,6 @@ type ToolObservation struct {
 	ResultBudgeted       bool                  `json:"result_budgeted,omitempty"`
 	ResultRef            string                `json:"result_ref,omitempty"`
 	ArtifactRefs         []string              `json:"artifact_refs,omitempty"`
-	ApprovalRef          string                `json:"approval_ref,omitempty"`
 	PatchRiskSummary     *PatchRiskObservation `json:"patch_risk_summary,omitempty"`
 	ResultEnvelope       *toolresult.Envelope  `json:"result_envelope,omitempty"`
 }

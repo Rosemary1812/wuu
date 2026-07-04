@@ -15,11 +15,9 @@ import (
 )
 
 const (
-	DefaultTimeout   = 30 * time.Second
-	DefaultMaxTokens = 512
-
-	PermissionProfileReadOnly = "read_only"
-	ApprovalPolicyNever       = "never"
+	DefaultTimeout     = 30 * time.Second
+	DefaultMaxTokens   = 512
+	PermissionModeRead = "read_only"
 )
 
 type Outcome string
@@ -32,15 +30,14 @@ const (
 )
 
 type Boundary struct {
-	PermissionProfile string `json:"permission_profile"`
-	ApprovalPolicy    string `json:"approval_policy"`
-	Tools             bool   `json:"tools"`
-	MCP               bool   `json:"mcp"`
-	Hooks             bool   `json:"hooks"`
-	Plugins           bool   `json:"plugins"`
-	Skills            bool   `json:"skills"`
-	MemoryWrites      bool   `json:"memory_writes"`
-	DurableWrites     bool   `json:"durable_writes"`
+	PermissionMode string `json:"permission_mode"`
+	Tools          bool   `json:"tools"`
+	MCP            bool   `json:"mcp"`
+	Hooks          bool   `json:"hooks"`
+	Plugins        bool   `json:"plugins"`
+	Skills         bool   `json:"skills"`
+	MemoryWrites   bool   `json:"memory_writes"`
+	DurableWrites  bool   `json:"durable_writes"`
 }
 
 type Config struct {
@@ -174,17 +171,13 @@ func (s *Session) Fork(opts ForkOptions) (*Session, error) {
 
 func RestrictedBoundary() Boundary {
 	return Boundary{
-		PermissionProfile: PermissionProfileReadOnly,
-		ApprovalPolicy:    ApprovalPolicyNever,
+		PermissionMode: PermissionModeRead,
 	}
 }
 
 func (b Boundary) ValidateRestricted() error {
-	if strings.TrimSpace(b.PermissionProfile) != PermissionProfileReadOnly {
-		return fmt.Errorf("review session permission_profile must be %q", PermissionProfileReadOnly)
-	}
-	if strings.TrimSpace(b.ApprovalPolicy) != ApprovalPolicyNever {
-		return fmt.Errorf("review session approval_policy must be %q", ApprovalPolicyNever)
+	if strings.TrimSpace(b.PermissionMode) != PermissionModeRead {
+		return fmt.Errorf("review session permission_mode must be %q", PermissionModeRead)
 	}
 	if b.Tools || b.MCP || b.Hooks || b.Plugins || b.Skills || b.MemoryWrites || b.DurableWrites {
 		return errors.New("review session boundary must disable tools, MCP, hooks, plugins, skills, memory writes, and durable writes")

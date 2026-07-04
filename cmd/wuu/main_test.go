@@ -396,72 +396,6 @@ func TestExecOptionsFromInputJSONAcceptsOutputSchema(t *testing.T) {
 	}
 }
 
-func TestExecOptionsFromCLIAcceptsApprovalAndToolOverrides(t *testing.T) {
-	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	cfg := addExecFlags(fs)
-	if err := fs.Parse([]string{
-		"--approval-handler", "approve-tool",
-		"--allow-tool", "run_shell",
-		"--deny-tool", "write_file",
-	}); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	opts, err := execOptionsFromCLI(cfg, "hello", "", false, nil)
-	if err != nil {
-		t.Fatalf("execOptionsFromCLI: %v", err)
-	}
-	if opts.ApprovalHandler != "approve-tool" {
-		t.Fatalf("ApprovalHandler = %q", opts.ApprovalHandler)
-	}
-	if !reflect.DeepEqual(opts.AllowTools, []string{"run_shell"}) || !reflect.DeepEqual(opts.DenyTools, []string{"write_file"}) {
-		t.Fatalf("tool overrides = allow %+v deny %+v", opts.AllowTools, opts.DenyTools)
-	}
-}
-
-func TestExecOptionsFromInputJSONAcceptsApprovalSocketAndToolOverrides(t *testing.T) {
-	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	cfg := addExecFlags(fs)
-	if err := fs.Parse(nil); err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	opts, err := execOptionsFromCLI(cfg, "hello", "", false, &execInputPayload{
-		ApprovalSocket: "/tmp/wuu-approval.sock",
-		AllowTools:     []string{"read_file"},
-		DenyTools:      []string{"run_shell"},
-	})
-	if err != nil {
-		t.Fatalf("execOptionsFromCLI: %v", err)
-	}
-	if opts.ApprovalSocket != "/tmp/wuu-approval.sock" {
-		t.Fatalf("ApprovalSocket = %q", opts.ApprovalSocket)
-	}
-	if !reflect.DeepEqual(opts.AllowTools, []string{"read_file"}) || !reflect.DeepEqual(opts.DenyTools, []string{"run_shell"}) {
-		t.Fatalf("tool overrides = allow %+v deny %+v", opts.AllowTools, opts.DenyTools)
-	}
-}
-
-func TestRunExecRejectsConflictingToolOverrides(t *testing.T) {
-	err := run([]string{"exec", "--allow-tool", "run_shell", "--deny-tool", "run_shell", "hello"})
-	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
-		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "both allowed and denied") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestRunExecRejectsConflictingApprovalHandlers(t *testing.T) {
-	err := run([]string{"exec", "--approval-handler", "approve", "--approval-socket", "/tmp/wuu.sock", "hello"})
-	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
-		t.Fatalf("ExitCode = %d, err=%v", wuuexec.ExitCode(err), err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestRunExecRejectsNegativeMaxTurnsWithExitCodeTwo(t *testing.T) {
 	err := run([]string{"exec", "--max-turns=-1", "hello"})
 	if wuuexec.ExitCode(err) != wuuexec.ExitInvalidInput {
@@ -1043,13 +977,12 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 		RevisionAfter:        "git:after:worktree:bbb",
 		Success:              false,
 		Error:                "authorization: bearer abc123",
-		ErrorKind:            "approval_required",
+		ErrorKind:            "boundary_denied",
 		RawOutputBytes:       1024,
 		ReturnedOutputBytes:  256,
 		ResultBudgeted:       true,
 		ResultRef:            "/tmp/wuu/tool-results/call_1.txt",
 		ArtifactRefs:         []string{"/tmp/wuu/tool-results/call_1.txt", "/tmp/wuu/tool-results/run-test-logs/call_1.log"},
-		ApprovalRef:          "/tmp/wuu/approvals/call_1.json",
 		PatchRiskSummary:     &tools.ToolPatchRisk{FileCount: 2, HunkCount: 2, AddedLines: 8, DeletedLines: 3, Actions: map[string]int{"update": 2}, MultiFile: true, RiskLevel: "medium"},
 	}}
 
@@ -1078,7 +1011,7 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	if strings.Contains(got[0].Error, "abc123") {
 		t.Fatalf("error secret leaked: %q", got[0].Error)
 	}
-	if got[0].ErrorKind != "approval_required" {
+	if got[0].ErrorKind != "boundary_denied" {
 		t.Fatalf("error kind not preserved: %+v", got[0])
 	}
 	if got[0].ResultRef != records[0].ResultRef {
@@ -1086,9 +1019,6 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got[0].ArtifactRefs, records[0].ArtifactRefs) {
 		t.Fatalf("artifact refs not preserved: %+v", got[0])
-	}
-	if got[0].ApprovalRef != records[0].ApprovalRef {
-		t.Fatalf("approval ref not preserved: %+v", got[0])
 	}
 	if got[0].PatchRiskSummary == nil ||
 		got[0].PatchRiskSummary.RiskLevel != "medium" ||
@@ -1105,9 +1035,6 @@ func TestEvalToolObservationsAreMetadataOnly(t *testing.T) {
 	artifactRefs, ok := got[0].ResultEnvelope.Data["artifact_refs"].([]string)
 	if !ok || !reflect.DeepEqual(artifactRefs, records[0].ArtifactRefs) {
 		t.Fatalf("result envelope missing artifact refs: %+v", got[0].ResultEnvelope)
-	}
-	if got[0].ResultEnvelope.Data["approval_ref"] != records[0].ApprovalRef {
-		t.Fatalf("result envelope missing approval ref: %+v", got[0].ResultEnvelope)
 	}
 	if got[0].ResultEnvelope.Data["error_kind"] != records[0].ErrorKind {
 		t.Fatalf("result envelope missing error kind: %+v", got[0].ResultEnvelope)
@@ -1387,7 +1314,6 @@ func TestRunEvalReplayTraceJSON(t *testing.T) {
 
 func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	tracePath := filepath.Join(t.TempDir(), "eval-trace.jsonl")
-	approvalRef := "/tmp/wuu/session/approvals/call-process.json"
 	if err := evalharness.WriteTrace(tracePath, evalharness.Result{
 		TaskID:             "task-1",
 		TaskName:           "Task One",
@@ -1412,9 +1338,8 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 				ResultAction:    "start_background",
 				Kind:            "shell",
 				Risk:            "high",
-				PolicyAction:    "require_approval",
-				ErrorKind:       "approval_required",
-				ApprovalRef:     approvalRef,
+				PolicyAction:    "deny",
+				ErrorKind:       "boundary_denied",
 				ArgumentsSHA256: strings.Repeat("e", 64),
 				Success:         false,
 			}},
@@ -1466,7 +1391,7 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "policy_blocks: bash:require_approval:approval_required:call_id=call-process:approval_ref="+approvalRef) {
+	if !strings.Contains(output, "policy_blocks: bash:deny:boundary_denied:call_id=call-process") {
 		t.Fatalf("replay text output missing policy blocks:\n%s", output)
 	}
 	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
@@ -1798,10 +1723,7 @@ func newCLIExecFakeController(events ...wuuexec.Notification) *cliExecFakeContro
 			Model:           "test-model",
 			WorkspaceRoot:   "/repo",
 			Permissions: appserver.PermissionSummary{
-				Mode:              "agent",
-				PermissionProfile: "workspace_write",
-				ApprovalPolicy:    "on_request",
-				ApprovalsReviewer: "user",
+				Mode: "standard",
 			},
 		},
 		thread: appserver.Thread{ID: "thread-1", ModelProvider: "test-provider", Model: "test-model", CWD: "/repo"},

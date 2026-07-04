@@ -1428,7 +1428,7 @@ func TestRunToolLoop_ZeroMaxStepsIsUnlimited(t *testing.T) {
 }
 
 func TestErrorJSONIncludesActionableEnvelope(t *testing.T) {
-	raw := errorJSON(errors.New(`tool "run_shell" blocked by policy: error_kind=approval_required policy_action=require_approval risk=high model_next_action="ask user"`))
+	raw := errorJSON(errors.New(`tool "write_file" denied by workspace boundary: error_kind=boundary_denied model_next_action="ask user to add workspace"`))
 	var parsed struct {
 		OK              bool     `json:"ok"`
 		Error           string   `json:"error"`
@@ -1438,11 +1438,11 @@ func TestErrorJSONIncludesActionableEnvelope(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		t.Fatalf("parse errorJSON: %v\n%s", err, raw)
 	}
-	if parsed.OK || parsed.Error == "" || parsed.ErrorKind != "approval_required" {
+	if parsed.OK || parsed.Error == "" || parsed.ErrorKind != "boundary_denied" {
 		t.Fatalf("unexpected error envelope: %+v", parsed)
 	}
-	if !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "approval") {
-		t.Fatalf("approval error should guide the model: %+v", parsed.NextSuggestions)
+	if !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "workspace boundary") {
+		t.Fatalf("boundary error should guide the model: %+v", parsed.NextSuggestions)
 	}
 
 	raw = errorJSON(errors.New(`edit failed: error_kind=stale_file_baseline safe_retry="read_file then retry"`))

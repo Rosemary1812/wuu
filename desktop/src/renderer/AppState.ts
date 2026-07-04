@@ -1,12 +1,9 @@
 import type {
-  Agent,
   AppServerNotification,
-  AppServerRequest,
   DesktopProject,
   GitStatusResult,
   InitializeResult,
   ParticipantSummary,
-  PendingToolApproval,
   PlanUpdate,
   RuntimeContext,
   ServerEvent,
@@ -122,7 +119,6 @@ type AppState = {
   threads: Thread[];
   running: boolean;
   status: string;
-  pendingToolApproval?: PendingToolApproval;
   // turnTokenUsage tracks per-turn cumulative token counts
   // pushed by the appserver's "turn/usage" notification. The samples field
   // is a rolling window used to derive a smoothed tokens-per-second read
@@ -261,18 +257,6 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
     case "notification":
       return reduceNotification(state, event.message);
     case "server-request": {
-      if (event.message.method === "tool/approval/request") {
-        const approval = toolApprovalFromServerRequest(event.message);
-        if (approval) {
-          return {
-            ...state,
-            pendingToolApproval: pendingToolApprovalWithOwner(
-              approval,
-              state,
-            ),
-          };
-        }
-      }
       void window.wuu.rejectServerRequest(
         event.message.id,
         `unsupported server request: ${event.message.method}`,
@@ -291,96 +275,6 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
         status: "wuu 内部错误",
       };
   }
-}
-
-function toolApprovalFromServerRequest(
-  request: Required<AppServerRequest>,
-): PendingToolApproval | undefined {
-  const params = isRecord(request.params) ? request.params : undefined;
-  if (!params) {
-    void window.wuu.rejectServerRequest(request.id, "tool approval request params missing");
-    return undefined;
-  }
-  const id = stringValue(params, "id");
-  const toolName = stringValue(params, "tool_name");
-  if (!id || !toolName) {
-    void window.wuu.rejectServerRequest(request.id, "tool approval request is invalid");
-    return undefined;
-  }
-  return {
-    server_request_id: request.id,
-    id,
-    tool_name: toolName,
-    call_id: stringValue(params, "call_id"),
-    kind: stringValue(params, "kind"),
-    risk: stringValue(params, "risk"),
-    policy_action: stringValue(params, "policy_action"),
-    policy_reason: stringValue(params, "policy_reason"),
-    classification_reason: stringValue(params, "classification_reason"),
-    read_only: params.read_only === true,
-    destructive: params.destructive === true,
-    revision: stringValue(params, "revision"),
-    arguments_sha256: stringValue(params, "arguments_sha256"),
-    arguments_preview: stringValue(params, "arguments_preview"),
-    approval_ref: stringValue(params, "approval_ref"),
-    permission: stringValue(params, "permission"),
-    permission_patterns: stringArrayValue(params, "permission_patterns"),
-    permission_always: stringArrayValue(params, "permission_always"),
-    permission_rule: stringValue(params, "permission_rule"),
-    capability: stringValue(params, "capability"),
-    capability_object: stringValue(params, "capability_object"),
-    capability_action: stringValue(params, "capability_action"),
-    capability_rule: stringValue(params, "capability_rule"),
-    model_next_action: stringValue(params, "model_next_action"),
-  };
-}
-
-function pendingToolApprovalWithOwner(
-  approval: PendingToolApproval,
-  state: AppState,
-): PendingToolApproval {
-  const callID = approval.call_id;
-  if (!callID) {
-    return approval;
-  }
-  const matches: Array<{ threadID: string; turnID: string }> = [];
-  const seenThreadIDs = new Set<string>();
-  for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
-    if (!thread || seenThreadIDs.has(thread.id)) {
-      continue;
-    }
-    seenThreadIDs.add(thread.id);
-    for (const turn of thread.turns) {
-      if (turnOwnsToolCall(turn, callID)) {
-        matches.push({ threadID: thread.id, turnID: turn.id });
-        break;
-      }
-    }
-  }
-  if (matches.length !== 1) {
-    return approval;
-  }
-  const [match] = matches;
-  return {
-    ...approval,
-    thread_id: match.threadID,
-    turn_id: match.turnID,
-  };
-}
-
-function turnOwnsToolCall(turn: Turn, callID: string): boolean {
-  return turn.items.some((item) => item.id === callID || item.source_id === callID);
-}
-
-function stringArrayValue(record: JsonRecord, key: string): string[] | undefined {
-  const value = record[key];
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const strings = value
-    .filter((item): item is string => typeof item === "string" && item.trim() !== "")
-    .map((item) => item.trim());
-  return strings.length > 0 ? strings : undefined;
 }
 
 function serverEventTargetsActiveContext(

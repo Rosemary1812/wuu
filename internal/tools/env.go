@@ -196,10 +196,6 @@ func (s *webEvidenceState) snapshot() []webEvidenceEntry {
 type Env struct {
 	RootDir  string
 	StateDir string
-	// PermissionProfile is the active runtime filesystem/approval profile.
-	// Tools use it to align hard runtime behavior with the selected product
-	// permission mode.
-	PermissionProfile string
 	// Unconfined is the explicit escape hatch for lifting path confinement.
 	// Default false means file tools stay inside FileScopeRoots/RootDir.
 	Unconfined bool

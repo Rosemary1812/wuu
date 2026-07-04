@@ -17,7 +17,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
-	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/memdir"
@@ -71,9 +70,6 @@ type turnRuntimeSnapshot struct {
 	ProviderName       string
 	Model              string
 	PermissionMode     string
-	PermissionProfile  string
-	ApprovalPolicy     string
-	ApprovalsReviewer  string
 	PermissionExplicit bool
 	// ForceCompact makes the turn run one compaction pass at entry. For
 	// control-plane /compact this is paired with CompactOnly; for recovery
@@ -536,7 +532,6 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		return nil, err
 	}
 	if threadRuntime.Toolkit != nil {
-		s.installToolApprovalReviewer(threadRuntime.Toolkit)
 		if _, restoreErr := threadRuntime.Toolkit.RestorePlanFromHistory(history); restoreErr != nil {
 			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
 		}
@@ -656,8 +651,9 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		// memory notebook (memory-redesign §3); reads and writes alike. The
 		// user notebook is deliberately NOT added: residents only see its
 		// index read-only via the prompt.
-		threadRuntime.Toolkit.SetFileScopeRoots(append(
-			workspaces.FileScopeRoots(threadCWD, s.rt.WuuHome),
+		threadRuntime.Toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(
+			threadCWD,
+			s.rt.WuuHome,
 			memdir.ParticipantMemdir(s.rt.WuuHome, participantID),
 		))
 		// The declared workspace focus decides where tools work by default
@@ -965,57 +961,26 @@ func turnRuntimeSnapshotLocked(th *threadState) turnRuntimeSnapshot {
 }
 
 func (snapshot turnRuntimeSnapshot) permissions() config.ResolvedPermissions {
-	return normalizeTurnPermissions(config.ResolvedPermissions{
-		Mode:              snapshot.PermissionMode,
-		PermissionProfile: snapshot.PermissionProfile,
-		ApprovalPolicy:    snapshot.ApprovalPolicy,
-		ApprovalsReviewer: snapshot.ApprovalsReviewer,
-	})
+	return normalizeTurnPermissions(config.ResolvedPermissions{Mode: snapshot.PermissionMode})
 }
 
 func (snapshot turnRuntimeSnapshot) withPermissions(permissions config.ResolvedPermissions) turnRuntimeSnapshot {
 	permissions = normalizeTurnPermissions(permissions)
 	snapshot.PermissionMode = permissions.Mode
-	snapshot.PermissionProfile = permissions.PermissionProfile
-	snapshot.ApprovalPolicy = permissions.ApprovalPolicy
-	snapshot.ApprovalsReviewer = permissions.ApprovalsReviewer
 	return snapshot
 }
 
 func (snapshot turnRuntimeSnapshot) hasPermissions() bool {
-	return strings.TrimSpace(snapshot.PermissionMode) != "" ||
-		strings.TrimSpace(snapshot.PermissionProfile) != "" ||
-		strings.TrimSpace(snapshot.ApprovalPolicy) != "" ||
-		strings.TrimSpace(snapshot.ApprovalsReviewer) != ""
+	return strings.TrimSpace(snapshot.PermissionMode) != ""
 }
 
 func normalizeTurnPermissions(permissions config.ResolvedPermissions) config.ResolvedPermissions {
-	mode := strings.TrimSpace(permissions.Mode)
-	if mode == "" {
-		mode = config.PermissionModeAgent
-	}
-	resolved, err := config.ResolvePermissionModePreset(mode)
-	if err != nil {
-		resolved, _ = config.ResolvePermissionModePreset(config.PermissionModeAgent)
-	}
-	if profile := strings.TrimSpace(permissions.PermissionProfile); profile != "" {
-		resolved.PermissionProfile = profile
-	}
-	if policy := strings.TrimSpace(permissions.ApprovalPolicy); policy != "" {
-		resolved.ApprovalPolicy = policy
-	}
-	if reviewer := strings.TrimSpace(permissions.ApprovalsReviewer); reviewer != "" {
-		resolved.ApprovalsReviewer = reviewer
-	}
-	if strings.TrimSpace(resolved.Mode) == "" {
-		resolved.Mode = mode
-	}
-	return resolved
+	return config.ResolvedPermissions{Mode: config.NormalizePermissionMode(permissions.Mode)}
 }
 
 func (s *Server) resolveTurnPermissions(permissionMode *string) (config.ResolvedPermissions, error) {
 	if permissionMode != nil {
-		return config.ResolvePermissionModePreset(*permissionMode)
+		return config.ResolvedPermissions{Mode: config.NormalizePermissionMode(*permissionMode)}, nil
 	}
 	if s != nil && s.rt != nil {
 		return normalizeTurnPermissions(s.rt.Permissions), nil
@@ -1072,12 +1037,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	runner.ForceInitialCompact = turnRuntime.ForceCompact
 	runner.CompactOnly = turnRuntime.CompactOnly
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
-		toolPolicy := config.ToolPolicyConfig{}
-		if !turnRuntime.PermissionExplicit && s != nil && s.rt != nil {
-			toolPolicy = s.rt.ToolPolicy
-		}
-		runtime.ConfigureToolkitPermissions(threadRuntime.Toolkit, toolPolicy, turnPermissions)
-		s.installToolApprovalReviewerForPermissions(threadRuntime.Toolkit, turnPermissions)
+		runtime.ConfigureToolkitPermissions(threadRuntime.Toolkit, turnPermissions)
 	}
 	// Resolve the real runtime context ceiling for the active provider/model
 	// so turn/usage notifications can drive a "已用 / 总数" meter in the UI.
@@ -1252,11 +1212,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
 	}()
-	// Hang the recent transcript off the request context so the LLM-driven
-	// guardian reviewer can judge pending tool calls in light of user intent.
-	// The snapshot is taken at turn entry; per-step updates would require
-	// plumbing through the streaming callback and are deferred for v1.
-	ctx = guardian.WithTranscript(ctx, guardian.TranscriptFromChatMessages(history))
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		if ev.Type == providers.EventUsage && ev.Usage != nil {
 			usagePushMu.Lock()
@@ -1518,9 +1473,6 @@ func (s *Server) persistTurnTrace(threadRuntime *runtime.ThreadRuntime, runner *
 		APIModel:            apiModel,
 		ModelProfile:        sessiontrace.NewModelProfileRecordWithBudget(providerName, model, apiModel, modelBudget),
 		PermissionMode:      permissions.Mode,
-		PermissionProfile:   permissions.PermissionProfile,
-		ApprovalPolicy:      permissions.ApprovalPolicy,
-		ApprovalsReviewer:   permissions.ApprovalsReviewer,
 		StartedAt:           turn.StartedAt,
 		CompletedAt:         turn.CompletedAt,
 		DurationMS:          turn.DurationMS,

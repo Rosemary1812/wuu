@@ -222,11 +222,6 @@ func (b *lockedBuffer) String() string {
 
 func TestServerInitializeAndConfigRead(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
-	rt.ToolPolicy = config.ToolPolicyConfig{
-		DefaultAction: "allow",
-		Tools:         map[string]string{"run_shell": "require_approval"},
-		Risks:         map[string]string{"high": "deny"},
-	}
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
@@ -252,21 +247,14 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if initResult.Model != "fake-model" || initResult.Provider != "fake-provider" {
 		t.Fatalf("unexpected initialize result: %+v", initResult)
 	}
-	if initResult.ToolPolicy.Profile != "agent" || initResult.ToolPolicy.Tools["run_shell"] != "require_approval" {
-		t.Fatalf("initialize missing tool policy summary: %+v", initResult.ToolPolicy)
-	}
-
 	configMsg := responseByID(t, msgs, "2")
 	configResult := remarshal[ConfigReadResult](t, configMsg["result"])
 	if configResult.ConfigPath == "" || configResult.SessionDir == "" {
 		t.Fatalf("expected config paths, got %+v", configResult)
 	}
-	if configResult.ToolPolicy.Profile != "agent" || configResult.ToolPolicy.Risks["high"] != "deny" {
-		t.Fatalf("config/read missing tool policy summary: %+v", configResult.ToolPolicy)
-	}
 }
 
-func TestServerInitializeDoesNotExposePresetDefaultActionAsOverride(t *testing.T) {
+func TestServerInitializeDoesNotExposeToolPolicySummary(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}
 	srv := New(rt, out)
@@ -276,15 +264,12 @@ func TestServerInitializeDoesNotExposePresetDefaultActionAsOverride(t *testing.T
 	}
 
 	msgs := parseOutput(t, out.String())
-	result := remarshal[InitializeResult](t, responseByID(t, msgs, "1")["result"])
-	if result.ToolPolicy.Profile != "agent" {
-		t.Fatalf("tool policy profile = %q, want agent", result.ToolPolicy.Profile)
+	raw, err := json.Marshal(responseByID(t, msgs, "1")["result"])
+	if err != nil {
+		t.Fatalf("marshal initialize result: %v", err)
 	}
-	if result.ToolPolicy.DefaultAction != "" ||
-		len(result.ToolPolicy.Tools) != 0 ||
-		len(result.ToolPolicy.Kinds) != 0 ||
-		len(result.ToolPolicy.Risks) != 0 {
-		t.Fatalf("preset defaults should not be exposed as custom overrides: %+v", result.ToolPolicy)
+	if strings.Contains(string(raw), `"tool_policy"`) {
+		t.Fatalf("initialize result should not expose tool_policy: %s", raw)
 	}
 }
 
@@ -718,11 +703,8 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools.New running: %v", err)
 	}
-	readOnlyPermissions, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
-	if err != nil {
-		t.Fatalf("ResolvePermissionModePreset read_only: %v", err)
-	}
-	runtime.ConfigureToolkitPermissions(runningKit, config.ToolPolicyConfig{}, readOnlyPermissions)
+	readOnlyPermissions := config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
+	runtime.ConfigureToolkitPermissions(runningKit, readOnlyPermissions)
 	running.execRuntime = &runtime.ThreadRuntime{
 		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
 		Toolkit:      runningKit,
@@ -733,7 +715,7 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools.New idle: %v", err)
 	}
-	runtime.ConfigureToolkitPermissions(idleKit, config.ToolPolicyConfig{}, readOnlyPermissions)
+	runtime.ConfigureToolkitPermissions(idleKit, readOnlyPermissions)
 	idle.execRuntime = &runtime.ThreadRuntime{
 		StreamRunner: &agent.StreamRunner{Model: "fake-model", APIModel: "fake-model"},
 		Toolkit:      idleKit,
@@ -741,7 +723,7 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	srv.threads[running.ID] = running
 	srv.threads[idle.ID] = idle
 
-	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model","permission_mode":"full_access"}}`)); err != nil {
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model","permission_mode":"unconfined"}}`)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
 
@@ -767,7 +749,7 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 		ID:        "running-still-read-only",
 		Name:      "write_file",
 		Arguments: `{"path":"running-still-read-only.txt","content":"nope\n","create_only":true}`,
-	}); err == nil || !strings.Contains(err.Error(), "permission_boundary_denied") {
+	}); err == nil || !strings.Contains(err.Error(), "boundary_denied") {
 		t.Fatalf("running turn should keep read-only boundary before pending update applies, err=%v", err)
 	}
 	running.mu.Unlock()
@@ -1045,11 +1027,6 @@ func TestServerConfigModelUpdateRejectsToolPolicyProfile(t *testing.T) {
 		t.Fatalf("new runtime toolkit: %v", err)
 	}
 	rt.Toolkit = kit
-	rt.ToolPolicy = config.ToolPolicyConfig{
-		Tools: map[string]string{
-			"run_shell": "allow",
-		},
-	}
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "agent": {
     "tool_policy": {
@@ -1113,41 +1090,33 @@ func TestServerConfigModelUpdatePersistsPermissionMode(t *testing.T) {
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
-	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","permission_mode":"auto_review"}}`
+	req := `{"id":"1","method":"config/model/update","params":{"model":"fake-model","permission_mode":"unconfined"}}`
 	if err := srv.handleLine(context.Background(), []byte(req)); err != nil {
 		t.Fatalf("config/model/update: %v", err)
 	}
 
 	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if result.Permissions.Mode != config.PermissionModeAutoReview ||
-		result.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
+	if result.Permissions.Mode != config.PermissionModeUnconfined {
 		t.Fatalf("unexpected permissions result: %+v", result.Permissions)
 	}
-	if result.ToolPolicy.Profile != "auto_review" {
-		t.Fatalf("permission mode should derive auto_review policy profile: %+v", result.ToolPolicy)
-	}
-	if rt.Permissions.Mode != config.PermissionModeAutoReview || rt.Permissions.ApprovalsReviewer != config.ApprovalsReviewerAutoReview {
+	if rt.Permissions.Mode != config.PermissionModeUnconfined {
 		t.Fatalf("runtime permissions not updated: %+v", rt.Permissions)
-	}
-	if rt.ToolPolicy.DefaultAction != "" || len(rt.ToolPolicy.Tools) != 0 {
-		t.Fatalf("runtime tool policy overrides not cleared: %+v", rt.ToolPolicy)
 	}
 	data, err := os.ReadFile(rt.ConfigPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
 	for _, want := range []string{
-		`"permission_mode": "auto_review"`,
-		`"permission_profile": "workspace_write"`,
-		`"approval_policy": "on_request"`,
-		`"approvals_reviewer": "auto_review"`,
+		`"permission_mode": "unconfined"`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("config missing %s: %s", want, data)
 		}
 	}
-	if strings.Contains(string(data), `"tool_policy"`) {
-		t.Fatalf("permission mode update should remove old tool policy config: %s", data)
+	for _, legacyKey := range []string{`"tool_policy"`, `"permission_profile"`, `"approval_policy"`, `"approvals_reviewer"`, `"permission_rules"`} {
+		if strings.Contains(string(data), legacyKey) {
+			t.Fatalf("permission mode update should remove legacy key %s: %s", legacyKey, data)
+		}
 	}
 }
 
@@ -1180,169 +1149,15 @@ func TestServerConfigModelUpdateAppliesPermissionBoundary(t *testing.T) {
 	}
 
 	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
-	if result.Permissions.PermissionProfile != config.PermissionProfileReadOnly {
+	if result.Permissions.Mode != config.PermissionModeReadOnly {
 		t.Fatalf("unexpected permissions: %+v", result.Permissions)
 	}
 	_, err = rt.Toolkit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
 		Arguments: `{"path":"blocked.txt","content":"nope"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=permission_boundary_denied") {
+	if err == nil || !strings.Contains(err.Error(), "error_kind=boundary_denied") {
 		t.Fatalf("expected read-only runtime boundary, got %v", err)
-	}
-}
-
-func TestServerToolApprovalRequestApprovesToolkitExecution(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	kit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("new runtime toolkit: %v", err)
-	}
-	kit.SetToolPolicy(tools.ToolPolicy{
-		ToolActions: map[string]tools.ToolPolicyAction{
-			"write_file": tools.ToolPolicyRequireApproval,
-		},
-	})
-	rt.Toolkit = kit
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	done := make(chan error, 1)
-	go func() {
-		_, execErr := kit.Execute(context.Background(), providers.ToolCall{
-			ID:        "call-write",
-			Name:      "write_file",
-			Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
-		})
-		done <- execErr
-	}()
-
-	var request map[string]any
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		raw := out.String()
-		if !strings.Contains(raw, MethodToolApprovalRequest) {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		for _, msg := range parseOutput(t, raw) {
-			if msg["method"] == MethodToolApprovalRequest {
-				request = msg
-				break
-			}
-		}
-		if request != nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if request == nil {
-		t.Fatalf("tool approval request not emitted; output=%s", out.String())
-	}
-	params := remarshal[ToolApprovalRequest](t, request["params"])
-	if params.ToolName != "write_file" || params.ArgumentsPreview == "" {
-		t.Fatalf("unexpected approval request params: %+v", params)
-	}
-	if params.Capability != "file.edit" || params.CapabilityObject != "notes.txt" || params.CapabilityAction != "edit" {
-		t.Fatalf("approval request missing capability fields: %+v", params)
-	}
-	id, ok := request["id"].(string)
-	if !ok || id == "" {
-		t.Fatalf("approval request missing id: %+v", request)
-	}
-	response := fmt.Sprintf(`{"id":%q,"result":{"decision":"approved","reason":"test approved"}}`, id)
-	if err := srv.handleLine(context.Background(), []byte(response)); err != nil {
-		t.Fatalf("approval response: %v", err)
-	}
-	select {
-	case execErr := <-done:
-		if execErr != nil {
-			t.Fatalf("tool execution after approval: %v", execErr)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("tool execution did not resume after approval")
-	}
-	if _, err := os.Stat(filepath.Join(rt.RootDir, "notes.txt")); err != nil {
-		t.Fatalf("approved tool did not write file: %v", err)
-	}
-}
-
-func TestServerAutoReviewFailsClosedWithoutGuardianProvider(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	kit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("new runtime toolkit: %v", err)
-	}
-	kit.SetToolPolicy(tools.ToolPolicy{
-		ToolActions: map[string]tools.ToolPolicyAction{
-			"write_file": tools.ToolPolicyRequireApproval,
-		},
-	})
-	rt.Toolkit = kit
-	rt.Permissions = config.ResolvedPermissions{
-		Mode:              config.PermissionModeAutoReview,
-		PermissionProfile: config.PermissionProfileWorkspaceWrite,
-		ApprovalPolicy:    config.ApprovalPolicyOnRequest,
-		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,
-	}
-	out := &lockedBuffer{}
-	srv := New(rt, out)
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		ID:        "call-write",
-		Name:      "write_file",
-		Arguments: `{"path":"notes.txt","content":"hello\n","create_only":true}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_denied") ||
-		!strings.Contains(err.Error(), "auto_review guardian unavailable") {
-		t.Fatalf("expected fail-closed guardian denial, got %v", err)
-	}
-	if strings.Contains(out.String(), MethodToolApprovalRequest) {
-		t.Fatalf("auto review should not emit client approval request: %s", out.String())
-	}
-	if srv.lastFallback == "" {
-		t.Fatal("expected guardian setup failure to be recorded")
-	}
-	if _, statErr := os.Stat(filepath.Join(rt.RootDir, "notes.txt")); !os.IsNotExist(statErr) {
-		t.Fatalf("denied auto-review write should not create file, stat err=%v", statErr)
-	}
-	records := kit.ToolTelemetry()
-	if len(records) != 1 || records[0].ApprovalDecision != tools.ToolApprovalDecisionDenied {
-		t.Fatalf("auto review denial telemetry missing: %+v", records)
-	}
-}
-
-func TestServerAutoReviewDeniesShellWithoutClientRequestWhenGuardianUnavailable(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
-	kit, err := tools.New(rt.RootDir)
-	if err != nil {
-		t.Fatalf("new runtime toolkit: %v", err)
-	}
-	kit.SetToolPolicy(tools.ToolPolicy{
-		ToolActions: map[string]tools.ToolPolicyAction{
-			"run_shell": tools.ToolPolicyRequireApproval,
-		},
-	})
-	rt.Toolkit = kit
-	rt.Permissions = config.ResolvedPermissions{
-		Mode:              config.PermissionModeAutoReview,
-		PermissionProfile: config.PermissionProfileWorkspaceWrite,
-		ApprovalPolicy:    config.ApprovalPolicyOnRequest,
-		ApprovalsReviewer: config.ApprovalsReviewerAutoReview,
-	}
-	out := &lockedBuffer{}
-	New(rt, out)
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		ID:        "call-shell",
-		Name:      "run_shell",
-		Arguments: `{"command":"printf hi > out.txt"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=approval_denied") {
-		t.Fatalf("expected auto-review shell denial, got %v", err)
-	}
-	if strings.Contains(out.String(), MethodToolApprovalRequest) {
-		t.Fatalf("auto review should not emit client approval request: %s", out.String())
 	}
 }
 
@@ -2968,11 +2783,7 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 		},
 	}
 	rt := newTestRuntime(t, client)
-	permissions, err := config.ResolvePermissionModePreset(config.PermissionModeAgent)
-	if err != nil {
-		t.Fatalf("ResolvePermissionModePreset: %v", err)
-	}
-	rt.Permissions = permissions
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeStandard}
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
@@ -3003,7 +2814,7 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 
 	startTurn("2", "try a read-only write", config.PermissionModeReadOnly)
 	waitForTurnCompletedCountForThread(t, out, threadID, 1)
-	startTurn("3", "try a full-access write", config.PermissionModeFullAccess)
+	startTurn("3", "try an unconfined write", config.PermissionModeUnconfined)
 	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
 
 	completed := make([]TurnCompletedNotification, 0, 2)
@@ -3056,7 +2867,7 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 			fullRecord = &records[i]
 		}
 	}
-	if readOnlyRecord == nil || readOnlyRecord.Success || readOnlyRecord.ErrorKind != "permission_boundary_denied" {
+	if readOnlyRecord == nil || readOnlyRecord.Success || readOnlyRecord.ErrorKind != "boundary_denied" {
 		t.Fatalf("read-only turn should deny write by permission boundary: %+v records=%+v", readOnlyRecord, records)
 	}
 	if fullRecord == nil || !fullRecord.Success {
@@ -3077,7 +2888,7 @@ func TestServerTurnPermissionModeChangesExecutionWithoutCacheDrift(t *testing.T)
 		t.Fatalf("trace should record both turns: %+v", traceSummary.Turns)
 	}
 	if traceSummary.Turns[len(traceSummary.Turns)-2].PermissionMode != config.PermissionModeReadOnly ||
-		traceSummary.Turns[len(traceSummary.Turns)-1].PermissionMode != config.PermissionModeFullAccess {
+		traceSummary.Turns[len(traceSummary.Turns)-1].PermissionMode != config.PermissionModeUnconfined {
 		t.Fatalf("trace permission modes = %+v", traceSummary.Turns)
 	}
 }
@@ -3094,11 +2905,7 @@ func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
 		},
 	}
 	rt := newTestRuntime(t, client)
-	fullAccess, err := config.ResolvePermissionModePreset(config.PermissionModeFullAccess)
-	if err != nil {
-		t.Fatalf("ResolvePermissionModePreset full_access: %v", err)
-	}
-	rt.Permissions = fullAccess
+	rt.Permissions = config.ResolvedPermissions{Mode: config.PermissionModeUnconfined}
 	kit, err := tools.New(rt.RootDir)
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
@@ -3111,10 +2918,7 @@ func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
 		t.Fatalf("thread/start: %v", err)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
-	readOnly, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
-	if err != nil {
-		t.Fatalf("ResolvePermissionModePreset read_only: %v", err)
-	}
+	readOnly := config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
 	started, err := srv.startQueuedTurn(context.Background(), threadID, queuedTurn{
 		id:       "queued-read-only",
 		msg:      providers.ChatMessage{Role: "user", Content: "queued write"},
@@ -3139,7 +2943,7 @@ func TestServerQueuedTurnUsesQueuedPermissionSnapshot(t *testing.T) {
 		t.Fatalf("queued read-only turn should not create file, stat err=%v", err)
 	}
 	records := srv.thread(threadID).execRuntime.Toolkit.ToolTelemetry()
-	if len(records) != 1 || records[0].CallID != "call-queued-write" || records[0].ErrorKind != "permission_boundary_denied" {
+	if len(records) != 1 || records[0].CallID != "call-queued-write" || records[0].ErrorKind != "boundary_denied" {
 		t.Fatalf("queued read-only turn should deny write by boundary: %+v", records)
 	}
 }

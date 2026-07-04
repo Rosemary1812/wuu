@@ -22,7 +22,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/subagent"
-	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
 
@@ -42,7 +41,6 @@ func (s *Server) handleInitialize(req Request) error {
 		Effort:           s.currentDisplayEffort(),
 		Variant:          s.currentVariant(),
 		WorkspaceRoot:    s.rt.RootDir,
-		ToolPolicy:       s.currentToolPolicySummary(),
 		Permissions:      s.currentPermissionSummary(),
 		ExtensionTrust:   s.currentExtensionTrustSummary(),
 		ModelProfile:     modelProfile,
@@ -64,7 +62,6 @@ func (s *Server) handleConfigRead(req Request) error {
 		ConfigPath:       s.rt.ConfigPath,
 		WorkspaceRoot:    s.rt.RootDir,
 		SessionDir:       s.rt.SessionDir,
-		ToolPolicy:       s.currentToolPolicySummary(),
 		Permissions:      s.currentPermissionSummary(),
 		ExtensionTrust:   s.currentExtensionTrustSummary(),
 		ModelProfile:     modelProfile,
@@ -98,85 +95,16 @@ func (s *Server) currentModelRoleSummaries() []ModelRoleSummary {
 	return out
 }
 
-func (s *Server) currentToolPolicySummary() ToolPolicySummary {
-	if s == nil || s.rt == nil {
-		return ToolPolicySummary{}
-	}
-	profile := config.ToolPolicyProfileForPermissionMode(s.rt.Permissions.Mode)
-	policy := runtime.ToolPolicyFromConfig(s.rt.ToolPolicy)
-	return ToolPolicySummary{
-		Profile:       strings.TrimSpace(profile),
-		DefaultAction: strings.TrimSpace(string(policy.DefaultAction)),
-		Tools:         toolPolicyToolSummary(policy.ToolActions),
-		Kinds:         toolPolicyKindSummary(policy.KindActions),
-		Risks:         toolPolicyRiskSummary(policy.RiskActions),
-	}
-}
-
-func toolPolicyToolSummary(in map[string]tools.ToolPolicyAction) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for name, action := range in {
-		if strings.TrimSpace(name) == "" || strings.TrimSpace(string(action)) == "" {
-			continue
-		}
-		out[name] = string(action)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func toolPolicyKindSummary(in map[tools.ToolKind]tools.ToolPolicyAction) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for kind, action := range in {
-		if strings.TrimSpace(string(kind)) == "" || strings.TrimSpace(string(action)) == "" {
-			continue
-		}
-		out[string(kind)] = string(action)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func toolPolicyRiskSummary(in map[tools.ToolRisk]tools.ToolPolicyAction) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for risk, action := range in {
-		if strings.TrimSpace(string(risk)) == "" || strings.TrimSpace(string(action)) == "" {
-			continue
-		}
-		out[string(risk)] = string(action)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 func (s *Server) currentPermissionSummary() PermissionSummary {
 	if s == nil || s.rt == nil {
 		return PermissionSummary{}
 	}
 	permissions := s.rt.Permissions
 	if strings.TrimSpace(permissions.Mode) == "" {
-		permissions, _ = config.PermissionPresetForMode(config.PermissionModeAgent)
+		permissions = config.ResolvedPermissions{Mode: config.PermissionModeStandard}
 	}
 	return PermissionSummary{
-		Mode:              strings.TrimSpace(permissions.Mode),
-		PermissionProfile: strings.TrimSpace(permissions.PermissionProfile),
-		ApprovalPolicy:    strings.TrimSpace(permissions.ApprovalPolicy),
-		ApprovalsReviewer: strings.TrimSpace(permissions.ApprovalsReviewer),
+		Mode: strings.TrimSpace(permissions.Mode),
 	}
 }
 
@@ -277,13 +205,15 @@ func (s *Server) currentModelSurfaceSummaries() (*ModelProfileSummary, *ToolSurf
 func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
 	main := ExtensionSessionTrustSummary{}
 	if s != nil && s.rt != nil {
-		toolStates := tools.ExtensionToolSurfaceStates{}
+		mcpKnownTools := 0
 		if s.rt.Toolkit != nil {
-			toolStates = s.rt.Toolkit.ExtensionToolSurfaceStates()
+			if manager := s.rt.Toolkit.MCPManager(); manager != nil {
+				mcpKnownTools = len(manager.AllTools())
+			}
 		}
-		main.MCP = extensionSurfaceFromToolState(toolStates.MCP, toolStates.MCP.KnownTools > 0, toolStates.MCP.KnownTools)
-		main.Skills = extensionSurfaceFromToolState(toolStates.Skills, len(s.rt.Skills) > 0, len(s.rt.Skills))
-		main.Workflows = extensionSurfaceFromToolState(toolStates.Workflows, len(s.rt.Workflows) > 0, len(s.rt.Workflows))
+		main.MCP = extensionSurfaceSummary(mcpKnownTools > 0, mcpKnownTools)
+		main.Skills = extensionSurfaceSummary(len(s.rt.Skills) > 0, len(s.rt.Skills))
+		main.Workflows = extensionSurfaceSummary(len(s.rt.Workflows) > 0, len(s.rt.Workflows))
 		main.Hooks = ExtensionSurfaceTrustSummary{Allowed: s.rt.HookDispatcher != nil, Active: hookDispatcherHasAny(s.rt.HookDispatcher)}
 		main.Plugins = ExtensionSurfaceTrustSummary{Allowed: true, Active: len(s.rt.Plugins) > 0, Count: len(s.rt.Plugins)}
 		main.ExternalTools = main.MCP
@@ -302,13 +232,13 @@ func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
 	}
 }
 
-func extensionSurfaceFromToolState(state tools.ExtensionToolSurfaceState, active bool, count int) ExtensionSurfaceTrustSummary {
+func extensionSurfaceSummary(active bool, count int) ExtensionSurfaceTrustSummary {
 	return ExtensionSurfaceTrustSummary{
-		Allowed:      state.Allowed,
+		Allowed:      true,
 		Active:       active,
 		Count:        count,
-		KnownTools:   state.KnownTools,
-		VisibleTools: state.VisibleTools,
+		KnownTools:   count,
+		VisibleTools: count,
 	}
 }
 
@@ -665,15 +595,10 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.Toolkit.ConfigureSurfaceForProviderModel(ruleProviderName, apiModel, true)
 	}
 	if params.PermissionMode != nil {
-		permissions, err := config.ResolvePermissionModePreset(*params.PermissionMode)
-		if err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
+		permissions := config.ResolvedPermissions{Mode: config.NormalizePermissionMode(*params.PermissionMode)}
 		s.rt.Permissions = permissions
-		s.rt.ToolPolicy = config.ToolPolicyConfig{}
 		if s.rt.Toolkit != nil {
-			runtime.ConfigureToolkitPermissions(s.rt.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
-			s.installToolApprovalReviewer(s.rt.Toolkit)
+			runtime.ConfigureToolkitPermissions(s.rt.Toolkit, s.rt.Permissions)
 		}
 	}
 	systemPrompt := s.rt.RefreshSystemPrompt(resolvedName, apiModel)
@@ -703,7 +628,6 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		Model:            model,
 		Effort:           effort,
 		Variant:          selection.Variant,
-		ToolPolicy:       s.currentToolPolicySummary(),
 		Permissions:      s.currentPermissionSummary(),
 		ExtensionTrust:   s.currentExtensionTrustSummary(),
 		ModelProfile:     modelProfile,
@@ -808,7 +732,6 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 			Provider:         s.rt.ProviderName,
 			Model:            s.rt.Model,
 			Variant:          s.currentVariant(),
-			ToolPolicy:       s.currentToolPolicySummary(),
 			Permissions:      s.currentPermissionSummary(),
 			ExtensionTrust:   s.currentExtensionTrustSummary(),
 			ModelProfile:     nil,
@@ -1010,8 +933,7 @@ func (s *Server) applyThreadRuntimeUpdateLocked(th *threadState, update threadRu
 	if th.execRuntime.Toolkit != nil {
 		th.execRuntime.Toolkit.ConfigureSurfaceForProviderModel(update.RuleProviderName, update.APIModel, true)
 		if s.rt != nil {
-			runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.ToolPolicy, s.rt.Permissions)
-			s.installToolApprovalReviewer(th.execRuntime.Toolkit)
+			runtime.ConfigureToolkitPermissions(th.execRuntime.Toolkit, s.rt.Permissions)
 		}
 	}
 }

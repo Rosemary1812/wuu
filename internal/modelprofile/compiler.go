@@ -396,7 +396,7 @@ func addExtensionTools(b *surfaceBuilder) {
 	// MCP has no stable built-in tool name because concrete MCP
 	// tools are discovered at runtime. The deferred capability says
 	// this profile may load MCP tools through tool_search; the tools
-	// themselves are still deferred and policy-gated.
+	// themselves are still deferred and guard-gated.
 	b.addDeferredCapability(capability.CapabilityMCP)
 }
 
@@ -420,21 +420,21 @@ func addGenericEditTools(b *surfaceBuilder) {
 
 // ── Prompt fragments ──────────────────────────────────────────────
 
-// sharedTail is the common closer every profile fragment shares. It
-// tells the model that permission prompts come from the harness, not
-// from a chat message, and it forbids the "should I continue running
-// tests?" pattern that wastes turns.
+// sharedTail is the common closer every profile fragment shares. It teaches
+// the allow/deny authority model and forbids chat-side permission questions
+// that waste turns.
 const sharedTail = `
 
-Permission and approval:
-- Permissions, approvals, and audit decisions are made by the Wuu harness and the user-facing approval UI. Do not ask the user chat-side questions like "should I continue running tests?", "do you want me to commit?", or "may I run the build?" — those are policy decisions and will be surfaced as system prompts when relevant.
-- The runtime policy block tells you the active permission profile and the tool surface available to you. Permission-boundary denials are hard runtime denials, not approval prompts. Trust the block; do not invent restrictions that are not in the system prompt.`
+Agent authority:
+- Runtime authority decisions are allow/deny only. Inside the reachable boundary, act without an approval step. Do not ask chat-side questions like "should I continue running tests?", "do you want me to commit?", or "may I run the build?" when the user's request already calls for the work.
+- File tools enforce the workspace boundary. If a tool returns error_kind=boundary_denied, explain that the target is outside the reachable roots and ask the user to add that directory as a workspace if the task needs it.`
 
 const bashTerminalGuidance = `
 
 Command and process discipline:
 - Use bash for every terminal operation: tests, lint, type checks, builds, git operations, package manager commands, and arbitrary scripts. There is no separate test-runner, git, or background-process tool on this surface; do not invent one.
-- For JavaScript projects, prefer package scripts such as npm test or npm run typecheck. If you only know the runner command such as npx vitest, still use bash and let the harness approval policy decide whether it may run.
+- Bash is not a strong path sandbox. Use its configured working directory and do not use absolute paths to route around the workspace boundary.
+- For JavaScript projects, prefer package scripts such as npm test or npm run typecheck. If you only know the runner command such as npx vitest, still use bash and let the runtime boundary allow or deny the tool call.
 - Do not pipe verification commands through tail/head just to keep output short; bash already caps command output and preserves full logs when available.
 - For repository history work, inspect git status, git diff, git diff --cached when staged files exist, and recent git log before committing. Stage only intended files with explicit paths, unstage mistakes with explicit paths, create commits with explicit non-interactive messages (-m/--message or -F/--file), amend only when explicitly requested, and push only when the user explicitly requested a remote write.
 - Never use broad staging, sensitive credential paths, destructive git commands, force push, git config mutation, hook-skipping flags, or interactive/editor-driven git flows unless the user explicitly requested that exact action and the runtime permits it.
@@ -445,7 +445,7 @@ func addOpenAICodexPrompt(b *surfaceBuilder) {
 [Tool surface: openai_codex]
 You are running under the OpenAI / Codex harness. Your editing primitive is apply_patch. Use it for every file change — create new files, update existing files, and remove files via *** Add File / *** Update File / *** Delete File blocks inside a single *** Begin Patch / *** End Patch envelope.
 
-All terminal work is unified under the bash tool. The internal capability is command.bash, and the runtime routes permission checks against it.
+All terminal work is unified under the bash tool. The internal capability is command.bash; the runtime applies non-path authority gates to the tool call while bash itself runs from its configured working directory.
 
 Use read_file before editing a file so the patch's context anchors match the on-disk content. Use visible search tools such as grep and glob to find the code you need to change.
 ` + bashTerminalGuidance + sharedTail)

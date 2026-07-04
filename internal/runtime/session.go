@@ -69,20 +69,20 @@ type Options struct {
 // stream runner. UI surfaces should depend on this instead of reassembling the
 // pieces themselves.
 type Session struct {
-	ProviderName                string
-	Model                       string
-	RootDir                     string
-	WorkspaceID                 string
-	StateDir                    string
-	ConfigPath                  string
-	SessionDir                  string
-	StreamRunner                *agent.StreamRunner
-	TitleClient                 providers.Client
-	HookDispatcher              *hooks.Dispatcher
-	Skills                      []skills.Skill
-	Workflows                   []workflow.Definition
-	Plugins                     []pluginpkg.Plugin
-	Memory                      []memory.File
+	ProviderName   string
+	Model          string
+	RootDir        string
+	WorkspaceID    string
+	StateDir       string
+	ConfigPath     string
+	SessionDir     string
+	StreamRunner   *agent.StreamRunner
+	TitleClient    providers.Client
+	HookDispatcher *hooks.Dispatcher
+	Skills         []skills.Skill
+	Workflows      []workflow.Definition
+	Plugins        []pluginpkg.Plugin
+	Memory         []memory.File
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.
@@ -99,7 +99,6 @@ type Session struct {
 	BaseSystemPromptSections    []prompt.SectionInfo
 	UserSystemPrompt            string
 	WuuHome                     string
-	ToolPolicy                  config.ToolPolicyConfig
 	Permissions                 config.ResolvedPermissions
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
@@ -246,23 +245,20 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
 		kit.SetWorkflows(discoveredWorkflows)
-		ConfigureToolkitPermissions(kit, cfg.Agent.ToolPolicy, permissions)
-		kit.SetPermissionRules(PermissionRulesFromConfig(cfg.Agent.PermissionRules))
+		ConfigureToolkitPermissions(kit, permissions)
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
+		var fileScopeExtras []string
 		// The retired memstore layers (read_memory/write_memory) are no
 		// longer mounted (memory-redesign §6): memory is the file-directory
-		// notebook injected into the prompt and written with plain file
-		// tools inside the whitelist below.
+		// notebook injected into the prompt and written with plain file tools
+		// inside the boundary roots below.
 		if memdirEnabled {
-			// The user notebook joins the session agent's file-tool whitelist
-			// (memory-redesign §3): FileScopeRoots replaces the single-RootDir
-			// confinement with [workspace root, user notebook]. Worker clones
-			// reset this below so subagents keep plain root confinement.
-			kit.SetFileScopeRoots([]string{kit.RootDir(), memdir.UserMemdir(wuuHome)})
+			fileScopeExtras = append(fileScopeExtras, memdir.UserMemdir(wuuHome))
 		}
+		kit.SetFileScopeRoots(workspaces.BoundaryRoots(kit.RootDir(), wuuHome, fileScopeExtras...))
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
 				CWD:      rootDir,
@@ -290,7 +286,7 @@ func NewSession(opts Options) (*Session, error) {
 		return nil, err
 	}
 	mainSurface.DeferredToolCatalog = deferredToolCatalogPrompt
-	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
 
@@ -322,7 +318,7 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, catErr
 		}
 		workerToolSurface.DeferredToolCatalog = workerDeferredCatalog
-		workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+		workerBaseSystemPrompt := buildBaseSystemPromptContent(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
@@ -349,18 +345,16 @@ func NewSession(opts Options) (*Session, error) {
 			ReportSink:                     loopSink,
 			WorkerSysPrompt:                workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-				return buildWorkerBasePrompt(workerRoot, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
+				return buildWorkerBasePrompt(workerRoot, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := toolkit.CloneForRoot(workerRoot)
 				if werr != nil {
 					return nil, werr
 				}
-				// Reset the inherited file-scope whitelist: an ordinary worker
-				// is confined to its own root (and must not see the user
-				// notebook); the participant branch below installs the
-				// resident whitelist when applicable.
-				wkit.SetFileScopeRoots(nil)
+				// Reset the inherited file-scope whitelist: a worker gets the
+				// standard boundary roots, but not the user notebook extra.
+				wkit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
 				workerStateDir := workspaceStateDir
 				if workerRoot != rootDir {
 					if dir, err := statepath.WorkspaceDir(wuuHome, workerRoot); err == nil {
@@ -385,7 +379,7 @@ func NewSession(opts Options) (*Session, error) {
 					wkit.SetParticipantSpeechEnabled(true)
 					// Participant task runs share the resident file scope:
 					// worker home + registered workspaces + system temp.
-					wkit.SetFileScopeRoots(workspaces.FileScopeRoots(workerRoot, wuuHome))
+					wkit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
 				}
 				return wkit, nil
 			},
@@ -472,7 +466,6 @@ func NewSession(opts Options) (*Session, error) {
 		BaseSystemPromptSections:    baseSystemPromptResult.Sections,
 		UserSystemPrompt:            userSystemPrompt,
 		WuuHome:                     wuuHome,
-		ToolPolicy:                  cfg.Agent.ToolPolicy,
 		Permissions:                 permissions,
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
@@ -771,7 +764,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				workerToolProviderName,
 				workerToolModeModel,
 				workerToolSurface,
-				toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 				s.Memory,
 				s.MemdirEnabled,
 				s.Skills,
@@ -798,7 +790,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				ReportSink:                     loopSink,
 				WorkerSysPrompt:                workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-					return buildWorkerBasePrompt(workerRoot, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions), s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil
+					return buildWorkerBasePrompt(workerRoot, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					parentKit := kit
@@ -809,11 +801,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					if err != nil {
 						return nil, err
 					}
-					// Reset the inherited file-scope whitelist: an ordinary
-					// worker is confined to its own root (and must not see
-					// the user notebook); the participant branch below
-					// installs the resident whitelist when applicable.
-					workerKit.SetFileScopeRoots(nil)
+					// Reset the inherited file-scope whitelist: a worker gets
+					// the standard boundary roots, but not the user notebook
+					// extra.
+					workerKit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
 					workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
 					workerStateDir := stateDir
 					if !sameRuntimeRoot(workerRoot, threadRoot) {
@@ -843,7 +834,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 						// Participant task runs share the resident file scope:
 						// worker home + registered workspaces + system temp
 						// (sidebar-groups-andy-workspaces.md §5.2).
-						workerKit.SetFileScopeRoots(workspaces.FileScopeRoots(workerRoot, wuuHome))
+						workerKit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
 					} else {
 						workerKit.SetParticipantIdentity("")
 						workerKit.SetParticipantSpeech(nil)
@@ -868,18 +859,20 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetSkills(s.Skills)
 		kit.SetWorkflows(s.Workflows)
 		kit.SetAgentControl(agentControl)
-		ConfigureToolkitPermissions(kit, s.ToolPolicy, s.Permissions)
+		ConfigureToolkitPermissions(kit, s.Permissions)
 		kit.SetSessionID(id)
 		kit.SetSessionDir(artifactDir)
 		kit.SetConversationSessionDir(s.SessionDir)
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
+		fileScopeExtras := []string{artifactDir}
 		if s.MemdirEnabled {
-			// Rebase the file-scope whitelist on the THREAD root (the clone
-			// inherited the parent session's roots): thread root plus the
-			// user notebook (memory-redesign §3).
-			kit.SetFileScopeRoots([]string{kit.RootDir(), memdir.UserMemdir(wuuHome)})
+			fileScopeExtras = append(fileScopeExtras, memdir.UserMemdir(wuuHome))
 		}
+		// Rebase the file-scope whitelist on the thread root (the clone
+		// inherited the parent session's roots): thread root + registered
+		// workspaces + temp + artifact/memory extras.
+		kit.SetFileScopeRoots(workspaces.BoundaryRoots(kit.RootDir(), wuuHome, fileScopeExtras...))
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", threadRoot)
 	}
 
@@ -1508,178 +1501,22 @@ func mcpOAuthConfig(in *config.MCPOAuthConfig) *mcp.OAuthConfig {
 	}
 }
 
-func PermissionRulesFromConfig(in config.PermissionRulesConfig) tools.ToolPermissionRuleSet {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(tools.ToolPermissionRuleSet, 0)
-	for permission, patterns := range in {
-		permission = strings.TrimSpace(permission)
-		if permission == "" {
-			continue
-		}
-		for pattern, action := range patterns {
-			pattern = strings.TrimSpace(pattern)
-			action = strings.TrimSpace(action)
-			if pattern == "" || action == "" {
-				continue
-			}
-			out = append(out, tools.ToolPermissionRule{
-				Permission: permission,
-				Pattern:    pattern,
-				Action:     tools.ToolPermissionAction(action),
-				Source:     "config",
-			})
-		}
-	}
-	return out
-}
-
-func ToolPolicyFromConfig(in config.ToolPolicyConfig) tools.ToolPolicy {
-	policy := tools.ToolPolicy{}
-	if action := toolPolicyAction(in.DefaultAction); action != "" {
-		policy.DefaultAction = action
-	}
-	if actions := toolPolicyToolActions(in.Tools); len(actions) > 0 {
-		policy.ToolActions = mergeToolPolicyToolActions(policy.ToolActions, actions)
-	}
-	if actions := toolPolicyKindActions(in.Kinds); len(actions) > 0 {
-		policy.KindActions = mergeToolPolicyKindActions(policy.KindActions, actions)
-	}
-	if actions := toolPolicyRiskActions(in.Risks); len(actions) > 0 {
-		policy.RiskActions = mergeToolPolicyRiskActions(policy.RiskActions, actions)
-	}
-	return policy
-}
-
-func ToolPolicyFromAgentConfig(agent config.AgentConfig) tools.ToolPolicy {
-	return ToolPolicyFromConfigAndPermissions(agent.ToolPolicy, config.ResolveAgentPermissions(agent))
-}
-
-func ConfigureToolkitPermissions(kit *tools.Toolkit, toolPolicy config.ToolPolicyConfig, permissions config.ResolvedPermissions) {
+func ConfigureToolkitPermissions(kit *tools.Toolkit, permissions config.ResolvedPermissions) {
 	if kit == nil {
 		return
 	}
-	kit.SetToolPolicy(ToolPolicyFromConfigAndPermissions(toolPolicy, permissions))
-	kit.SetPermissionBoundary(tools.PermissionBoundaryForProfile(permissions.PermissionProfile))
+	kit.SetBoundary(BoundaryForMode(permissions.Mode))
 }
 
-func ToolPolicyFromConfigAndPermissions(in config.ToolPolicyConfig, permissions config.ResolvedPermissions) tools.ToolPolicy {
-	profile := config.ToolPolicyProfileForPermissionMode(permissions.Mode)
-	policy, ok := tools.PolicyForProfile(tools.ToolPolicyProfile(profile))
-	if !ok {
-		policy = tools.ToolPolicy{}
-	}
-	if approvalPolicy := strings.TrimSpace(permissions.ApprovalPolicy); approvalPolicy != "" {
-		policy.ApprovalPolicy = tools.ToolApprovalPolicy(approvalPolicy)
-	}
-	if action := toolPolicyAction(in.DefaultAction); action != "" {
-		policy.DefaultAction = action
-	}
-	if actions := toolPolicyToolActions(in.Tools); len(actions) > 0 {
-		policy.ToolActions = mergeToolPolicyToolActions(policy.ToolActions, actions)
-	}
-	if actions := toolPolicyKindActions(in.Kinds); len(actions) > 0 {
-		policy.KindActions = mergeToolPolicyKindActions(policy.KindActions, actions)
-	}
-	if actions := toolPolicyRiskActions(in.Risks); len(actions) > 0 {
-		policy.RiskActions = mergeToolPolicyRiskActions(policy.RiskActions, actions)
-	}
-	return policy
-}
-
-func toolPolicyToolActions(in map[string]string) map[string]tools.ToolPolicyAction {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]tools.ToolPolicyAction, len(in)*2)
-	for name, action := range in {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			resolved := toolPolicyAction(action)
-			out[name] = resolved
-			for _, alias := range toolPolicyToolActionAliases(name) {
-				out[alias] = resolved
-			}
-		}
-	}
-	return out
-}
-
-func toolPolicyToolActionAliases(name string) []string {
-	switch strings.TrimSpace(name) {
-	case "bash":
-		return []string{"run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"}
-	case "run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
-		return []string{"bash"}
+func BoundaryForMode(mode string) tools.WorkspaceBoundary {
+	switch config.NormalizePermissionMode(mode) {
+	case config.PermissionModeReadOnly:
+		return tools.ReadOnlyBoundary()
+	case config.PermissionModeUnconfined:
+		return tools.UnconfinedBoundary()
 	default:
-		return nil
+		return tools.StandardBoundary()
 	}
-}
-
-func toolPolicyKindActions(in map[string]string) map[tools.ToolKind]tools.ToolPolicyAction {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[tools.ToolKind]tools.ToolPolicyAction, len(in))
-	for kind, action := range in {
-		kind = strings.TrimSpace(kind)
-		if kind != "" {
-			out[tools.ToolKind(kind)] = toolPolicyAction(action)
-		}
-	}
-	return out
-}
-
-func toolPolicyRiskActions(in map[string]string) map[tools.ToolRisk]tools.ToolPolicyAction {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[tools.ToolRisk]tools.ToolPolicyAction, len(in))
-	for risk, action := range in {
-		risk = strings.TrimSpace(risk)
-		if risk != "" {
-			out[tools.ToolRisk(risk)] = toolPolicyAction(action)
-		}
-	}
-	return out
-}
-
-func mergeToolPolicyToolActions(base, override map[string]tools.ToolPolicyAction) map[string]tools.ToolPolicyAction {
-	out := make(map[string]tools.ToolPolicyAction, len(base)+len(override))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range override {
-		out[k] = v
-	}
-	return out
-}
-
-func mergeToolPolicyKindActions(base, override map[tools.ToolKind]tools.ToolPolicyAction) map[tools.ToolKind]tools.ToolPolicyAction {
-	out := make(map[tools.ToolKind]tools.ToolPolicyAction, len(base)+len(override))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range override {
-		out[k] = v
-	}
-	return out
-}
-
-func mergeToolPolicyRiskActions(base, override map[tools.ToolRisk]tools.ToolPolicyAction) map[tools.ToolRisk]tools.ToolPolicyAction {
-	out := make(map[tools.ToolRisk]tools.ToolPolicyAction, len(base)+len(override))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range override {
-		out[k] = v
-	}
-	return out
-}
-
-func toolPolicyAction(action string) tools.ToolPolicyAction {
-	return tools.ToolPolicyAction(strings.TrimSpace(action))
 }
 
 func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.File {
@@ -1713,7 +1550,7 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 // fresh here because worker/thread creation is a prompt-prefix creation
 // moment under the cache red lines — while the notebook directory stays
 // outside the worker's writable file scope.
-func buildWorkerBasePrompt(rootDir, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+func buildWorkerBasePrompt(rootDir, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
 	var teaching, index string
 	if memdirEnabled && strings.TrimSpace(wuuHome) != "" {
 		userNotebook := memdir.UserMemdir(wuuHome)
@@ -1724,7 +1561,7 @@ func buildWorkerBasePrompt(rootDir, wuuHome, userPrompt, providerName, model str
 			providers.DebugLogf("read user memory index for worker prompt: %v", err)
 		}
 	}
-	return buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, teaching, index, discoveredSkills, discoveredWorkflows)
+	return buildBaseSystemPromptContent(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, teaching, index, discoveredSkills, discoveredWorkflows)
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {
@@ -1750,7 +1587,6 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		providerName,
 		model,
 		activeSurfaceWithDeferredToolCatalog(s.Toolkit, s.DeferredToolCatalogPrompt),
-		toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 		s.Memory,
 		memdirTeaching,
 		memdirIndex,
@@ -1783,15 +1619,15 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 		s.DreamIntervalDays = 0
 	}
 	if s.Toolkit != nil {
+		fileScopeExtras := []string{}
 		if s.MemdirEnabled {
 			userNotebook := memdir.UserMemdir(s.WuuHome)
 			if err := memdir.EnsureDir(userNotebook); err != nil {
 				providers.DebugLogf("ensure user memory notebook: %v", err)
 			}
-			s.Toolkit.SetFileScopeRoots([]string{s.Toolkit.RootDir(), userNotebook})
-		} else {
-			s.Toolkit.SetFileScopeRoots(nil)
+			fileScopeExtras = append(fileScopeExtras, userNotebook)
 		}
+		s.Toolkit.SetFileScopeRoots(workspaces.BoundaryRoots(s.Toolkit.RootDir(), s.WuuHome, fileScopeExtras...))
 	}
 	apiModel := s.Model
 	if s.StreamRunner != nil && strings.TrimSpace(s.StreamRunner.APIModel) != "" {
@@ -1801,14 +1637,14 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 }
 
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, wuucontext.Block{}, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+	return buildBaseSystemPromptContent(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 }
 
-func buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows).Content
+func buildBaseSystemPromptContent(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows).Content
 }
 
-func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
+func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	pb.AddHarnessAdapter(providerName, model)
@@ -1845,25 +1681,6 @@ func environmentSystemPromptSection(rootDir string) string {
 		fmt.Fprintf(&b, "- Current date: %s\n", date)
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-func toolPolicySystemBlockForToolkit(kit *tools.Toolkit, toolPolicy config.ToolPolicyConfig, permissions config.ResolvedPermissions) wuucontext.Block {
-	if kit == nil {
-		return wuucontext.Block{}
-	}
-	block, _ := tools.ToolPolicyContextBlockFor(
-		ToolPolicyFromConfigAndPermissions(toolPolicy, permissions),
-		tools.PermissionBoundaryForProfile(permissions.PermissionProfile),
-	)
-	return block
-}
-
-func toolPolicySystemPromptSection(block wuucontext.Block) string {
-	content := strings.TrimSpace(block.Content)
-	if block.Kind != wuucontext.BlockToolPolicy || content == "" {
-		return ""
-	}
-	return "# Runtime Tool Policy\n\n" + content
 }
 
 func agentPromptSections(sections []prompt.SectionInfo) []agent.SystemPromptSectionInfo {
@@ -1947,4 +1764,3 @@ func workerDeferredToolCatalogPromptForToolkit(kit *tools.Toolkit, providerName,
 func compiledSurfaceForProviderModel(providerName, model string) capability.Surface {
 	return modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(providerName, model), false)
 }
-

@@ -177,7 +177,6 @@ type InitializeResult struct {
 	Effort           string                  `json:"effort,omitempty"`
 	Variant          string                  `json:"variant,omitempty"`
 	WorkspaceRoot    string                  `json:"workspace_root"`
-	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
 	Permissions      PermissionSummary       `json:"permissions"`
 	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
 	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
@@ -206,7 +205,6 @@ type ConfigReadResult struct {
 	ConfigPath       string                  `json:"config_path"`
 	WorkspaceRoot    string                  `json:"workspace_root"`
 	SessionDir       string                  `json:"session_dir"`
-	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
 	Permissions      PermissionSummary       `json:"permissions"`
 	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
 	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
@@ -217,19 +215,8 @@ type ConfigReadResult struct {
 	GeneralSettings  GeneralSettingsSummary  `json:"general_settings"`
 }
 
-type ToolPolicySummary struct {
-	Profile       string            `json:"profile,omitempty"`
-	DefaultAction string            `json:"default_action,omitempty"`
-	Tools         map[string]string `json:"tools,omitempty"`
-	Kinds         map[string]string `json:"kinds,omitempty"`
-	Risks         map[string]string `json:"risks,omitempty"`
-}
-
 type PermissionSummary struct {
-	Mode              string `json:"mode,omitempty"`
-	PermissionProfile string `json:"permission_profile,omitempty"`
-	ApprovalPolicy    string `json:"approval_policy,omitempty"`
-	ApprovalsReviewer string `json:"approvals_reviewer,omitempty"`
+	Mode string `json:"mode,omitempty"`
 }
 
 type MCPServerStatus struct {
@@ -297,7 +284,6 @@ type ConfigModelUpdateResult struct {
 	Model            string                  `json:"model"`
 	Effort           string                  `json:"effort,omitempty"`
 	Variant          string                  `json:"variant,omitempty"`
-	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
 	Permissions      PermissionSummary       `json:"permissions"`
 	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
 	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
@@ -335,13 +321,12 @@ type ConfigProviderRemoveParams struct {
 
 // ConfigProviderRemoveResult mirrors ConfigModelUpdateResult. The
 // renderer reuses its existing updateRuntimeSettings reducer to
-// merge provider/model/toolpolicy/permissions into the initialized
-// state, so the shape intentionally matches that result.
+// merge provider/model/permissions into the initialized state, so the shape
+// intentionally matches that result.
 type ConfigProviderRemoveResult struct {
 	Provider         string                  `json:"provider"`
 	Model            string                  `json:"model"`
 	Variant          string                  `json:"variant,omitempty"`
-	ToolPolicy       ToolPolicySummary       `json:"tool_policy"`
 	Permissions      PermissionSummary       `json:"permissions"`
 	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
 	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`

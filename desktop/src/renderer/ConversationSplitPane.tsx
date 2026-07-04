@@ -2,7 +2,6 @@ import { X } from "lucide-react";
 import type {
   InputFile,
   InputImage,
-  PendingToolApproval,
   Thread,
   ThreadItem,
 } from "../shared/protocol";
@@ -50,8 +49,6 @@ export function ConversationSplitPane({
   onStreamFrame,
   onNoticeAction,
   onOpenFileDiff,
-  pendingToolApproval,
-  onResolveToolApproval,
 }: {
   pane: ConversationPaneID;
   thread: Thread;
@@ -89,27 +86,16 @@ export function ConversationSplitPane({
   onStreamFrame: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
-  pendingToolApproval?: PendingToolApproval;
-  onResolveToolApproval?: (
-    approval: PendingToolApproval,
-    decision: "approved" | "approved_for_session" | "denied",
-  ) => void;
 }): JSX.Element {
   const paneTurns = thread.turns ?? [];
   const paneLatestAgentMessageID = latestAgentMessageItemID(paneTurns);
   const closeLabel = pane === "secondary" ? "关闭右侧对话" : "关闭左侧对话";
   const paneRunning = isThreadRunning(thread);
   const paneReadOnly = Boolean(thread.read_only);
-  const panePendingApproval = pendingApprovalForThread(
-    pendingToolApproval,
-    thread,
-  );
   const paneStatus = paneReadOnly
     ? paneRunning
       ? "子任务运行中"
       : "子任务会话只读"
-    : panePendingApproval
-      ? "等待审批"
     : paneRunning
       ? streamStatus?.text ?? "运行中"
       : active && appStatus !== "ready"
@@ -149,12 +135,7 @@ export function ConversationSplitPane({
             forcedFullTurnIDs={
               editingMessage ? [editingMessage.turnID] : undefined
             }
-            renderTurn={(turn) => {
-              const approval = pendingApprovalForTurn(
-                panePendingApproval,
-                turn,
-              );
-              return (
+            renderTurn={(turn) => (
                 <TurnView
                   turn={turn}
                   cwd={thread.cwd ?? activeContextCwd}
@@ -186,29 +167,8 @@ export function ConversationSplitPane({
                       ? streamStatus
                       : undefined
                   }
-                  pendingApproval={approval}
-                  onApproveTool={
-                    approval && onResolveToolApproval
-                      ? () => onResolveToolApproval(approval, "approved")
-                      : undefined
-                  }
-                  onApproveToolForSession={
-                    approval && onResolveToolApproval
-                      ? () =>
-                          onResolveToolApproval(
-                            approval,
-                            "approved_for_session",
-                          )
-                      : undefined
-                  }
-                  onDenyTool={
-                    approval && onResolveToolApproval
-                      ? () => onResolveToolApproval(approval, "denied")
-                      : undefined
-                  }
                 />
-              );
-            }}
+            )}
           />
         </div>
       </div>
@@ -233,40 +193,4 @@ export function ConversationSplitPane({
       />
     </section>
   );
-}
-
-function pendingApprovalForThread(
-  approval: PendingToolApproval | undefined,
-  thread: Thread | undefined,
-): PendingToolApproval | undefined {
-  if (!approval || !thread) {
-    return undefined;
-  }
-  if (approval.thread_id) {
-    return approval.thread_id === thread.id ? approval : undefined;
-  }
-  const callID = approval.call_id;
-  if (!callID) {
-    return undefined;
-  }
-  return thread.turns.some((turn) => pendingApprovalForTurn(approval, turn))
-    ? approval
-    : undefined;
-}
-
-function pendingApprovalForTurn(
-  approval: PendingToolApproval | undefined,
-  turn: { id: string; items: ThreadItem[] },
-): PendingToolApproval | undefined {
-  if (!approval) return undefined;
-  if (approval.turn_id) {
-    return approval.turn_id === turn.id ? approval : undefined;
-  }
-  const callID = approval.call_id;
-  if (!callID) return undefined;
-  return turn.items.some(
-    (item) => item.id === callID || item.source_id === callID,
-  )
-    ? approval
-    : undefined;
 }

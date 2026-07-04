@@ -7,7 +7,6 @@ import {
   Composer,
   SplitPaneComposer,
   permissionModeFromSummary,
-  permissionModeHasAdvancedOverrides,
   type CodexModelLoadState,
   type ComposerVariant,
   type PermissionMode,
@@ -22,7 +21,6 @@ import type {
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
-  ToolPolicySummary,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -64,13 +62,12 @@ afterEach(() => {
     .forEach((element) => element.remove());
 });
 
-function initialized(toolPolicy?: ToolPolicySummary, permissions?: PermissionSummary): InitializeResult {
+function initialized(permissions?: PermissionSummary): InitializeResult {
   return {
     protocol_version: "wuu-app-server/v0.1",
     provider: "fake",
     model: "fake-model",
     workspace_root: "/tmp/project",
-    tool_policy: toolPolicy,
     permissions,
     providers: [
       {
@@ -89,7 +86,6 @@ function renderComposer(props: {
   running?: boolean;
   queuedMessages?: QueuedComposerMessage[];
   guideMessages?: QueuedComposerMessage[];
-  toolPolicy?: ToolPolicySummary;
   status?: string;
   statusLiveProgress?: boolean;
   runtimeControlsDisabled?: boolean;
@@ -143,7 +139,7 @@ function renderComposer(props: {
           status={props.status ?? "ready"}
           statusLiveProgress={props.statusLiveProgress}
           readOnly={props.readOnly ?? false}
-          initialized={initialized(props.toolPolicy, props.permissions)}
+        initialized={initialized(props.permissions)}
           projects={props.projects ?? []}
           activeContext={props.activeContext}
           activeProject={props.activeProject}
@@ -1264,47 +1260,22 @@ describe("Composer queue strip", () => {
 
 describe("Composer permission menu", () => {
   it("maps permission summaries to mode chip states", () => {
-    expect(permissionModeFromSummary()).toBe("agent");
+    expect(permissionModeFromSummary()).toBe("standard");
+    expect(permissionModeFromSummary({ mode: "standard" })).toBe("standard");
     expect(permissionModeFromSummary({ mode: "read_only" })).toBe("read_only");
-    expect(permissionModeFromSummary({ mode: "agent" })).toBe("agent");
-    expect(permissionModeFromSummary({ mode: "auto_review" })).toBe("auto_review");
-    expect(permissionModeFromSummary({ mode: "full_access" })).toBe("full_access");
-    expect(
-      permissionModeFromSummary({
-        mode: "full_access",
-        permission_profile: "danger_full_access",
-        approval_policy: "on_request",
-        approvals_reviewer: "user",
-      }),
-    ).toBe("custom");
-    expect(permissionModeHasAdvancedOverrides({ profile: "agent" })).toBe(false);
-    expect(
-      permissionModeHasAdvancedOverrides(undefined, {
-        mode: "agent",
-        permission_profile: "workspace_write",
-        approval_policy: "never",
-        approvals_reviewer: "user",
-      }),
-    ).toBe(true);
-    expect(
-      permissionModeHasAdvancedOverrides({
-        profile: "agent",
-        tools: { run_shell: "allow" },
-      }),
-    ).toBe(true);
+    expect(permissionModeFromSummary({ mode: "unconfined" })).toBe("unconfined");
   });
 
   it("shows the everyday permission modes in the composer menu", () => {
     const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
-      toolPolicy: { profile: "agent" },
-      permissions: { mode: "agent" },
+      permissions: { mode: "standard" },
       onSelectPermissionMode,
     });
 
     const chip = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"权限模式：默认\"]",
+      "button[aria-label=\"权限模式：标准\"]",
     );
     expect(chip).not.toBeNull();
     expect(chip?.disabled).toBe(false);
@@ -1314,54 +1285,26 @@ describe("Composer permission menu", () => {
         "button[role=\"menuitemradio\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(labels).toEqual(["只读", "默认", "替我审批", "完全访问"]);
+    expect(labels).toEqual(["工作区内完全信任", "只读", "无边界"]);
     expect(document.body.textContent).not.toContain("平衡");
     expect(document.body.textContent).not.toContain("严格");
+    expect(document.body.textContent).not.toContain("替我审批");
 
     const checkedLabels = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
       ),
     ).map((label) => label.textContent?.trim());
-    expect(checkedLabels).toEqual(["默认"]);
+    expect(checkedLabels).toEqual(["工作区内完全信任"]);
     expect(document.body.textContent).not.toContain("profile:");
-    expect(document.body.textContent).not.toContain("approval:");
     expect(document.body.textContent).not.toContain("reviewer:");
   });
 
-  it("shows a custom state when explicit permission axes do not match the mode preset", () => {
-    renderComposer({
-      accessMenuOpen: true,
-      toolPolicy: { profile: "full_access" },
-      permissions: {
-        mode: "full_access",
-        permission_profile: "danger_full_access",
-        approval_policy: "on_request",
-        approvals_reviewer: "user",
-      },
-    });
-
-    const chip = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"权限模式：自定义权限\"]",
-    );
-    expect(chip).not.toBeNull();
-
-    const checkedLabels = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>(
-        "button[role=\"menuitemradio\"][aria-checked=\"true\"] strong",
-      ),
-    ).map((label) => label.textContent?.trim());
-    expect(checkedLabels).toEqual([]);
-    expect(document.body.textContent).toContain("自定义权限");
-    expect(document.body.textContent).not.toContain("approval:");
-  });
-
-  it("lets the user switch between read only, approve for me, and full access", () => {
+  it("lets the user switch between the three permission modes", () => {
     const onSelectPermissionMode = vi.fn();
     renderComposer({
       accessMenuOpen: true,
-      toolPolicy: { profile: "agent" },
-      permissions: { mode: "agent" },
+      permissions: { mode: "standard" },
       onSelectPermissionMode,
     });
 
@@ -1380,48 +1323,20 @@ describe("Composer permission menu", () => {
 
     expect(onSelectPermissionMode).toHaveBeenCalledWith("read_only");
 
-    const approveForMeOption = Array.from(
+    const unconfinedOption = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
         "button[role=\"menuitemradio\"]",
       ),
-    ).find((button) => button.textContent?.includes("替我审批"));
-    expect(approveForMeOption).not.toBeUndefined();
+    ).find((button) => button.textContent?.includes("无边界"));
+    expect(unconfinedOption).not.toBeUndefined();
 
     act(() => {
-      approveForMeOption?.dispatchEvent(
+      unconfinedOption?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });
 
-    expect(onSelectPermissionMode).toHaveBeenCalledWith("auto_review");
-
-    const fullAccessOption = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>(
-        "button[role=\"menuitemradio\"]",
-      ),
-    ).find((button) => button.textContent?.includes("完全访问"));
-    expect(fullAccessOption).not.toBeUndefined();
-
-    act(() => {
-      fullAccessOption?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-
-    expect(onSelectPermissionMode).toHaveBeenCalledWith("full_access");
-  });
-
-  it("shows a custom state when advanced overrides are present", () => {
-    renderComposer({
-      accessMenuOpen: true,
-      toolPolicy: {
-        profile: "agent",
-        tools: { run_shell: "allow" },
-      },
-    });
-
-    expect(container.textContent).toContain("自定义权限");
-    expect(document.body.textContent).toContain("选择任一模式会改为该预设");
+    expect(onSelectPermissionMode).toHaveBeenCalledWith("unconfined");
   });
 });
 

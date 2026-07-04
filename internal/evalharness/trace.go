@@ -105,7 +105,6 @@ type ToolPolicyBlockSummary struct {
 	Risk            string `json:"risk,omitempty"`
 	ErrorKind       string `json:"error_kind,omitempty"`
 	ArgumentsSHA256 string `json:"arguments_sha256,omitempty"`
-	ApprovalRef     string `json:"approval_ref,omitempty"`
 	RevisionBefore  string `json:"revision_before,omitempty"`
 	ModelNextAction string `json:"model_next_action,omitempty"`
 }
@@ -501,18 +500,8 @@ func toolResultActionKey(toolName, action string) string {
 func (summary *TraceReplaySummary) addToolPolicyBlock(record ToolObservation) {
 	action := strings.TrimSpace(record.PolicyAction)
 	errorKind := strings.TrimSpace(record.ErrorKind)
-	autoModeBlocked := action == "auto_classify" &&
-		(errorKind == "auto_mode_denied" ||
-			errorKind == "auto_classifier_unavailable" ||
-			errorKind == "auto_classifier_error")
 	if action != "deny" &&
-		action != "require_approval" &&
-		!autoModeBlocked &&
-		errorKind != "policy_denied" &&
-		errorKind != "approval_required" &&
-		errorKind != "auto_mode_denied" &&
-		errorKind != "auto_classifier_unavailable" &&
-		errorKind != "auto_classifier_error" {
+		errorKind != "boundary_denied" {
 		return
 	}
 	toolName := strings.TrimSpace(record.Name)
@@ -528,7 +517,6 @@ func (summary *TraceReplaySummary) addToolPolicyBlock(record ToolObservation) {
 		Risk:            strings.TrimSpace(record.Risk),
 		ErrorKind:       errorKind,
 		ArgumentsSHA256: strings.TrimSpace(record.ArgumentsSHA256),
-		ApprovalRef:     strings.TrimSpace(record.ApprovalRef),
 		RevisionBefore:  strings.TrimSpace(record.RevisionBefore),
 		ModelNextAction: modelNextActionForPolicyBlock(action, errorKind),
 	})
@@ -536,12 +524,8 @@ func (summary *TraceReplaySummary) addToolPolicyBlock(record ToolObservation) {
 
 func modelNextActionForPolicyBlock(action, errorKind string) string {
 	switch {
-	case action == "require_approval" || errorKind == "approval_required":
-		return "ask the user for approval or choose a lower-risk alternative"
-	case action == "auto_classify" || errorKind == "auto_mode_denied" || errorKind == "auto_classifier_unavailable" || errorKind == "auto_classifier_error":
-		return "ask the user for approval or choose a lower-risk alternative"
-	case action == "deny" || errorKind == "policy_denied":
-		return "choose a lower-risk tool or explain that policy blocks the requested action"
+	case action == "deny" || errorKind == "boundary_denied":
+		return "explain the workspace boundary denial or use a path/action inside the allowed boundary"
 	default:
 		return ""
 	}

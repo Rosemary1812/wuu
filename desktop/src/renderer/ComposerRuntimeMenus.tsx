@@ -2,7 +2,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  ClipboardCheck,
   Eye,
   Focus,
   Folder,
@@ -26,8 +25,7 @@ import type {
   PermissionSummary,
   ProviderModelSummary,
   ProviderSummary,
-  RuntimeContext,
-  ToolPolicySummary
+  RuntimeContext
 } from "../shared/protocol";
 import { FloatingMenuPortal, isInsideFloatingMenu } from "./ComposerFloatingMenu";
 import type {
@@ -50,7 +48,7 @@ import {
 
 type ChipTone = "neutral" | "danger";
 
-type PermissionModeState = PermissionMode | "custom";
+type PermissionModeState = PermissionMode;
 
 type PermissionModeOption = {
   mode: PermissionMode;
@@ -63,6 +61,13 @@ type PermissionModeOption = {
 
 const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
   {
+    mode: "standard",
+    label: "工作区内完全信任",
+    chipLabel: "标准",
+    icon: Shield,
+    chipTone: "neutral"
+  },
+  {
     mode: "read_only",
     label: "只读",
     chipLabel: "只读",
@@ -70,100 +75,35 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
     chipTone: "neutral"
   },
   {
-    mode: "agent",
-    label: "默认",
-    chipLabel: "默认",
-    icon: Shield,
-    chipTone: "neutral"
-  },
-  {
-    mode: "auto_review",
-    label: "替我审批",
-    chipLabel: "替我审批",
-    icon: ClipboardCheck,
-    chipTone: "neutral"
-  },
-  {
-    mode: "full_access",
-    label: "完全访问",
-    chipLabel: "完全访问",
+    mode: "unconfined",
+    label: "无边界",
+    chipLabel: "无边界",
     icon: TriangleAlert,
     chipTone: "danger",
     tone: "danger"
   }
 ];
 
-const CUSTOM_PERMISSION_MODE_OPTION: Omit<PermissionModeOption, "mode"> & { mode: PermissionModeState } = {
-  mode: "custom",
-  label: "自定义权限",
-  chipLabel: "自定义权限",
-  icon: Shield,
-  chipTone: "neutral"
-};
-
-function permissionPresetAxes(mode: PermissionMode): { profile: string; approval: string; reviewer: string } {
-  switch (mode) {
-    case "read_only":
-      return { profile: "read_only", approval: "on_request", reviewer: "user" };
-    case "auto_review":
-      return { profile: "workspace_write", approval: "on_request", reviewer: "auto_review" };
-    case "full_access":
-      return { profile: "danger_full_access", approval: "never", reviewer: "user" };
-    case "agent":
-    default:
-      return { profile: "workspace_write", approval: "on_request", reviewer: "user" };
-  }
-}
-
-function permissionSummaryMatchesPreset(permissions: PermissionSummary | undefined, mode: PermissionMode): boolean {
-  const preset = permissionPresetAxes(mode);
-  const profile = permissions?.permission_profile?.trim();
-  const approval = permissions?.approval_policy?.trim();
-  const reviewer = permissions?.approvals_reviewer?.trim();
-  return (
-    (!profile || profile === preset.profile) &&
-    (!approval || approval === preset.approval) &&
-    (!reviewer || reviewer === preset.reviewer)
-  );
-}
-
 export function permissionModeFromSummary(permissions?: PermissionSummary): PermissionModeState {
   const mode = permissions?.mode?.trim();
-  let preset: PermissionMode;
   switch (mode) {
     case "read_only":
-      preset = "read_only";
-      break;
-    case "agent":
-      preset = "agent";
-      break;
-    case "auto_review":
-      preset = "auto_review";
-      break;
-    case "full_access":
-      preset = "full_access";
-      break;
+      return "read_only";
+    case "unconfined":
+      return "unconfined";
+    case "standard":
+      return "standard";
     default:
-      preset = "agent";
+      return "standard";
   }
-  return permissionSummaryMatchesPreset(permissions, preset) ? preset : "custom";
 }
 
-export function permissionModeHasAdvancedOverrides(policy?: ToolPolicySummary, permissions?: PermissionSummary): boolean {
-  return Boolean(
-    permissionModeFromSummary(permissions) === "custom" ||
-      policy?.default_action ||
-      Object.keys(policy?.tools ?? {}).length > 0 ||
-      Object.keys(policy?.kinds ?? {}).length > 0 ||
-      Object.keys(policy?.risks ?? {}).length > 0
-  );
+export function permissionModeHasAdvancedOverrides(_permissions?: PermissionSummary): boolean {
+  return false;
 }
 
 export function permissionModeOption(mode: PermissionModeState): Omit<PermissionModeOption, "mode"> & { mode: PermissionModeState } {
-  if (mode === "custom") {
-    return CUSTOM_PERMISSION_MODE_OPTION;
-  }
-  return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[1];
+  return PERMISSION_MODE_OPTIONS.find((option) => option.mode === mode) ?? PERMISSION_MODE_OPTIONS[0];
 }
 
 export function RuntimePicker({
@@ -483,32 +423,22 @@ function normalizedVariantForRuntimeModel(
 
 export function AccessMenu({
   permissions,
-  policy,
   disabled,
   onSelect
 }: {
   permissions?: PermissionSummary;
-  policy?: ToolPolicySummary;
   disabled: boolean;
   onSelect: (mode: PermissionMode) => void;
 }): JSX.Element {
-  const hasOverrides = permissionModeHasAdvancedOverrides(policy, permissions);
   const mode = permissionModeFromSummary(permissions);
-  const activeMode = hasOverrides ? undefined : mode;
   return (
     <div className="composer-context-menu access-menu" role="menu">
-      {hasOverrides ? (
-        <div className="composer-menu-note">
-          <strong>自定义权限</strong>
-          <span>当前设置不匹配任何预设；选择任一模式会改为该预设</span>
-        </div>
-      ) : null}
       {PERMISSION_MODE_OPTIONS.map((option) => (
         <button
           key={option.mode}
           className={`permission-mode-option${option.tone === "danger" ? " danger" : ""}`}
           role="menuitemradio"
-          aria-checked={activeMode === option.mode}
+          aria-checked={mode === option.mode}
           aria-label={option.label}
           type="button"
           disabled={disabled}

@@ -11,14 +11,13 @@ import {
 
 /**
  * Shared chrome for the application's environment-style dialogs
- * (fork picker, git commit/PR, tool approval). Centralizes the
+ * (fork picker, git commit/PR, destructive confirmations). Centralizes the
  * backdrop, header, focus, Esc, and backdrop-click dismissal
  * behavior so each dialog only owns its body and footer.
  *
  * Close model:
  * - Pass `onClose` to opt into X button + Escape + backdrop dismissal.
- * - Omit `onClose` to render a non-dismissible dialog (e.g. tool
- *   approval, where the user must explicitly approve or deny).
+ * - Omit `onClose` to render a non-dismissible dialog.
  * - `closeDisabled` temporarily locks down every close affordance
  *   while an in-flight promise is still resolving.
  *

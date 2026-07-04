@@ -19,7 +19,6 @@ import {
   Plus,
   Search,
   Settings,
-  ShieldCheck,
   Upload,
   UserRound,
   UsersRound,
@@ -321,7 +320,6 @@ export function AppSidebar({
   onSeedConversationFixture,
   onSeedAgentTreeDemo,
   onOpenChipGallery,
-  onOpenApprovalGallery,
   onSelectThread,
   onSelectParticipant,
   onEditParticipant,
@@ -377,7 +375,7 @@ export function AppSidebar({
   // Set of participant IDs with at least one running run. Drives the busy
   // status dot in the roster. Derived in App.tsx by walking child agents
   // across all threads; participants not in the set render as online.
-  busyParticipantIDs: Set<string>;
+  busyParticipantIDs: ReadonlySet<string>;
   pendingThreadID?: string;
   pendingProjectID?: string;
   archiveConfirmThreadID?: string;
@@ -400,7 +398,6 @@ export function AppSidebar({
   onSeedConversationFixture: (kind: ConversationFixtureKind) => void;
   onSeedAgentTreeDemo: () => void;
   onOpenChipGallery: () => void;
-  onOpenApprovalGallery: () => void;
   onSelectThread: (id: string) => void;
   // Fires when the user clicks an agent row. The current product flow
   // routes this to opening (or creating) the DM conversation with that
@@ -647,13 +644,6 @@ export function AppSidebar({
               >
                 <LayoutGrid className="icon" />
                 <span>Chip 图鉴</span>
-              </button>
-              <button
-                className="nav-item dev-fixture-button"
-                onClick={onOpenApprovalGallery}
-              >
-                <ShieldCheck className="icon" />
-                <span>审批图鉴</span>
               </button>
             </div>
           ) : null}

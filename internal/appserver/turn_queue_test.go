@@ -61,10 +61,7 @@ func TestReplaceQueuedUserTurnPreservesOrder(t *testing.T) {
 }
 
 func TestReplaceQueuedUserTurnPreservesRuntimeSnapshot(t *testing.T) {
-	readOnly, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
-	if err != nil {
-		t.Fatalf("ResolvePermissionModePreset: %v", err)
-	}
+	readOnly := config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
 	s := &Server{}
 	s.enqueueQueuedUserTurn("thread-1", queuedTurn{
 		id:       "queue-1",
@@ -79,7 +76,7 @@ func TestReplaceQueuedUserTurnPreservesRuntimeSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatal("replaceQueuedUserTurn returned false")
 	}
-	if got := updated.snapshot.permissions(); got.Mode != config.PermissionModeReadOnly || got.PermissionProfile != config.PermissionProfileReadOnly {
+	if got := updated.snapshot.permissions(); got.Mode != config.PermissionModeReadOnly {
 		t.Fatalf("replacement lost permission snapshot: %+v", got)
 	}
 }

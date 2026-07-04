@@ -251,7 +251,7 @@ func TestStoreRejectedApprovalBlocksGoal(t *testing.T) {
 		ID:              "approval-1",
 		Title:           "Run destructive command",
 		RequestedAction: "git reset",
-		Source:          "tool_policy",
+		Source:          "goal_review",
 		SourceID:        "call-1",
 	}); err != nil {
 		t.Fatalf("RequestApproval: %v", err)

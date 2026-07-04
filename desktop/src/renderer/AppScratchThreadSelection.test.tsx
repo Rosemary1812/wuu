@@ -57,13 +57,7 @@ function initialized(workspaceRoot: string): InitializeResult {
     provider: "fake",
     model: "fake-model",
     workspace_root: workspaceRoot,
-    tool_policy: {},
-    permissions: {
-      mode: "default",
-      permission_profile: "workspace_write",
-      approval_policy: "on_request",
-      approvals_reviewer: "user",
-    },
+    permissions: { mode: "standard" },
     providers: [
       { name: "fake", type: "openai-compatible", model: "fake-model" },
     ],

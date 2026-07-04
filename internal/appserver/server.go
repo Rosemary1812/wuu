@@ -14,7 +14,6 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
-	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -164,18 +163,6 @@ type Server struct {
 	// manager run.
 	memoryOverviewMu    sync.Mutex
 	memoryOverviewCache map[string]memoryOverviewCacheEntry
-
-	// guardianBreaker tracks recent auto-review denials so a runaway
-	// rejection loop can interrupt the host turn instead of burning LLM
-	// tokens on a broken path. Shared across turns; cleared via ClearTurn
-	// by the host turn layer when a turn completes.
-	guardianBreaker *guardian.RejectionCircuitBreaker
-
-	// lastFallback records the most recent auto_review guardian setup
-	// failure, if any. Set under writeMu. The field exists so the desktop
-	// (and tests) can observe why auto-review failed closed without us
-	// polluting the JSON-RPC out stream with log lines.
-	lastFallback string
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -193,11 +180,8 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingResidentAgent:        make(map[string]bool),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
-
-		guardianBreaker: guardian.NewRejectionCircuitBreaker(),
 	}
 	if rt != nil {
-		s.installToolApprovalReviewer(rt.Toolkit)
 		// Only seed Andy when the runtime is actually usable: test-only
 		// sessions frequently leave SessionDir/WuuHome empty, and the seed
 		// would otherwise log a workspace error for every unrelated

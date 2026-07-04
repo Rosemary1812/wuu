@@ -19,10 +19,9 @@ export type FloatingMenuOwner =
 export type FloatingMenuPlacement = "above" | "below" | "middle";
 export type FloatingMenuAlign = "left" | "right";
 export type PermissionMode =
+  | "standard"
   | "read_only"
-  | "agent"
-  | "auto_review"
-  | "full_access";
+  | "unconfined";
 
 const HIDDEN_COMPOSER_STATUSES = new Set(["ready", "正在发送请求"]);
 

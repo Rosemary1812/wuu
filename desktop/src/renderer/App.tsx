@@ -46,7 +46,6 @@ import type {
   InputImage,
   ParticipantProfile,
   ParticipantSaveParams,
-  PendingToolApproval,
   PlanUpdate,
   ProjectListResult,
   PermissionSummary,
@@ -274,7 +273,6 @@ import {
   RunDebugPanel,
   runDebugPhaseForState,
 } from "./RunDebugPanel";
-import { ApprovalGalleryPanel } from "./ApprovalGalleryPanel";
 import { ChipGalleryPanel } from "./ChipGalleryPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { threadDisplayTitle } from "./ThreadTitles";
@@ -321,37 +319,7 @@ import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
-  switch (mode) {
-    case "read_only":
-      return {
-        mode,
-        permission_profile: "read_only",
-        approval_policy: "on_request",
-        approvals_reviewer: "user",
-      };
-    case "auto_review":
-      return {
-        mode,
-        permission_profile: "workspace_write",
-        approval_policy: "on_request",
-        approvals_reviewer: "auto_review",
-      };
-    case "full_access":
-      return {
-        mode,
-        permission_profile: "danger_full_access",
-        approval_policy: "never",
-        approvals_reviewer: "user",
-      };
-    case "agent":
-    default:
-      return {
-        mode: "agent",
-        permission_profile: "workspace_write",
-        approval_policy: "on_request",
-        approvals_reviewer: "user",
-      };
-  }
+  return { mode };
 }
 
 function initializedForSelectedPermissionMode(
@@ -364,44 +332,7 @@ function initializedForSelectedPermissionMode(
   return {
     ...initialized,
     permissions: permissionSummaryForMode(mode),
-    tool_policy: { profile: mode },
   };
-}
-
-function pendingApprovalForThread(
-  approval: PendingToolApproval | undefined,
-  thread: Thread | undefined,
-): PendingToolApproval | undefined {
-  if (!approval || !thread) {
-    return undefined;
-  }
-  if (approval.thread_id) {
-    return approval.thread_id === thread.id ? approval : undefined;
-  }
-  const callID = approval.call_id;
-  if (!callID) {
-    return undefined;
-  }
-  return thread.turns.some((turn) => pendingApprovalForTurn(approval, turn))
-    ? approval
-    : undefined;
-}
-
-function pendingApprovalForTurn(
-  approval: PendingToolApproval | undefined,
-  turn: Turn,
-): PendingToolApproval | undefined {
-  if (!approval) return undefined;
-  if (approval.turn_id) {
-    return approval.turn_id === turn.id ? approval : undefined;
-  }
-  const callID = approval.call_id;
-  if (!callID) return undefined;
-  return turn.items.some(
-    (item) => item.id === callID || item.source_id === callID,
-  )
-    ? approval
-    : undefined;
 }
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
@@ -874,8 +805,6 @@ export function App(): JSX.Element {
     setConversationGridVisible,
     chipGalleryOpen,
     setChipGalleryOpen,
-    approvalGalleryOpen,
-    setApprovalGalleryOpen,
     runDebugEvents,
     runDebugCopied,
     runDebugRef,
@@ -1899,14 +1828,6 @@ export function App(): JSX.Element {
   const handleCachedPaneOpenSubthread = useStableCallback(
     (thread: Thread, item: ThreadItem) => {
       openConversationSubthread(thread, item);
-    },
-  );
-  const handleCachedPaneResolveToolApproval = useStableCallback(
-    (
-      approval: PendingToolApproval,
-      decision: "approved" | "approved_for_session" | "denied",
-    ) => {
-      void resolveToolApproval(approval, decision);
     },
   );
   const handleCachedPaneOpenFileDiff = useStableCallback(
@@ -3664,10 +3585,6 @@ export function App(): JSX.Element {
         state.initialized?.advanced_settings?.context_window_tokens,
     });
     const streamStatus = turnStreamStatusForThread(state, activeThread);
-    const pendingApproval = pendingApprovalForThread(
-      state.pendingToolApproval,
-      activeThread,
-    );
     return (
       <Composer
         variant={variant}
@@ -3701,12 +3618,10 @@ export function App(): JSX.Element {
             ? activeThreadIsRunning
               ? "子任务运行中"
               : "子任务会话只读"
-            : pendingApproval
-              ? "等待审批"
-              : streamStatus?.text ?? state.status
+            : streamStatus?.text ?? state.status
         }
         statusLiveProgress={
-          activeThreadReadOnly || pendingApproval
+          activeThreadReadOnly
             ? false
             : streamStatus?.liveProgress
         }
@@ -3882,10 +3797,6 @@ export function App(): JSX.Element {
         }
         onStreamFrame={scheduleStreamScroll}
         onNoticeAction={handleNoticeAction}
-        pendingToolApproval={state.pendingToolApproval}
-        onResolveToolApproval={(approval, decision) =>
-          void resolveToolApproval(approval, decision)
-        }
         onOpenFileDiff={(selection) =>
           openTurnFileDiffPanel(thread.id, selection)
         }
@@ -7406,17 +7317,9 @@ export function App(): JSX.Element {
         nextConnection.base_url !== (currentProvider?.base_url ?? ""));
     const currentPermissionMode =
       state.initialized?.permissions?.mode ?? "";
-    const currentToolPolicy = state.initialized?.tool_policy;
-    const currentToolPolicyHasOverrides = Boolean(
-      currentToolPolicy?.default_action ||
-        Object.keys(currentToolPolicy?.tools ?? {}).length > 0 ||
-        Object.keys(currentToolPolicy?.kinds ?? {}).length > 0 ||
-        Object.keys(currentToolPolicy?.risks ?? {}).length > 0,
-    );
     const permissionModeChanged =
       nextPermissionMode !== undefined &&
-      (nextPermissionMode !== currentPermissionMode ||
-        currentToolPolicyHasOverrides);
+      nextPermissionMode !== currentPermissionMode;
     if (
       !nextProvider ||
       !nextModel ||
@@ -7449,7 +7352,6 @@ export function App(): JSX.Element {
               model: updated.model,
               effort: updated.effort ?? "",
               variant: updated.variant ?? "",
-              tool_policy: updated.tool_policy ?? current.initialized.tool_policy,
               permissions: updated.permissions ?? current.initialized.permissions,
               extension_trust: updated.extension_trust ?? current.initialized.extension_trust,
               providers: updated.providers ?? current.initialized.providers,
@@ -7562,8 +7464,6 @@ export function App(): JSX.Element {
               model: updated.model ?? current.initialized.model,
               effort: updated.effort ?? current.initialized.effort,
               variant: updated.variant ?? current.initialized.variant,
-              tool_policy:
-                updated.tool_policy ?? current.initialized.tool_policy,
               permissions:
                 updated.permissions ?? current.initialized.permissions,
               extension_trust:
@@ -7757,28 +7657,6 @@ export function App(): JSX.Element {
     clearThreadPendingComposerMessages(thread.id);
   }
 
-  async function resolveToolApproval(
-    approval: PendingToolApproval,
-    decision: "approved" | "approved_for_session" | "denied",
-  ): Promise<void> {
-    await window.wuu.respondToServerRequest(approval.server_request_id, {
-      decision,
-      reason:
-        decision === "denied"
-          ? "user denied the requested tool call"
-          : "user approved the requested tool call",
-    });
-    setState((current) =>
-      current.pendingToolApproval?.server_request_id === approval.server_request_id
-        ? {
-            ...current,
-            pendingToolApproval: undefined,
-            status: current.status === "等待审批" ? "ready" : current.status,
-          }
-        : current,
-    );
-  }
-
   if (settingsOpen) {
     return (
       <SettingsView
@@ -7854,7 +7732,6 @@ export function App(): JSX.Element {
         onSeedConversationFixture={seedConversationFixture}
         onSeedAgentTreeDemo={seedAgentTreeDemo}
         onOpenChipGallery={() => setChipGalleryOpen(true)}
-        onOpenApprovalGallery={() => setApprovalGalleryOpen(true)}
         onSelectThread={(id) => void activateThread(id)}
         onSelectParticipant={(participant) => void openParticipantDM(participant)}
         onEditParticipant={openParticipantProfile}
@@ -7931,13 +7808,6 @@ export function App(): JSX.Element {
         onSelectIndex={setConversationSearchSelectedIndex}
         onSelectResult={selectConversationSearchResult}
       />
-
-      {/*
-        Pending tool approvals render inline inside the matching turn
-        (see AssistantTurnShell), not as a global modal. The AppState
-        still holds the single pending slot — renderTurn maps it to the
-        right turn via pendingApprovalForTurn().
-      */}
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
@@ -8053,10 +7923,6 @@ export function App(): JSX.Element {
             <ChipGalleryPanel
               open={chipGalleryOpen}
               onClose={() => setChipGalleryOpen(false)}
-            />
-            <ApprovalGalleryPanel
-              open={approvalGalleryOpen}
-              onClose={() => setApprovalGalleryOpen(false)}
             />
             <button
               ref={environmentToggleRef}
@@ -8296,9 +8162,7 @@ export function App(): JSX.Element {
                 resolveParticipantName={resolveParticipantName}
                 chatReaderCount={chatReaderCount}
                 pendingChatMessagesByThread={pendingComposerMessagesByThread}
-                pendingToolApproval={state.pendingToolApproval}
                 turnStreamStatus={state.turnStreamStatus}
-                onResolveToolApproval={handleCachedPaneResolveToolApproval}
                 onOpenFileDiff={handleCachedPaneOpenFileDiff}
               />
             )}
@@ -8512,21 +8376,6 @@ type CachedConversationPanesProps = {
    * ignore this — their queue renders in the composer strip instead.
    */
   pendingChatMessagesByThread: PendingComposerMessagesByThread;
-  /**
-   * Tool approval waiting for a decision. The matching turn is found
-   * inside this component by `call_id` lookup, so the card only renders
-   * next to the tool call it actually gates.
-   */
-  pendingToolApproval?: PendingToolApproval;
-  /**
-   * Resolver forwarded to the inline approval card. Receives the
-   * matched `pendingToolApproval` plus the decision string the user
-   * picked (approved / approved_for_session / denied).
-   */
-  onResolveToolApproval?: (
-    approval: PendingToolApproval,
-    decision: "approved" | "approved_for_session" | "denied",
-  ) => void;
 };
 
 const CachedConversationPanes = memo(function CachedConversationPanes({
@@ -8557,8 +8406,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   resolveParticipantName,
   chatReaderCount,
   pendingChatMessagesByThread,
-  pendingToolApproval,
-  onResolveToolApproval,
 }: CachedConversationPanesProps): JSX.Element {
   return (
     <div className="cached-conversation-panes">
@@ -8570,10 +8417,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
         const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
         const threadContextEntries = contextCompositionEntries.filter(
           (entry) => entry.threadID === threadID,
-        );
-        const threadPendingToolApproval = pendingApprovalForThread(
-          pendingToolApproval,
-          thread,
         );
         const turnIDs = new Set(threadTurns.map((turn) => turn.id));
         const entriesBeforeTurns = threadContextEntries.filter(
@@ -8670,12 +8513,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                     ? [historyMessageEdit.turnID]
                     : undefined
                 }
-                renderTurn={(turn) => {
-                  const approval = pendingApprovalForTurn(
-                    threadPendingToolApproval,
-                    turn,
-                  );
-                  return (
+                renderTurn={(turn) => (
                   <TurnView
                     turn={turn}
                     cwd={thread.cwd ?? activeContextCwd}
@@ -8728,29 +8566,8 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                         ? turnStreamStatus[turn.id]
                         : undefined
                     }
-                    pendingApproval={approval}
-                    onApproveTool={
-                      approval && onResolveToolApproval
-                        ? () => onResolveToolApproval(approval, "approved")
-                        : undefined
-                    }
-                    onApproveToolForSession={
-                      approval && onResolveToolApproval
-                        ? () =>
-                            onResolveToolApproval(
-                              approval,
-                              "approved_for_session",
-                            )
-                        : undefined
-                    }
-                    onDenyTool={
-                      approval && onResolveToolApproval
-                        ? () => onResolveToolApproval(approval, "denied")
-                        : undefined
-                    }
                   />
-                  );
-                }}
+                )}
               />
               )}
             </div>

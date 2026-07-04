@@ -53,13 +53,12 @@ export type InitializeResult = {
   effort?: string;
   variant?: string;
   workspace_root: string;
-  tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
   // model_profile + tool_surface summarise the per-model tool
   // surface the runtime compiled for the active session. The
-  // renderer uses these to drive capability-first activity,
-  // approval UI, and the debug surface view; the runtime side
-  // owns the values so the UI never has to re-derive the
+  // renderer uses these to drive capability-first activity and the
+  // debug surface view; the runtime side owns the values so the UI never
+  // has to re-derive the
   // bash-first / patch-first split.
   model_profile?: ModelProfileSummary;
   tool_surface?: ToolSurfaceSummary;
@@ -91,19 +90,8 @@ export type GeneralSettingsSummary = {
   mcp_server_enabled: Record<string, boolean>;
 };
 
-export type ToolPolicySummary = {
-  profile?: string;
-  default_action?: string;
-  tools?: Record<string, string>;
-  kinds?: Record<string, string>;
-  risks?: Record<string, string>;
-};
-
 export type PermissionSummary = {
   mode?: string;
-  permission_profile?: string;
-  approval_policy?: string;
-  approvals_reviewer?: string;
 };
 
 export type ModelProfileSummary = {
@@ -156,7 +144,6 @@ export type ConfigModelUpdateResult = {
   model: string;
   effort?: string;
   variant?: string;
-  tool_policy?: ToolPolicySummary;
   permissions?: PermissionSummary;
   // model_profile + tool_surface mirror the initialize result. The
   // runtime recomputes the surface when the model changes, so the
@@ -1366,42 +1353,6 @@ export type ServerEvent = {
   | { kind: "server-error"; message: string }
   | { kind: "server-exit"; code: number | null }
 );
-
-export type ToolApprovalRequest = {
-  id: string;
-  tool_name: string;
-  call_id?: string;
-  kind?: string;
-  risk?: string;
-  policy_action?: string;
-  policy_reason?: string;
-  classification_reason?: string;
-  read_only?: boolean;
-  destructive?: boolean;
-  revision?: string;
-  arguments_sha256?: string;
-  arguments_preview?: string;
-  approval_ref?: string;
-  permission?: string;
-  permission_patterns?: string[];
-  permission_always?: string[];
-  permission_rule?: string;
-  model_next_action?: string;
-  // capability + capability_object + capability_action are the
-  // capability-first view of the same approval. The renderer
-  // shows these so the user reads "approval for command.bash
-  // / git push origin main" instead of "approval for run_shell".
-  capability?: string;
-  capability_object?: string;
-  capability_action?: string;
-  capability_rule?: string;
-};
-
-export type PendingToolApproval = ToolApprovalRequest & {
-  server_request_id: string;
-  thread_id?: string;
-  turn_id?: string;
-};
 
 export type WindowResizeState = {
   resizing: boolean;

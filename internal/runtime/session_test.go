@@ -331,8 +331,8 @@ func TestNewSessionRetiresMemoryToolsAndInjectsMemdir(t *testing.T) {
 		t.Fatalf("memdir section should carry the MEMORY.md index slot:\n%s", rt.BaseSystemPrompt)
 	}
 	if strings.Contains(rt.BaseSystemPrompt, "# Runtime Tool Policy") ||
-		strings.Contains(rt.BaseSystemPrompt, "approval_policy:") {
-		t.Fatalf("base system prompt should keep runtime permission state out of the stable prompt:\n%s", rt.BaseSystemPrompt)
+		strings.Contains(rt.BaseSystemPrompt, "permission_mode:") {
+		t.Fatalf("base system prompt should keep runtime authority state out of the stable prompt:\n%s", rt.BaseSystemPrompt)
 	}
 	for _, def := range rt.Toolkit.Definitions() {
 		if def.Name == "read_memory" || def.Name == "write_memory" {
@@ -1950,7 +1950,7 @@ func TestNewSessionAppliesPermissionBoundary(t *testing.T) {
 		Name:      "write_file",
 		Arguments: `{"path":"blocked.txt","content":"nope"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=permission_boundary_denied") {
+	if err == nil || !strings.Contains(err.Error(), "error_kind=boundary_denied") {
 		t.Fatalf("expected read-only runtime boundary, got %v", err)
 	}
 }
@@ -1981,13 +1981,9 @@ func TestNewThreadRuntimeWorkerInheritsCurrentPermissionBoundary(t *testing.T) {
 		t.Fatalf("NewSession: %v", err)
 	}
 
-	permissions, err := config.ResolvePermissionModePreset(config.PermissionModeReadOnly)
-	if err != nil {
-		t.Fatalf("ResolvePermissionModePreset: %v", err)
-	}
+	permissions := config.ResolvedPermissions{Mode: config.PermissionModeReadOnly}
 	rt.Permissions = permissions
-	rt.ToolPolicy = config.ToolPolicyConfig{}
-	ConfigureToolkitPermissions(rt.Toolkit, rt.ToolPolicy, rt.Permissions)
+	ConfigureToolkitPermissions(rt.Toolkit, rt.Permissions)
 
 	client := &sessionRecordingClient{
 		streamBatches: [][]providers.StreamEvent{
@@ -2028,8 +2024,8 @@ func TestNewThreadRuntimeWorkerInheritsCurrentPermissionBoundary(t *testing.T) {
 		joined.WriteByte('\n')
 	}
 	content := joined.String()
-	if !strings.Contains(content, "permission_boundary_denied") ||
-		!strings.Contains(content, "read_only profile blocks") {
+	if !strings.Contains(content, "boundary_denied") ||
+		!strings.Contains(content, "this agent is read-only") {
 		t.Fatalf("worker did not inherit read-only permission boundary:\n%s", content)
 	}
 	if _, err := os.Stat(filepath.Join(root, "blocked.txt")); !os.IsNotExist(err) {
@@ -2615,112 +2611,24 @@ func TestMCPToolOverridesFromConfig(t *testing.T) {
 	}
 }
 
-func TestToolPolicyFromConfig(t *testing.T) {
-	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
-		DefaultAction: "allow",
-		Tools: map[string]string{
-			"run_shell": "require_approval",
-		},
-		Kinds: map[string]string{
-			"web": "allow",
-		},
-		Risks: map[string]string{
-			"high": "deny",
-		},
-	})
-
-	if policy.DefaultAction != tools.ToolPolicyAllow {
-		t.Fatalf("DefaultAction = %s, want allow", policy.DefaultAction)
+func TestBoundaryForMode(t *testing.T) {
+	tests := []struct {
+		mode           string
+		wantEnforce    bool
+		wantMutations  bool
+		wantUnconfined bool
+	}{
+		{mode: "", wantEnforce: true, wantMutations: true},
+		{mode: config.PermissionModeStandard, wantEnforce: true, wantMutations: true},
+		{mode: config.PermissionModeReadOnly, wantEnforce: true, wantMutations: false},
+		{mode: config.PermissionModeUnconfined, wantEnforce: false, wantMutations: true, wantUnconfined: true},
+		{mode: "not-a-mode", wantEnforce: true, wantMutations: true},
 	}
-	if policy.Profile != "" {
-		t.Fatalf("Profile = %s, want no profile from explicit override config", policy.Profile)
-	}
-	if policy.ToolActions["run_shell"] != tools.ToolPolicyRequireApproval {
-		t.Fatalf("run_shell action = %s, want require_approval", policy.ToolActions["run_shell"])
-	}
-	if policy.ToolActions["bash"] != tools.ToolPolicyRequireApproval {
-		t.Fatalf("bash alias action = %s, want require_approval", policy.ToolActions["bash"])
-	}
-	if policy.KindActions[tools.ToolKindWeb] != tools.ToolPolicyAllow {
-		t.Fatalf("web action = %s, want allow", policy.KindActions[tools.ToolKindWeb])
-	}
-	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
-		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
-	}
-}
-
-func TestToolPolicyFromConfigAliasesUnifiedCommandTools(t *testing.T) {
-	policy := ToolPolicyFromConfig(config.ToolPolicyConfig{
-		Tools: map[string]string{
-			"bash": "deny",
-		},
-	})
-	for _, name := range []string{"bash", "run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
-		if policy.ToolActions[name] != tools.ToolPolicyDeny {
-			t.Fatalf("%s action = %s, want deny", name, policy.ToolActions[name])
+	for _, tt := range tests {
+		got := BoundaryForMode(tt.mode)
+		if got.Enforce != tt.wantEnforce || got.AllowMutations != tt.wantMutations {
+			t.Fatalf("BoundaryForMode(%q) = %+v", tt.mode, got)
 		}
-	}
-
-	legacy := ToolPolicyFromConfig(config.ToolPolicyConfig{
-		Tools: map[string]string{
-			"run_shell": "require_approval",
-		},
-	})
-	if legacy.ToolActions["bash"] != tools.ToolPolicyRequireApproval {
-		t.Fatalf("legacy run_shell action did not alias to bash: %+v", legacy.ToolActions)
-	}
-}
-
-func TestToolPolicyFromConfigAndPermissionsDerivesAgentProfile(t *testing.T) {
-	policy := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{
-		Risks: map[string]string{
-			"high": "deny",
-		},
-	}, config.ResolvedPermissions{Mode: config.PermissionModeAgent})
-
-	if policy.Profile != tools.ToolPolicyProfileAgent {
-		t.Fatalf("Profile = %s, want agent", policy.Profile)
-	}
-	if policy.DefaultAction != tools.ToolPolicyAllow {
-		t.Fatalf("DefaultAction = %s, want allow", policy.DefaultAction)
-	}
-	if policy.RiskActions[tools.ToolRiskHigh] != tools.ToolPolicyDeny {
-		t.Fatalf("high risk action = %s, want deny", policy.RiskActions[tools.ToolRiskHigh])
-	}
-}
-
-func TestToolPolicyFromConfigAndPermissionsKeepsAutoReviewAsReviewerOnlyProfile(t *testing.T) {
-	agent := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{Mode: config.PermissionModeAgent})
-	autoReview := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{Mode: config.PermissionModeAutoReview})
-
-	if agent.Profile != tools.ToolPolicyProfileAgent {
-		t.Fatalf("agent Profile = %s, want agent", agent.Profile)
-	}
-	if autoReview.Profile != tools.ToolPolicyProfileAutoReview {
-		t.Fatalf("auto review Profile = %s, want auto_review", autoReview.Profile)
-	}
-	if agent.DefaultAction != autoReview.DefaultAction {
-		t.Fatalf("auto_review should not change policy action defaults: agent=%s auto_review=%s", agent.DefaultAction, autoReview.DefaultAction)
-	}
-}
-
-func TestToolPolicyFromConfigAndPermissionsUsesApprovalPolicyAxis(t *testing.T) {
-	fullAccessOnRequest := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{
-		Mode:           config.PermissionModeFullAccess,
-		ApprovalPolicy: config.ApprovalPolicyOnRequest,
-	})
-	if fullAccessOnRequest.Profile != tools.ToolPolicyProfileFullAccess ||
-		fullAccessOnRequest.ApprovalPolicy != tools.ToolApprovalPolicyOnRequest {
-		t.Fatalf("full_access with on_request approval policy mapped incorrectly: %+v", fullAccessOnRequest)
-	}
-
-	agentNever := ToolPolicyFromConfigAndPermissions(config.ToolPolicyConfig{}, config.ResolvedPermissions{
-		Mode:           config.PermissionModeAgent,
-		ApprovalPolicy: config.ApprovalPolicyNever,
-	})
-	if agentNever.Profile != tools.ToolPolicyProfileAgent ||
-		agentNever.ApprovalPolicy != tools.ToolApprovalPolicyNever {
-		t.Fatalf("agent with never approval policy mapped incorrectly: %+v", agentNever)
 	}
 }
 

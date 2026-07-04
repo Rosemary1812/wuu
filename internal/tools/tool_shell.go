@@ -55,16 +55,6 @@ func (t *ShellTool) ValidateInput(argsJSON string) error {
 	return nil
 }
 
-func (t *ShellTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return nil
-	}
-	return []ToolPermissionRequest{shellPermissionRequest("run_shell", args.Command)}
-}
-
 func (t *ShellTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "run_shell",
@@ -79,7 +69,7 @@ func (t *ShellTool) Definition() providers.ToolDefinition {
 			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
 			"- If commands are independent, make multiple tool calls in parallel\n" +
 			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write. Unsafe git forms such as broad staging, config mutation, force push, hook skipping, destructive reset/clean/checkout, and interactive git are rejected by command policy unless full access is active.",
+			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -113,30 +103,6 @@ func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error
 	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
 		return "", errors.New("run_shell requires command")
 	}
-	if !t.env.BypassToolHardProtections() {
-		if reason, ok := blockedShellGitCommandReason(args.Command); ok {
-			return "", fmt.Errorf("run_shell refuses unsafe git command (%s). Use safe non-interactive git commands such as git status/diff/log, explicit-path git add, or git commit with an explicit non-interactive message: error_kind=unsupported_git_shell model_next_action=%q", reason, "retry with a safe bash git command")
-		}
-		if shellCommandUsesUnsupportedWrapper(args.Command) {
-			return "", errors.New("run_shell refuses unsupported shell wrapper syntax because it cannot prove which command will execute; retry with a plain command or a supported timeout/time/nice/nohup/stdbuf form")
-		}
-		if shellCommandDumpsEnvironment(args.Command) {
-			return "", errors.New("run_shell refuses to print process environment variables because they may contain secrets")
-		}
-		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-			return "", fmt.Errorf("run_shell refuses to access sensitive paths (%s). Use dedicated metadata-safe tools or ask the user for explicit secret handling", reason)
-		}
-		if shellCommandInvokesDestructiveCommand(args.Command) {
-			return "", errors.New("run_shell refuses to execute destructive shell commands; use the file editing tool exposed in this session or another restricted audited tool so changes remain reviewable")
-		}
-		if testCommandLooksLikeLocalRunnerVerification(args.Command) {
-			return "", errors.New("run_shell refuses to execute package-runner verification commands directly because they can install packages when the runner is missing; use bash action=run for local verification so project-local test runners are resolved without downloads: error_kind=wrong_tool_for_verification model_next_action=\"retry with bash action=run using the same command\"")
-		}
-		if shellCommandInvokesPackageOrNetworkMutation(args.Command) {
-			return "", errors.New("run_shell refuses to execute package, network, or external mutation commands; use dedicated web tools, project-approved verification commands, or ask the user for explicit approval")
-		}
-	}
-
 	timeout := args.TimeoutSeconds
 	if timeout <= 0 {
 		timeout = defaultShellTimeoutSeconds

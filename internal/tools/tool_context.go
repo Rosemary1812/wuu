@@ -205,129 +205,6 @@ func (t *Toolkit) SessionMemoryContextBlocks() []wuucontext.Block {
 	return sessionmemory.RequestContextBlocks(stateDir, t.env.SessionDir)
 }
 
-func (t *Toolkit) ToolPolicyContextBlock() (wuucontext.Block, bool) {
-	if t == nil {
-		return wuucontext.Block{}, false
-	}
-	return ToolPolicyContextBlockFor(t.toolPolicy, t.permissionBoundary)
-}
-
-func ToolPolicyContextBlockFor(policy ToolPolicy, boundary PermissionBoundary) (wuucontext.Block, bool) {
-	if !hasRuntimeToolPolicyContext(policy, boundary) {
-		return wuucontext.Block{}, false
-	}
-	var b strings.Builder
-	if profile := strings.TrimSpace(boundary.Profile); profile != "" {
-		fmt.Fprintf(&b, "permission_profile: %s\n", profile)
-		writePermissionBoundaryContext(&b, profile)
-	}
-	if policy.Profile != "" {
-		fmt.Fprintf(&b, "profile: %s\n", policy.Profile)
-	}
-	if policy.ApprovalPolicy != "" {
-		fmt.Fprintf(&b, "approval_policy: %s\n", policy.ApprovalPolicy)
-	}
-	if policy.DefaultAction != "" {
-		fmt.Fprintf(&b, "default_action: %s\n", policy.DefaultAction)
-	}
-	writeToolPolicyActions(&b, "risk_actions", toolPolicyRiskActionLines(policy.RiskActions))
-	writeToolPolicyActions(&b, "kind_actions", toolPolicyKindActionLines(policy.KindActions))
-	writeToolPolicyActions(&b, "tool_actions", toolPolicyToolActionLines(policy.ToolActions))
-	b.WriteString("note: permission_boundary is enforced before policy and approval. Boundary denials require changing profile; approval flags cannot bypass them. require_approval means ask the user; auto_classify means let auto mode decide.\n")
-
-	return wuucontext.Block{
-		Kind:        wuucontext.BlockToolPolicy,
-		Title:       "Runtime tool policy",
-		Source:      "runtime.tool_policy",
-		TokenBudget: 650,
-		Content:     strings.TrimRight(b.String(), "\n"),
-	}, true
-}
-
-func hasRuntimeToolPolicyContext(policy ToolPolicy, boundary PermissionBoundary) bool {
-	return hasConfiguredToolPolicy(policy) || strings.TrimSpace(boundary.Profile) != ""
-}
-
-func hasConfiguredToolPolicy(policy ToolPolicy) bool {
-	return policy.Profile != "" ||
-		policy.ApprovalPolicy != "" ||
-		policy.DefaultAction != "" ||
-		len(policy.ToolActions) > 0 ||
-		len(policy.KindActions) > 0 ||
-		len(policy.RiskActions) > 0
-}
-
-func writePermissionBoundaryContext(b *strings.Builder, profile string) {
-	switch strings.TrimSpace(profile) {
-	case PermissionProfileReadOnly:
-		b.WriteString("boundary: read_only permits read-only tools and blocks mutations.\n")
-	case PermissionProfileWorkspaceWrite:
-		b.WriteString("boundary: workspace_write permits workspace edits but blocks destructive runtime actions and outside-workspace paths.\n")
-	case PermissionProfileDangerFullAccess:
-		b.WriteString("boundary: danger_full_access removes Wuu workspace, network, sensitive-path, and default command-policy hard guards; explicit policy, tool limits, and OS permissions still apply.\n")
-	default:
-		fmt.Fprintf(b, "boundary: unknown permission profile %s; stop and report the invalid runtime policy.\n", profile)
-	}
-}
-
-func writeToolPolicyActions(b *strings.Builder, title string, lines []string) {
-	if len(lines) == 0 {
-		return
-	}
-	fmt.Fprintf(b, "%s:\n", title)
-	for _, line := range lines {
-		fmt.Fprintf(b, "- %s\n", line)
-	}
-}
-
-func toolPolicyRiskActionLines(actions map[ToolRisk]ToolPolicyAction) []string {
-	if len(actions) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(actions))
-	for risk := range actions {
-		keys = append(keys, string(risk))
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, key+": "+string(actions[ToolRisk(key)]))
-	}
-	return out
-}
-
-func toolPolicyKindActionLines(actions map[ToolKind]ToolPolicyAction) []string {
-	if len(actions) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(actions))
-	for kind := range actions {
-		keys = append(keys, string(kind))
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, key+": "+string(actions[ToolKind(key)]))
-	}
-	return out
-}
-
-func toolPolicyToolActionLines(actions map[string]ToolPolicyAction) []string {
-	if len(actions) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(actions))
-	for name := range actions {
-		keys = append(keys, name)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, key+": "+string(actions[key]))
-	}
-	return out
-}
-
 func (t *Toolkit) ActiveFilesContextBlock() (wuucontext.Block, bool) {
 	if t == nil || t.env == nil {
 		return wuucontext.Block{}, false
@@ -555,9 +432,6 @@ func (t *Toolkit) ToolResultSummaryContextBlock() (wuucontext.Block, bool) {
 		}
 		if record.ResultRef != "" {
 			fmt.Fprintf(&b, " result_ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ResultRef))))
-		}
-		if record.ApprovalRef != "" {
-			fmt.Fprintf(&b, " approval_ref=%s", compactContextLine(redactToolOutput(contextArtifactRef(t.env, record.ApprovalRef))))
 		}
 		if record.PatchRiskSummary != nil {
 			fmt.Fprintf(&b, " patch_risk=%s", compactToolPatchRisk(*record.PatchRiskSummary))

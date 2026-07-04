@@ -58,16 +58,7 @@ type Toolkit struct {
 	nativeDeferredDiscovery bool
 	discoveryMu             sync.Mutex
 	discoveredToolsByCall   map[string][]providers.LoadableToolDefinition
-	toolPolicy              ToolPolicy
 	boundary                WorkspaceBoundary
-	permissionBoundary      PermissionBoundary
-	extensionSurfacePolicy  ExtensionSurfacePolicy
-	autoModeClassifier      AutoModeClassifier
-	approvalReviewer        ToolApprovalReviewer
-	approvalStore           *ToolApprovalStore
-	permissionRulesMu       sync.RWMutex
-	permissionRules         ToolPermissionRuleSet
-	permissionSessionRules  ToolPermissionRuleSet
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
@@ -114,11 +105,9 @@ func New(rootDir string) (*Toolkit, error) {
 		ToolSearchEnabled: true,
 	}
 	t := &Toolkit{
-		env:                env,
-		toolSearchEnabled:  true,
-		boundary:           StandardBoundary(),
-		autoModeClassifier: DefaultAutoModeClassifier{},
-		approvalStore:      NewToolApprovalStore(),
+		env:               env,
+		toolSearchEnabled: true,
+		boundary:          StandardBoundary(),
 	}
 	t.rebuildRegistry()
 	t.SetEditToolMode(EditToolModeText)
@@ -154,7 +143,6 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	env := Env{
 		RootDir:                     abs,
 		StateDir:                    t.env.StateDir,
-		PermissionProfile:           t.env.PermissionProfile,
 		Unconfined:                  t.env.Unconfined,
 		SessionID:                   t.env.SessionID,
 		SessionDir:                  t.env.SessionDir,
@@ -185,16 +173,9 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	}
 
 	clone := &Toolkit{
-		env:                    &env,
-		toolPolicy:             t.toolPolicy,
-		boundary:               t.boundary,
-		permissionBoundary:     t.permissionBoundary,
-		extensionSurfacePolicy: t.extensionSurfacePolicy,
-		autoModeClassifier:     t.autoModeClassifier,
-		approvalReviewer:       t.approvalReviewer,
-		approvalStore:          NewToolApprovalStore(),
-		permissionRules:        t.PermissionRules(),
-		mcpManager:             t.mcpManager,
+		env:        &env,
+		boundary:   t.boundary,
+		mcpManager: t.mcpManager,
 	}
 	t.exposureMu.RLock()
 	clone.toolSearchEnabled = t.toolSearchEnabled
@@ -538,20 +519,6 @@ func (t *Toolkit) MCPManager() *mcp.Manager {
 	return t.mcpManager
 }
 
-// SetToolPolicy installs the runtime policy used before executing known tools.
-func (t *Toolkit) SetToolPolicy(policy ToolPolicy) {
-	t.toolPolicy = policy
-}
-
-// SetPermissionBoundary installs the hard runtime boundary below tool policy.
-// The zero value leaves the legacy unrestricted behavior in place.
-func (t *Toolkit) SetPermissionBoundary(boundary PermissionBoundary) {
-	t.permissionBoundary = boundary
-	if t != nil && t.env != nil {
-		t.env.PermissionProfile = normalizePermissionBoundaryProfile(boundary.Profile)
-	}
-}
-
 // SetBoundary installs the single authority gate for this runtime. It also
 // wires Env.Unconfined so path confinement in ResolvePath tracks the boundary.
 func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
@@ -566,40 +533,6 @@ func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
 
 func (t *Toolkit) bypassToolHardProtections() bool {
 	return t != nil && t.env != nil && t.env.BypassToolHardProtections()
-}
-
-// SetExtensionSurfacePolicy installs the runtime trust policy for extension
-// backed tools such as MCP, skills, and workflows. The zero value allows all.
-func (t *Toolkit) SetExtensionSurfacePolicy(policy ExtensionSurfacePolicy) {
-	t.extensionSurfacePolicy = policy
-}
-
-// SetAutoModeClassifier installs the reviewer used by explicit auto-classify
-// policy actions. Passing nil makes those actions fail closed for non-low-risk calls.
-func (t *Toolkit) SetAutoModeClassifier(classifier AutoModeClassifier) {
-	t.autoModeClassifier = classifier
-}
-
-// SetToolApprovalReviewer installs the reviewer used when policy requires
-// approval. A nil reviewer preserves the legacy fail-closed behavior: the
-// request is written as an approval artifact and returned to the model.
-func (t *Toolkit) SetToolApprovalReviewer(reviewer ToolApprovalReviewer) {
-	t.approvalReviewer = reviewer
-	if t.approvalStore == nil {
-		t.approvalStore = NewToolApprovalStore()
-	}
-}
-
-// ApprovalStore returns the session-wide approval cache the toolkit uses
-// to skip the reviewer for repeated identical tool calls. Returns nil
-// only when the toolkit itself is nil. Callers (e.g. the LLM-driven
-// guardian reviewer) can pass the result through to keep their own
-// short-circuit on top of the toolkit's already-failed attempts.
-func (t *Toolkit) ApprovalStore() *ToolApprovalStore {
-	if t == nil {
-		return nil
-	}
-	return t.approvalStore
 }
 
 // AgentControl returns the attached agent control runtime, or nil.
@@ -1111,9 +1044,6 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 	if surface.ProfileName != "" {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
 			return fmt.Errorf("tool %q is not available in the active model surface", name)
-		}
-		if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {
-			return nil
 		}
 		if activeSurfaceToolExposure(surface, name) == ToolExposureDeferred && !t.isDeferredToolLoaded(name) {
 			return fmt.Errorf("tool %q is deferred; call tool_search first to load it", name)

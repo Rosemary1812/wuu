@@ -103,14 +103,6 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		return "", errors.New("run_test requires command")
 	}
 	command := strings.TrimSpace(args.Command)
-	if !t.env.BypassToolHardProtections() {
-		if shellCommandDumpsEnvironment(args.Command) {
-			return "", errors.New("run_test refuses to print process environment variables because they may contain secrets")
-		}
-		if reason, ok := shellCommandSensitivePathReason(args.Command); ok {
-			return "", errors.New("run_test refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
-		}
-	}
 	// Worktree-bound execution: resolve project-local runners inside the
 	// checkout the command will actually run in.
 	runRoot, err := t.env.ExecRootDir(ctx)

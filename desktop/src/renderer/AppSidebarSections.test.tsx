@@ -174,7 +174,6 @@ function renderSidebar(options: RenderOptions): void {
         onSeedConversationFixture={() => {}}
         onSeedAgentTreeDemo={() => {}}
         onOpenChipGallery={() => {}}
-        onOpenApprovalGallery={() => {}}
         onSelectThread={onSelectThread}
         onSelectParticipant={onSelectParticipant}
         onCreateGroupThread={onCreateGroupThread}
@@ -931,7 +930,6 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onSeedConversationFixture: () => {},
             onSeedAgentTreeDemo: () => {},
             onOpenChipGallery: () => {},
-            onOpenApprovalGallery: () => {},
             onSelectThread: () => {},
             onSelectParticipant: () => {},
             onEditParticipant: () => {},

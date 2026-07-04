@@ -282,21 +282,9 @@ type AgentConfig struct {
 	SystemPrompt string `json:"system_prompt,omitempty"`
 	// AppendSystemPrompt is the preferred field for user or project-specific
 	// instructions that should customize, not replace, wuu's base behavior.
-	AppendSystemPrompt string           `json:"append_system_prompt,omitempty"`
-	ToolPolicy         ToolPolicyConfig `json:"tool_policy,omitempty"`
-	// PermissionRules are granular OpenCode-style permission rules:
-	// permission -> pattern -> allow/deny/ask. They refine the broad permission
-	// mode without changing the hard permission boundary.
-	PermissionRules PermissionRulesConfig `json:"permission_rules,omitempty"`
-	// PermissionMode is the user-facing Codex-style permission preset.
-	// Empty resolves to the Default preset.
+	AppendSystemPrompt string `json:"append_system_prompt,omitempty"`
+	// PermissionMode selects the authority boundary. Empty resolves to standard.
 	PermissionMode string `json:"permission_mode,omitempty"`
-	// PermissionProfile, ApprovalPolicy, and ApprovalsReviewer are the
-	// normalized runtime fields behind PermissionMode. Advanced configs can set
-	// them directly; preset selection rewrites them together.
-	PermissionProfile string `json:"permission_profile,omitempty"`
-	ApprovalPolicy    string `json:"approval_policy,omitempty"`
-	ApprovalsReviewer string `json:"approvals_reviewer,omitempty"`
 	// Effort controls reasoning depth. Valid: "low", "medium", "high",
 	// "max" (Anthropic only). Empty = API default. Aligned with Claude
 	// Code's /effort command and Codex's reasoning_effort setting.
@@ -365,15 +353,6 @@ type ModelRoleConfig struct {
 	Model    string `json:"model,omitempty"`
 	Effort   string `json:"effort,omitempty"`
 	Variant  string `json:"variant,omitempty"`
-}
-
-// ToolPolicyConfig configures explicit capability-policy overrides. The broad
-// runtime profile comes from PermissionMode instead of a second preset system.
-type ToolPolicyConfig struct {
-	DefaultAction string            `json:"default_action,omitempty"`
-	Tools         map[string]string `json:"tools,omitempty"`
-	Kinds         map[string]string `json:"kinds,omitempty"`
-	Risks         map[string]string `json:"risks,omitempty"`
 }
 
 type AdvancedRuntimeUpdate struct {
@@ -495,7 +474,8 @@ func readConfig(path string) (Config, error) {
 // strictness.
 func decodeConfig(data []byte, sourcePath string) (Config, error) {
 	var cfg Config
-	dec := json.NewDecoder(bytes.NewReader(data))
+	sanitized := stripLegacyPermissionKeys(data)
+	dec := json.NewDecoder(bytes.NewReader(sanitized))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", sourcePath, err)
@@ -507,6 +487,31 @@ func decodeConfig(data []byte, sourcePath string) (Config, error) {
 	applyLegacyCodexCredentialReuseDefaults(&cfg, raw.Providers)
 
 	return cfg, nil
+}
+
+func stripLegacyPermissionKeys(data []byte) []byte {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return data
+	}
+	agent, _ := raw["agent"].(map[string]any)
+	if agent == nil {
+		return data
+	}
+	for _, key := range []string{
+		"tool_policy",
+		"permission_rules",
+		"permission_profile",
+		"approval_policy",
+		"approvals_reviewer",
+	} {
+		delete(agent, key)
+	}
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return data
+	}
+	return out
 }
 
 func applyLegacyCodexCredentialReuseDefaults(cfg *Config, rawProviders map[string]map[string]json.RawMessage) {
@@ -659,9 +664,6 @@ func (c Config) Validate() error {
 	if c.Memory.DreamIntervalDays != nil && *c.Memory.DreamIntervalDays < 0 {
 		return errors.New("memory.dream_interval_days cannot be negative")
 	}
-	if err := validateToolPolicyConfig(c.Agent.ToolPolicy); err != nil {
-		return err
-	}
 	if err := validatePermissionConfig(c.Agent); err != nil {
 		return err
 	}
@@ -697,107 +699,15 @@ func validatePermissionConfig(agent AgentConfig) error {
 	if err := validatePermissionMode(agent.PermissionMode); err != nil {
 		return err
 	}
-	if err := validatePermissionProfile(agent.PermissionProfile); err != nil {
-		return err
-	}
-	if err := validateApprovalPolicy(agent.ApprovalPolicy); err != nil {
-		return err
-	}
-	if err := validateApprovalsReviewer(agent.ApprovalsReviewer); err != nil {
-		return err
-	}
-	if err := validatePermissionRulesConfig(agent.PermissionRules); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateToolPolicyConfig(policy ToolPolicyConfig) error {
-	if err := validateToolPolicyAction("agent.tool_policy.default_action", policy.DefaultAction); err != nil {
-		return err
-	}
-	for name, action := range policy.Tools {
-		if strings.TrimSpace(name) == "" {
-			return errors.New("agent.tool_policy.tools contains an empty tool name")
-		}
-		if err := validateToolPolicyAction(fmt.Sprintf("agent.tool_policy.tools.%s", name), action); err != nil {
-			return err
-		}
-	}
-	for kind, action := range policy.Kinds {
-		if strings.TrimSpace(kind) == "" {
-			return errors.New("agent.tool_policy.kinds contains an empty kind")
-		}
-		if err := validateToolPolicyAction(fmt.Sprintf("agent.tool_policy.kinds.%s", kind), action); err != nil {
-			return err
-		}
-	}
-	for risk, action := range policy.Risks {
-		risk = strings.TrimSpace(risk)
-		if risk == "" {
-			return errors.New("agent.tool_policy.risks contains an empty risk")
-		}
-		if err := validateToolPolicyRisk(risk); err != nil {
-			return err
-		}
-		if err := validateToolPolicyAction(fmt.Sprintf("agent.tool_policy.risks.%s", risk), action); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
 func validatePermissionMode(mode string) error {
-	switch normalizePermissionMode(mode) {
-	case "", PermissionModeReadOnly, PermissionModeAgent, PermissionModeAutoReview, PermissionModeFullAccess:
+	switch NormalizePermissionMode(mode) {
+	case PermissionModeStandard, PermissionModeReadOnly, PermissionModeUnconfined:
 		return nil
 	default:
-		return fmt.Errorf("agent.permission_mode must be one of read_only, agent, auto_review, full_access")
-	}
-}
-
-func validatePermissionProfile(profile string) error {
-	switch normalizePermissionProfile(profile) {
-	case "", PermissionProfileReadOnly, PermissionProfileWorkspaceWrite, PermissionProfileDangerFullAccess:
 		return nil
-	default:
-		return fmt.Errorf("agent.permission_profile must be one of read_only, workspace_write, danger_full_access")
-	}
-}
-
-func validateApprovalPolicy(policy string) error {
-	switch normalizeApprovalPolicy(policy) {
-	case "", ApprovalPolicyOnRequest, ApprovalPolicyNever:
-		return nil
-	default:
-		return fmt.Errorf("agent.approval_policy must be one of on_request, never")
-	}
-}
-
-func validateApprovalsReviewer(reviewer string) error {
-	switch normalizeApprovalsReviewer(reviewer) {
-	case "", ApprovalsReviewerUser, ApprovalsReviewerAutoReview:
-		return nil
-	default:
-		return fmt.Errorf("agent.approvals_reviewer must be one of user, auto_review")
-	}
-}
-
-func validateToolPolicyAction(path, action string) error {
-	switch strings.TrimSpace(action) {
-	case "", "allow", "deny", "require_approval", "auto_classify":
-		return nil
-	default:
-		return fmt.Errorf("%s must be one of allow, deny, require_approval, auto_classify", path)
-	}
-}
-
-func validateToolPolicyRisk(risk string) error {
-	switch risk {
-	case "low", "medium", "high":
-		return nil
-	default:
-		return fmt.Errorf("agent.tool_policy.risks.%s is not a known risk", risk)
 	}
 }
 
@@ -843,11 +753,8 @@ func Default() Config {
 			},
 		},
 		Agent: AgentConfig{
-			Name:              DefaultAgentName,
-			PermissionMode:    PermissionModeAgent,
-			PermissionProfile: PermissionProfileWorkspaceWrite,
-			ApprovalPolicy:    ApprovalPolicyOnRequest,
-			ApprovalsReviewer: ApprovalsReviewerUser,
+			Name:           DefaultAgentName,
+			PermissionMode: PermissionModeStandard,
 			// 0 = unlimited; the model decides when to stop. Users who
 			// want a runaway safety net can set this explicitly.
 			MaxSteps: 0,
@@ -1397,12 +1304,8 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 		}
 	}
 	if permissionMode != nil {
-		mode := normalizePermissionMode(*permissionMode)
+		mode := NormalizePermissionMode(*permissionMode)
 		if err := validatePermissionMode(mode); err != nil {
-			return err
-		}
-		permissions, err := ResolvePermissionModePreset(mode)
-		if err != nil {
 			return err
 		}
 		agent, _ := raw["agent"].(map[string]any)
@@ -1410,11 +1313,12 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 			agent = make(map[string]any)
 			raw["agent"] = agent
 		}
-		agent["permission_mode"] = permissions.Mode
-		agent["permission_profile"] = permissions.PermissionProfile
-		agent["approval_policy"] = permissions.ApprovalPolicy
-		agent["approvals_reviewer"] = permissions.ApprovalsReviewer
+		agent["permission_mode"] = mode
+		delete(agent, "permission_profile")
+		delete(agent, "approval_policy")
+		delete(agent, "approvals_reviewer")
 		delete(agent, "tool_policy")
+		delete(agent, "permission_rules")
 	}
 
 	out, err := json.MarshalIndent(raw, "", "  ")
@@ -1429,16 +1333,5 @@ func applyDefaults(cfg *Config) {
 		cfg.Agent.Name = DefaultAgentName
 	}
 	permissions := ResolveAgentPermissions(cfg.Agent)
-	if strings.TrimSpace(cfg.Agent.PermissionMode) == "" {
-		cfg.Agent.PermissionMode = permissions.Mode
-	}
-	if strings.TrimSpace(cfg.Agent.PermissionProfile) == "" {
-		cfg.Agent.PermissionProfile = permissions.PermissionProfile
-	}
-	if strings.TrimSpace(cfg.Agent.ApprovalPolicy) == "" {
-		cfg.Agent.ApprovalPolicy = permissions.ApprovalPolicy
-	}
-	if strings.TrimSpace(cfg.Agent.ApprovalsReviewer) == "" {
-		cfg.Agent.ApprovalsReviewer = permissions.ApprovalsReviewer
-	}
+	cfg.Agent.PermissionMode = permissions.Mode
 }

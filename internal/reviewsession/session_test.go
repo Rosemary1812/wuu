@@ -39,7 +39,7 @@ func TestNewDefaultsToRestrictedBoundary(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	boundary := session.Boundary()
-	if boundary.PermissionProfile != PermissionProfileReadOnly || boundary.ApprovalPolicy != ApprovalPolicyNever {
+	if boundary.PermissionMode != PermissionModeRead {
 		t.Fatalf("unexpected boundary: %+v", boundary)
 	}
 	if boundary.Tools || boundary.MCP || boundary.Hooks || boundary.Plugins || boundary.Skills || boundary.MemoryWrites || boundary.DurableWrites {
@@ -52,9 +52,8 @@ func TestNewRejectsUnrestrictedBoundary(t *testing.T) {
 		Client: &fakeReviewClient{},
 		Model:  "review-model",
 		Boundary: Boundary{
-			PermissionProfile: PermissionProfileReadOnly,
-			ApprovalPolicy:    ApprovalPolicyNever,
-			Tools:             true,
+			PermissionMode: PermissionModeRead,
+			Tools:          true,
 		},
 	})
 	if err == nil {

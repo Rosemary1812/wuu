@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -86,26 +85,6 @@ func (t *GitTool) ValidateInput(argsJSON string) error {
 	return err
 }
 
-func (t *GitTool) PermissionRequests(argsJSON string) []ToolPermissionRequest {
-	invocation, err := parseGitInvocation(argsJSON, t.env.BypassToolHardProtections())
-	if err != nil {
-		return nil
-	}
-	pattern := strings.TrimSpace(invocation.Subcommand + " " + strings.Join(invocation.Args, " "))
-	if pattern == "" {
-		pattern = invocation.Subcommand
-	}
-	return []ToolPermissionRequest{{
-		Permission: "git",
-		Patterns:   []string{pattern},
-		Always:     []string{invocation.Subcommand + " *"},
-		Metadata: map[string]string{
-			"tool":       "git",
-			"subcommand": invocation.Subcommand,
-		},
-	}}
-}
-
 func (t *GitTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "git",
@@ -122,8 +101,6 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 			"git status returns structured {staged, unstaged, untracked} output.\n\n" +
 			"add and restore --staged reject root/current-directory/pathspec magic/wildcard forms; pass explicit workspace-relative paths. " +
 			"Content output for sensitive credential paths is rejected or redacted.\n\n" +
-			"add, restore --staged, and commit require confirm_user_approved=true after explicit user approval. " +
-			"push requires confirm_user_approved=true and confirm_remote_write=true after explicit user approval.\n\n" +
 			"NOT supported (delegate to a worker): rebase, merge, cherry-pick, clean, reset --hard, " +
 			"stash pop/apply/drop/clear, force push, branch create/delete, tag create/delete.",
 		InputSchema: map[string]any{
@@ -137,14 +114,6 @@ func (t *GitTool) Definition() providers.ToolDefinition {
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
 					"description": "Arguments to pass to the git subcommand. add and restore --staged require explicit workspace-relative paths from git status and do not accept '.', wildcards, pathspec magic, or flags. commit supports non-interactive explicit messages with one or more -m/--message flags, a workspace-relative -F/--file message file, and --amend when explicitly requested; push only supports plain push or -u/--set-upstream origin <current-branch>.",
-				},
-				"confirm_user_approved": map[string]any{
-					"type":        "boolean",
-					"description": "Set true only after the user explicitly approves staging, unstaging, creating a commit, or pushing. Required for add, restore --staged, commit, and push.",
-				},
-				"confirm_remote_write": map[string]any{
-					"type":        "boolean",
-					"description": "Set true only after the user explicitly approves writing to the remote. Required for push.",
 				},
 			},
 			"required": []string{"subcommand"},

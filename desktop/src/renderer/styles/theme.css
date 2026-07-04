@@ -243,13 +243,10 @@
   --settings-heatmap-level-3: #3d74cc;
   --settings-heatmap-level-4: #6ea3e8;
 
-  /* responsive-design.css / tool-approval.css / participants.css
+  /* responsive-design.css / participants.css
      (image-preview.css is a dark overlay in both themes — no override) */
   --responsive-secondary-button-bg: #2b2f34;
   --responsive-secondary-button-text: #ccd1d5;
-  --tool-approval-focus-outline: #4cc38a;
-  --tool-approval-button-primary-hover: #f0f2f4;
-  --tool-approval-danger-button-hover: #c0392b;
   --participants-roster-focus-ring: rgba(228, 232, 235, 0.25);
 
   /* sidebar.css */
