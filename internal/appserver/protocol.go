@@ -53,6 +53,7 @@ const (
 	MethodThreadArchive            = "thread/archive"
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
+	MethodThreadMembersRemove      = "thread/members/remove"
 	MethodParticipantStart         = "participant/start"
 	MethodParticipantList          = "participant/list"
 	MethodParticipantSave          = "participant/save"
@@ -952,6 +953,20 @@ type ThreadRenameParams struct {
 }
 
 type ThreadRenameResult struct {
+	Thread Thread `json:"thread"`
+}
+
+// ThreadMembersRemoveParams is the input for the `thread/members/remove`
+// method: the user removes a named participant from a group thread's
+// explicit roster. Only group threads with explicit thread_members rows are
+// eligible — the #all channel's membership is implicit (every named
+// participant) and is rejected.
+type ThreadMembersRemoveParams struct {
+	ThreadID      string `json:"thread_id"`
+	ParticipantID string `json:"participant_id"`
+}
+
+type ThreadMembersRemoveResult struct {
 	Thread Thread `json:"thread"`
 }
 

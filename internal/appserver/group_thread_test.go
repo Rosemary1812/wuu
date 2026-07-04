@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -189,3 +190,119 @@ func TestGroupTurnStartCompletesWithoutProviderCallAndMarksMentionedAddressed(t 
 // TestGroupTurnStartRoutesThroughAllChannelWithoutExplicitMembership lives in
 // resident_router_test.go: it exercises routeEnvelopes' #all fan-out, which
 // is implemented there alongside the rest of the envelope routing machinery.
+
+func removeThreadMemberForTest(t *testing.T, srv *Server, reqID, threadID, participantID string) map[string]any {
+	t.Helper()
+	raw := fmt.Sprintf(`{"id":%q,"method":"thread/members/remove","params":{"thread_id":%q,"participant_id":%q}}`, reqID, threadID, participantID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/members/remove: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	return responseByID(t, msgs, reqID)
+}
+
+func TestThreadMembersRemoveRemovesGroupMember(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, bea); err != nil {
+		t.Fatalf("AddThreadMember Bea: %v", err)
+	}
+
+	resp := removeThreadMemberForTest(t, srv, "remove", group.ID, bea)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/members/remove returned error: %v", errMsg)
+	}
+	thread := remarshal[ThreadMembersRemoveResult](t, resp["result"]).Thread
+	if len(thread.Members) != 1 || thread.Members[0].ID != ivy {
+		t.Fatalf("expected result thread members to be just Ivy after removal, got %+v", thread.Members)
+	}
+	members, err := session.ListThreadMembers(rt.SessionDir, group.ID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers: %v", err)
+	}
+	if len(members) != 1 || members[0] != ivy {
+		t.Fatalf("expected persisted members to be just Ivy after removal, got %+v", members)
+	}
+}
+
+func TestThreadMembersRemoveRejectsAllChannel(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+
+	allID, err := srv.ensureAllChannel()
+	if err != nil {
+		t.Fatalf("ensureAllChannel: %v", err)
+	}
+
+	resp := removeThreadMemberForTest(t, srv, "remove-all", allID, ivy)
+	errMsg, ok := resp["error"]
+	if !ok {
+		t.Fatalf("expected error removing a member from #all, got: %+v", resp)
+	}
+	errStr := fmt.Sprint(errMsg)
+	if !strings.Contains(errStr, "all channel") {
+		t.Fatalf("error should mention the all channel, got %q", errStr)
+	}
+}
+
+func TestThreadMembersRemoveRejectsNonGroupThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+
+	raw := `{"id":"start","method":"thread/start","params":{}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	startResp := responseByID(t, msgs, "start")
+	if errMsg, ok := startResp["error"]; ok {
+		t.Fatalf("thread/start returned error: %v", errMsg)
+	}
+	thread := remarshal[ThreadStartResult](t, startResp["result"]).Thread
+
+	resp := removeThreadMemberForTest(t, srv, "remove", thread.ID, ivy)
+	errMsg, ok := resp["error"]
+	if !ok {
+		t.Fatalf("expected error removing a member from a non-group thread, got: %+v", resp)
+	}
+	errStr := fmt.Sprint(errMsg)
+	if !strings.Contains(errStr, "not a group thread") {
+		t.Fatalf("error should say the thread is not a group thread, got %q", errStr)
+	}
+}
+
+func TestThreadMembersRemoveRejectsNonMember(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+
+	resp := removeThreadMemberForTest(t, srv, "remove", group.ID, bea)
+	errMsg, ok := resp["error"]
+	if !ok {
+		t.Fatalf("expected error removing a non-member, got: %+v", resp)
+	}
+	errStr := fmt.Sprint(errMsg)
+	if !strings.Contains(errStr, "not a member") {
+		t.Fatalf("error should say the participant is not a member, got %q", errStr)
+	}
+	members, err := session.ListThreadMembers(rt.SessionDir, group.ID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers: %v", err)
+	}
+	if len(members) != 1 || members[0] != ivy {
+		t.Fatalf("membership should be untouched by a failed removal, got %+v", members)
+	}
+}
