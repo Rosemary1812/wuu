@@ -154,13 +154,20 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 			}
 		}
 	}
-	return agentcontrol.RosterEntry{
+	result := agentcontrol.RosterEntry{
 		ID:      entry.ID,
 		Name:    entry.Name,
 		Role:    entry.Role,
 		Tagline: entry.Tagline,
 		Model:   entry.Model,
-	}, nil
+	}
+	if existing == nil {
+		// Same-name rebuild guard: surface a retired predecessor's ID so
+		// the caller knows archived state exists. Advisory only — the new
+		// participant starts fresh.
+		result.ArchivedPredecessorID = r.server.archivedPredecessorID(entry.Name, entry.ID)
+	}
+	return result, nil
 }
 
 func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name string) (agentcontrol.RosterEntry, error) {

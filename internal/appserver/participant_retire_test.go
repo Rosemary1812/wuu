@@ -240,6 +240,101 @@ func TestThreadStartRejectsNewDMForRetiredParticipant(t *testing.T) {
 	}
 }
 
+// TestParticipantSaveDetectsArchivedPredecessor: creating a named
+// participant whose name matches a retired predecessor surfaces the
+// predecessor's ID (same-name rebuild guard). The new identity still starts
+// fresh — rehire UI is a later phase.
+func TestParticipantSaveDetectsArchivedPredecessor(t *testing.T) {
+	_, srv, _ := withDMRuntime(t)
+
+	first := retireTestSaveParticipant(t, srv, "save-noel-1", "Noel", "generation one lore")
+	if resp := retireTestRetire(t, srv, "retire-noel-1", first.ID); resp["error"] != nil {
+		t.Fatalf("retire error: %v", resp["error"])
+	}
+
+	raw, _ := json.Marshal(map[string]any{
+		"id":     "save-noel-2",
+		"method": MethodParticipantSave,
+		"params": ParticipantSaveParams{Name: "noel", Role: "qa"},
+	})
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "save-noel-2")
+	if resp["error"] != nil {
+		t.Fatalf("second save error: %v", resp["error"])
+	}
+	second := remarshal[ParticipantSaveResult](t, resp["result"])
+	if second.Participant.ID == first.ID {
+		t.Fatalf("rebuild must mint a fresh ID, got predecessor's %q", first.ID)
+	}
+	if second.ArchivedPredecessorID != first.ID {
+		t.Errorf("ArchivedPredecessorID = %q, want %q", second.ArchivedPredecessorID, first.ID)
+	}
+	if second.Participant.Memory != "" {
+		t.Errorf("rebuilt participant must start fresh, got memory %q", second.Participant.Memory)
+	}
+
+	// Updating the existing rebuilt participant is NOT a creation: the
+	// predecessor hint must not reappear.
+	updateRaw, _ := json.Marshal(map[string]any{
+		"id":     "save-noel-3",
+		"method": MethodParticipantSave,
+		"params": ParticipantSaveParams{ID: second.Participant.ID, Name: "Noel", Role: "qa"},
+	})
+	if err := srv.handleLine(context.Background(), updateRaw); err != nil {
+		t.Fatalf("update save: %v", err)
+	}
+	updateResp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "save-noel-3")
+	if updateResp["error"] != nil {
+		t.Fatalf("update save error: %v", updateResp["error"])
+	}
+	update := remarshal[ParticipantSaveResult](t, updateResp["result"])
+	if update.ArchivedPredecessorID != "" {
+		t.Errorf("update should not carry ArchivedPredecessorID, got %q", update.ArchivedPredecessorID)
+	}
+}
+
+// TestRosterSaveDetectsArchivedPredecessor mirrors the guard on the
+// manage_participant roster path.
+func TestRosterSaveDetectsArchivedPredecessor(t *testing.T) {
+	_, srv, _ := withDMRuntime(t)
+	roster := srv.participantRosterForTool()
+
+	first, err := roster.Save(context.Background(), "agent-1", agentcontrol.RosterSaveRequest{Name: "Mars", Role: "reviewer"})
+	if err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	if first.ArchivedPredecessorID != "" {
+		t.Errorf("first creation has no predecessor, got %q", first.ArchivedPredecessorID)
+	}
+	if _, err := roster.Retire(context.Background(), "agent-1", "Mars"); err != nil {
+		t.Fatalf("retire: %v", err)
+	}
+	second, err := roster.Save(context.Background(), "agent-1", agentcontrol.RosterSaveRequest{Name: "mars", Role: "qa"})
+	if err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatalf("rebuild must mint a fresh ID")
+	}
+	if second.ArchivedPredecessorID != first.ID {
+		t.Errorf("ArchivedPredecessorID = %q, want %q", second.ArchivedPredecessorID, first.ID)
+	}
+
+	// A plain update of the active rebuilt entry must not re-surface it.
+	third, err := roster.Save(context.Background(), "agent-1", agentcontrol.RosterSaveRequest{Name: "Mars", Tagline: "still here"})
+	if err != nil {
+		t.Fatalf("third save: %v", err)
+	}
+	if third.ID != second.ID {
+		t.Fatalf("update should keep the active entry's ID")
+	}
+	if third.ArchivedPredecessorID != "" {
+		t.Errorf("update should not carry ArchivedPredecessorID, got %q", third.ArchivedPredecessorID)
+	}
+}
+
 // TestRosterRetireRunsFullCleanup drives the manage_participant tool's
 // roster path and asserts it shares the same cleanup protocol as the RPC:
 // derived rows removed, workspace archived.

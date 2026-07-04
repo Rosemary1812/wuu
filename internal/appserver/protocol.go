@@ -855,6 +855,14 @@ type ParticipantSaveParams struct {
 
 type ParticipantSaveResult struct {
 	Participant ParticipantProfile `json:"participant"`
+	// ArchivedPredecessorID is set when this save CREATED a named
+	// participant and a retired predecessor with the same name (case-
+	// insensitive) exists in the store — its on-disk state lives under
+	// participants/.archived/<id>/. The new participant still starts
+	// fresh; surfacing the predecessor lets a future rehire/inherit UI
+	// offer the archived notebook (memory-redesign §9). Never set on
+	// updates of existing participants.
+	ArchivedPredecessorID string `json:"archived_predecessor_id,omitempty"`
 }
 
 type ParticipantFeedbackParams struct {

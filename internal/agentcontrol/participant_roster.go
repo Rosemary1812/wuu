@@ -40,6 +40,11 @@ type RosterEntry struct {
 	Role    string `json:"role,omitempty"`
 	Tagline string `json:"tagline,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// ArchivedPredecessorID is set only on save responses that CREATED a
+	// participant whose name matches a retired predecessor; the
+	// predecessor's archived state (memory notebook included) is kept by
+	// the roster owner. The new participant still starts fresh.
+	ArchivedPredecessorID string `json:"archived_predecessor_id,omitempty"`
 }
 
 // RosterSaveRequest carries a save call from the manage_participant tool.

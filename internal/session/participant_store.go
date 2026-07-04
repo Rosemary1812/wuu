@@ -333,6 +333,79 @@ WHERE id = ?`, timeText(now), timeText(now), id)
 	return nil
 }
 
+// FindRetiredParticipantByName returns the most recently retired participant
+// of the given kind whose name matches case-insensitively (the same matching
+// the active roster uses). This backs the same-name rebuild guard: creating
+// a named participant checks for an archived predecessor so callers can
+// surface its archived state (participants/.archived/<id>/) alongside the
+// fresh identity. Empty kind matches all kinds.
+func FindRetiredParticipantByName(sessDir string, kind participant.Kind, name string) (participant.Participant, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return participant.Participant{}, false, errors.New("name is required")
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return participant.Participant{}, false, err
+	}
+	defer db.Close()
+
+	query := `
+SELECT id, kind, name, role, avatar, tagline, workspace, model,
+       created_at, updated_at, retired_at
+FROM participants
+WHERE retired_at IS NOT NULL`
+	args := []any{}
+	if kind != "" {
+		query += ` AND kind = ?`
+		args = append(args, string(kind))
+	}
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return participant.Participant{}, false, fmt.Errorf("find retired participant: %w", err)
+	}
+	defer rows.Close()
+
+	var best participant.Participant
+	found := false
+	for rows.Next() {
+		p, err := scanParticipant(rows)
+		if err != nil {
+			return participant.Participant{}, false, fmt.Errorf("scan retired participants: %w", err)
+		}
+		if !strings.EqualFold(strings.TrimSpace(p.Name), name) {
+			continue
+		}
+		// Latest retirement wins; ordering is resolved on parsed times in
+		// Go because RFC3339Nano text does not sort reliably across
+		// differing fractional precision.
+		if !found || retiredAfter(p, best) {
+			best = p
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return participant.Participant{}, false, fmt.Errorf("scan retired participants: %w", err)
+	}
+	return best, found, nil
+}
+
+// retiredAfter reports whether a was retired after b, tie-breaking on
+// updated_at so re-stamped rows resolve deterministically.
+func retiredAfter(a, b participant.Participant) bool {
+	var at, bt time.Time
+	if a.RetiredAt != nil {
+		at = *a.RetiredAt
+	}
+	if b.RetiredAt != nil {
+		bt = *b.RetiredAt
+	}
+	if !at.Equal(bt) {
+		return at.After(bt)
+	}
+	return a.UpdatedAt.After(b.UpdatedAt)
+}
+
 func scanParticipant(scanner interface {
 	Scan(dest ...any) error
 }) (participant.Participant, error) {

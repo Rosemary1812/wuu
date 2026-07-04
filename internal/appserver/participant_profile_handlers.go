@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -73,7 +74,8 @@ func (s *Server) handleParticipantSave(req Request) error {
 		Model:     strings.TrimSpace(params.Model),
 		UpdatedAt: now,
 	}
-	if p.ID == "" {
+	isNew := p.ID == ""
+	if isNew {
 		p.ID = participant.NewID()
 		p.CreatedAt = now
 	} else if existing, err := session.GetParticipant(s.rt.SessionDir, p.ID); err == nil {
@@ -82,7 +84,10 @@ func (s *Server) handleParticipantSave(req Request) error {
 		// Legacy emoji avatars stay in the store untouched; the save
 		// path no longer accepts or rewrites them.
 		p.Avatar = existing.Avatar
-	} else if !errors.Is(err, session.ErrParticipantNotFound) {
+	} else if errors.Is(err, session.ErrParticipantNotFound) {
+		// Caller-supplied ID with no existing row: still a creation.
+		isNew = true
+	} else {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if p.Workspace == "" {
@@ -119,7 +124,28 @@ func (s *Server) handleParticipantSave(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, ParticipantSaveResult{Participant: profile}, nil)
+	result := ParticipantSaveResult{Participant: profile}
+	if isNew {
+		result.ArchivedPredecessorID = s.archivedPredecessorID(p.Name, p.ID)
+	}
+	return s.writeResponse(req.ID, result, nil)
+}
+
+// archivedPredecessorID implements the same-name rebuild guard: when a NEW
+// named participant takes the name of a retired one, the predecessor's ID is
+// surfaced so callers know archived state exists under
+// participants/.archived/<id>/. Detection is advisory — the new participant
+// always starts fresh, and a lookup failure never blocks the save.
+func (s *Server) archivedPredecessorID(name, newID string) string {
+	predecessor, ok, err := session.FindRetiredParticipantByName(s.rt.SessionDir, participant.KindNamed, name)
+	if err != nil {
+		providers.DebugLogf("find retired predecessor for %q: %v", name, err)
+		return ""
+	}
+	if !ok || predecessor.ID == strings.TrimSpace(newID) {
+		return ""
+	}
+	return predecessor.ID
 }
 
 func (s *Server) handleParticipantFeedback(req Request) error {

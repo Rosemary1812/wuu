@@ -194,6 +194,57 @@ func TestRetiredNamedParticipantFreesName(t *testing.T) {
 	}
 }
 
+func TestFindRetiredParticipantByName(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok, err := FindRetiredParticipantByName(dir, participant.KindNamed, "Noel"); err != nil || ok {
+		t.Fatalf("empty store: ok=%v err=%v, want no match", ok, err)
+	}
+
+	first := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Noel", Role: "reviewer"}
+	if err := UpsertParticipant(dir, first); err != nil {
+		t.Fatal(err)
+	}
+	// Active rows never match: the guard is about ARCHIVED predecessors.
+	if _, ok, err := FindRetiredParticipantByName(dir, participant.KindNamed, "Noel"); err != nil || ok {
+		t.Fatalf("active row matched: ok=%v err=%v", ok, err)
+	}
+	if err := RetireParticipant(dir, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := FindRetiredParticipantByName(dir, participant.KindNamed, "noel")
+	if err != nil || !ok {
+		t.Fatalf("case-insensitive match failed: ok=%v err=%v", ok, err)
+	}
+	if got.ID != first.ID {
+		t.Errorf("predecessor ID = %q, want %q", got.ID, first.ID)
+	}
+
+	// A second same-name generation retires later; the most recent
+	// retirement must win.
+	time.Sleep(5 * time.Millisecond)
+	second := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Noel", Role: "qa"}
+	if err := UpsertParticipant(dir, second); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetireParticipant(dir, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err = FindRetiredParticipantByName(dir, participant.KindNamed, "Noel")
+	if err != nil || !ok {
+		t.Fatalf("two-generation match failed: ok=%v err=%v", ok, err)
+	}
+	if got.ID != second.ID {
+		t.Errorf("most recent retiree = %q, want %q", got.ID, second.ID)
+	}
+
+	if _, ok, _ := FindRetiredParticipantByName(dir, participant.KindNamed, "Unknown"); ok {
+		t.Error("unknown name should not match")
+	}
+	if _, _, err := FindRetiredParticipantByName(dir, participant.KindNamed, "  "); err == nil {
+		t.Error("blank name should be rejected")
+	}
+}
+
 func TestCountParticipantsByKindIncludesRetired(t *testing.T) {
 	dir := t.TempDir()
 	if got, err := CountParticipantsByKind(dir, participant.KindNamed); err != nil || got != 0 {
