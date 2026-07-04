@@ -52,7 +52,7 @@ func ScanSessionsForCWD(sessDir, cwd string, maxSessions int) ([]SessionMeta, er
 	if strings.TrimSpace(cwd) == "" {
 		return ScanSessions(sessDir, maxSessions)
 	}
-	sessions, err := sessionstore.ListForCWD(sessDir, cwd, 0)
+	sessions, err := sessionstore.ListForCWD(sessDir, cwd, "", 0)
 	if err != nil {
 		return nil, err
 	}

@@ -406,7 +406,7 @@ func runSessionList(args []string) error {
 		if werr != nil {
 			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, werr)
 		}
-		sessions, err = session.ListForCWD(sessDir, rootDir, *limit)
+		sessions, err = session.ListForCWD(sessDir, rootDir, "", *limit)
 	}
 	if err != nil {
 		return fmt.Errorf("list sessions: %w", err)
@@ -471,7 +471,7 @@ func runSessionTrace(args []string) error {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	if id == "" {
-		id, err = session.MostRecentForCWD(sessDir, rootDir)
+		id, err = session.MostRecentForCWD(sessDir, rootDir, "")
 		if err != nil {
 			return fmt.Errorf("find most recent session: %w", err)
 		}
@@ -545,7 +545,7 @@ func runSessionSearch(args []string) error {
 		if werr != nil {
 			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, werr)
 		}
-		sessions, err = session.ListForCWD(sessDir, rootDir, 0)
+		sessions, err = session.ListForCWD(sessDir, rootDir, "", 0)
 	}
 	if err != nil {
 		return fmt.Errorf("list sessions: %w", err)
@@ -673,7 +673,7 @@ func runSessionExport(args []string) error {
 
 	// Find the session ID
 	if id == "" {
-		id, err = session.MostRecentForCWD(sessDir, rootDir)
+		id, err = session.MostRecentForCWD(sessDir, rootDir, "")
 		if err != nil {
 			return fmt.Errorf("find most recent session: %w", err)
 		}
@@ -777,7 +777,7 @@ func deleteSessionArtifacts(sess session.Session) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("resolve wuu home: %w", err)
 	}
-	workspaceStateDir, err := statepath.WorkspaceDir(home, sess.CWD)
+	workspaceStateDir, err := sessionWorkspaceStateDir(home, sess.WorkspaceID, sess.CWD)
 	if err != nil {
 		return "", false, fmt.Errorf("resolve workspace state: %w", err)
 	}
@@ -866,7 +866,7 @@ func printSession(sessDir, id, rootDir string, jsonOutput bool, limit int) error
 	var err error
 	id = strings.TrimSpace(id)
 	if id == "" {
-		id, err = session.MostRecentForCWD(sessDir, rootDir)
+		id, err = session.MostRecentForCWD(sessDir, rootDir, "")
 		if err != nil {
 			return fmt.Errorf("find most recent session: %w", err)
 		}
@@ -962,11 +962,21 @@ func tracePathForSession(sess session.Session, fallbackRoot string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("resolve wuu home: %w", err)
 	}
-	workspaceStateDir, err := statepath.WorkspaceDir(home, rootDir)
+	workspaceStateDir, err := sessionWorkspaceStateDir(home, sess.WorkspaceID, rootDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve workspace state: %w", err)
 	}
 	return sessiontrace.Path(statepath.SessionArtifactDir(workspaceStateDir, sess.ID)), nil
+}
+
+// sessionWorkspaceStateDir resolves a session's workspace state directory,
+// preferring its stable workspace id (so it survives the project moving on
+// disk) and falling back to the recorded cwd for id-less sessions.
+func sessionWorkspaceStateDir(home, workspaceID, cwd string) (string, error) {
+	if id := strings.TrimSpace(workspaceID); id != "" {
+		return statepath.WorkspaceDirByID(home, id)
+	}
+	return statepath.WorkspaceDir(home, cwd)
 }
 
 func printJSON(payload any) error {
@@ -1516,7 +1526,7 @@ func runExecShowSessions() error {
 	if err != nil {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
-	sessions, err := session.ListForCWD(sessDir, rootDir, 50)
+	sessions, err := session.ListForCWD(sessDir, rootDir, "", 50)
 	if err != nil {
 		return fmt.Errorf("list sessions: %w", err)
 	}

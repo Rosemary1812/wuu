@@ -443,7 +443,7 @@ func TestListForCWDIncludesPersistedDMFromUnrelatedServer(t *testing.T) {
 	// Sanity: a normal project cwd query on the SAME session dir but a
 	// different project RootDir must still include the DM.
 	unrelated := filepath.Join(t.TempDir(), "unrelated-project")
-	got, err := session.ListForCWDWithDMs(rt.SessionDir, unrelated, 0)
+	got, err := session.ListForCWDWithDMs(rt.SessionDir, unrelated, "", 0)
 	if err != nil {
 		t.Fatalf("ListForCWDWithDMs: %v", err)
 	}

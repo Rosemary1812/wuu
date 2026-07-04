@@ -105,6 +105,7 @@ func (s *Server) createGroupThreadState(id, title string, now time.Time) (*threa
 	if title == "" {
 		title = "Group"
 	}
+	// Group channels are matched by the group bypass, never by workspace id.
 	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, s.rt.RootDir); err != nil {
 		return nil, err
 	}

@@ -62,7 +62,7 @@ func TestListForCWDFiltersSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := ListForCWD(dir, cwdA, 0)
+	sessions, err := ListForCWD(dir, cwdA, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,12 +70,68 @@ func TestListForCWDFiltersSessions(t *testing.T) {
 		t.Fatalf("unexpected scoped sessions: %+v", sessions)
 	}
 
-	recent, err := MostRecentForCWD(dir, cwdB)
+	recent, err := MostRecentForCWD(dir, cwdB, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if recent != "sess-b" {
 		t.Fatalf("MostRecentForCWD() = %q, want sess-b", recent)
+	}
+}
+
+func TestListForCWDMatchesByWorkspaceIDAcrossMoves(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(t.TempDir(), "old")
+	newPath := filepath.Join(t.TempDir(), "new")
+
+	// A project session recorded at the OLD path, bound to a stable id.
+	proj, err := CreateWithMetadata(dir, "sess-proj", oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetWorkspaceID(dir, proj.ID, "ws-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Listing by the workspace id + the NEW path (post-move) still finds it,
+	// even though its recorded cwd is the old path.
+	got, err := ListForCWD(dir, newPath, "ws-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "sess-proj" {
+		t.Fatalf("id-keyed session should survive a move; got %+v", got)
+	}
+
+	// A session with no workspace id but the workspace's current cwd still
+	// matches (graceful transition for sessions predating the id).
+	if _, err := CreateWithMetadata(dir, "sess-legacy", newPath); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ListForCWD(dir, newPath, "ws-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected id match + legacy-cwd match, got %d: %+v", len(got), got)
+	}
+
+	// A session of a DIFFERENT workspace at the same cwd is excluded.
+	other, err := CreateWithMetadata(dir, "sess-other", newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetWorkspaceID(dir, other.ID, "ws-2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ListForCWD(dir, newPath, "ws-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range got {
+		if s.ID == "sess-other" {
+			t.Fatalf("ws-2 session leaked into the ws-1 listing: %+v", got)
+		}
 	}
 }
 
@@ -94,7 +150,7 @@ func TestListForCWDStaysScopedDespiteDMSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := ListForCWD(dir, projectCWD, 0)
+	sessions, err := ListForCWD(dir, projectCWD, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +160,7 @@ func TestListForCWDStaysScopedDespiteDMSessions(t *testing.T) {
 
 	// A newer DM session must not hijack the project's most-recent lookup
 	// (e.g. `wuu resume` inside a project).
-	recent, err := MostRecentForCWD(dir, projectCWD)
+	recent, err := MostRecentForCWD(dir, projectCWD, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +184,7 @@ func TestListForCWDWithDMsIncludesDMSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := ListForCWDWithDMs(dir, projectCWD, 0)
+	sessions, err := ListForCWDWithDMs(dir, projectCWD, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +224,7 @@ func TestSetGroupThreadPersistsAndSurfacesRegardlessOfCWD(t *testing.T) {
 		t.Fatalf("expected persisted session to be marked group, got %+v (ok=%v)", found, ok)
 	}
 
-	sessions, err := ListForCWDWithDMs(dir, projectCWD, 0)
+	sessions, err := ListForCWDWithDMs(dir, projectCWD, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +237,7 @@ func TestSetGroupThreadPersistsAndSurfacesRegardlessOfCWD(t *testing.T) {
 	}
 
 	// Strict cwd scoping must not leak group threads bound to other cwds.
-	scoped, err := ListForCWD(dir, projectCWD, 0)
+	scoped, err := ListForCWD(dir, projectCWD, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +447,7 @@ func TestListForCWDIncludesWorktreeBaseRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessions, err := ListForCWD(dir, parent, 0)
+	sessions, err := ListForCWD(dir, parent, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

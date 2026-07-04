@@ -39,6 +39,13 @@ type Session struct {
 	Summary          string     `json:"summary,omitempty"`
 	Entries          int        `json:"entries"`
 	CWD              string     `json:"cwd,omitempty"`
+	// WorkspaceID is the stable, location-independent identity of the workspace
+	// this session belongs to (the desktop's registered-project id). Sessions
+	// of a workspace with an id are listed by that id, so they follow the
+	// project across moves/renames even though CWD still records the old path.
+	// Empty for location-anchored threads (对话 scratch, DMs, groups), which
+	// are matched by cwd / the DM-group bypass instead.
+	WorkspaceID      string     `json:"workspace_id,omitempty"`
 	ForkedFromID     string     `json:"forked_from_id,omitempty"`
 	ForkedFromTurnID string     `json:"forked_from_turn_id,omitempty"`
 	ForkedFromItemID string     `json:"forked_from_item_id,omitempty"`
@@ -152,6 +159,8 @@ func Create(sessDir string, id ...string) (*Session, error) {
 }
 
 // CreateWithMetadata initializes a new session with thread-level metadata.
+// The workspace identity is bound separately via SetWorkspaceID (mirroring
+// BindDMParticipant / SetGroupThread), so this signature stays stable.
 func CreateWithMetadata(sessDir, id, cwd string) (*Session, error) {
 	return createWithMetadata(sessDir, id, cwd, ForkMetadata{})
 }
@@ -216,7 +225,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group, focus_workspace
+       dm_participant_id, is_group, focus_workspace, workspace_id
 FROM sessions`)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -242,29 +251,36 @@ FROM sessions`)
 	return sessions, nil
 }
 
-// ListForCWD reads sessions scoped to a workspace cwd.
-func ListForCWD(sessDir, cwd string, limit int) ([]Session, error) {
-	return listForCWD(sessDir, cwd, limit, false)
+// ListForCWD reads sessions scoped to a workspace. When workspaceID is set
+// (a registered project) sessions are matched by that stable id so they follow
+// the project across moves; otherwise they are matched by cwd.
+func ListForCWD(sessDir, cwd, workspaceID string, limit int) ([]Session, error) {
+	return listForCWD(sessDir, cwd, workspaceID, limit, false)
 }
 
-// ListForCWDWithDMs reads sessions scoped to a workspace cwd, plus all
-// direct-message sessions (DMParticipantID != "") and group channels
-// (Group == true) regardless of their cwd, so DM and group threads surface
-// in every app server's thread list and search results. Callers that need
-// strict cwd scoping (MostRecentForCWD, CLI listings, the insight scanner)
-// should use ListForCWD instead.
-func ListForCWDWithDMs(sessDir, cwd string, limit int) ([]Session, error) {
-	return listForCWD(sessDir, cwd, limit, true)
+// ListForCWDWithDMs reads sessions scoped to a workspace (by stable id when
+// workspaceID is set, else by cwd), plus all direct-message sessions
+// (DMParticipantID != "") and group channels (Group == true) regardless of
+// their workspace, so DM and group threads surface in every app server's
+// thread list and search results. Callers that need strict scoping
+// (MostRecentForCWD, CLI listings, the insight scanner) should use ListForCWD.
+func ListForCWDWithDMs(sessDir, cwd, workspaceID string, limit int) ([]Session, error) {
+	return listForCWD(sessDir, cwd, workspaceID, limit, true)
 }
 
-func listForCWD(sessDir, cwd string, limit int, includeDMs bool) ([]Session, error) {
+func listForCWD(sessDir, cwd, workspaceID string, limit int, includeDMs bool) ([]Session, error) {
 	target := normalizeCWD(cwd)
-	if target == "" {
+	wsID := strings.TrimSpace(workspaceID)
+	if target == "" && wsID == "" {
 		return List(sessDir, limit)
 	}
 	sessions, err := List(sessDir, 0)
 	if err != nil {
 		return nil, err
+	}
+	matchesCWD := func(s Session) bool {
+		return target != "" &&
+			(normalizeCWD(s.CWD) == target || normalizeCWD(s.WorktreeBaseRepo) == target)
 	}
 	filtered := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
@@ -272,7 +288,19 @@ func listForCWD(sessDir, cwd string, limit int, includeDMs bool) ([]Session, err
 			filtered = append(filtered, s)
 			continue
 		}
-		if normalizeCWD(s.CWD) == target || normalizeCWD(s.WorktreeBaseRepo) == target {
+		if wsID != "" {
+			// A workspace with a stable id (a registered project) matches by
+			// that id, so its sessions follow the project across moves even
+			// though CWD still records the old path. As a graceful transition,
+			// sessions predating the id still match by path while they live at
+			// the workspace's current location.
+			if strings.TrimSpace(s.WorkspaceID) == wsID ||
+				(strings.TrimSpace(s.WorkspaceID) == "" && matchesCWD(s)) {
+				filtered = append(filtered, s)
+			}
+			continue
+		}
+		if matchesCWD(s) {
 			filtered = append(filtered, s)
 		}
 	}
@@ -378,6 +406,17 @@ func SetGroupThread(sessDir, id string, group bool) (Session, error) {
 func SetFocusWorkspace(sessDir, id, focus string) (Session, error) {
 	return updateMetadata(sessDir, id, false, func(s *Session) {
 		s.FocusWorkspace = strings.TrimSpace(focus)
+	})
+}
+
+// SetWorkspaceID binds a session to a stable, location-independent workspace
+// identity (the desktop's registered-project id), so the session's state and
+// thread listing follow the workspace across moves/renames. Set once at
+// creation for registered-project threads; left empty for location-anchored
+// threads (对话 scratch, DMs, groups), which match by cwd / the DM-group bypass.
+func SetWorkspaceID(sessDir, id, workspaceID string) (Session, error) {
+	return updateMetadata(sessDir, id, false, func(s *Session) {
+		s.WorkspaceID = strings.TrimSpace(workspaceID)
 	})
 }
 
@@ -518,9 +557,10 @@ func MostRecent(sessDir string) (string, error) {
 	return sessions[0].ID, nil
 }
 
-// MostRecentForCWD returns the most recent session for a workspace cwd.
-func MostRecentForCWD(sessDir, cwd string) (string, error) {
-	sessions, err := ListForCWD(sessDir, cwd, 1)
+// MostRecentForCWD returns the most recent session for a workspace (by stable
+// id when workspaceID is set, else by cwd).
+func MostRecentForCWD(sessDir, cwd, workspaceID string) (string, error) {
+	sessions, err := ListForCWD(sessDir, cwd, workspaceID, 1)
 	if err != nil {
 		return "", err
 	}
@@ -848,6 +888,12 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "sessions", "focus_workspace", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "sessions", "workspace_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id)`); err != nil {
+		return fmt.Errorf("migrate sessions database: %w", err)
+	}
 	return nil
 }
 
@@ -904,8 +950,8 @@ func insertSessionSQL(conflict string) string {
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
 		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo,
-		dm_participant_id, is_group, focus_workspace
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		dm_participant_id, is_group, focus_workspace, workspace_id
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 }
 
 func updateSessionTx(tx *sql.Tx, sess Session) error {
@@ -914,13 +960,13 @@ UPDATE sessions
 SET created_at = ?, updated_at = ?, title = ?, summary = ?, entries = ?, cwd = ?,
     forked_from_id = ?, forked_from_turn_id = ?, forked_from_item_id = ?,
     pinned_at = ?, archived_at = ?, worktree_path = ?, worktree_base_head = ?, worktree_base_repo = ?,
-    dm_participant_id = ?, is_group = ?, focus_workspace = ?
+    dm_participant_id = ?, is_group = ?, focus_workspace = ?, workspace_id = ?
 WHERE id = ?`,
 		timeText(sess.CreatedAt), timeText(sess.UpdatedAt), sess.Title, sess.Summary, sess.Entries, normalizeCWD(sess.CWD),
 		sess.ForkedFromID, sess.ForkedFromTurnID, sess.ForkedFromItemID,
 		nullableTimeText(sess.PinnedAt), nullableTimeText(sess.ArchivedAt),
 		normalizeCWD(sess.WorktreePath), sess.WorktreeBaseHEAD, normalizeCWD(sess.WorktreeBaseRepo),
-		strings.TrimSpace(sess.DMParticipantID), boolToInt(sess.Group), strings.TrimSpace(sess.FocusWorkspace),
+		strings.TrimSpace(sess.DMParticipantID), boolToInt(sess.Group), strings.TrimSpace(sess.FocusWorkspace), strings.TrimSpace(sess.WorkspaceID),
 		sess.ID,
 	)
 	if err != nil {
@@ -949,6 +995,7 @@ func sessionArgs(sess Session) []any {
 		strings.TrimSpace(sess.DMParticipantID),
 		boolToInt(sess.Group),
 		strings.TrimSpace(sess.FocusWorkspace),
+		strings.TrimSpace(sess.WorkspaceID),
 	}
 }
 
@@ -965,7 +1012,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group, focus_workspace
+       dm_participant_id, is_group, focus_workspace, workspace_id
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -977,7 +1024,7 @@ SELECT id, created_at, updated_at, title, summary, entries, cwd,
        forked_from_id, forked_from_turn_id, forked_from_item_id,
        pinned_at, archived_at,
        worktree_path, worktree_base_head, worktree_base_repo,
-       dm_participant_id, is_group, focus_workspace
+       dm_participant_id, is_group, focus_workspace, workspace_id
 FROM sessions
 WHERE id = ?`, id)
 	return scanSessionRow(row)
@@ -1008,7 +1055,7 @@ func scanSession(scanner interface {
 		&s.ForkedFromID, &s.ForkedFromTurnID, &s.ForkedFromItemID,
 		&pinnedAt, &archivedAt,
 		&s.WorktreePath, &s.WorktreeBaseHEAD, &s.WorktreeBaseRepo,
-		&s.DMParticipantID, &isGroup, &s.FocusWorkspace,
+		&s.DMParticipantID, &isGroup, &s.FocusWorkspace, &s.WorkspaceID,
 	); err != nil {
 		return Session{}, err
 	}

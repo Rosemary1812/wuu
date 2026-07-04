@@ -128,6 +128,14 @@ func (s *Server) handleThreadStart(req Request) error {
 		if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
+		// Bind the thread to the active workspace's stable id (registered
+		// projects) so its state and listing survive the project moving; DM
+		// and scratch runtimes carry no id and stay matched by cwd.
+		if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" {
+			if _, err := session.SetWorkspaceID(s.rt.SessionDir, id, wsID); err != nil {
+				return s.writeResponse(req.ID, nil, err)
+			}
+		}
 	} else {
 		id = "ephemeral-" + id
 	}
@@ -181,6 +189,8 @@ func (s *Server) createResidentDMThreadState(p participant.Participant, id strin
 	if strings.TrimSpace(id) == "" {
 		id = session.NewID()
 	}
+	// DMs are matched by the DM bypass, never by workspace id, so they carry
+	// no workspace id.
 	if _, err := session.CreateWithMetadata(s.rt.SessionDir, id, threadCWD); err != nil {
 		return nil, err
 	}
@@ -481,6 +491,14 @@ func (s *Server) handleThreadFork(req Request) error {
 		cleanupWorktree()
 		return s.writeResponse(req.ID, nil, err)
 	}
+	// A fork belongs to the same workspace as its source, so it inherits the
+	// active workspace's stable id (empty for scratch/DM/group runtimes).
+	if wsID := strings.TrimSpace(s.rt.WorkspaceID); wsID != "" {
+		if _, err := session.SetWorkspaceID(s.rt.SessionDir, id, wsID); err != nil {
+			cleanupWorktree()
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	if err := rewriteChatHistory(s.rt.SessionDir, sess.ID, history); err != nil {
 		_, _ = session.Delete(s.rt.SessionDir, sess.ID)
 		cleanupWorktree()
@@ -638,7 +656,13 @@ func (s *Server) handleThreadList(req Request) error {
 		providers.DebugLogf("ensure #all group channel: %v", err)
 	}
 	targetCWD := firstNonEmpty(params.CWD, s.rt.RootDir)
-	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, targetCWD, 0)
+	// Trust the active workspace's stable id only when the caller didn't pin a
+	// specific cwd; an explicit params.CWD falls back to pure cwd matching.
+	targetWorkspaceID := ""
+	if strings.TrimSpace(params.CWD) == "" {
+		targetWorkspaceID = s.rt.WorkspaceID
+	}
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, targetCWD, targetWorkspaceID, 0)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -1158,7 +1182,7 @@ func (s *Server) rootThreadIDs() ([]string, error) {
 		ids = append(ids, id)
 	}
 
-	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, 0)
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1355,7 +1379,7 @@ func sortThreadListEntries(entries []threadListEntry) {
 }
 
 func (s *Server) mostRecentVisibleThreadID() (string, error) {
-	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, 0)
+	sessions, err := session.ListForCWDWithDMs(s.rt.SessionDir, s.rt.RootDir, s.rt.WorkspaceID, 0)
 	if err != nil {
 		return "", err
 	}
