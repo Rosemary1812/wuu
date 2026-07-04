@@ -56,7 +56,8 @@ recovery := {
 
 1. `helpme(args)`：解析 brief（args 优先，历史回退，占位符兜底）；种锚点（复用 checkpoint 机制）；以 `helpme_recovery` worker 类型 spawn 帮手，该类型声明 `RequiresReport: true`（prompt 不再恳求报告）；recovery 对象随 run 快照持久化。异步返回，同今天。可选 `wait: true` 走同步 Spawn，一次调用完成全流程（取代死代码分支）。
 2. 帮手完成：运行时按 RequiresReport 契约保证 agent_report 存在。
-3. 父代理 await（或收到完成通知）：agentcontrol 发现该线程有 `helper_done` 状态的 recovery，用 brief + report + result 构造 joint compact 内容（现有 `BuildHelpMeJointCompactContent` 保留），以 **inception 锚定重写**的形式返回（anchor = recovery.anchor_id），随后置 `state = applied`。重复 await 正常返回结果但不再携带重写（结构性消灭问题 2）。锚定重写同时保证：卡住之前的历史与未应答用户消息不再被吞。
+3. 父代理 await（或收到完成通知）：agentcontrol 发现该线程有 `helper_done` 状态的 recovery，用 brief + report + result 构造 joint compact 内容（现有 `BuildHelpMeJointCompactContent` 保留），随后置 `state = applied`。重复 await 正常返回结果但不再携带重写（结构性消灭问题 2）。
+   重写窗口语义修正：实施时保留现有的**整体替换**（system 前缀 + joint compact + 锚点），不迁移到 inception 的锚定保留——helpme 的目的就是丢弃被污染的上下文，从旧锚点起保留反而把污染留下。真正要从 inception 对齐过来的行为是**保留未应答的可见用户消息**（`unansweredVisibleUserSuffix`），防止 await 期间用户插话被吞。锚点字段从 recovery 对象中移除。
 4. 跨重启：recovery 随快照复水；await 目标解析接入 `rehydrateAgent`（顺带修复问题 4，此项是 subagent 层通用修复）。
 5. trace 文件降级为纯审计产物：写失败只在响应 next_steps 注明，不再使调用失败；ephemeral 运行因 recovery 在内存中而不再依赖它。
 
