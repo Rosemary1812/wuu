@@ -123,7 +123,8 @@ describe("EnvironmentSideStack", () => {
 
     expect(container.querySelector(".group-info-panel")).not.toBeNull();
     expect(container.textContent).toContain("群聊信息");
-    expect(container.textContent).toContain("#前端小队");
+    expect(container.textContent).toContain("前端小队");
+    expect(container.textContent).not.toContain("群内容");
     expect(container.textContent).not.toContain("创建拉取请求");
   });
 });

@@ -83,12 +83,13 @@ function renderPanel(
 }
 
 describe("GroupInfoPanel", () => {
-  it("renders the group name, content, and full member list", () => {
+  it("renders only the group name and full member list", () => {
     const container = renderPanel();
 
     expect(container.querySelector("h2")?.textContent).toBe("群聊信息");
-    expect(container.textContent).toContain("#前端小队");
-    expect(container.textContent).toContain("讨论群聊信息面板");
+    expect(container.textContent).toContain("前端小队");
+    expect(container.textContent).not.toContain("群内容");
+    expect(container.textContent).not.toContain("讨论群聊信息面板");
     expect(container.querySelectorAll(".group-info-member-row")).toHaveLength(2);
     expect(container.textContent).toContain("小青");
     expect(container.textContent).toContain("阿蓝");
@@ -140,10 +141,9 @@ describe("GroupInfoPanel", () => {
       onRemoveMember: vi.fn(),
     });
 
-    expect(
-      container.querySelector<HTMLButtonElement>(".group-info-add-button")
-        ?.disabled,
-    ).toBe(true);
+    expect(container.textContent).toContain("all");
+    expect(container.textContent).not.toContain("#all");
+    expect(container.querySelector(".group-info-add-button")).toBeNull();
     expect(container.querySelector(".group-info-remove-button")).toBeNull();
   });
 });

@@ -176,9 +176,8 @@
 
 .group-info-summary {
   display: grid;
-  gap: 12px;
   border-bottom: 1px solid var(--surface-3);
-  padding: 2px 4px 14px;
+  padding: 2px 4px 18px;
 }
 
 .group-info-field {
@@ -202,17 +201,6 @@
   color: var(--ink);
   font-size: var(--font-body);
   font-weight: var(--weight-semibold);
-}
-
-.group-info-field p {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
 }
 
 .group-info-members {
@@ -259,11 +247,6 @@
   background: var(--surface-2);
   color: var(--ink);
   outline: 0;
-}
-
-.group-info-add-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
 }
 
 .group-info-add-list {

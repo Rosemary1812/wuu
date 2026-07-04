@@ -42,9 +42,8 @@ export function GroupInfoPanel({
   );
   const allChannel = isAllChannelThread(thread);
   const groupName = groupDisplayName(thread);
-  const groupContent = thread.preview.trim() || "暂无内容";
-  const addDisabled =
-    allChannel || !onAddMember || availableParticipants.length === 0;
+  const canAddMember =
+    !allChannel && Boolean(onAddMember) && availableParticipants.length > 0;
 
   async function addMember(participantID: string): Promise<void> {
     if (!onAddMember) {
@@ -91,10 +90,6 @@ export function GroupInfoPanel({
               {groupName}
             </strong>
           </div>
-          <div className="group-info-field">
-            <span>群内容</span>
-            <p>{groupContent}</p>
-          </div>
         </section>
 
         <section className="group-info-members" aria-label="群成员">
@@ -103,23 +98,18 @@ export function GroupInfoPanel({
               <h3>群成员</h3>
               <span>{members.length} 人</span>
             </div>
-            <button
-              className="group-info-add-button"
-              type="button"
-              aria-label="添加群成员"
-              aria-expanded={addOpen}
-              disabled={addDisabled}
-              title={
-                allChannel
-                  ? "#all 自动包含所有 Agent"
-                  : availableParticipants.length === 0
-                    ? "没有可添加的 Agent"
-                    : "添加群成员"
-              }
-              onClick={() => setAddOpen((open) => !open)}
-            >
-              <Plus aria-hidden="true" />
-            </button>
+            {canAddMember ? (
+              <button
+                className="group-info-add-button"
+                type="button"
+                aria-label="添加群成员"
+                aria-expanded={addOpen}
+                title="添加群成员"
+                onClick={() => setAddOpen((open) => !open)}
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
 
           {addOpen ? (
@@ -191,7 +181,7 @@ function ParticipantAvatar({
 
 function groupDisplayName(thread: Thread): string {
   const title = thread.title?.trim() || thread.preview.trim() || "未命名群聊";
-  return title.startsWith("#") ? title : `#${title}`;
+  return title.replace(/^#/, "");
 }
 
 function isAllChannelThread(thread: Thread): boolean {
