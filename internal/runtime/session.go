@@ -49,7 +49,13 @@ import (
 // The shape is intentionally UI-neutral so desktop and protocol clients can
 // attach without rebuilding the agent.
 type Options struct {
-	RootDir       string
+	RootDir string
+	// WorkspaceID is the stable, location-independent identity of the
+	// workspace (the desktop's registered-project id). When set, the workspace
+	// state directory is keyed by this id so it survives the project being
+	// moved or renamed on disk. Empty for location-anchored roots (the shared
+	// 对话 scratch dir, agent homes), which stay keyed by their path.
+	WorkspaceID   string
 	HomeDir       string
 	ConfigPath    string
 	Config        config.Config
@@ -66,6 +72,7 @@ type Session struct {
 	ProviderName                string
 	Model                       string
 	RootDir                     string
+	WorkspaceID                 string
 	StateDir                    string
 	ConfigPath                  string
 	SessionDir                  string
@@ -117,6 +124,17 @@ type ThreadRuntime struct {
 	WorkerModelBudget modelbudget.Budget
 }
 
+// resolveWorkspaceStateDir returns the workspace state directory, keyed by the
+// stable workspace id when present (so it survives the project moving on disk)
+// and otherwise by the filesystem path (location-anchored roots that never
+// move: the shared 对话 scratch dir, agent homes, worktree checkouts).
+func resolveWorkspaceStateDir(wuuHome, workspaceID, rootDir string) (string, error) {
+	if id := strings.TrimSpace(workspaceID); id != "" {
+		return statepath.WorkspaceDirByID(wuuHome, id)
+	}
+	return statepath.WorkspaceDir(wuuHome, rootDir)
+}
+
 // NewSession builds the shared runtime for an interactive agent surface.
 func NewSession(opts Options) (*Session, error) {
 	rootDir := strings.TrimSpace(opts.RootDir)
@@ -129,7 +147,8 @@ func NewSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve wuu home: %w", err)
 	}
-	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, rootDir)
+	workspaceID := strings.TrimSpace(opts.WorkspaceID)
+	workspaceStateDir, err := resolveWorkspaceStateDir(wuuHome, workspaceID, rootDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 	}
@@ -430,6 +449,7 @@ func NewSession(opts Options) (*Session, error) {
 		ProviderName:                resolvedName,
 		Model:                       providerCfg.Model,
 		RootDir:                     rootDir,
+		WorkspaceID:                 workspaceID,
 		StateDir:                    workspaceStateDir,
 		ConfigPath:                  opts.ConfigPath,
 		SessionDir:                  sessionDir,
@@ -693,7 +713,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		if err != nil {
 			return nil, fmt.Errorf("resolve wuu home: %w", err)
 		}
-		stateDir, err = statepath.WorkspaceDir(home, s.RootDir)
+		stateDir, err = resolveWorkspaceStateDir(home, s.WorkspaceID, s.RootDir)
 		if err != nil {
 			return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 		}
@@ -1051,7 +1071,7 @@ func (s *Session) SetSessionID(id string) {
 		stateDir := strings.TrimSpace(s.StateDir)
 		if stateDir == "" {
 			if home, err := statepath.Home(""); err == nil {
-				if dir, err := statepath.WorkspaceDir(home, s.RootDir); err == nil {
+				if dir, err := resolveWorkspaceStateDir(home, s.WorkspaceID, s.RootDir); err == nil {
 					stateDir = dir
 				}
 			}

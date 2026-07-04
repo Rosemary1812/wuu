@@ -1240,6 +1240,9 @@ func (s *Server) workspaceStateDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if id := strings.TrimSpace(s.rt.WorkspaceID); id != "" {
+		return statepath.WorkspaceDirByID(home, id)
+	}
 	return statepath.WorkspaceDir(home, s.rt.RootDir)
 }
 

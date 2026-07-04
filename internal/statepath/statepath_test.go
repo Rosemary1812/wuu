@@ -136,6 +136,44 @@ func TestWorkspaceDirIsStableAndOutsideWorkspace(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDirByIDIsStableAndPathIndependent(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".wuu")
+	id := "proj 1234abcd"
+
+	got, err := WorkspaceDirByID(home, id)
+	if err != nil {
+		t.Fatalf("WorkspaceDirByID: %v", err)
+	}
+	if !strings.HasPrefix(got, filepath.Join(home, "workspaces")+string(filepath.Separator)) {
+		t.Fatalf("WorkspaceDirByID() = %q, want under %q", got, filepath.Join(home, "workspaces"))
+	}
+	if strings.Contains(got, "proj 1234abcd") {
+		t.Fatalf("WorkspaceDirByID() should sanitize spaces, got %q", got)
+	}
+
+	gotAgain, err := WorkspaceDirByID(home, id)
+	if err != nil {
+		t.Fatalf("WorkspaceDirByID second call: %v", err)
+	}
+	if gotAgain != got {
+		t.Fatalf("WorkspaceDirByID not stable: %q then %q", got, gotAgain)
+	}
+
+	// The whole point: the same id maps to the same dir regardless of any
+	// filesystem path, and differs from the path-keyed WorkspaceDir.
+	pathKeyed, err := WorkspaceDir(home, filepath.Join(t.TempDir(), "proj"))
+	if err != nil {
+		t.Fatalf("WorkspaceDir: %v", err)
+	}
+	if got == pathKeyed {
+		t.Fatalf("WorkspaceDirByID collided with path-keyed WorkspaceDir: %q", got)
+	}
+
+	if _, err := WorkspaceDirByID(home, "  "); err == nil {
+		t.Fatalf("WorkspaceDirByID should reject a blank id")
+	}
+}
+
 func TestProfileDirIsStableAndUnderProfiles(t *testing.T) {
 	home := filepath.Join(t.TempDir(), ".wuu")
 	name := "Mia Agent"

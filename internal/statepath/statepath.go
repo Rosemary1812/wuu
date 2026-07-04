@@ -142,7 +142,34 @@ func UsageDataDir(wuuHome string) string {
 	return filepath.Join(wuuHome, "usage-data")
 }
 
-// WorkspaceDir returns a stable user-level state directory for one workspace.
+// WorkspaceDirByID returns a stable user-level state directory for a workspace
+// identified by an opaque, location-independent ID (the desktop's stable
+// project id). Unlike WorkspaceDir it hashes the ID rather than the filesystem
+// path, so the directory — and everything under it (memory, goals, scheduled
+// tasks, session artifacts) — survives the workspace being moved or renamed on
+// disk. The layout matches WorkspaceDir (<slug>-<hash16>) so every downstream
+// RuntimeDir/WorktreeRoot/GoalRoot/... helper is unaffected.
+func WorkspaceDirByID(wuuHome, workspaceID string) (string, error) {
+	if strings.TrimSpace(wuuHome) == "" {
+		return "", errors.New("wuu home is required")
+	}
+	id := strings.TrimSpace(workspaceID)
+	if id == "" {
+		return "", errors.New("workspace id is required")
+	}
+	sum := sha256.Sum256([]byte(id))
+	slug := sanitizeSlug(id)
+	if slug == "" {
+		slug = "workspace"
+	}
+	return filepath.Join(wuuHome, "workspaces", slug+"-"+hex.EncodeToString(sum[:])[:16]), nil
+}
+
+// WorkspaceDir returns a stable user-level state directory for one workspace,
+// keyed by its filesystem path. Prefer WorkspaceDirByID for workspaces that
+// carry a stable identity (registered projects); this path-keyed form remains
+// for location-anchored roots that never move — the shared 对话 scratch dir,
+// per-agent home dirs, and sub-agent worktree checkouts.
 func WorkspaceDir(wuuHome, rootDir string) (string, error) {
 	if strings.TrimSpace(wuuHome) == "" {
 		return "", errors.New("wuu home is required")

@@ -1937,6 +1937,7 @@ func runAppServer(args []string) error {
 	providerName := fs.String("provider", "", "provider name in config")
 	modelOverride := fs.String("model", "", "model override")
 	workdir := fs.String("workdir", "", "workspace directory")
+	workspaceID := fs.String("workspace-id", "", "stable workspace identity (survives the workspace moving on disk)")
 	noTools := fs.Bool("no-tools", false, "disable local tools")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -1954,6 +1955,7 @@ func runAppServer(args []string) error {
 
 	rt, err := runtime.NewSession(runtime.Options{
 		RootDir:       rootDir,
+		WorkspaceID:   *workspaceID,
 		HomeDir:       homeDir,
 		ConfigPath:    configPath,
 		Config:        cfg,
