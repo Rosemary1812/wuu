@@ -1,11 +1,12 @@
 // Package insight aggregates session-level token usage and model breakdowns
-// for the desktop settings page and the LLM-driven session insights report.
+// for the desktop settings page (appserver handleSettingsUsage). The public
+// surface is ScanSessions, CollectTokenUsageRows, and their row/meta types.
 //
-// UsageReport, BuildUsageReport, and FormatUsageReport used to live here as
-// a text-format summary of local sessions, but they had no callers once
-// handleSettingsUsage took over the desktop usage snapshot. They were
-// removed as dead code; the desktop now reads its usage data from the
-// SettingsUsageResponse RPC instead of this text pipeline. See the git
-// history of this file for the previous implementation.
+// Two earlier pipelines were removed as dead code and live only in git
+// history:
+//   - UsageReport/BuildUsageReport/FormatUsageReport, a text-format summary
+//     superseded by the SettingsUsageResponse RPC;
+//   - the LLM-driven insights report (Run, facet extraction via ExtractFacet,
+//     GenerateInsights, GenerateHTML, and the usage-data cache), which never
+//     had a production trigger.
 package insight
-

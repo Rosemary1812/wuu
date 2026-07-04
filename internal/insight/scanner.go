@@ -47,18 +47,6 @@ func ScanSessions(sessDir string, maxSessions int) ([]SessionMeta, error) {
 	return scanSessions(sessDir, sessions, maxSessions)
 }
 
-// ScanSessionsForCWD reads sessions scoped to a workspace cwd.
-func ScanSessionsForCWD(sessDir, cwd string, maxSessions int) ([]SessionMeta, error) {
-	if strings.TrimSpace(cwd) == "" {
-		return ScanSessions(sessDir, maxSessions)
-	}
-	sessions, err := sessionstore.ListForCWD(sessDir, cwd, "", 0)
-	if err != nil {
-		return nil, err
-	}
-	return scanSessions(sessDir, sessions, maxSessions)
-}
-
 // CollectTokenUsageRows walks every session in sessDir and returns one
 // TokenUsageRow per persisted token_usage meta record, in the order they
 // appear in the session history. Corrupt or missing session files are
@@ -229,8 +217,8 @@ func scanSessionRecords(records []sessionstore.HistoryRecord, id string) Session
 			meta.LinesRemoved += removed
 		case "meta":
 			// Token usage records. Accumulate into per-session totals and
-			// the per-provider/model breakdown so Aggregate can roll up
-			// across sessions without re-reading history.
+			// the per-provider/model breakdown so usage consumers can roll
+			// up across sessions without re-reading history.
 			meta.InputTokens += rec.InputTokens
 			meta.OutputTokens += rec.OutputTokens
 			meta.CacheCreationTokens += rec.CacheCreationTokens
@@ -261,43 +249,6 @@ func scanSessionRecords(records []sessionstore.HistoryRecord, id string) Session
 	return meta
 }
 
-// FormatTranscript builds a condensed text transcript of a session for LLM analysis.
-func FormatTranscript(sessDir, sessionID string) (string, error) {
-	records, err := sessionstore.LoadHistoryRecords(sessDir, sessionID, true)
-	if err != nil {
-		return "", err
-	}
-
-	var b strings.Builder
-	b.WriteString("Session: " + sessionID + "\n\n")
-
-	for _, historyRec := range records {
-		rec := memoryRecordFromHistoryRecord(historyRec)
-		role := strings.ToLower(strings.TrimSpace(rec.Role))
-		content := strings.TrimSpace(rec.Content)
-
-		switch role {
-		case "user":
-			b.WriteString("[User]: " + truncateStr(content, 500) + "\n")
-		case "assistant":
-			b.WriteString("[Assistant]: " + truncateStr(content, 300) + "\n")
-			for _, tc := range rec.ToolCalls {
-				b.WriteString("[Tool: " + tc.Name + "]\n")
-			}
-		case "tool":
-			// Skip tool results to keep transcript compact.
-		}
-
-		// Cap total transcript size.
-		if b.Len() > 15000 {
-			b.WriteString("\n... (truncated)\n")
-			break
-		}
-	}
-
-	return b.String(), nil
-}
-
 func memoryRecordFromHistoryRecord(rec sessionstore.HistoryRecord) memoryRecord {
 	out := memoryRecord{
 		Role:                rec.Role,
@@ -316,139 +267,6 @@ func memoryRecordFromHistoryRecord(rec sessionstore.HistoryRecord) memoryRecord 
 		_ = json.Unmarshal(rec.ToolCalls, &out.ToolCalls)
 	}
 	return out
-}
-
-// Aggregate combines multiple SessionMeta and Facets into AggregatedData.
-func Aggregate(metas []SessionMeta, facets map[string]Facet) AggregatedData {
-	agg := AggregatedData{
-		TotalSessions:      len(metas),
-		SessionsWithFacets: len(facets),
-		ToolCounts:         make(map[string]int),
-		Languages:          make(map[string]int),
-		GoalCategories:     make(map[string]int),
-		Outcomes:           make(map[string]int),
-		Satisfaction:       make(map[string]int),
-		SessionTypes:       make(map[string]int),
-		Friction:           make(map[string]int),
-		Success:            make(map[string]int),
-	}
-
-	daysSet := make(map[string]struct{})
-
-	for _, m := range metas {
-		agg.TotalMessages += m.UserMessages + m.AssistantMsgs
-		agg.TotalDurationH += m.Duration.Hours()
-		agg.TotalEstTokens += m.EstTokens
-		agg.TotalInputTokens += m.InputTokens
-		agg.TotalOutputTokens += m.OutputTokens
-		agg.TotalCacheCreationTokens += m.CacheCreationTokens
-		agg.TotalCacheReadTokens += m.CacheReadTokens
-		agg.TotalLinesAdded += m.LinesAdded
-		agg.TotalLinesRemoved += m.LinesRemoved
-		agg.TotalFilesModified += m.FilesModified
-		agg.MessageHours = append(agg.MessageHours, m.MessageHours...)
-
-		for name, cnt := range m.ToolCounts {
-			agg.ToolCounts[name] += cnt
-		}
-		for lang, cnt := range m.Languages {
-			agg.Languages[lang] += cnt
-		}
-
-		if !m.CreatedAt.IsZero() {
-			day := m.CreatedAt.Format("2006-01-02")
-			daysSet[day] = struct{}{}
-		}
-	}
-
-	// Aggregate facets.
-	for _, f := range facets {
-		for cat, cnt := range f.GoalCategories {
-			agg.GoalCategories[cat] += cnt
-		}
-		if f.Outcome != "" {
-			agg.Outcomes[f.Outcome]++
-		}
-		if f.Satisfaction != "" {
-			agg.Satisfaction[f.Satisfaction]++
-		}
-		if f.SessionType != "" {
-			agg.SessionTypes[f.SessionType]++
-		}
-		for fric, cnt := range f.Friction {
-			agg.Friction[fric] += cnt
-		}
-		if f.PrimarySuccess != "" {
-			agg.Success[f.PrimarySuccess]++
-		}
-	}
-
-	// Summaries from first 50 sessions.
-	limit := 50
-	if len(metas) < limit {
-		limit = len(metas)
-	}
-	for _, m := range metas[:limit] {
-		s := SessionSummary{
-			ID:      m.ID,
-			Date:    m.CreatedAt.Format("2006-01-02"),
-			Summary: m.FirstUserMsg,
-		}
-		if f, ok := facets[m.ID]; ok {
-			s.Goal = f.Goal
-		}
-		agg.Summaries = append(agg.Summaries, s)
-	}
-
-	// Date range.
-	if len(metas) > 0 {
-		agg.DateRange = [2]string{
-			metas[len(metas)-1].CreatedAt.Format("2006-01-02"),
-			metas[0].CreatedAt.Format("2006-01-02"),
-		}
-	}
-
-	agg.DaysActive = len(daysSet)
-	if agg.DaysActive > 0 {
-		agg.MessagesPerDay = float64(agg.TotalMessages) / float64(agg.DaysActive)
-	}
-
-	// Merge per-session ModelBreakdowns into a single sorted list and
-	// compute the overall prompt-cache hit rate across all usage.
-	bucketMap := make(map[string]*ModelUsage)
-	for _, m := range metas {
-		for _, b := range m.ModelBreakdowns {
-			key := b.Provider + "|" + b.Model
-			merged, ok := bucketMap[key]
-			if !ok {
-				merged = &ModelUsage{Provider: b.Provider, Model: b.Model}
-				bucketMap[key] = merged
-			}
-			merged.InputTokens += b.InputTokens
-			merged.OutputTokens += b.OutputTokens
-			merged.CacheCreationTokens += b.CacheCreationTokens
-			merged.CacheReadTokens += b.CacheReadTokens
-			// One session contributes 1 to each bucket it touched.
-			merged.Sessions++
-		}
-	}
-	breakdowns := make([]ModelUsage, 0, len(bucketMap))
-	totalInput := 0
-	totalCacheRead := 0
-	for _, b := range bucketMap {
-		breakdowns = append(breakdowns, *b)
-		totalInput += b.InputTokens
-		totalCacheRead += b.CacheReadTokens
-	}
-	sort.Slice(breakdowns, func(i, j int) bool {
-		return breakdowns[i].TotalContextTokens() > breakdowns[j].TotalContextTokens()
-	})
-	agg.ModelBreakdowns = breakdowns
-	if denom := totalInput + totalCacheRead; denom > 0 {
-		agg.OverallCacheHitRate = float64(totalCacheRead) / float64(denom)
-	}
-
-	return agg
 }
 
 // --- filtering ---

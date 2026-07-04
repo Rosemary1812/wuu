@@ -2,8 +2,6 @@ package insight
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +9,7 @@ import (
 	sessionstore "github.com/blueberrycongee/wuu/internal/session"
 )
 
-func TestScanSessionsAndFormatTranscriptHandleLargeToolRecords(t *testing.T) {
+func TestScanSessionsHandleLargeToolRecords(t *testing.T) {
 	dir := t.TempDir()
 	sessionID := "20260413-101416-cd82"
 	largeToolResult := strings.Repeat("x", 2100*1024)
@@ -64,54 +62,10 @@ func TestScanSessionsAndFormatTranscriptHandleLargeToolRecords(t *testing.T) {
 	if meta.FilesModified != 1 {
 		t.Fatalf("expected 1 modified file, got %d", meta.FilesModified)
 	}
-
-	transcript, err := FormatTranscript(dir, sessionID)
-	if err != nil {
-		t.Fatalf("FormatTranscript: %v", err)
-	}
-	if !strings.Contains(transcript, "[User]: restore this session") {
-		t.Fatalf("expected first user message in transcript, got %q", transcript)
-	}
-	if !strings.Contains(transcript, "[User]: and keep it visible") {
-		t.Fatalf("expected follow-up user message in transcript, got %q", transcript)
-	}
-	if !strings.Contains(transcript, "[Tool: write_file]") {
-		t.Fatalf("expected tool call marker in transcript, got %q", transcript)
-	}
-	if strings.Contains(transcript, largeToolResult[:256]) {
-		t.Fatal("expected large tool payload to stay out of transcript output")
-	}
-}
-
-func TestScanSessionsForCWDFiltersBySessionIndex(t *testing.T) {
-	dir := t.TempDir()
-	cwdA := filepath.Join(t.TempDir(), "project-a")
-	cwdB := filepath.Join(t.TempDir(), "project-b")
-	start := time.Date(2026, time.April, 14, 9, 0, 0, 0, time.UTC)
-
-	if _, err := sessionstore.CreateWithMetadata(dir, "sess-a", cwdA); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := sessionstore.CreateWithMetadata(dir, "sess-b", cwdB); err != nil {
-		t.Fatal(err)
-	}
-	writeInsightSessionRecords(t, dir, "sess-a", []memoryRecord{
-		{Role: "user", Content: "work in project a", At: start},
-		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
-		{Role: "user", Content: "continue project a", At: start.Add(2 * time.Minute)},
-	})
-	writeInsightSessionRecords(t, dir, "sess-b", []memoryRecord{
-		{Role: "user", Content: "work in project b", At: start},
-		{Role: "assistant", Content: "ok", At: start.Add(10 * time.Second)},
-		{Role: "user", Content: "continue project b", At: start.Add(2 * time.Minute)},
-	})
-
-	metas, err := ScanSessionsForCWD(dir, cwdA, 0)
-	if err != nil {
-		t.Fatalf("ScanSessionsForCWD: %v", err)
-	}
-	if len(metas) != 1 || metas[0].ID != "sess-a" {
-		t.Fatalf("unexpected scoped metas: %+v", metas)
+	// The 2MB tool payload only contributes to the token estimate; it must
+	// not break scanning or leak into the extracted first-user-message.
+	if !strings.Contains(meta.FirstUserMsg, "restore this session") {
+		t.Fatalf("unexpected first user message: %q", meta.FirstUserMsg)
 	}
 }
 
@@ -202,63 +156,6 @@ func TestScanSessionsAggregatesModelBreakdowns(t *testing.T) {
 		}
 	}
 
-	// Aggregate: 3 distinct provider/model buckets, sorted by total context
-	// tokens desc.
-	agg := Aggregate(metas, nil)
-	if got := len(agg.ModelBreakdowns); got != 3 {
-		t.Fatalf("aggregate: expected 3 buckets, got %d (%+v)", got, agg.ModelBreakdowns)
-	}
-	// Anthropic total = 300 + 70 + 130 = 500
-	// OpenAI total    = 500 + 100 + 200 = 800
-	// (unknown) total = 50 + 0 + 10 = 60
-	if agg.ModelBreakdowns[0].Provider != "openai" {
-		t.Fatalf("aggregate: expected openai first, got %q", agg.ModelBreakdowns[0].Provider)
-	}
-	if agg.ModelBreakdowns[1].Provider != "anthropic" {
-		t.Fatalf("aggregate: expected anthropic second, got %q", agg.ModelBreakdowns[1].Provider)
-	}
-	if agg.ModelBreakdowns[2].Provider != "" {
-		t.Fatalf("aggregate: expected (unknown) last, got %q", agg.ModelBreakdowns[2].Provider)
-	}
-
-	for _, b := range agg.ModelBreakdowns {
-		if b.Sessions != 1 {
-			t.Fatalf("bucket %+v: expected Sessions=1, got %d", b, b.Sessions)
-		}
-	}
-
-	// Cache hit rate: cacheRead / (input + cacheRead) across all buckets.
-	// = (70 + 100 + 0) / ((300 + 500 + 50) + (70 + 100 + 0)) = 170 / 1020.
-	expectedRate := float64(170) / float64(1020)
-	if diff := agg.OverallCacheHitRate - expectedRate; diff > 1e-9 || diff < -1e-9 {
-		t.Fatalf("aggregate: OverallCacheHitRate=%f, want %f", agg.OverallCacheHitRate, expectedRate)
-	}
-}
-
-func TestUsageDataPathsStayUnderUserState(t *testing.T) {
-	home := t.TempDir()
-	usageDir := UsageDataDir(home)
-	if want := filepath.Join(home, ".wuu", "usage-data"); usageDir != want {
-		t.Fatalf("UsageDataDir() = %q, want %q", usageDir, want)
-	}
-	if want := filepath.Join(usageDir, "cache"); CacheDir(usageDir) != want {
-		t.Fatalf("CacheDir() = %q, want %q", CacheDir(usageDir), want)
-	}
-
-	report := &Report{
-		Stats:       AggregatedData{TotalSessions: 1},
-		GeneratedAt: time.Date(2026, time.April, 16, 12, 0, 0, 0, time.UTC),
-	}
-	path, err := GenerateHTML(usageDir, report)
-	if err != nil {
-		t.Fatalf("GenerateHTML: %v", err)
-	}
-	if path != filepath.Join(usageDir, "report.html") {
-		t.Fatalf("GenerateHTML path = %q, want report.html under usage dir", path)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected report file: %v", err)
-	}
 }
 
 func writeInsightSessionRecords(t *testing.T, sessDir, id string, records []memoryRecord) {
