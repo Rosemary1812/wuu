@@ -11,15 +11,17 @@
 <style>
 :root {
   --bg-0: #0a0b0e;
-  --bg-1: #0f1116;
-  --bg-2: #15181f;
-  --line: rgba(255,255,255,.08);
-  --line-strong: rgba(255,255,255,.16);
+  --bg-1: #0e1014;
+  --bg-2: #14161c;
+  --line: rgba(255,255,255,.07);
+  --line-strong: rgba(255,255,255,.14);
   --text-0: #f4f4f2;
-  --text-1: #b9bab6;
-  --text-2: #83847f;
+  --text-1: #b6b8b4;
+  --text-2: #7f817c;
   --accent: #d8c8a8;
-  --accent-dim: rgba(216,200,168,.13);
+  --accent-dim: rgba(216,200,168,.12);
+  --glow-a: rgba(70,110,150,.20);   /* muted steel blue */
+  --glow-b: rgba(60,120,110,.14);   /* muted teal */
   --sans: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --mono: "IBM Plex Mono", "SF Mono", Consolas, monospace;
 }
@@ -36,37 +38,30 @@ body {
 }
 ::selection { background: var(--accent); color: var(--bg-0); }
 
-/* ---------- bilingual switching ---------- */
 [data-lang="zh"] .en { display: none !important; }
 [data-lang="en"] .zh { display: none !important; }
 
-/* ---------- shared ---------- */
 .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
 .kicker {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-  color: var(--accent);
-  display: block;
-  margin-bottom: 18px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--accent);
+  display: block; margin-bottom: 18px;
 }
 h2.title {
-  font-weight: 600;
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 1.25;
-  letter-spacing: -.02em;
-  margin-bottom: 20px;
+  font-weight: 600; font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.22; letter-spacing: -.02em; margin-bottom: 18px;
+  text-wrap: balance;
 }
-.lede { color: var(--text-1); font-size: 17px; max-width: 40em; }
+.lede { color: var(--text-1); font-size: 17px; max-width: 42em; }
+code.inline { font-family: var(--mono); font-size: .88em; color: var(--accent); background: var(--accent-dim); padding: 1px 6px; border-radius: 5px; }
 
-/* scroll reveal */
 .reveal { opacity: 0; transform: translateY(24px); transition: opacity .8s cubic-bezier(.2,.6,.2,1), transform .8s cubic-bezier(.2,.6,.2,1); }
 .reveal.in { opacity: 1; transform: none; }
 .reveal.d1 { transition-delay: .1s; } .reveal.d2 { transition-delay: .2s; } .reveal.d3 { transition-delay: .3s; }
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
   html { scroll-behavior: auto; }
+  .aurora span { animation: none !important; }
 }
 
 /* ---------- nav ---------- */
@@ -95,35 +90,40 @@ nav.scrolled { background: rgba(10,11,14,.8); backdrop-filter: blur(14px); borde
 /* ---------- hero ---------- */
 header.hero {
   position: relative;
-  padding: 170px 0 0;
+  padding: 168px 0 0;
   text-align: center;
   overflow: hidden;
+  border-bottom: 1px solid var(--line);
 }
-.hero-glow {
-  position: absolute; top: -320px; left: 50%; transform: translateX(-50%);
-  width: 1100px; height: 700px; pointer-events: none;
-  background:
-    radial-gradient(ellipse 45% 55% at 38% 40%, rgba(233,113,133,.14), transparent 70%),
-    radial-gradient(ellipse 45% 55% at 62% 45%, rgba(120,119,238,.14), transparent 70%),
-    radial-gradient(ellipse 60% 60% at 50% 30%, rgba(56,178,222,.10), transparent 70%);
-  filter: blur(20px);
+.aurora { position: absolute; inset: 0; pointer-events: none; }
+.aurora span {
+  position: absolute; border-radius: 50%; filter: blur(90px); opacity: .9;
+  will-change: transform;
+}
+.aurora .a1 { width: 720px; height: 480px; left: 8%; top: -180px; background: radial-gradient(closest-side, var(--glow-a), transparent); animation: drift1 26s ease-in-out infinite alternate; }
+.aurora .a2 { width: 640px; height: 460px; right: 4%; top: -120px; background: radial-gradient(closest-side, var(--glow-b), transparent); animation: drift2 32s ease-in-out infinite alternate; }
+.aurora .a3 { width: 520px; height: 380px; left: 38%; top: 60px; background: radial-gradient(closest-side, rgba(216,200,168,.07), transparent); animation: drift1 38s ease-in-out infinite alternate-reverse; }
+@keyframes drift1 { to { transform: translate(60px, 40px) scale(1.08); } }
+@keyframes drift2 { to { transform: translate(-70px, 30px) scale(1.05); } }
+/* cursor spotlight */
+.spotlight {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(560px circle at var(--mx, 50%) var(--my, 30%), rgba(216,200,168,.06), transparent 65%);
 }
 .hero h1 {
-  position: relative;
+  position: relative; z-index: 2;
   font-weight: 700;
-  font-size: clamp(40px, 6.5vw, 76px);
-  line-height: 1.12;
-  letter-spacing: -.03em;
-  max-width: 15em; margin: 0 auto;
-  text-wrap: balance;
+  font-size: clamp(56px, 9vw, 108px);
+  line-height: 1.02; letter-spacing: -.04em;
 }
 .hero .sub {
-  position: relative;
-  color: var(--text-1); font-size: clamp(16px, 2vw, 19px);
-  max-width: 44em; margin: 26px auto 0;
+  position: relative; z-index: 2;
+  color: var(--text-1); font-size: clamp(17px, 2.1vw, 21px); line-height: 1.7;
+  max-width: 36em; margin: 24px auto 0;
   text-wrap: balance;
 }
-.hero-cta { position: relative; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: center; margin-top: 38px; }
+.hero .sub strong { color: var(--text-0); font-weight: 500; }
+.hero-cta { position: relative; z-index: 2; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: center; margin-top: 36px; }
 .btn {
   display: inline-flex; align-items: center; gap: 10px;
   padding: 12px 24px; border-radius: 10px; text-decoration: none;
@@ -136,7 +136,7 @@ header.hero {
 .btn-ghost { border: 1px solid var(--line-strong); color: var(--text-0); }
 .btn-ghost:hover { border-color: var(--accent); background: var(--accent-dim); }
 .install-line {
-  position: relative;
+  position: relative; z-index: 2;
   display: inline-flex; align-items: center; gap: 14px;
   font-family: var(--mono); font-size: 13px;
   background: var(--bg-1);
@@ -149,12 +149,13 @@ header.hero {
 .install-line .dollar { color: var(--accent); }
 .install-line .copy-hint { font-size: 11px; color: var(--text-2); letter-spacing: .08em; }
 
-/* hero screenshot */
+/* hero screenshot with mouse tilt */
 .hero-shot {
-  position: relative;
-  margin: 76px auto -2px;
-  max-width: 1040px;
+  position: relative; z-index: 2;
+  margin: 72px auto -2px;
+  max-width: 1020px;
   padding: 0 32px;
+  perspective: 1400px;
 }
 .hero-shot .frame {
   position: relative;
@@ -162,105 +163,155 @@ header.hero {
   border-bottom: none;
   border-radius: 18px 18px 0 0;
   overflow: hidden;
-  box-shadow: 0 -30px 120px -40px rgba(120,119,238,.25), 0 -10px 60px -30px rgba(233,113,133,.18);
+  box-shadow: 0 -20px 100px -40px rgba(70,110,150,.35);
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform .18s ease-out;
+  will-change: transform;
 }
 .hero-shot img {
   display: block; width: 100%; height: auto;
-  max-height: 640px; object-fit: cover; object-position: top center;
+  max-height: 620px; object-fit: cover; object-position: top center;
 }
 .hero-shot .fade {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 140px;
+  position: absolute; left: 0; right: 0; bottom: 0; height: 150px;
   background: linear-gradient(to bottom, transparent, var(--bg-0));
 }
-header.hero { border-bottom: 1px solid var(--line); }
 
-/* ---------- terminal ---------- */
-.terminal-section { padding: 130px 0; }
-.term-grid { display: grid; grid-template-columns: 5fr 6fr; gap: 64px; align-items: center; }
-@media (max-width: 900px) { .term-grid { grid-template-columns: 1fr; gap: 44px; } }
-.terminal {
-  background: #0c0e12; border: 1px solid var(--line-strong); border-radius: 14px;
-  box-shadow: 0 30px 80px -30px rgba(0,0,0,.7);
-  overflow: hidden; font-family: var(--mono); font-size: 13.5px; line-height: 1.9;
+/* ---------- capability rows ---------- */
+.caps { padding: 140px 0 40px; }
+.cap-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 72px;
+  align-items: center; padding: 68px 0;
 }
+.cap-row.flip .cap-copy { order: 2; }
+.cap-row.flip .cap-visual { order: 1; }
+@media (max-width: 900px) {
+  .cap-row { grid-template-columns: 1fr; gap: 36px; padding: 48px 0; }
+  .cap-row.flip .cap-copy { order: 1; }
+  .cap-row.flip .cap-visual { order: 2; }
+}
+.cap-copy h3 { font-weight: 600; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.3; letter-spacing: -.02em; margin-bottom: 14px; text-wrap: balance; }
+.cap-copy p { color: var(--text-1); font-size: 16px; }
+.cap-copy .mini { margin-top: 18px; font-family: var(--mono); font-size: 12.5px; letter-spacing: .1em; color: var(--text-2); text-transform: uppercase; }
+
+/* spotlight cards (mouse-tracking border glow) */
+.card {
+  position: relative;
+  background: var(--bg-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.card::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  opacity: 0; transition: opacity .35s;
+  background: radial-gradient(420px circle at var(--cx, 50%) var(--cy, 50%), rgba(216,200,168,.08), transparent 60%);
+}
+.card:hover::before { opacity: 1; }
+
+/* terminal */
+.terminal { font-family: var(--mono); font-size: 13px; line-height: 1.85; box-shadow: 0 30px 80px -30px rgba(0,0,0,.7); }
 .term-bar { display: flex; align-items: center; gap: 8px; padding: 13px 17px; border-bottom: 1px solid var(--line); }
 .term-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
 .term-bar span { margin-left: 10px; font-size: 12px; color: var(--text-2); letter-spacing: .06em; }
-.term-body { padding: 20px 22px 26px; min-height: 300px; color: var(--text-1); }
+.term-body { padding: 18px 20px 24px; min-height: 290px; color: var(--text-1); }
 .term-body .ps { color: var(--accent); }
 .term-body .cmd { color: var(--text-0); }
 .term-body .ok { color: #9fc79f; }
 .term-body .dim { color: var(--text-2); }
 .term-body .line { display: block; white-space: pre-wrap; word-break: break-word; }
-.caret { display: inline-block; width: 8px; height: 16px; background: var(--text-0); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
+.caret { display: inline-block; width: 8px; height: 15px; background: var(--text-0); vertical-align: -3px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* ---------- features ---------- */
-.features { padding: 130px 0; background: var(--bg-1); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-top: 56px; }
-@media (max-width: 900px) { .feature-grid { grid-template-columns: 1fr; } }
-.feature {
-  background: var(--bg-1); padding: 36px 32px 40px;
-  transition: background .35s;
+/* subagent fan-out visual */
+.fan { padding: 34px 30px 30px; }
+.fan .task {
+  font-family: var(--mono); font-size: 12.5px; color: var(--text-0);
+  border: 1px solid var(--accent); background: var(--accent-dim);
+  border-radius: 9px; padding: 9px 14px; display: inline-block;
 }
-.feature:hover { background: var(--bg-2); }
-.feature .num { font-family: var(--mono); font-size: 12px; color: var(--text-2); letter-spacing: .15em; }
-.feature h3 { font-weight: 600; font-size: 18px; margin: 16px 0 10px; line-height: 1.4; letter-spacing: -.01em; }
-.feature p { color: var(--text-1); font-size: 14.5px; line-height: 1.8; }
-.feature code { font-family: var(--mono); font-size: .88em; color: var(--accent); background: var(--accent-dim); padding: 1px 6px; border-radius: 5px; }
-
-/* ---------- statement ---------- */
-.statement {
-  position: relative; padding: 150px 0; text-align: center; overflow: hidden;
-}
-.statement .glow {
-  position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(ellipse 55% 65% at 50% 50%, rgba(120,119,238,.09), transparent 70%);
-}
-.statement blockquote {
-  position: relative;
-  font-weight: 600;
-  font-size: clamp(24px, 3.6vw, 40px); line-height: 1.5; letter-spacing: -.02em;
-  max-width: 22em; margin: 0 auto; text-wrap: balance;
-}
-.statement .attribution { position: relative; display: block; margin-top: 26px; font-family: var(--mono); font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--text-2); }
-
-/* ---------- architecture ---------- */
-.arch { padding: 130px 0 140px; }
-.arch-diagram { margin-top: 60px; display: grid; gap: 0; justify-items: center; }
-.arch-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px; width: 100%; max-width: 860px; }
-.arch-box {
-  border: 1px solid var(--line-strong); border-radius: 12px;
-  padding: 24px 22px; text-align: center; background: var(--bg-1);
+.fan .wires { display: grid; grid-template-columns: repeat(3, 1fr); height: 34px; margin: 6px 18% 6px; }
+.fan .wires i { width: 1px; height: 100%; margin: 0 auto; background: linear-gradient(to bottom, var(--accent), var(--line-strong)); }
+.fan .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fan .agent {
+  border: 1px solid var(--line-strong); border-radius: 9px; padding: 12px 10px;
+  text-align: center; background: var(--bg-2);
   transition: border-color .3s, transform .3s;
 }
-.arch-box:hover { border-color: var(--accent); transform: translateY(-3px); }
-.arch-box .t { font-size: 16px; font-weight: 600; }
-.arch-box .d { font-size: 13px; color: var(--text-2); margin-top: 6px; line-height: 1.7; }
-.arch-core {
-  border: 1px solid var(--accent); background: linear-gradient(180deg, var(--accent-dim), transparent);
-  border-radius: 14px; padding: 30px 28px; text-align: center; width: 100%; max-width: 560px;
+.fan .agent:hover { border-color: var(--accent); transform: translateY(-2px); }
+.fan .agent .t { font-size: 13px; font-weight: 600; }
+.fan .agent .s { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); letter-spacing: .06em; margin-top: 3px; }
+.fan .agent .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #9fc79f; margin-right: 5px; animation: pulse 2s ease-in-out infinite; }
+.fan .agent:nth-child(2) .dot { animation-delay: .5s; }
+.fan .agent:nth-child(3) .dot { background: var(--accent); animation-delay: 1s; }
+@keyframes pulse { 50% { opacity: .3; } }
+.fan .merge { margin-top: 16px; border-top: 1px dashed var(--line-strong); padding-top: 14px; font-family: var(--mono); font-size: 12px; color: var(--text-2); text-align: center; }
+
+/* schedule visual */
+.sched { padding: 26px 26px 22px; font-family: var(--mono); font-size: 12.5px; }
+.sched .head { color: var(--text-2); letter-spacing: .1em; text-transform: uppercase; font-size: 11px; margin-bottom: 14px; }
+.sched .job {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 11px 14px; margin-bottom: 9px; background: var(--bg-2);
+  transition: border-color .3s;
 }
-.arch-core .t { font-size: 19px; font-weight: 600; }
-.arch-core .d { font-size: 13.5px; color: var(--text-1); margin-top: 8px; line-height: 1.8; }
-.arch-link { height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.arch-link .wire { width: 1px; flex: 1; background: linear-gradient(to bottom, var(--line-strong), var(--accent), var(--line-strong)); }
-.arch-link .proto { font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; color: var(--accent); text-transform: uppercase; }
-@media (max-width: 720px) { .arch-row { grid-template-columns: 1fr; } }
+.sched .job:hover { border-color: var(--accent); }
+.sched .cron { color: var(--accent); white-space: nowrap; }
+.sched .what { color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched .st { margin-left: auto; font-size: 11px; color: #9fc79f; white-space: nowrap; }
+.sched .st.wait { color: var(--text-2); }
+
+/* config visual */
+.conf { padding: 22px 24px; font-family: var(--mono); font-size: 12.8px; line-height: 1.95; color: var(--text-1); white-space: pre; overflow-x: auto; }
+.conf .k { color: var(--text-0); }
+.conf .v { color: var(--accent); }
+.conf .p { color: var(--text-2); }
+
+/* ---------- everywhere / one core ---------- */
+.everywhere { padding: 120px 0 130px; background: var(--bg-1); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.surface-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 56px; }
+@media (max-width: 900px) { .surface-grid { grid-template-columns: 1fr; } }
+.surface { padding: 30px 28px 34px; }
+.surface .step { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: .15em; }
+.surface h3 { font-size: 19px; font-weight: 600; margin: 14px 0 10px; letter-spacing: -.01em; }
+.surface p { color: var(--text-1); font-size: 14.5px; }
+.core-strip {
+  margin-top: 18px;
+  display: flex; align-items: center; justify-content: center; gap: 18px;
+  border: 1px solid var(--line-strong); border-radius: 14px;
+  padding: 20px 28px; background: linear-gradient(180deg, var(--accent-dim), transparent);
+  border-color: rgba(216,200,168,.35);
+  flex-wrap: wrap; text-align: center;
+}
+.core-strip .t { font-weight: 600; font-size: 16px; }
+.core-strip .proto { font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; color: var(--accent); text-transform: uppercase; }
+.core-strip .d { font-size: 13.5px; color: var(--text-1); }
+
+/* ---------- acknowledgments ---------- */
+.credits-section { padding: 120px 0; }
+.credit-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 52px; }
+@media (max-width: 980px) { .credit-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .credit-grid { grid-template-columns: 1fr; } }
+.credit { padding: 26px 24px 28px; text-decoration: none; display: block; transition: transform .3s; }
+.credit:hover { transform: translateY(-3px); }
+.credit .n { font-weight: 600; font-size: 16px; color: var(--text-0); display: flex; align-items: center; gap: 8px; }
+.credit .n::after { content: "↗"; font-size: 12px; color: var(--text-2); }
+.credit p { font-size: 13.5px; color: var(--text-1); margin-top: 8px; line-height: 1.7; }
 
 /* ---------- quickstart ---------- */
-.quickstart { padding: 130px 0 140px; background: var(--bg-1); border-top: 1px solid var(--line); }
+.quickstart { padding: 120px 0 130px; background: var(--bg-1); border-top: 1px solid var(--line); }
 .steps { margin-top: 56px; display: grid; gap: 40px; max-width: 780px; }
-.step { display: grid; grid-template-columns: 56px 1fr; gap: 24px; align-items: start; }
-.step .n {
+.step-row { display: grid; grid-template-columns: 56px 1fr; gap: 24px; align-items: start; }
+.step-row .n {
   width: 36px; height: 36px; border-radius: 50%;
   border: 1px solid var(--line-strong);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--mono); font-size: 14px; color: var(--text-1);
   margin-top: 2px;
 }
-.step h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; letter-spacing: -.01em; }
-.step p { color: var(--text-1); font-size: 15px; margin-bottom: 14px; }
+.step-row h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; letter-spacing: -.01em; }
+.step-row p { color: var(--text-1); font-size: 15px; margin-bottom: 14px; }
 .codeblock {
   position: relative;
   background: #0c0e12; border: 1px solid var(--line-strong); border-radius: 10px;
@@ -278,18 +329,14 @@ header.hero { border-bottom: 1px solid var(--line); }
   transition: color .2s, border-color .2s;
 }
 .copy-btn:hover { color: var(--text-0); border-color: var(--accent); }
-@media (max-width: 600px) { .step { grid-template-columns: 1fr; gap: 8px; } }
+@media (max-width: 600px) { .step-row { grid-template-columns: 1fr; gap: 8px; } }
 
 /* ---------- footer ---------- */
 footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
-.footer-glow {
-  position: absolute; bottom: -300px; left: 50%; transform: translateX(-50%);
-  width: 1000px; height: 600px; pointer-events: none;
-  background:
-    radial-gradient(ellipse 50% 55% at 42% 60%, rgba(233,113,133,.10), transparent 70%),
-    radial-gradient(ellipse 50% 55% at 58% 55%, rgba(120,119,238,.10), transparent 70%);
-  filter: blur(20px);
-}
+.footer-aurora { position: absolute; inset: 0; pointer-events: none; }
+.footer-aurora span { position: absolute; border-radius: 50%; filter: blur(90px); }
+.footer-aurora .a1 { width: 700px; height: 420px; left: 10%; bottom: -260px; background: radial-gradient(closest-side, var(--glow-a), transparent); }
+.footer-aurora .a2 { width: 600px; height: 380px; right: 8%; bottom: -220px; background: radial-gradient(closest-side, var(--glow-b), transparent); }
 .footer-inner { position: relative; z-index: 2; }
 .footer-cta h2 {
   font-weight: 600;
@@ -311,24 +358,22 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
 <nav id="nav">
   <a class="logo" href="#">wuu<em>.</em></a>
   <div class="nav-links">
-    <a href="#features"><span class="zh">特性</span><span class="en">Features</span></a>
-    <a href="#arch"><span class="zh">架构</span><span class="en">Architecture</span></a>
+    <a href="#caps"><span class="zh">能力</span><span class="en">Capabilities</span></a>
+    <a href="#everywhere"><span class="zh">架构</span><span class="en">Architecture</span></a>
     <a href="#quickstart"><span class="zh">快速开始</span><span class="en">Quick start</span></a>
     <a href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub</a>
     <button class="lang-toggle" id="langToggle" aria-label="Switch language">EN</button>
   </div>
 </nav>
 
-<header class="hero">
-  <div class="hero-glow" aria-hidden="true"></div>
+<header class="hero" id="hero">
+  <div class="aurora" aria-hidden="true"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
+  <div class="spotlight" aria-hidden="true"></div>
   <div class="wrap">
-    <h1 class="reveal in">
-      <span class="zh">开源的 AI Coding Agent，<br>用你自己的 Key。</span>
-      <span class="en">The open-source AI coding agent.<br>Bring your own key.</span>
-    </h1>
+    <h1 class="reveal in">wuu</h1>
     <p class="sub reveal in d1">
-      <span class="zh">wuu 在你的本地仓库里读代码、改文件、跑命令、审改动。Go 核心 + 桌面应用 + 可脚本化 CLI，内置多智能体编排，支持 Anthropic 和任何 OpenAI 兼容端点。</span>
-      <span class="en">wuu reads code, edits files, runs commands, and reviews changes in your local repository. A Go core with a desktop app and a scriptable CLI, built-in multi-agent orchestration, and support for Anthropic and any OpenAI-compatible endpoint.</span>
+      <span class="zh">帮你把工程任务<strong>端到端做完</strong>的 AI Coding Agent。<br>开源，本地优先，用你自己的 API Key。</span>
+      <span class="en">A coding agent that takes engineering tasks <strong>end to end</strong>.<br>Open source, local-first, powered by your own API key.</span>
     </p>
     <div class="hero-cta reveal in d2">
       <a class="btn btn-solid" href="#quickstart"><span class="zh">开始使用</span><span class="en">Get started</span></a>
@@ -341,129 +386,174 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
       </button>
     </div>
   </div>
-  <div class="hero-shot reveal in d3">
+  <div class="hero-shot reveal in d3" id="heroShot">
     <div class="frame">
-      <img src="https://github.com/user-attachments/assets/2d9030aa-ca03-42b1-9333-f79cc5aff95b" alt="wuu desktop app" loading="eager">
+      <img src="assets/desktop.png" alt="wuu desktop app" loading="eager">
       <div class="fade"></div>
     </div>
   </div>
 </header>
 
-<section class="terminal-section">
-  <div class="wrap term-grid">
-    <div>
-      <span class="kicker reveal">CLI</span>
-      <h2 class="title reveal">
-        <span class="zh">一条命令，<br>交给它一件事。</span>
-        <span class="en">One command.<br>Hand it something real.</span>
-      </h2>
-      <p class="lede reveal">
-        <span class="zh"><code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">wuu exec</code> 是非交互式入口：它自己读文件、跑测试、改代码、复盘失败，直到测试变绿。输出是流式 JSONL，脚本、CI、review 机器人和其他 agent 都能直接驱动它。</span>
-        <span class="en"><code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">wuu exec</code> is the non-interactive entrypoint: it reads files, runs tests, edits code, and iterates on failures until the tests go green. Output streams as JSONL, so scripts, CI, review bots, and other agents can drive it directly.</span>
-      </p>
-    </div>
-    <div class="terminal reveal d1" id="terminal">
-      <div class="term-bar"><i></i><i></i><i></i><span>wuu — zsh</span></div>
-      <div class="term-body" id="termBody"></div>
-    </div>
-  </div>
-</section>
-
-<section class="features" id="features">
+<section class="caps" id="caps">
   <div class="wrap">
-    <span class="kicker reveal"><span class="zh">特性</span><span class="en">Features</span></span>
+    <span class="kicker reveal"><span class="zh">能力</span><span class="en">Capabilities</span></span>
     <h2 class="title reveal">
-      <span class="zh">编排能力是运行时的一部分，不是外挂。</span>
-      <span class="en">Orchestration is part of the runtime, not bolted on.</span>
+      <span class="zh">不止生成代码，<br>而是把任务真正做完。</span>
+      <span class="en">Not just writing code —<br>getting the task done.</span>
     </h2>
     <p class="lede reveal">
-      <span class="zh">单轮任务之外，wuu 能规划多步工作、委派子智能体、运行可持久化的工作流——这些都长在核心里。</span>
-      <span class="en">Beyond single-turn tasks, wuu plans multi-step work, delegates to subagents, and runs durable workflows — all of it native to the core.</span>
+      <span class="zh">从修一个失败的测试，到功能开发、重构和迁移——wuu 在你的本地仓库里读代码、改文件、跑命令、复盘失败，直到结果收敛。</span>
+      <span class="en">From fixing a failing test to features, refactors, and migrations — wuu reads code, edits files, runs commands, and iterates on failures in your local repository until the work converges.</span>
     </p>
-    <div class="feature-grid">
-      <div class="feature reveal">
-        <span class="num">01</span>
-        <h3><span class="zh">BYOK，不锁定</span><span class="en">BYOK, no lock-in</span></h3>
-        <p><span class="zh">自带 API Key，支持 Anthropic 与任何 OpenAI 兼容端点——OpenAI、OpenRouter、one-api，或你机器上的本地网关。换模型只需改一行配置。</span><span class="en">Bring your own API key. Works with Anthropic and any OpenAI-compatible endpoint — OpenAI, OpenRouter, one-api, or a local gateway. Switching models is a one-line config change.</span></p>
+
+    <div class="cap-row">
+      <div class="cap-copy reveal">
+        <h3><span class="zh">为真实的工程工作而造</span><span class="en">Built to drive real engineering work</span></h3>
+        <p>
+          <span class="zh">交给它一句话，它自己找到相关文件、动手修改、运行测试、根据失败继续迭代——最后交回一次干净的改动。文件和截图也能直接作为上下文传入。</span>
+          <span class="en">Hand it one sentence and it finds the relevant files, makes the change, runs the tests, and iterates on failures — then hands back a clean diff. Files and screenshots go straight in as context.</span>
+        </p>
+        <p class="mini"><span class="zh">读写文件 · 执行命令 · 审查改动 · 附件上下文</span><span class="en">File edits · Shell execution · Change review · Attachments</span></p>
       </div>
-      <div class="feature reveal d1">
-        <span class="num">02</span>
-        <h3><span class="zh">子智能体协作</span><span class="en">Subagent delegation</span></h3>
-        <p><span class="zh">规划、实现、审查、调试、QA——把工作委派给专门的子智能体，并行或隔离地推进，而不是让一个上下文背下所有事。</span><span class="en">Planner, worker, reviewer, debugger, QA — delegate to specialized subagents that work in parallel or in isolation, instead of one context carrying everything.</span></p>
+      <div class="cap-visual reveal d1">
+        <div class="card terminal" id="terminal">
+          <div class="term-bar"><i></i><i></i><i></i><span>wuu — zsh</span></div>
+          <div class="term-body" id="termBody"></div>
+        </div>
       </div>
-      <div class="feature reveal d2">
-        <span class="num">03</span>
-        <h3><span class="zh">可持久化工作流</span><span class="en">Durable workflows</span></h3>
-        <p><span class="zh">分阶段的多步任务，支持派生 worker 与中断恢复；配合技能（skills）、持久记忆与定时任务，长期工作也能安放。</span><span class="en">Multi-step runs with phases, worker spawns, and recovery — alongside skills, persistent memory, and scheduled tasks, so long-running work has a home.</span></p>
+    </div>
+
+    <div class="cap-row flip">
+      <div class="cap-copy reveal">
+        <h3><span class="zh">为多智能体工作流设计</span><span class="en">Designed for multi-agent workflows</span></h3>
+        <p>
+          <span class="zh">规划、实现、审查、调试、QA——把一个任务拆给专门的子智能体并行推进，再合并成一份结果。可持久化的工作流支持分阶段执行与断点恢复，跑到一半不会前功尽弃。</span>
+          <span class="en">Planner, worker, reviewer, debugger, QA — split one task across specialized subagents working in parallel, then merge the results. Durable workflows run in phases and recover from interruptions, so long runs never start over.</span>
+        </p>
+        <p class="mini"><span class="zh">子智能体 · 工作流 · 阶段与恢复</span><span class="en">Subagents · Workflows · Phases &amp; recovery</span></p>
       </div>
-      <div class="feature reveal">
-        <span class="num">04</span>
-        <h3><span class="zh">为脚本化而生</span><span class="en">Scriptable by design</span></h3>
-        <p><span class="zh"><code>wuu exec</code> 输出流式 JSONL——CI 任务、review 机器人、甚至另一个 agent，都能编程式地驱动它。</span><span class="en"><code>wuu exec</code> streams JSONL — CI jobs, review bots, and even other agents can drive it programmatically.</span></p>
+      <div class="cap-visual reveal d1">
+        <div class="card fan">
+          <div style="text-align:center"><span class="task"><span class="zh">重构会话存储层</span><span class="en">refactor the session store</span></span></div>
+          <div class="wires"><i></i><i></i><i></i></div>
+          <div class="agents">
+            <div class="agent"><div class="t"><span class="dot"></span>worker</div><div class="s"><span class="zh">改 12 个文件</span><span class="en">editing 12 files</span></div></div>
+            <div class="agent"><div class="t"><span class="dot"></span>reviewer</div><div class="s"><span class="zh">审查改动</span><span class="en">reviewing diff</span></div></div>
+            <div class="agent"><div class="t"><span class="dot"></span>qa</div><div class="s"><span class="zh">补回归测试</span><span class="en">adding tests</span></div></div>
+          </div>
+          <div class="merge"><span class="zh">→ 合并结果 · 全部测试通过</span><span class="en">→ merged · all tests green</span></div>
+        </div>
       </div>
-      <div class="feature reveal d1">
-        <span class="num">05</span>
-        <h3><span class="zh">会话可持久</span><span class="en">Sessions that persist</span></h3>
-        <p><span class="zh">恢复之前的对话、列出历史、从任意检查点 fork。上下文跨会话保留，工作不必从头开始。</span><span class="en">Resume previous turns, list history, fork from any checkpoint. Context carries across sessions — work never starts from zero.</span></p>
+    </div>
+
+    <div class="cap-row">
+      <div class="cap-copy reveal">
+        <h3><span class="zh">适配你的项目和习惯</span><span class="en">Adapts to how you build</span></h3>
+        <p>
+          <span class="zh">技能（skills）让它按你的方式做特定类型的工作；持久记忆跨会话记住偏好和上下文；会话可以随时恢复、从检查点 fork——昨天没做完的事，今天接着做。</span>
+          <span class="en">Skills teach it to do specific kinds of work your way. Persistent memory carries preferences and context across sessions. Sessions resume anytime and fork from checkpoints — yesterday's work continues today.</span>
+        </p>
+        <p class="mini"><span class="zh">技能 · 持久记忆 · 会话恢复与 fork</span><span class="en">Skills · Persistent memory · Resume &amp; fork</span></p>
       </div>
-      <div class="feature reveal d2">
-        <span class="num">06</span>
-        <h3><span class="zh">桌面应用</span><span class="en">Desktop app</span></h3>
-        <p><span class="zh">交互式工作用桌面端，自动化用 CLI。同一个核心，两种手感——群组会话、成员面板与主题系统都在持续打磨中。</span><span class="en">The desktop app for interactive work, the CLI for automation. One core, two textures — with group threads, member panels, and a theming system under active polish.</span></p>
+      <div class="cap-visual reveal d1">
+        <div class="card conf"><span class="p"># .wuu.json</span>
+{
+  <span class="k">"default_provider"</span>: <span class="v">"anthropic"</span>,
+  <span class="k">"providers"</span>: {
+    <span class="k">"anthropic"</span>:  { <span class="k">"api_key_env"</span>: <span class="v">"ANTHROPIC_API_KEY"</span> },
+    <span class="k">"openrouter"</span>: { <span class="k">"type"</span>: <span class="v">"openai-compatible"</span>,
+                     <span class="k">"base_url"</span>: <span class="v">"https://openrouter.ai/api/v1"</span> }
+  }
+}
+<span class="p"># <span class="zh">换模型 = 改一行；本地网关也一样接</span><span class="en">switching models = one line; local gateways work too</span></span></div>
+      </div>
+    </div>
+
+    <div class="cap-row flip">
+      <div class="cap-copy reveal">
+        <h3><span class="zh">全天候的后台工作</span><span class="en">Made for always-on background work</span></h3>
+        <p>
+          <span class="zh">定时任务按 cron 自动醒来，处理例行但重要的事：跑 review、盯 CI、整理 issue。<code class="inline">wuu exec</code> 输出流式 JSONL，脚本、CI 和其他 agent 都能编程式驱动它——你专注写代码就好。</span>
+          <span class="en">Scheduled tasks wake on cron and handle the routine-but-important work: reviews, CI babysitting, issue triage. <code class="inline">wuu exec</code> streams JSONL, so scripts, CI, and other agents drive it programmatically — you stay focused on building.</span>
+        </p>
+        <p class="mini"><span class="zh">定时任务 · JSONL 输出 · CI 集成</span><span class="en">Scheduled tasks · JSONL output · CI integration</span></p>
+      </div>
+      <div class="cap-visual reveal d1">
+        <div class="card sched">
+          <div class="head"><span class="zh">定时任务</span><span class="en">Scheduled tasks</span></div>
+          <div class="job"><span class="cron">0 9 * * 1-5</span><span class="what"><span class="zh">review 昨晚合并的 PR</span><span class="en">review last night's merged PRs</span></span><span class="st">✓ <span class="zh">已完成</span><span class="en">done</span></span></div>
+          <div class="job"><span class="cron">*/30 * * * *</span><span class="what"><span class="zh">盯 CI，失败就修</span><span class="en">watch CI, fix failures</span></span><span class="st">✓ <span class="zh">已完成</span><span class="en">done</span></span></div>
+          <div class="job"><span class="cron">0 3 * * *</span><span class="what"><span class="zh">整理新 issue 并打标签</span><span class="en">triage and label new issues</span></span><span class="st wait"><span class="zh">等待中</span><span class="en">waiting</span></span></div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="statement">
-  <div class="glow" aria-hidden="true"></div>
-  <div class="wrap">
-    <blockquote class="reveal">
-      <span class="zh">把任务交给它，去睡觉。<br>定时任务按 cron 醒来，工作流断点续跑，记忆留到明天。</span>
-      <span class="en">Hand it the task, then go to sleep.<br>Scheduled runs wake on cron, workflows resume from checkpoints, and memory is still there tomorrow.</span>
-    </blockquote>
-    <span class="attribution reveal d1"><span class="zh">定时任务 · 工作流 · 持久记忆</span><span class="en">Scheduled tasks · Workflows · Persistent memory</span></span>
-  </div>
-</section>
-
-<section class="arch" id="arch">
+<section class="everywhere" id="everywhere">
   <div class="wrap">
     <span class="kicker reveal"><span class="zh">架构</span><span class="en">Architecture</span></span>
     <h2 class="title reveal">
-      <span class="zh">一个核心，多个 Shell。</span>
-      <span class="en">One core, many shells.</span>
+      <span class="zh">同一个 agent，随处可用。</span>
+      <span class="en">The same agent everywhere you build.</span>
     </h2>
     <p class="lede reveal">
-      <span class="zh">Go 核心通过 <code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">wuu app-server</code> 提供 JSON-RPC 接口。桌面应用是第一个 Shell；编辑器插件可以直接复用同一个核心——不需要 import，更不需要 fork。</span>
-      <span class="en">The Go core speaks JSON-RPC via <code style="font-family:var(--mono);font-size:.9em;color:var(--accent)">wuu app-server</code>. The desktop app is the first shell; editor plugins can reuse the exact same core — no imports, no forks.</span>
+      <span class="zh">wuu 是一个 Go 核心加多个 Shell：桌面应用、CLI，以及未来的编辑器插件，共享同一套运行时、会话和配置。在一个地方开始，在另一个地方继续。</span>
+      <span class="en">wuu is one Go core with many shells: the desktop app, the CLI, and future editor plugins share the same runtime, sessions, and config. Start in one place, continue in another.</span>
     </p>
-    <div class="arch-diagram">
-      <div class="arch-row reveal">
-        <div class="arch-box">
-          <div class="t"><span class="zh">桌面应用</span><span class="en">Desktop app</span></div>
-          <div class="d">Electron · <span class="zh">交互式工作</span><span class="en">interactive work</span></div>
-        </div>
-        <div class="arch-box">
-          <div class="t">wuu exec</div>
-          <div class="d"><span class="zh">脚本 / CI / 其他 agent</span><span class="en">scripts / CI / other agents</span></div>
-        </div>
-        <div class="arch-box">
-          <div class="t"><span class="zh">未来的 Shell</span><span class="en">Future shells</span></div>
-          <div class="d">VS Code · JetBrains · …</div>
-        </div>
+    <div class="surface-grid">
+      <div class="card surface reveal">
+        <span class="step">01</span>
+        <h3><span class="zh">从桌面应用开始</span><span class="en">Start in the desktop app</span></h3>
+        <p><span class="zh">交互式地探索任务：多标签会话、过程记录、改动审查，适合需要来回讨论的工作。</span><span class="en">Explore tasks interactively: tabbed sessions, process logs, and change review — for work that needs a conversation.</span></p>
       </div>
-      <div class="arch-link reveal d1">
-        <div class="wire"></div>
-        <span class="proto">JSON-RPC · app-server</span>
-        <div class="wire"></div>
+      <div class="card surface reveal d1">
+        <span class="step">02</span>
+        <h3><span class="zh">在终端和 CI 里继续</span><span class="en">Continue in the terminal and CI</span></h3>
+        <p><span class="zh"><code class="inline">wuu exec</code> 把同一个 agent 带进脚本、CI 和自动化——<code class="inline">resume --last</code> 接着昨天的会话继续。</span><span class="en"><code class="inline">wuu exec</code> brings the same agent to scripts, CI, and automation — <code class="inline">resume --last</code> picks up yesterday's session.</span></p>
       </div>
-      <div class="arch-core reveal d2">
-        <div class="t"><span class="zh">Go 核心</span><span class="en">Go core</span></div>
-        <div class="d">
-          <span class="zh">Agent 运行时 · 模型提供商 · 工具循环 · 会话 · 配置</span>
-          <span class="en">Agent runtime · Providers · Tool loop · Sessions · Config</span>
-        </div>
+      <div class="card surface reveal d2">
+        <span class="step">03</span>
+        <h3><span class="zh">未来：你的编辑器</span><span class="en">Next: your editor</span></h3>
+        <p><span class="zh">VS Code、JetBrains 等插件可以直接复用同一个核心——通过 <code class="inline">wuu app-server</code>，不需要 fork。</span><span class="en">VS Code, JetBrains, and other plugins can reuse the exact same core via <code class="inline">wuu app-server</code> — no forks required.</span></p>
       </div>
+    </div>
+    <div class="core-strip reveal d2">
+      <span class="t"><span class="zh">Go 核心</span><span class="en">Go core</span></span>
+      <span class="proto">JSON-RPC · app-server</span>
+      <span class="d"><span class="zh">Agent 运行时 · 模型提供商 · 工具循环 · 会话 · 配置</span><span class="en">Agent runtime · Providers · Tool loop · Sessions · Config</span></span>
+    </div>
+  </div>
+</section>
+
+<section class="credits-section">
+  <div class="wrap">
+    <span class="kicker reveal"><span class="zh">致谢</span><span class="en">Acknowledgments</span></span>
+    <h2 class="title reveal">
+      <span class="zh">站在这些项目的肩膀上。</span>
+      <span class="en">Standing on the shoulders of these projects.</span>
+    </h2>
+    <p class="lede reveal">
+      <span class="zh">wuu 的设计深受这些开源项目启发——它们在 agent 运行时、工具循环和多智能体编排上的工作，塑造了 wuu 的许多决策。</span>
+      <span class="en">wuu's design draws heavily from these open-source projects — their work on agent runtimes, tool loops, and multi-agent orchestration shaped many of wuu's decisions.</span>
+    </p>
+    <div class="credit-grid">
+      <a class="card credit reveal" href="https://github.com/openai/codex" target="_blank" rel="noopener">
+        <span class="n">Codex</span>
+        <p><span class="zh">OpenAI 的 coding agent</span><span class="en">OpenAI's coding agent</span></p>
+      </a>
+      <a class="card credit reveal d1" href="https://github.com/sst/opencode" target="_blank" rel="noopener">
+        <span class="n">OpenCode</span>
+        <p><span class="zh">开源终端 coding agent</span><span class="en">The open-source terminal coding agent</span></p>
+      </a>
+      <a class="card credit reveal d2" href="https://github.com/badlogic/pi-mono" target="_blank" rel="noopener">
+        <span class="n">pi</span>
+        <p><span class="zh">Mario Zechner 的极简 agent 工具集</span><span class="en">Mario Zechner's minimal AI agent toolkit</span></p>
+      </a>
+      <a class="card credit reveal d3" href="https://github.com/MoonshotAI/kimi-cli" target="_blank" rel="noopener">
+        <span class="n">Kimi Code</span>
+        <p><span class="zh">Moonshot AI 的 coding agent</span><span class="en">Moonshot AI's coding agent</span></p>
+      </a>
     </div>
   </div>
 </section>
@@ -476,7 +566,7 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
       <span class="en">Your first task, in three minutes.</span>
     </h2>
     <div class="steps">
-      <div class="step reveal">
+      <div class="step-row reveal">
         <div class="n">1</div>
         <div>
           <h3><span class="zh">安装</span><span class="en">Install</span></h3>
@@ -484,7 +574,7 @@ footer { position: relative; padding: 130px 0 56px; overflow: hidden; }
           <div class="codeblock"><button class="copy-btn" data-copy="go install github.com/blueberrycongee/wuu/cmd/wuu@latest">copy</button><span class="dollar">$</span> go install github.com/blueberrycongee/wuu/cmd/wuu@latest</div>
         </div>
       </div>
-      <div class="step reveal">
+      <div class="step-row reveal">
         <div class="n">2</div>
         <div>
           <h3><span class="zh">配置你的模型</span><span class="en">Point it at your model</span></h3>
@@ -494,11 +584,11 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
 <span class="dollar">$</span> export ANTHROPIC_API_KEY="..."</div>
         </div>
       </div>
-      <div class="step reveal">
+      <div class="step-row reveal">
         <div class="n">3</div>
         <div>
           <h3><span class="zh">交给它一件事</span><span class="en">Hand it something real</span></h3>
-          <p><span class="zh">从描述仓库开始，到修一个失败的测试，再到把整份 PDF 计划书变成实现。</span><span class="en">Start with describing the repo, move on to fixing a failing test, then hand it a whole PDF plan to implement.</span></p>
+          <p><span class="zh">从描述仓库开始，到修一个失败的测试，再到把整份计划书变成实现。</span><span class="en">Start with describing the repo, move on to fixing a failing test, then hand it a whole plan to implement.</span></p>
           <div class="codeblock"><button class="copy-btn" data-copy='wuu exec "fix the failing test"'>copy</button><span class="dollar">$</span> wuu exec "describe this repo"
 <span class="dollar">$</span> wuu exec "fix the failing test"
 <span class="dollar">$</span> wuu exec --file plan.md "implement this plan"
@@ -511,7 +601,7 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
 </section>
 
 <footer>
-  <div class="footer-glow" aria-hidden="true"></div>
+  <div class="footer-aurora" aria-hidden="true"><span class="a1"></span><span class="a2"></span></div>
   <div class="footer-inner wrap">
     <div class="footer-cta">
       <h2 class="reveal">
@@ -541,6 +631,8 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
 <script>
 (function () {
   var doc = document.documentElement;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var finePointer = window.matchMedia('(pointer: fine)').matches;
 
   /* ---- language toggle ---- */
   var toggle = document.getElementById('langToggle');
@@ -574,6 +666,38 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
     });
   }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' });
   document.querySelectorAll('.reveal:not(.in)').forEach(function (el) { io.observe(el); });
+
+  /* ---- cursor: hero spotlight + screenshot tilt ---- */
+  if (finePointer && !reduced) {
+    var hero = document.getElementById('hero');
+    var shot = document.getElementById('heroShot');
+    var frame = shot.querySelector('.frame');
+    hero.addEventListener('mousemove', function (e) {
+      var r = hero.getBoundingClientRect();
+      var x = e.clientX - r.left, y = e.clientY - r.top;
+      hero.querySelector('.spotlight').style.setProperty('--mx', x + 'px');
+      hero.querySelector('.spotlight').style.setProperty('--my', y + 'px');
+      var sr = shot.getBoundingClientRect();
+      var px = (e.clientX - sr.left) / sr.width - 0.5;
+      var py = (e.clientY - sr.top) / sr.height - 0.5;
+      var clamp = function (v) { return Math.max(-0.6, Math.min(0.6, v)); };
+      frame.style.setProperty('--ry', (clamp(px) * 3.2) + 'deg');
+      frame.style.setProperty('--rx', (clamp(py) * -2.4) + 'deg');
+    });
+    hero.addEventListener('mouseleave', function () {
+      frame.style.setProperty('--rx', '0deg');
+      frame.style.setProperty('--ry', '0deg');
+    });
+
+    /* ---- card spotlight tracking ---- */
+    document.querySelectorAll('.card').forEach(function (card) {
+      card.addEventListener('mousemove', function (e) {
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--cx', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--cy', (e.clientY - r.top) + 'px');
+      });
+    });
+  }
 
   /* ---- copy buttons ---- */
   document.querySelectorAll('[data-copy]').forEach(function (btn) {
@@ -613,7 +737,6 @@ export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</s
     { type: 'cmd',  text: 'wuu exec resume --last "continue"', delay: 900 }
   ];
   var started = false;
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function typeLine(i) {
     if (i >= script.length) { body.insertAdjacentHTML('beforeend', '<span class="line"><span class="ps">$</span> <span class="caret"></span></span>'); return; }
     var item = script[i];
