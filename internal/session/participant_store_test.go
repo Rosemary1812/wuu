@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/participant"
 )
@@ -66,6 +67,107 @@ func TestRetireParticipant(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Errorf("ListParticipants after retire = %v, want empty", list)
+	}
+}
+
+// TestRetireParticipantCleansDerivedRows asserts that retiring is a full
+// storage-side cleanup transaction, not just a retired_at stamp: the
+// participant's thread_members rows disappear and its unconsumed
+// resident_inbox envelopes are dropped, while consumed envelopes are kept
+// as delivery history.
+func TestRetireParticipantCleansDerivedRows(t *testing.T) {
+	dir := t.TempDir()
+	p := participant.Participant{
+		ID: participant.NewID(), Kind: participant.KindNamed,
+		Name: "Noel", Role: "reviewer",
+	}
+	if err := UpsertParticipant(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateWithMetadata(dir, "sess-group", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThreadMember(dir, "sess-group", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := EnqueueResidentEnvelope(dir, ResidentEnvelope{
+		ParticipantID: p.ID,
+		EnvelopeJSON:  []byte(`{"text":"pending"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumed, err := EnqueueResidentEnvelope(dir, ResidentEnvelope{
+		ParticipantID: p.ID,
+		EnvelopeJSON:  []byte(`{"text":"consumed"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkResidentEnvelopesConsumed(dir, []string{consumed.ID}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RetireParticipant(dir, p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var memberCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM thread_members WHERE participant_id = ?`, p.ID).Scan(&memberCount); err != nil {
+		t.Fatal(err)
+	}
+	if memberCount != 0 {
+		t.Errorf("thread_members rows after retire = %d, want 0", memberCount)
+	}
+	var pendingCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NULL`, p.ID).Scan(&pendingCount); err != nil {
+		t.Fatal(err)
+	}
+	if pendingCount != 0 {
+		t.Errorf("pending resident_inbox rows after retire = %d, want 0 (envelope %s should be dropped)", pendingCount, pending.ID)
+	}
+	var consumedCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NOT NULL`, p.ID).Scan(&consumedCount); err != nil {
+		t.Fatal(err)
+	}
+	if consumedCount != 1 {
+		t.Errorf("consumed resident_inbox rows after retire = %d, want 1 (history must be kept)", consumedCount)
+	}
+}
+
+// TestRetireParticipantIdempotent asserts a second retire keeps the original
+// retired_at stamp (COALESCE) and succeeds, so cleanup callers can re-run
+// the protocol after a partial failure.
+func TestRetireParticipantIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	p := participant.Participant{
+		ID: participant.NewID(), Kind: participant.KindNamed, Name: "Ivy",
+	}
+	if err := UpsertParticipant(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetireParticipant(dir, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	first, err := GetParticipant(dir, p.ID)
+	if err != nil || first.RetiredAt == nil {
+		t.Fatalf("first retire: %+v, %v", first, err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if err := RetireParticipant(dir, p.ID); err != nil {
+		t.Fatalf("second retire should be idempotent, got %v", err)
+	}
+	second, err := GetParticipant(dir, p.ID)
+	if err != nil || second.RetiredAt == nil {
+		t.Fatalf("second retire: %+v, %v", second, err)
+	}
+	if !second.RetiredAt.Equal(*first.RetiredAt) {
+		t.Errorf("retired_at changed on re-retire: %v -> %v", first.RetiredAt, second.RetiredAt)
 	}
 }
 

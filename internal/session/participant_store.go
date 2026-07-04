@@ -274,8 +274,23 @@ func CountParticipantsByKind(sessDir string, kind participant.Kind) (int, error)
 	return count, nil
 }
 
-// RetireParticipant marks a participant as retired.
+// RetireParticipant marks a participant as retired and, in the same
+// transaction, removes the rows derived from its active identity:
+//
+//   - thread_members: the participant leaves every group/conversation thread
+//     it was a member of. The CASCADE FK on thread_members only fires on
+//     participant DELETE; retire is an UPDATE, so the rows are removed here
+//     explicitly.
+//   - resident_inbox: unconsumed envelopes are dropped — a retired resident
+//     never drains its inbox again, so pending envelopes would sit forever.
+//     Consumed envelopes are kept as delivery history.
+//
+// The retired_at stamp uses COALESCE so retiring an already-retired
+// participant is idempotent (the original retirement time is preserved),
+// which lets callers safely re-run the retire cleanup protocol after a
+// partial failure.
 func RetireParticipant(sessDir, id string) error {
+	id = strings.TrimSpace(id)
 	db, err := openStore(sessDir)
 	if err != nil {
 		return err
@@ -285,11 +300,17 @@ func RetireParticipant(sessDir, id string) error {
 	storeWriteMu.Lock()
 	defer storeWriteMu.Unlock()
 
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin retire participant: %w", err)
+	}
+	defer tx.Rollback()
+
 	now := time.Now().UTC()
-	res, err := db.Exec(`
+	res, err := tx.Exec(`
 UPDATE participants
-SET retired_at = ?, updated_at = ?
-WHERE id = ?`, timeText(now), timeText(now), strings.TrimSpace(id))
+SET retired_at = COALESCE(retired_at, ?), updated_at = ?
+WHERE id = ?`, timeText(now), timeText(now), id)
 	if err != nil {
 		return fmt.Errorf("retire participant: %w", err)
 	}
@@ -299,6 +320,15 @@ WHERE id = ?`, timeText(now), timeText(now), strings.TrimSpace(id))
 	}
 	if affected == 0 {
 		return fmt.Errorf("%w: %q", ErrParticipantNotFound, id)
+	}
+	if _, err := tx.Exec(`DELETE FROM thread_members WHERE participant_id = ?`, id); err != nil {
+		return fmt.Errorf("retire participant: remove thread members: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NULL`, id); err != nil {
+		return fmt.Errorf("retire participant: drop pending envelopes: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit retire participant: %w", err)
 	}
 	return nil
 }
