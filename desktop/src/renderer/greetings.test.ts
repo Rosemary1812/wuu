@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { greetingFor, type GreetingContext } from "./greetings";
+import {
+  greetingFor,
+  resolveGreetingContext,
+  type GreetingContext,
+} from "./greetings";
 
 describe("greetingFor", () => {
   describe("project context", () => {
@@ -154,5 +158,119 @@ describe("greetingFor", () => {
       const greeting = greetingFor(22, ctx);
       expect(greeting).toContain("夜深了");
     });
+  });
+});
+
+describe("resolveGreetingContext", () => {
+  // R3: the greeting is derived from activeContext on every render — there
+  // is no separately-cached "which project was I greeting for" state to
+  // fall behind. These tests pin that a bare context-kind/name change (the
+  // same shape App.tsx feeds it after a sidebar "新对话" reset, R1, or a
+  // hero-project-pill / ProjectPickerMenu switch, R2) flips the derived
+  // greeting kind on its own, with no thread/participant change needed.
+  it("follows a project -> no-project context switch on a draft (no active thread)", () => {
+    const projectCtx = resolveGreetingContext({
+      activeThread: undefined,
+      participants: [],
+      activeContextKind: "project",
+      activeProjectName: "MyApp",
+    });
+    expect(projectCtx).toEqual({ kind: "project", projectName: "MyApp" });
+
+    const noProjectCtx = resolveGreetingContext({
+      activeThread: undefined,
+      participants: [],
+      activeContextKind: "no_project",
+      activeProjectName: "MyApp", // stale leftover from before the switch
+    });
+    // Falls to the generic greeting once the context is no longer a
+    // project, even though a stale project name is still passed in — the
+    // *context kind* decides, not whatever name last happened to be cached.
+    expect(noProjectCtx).toEqual({ kind: "wuu" });
+  });
+
+  it("follows a no-project -> project context switch on a draft", () => {
+    const noProjectCtx = resolveGreetingContext({
+      activeThread: undefined,
+      participants: [],
+      activeContextKind: "no_project",
+      activeProjectName: undefined,
+    });
+    expect(noProjectCtx).toEqual({ kind: "wuu" });
+
+    const projectCtx = resolveGreetingContext({
+      activeThread: undefined,
+      participants: [],
+      activeContextKind: "project",
+      activeProjectName: "OtherApp",
+    });
+    expect(projectCtx).toEqual({ kind: "project", projectName: "OtherApp" });
+  });
+
+  it("falls back to a generic project name when the active project is unresolved", () => {
+    const ctx = resolveGreetingContext({
+      activeThread: undefined,
+      participants: [],
+      activeContextKind: "project",
+      activeProjectName: undefined,
+    });
+    expect(ctx).toEqual({ kind: "project", projectName: "这个项目" });
+  });
+
+  it("group threads win over activeContext regardless of project/no-project", () => {
+    const ctx = resolveGreetingContext({
+      activeThread: { group: true, title: "前端小队", members: [], dm_participant_id: undefined },
+      participants: [],
+      activeContextKind: "project",
+      activeProjectName: "MyApp",
+    });
+    expect(ctx).toEqual({
+      kind: "group",
+      title: "前端小队",
+      memberNames: [],
+    });
+  });
+
+  it("DM threads win over activeContext and resolve the participant's name from the roster", () => {
+    const ctx = resolveGreetingContext({
+      activeThread: {
+        group: false,
+        title: undefined,
+        members: [],
+        dm_participant_id: "prt-1",
+      },
+      participants: [{ id: "prt-1", name: "Andy" }],
+      activeContextKind: "no_project",
+      activeProjectName: undefined,
+    });
+    expect(ctx).toEqual({ kind: "dm", agentName: "Andy" });
+  });
+
+  it("DM thread falls back to the thread title, then a generic label, when the roster has no match", () => {
+    const titledCtx = resolveGreetingContext({
+      activeThread: {
+        group: false,
+        title: "Renamed DM",
+        members: [],
+        dm_participant_id: "prt-unknown",
+      },
+      participants: [],
+      activeContextKind: "project",
+      activeProjectName: "MyApp",
+    });
+    expect(titledCtx).toEqual({ kind: "dm", agentName: "Renamed DM" });
+
+    const untitledCtx = resolveGreetingContext({
+      activeThread: {
+        group: false,
+        title: undefined,
+        members: [],
+        dm_participant_id: "prt-unknown",
+      },
+      participants: [],
+      activeContextKind: "project",
+      activeProjectName: "MyApp",
+    });
+    expect(untitledCtx).toEqual({ kind: "dm", agentName: "这位成员" });
   });
 });

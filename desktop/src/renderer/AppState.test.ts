@@ -10,10 +10,12 @@ import {
   activePlanUpdateForThread,
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
+  applyLoadedRuntimeWithDraftCarry,
   appendStreamingTokenSample,
   appendTurnTokenSample,
   chatFocusValueForThread,
   chatMessagesFromTurns,
+  composerDraftHasContent,
   conversationPaneThreadsByID,
   groupThreadSummaries,
   pinnedThreadSummaries,
@@ -41,6 +43,8 @@ import {
   threadSessionTabID,
   turnStreamStatusForThread,
   workspacePanelContext,
+  type AppState,
+  type ComposerDraftState,
   type SessionTab,
   type ThreadSummary,
 } from "./AppState";
@@ -2498,5 +2502,188 @@ describe("shouldResetToNoProjectForNewThread (new-thread entry semantics)", () =
     expect(shouldResetToNoProjectForNewThread(undefined, true, true)).toBe(
       false,
     );
+  });
+});
+
+describe("composerDraftHasContent", () => {
+  it("is false for a blank draft and true once text, an image, or a file is present", () => {
+    expect(
+      composerDraftHasContent({ prompt: "", images: [], files: [] }),
+    ).toBe(false);
+    expect(
+      composerDraftHasContent({ prompt: "   ", images: [], files: [] }),
+    ).toBe(false);
+    expect(
+      composerDraftHasContent({ prompt: "hi", images: [], files: [] }),
+    ).toBe(true);
+    expect(
+      composerDraftHasContent({
+        prompt: "",
+        images: [{ id: "img-1", dataUrl: "data:," }] as never,
+        files: [],
+      }),
+    ).toBe(true);
+    expect(
+      composerDraftHasContent({
+        prompt: "",
+        images: [],
+        files: [{ id: "file-1", name: "a.txt" }] as never,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("applyLoadedRuntimeWithDraftCarry (R2: draft follows a pill switch)", () => {
+  const projectContext: RuntimeContext = {
+    kind: "project",
+    project_id: "p1",
+    cwd: "/repo/p1",
+  };
+  const noProjectContext: RuntimeContext = {
+    kind: "no_project",
+    cwd: "/scratch/2026-07-03",
+  };
+
+  function draftTab(
+    id: string,
+    context: RuntimeContext,
+    prompt: string,
+  ): SessionTab {
+    return {
+      id,
+      kind: "draft",
+      context,
+      title: "新对话",
+      prompt,
+      images: [],
+      files: [],
+      createdAt: 0,
+    };
+  }
+
+  function draftOf(tab: SessionTab): string | undefined {
+    return tab.kind === "draft" || tab.kind === "thread"
+      ? tab.prompt
+      : undefined;
+  }
+
+  it("carries a non-empty draft into the target context's tab, overwriting that tab's own stale content", () => {
+    const oldTab = draftTab("draft:old", projectContext, "");
+    const staleTargetTab = draftTab(
+      "draft:target-stale",
+      noProjectContext,
+      "an earlier, unrelated draft",
+    );
+    const current: AppState = {
+      ...initialState,
+      activeContext: projectContext,
+      sessionTabs: [oldTab, staleTargetTab],
+      activeSessionTabID: oldTab.id,
+    };
+    const outgoingDraft: ComposerDraftState = {
+      prompt: "hello from the project draft",
+      images: [],
+      files: [],
+    };
+    const loadedState: Partial<AppState> = {
+      activeContext: noProjectContext,
+      thread: undefined,
+    };
+
+    const next = applyLoadedRuntimeWithDraftCarry(
+      current,
+      loadedState,
+      outgoingDraft,
+    );
+
+    // Lands on the pre-existing draft tab for the target context...
+    expect(next.activeSessionTabID).toBe(staleTargetTab.id);
+    const resultTargetTab = next.sessionTabs.find(
+      (tab) => tab.id === staleTargetTab.id,
+    );
+    // ...and its content is the carried draft, not its own stale one.
+    expect(draftOf(resultTargetTab!)).toBe("hello from the project draft");
+    // The tab the user left behind keeps whatever it already had — no
+    // duplicate copy of the carried text is written back into it.
+    const resultOldTab = next.sessionTabs.find((tab) => tab.id === oldTab.id);
+    expect(draftOf(resultOldTab!)).toBe("");
+  });
+
+  it("does not carry an empty draft (falls back to persisting + loading normally)", () => {
+    const oldTab = draftTab("draft:old", projectContext, "");
+    const current: AppState = {
+      ...initialState,
+      activeContext: projectContext,
+      sessionTabs: [oldTab],
+      activeSessionTabID: oldTab.id,
+    };
+    const emptyDraft: ComposerDraftState = {
+      prompt: "",
+      images: [],
+      files: [],
+    };
+    const loadedState: Partial<AppState> = {
+      activeContext: noProjectContext,
+      thread: undefined,
+    };
+
+    const next = applyLoadedRuntimeWithDraftCarry(
+      current,
+      loadedState,
+      emptyDraft,
+    );
+
+    // A brand new draft tab is created for the target context, still empty.
+    expect(next.activeSessionTabID).not.toBe(oldTab.id);
+    const resultNewTab = next.sessionTabs.find(
+      (tab) => tab.id === next.activeSessionTabID,
+    );
+    expect(draftOf(resultNewTab!)).toBe("");
+  });
+
+  it("does not carry when the outgoing tab is a real thread, not a draft", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["reply in progress"]),
+      id: "thread-1",
+      cwd: projectContext.cwd,
+    };
+    const threadTab = createThreadSessionTab(thread, projectContext);
+    const current: AppState = {
+      ...initialState,
+      activeContext: projectContext,
+      thread,
+      sessionTabs: [threadTab],
+      activeSessionTabID: threadTab.id,
+      threads: [thread],
+    };
+    const outgoingDraft: ComposerDraftState = {
+      prompt: "typed mid-thread, not a fresh draft",
+      images: [],
+      files: [],
+    };
+    const loadedState: Partial<AppState> = {
+      activeContext: noProjectContext,
+      thread: undefined,
+    };
+
+    const next = applyLoadedRuntimeWithDraftCarry(
+      current,
+      loadedState,
+      outgoingDraft,
+    );
+
+    // The thread tab keeps the in-progress reply (ordinary persist path)...
+    const resultThreadTab = next.sessionTabs.find(
+      (tab) => tab.id === threadTab.id,
+    );
+    expect(draftOf(resultThreadTab!)).toBe(
+      "typed mid-thread, not a fresh draft",
+    );
+    // ...and the freshly-created no-project draft tab starts blank, since
+    // this isn't the "carry a fresh draft along" case.
+    const resultNewTab = next.sessionTabs.find(
+      (tab) => tab.id === next.activeSessionTabID,
+    );
+    expect(draftOf(resultNewTab!)).toBe("");
   });
 });

@@ -2087,6 +2087,69 @@ function persistActiveSessionTabDraft(
   };
 }
 
+// composerDraftHasContent tells apart a truly blank draft from one the user
+// has started typing into (text, an attached image, or a file). Only the
+// latter is worth carrying across a context switch.
+function composerDraftHasContent(draft: ComposerDraftState): boolean {
+  return (
+    draft.prompt.trim().length > 0 ||
+    draft.images.length > 0 ||
+    draft.files.length > 0
+  );
+}
+
+/**
+ * Applies a project/no-project runtime switch while carrying an in-progress
+ * draft along with the user instead of stranding it in the tab they're
+ * leaving.
+ *
+ * The hero-project-pill / ProjectPickerMenu let the user retarget a *draft*
+ * conversation at a different project (or at no project) before ever
+ * sending anything. If they had already typed a prompt (or attached images
+ * / files), silently persisting that text back into the old context's
+ * draft tab and showing the new context's (usually empty) draft tab reads
+ * as "the app ate what I typed" — the content is technically still there,
+ * just one tab away, but the user just watched their composer go blank.
+ *
+ * When the outgoing tab is a draft with content, this carries that content
+ * into whichever tab the switch lands on (overwriting that tab's own prior
+ * draft) and leaves the old tab's stored draft untouched, rather than
+ * persisting the outgoing content into it. When the outgoing tab is a
+ * thread (an actual conversation, not a fresh draft) or the draft is empty,
+ * this is exactly the previous persistActiveSessionTabDraft +
+ * withLoadedRuntimeSessionTab pairing.
+ */
+function applyLoadedRuntimeWithDraftCarry(
+  current: AppState,
+  loadedState: Partial<AppState>,
+  outgoingDraft: ComposerDraftState,
+): AppState {
+  const carry =
+    activeSessionTab(current)?.kind === "draft" &&
+    composerDraftHasContent(outgoingDraft);
+  const persisted = carry
+    ? current
+    : persistActiveSessionTabDraft(current, outgoingDraft);
+  const next = withLoadedRuntimeSessionTab(persisted, loadedState);
+  if (!carry) {
+    return next;
+  }
+  const targetTabID = next.activeSessionTabID;
+  return {
+    ...next,
+    sessionTabs: next.sessionTabs.map((tab) =>
+      tab.id === targetTabID && (tab.kind === "draft" || tab.kind === "thread")
+        ? {
+            ...tab,
+            prompt: outgoingDraft.prompt,
+            images: outgoingDraft.images.map((image) => ({ ...image })),
+            files: outgoingDraft.files.map((file) => ({ ...file })),
+          }
+        : tab,
+    ),
+  };
+}
+
 function bindActiveSessionTabToThread(
   tabs: SessionTab[],
   activeTabID: string,
@@ -3038,11 +3101,13 @@ export {
   activeTurnTokenSpeedSnapshot,
   turnStreamStatusForThread,
   agentFromRecord,
+  applyLoadedRuntimeWithDraftCarry,
   appendStreamingTokenSample,
   appendTurnTokenSample,
   bindActiveSessionTabToThread,
   cloneComposerDraft,
   cloneSessionTabDraft,
+  composerDraftHasContent,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
   conversationSearchContextLabel,

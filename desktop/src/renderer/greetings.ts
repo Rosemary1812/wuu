@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { RuntimeContext, Thread } from "../shared/protocol";
 
 // Context for the empty new-conversation greeting. We keep it as a
 // discriminated union so the helper can't accidentally mix the
@@ -8,6 +9,60 @@ export type GreetingContext =
   | { kind: "group"; title?: string; memberNames: string[] }
   | { kind: "dm"; agentName: string }
   | { kind: "wuu" };
+
+type GreetingThreadSource = Pick<
+  Thread,
+  "group" | "title" | "members" | "dm_participant_id"
+>;
+
+/**
+ * Derives the empty-conversation greeting context from the pieces App.tsx
+ * already tracks in render: the active thread (if any), the roster to
+ * resolve a DM participant's name against, and the active runtime
+ * context's kind + display name.
+ *
+ * Group and DM threads always win — their framing doesn't depend on which
+ * project is open. Otherwise the greeting follows `activeContextKind`
+ * directly rather than any separately-cached "last known project" value,
+ * so switching between a project and no-project (R1's sidebar "新对话",
+ * R2's hero-project-pill / ProjectPickerMenu switches) re-derives the
+ * right greeting on every render — there's no stale state to fall behind.
+ */
+export function resolveGreetingContext(input: {
+  activeThread: GreetingThreadSource | undefined;
+  participants: readonly { id: string; name: string }[];
+  activeContextKind: RuntimeContext["kind"] | undefined;
+  activeProjectName: string | undefined;
+}): GreetingContext {
+  const { activeThread, participants, activeContextKind, activeProjectName } =
+    input;
+  // Group chats greet with the collaboration framing. The `group` flag is
+  // the discriminant — the `all` channel has implicit membership, so
+  // members may be empty even for a group thread.
+  if (activeThread?.group) {
+    return {
+      kind: "group",
+      title: activeThread.title?.trim() || undefined,
+      memberNames: (activeThread.members ?? []).map((member) => member.name),
+    };
+  }
+  // DM threads greet as a one-on-one conversation with the named agent.
+  if (activeThread?.dm_participant_id) {
+    const agentName =
+      participants.find((p) => p.id === activeThread.dm_participant_id)
+        ?.name ||
+      activeThread.title?.trim() ||
+      "这位成员";
+    return { kind: "dm", agentName };
+  }
+  if (activeContextKind === "project") {
+    return {
+      kind: "project",
+      projectName: activeProjectName ?? "这个项目",
+    };
+  }
+  return { kind: "wuu" };
+}
 
 // Five time-of-day buckets in the user's local time. Boundaries are
 // chosen for a coding tool: we want a clear "morning / noon / afternoon /

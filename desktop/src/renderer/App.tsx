@@ -90,6 +90,7 @@ import {
 } from "./ComposerPendingMessages";
 import {
   greetingFor,
+  resolveGreetingContext,
   useCurrentHour,
   type GreetingContext,
 } from "./greetings";
@@ -149,12 +150,14 @@ import {
   latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
+  applyLoadedRuntimeWithDraftCarry,
   appendStreamingTokenSample,
   bindActiveSessionTabToThread,
   busyDMParticipantIDs,
   chatFocusValueForThread,
   cloneSessionTabDraft,
   cloneComposerDraft,
+  composerDraftHasContent,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
   createDraftSessionTab,
@@ -1716,34 +1719,12 @@ export function App(): JSX.Element {
       ? workspaceModeTitle(workspaceMode)
       : activeThread?.preview || "新对话";
   const currentHour = useCurrentHour();
-  const greetingContext: GreetingContext = (() => {
-    // Group chats greet with the collaboration framing. The `group` flag
-    // is the discriminant — the `all` channel has implicit membership, so
-    // members may be empty even for a group thread.
-    if (activeThread?.group) {
-      return {
-        kind: "group",
-        title: activeThread.title?.trim() || undefined,
-        memberNames: (activeThread.members ?? []).map((m) => m.name),
-      };
-    }
-    // DM threads greet as a one-on-one conversation with the named agent.
-    if (activeThread?.dm_participant_id) {
-      const agentName =
-        participants.find((p) => p.id === activeThread.dm_participant_id)
-          ?.name ||
-        activeThread.title?.trim() ||
-        "这位成员";
-      return { kind: "dm", agentName };
-    }
-    if (state.activeContext?.kind === "project") {
-      return {
-        kind: "project",
-        projectName: activeProject?.name ?? "这个项目",
-      };
-    }
-    return { kind: "wuu" };
-  })();
+  const greetingContext: GreetingContext = resolveGreetingContext({
+    activeThread,
+    participants,
+    activeContextKind: state.activeContext?.kind,
+    activeProjectName: activeProject?.name,
+  });
   const emptyThreadTitle = greetingFor(currentHour, greetingContext);
   const turns = activeThread?.turns ?? [];
   const latestAgentMessageID = latestAgentMessageItemID(turns);
@@ -4167,6 +4148,13 @@ export function App(): JSX.Element {
     setArchiveConfirmThreadID(undefined);
     setWorkspaceMode(undefined);
     const outgoingDraft = currentPrimaryComposerDraft();
+    // R2: a draft the user was actively typing into follows them to the new
+    // project instead of being stranded in the project they're leaving.
+    const carryDraft =
+      activeSessionTab(currentState)?.kind === "draft" &&
+      composerDraftHasContent(outgoingDraft)
+        ? outgoingDraft
+        : undefined;
     try {
       const projectState = await window.wuu.selectProject(projectId);
       const loadedState = await loadRuntime(projectState, {
@@ -4175,11 +4163,12 @@ export function App(): JSX.Element {
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      restoreLoadedRuntimeComposerDraft(loadedState);
+      restoreLoadedRuntimeComposerDraft(loadedState, carryDraft);
       setState((current) => {
-        const next = withLoadedRuntimeSessionTab(
-          persistActiveSessionTabDraft(current, outgoingDraft),
+        const next = applyLoadedRuntimeWithDraftCarry(
+          current,
           loadedState,
+          outgoingDraft,
         );
         return {
           ...next,
@@ -4372,18 +4361,23 @@ export function App(): JSX.Element {
     );
     closeProjectMenus();
     const outgoingDraft = currentPrimaryComposerDraft();
+    // R2: same carry-along as selectProjectForNewThread — a mid-typed draft
+    // follows the user into the no-project context instead of being left
+    // behind in the project's draft tab.
+    const carryDraft =
+      activeSessionTab(state)?.kind === "draft" &&
+      composerDraftHasContent(outgoingDraft)
+        ? outgoingDraft
+        : undefined;
     try {
       const projectState = await window.wuu.selectNoProject(fresh);
       const loadedState = await loadRuntime(projectState);
       if (!finishViewSwitch(requestID)) {
         return;
       }
-      restoreLoadedRuntimeComposerDraft(loadedState);
+      restoreLoadedRuntimeComposerDraft(loadedState, carryDraft);
       setState((current) =>
-        withLoadedRuntimeSessionTab(
-          persistActiveSessionTabDraft(current, outgoingDraft),
-          loadedState,
-        ),
+        applyLoadedRuntimeWithDraftCarry(current, loadedState, outgoingDraft),
       );
     } catch (error) {
       if (!finishViewSwitch(requestID)) {
@@ -4603,9 +4597,19 @@ export function App(): JSX.Element {
 
   function restoreLoadedRuntimeComposerDraft(
     loadedState: Partial<AppState>,
+    carryDraft?: ComposerDraftState,
   ): void {
     const context = loadedState.activeContext;
     if (!context) {
+      return;
+    }
+    // When a draft is being carried across the switch (see
+    // applyLoadedRuntimeWithDraftCarry), the composer should keep showing
+    // exactly what the user had typed rather than whatever the target
+    // context's own tab already held.
+    if (carryDraft) {
+      restorePrimaryComposerDraft(carryDraft);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
       return;
     }
     restoreSessionTabComposerDraft(
