@@ -574,6 +574,20 @@
   gap: 0;
 }
 
+/* A workspace whose directory was moved away or deleted (project.missing).
+   The header is dimmed and its "新建会话" affordance is disabled so no
+   session can be created in a cwd that no longer exists. Opacity is
+   theme-agnostic, so this reads correctly in both light and dark. */
+.project-group-missing > .sidebar-section-header-group .project-row-icon,
+.project-group-missing > .sidebar-section-header-group .project-row-label {
+  opacity: 0.4;
+}
+
+.project-group-missing .project-row-new-thread:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 .project-row.active {
   background: var(--sidebar-project-row-active-bg);
   color: var(--ink);

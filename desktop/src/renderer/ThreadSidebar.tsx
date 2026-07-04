@@ -182,6 +182,9 @@ export function ProjectGroup({
 
   const pendingProject = pendingProjectID === project.id;
   const isScratchPseudo = project.id === scratchPseudoProjectID;
+  // A real workspace whose directory was moved away or deleted. Its "新建会话"
+  // affordance is disabled so no session can be created in a cwd that is gone.
+  const isMissing = !isScratchPseudo && project.missing === true;
   const activeProject = isScratchPseudo
     ? scratchPseudoActive
     : project.id === activeID;
@@ -213,7 +216,11 @@ export function ProjectGroup({
   const CollapsedIcon = isScratchPseudo ? MessageSquare : Folder;
   const ExpandedIcon = isScratchPseudo ? MessagesSquare : FolderOpen;
   return (
-    <div className="project-group" data-section-id={project.id}>
+    <div
+      className={`project-group${isMissing ? " project-group-missing" : ""}`}
+      data-section-id={project.id}
+      data-missing={isMissing || undefined}
+    >
       <SidebarSection
         expanded={expanded}
         iconKind={isScratchPseudo ? "conversation" : "project"}
@@ -242,7 +249,8 @@ export function ProjectGroup({
             className="sidebar-row-icon-button project-row-new-thread"
             type="button"
             aria-label={`在 ${project.name} 中新建会话`}
-            title="新建会话"
+            title={isMissing ? "工作区目录已不存在，无法新建会话" : "新建会话"}
+            disabled={isMissing}
             onClick={() => onStartNewThread(project.id)}
           >
             <MessageSquarePlus className="icon" />

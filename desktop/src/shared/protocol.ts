@@ -364,6 +364,12 @@ export type DesktopProject = {
   path: string;
   created_at: string;
   updated_at: string;
+  // Derived (not persisted): true when the project's directory no longer
+  // exists on disk — it was moved away or deleted. The main process computes
+  // it fresh on every list(); the sidebar greys such a workspace out and
+  // disables its "新建会话" affordance so no new session can be created in a
+  // cwd that is gone.
+  missing?: boolean;
 };
 
 export type RuntimeContext =

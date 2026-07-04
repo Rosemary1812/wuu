@@ -594,3 +594,61 @@ describe("ProjectGroup remove workspace", () => {
     expect(document.body.querySelector(".thread-row-context-menu")).toBeNull();
   });
 });
+
+describe("ProjectGroup missing workspace", () => {
+  const baseProps = {
+    activeID: undefined,
+    pendingProjectID: undefined,
+    collapsedProjectIDs: new Set<string>(),
+    expandedProjectIDs: new Set<string>(),
+    collapsingProjectIDs: new Set<string>(),
+    threadsByProjectID: {},
+    activeThreadID: undefined,
+    pendingThreadID: undefined,
+    archiveConfirmThreadID: undefined,
+    lastViewedTurnByThreadID: {},
+    scratchPseudoProjectID: SCRATCH_PSEUDO_PROJECT_ID,
+    scratchPseudoActive: false,
+    onToggleProjectCollapsed: () => {},
+    onStartNewThread: () => {},
+    onSelectThread: () => {},
+    onToggleThreadPinned: () => {},
+    onArchiveThread: () => {},
+    onClearArchiveConfirm: () => {},
+    onRemoveProject: () => {},
+  };
+
+  function renderProject(project: DesktopProject): void {
+    act(() => {
+      root = createRoot(container);
+      root.render(<ProjectGroup {...baseProps} project={project} />);
+    });
+  }
+
+  const makeProject = (missing?: boolean): DesktopProject => ({
+    id: "project-1",
+    name: "wuu",
+    path: "/repo/wuu",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    missing,
+  });
+
+  it("dims a missing workspace and disables its 新建会话 button", () => {
+    renderProject(makeProject(true));
+    expect(container.querySelector(".project-group-missing")).not.toBeNull();
+    const newThread = container.querySelector<HTMLButtonElement>(
+      ".project-row-new-thread",
+    );
+    expect(newThread?.disabled).toBe(true);
+  });
+
+  it("leaves a present workspace enabled", () => {
+    renderProject(makeProject(false));
+    expect(container.querySelector(".project-group-missing")).toBeNull();
+    const newThread = container.querySelector<HTMLButtonElement>(
+      ".project-row-new-thread",
+    );
+    expect(newThread?.disabled).toBe(false);
+  });
+});

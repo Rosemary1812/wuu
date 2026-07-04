@@ -24,7 +24,13 @@ export class ProjectManager {
     this.load();
     const context = this.ensureRuntimeContext();
     return {
-      projects: this.store.projects,
+      // Annotate (without persisting) each project with whether its directory
+      // still exists, so the sidebar can grey out and lock a workspace whose
+      // folder was moved away or deleted.
+      projects: this.store.projects.map((project) => ({
+        ...project,
+        missing: !isDirectory(project.path),
+      })),
       active_context: context,
       active_project_id:
         context.kind === "project" ? context.project_id : undefined,
