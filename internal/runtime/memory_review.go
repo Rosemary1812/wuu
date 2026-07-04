@@ -173,7 +173,15 @@ type profileMemoryOnlyExecutor struct {
 }
 
 func newProfileMemoryOnlyExecutor(provider memstore.Provider, memoryCharLimit, userCharLimit int) *profileMemoryOnlyExecutor {
-	env := &tools.Env{Memory: provider, MemoryCharLimit: memoryCharLimit, UserMemoryCharLimit: userCharLimit}
+	// The reviewer targets the GLOBAL memory layer exclusively: the provider is
+	// attached as the global layer and DefaultMemoryWriteScope forces scope-less
+	// write_memory calls (which the review prompt always produces) to global.
+	env := &tools.Env{
+		Memory:                  provider,
+		MemoryCharLimit:         memoryCharLimit,
+		UserMemoryCharLimit:     userCharLimit,
+		DefaultMemoryWriteScope: tools.MemoryScopeGlobal,
+	}
 	memoryTools := tools.NewMemoryTools(env)
 	index := make(map[string]tools.Tool, len(memoryTools))
 	defs := make([]providers.ToolDefinition, 0, len(memoryTools))

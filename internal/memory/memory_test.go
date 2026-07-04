@@ -364,10 +364,46 @@ func TestDiscover_TildeExpansion(t *testing.T) {
 	}
 }
 
+func TestDiscover_DefaultUserDirsScanUnifiedHome(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".wuu"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".wuu", "AGENTS.md"), []byte("unified"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := Discover("", home, DefaultOptions())
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file from unified home, got %d: %+v", len(files), files)
+	}
+	if files[0].Content != "unified" || files[0].Source != "user" {
+		t.Fatalf("unexpected unified-home memory file: %+v", files[0])
+	}
+}
+
+func TestDiscover_DefaultUserDirsStillReadLegacy(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".config", "wuu"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".config", "wuu", "AGENTS.md"), []byte("legacy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := Discover("", home, DefaultOptions())
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file from legacy dir, got %d: %+v", len(files), files)
+	}
+	if files[0].Content != "legacy" {
+		t.Fatalf("unexpected legacy memory file: %+v", files[0])
+	}
+}
+
 func TestDiscover_DefaultOptionsAreWuuNative(t *testing.T) {
 	opts := DefaultOptions()
-	if len(opts.UserDirs) != 1 || opts.UserDirs[0] != "~/.config/wuu" {
-		t.Errorf("expected only Wuu default user dir, got %v", opts.UserDirs)
+	if len(opts.UserDirs) != 2 || opts.UserDirs[0] != "~/.wuu" || opts.UserDirs[1] != "~/.config/wuu" {
+		t.Errorf("expected unified wuu home plus legacy user dir, got %v", opts.UserDirs)
 	}
 	if len(opts.Filenames) != 3 {
 		t.Errorf("expected 3 default filenames, got %d", len(opts.Filenames))

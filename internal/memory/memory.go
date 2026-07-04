@@ -3,7 +3,9 @@
 //
 // The default path stays Wuu-native and cache-friendly:
 //
-//   - Wuu user instructions live under ~/.config/wuu.
+//   - Wuu user instructions live under the unified wuu home (~/.wuu, or
+//     WUU_HOME when set); the legacy ~/.config/wuu directory is still read for
+//     backward compatibility.
 //   - Shared project instructions take priority within each directory.
 //   - Local-only overrides are supported for machine-specific notes.
 //   - Legacy cross-harness layouts are opt-in for migration only.
@@ -47,8 +49,11 @@ type Options struct {
 
 	// UserDirs are absolute or home-relative directories scanned for
 	// user-level memory files (no hierarchy walk). Empty entries and
-	// missing directories are silently skipped. Defaults include Wuu's
-	// user config directory only.
+	// missing directories are silently skipped. Defaults cover Wuu's
+	// unified user home plus the legacy ~/.config/wuu directory. Callers
+	// that need WUU_HOME-aware absolute paths (see statepath.UserInstructionDirs)
+	// should set this explicitly, since DefaultOptions only knows the
+	// home-relative form.
 	UserDirs []string
 
 	// Enables import of legacy markdown memory layouts from Claude-style
@@ -62,7 +67,7 @@ func DefaultOptions() Options {
 	return Options{
 		Filenames:           []string{"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"},
 		ProjectRootMarkers:  []string{".git", ".hg", ".jj", ".svn"},
-		UserDirs:            []string{"~/.config/wuu"},
+		UserDirs:            []string{"~/.wuu", "~/.config/wuu"},
 		IncludeLegacyMemory: boolPtr(false),
 	}
 }

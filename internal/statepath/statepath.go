@@ -11,9 +11,26 @@ import (
 
 const (
 	envHomeVar = "WUU_HOME"
+
+	// configFileName and authFileName are the canonical file names stored
+	// directly inside the unified wuu home (~/.wuu, or WUU_HOME when set).
+	configFileName = "config.json"
+	authFileName   = "auth.json"
+
+	// legacyGlobalRelative is the pre-unification global directory under the
+	// real HOME that held config.json, auth.json, and user-level instruction
+	// files before everything was consolidated into the wuu home. It is kept
+	// for backward-compatible reads and one-time migration only. It is
+	// intentionally NOT affected by WUU_HOME: it names the fixed location old
+	// builds always wrote to.
+	legacyGlobalRelative = ".config/wuu"
 )
 
-// Home returns the user-level wuu state directory.
+// Home returns the unified user-level wuu directory. It is the single root for
+// both configuration (config.json, auth.json, user AGENTS.md) and runtime
+// state (sessions, workspaces, memory, logs). WUU_HOME overrides it wholesale,
+// mirroring Claude Code's CLAUDE_CONFIG_DIR: setting WUU_HOME relocates the
+// entire directory, not just state.
 func Home(homeDir string) (string, error) {
 	if override := strings.TrimSpace(os.Getenv(envHomeVar)); override != "" {
 		return filepath.Abs(override)
@@ -31,6 +48,83 @@ func Home(homeDir string) (string, error) {
 		return "", errors.New("home directory is unavailable")
 	}
 	return filepath.Join(home, ".wuu"), nil
+}
+
+// ConfigPath returns the canonical path to the user config file inside the
+// unified wuu home (WUU_HOME/config.json when WUU_HOME is set, otherwise
+// ~/.wuu/config.json).
+func ConfigPath(homeDir string) (string, error) {
+	home, err := Home(homeDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, configFileName), nil
+}
+
+// AuthPath returns the canonical path to the user credential store inside the
+// unified wuu home (WUU_HOME/auth.json when WUU_HOME is set, otherwise
+// ~/.wuu/auth.json).
+func AuthPath(homeDir string) (string, error) {
+	home, err := Home(homeDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, authFileName), nil
+}
+
+// UserInstructionsDir returns the canonical directory scanned for user-level
+// instruction files (AGENTS.md, CLAUDE.md, ...). It is the unified wuu home
+// and therefore honors WUU_HOME just like ConfigPath and AuthPath.
+func UserInstructionsDir(homeDir string) (string, error) {
+	return Home(homeDir)
+}
+
+// LegacyGlobalDir returns the pre-unification global directory
+// ($HOME/.config/wuu) that held config.json, auth.json, and user-level
+// instruction files. It ignores WUU_HOME because it names the fixed legacy
+// location old builds always wrote to. It returns "" when homeDir is empty.
+func LegacyGlobalDir(homeDir string) string {
+	home := strings.TrimSpace(homeDir)
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, legacyGlobalRelative)
+}
+
+// LegacyConfigPath returns the pre-unification config.json location
+// ($HOME/.config/wuu/config.json), or "" when homeDir is empty.
+func LegacyConfigPath(homeDir string) string {
+	dir := LegacyGlobalDir(homeDir)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, configFileName)
+}
+
+// LegacyAuthPath returns the pre-unification auth.json location
+// ($HOME/.config/wuu/auth.json), or "" when homeDir is empty.
+func LegacyAuthPath(homeDir string) string {
+	dir := LegacyGlobalDir(homeDir)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, authFileName)
+}
+
+// UserInstructionDirs returns the ordered directories scanned for user-level
+// instruction files: the canonical unified home first, then the legacy
+// $HOME/.config/wuu directory for backward compatibility. Missing pieces are
+// skipped, so the result may have one entry (or none when homeDir is empty and
+// the home cannot be resolved).
+func UserInstructionDirs(homeDir string) []string {
+	var dirs []string
+	if canonical, err := UserInstructionsDir(homeDir); err == nil && strings.TrimSpace(canonical) != "" {
+		dirs = append(dirs, canonical)
+	}
+	if legacy := LegacyGlobalDir(homeDir); legacy != "" {
+		dirs = append(dirs, legacy)
+	}
+	return dirs
 }
 
 // LogDir returns the user-level directory for runtime logs.
@@ -162,6 +256,23 @@ func GlobalMemoryDir(wuuHome string) string {
 // document inside this directory; the directory is created lazily by the store.
 func ProfileMemoryDir(profileStateDir string) string {
 	return filepath.Join(profileStateDir, "memory")
+}
+
+// WorkspaceMemoryDir returns the workspace-scoped directory for the
+// LLM-writable durable memory store — the "workspace" layer of the two-layer
+// long-term memory (the other layer being GlobalMemoryDir). Like GlobalMemoryDir
+// it is backed by a memstore.FileProvider, so the directory holds entries.jsonl
+// plus a human-facing MEMORY.md.
+//
+// The directory is deliberately "memory-store", a SIBLING of the "memory"
+// subdirectory owned by the per-workspace dream memory
+// (internal/sessionmemory). Dream memory occupies memory/MEMORY.md,
+// memory/dream_state.json, and memory/dream.lock inside the same workspace
+// state directory; rooting the FileProvider under memory/ would make its own
+// MEMORY.md collide with dream's project MEMORY.md. Keeping the two subsystems
+// in separate top-level namespaces guarantees zero path overlap.
+func WorkspaceMemoryDir(workspaceStateDir string) string {
+	return filepath.Join(workspaceStateDir, "memory-store")
 }
 
 func sanitizeSlug(input string) string {

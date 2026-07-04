@@ -131,12 +131,16 @@ func testTagsMatch(have, want []string) bool {
 	return true
 }
 
+// newEnvWith attaches the provider as the WORKSPACE memory layer, which is the
+// default write scope and the default single-layer read source. Single-provider
+// tests therefore exercise the ordinary default path without threading a scope
+// argument through every call.
 func newEnvWith(p store.Provider) *Env {
-	return &Env{Memory: p}
+	return &Env{WorkspaceMemory: p}
 }
 
 func newEnvWithLimits(p store.Provider, memoryLimit, userLimit int) *Env {
-	return &Env{Memory: p, MemoryCharLimit: memoryLimit, UserMemoryCharLimit: userLimit}
+	return &Env{WorkspaceMemory: p, MemoryCharLimit: memoryLimit, UserMemoryCharLimit: userLimit}
 }
 
 func decodeMemoryResult(t *testing.T, raw string) struct {
@@ -700,5 +704,167 @@ func TestMemoryTools_EndToEndWithFileProvider(t *testing.T) {
 	}
 	if !strings.Contains(string(md), "- end-to-end test _[tags: e2e]_") {
 		t.Fatalf("MEMORY.md missing stored memory:\n%s", string(md))
+	}
+}
+
+// --- two-layer memory (scope) tests ---
+
+func twoLayerEnv(t *testing.T) (*Env, *store.FileProvider, *store.FileProvider) {
+	t.Helper()
+	global := mustProvider(t, filepath.Join(t.TempDir(), "global"))
+	workspace := mustProvider(t, filepath.Join(t.TempDir(), "workspace"))
+	return &Env{Memory: global, WorkspaceMemory: workspace}, global, workspace
+}
+
+func recallContents(t *testing.T, p *store.FileProvider) []string {
+	t.Helper()
+	entries, err := p.Recall(context.Background(), store.RecallQuery{})
+	if err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Content)
+	}
+	return out
+}
+
+func TestWriteMemoryScopeRoutesToCorrectLayer(t *testing.T) {
+	env, global, workspace := twoLayerEnv(t)
+	tool := NewWriteMemoryTool(env)
+
+	// Default scope (omitted) must land in the workspace layer.
+	if _, err := tool.Execute(context.Background(), `{"action":"add","target":"memory","content":"uses make build"}`); err != nil {
+		t.Fatalf("default write: %v", err)
+	}
+	// Explicit workspace scope.
+	if _, err := tool.Execute(context.Background(), `{"action":"add","scope":"workspace","target":"memory","content":"tests via go test ./..."}`); err != nil {
+		t.Fatalf("workspace write: %v", err)
+	}
+	// Explicit global scope.
+	out, err := tool.Execute(context.Background(), `{"action":"add","scope":"global","target":"user","content":"prefers concise replies"}`)
+	if err != nil {
+		t.Fatalf("global write: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["scope"] != "global" {
+		t.Fatalf("global write result scope = %v, want global", resp["scope"])
+	}
+	if resp["path"] != global.MarkdownPath() {
+		t.Fatalf("global write path = %v, want %q (the global layer document)", resp["path"], global.MarkdownPath())
+	}
+
+	gotGlobal := recallContents(t, global)
+	if len(gotGlobal) != 1 || gotGlobal[0] != "prefers concise replies" {
+		t.Fatalf("global layer = %v, want [prefers concise replies]", gotGlobal)
+	}
+	gotWorkspace := recallContents(t, workspace)
+	if len(gotWorkspace) != 2 {
+		t.Fatalf("workspace layer = %v, want 2 entries", gotWorkspace)
+	}
+	for _, want := range []string{"uses make build", "tests via go test ./..."} {
+		found := false
+		for _, c := range gotWorkspace {
+			if c == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("workspace layer missing %q: %v", want, gotWorkspace)
+		}
+	}
+}
+
+func TestWriteMemoryScopeUnavailableIsRejected(t *testing.T) {
+	// Only the global layer is attached; a workspace-scoped write must fail.
+	env := &Env{Memory: mustProvider(t, filepath.Join(t.TempDir(), "global"))}
+	tool := NewWriteMemoryTool(env)
+	_, err := tool.Execute(context.Background(), `{"action":"add","scope":"workspace","target":"memory","content":"x"}`)
+	if err == nil || !strings.Contains(err.Error(), "workspace") || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("expected workspace-not-configured error, got: %v", err)
+	}
+}
+
+func TestWriteMemoryDefaultScopeOverride(t *testing.T) {
+	// The background reviewer attaches the global provider and forces the
+	// default write scope to global; a scope-less write must land in global.
+	global := mustProvider(t, filepath.Join(t.TempDir(), "global"))
+	env := &Env{Memory: global, DefaultMemoryWriteScope: MemoryScopeGlobal}
+	tool := NewWriteMemoryTool(env)
+	if _, err := tool.Execute(context.Background(), `{"action":"add","target":"user","content":"prefers dark mode"}`); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got := recallContents(t, global)
+	if len(got) != 1 || got[0] != "prefers dark mode" {
+		t.Fatalf("global layer = %v, want [prefers dark mode]", got)
+	}
+}
+
+func TestReadMemoryMergesLayersGlobalFirst(t *testing.T) {
+	env, global, workspace := twoLayerEnv(t)
+	if _, err := global.Store(context.Background(), store.Entry{Content: "G-user", Tags: []string{"target:user"}, Source: store.SourceUser}); err != nil {
+		t.Fatalf("seed global: %v", err)
+	}
+	if _, err := workspace.Store(context.Background(), store.Entry{Content: "W-memory", Tags: []string{"target:memory"}, Source: store.SourceAssistant}); err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	reader := NewReadMemoryTool(env)
+
+	// No scope, no query -> both layers, global first, each annotated.
+	out, err := reader.Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("read both: %v", err)
+	}
+	resp := decodeMemoryResult(t, out)
+	if resp.Count != 2 {
+		t.Fatalf("count = %d, want 2 (raw: %s)", resp.Count, out)
+	}
+	if resp.Entries[0].Content != "G-user" || resp.Entries[0].Scope != "global" {
+		t.Fatalf("first entry = %+v, want G-user/global", resp.Entries[0])
+	}
+	if resp.Entries[1].Content != "W-memory" || resp.Entries[1].Scope != "workspace" {
+		t.Fatalf("second entry = %+v, want W-memory/workspace", resp.Entries[1])
+	}
+
+	// scope=global -> only the global layer.
+	out, err = reader.Execute(context.Background(), `{"scope":"global"}`)
+	if err != nil {
+		t.Fatalf("read global: %v", err)
+	}
+	resp = decodeMemoryResult(t, out)
+	if resp.Count != 1 || resp.Entries[0].Content != "G-user" {
+		t.Fatalf("scope=global entries = %+v, want [G-user]", resp.Entries)
+	}
+
+	// scope=workspace -> only the workspace layer.
+	out, err = reader.Execute(context.Background(), `{"scope":"workspace"}`)
+	if err != nil {
+		t.Fatalf("read workspace: %v", err)
+	}
+	resp = decodeMemoryResult(t, out)
+	if resp.Count != 1 || resp.Entries[0].Content != "W-memory" {
+		t.Fatalf("scope=workspace entries = %+v, want [W-memory]", resp.Entries)
+	}
+}
+
+func TestReadMemoryTwoLayerDeterministic(t *testing.T) {
+	env, global, workspace := twoLayerEnv(t)
+	seedProvider(t, global, []string{"G1", "G2", "G3"}, []string{"target:memory"})
+	seedProvider(t, workspace, []string{"W1", "W2"}, []string{"target:memory"})
+	reader := NewReadMemoryTool(env)
+
+	first, err := reader.Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("read #1: %v", err)
+	}
+	second, err := reader.Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("read #2: %v", err)
+	}
+	if first != second {
+		t.Fatalf("two-layer read not byte-identical:\n#1: %s\n#2: %s", first, second)
 	}
 }

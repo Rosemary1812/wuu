@@ -27,19 +27,73 @@ const (
 	memoryActionReplace = "replace"
 	memoryActionRemove  = "remove"
 
+	// memoryScopeWorkspace targets the project-scoped workspace memory layer;
+	// memoryScopeGlobal targets the cross-workspace global memory layer.
+	// "workspace" is the default write scope: most facts learned during work
+	// are project-specific.
+	memoryScopeWorkspace = "workspace"
+	memoryScopeGlobal    = "global"
+
+	// MemoryScopeWorkspace and MemoryScopeGlobal are exported for callers that
+	// construct an Env with a forced default write scope (e.g. the background
+	// global-memory reviewer via Env.DefaultMemoryWriteScope).
+	MemoryScopeWorkspace = memoryScopeWorkspace
+	MemoryScopeGlobal    = memoryScopeGlobal
+
 	memoryEntryDelimiter = "\n§\n"
 
 	defaultMemoryCharLimit     = 2200
 	defaultUserMemoryCharLimit = 1375
 )
 
-var errMemoryUnavailable = fmt.Errorf("memory: no Provider configured on Env; set Env.Memory before registering memory tools")
+var errMemoryUnavailable = fmt.Errorf("memory: no Provider configured on Env; set Env.Memory and/or Env.WorkspaceMemory before registering memory tools")
 
-func memoryProvider(env *Env) store.Provider {
+// hasAnyMemory reports whether either long-term memory layer (global or
+// workspace) is attached. Memory tools are exposed while at least one layer is
+// available.
+func hasAnyMemory(env *Env) bool {
+	return env != nil && (env.Memory != nil || env.WorkspaceMemory != nil)
+}
+
+// memoryProviderForScope resolves the store provider backing a write scope.
+// A nil result means that scope is not configured on this Env.
+func memoryProviderForScope(env *Env, scope string) store.Provider {
 	if env == nil {
 		return nil
 	}
-	return env.Memory
+	switch scope {
+	case memoryScopeGlobal:
+		return env.Memory
+	case memoryScopeWorkspace:
+		return env.WorkspaceMemory
+	default:
+		return nil
+	}
+}
+
+// memoryLayer pairs a store provider with its scope label. Read paths return
+// layers in a deterministic order — global first, workspace second — matching
+// the ordering used when the merged memory snapshot is injected into the base
+// system prompt (global entries in front, workspace entries after).
+type memoryLayer struct {
+	scope    string
+	provider store.Provider
+}
+
+// memoryReadLayers returns the attached layers in deterministic global→workspace
+// order. Nil providers are skipped.
+func memoryReadLayers(env *Env) []memoryLayer {
+	if env == nil {
+		return nil
+	}
+	var layers []memoryLayer
+	if env.Memory != nil {
+		layers = append(layers, memoryLayer{scope: memoryScopeGlobal, provider: env.Memory})
+	}
+	if env.WorkspaceMemory != nil {
+		layers = append(layers, memoryLayer{scope: memoryScopeWorkspace, provider: env.WorkspaceMemory})
+	}
+	return layers
 }
 
 type memoryDocumentProvider interface {
@@ -59,6 +113,7 @@ func isMemoryToolName(name string) bool {
 
 type memoryEntryDTO struct {
 	ID        string   `json:"id"`
+	Scope     string   `json:"scope,omitempty"`
 	Content   string   `json:"content"`
 	Target    string   `json:"target,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
@@ -67,9 +122,10 @@ type memoryEntryDTO struct {
 	UpdatedAt string   `json:"updated_at,omitempty"`
 }
 
-func toMemoryEntryDTO(e store.Entry) memoryEntryDTO {
+func toMemoryEntryDTO(e store.Entry, scope string) memoryEntryDTO {
 	out := memoryEntryDTO{
 		ID:      string(e.ID),
+		Scope:   scope,
 		Content: e.Content,
 		Target:  memoryEntryTarget(e),
 		Tags:    memoryUserTags(e.Tags),
@@ -95,6 +151,11 @@ var allowedMemorySources = []string{
 var allowedMemoryTargets = []string{
 	memoryTargetMemory,
 	memoryTargetUser,
+}
+
+var allowedMemoryScopes = []string{
+	memoryScopeWorkspace,
+	memoryScopeGlobal,
 }
 
 var allowedMemoryActions = []string{
@@ -155,6 +216,31 @@ func normalizeOptionalMemoryTarget(target string) (string, error) {
 		return "", nil
 	}
 	return normalizeMemoryTarget(target)
+}
+
+// normalizeMemoryScope resolves a write scope, defaulting to "workspace".
+func normalizeMemoryScope(scope string) (string, error) {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return memoryScopeWorkspace, nil
+	}
+	if scope == memoryScopeWorkspace || scope == memoryScopeGlobal {
+		return scope, nil
+	}
+	return "", fmt.Errorf("scope %q is not one of %v", scope, allowedMemoryScopes)
+}
+
+// normalizeOptionalMemoryScope resolves an optional read scope. An empty value
+// means "read both layers".
+func normalizeOptionalMemoryScope(scope string) (string, error) {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return "", nil
+	}
+	if scope == memoryScopeWorkspace || scope == memoryScopeGlobal {
+		return scope, nil
+	}
+	return "", fmt.Errorf("scope %q is not one of %v", scope, allowedMemoryScopes)
 }
 
 func memoryEntryTarget(entry store.Entry) string {
@@ -280,6 +366,7 @@ func memoryEntriesWithAppend(entries []store.Entry, content string) []store.Entr
 
 type writeMemoryArgs struct {
 	Action  string   `json:"action,omitempty"`
+	Scope   string   `json:"scope,omitempty"`
 	Target  string   `json:"target,omitempty"`
 	Content string   `json:"content"`
 	OldText string   `json:"old_text,omitempty"`
@@ -304,7 +391,9 @@ func (t *writeMemoryTool) IsConcurrencySafe() bool { return true }
 func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: writeMemoryName,
-		Description: "Save compact, durable information to this agent profile's bounded long-term markdown memory document. " +
+		Description: "Save compact, durable information to bounded long-term markdown memory. " +
+			"Memory has two layers selected by scope: \"workspace\" (default) for facts tied to THIS project — build/test commands, architecture decisions, code conventions, environment quirks specific to this repo; and \"global\" for facts true across all projects — the user's identity, durable preferences, communication style, and cross-project workflow lessons. " +
+			"When unsure, prefer \"workspace\": a project fact wrongly saved globally leaks into unrelated projects, while a global-worthy fact saved to the workspace merely fails to follow the user elsewhere. " +
 			"Use proactively when the user corrects you, shares a stable preference, asks you to remember something, " +
 			"or when you learn a durable environment fact, project convention, or tool quirk that will matter in future sessions. " +
 			"Do not save task progress, completed-work logs, PR numbers, commit SHAs, temporary TODOs, raw data dumps, or facts likely to go stale within a week. " +
@@ -319,6 +408,11 @@ func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"enum":        allowedMemoryActions,
 					"description": "Use \"add\" for a new entry, \"replace\" to update an existing entry identified by old_text, or \"remove\" to delete an existing entry identified by old_text.",
+				},
+				"scope": map[string]any{
+					"type":        "string",
+					"enum":        allowedMemoryScopes,
+					"description": "Which memory layer to write. \"workspace\" (default) for facts specific to the current project — build/test commands, architecture decisions, code conventions. \"global\" for facts that hold across every project — the user's identity, durable preferences, communication style. Defaults to \"workspace\".",
 				},
 				"target": map[string]any{
 					"type":        "string",
@@ -353,8 +447,7 @@ func (t *writeMemoryTool) Definition() providers.ToolDefinition {
 }
 
 func (t *writeMemoryTool) Execute(ctx context.Context, args string) (string, error) {
-	mem := memoryProvider(t.env)
-	if mem == nil {
+	if !hasAnyMemory(t.env) {
 		return "", errMemoryUnavailable
 	}
 	var a writeMemoryArgs
@@ -372,19 +465,31 @@ func (t *writeMemoryTool) Execute(ctx context.Context, args string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("write_memory: %w", err)
 	}
+	rawScope := strings.TrimSpace(a.Scope)
+	if rawScope == "" && t.env != nil && t.env.DefaultMemoryWriteScope != "" {
+		rawScope = t.env.DefaultMemoryWriteScope
+	}
+	scope, err := normalizeMemoryScope(rawScope)
+	if err != nil {
+		return "", fmt.Errorf("write_memory: %w", err)
+	}
+	mem := memoryProviderForScope(t.env, scope)
+	if mem == nil {
+		return "", fmt.Errorf("write_memory: %q memory scope is not configured for this session", scope)
+	}
 	switch action {
 	case memoryActionAdd:
-		return t.executeAdd(ctx, mem, a, target)
+		return t.executeAdd(ctx, mem, a, target, scope)
 	case memoryActionReplace:
-		return t.executeReplace(ctx, mem, a, target)
+		return t.executeReplace(ctx, mem, a, target, scope)
 	case memoryActionRemove:
-		return t.executeRemove(ctx, mem, a, target)
+		return t.executeRemove(ctx, mem, a, target, scope)
 	default:
 		return "", fmt.Errorf("write_memory: action %q is not one of %v", action, allowedMemoryActions)
 	}
 }
 
-func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a writeMemoryArgs, target string) (string, error) {
+func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a writeMemoryArgs, target, scope string) (string, error) {
 	content := strings.TrimSpace(a.Content)
 	if content == "" {
 		return "", fmt.Errorf("write_memory: content is required and must be non-empty")
@@ -403,6 +508,7 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 				"id":        string(entry.ID),
 				"written":   false,
 				"duplicate": true,
+				"scope":     scope,
 				"target":    target,
 				"path":      memoryDocumentPath(mem),
 				"source":    string(entry.Source),
@@ -440,6 +546,7 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 		"action":  memoryActionAdd,
 		"id":      string(id),
 		"written": true,
+		"scope":   scope,
 		"target":  target,
 		"path":    memoryDocumentPath(mem),
 		"source":  string(source),
@@ -454,7 +561,7 @@ func (t *writeMemoryTool) executeAdd(ctx context.Context, mem store.Provider, a 
 	return string(b), nil
 }
 
-func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider, a writeMemoryArgs, target string) (string, error) {
+func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider, a writeMemoryArgs, target, scope string) (string, error) {
 	oldText := strings.TrimSpace(a.OldText)
 	if oldText == "" {
 		return "", fmt.Errorf("write_memory: old_text is required for action %q", memoryActionReplace)
@@ -505,6 +612,7 @@ func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider
 		"id":          string(id),
 		"replaced_id": string(oldEntry.ID),
 		"written":     true,
+		"scope":       scope,
 		"target":      target,
 		"path":        memoryDocumentPath(mem),
 		"source":      string(source),
@@ -519,7 +627,7 @@ func (t *writeMemoryTool) executeReplace(ctx context.Context, mem store.Provider
 	return string(b), nil
 }
 
-func (t *writeMemoryTool) executeRemove(ctx context.Context, mem store.Provider, a writeMemoryArgs, target string) (string, error) {
+func (t *writeMemoryTool) executeRemove(ctx context.Context, mem store.Provider, a writeMemoryArgs, target, scope string) (string, error) {
 	oldText := strings.TrimSpace(a.OldText)
 	if oldText == "" {
 		return "", fmt.Errorf("write_memory: old_text is required for action %q", memoryActionRemove)
@@ -535,6 +643,7 @@ func (t *writeMemoryTool) executeRemove(ctx context.Context, mem store.Provider,
 		"action":     memoryActionRemove,
 		"removed":    true,
 		"removed_id": string(oldEntry.ID),
+		"scope":      scope,
 		"target":     target,
 		"path":       memoryDocumentPath(mem),
 	}
@@ -578,6 +687,7 @@ func findMemoryEntryInEntries(entries []store.Entry, target, oldText string) (st
 // read_memory
 
 type readMemoryArgs struct {
+	Scope  string   `json:"scope,omitempty"`
 	Target string   `json:"target,omitempty"`
 	Query  string   `json:"query,omitempty"`
 	Tags   []string `json:"tags,omitempty"`
@@ -601,13 +711,19 @@ func (t *readMemoryTool) IsConcurrencySafe() bool { return true }
 func (t *readMemoryTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: readMemoryName,
-		Description: "Read this agent profile's long-term markdown memory document through the indexed memory store. With a query, searches entry content; without a query, returns recent entries. " +
+		Description: "Read long-term markdown memory through the indexed memory store. By default it reads BOTH memory layers — global (cross-project) and workspace (current project) — and each returned entry is annotated with its \"scope\". With a query, searches entry content; without a query, returns recent entries. " +
 			"Use this when the user refers to remembered preferences, prior durable facts, or stable project/environment conventions. " +
-			"Use target=\"user\" for user profile facts and target=\"memory\" for agent notes; omit target to search both.",
+			"Use target=\"user\" for user profile facts and target=\"memory\" for agent notes; omit target to search both. " +
+			"Use scope=\"workspace\" or scope=\"global\" to restrict to a single layer; omit scope to read both.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
+				"scope": map[string]any{
+					"type":        "string",
+					"enum":        allowedMemoryScopes,
+					"description": "Optional memory layer to read: \"workspace\" (current project) or \"global\" (cross-project). Omit to read both layers.",
+				},
 				"target": map[string]any{
 					"type":        "string",
 					"enum":        allowedMemoryTargets,
@@ -639,8 +755,7 @@ func (t *readMemoryTool) Definition() providers.ToolDefinition {
 }
 
 func (t *readMemoryTool) Execute(ctx context.Context, args string) (string, error) {
-	mem := memoryProvider(t.env)
-	if mem == nil {
+	if !hasAnyMemory(t.env) {
 		return "", errMemoryUnavailable
 	}
 	var a readMemoryArgs
@@ -656,51 +771,86 @@ func (t *readMemoryTool) Execute(ctx context.Context, args string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("read_memory: %w", err)
 	}
-	query := strings.TrimSpace(a.Query)
-
-	var entries []store.Entry
-	providerLimit := limit
-	if target != "" {
-		providerLimit = 0
-	}
-	if query == "" {
-		entries, err = mem.Recall(ctx, store.RecallQuery{
-			Tags:  append([]string(nil), a.Tags...),
-			Limit: providerLimit,
-			Since: since,
-		})
-	} else {
-		entries, err = mem.Search(ctx, store.SearchQuery{
-			Text:  query,
-			Tags:  append([]string(nil), a.Tags...),
-			Since: since,
-			Limit: providerLimit,
-		})
-	}
+	scope, err := normalizeOptionalMemoryScope(a.Scope)
 	if err != nil {
 		return "", fmt.Errorf("read_memory: %w", err)
 	}
-	if target != "" {
-		entries = filterMemoryEntriesByTarget(entries, target)
-		entries = limitMemoryEntries(entries, limit)
+	query := strings.TrimSpace(a.Query)
+
+	layers := memoryReadLayers(t.env)
+	if scope != "" {
+		filtered := layers[:0]
+		for _, layer := range layers {
+			if layer.scope == scope {
+				filtered = append(filtered, layer)
+			}
+		}
+		layers = filtered
+		if len(layers) == 0 {
+			return "", fmt.Errorf("read_memory: %q memory scope is not configured for this session", scope)
+		}
 	}
 
-	dtos := make([]memoryEntryDTO, 0, len(entries))
-	for _, e := range entries {
-		dtos = append(dtos, toMemoryEntryDTO(e))
+	// Read each layer fully (Limit: 0) and merge deterministically in
+	// global→workspace order; each provider already returns a stable order
+	// (UpdatedAt desc, ID asc). The final cap is applied after merging so the
+	// global layer keeps priority when both layers are present. The stores are
+	// character-bounded, so reading all entries per layer is cheap.
+	dtos := make([]memoryEntryDTO, 0, limit)
+	paths := make(map[string]string, len(layers))
+	for _, layer := range layers {
+		var entries []store.Entry
+		if query == "" {
+			entries, err = layer.provider.Recall(ctx, store.RecallQuery{
+				Tags:  append([]string(nil), a.Tags...),
+				Since: since,
+			})
+		} else {
+			entries, err = layer.provider.Search(ctx, store.SearchQuery{
+				Text:  query,
+				Tags:  append([]string(nil), a.Tags...),
+				Since: since,
+			})
+		}
+		if err != nil {
+			return "", fmt.Errorf("read_memory: %w", err)
+		}
+		if target != "" {
+			entries = filterMemoryEntriesByTarget(entries, target)
+		}
+		for _, e := range entries {
+			dtos = append(dtos, toMemoryEntryDTO(e, layer.scope))
+		}
+		if path := memoryDocumentPath(layer.provider); path != "" {
+			paths[layer.scope] = path
+		}
 	}
+	if len(dtos) > limit {
+		dtos = dtos[:limit]
+	}
+
 	out := map[string]any{
 		"count":   len(dtos),
 		"entries": dtos,
 	}
-	if path := memoryDocumentPath(mem); path != "" {
-		out["path"] = path
+	if len(paths) > 0 {
+		out["paths"] = paths
+		// Preserve the single "path" field for callers reading exactly one
+		// layer (a single attached layer, or an explicit scope filter).
+		if len(paths) == 1 {
+			for _, p := range paths {
+				out["path"] = p
+			}
+		}
 	}
 	if query != "" {
 		out["query"] = query
 	}
 	if target != "" {
 		out["target"] = target
+	}
+	if scope != "" {
+		out["scope"] = scope
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -717,19 +867,6 @@ func filterMemoryEntriesByTarget(entries []store.Entry, target string) []store.E
 		}
 	}
 	return out
-}
-
-func limitMemoryEntries(entries []store.Entry, limit int) []store.Entry {
-	if limit <= 0 {
-		limit = memoryDefaultLimit
-	}
-	if limit > memoryMaxLimit {
-		limit = memoryMaxLimit
-	}
-	if len(entries) > limit {
-		return entries[:limit]
-	}
-	return entries
 }
 
 func normalizeMemoryLimit(limit int) int {

@@ -726,6 +726,57 @@ Global body.
 	}
 }
 
+func TestDiscoverSkillsIncludesClaudeCommands(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	wuuHome := filepath.Join(home, ".wuu")
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+
+	// Project-chain Claude Code command with execution-binding frontmatter that
+	// must be ignored, plus a $ARGUMENTS placeholder that must be normalized.
+	writeSessionTestFile(t, filepath.Join(root, ".claude", "commands", "commit.md"), `---
+description: Create a commit
+argument-hint: <message>
+allowed-tools: [Bash(git commit:*)]
+model: claude-opus-4
+---
+Create a commit for $ARGUMENTS.
+`)
+	// Project-chain wuu command without frontmatter.
+	writeSessionTestFile(t, filepath.Join(root, ".wuu", "commands", "plan.md"), "Draft a plan.")
+	// User-level command under ~/.wuu/commands.
+	writeSessionTestFile(t, filepath.Join(wuuHome, "commands", "greet.md"), "Say hello.")
+
+	got := discoverSkills(root, home, wuuHome, nil)
+
+	commit, ok := skills.Find(got, "commit")
+	if !ok {
+		t.Fatalf("commit command not discovered in %+v", got)
+	}
+	if commit.Description != "Create a commit" {
+		t.Fatalf("Description = %q", commit.Description)
+	}
+	if commit.ArgumentHint != "<message>" {
+		t.Fatalf("ArgumentHint = %q", commit.ArgumentHint)
+	}
+	if len(commit.AllowedTools) != 0 {
+		t.Fatalf("AllowedTools = %v, want ignored", commit.AllowedTools)
+	}
+	if commit.Model != "" {
+		t.Fatalf("Model = %q, want ignored", commit.Model)
+	}
+	if !strings.Contains(commit.Content, "${ARGUMENTS}") {
+		t.Fatalf("Content did not normalize $ARGUMENTS: %q", commit.Content)
+	}
+	for _, name := range []string{"plan", "greet"} {
+		if _, ok := skills.Find(got, name); !ok {
+			t.Fatalf("command %q not discovered", name)
+		}
+	}
+}
+
 func TestNewSessionWiresPluginHooks(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
