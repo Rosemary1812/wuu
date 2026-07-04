@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,39 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
+
+// recordEnvelopeReadReceipts writes/advances the read-receipt status for the
+// source messages a resident is processing (2026-07-04-read-receipts-and-
+// reactions.md §3/§5). Each source message is marked seen against its own
+// group thread (env.SourceThreadID / SourceSeq) by the resident participant:
+// in_progress when the turn starts consuming the batch, then completed or
+// failed by turn outcome. Envelopes with no source seq (0 — pre-spine or a
+// non-chat path) carry no receipt. (thread, seq) is de-duplicated within a
+// batch so one coalesced message yields one receipt.
+func (s *Server) recordEnvelopeReadReceipts(participantID string, envs []MessageEnvelope, status string, at time.Time) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" {
+		return
+	}
+	done := make(map[string]bool, len(envs))
+	for _, env := range envs {
+		threadID := strings.TrimSpace(env.SourceThreadID)
+		if threadID == "" || env.SourceSeq <= 0 {
+			continue
+		}
+		key := threadID + "#" + strconv.Itoa(env.SourceSeq)
+		if done[key] {
+			continue
+		}
+		done[key] = true
+		if err := session.MarkMessageSeen(s.rt.SessionDir, threadID, env.SourceSeq, participantID, status, at); err != nil {
+			providers.DebugLogf("record read receipt (%s) for %q on %s#%d: %v", status, participantID, threadID, env.SourceSeq, err)
+		}
+	}
+}
 
 const residentEnvelopeBatchLimit = 20
 
@@ -271,6 +305,10 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if !ok {
 		return
 	}
+	// The turn is now consuming this batch: mark each source message
+	// in_progress for this resident. Turn outcome (completed/failed) is
+	// recorded later in afterResidentTurn.
+	s.recordEnvelopeReadReceipts(participantID, envs, session.SeenStatusInProgress, time.Now().UTC())
 	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: th.ID,
 		Turn:     started.turn,
@@ -455,6 +493,17 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	participantID = strings.TrimSpace(participantID)
 	if participantID == "" {
 		return
+	}
+	// Resolve the read receipt: the turn that consumed these envelopes either
+	// finished (completed) or errored/was interrupted (failed). "Seen" in the
+	// product sense is completed; failed is surfaced distinctly so a crashed
+	// turn does not read as "read".
+	if len(envs) > 0 {
+		status := session.SeenStatusCompleted
+		if turn.Status != TurnStatusCompleted {
+			status = session.SeenStatusFailed
+		}
+		s.recordEnvelopeReadReceipts(participantID, envs, status, firstNonZeroTime(completedAt, time.Now().UTC()))
 	}
 	s.fallbackDMReplyFromFinalAnswer(th, participantID, envs, turn, completedAt)
 	if len(envs) > 0 {
