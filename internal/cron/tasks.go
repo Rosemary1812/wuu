@@ -277,6 +277,12 @@ func IsExpired(task Task, nowMillis int64) bool {
 	return age > RecurringMaxAge
 }
 
+// FindMissedOneShots returns the one-shot tasks whose scheduled time already
+// passed — they were due while no scheduler was running (workspace closed,
+// process dead) and would otherwise sit silently in the store. The scheduler
+// fires them once at startup (Scheduler.catchUpMissedOneShots). Recurring
+// tasks are deliberately excluded: they carry no backfill semantics — missed
+// occurrences collapse into the single next due fire (see Scheduler.Start).
 func FindMissedOneShots(tasks []Task, now time.Time) []Task {
 	var missed []Task
 	for _, t := range tasks {

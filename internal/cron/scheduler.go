@@ -33,7 +33,20 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 }
 
+// Start launches the scheduler loop. Before the first tick it runs a
+// one-time catch-up pass for one-shot tasks whose fire time passed while no
+// scheduler was running (workspace closed, process dead): they fire exactly
+// once now instead of staying silently pending.
+//
+// Missed-occurrence semantics, by design:
+//   - one-shot: caught up at startup via FindMissedOneShots, fired once,
+//     then removed like any normal one-shot fire;
+//   - recurring: no backfill. NextFireAt anchors at LastFiredAt (or
+//     CreatedAt), so every occurrence missed while no scheduler ran
+//     collapses into a single fire on the next due evaluation, and tasks
+//     past RecurringMaxAge are expired instead of fired.
 func (s *Scheduler) Start() {
+	s.catchUpMissedOneShots(time.Now())
 	s.ticker = time.NewTicker(time.Second)
 	s.wg.Add(1)
 	go func() {
@@ -50,6 +63,67 @@ func (s *Scheduler) Start() {
 			}
 		}
 	}()
+}
+
+// catchUpMissedOneShots fires every one-shot task whose scheduled time
+// passed with no scheduler alive to see it. Fired tasks are removed from
+// their store synchronously before the ticker loop starts, so the regular
+// check pass can never double-fire them; the shared inFlight guard covers
+// the callback goroutines themselves.
+func (s *Scheduler) catchUpMissedOneShots(now time.Time) {
+	if s.cfg.IsKilled() {
+		return
+	}
+	ownsDurableTasks := true
+	if s.cfg.IsOwner != nil {
+		ownsDurableTasks = s.cfg.IsOwner()
+	}
+	if ownsDurableTasks && s.cfg.Store != nil {
+		if tasks, err := s.cfg.Store.List(); err == nil {
+			if fired := s.fireMissedOneShots(FindMissedOneShots(tasks, now), false); len(fired) > 0 {
+				s.cfg.Store.Remove(fired...)
+			}
+		}
+	}
+	if s.cfg.SessionStore != nil {
+		if tasks, err := s.cfg.SessionStore.List(); err == nil {
+			if fired := s.fireMissedOneShots(FindMissedOneShots(tasks, now), true); len(fired) > 0 {
+				s.cfg.SessionStore.Remove(fired...)
+			}
+		}
+	}
+}
+
+// fireMissedOneShots dispatches the missed tasks through the normal OnFire
+// callback (one goroutine per task, guarded by inFlight) and returns the ids
+// it actually claimed so the caller can remove them from the store.
+func (s *Scheduler) fireMissedOneShots(missed []Task, sessionOnly bool) []string {
+	fired := make([]string, 0, len(missed))
+	for _, task := range missed {
+		taskKey := task.ID
+		if sessionOnly {
+			taskKey = "session:" + task.ID
+		}
+		s.mu.Lock()
+		if _, busy := s.inFlight[taskKey]; busy {
+			s.mu.Unlock()
+			continue
+		}
+		s.inFlight[taskKey] = struct{}{}
+		s.mu.Unlock()
+		fired = append(fired, task.ID)
+		go func(t Task, key string) {
+			defer func() {
+				s.mu.Lock()
+				delete(s.inFlight, key)
+				s.mu.Unlock()
+			}()
+			if s.cfg.OnFire != nil {
+				s.cfg.OnFire(t)
+			}
+		}(task, taskKey)
+	}
+	return fired
 }
 
 func (s *Scheduler) Stop() {

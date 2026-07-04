@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -191,4 +192,142 @@ func TestScheduler_firesMetadataTasksThroughPromptCallback(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for task fire")
 	}
+}
+
+// TestScheduler_StartCatchesUpMissedOneShots is the crash/closed-workspace
+// story for repair item #10: a one-shot task came due while no scheduler was
+// running. Start must fire it exactly once via the FindMissedOneShots
+// catch-up pass — without waiting for a tick — and remove it from the store.
+func TestScheduler_StartCatchesUpMissedOneShots(t *testing.T) {
+	fileStore := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	sessionStore := NewSessionTaskStore(t.TempDir())
+
+	// Due yesterday at a fixed time — plainly missed.
+	missedAt := time.Now().Add(-24 * time.Hour)
+	if err := fileStore.Add(Task{
+		ID:        "missed-durable",
+		Cron:      missedCronFor(missedAt),
+		Prompt:    "missed durable",
+		CreatedAt: missedAt.Add(-time.Hour).UnixMilli(),
+		Recurring: false,
+	}); err != nil {
+		t.Fatalf("fileStore.Add: %v", err)
+	}
+	if err := sessionStore.Add(Task{
+		ID:        "missed-session",
+		Cron:      missedCronFor(missedAt),
+		Prompt:    "missed session",
+		CreatedAt: missedAt.Add(-time.Hour).UnixMilli(),
+		Recurring: false,
+	}); err != nil {
+		t.Fatalf("sessionStore.Add: %v", err)
+	}
+	// A recurring task must never be caught up by the one-shot pass.
+	if err := fileStore.Add(Task{
+		ID:        "recurring-untouched",
+		Cron:      "0 0 1 1 *",
+		Prompt:    "recurring",
+		CreatedAt: missedAt.Add(-time.Hour).UnixMilli(),
+		Recurring: true,
+	}); err != nil {
+		t.Fatalf("fileStore.Add recurring: %v", err)
+	}
+
+	firedCh := make(chan string, 4)
+	s := NewScheduler(SchedulerConfig{
+		Store:        fileStore,
+		SessionStore: sessionStore,
+		OnFire: func(task Task) {
+			firedCh <- task.Prompt
+		},
+		IsOwner: func() bool { return true },
+	})
+
+	s.Start()
+	defer s.Stop()
+
+	fired := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case prompt := <-firedCh:
+			fired[prompt] = true
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for catch-up fires, got %#v", fired)
+		}
+	}
+	if !fired["missed durable"] || !fired["missed session"] {
+		t.Fatalf("expected both missed one-shots to fire, got %#v", fired)
+	}
+
+	fileTasks, _ := fileStore.List()
+	if len(fileTasks) != 1 || fileTasks[0].ID != "recurring-untouched" {
+		t.Fatalf("expected only the recurring task to remain, got %#v", fileTasks)
+	}
+	sessionTasks, _ := sessionStore.List()
+	if len(sessionTasks) != 0 {
+		t.Fatalf("expected missed session one-shot removed, got %#v", sessionTasks)
+	}
+
+	select {
+	case prompt := <-firedCh:
+		t.Fatalf("unexpected extra fire %q (double-fire or recurring backfill)", prompt)
+	case <-time.After(1500 * time.Millisecond):
+	}
+}
+
+// TestScheduler_CatchUpRespectsOwnerLock asserts the catch-up pass honors
+// the durable-store ownership gate: a non-owner must not fire durable
+// one-shots, while session tasks still catch up.
+func TestScheduler_CatchUpRespectsOwnerLock(t *testing.T) {
+	fileStore := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	sessionStore := NewSessionTaskStore(t.TempDir())
+	missedAt := time.Now().Add(-24 * time.Hour)
+
+	if err := fileStore.Add(Task{
+		ID:        "missed-durable",
+		Cron:      missedCronFor(missedAt),
+		Prompt:    "missed durable",
+		CreatedAt: missedAt.Add(-time.Hour).UnixMilli(),
+		Recurring: false,
+	}); err != nil {
+		t.Fatalf("fileStore.Add: %v", err)
+	}
+	if err := sessionStore.Add(Task{
+		ID:        "missed-session",
+		Cron:      missedCronFor(missedAt),
+		Prompt:    "missed session",
+		CreatedAt: missedAt.Add(-time.Hour).UnixMilli(),
+		Recurring: false,
+	}); err != nil {
+		t.Fatalf("sessionStore.Add: %v", err)
+	}
+
+	firedCh := make(chan string, 2)
+	s := NewScheduler(SchedulerConfig{
+		Store:        fileStore,
+		SessionStore: sessionStore,
+		OnFire:       func(task Task) { firedCh <- task.Prompt },
+		IsOwner:      func() bool { return false },
+	})
+
+	s.catchUpMissedOneShots(time.Now())
+
+	select {
+	case prompt := <-firedCh:
+		if prompt != "missed session" {
+			t.Fatalf("non-owner fired durable task %q", prompt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for session catch-up fire")
+	}
+	fileTasks, _ := fileStore.List()
+	if len(fileTasks) != 1 {
+		t.Fatalf("durable one-shot must remain for the owner, got %#v", fileTasks)
+	}
+}
+
+// missedCronFor renders an explicit single-occurrence cron expression for
+// the given time, the shape one-shot scheduling uses.
+func missedCronFor(at time.Time) string {
+	return fmt.Sprintf("%d %d %d %d *", at.Minute(), at.Hour(), at.Day(), int(at.Month()))
 }
