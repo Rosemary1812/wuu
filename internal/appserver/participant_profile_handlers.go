@@ -113,8 +113,14 @@ func (s *Server) handleParticipantSave(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
-	if err := os.WriteFile(participantMemoryPath(p.Workspace), []byte(params.Memory), 0o644); err != nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("write participant memory: %w", err))
+	// The profile panel no longer edits memory (it moved to the memdir
+	// notebook + memory panel); only legacy callers such as team template
+	// import still send the field. An absent/empty field must not clobber
+	// the legacy MEMORY.md with an empty file.
+	if strings.TrimSpace(params.Memory) != "" {
+		if err := os.WriteFile(participantMemoryPath(p.Workspace), []byte(params.Memory), 0o644); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("write participant memory: %w", err))
+		}
 	}
 	if err := session.UpsertParticipant(s.rt.SessionDir, p); err != nil {
 		return s.writeResponse(req.ID, nil, err)
