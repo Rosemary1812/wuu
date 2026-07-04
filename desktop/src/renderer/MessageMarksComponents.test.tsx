@@ -37,8 +37,13 @@ describe("ReadReceiptRing", () => {
     const ring = el.querySelector(".chat-receipt-ring")!;
     expect(ring.getAttribute("data-all-seen")).toBe("true");
     expect(ring.getAttribute("aria-label")).toContain("已读 2/2");
-    expect(ring.getAttribute("aria-label")).toContain("Andy");
     expect(el.querySelector(".chat-receipt-ring-done")).not.toBeNull();
+    // The custom hover tooltip carries the breakdown + member names.
+    const tooltip = ring.querySelector(".chat-receipt-tooltip")!;
+    expect(tooltip).not.toBeNull();
+    expect(tooltip.textContent).toContain("已读 2/2");
+    expect(tooltip.textContent).toContain("Andy");
+    expect(tooltip.textContent).toContain("le");
   });
 
   it("renders a failed segment and never claims all-seen when one crashed", () => {
@@ -49,8 +54,12 @@ describe("ReadReceiptRing", () => {
     const ring = el.querySelector(".chat-receipt-ring")!;
     expect(ring.getAttribute("data-failed")).toBe("true");
     expect(ring.getAttribute("data-all-seen")).toBeNull();
-    expect(ring.getAttribute("aria-label")).toContain("未完成：le");
     expect(el.querySelector(".chat-receipt-ring-failed")).not.toBeNull();
+    // Failed members get their own tooltip row.
+    const failRow = ring.querySelector('.chat-receipt-tooltip-row[data-kind="fail"]')!;
+    expect(failRow).not.toBeNull();
+    expect(failRow.textContent).toContain("未完成");
+    expect(failRow.textContent).toContain("le");
   });
 
   it("renders nothing when there is no readership", () => {

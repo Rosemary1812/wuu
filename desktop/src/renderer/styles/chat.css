@@ -239,9 +239,63 @@
 }
 
 .chat-receipt-ring {
+  position: relative;
   display: inline-flex;
   align-items: center;
   cursor: default;
+  outline: none;
+}
+/* Immediate custom hover/focus tooltip: who has read, who is still
+   processing, who failed. Replaces the weak native title attribute. */
+.chat-receipt-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 132px;
+  max-width: 260px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  border: 1px solid var(--line-ui);
+  box-shadow: var(--menu-shadow);
+  font-size: var(--font-xs);
+  line-height: 1.35;
+  color: var(--ink);
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(2px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+  pointer-events: none;
+}
+.chat-receipt-ring:hover .chat-receipt-tooltip,
+.chat-receipt-ring:focus-visible .chat-receipt-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.chat-receipt-tooltip-row {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+.chat-receipt-tooltip-label {
+  color: var(--ink-muted);
+  flex: none;
+}
+.chat-receipt-tooltip-row[data-kind="fail"] .chat-receipt-tooltip-label {
+  color: var(--warning);
+}
+.chat-receipt-tooltip-names {
+  color: var(--ink);
+  text-align: right;
 }
 .chat-receipt-ring-track {
   stroke: var(--ink-overlay-8);

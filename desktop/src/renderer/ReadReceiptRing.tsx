@@ -44,14 +44,23 @@ export function ReadReceiptRing({
   const failed = ring.total > 0 ? (ring.failed / ring.total) * CIRC : 0;
   const title = ringTitle(ring, seen, resolveName);
   const center = SIZE / 2;
+  const rows: Array<{ key: string; label: string; people: string[] }> = [
+    { key: "done", label: `已读 ${ring.completed}/${ring.total}`, people: seen.completed },
+  ];
+  if (ring.inProgress > 0) {
+    rows.push({ key: "wip", label: "处理中", people: seen.inProgress });
+  }
+  if (ring.failed > 0) {
+    rows.push({ key: "fail", label: "未完成", people: seen.failed });
+  }
   return (
     <span
       className="chat-receipt-ring"
       data-all-seen={ring.allSeen ? "true" : undefined}
       data-failed={ring.anyFailed ? "true" : undefined}
-      title={title}
       role="img"
       aria-label={title}
+      tabIndex={0}
     >
       <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
         <circle
@@ -89,6 +98,22 @@ export function ReadReceiptRing({
           />
         ) : null}
       </svg>
+      <span className="chat-receipt-tooltip" role="tooltip">
+        {rows.map((row) => (
+          <span
+            key={row.key}
+            className="chat-receipt-tooltip-row"
+            data-kind={row.key}
+          >
+            <span className="chat-receipt-tooltip-label">{row.label}</span>
+            {row.people.length > 0 ? (
+              <span className="chat-receipt-tooltip-names">
+                {row.people.map((id) => resolveName?.(id) ?? id).join("、")}
+              </span>
+            ) : null}
+          </span>
+        ))}
+      </span>
     </span>
   );
 }
