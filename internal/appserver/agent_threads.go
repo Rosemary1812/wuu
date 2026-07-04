@@ -464,6 +464,11 @@ func (s *Server) resolveParticipantSummary(id string) (participant.Summary, bool
 		return participant.Summary{}, false
 	}
 	summary = p.Summary()
+	// Avatar rides on the cached summary so the disk read happens once
+	// per participant per cache generation (invalidateParticipantSummary
+	// covers profile saves, retires, and roster edits). Capped — see
+	// participantSummaryAvatarMaxBytes.
+	summary.AvatarImage = participantSummaryAvatarDataURL(p.Workspace)
 
 	s.participantMu.Lock()
 	if s.participantSummaryCache == nil {

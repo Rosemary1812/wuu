@@ -39,6 +39,14 @@ type Summary struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
 	Role string `json:"role,omitempty"`
+	// AvatarImage is the participant's uploaded avatar as a base64 data
+	// URL ("data:image/png;base64,..."). The avatar bytes live in the
+	// participant's workspace directory, not in the store, so
+	// Participant.Summary() leaves this empty — the appserver fills it
+	// (with a size cap, see appserver.participantSummaryAvatarMaxBytes)
+	// because summaries are duplicated into every thread item they
+	// attribute and an unbounded payload would bloat history resumes.
+	AvatarImage string `json:"avatar_image,omitempty"`
 }
 
 // Summary returns the wire shape for a participant.

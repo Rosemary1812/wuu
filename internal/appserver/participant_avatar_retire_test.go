@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -376,5 +378,84 @@ func TestParticipantAvatarImageRejectsOversizedPreDecode(t *testing.T) {
 	msg, _ := resp["error"].(map[string]any)["message"].(string)
 	if !strings.Contains(strings.ToLower(msg), "too large") {
 		t.Fatalf("pre-decode cap error message should mention size, got %q", msg)
+	}
+}
+
+// resolveParticipantSummary embeds the workspace avatar as a data URL so
+// chat bubbles, group member chips, and group typing rows light up without
+// a profile round-trip (consistency-repair-plan §1 #11). The embed is
+// capped at participantSummaryAvatarMaxBytes: summaries are duplicated
+// into every thread item they attribute, so oversized avatars degrade to
+// the initial-letter fallback instead of inflating history payloads.
+func TestResolveParticipantSummaryEmbedsCappedAvatar(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	srv := New(rt, &lockedBuffer{})
+
+	withAvatar := participant.Participant{
+		ID:        participant.NewID(),
+		Kind:      participant.KindNamed,
+		Name:      "Avery",
+		Role:      "reviewer",
+		Workspace: t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := session.UpsertParticipant(rt.SessionDir, withAvatar); err != nil {
+		t.Fatalf("upsert participant: %v", err)
+	}
+	raw, err := base64.StdEncoding.DecodeString(tinyPNGBase64)
+	if err != nil {
+		t.Fatalf("decode fixture png: %v", err)
+	}
+	if err := writeParticipantAvatarImage(withAvatar.Workspace, "image/png", raw); err != nil {
+		t.Fatalf("write avatar: %v", err)
+	}
+
+	summary, ok := srv.resolveParticipantSummary(withAvatar.ID)
+	if !ok {
+		t.Fatalf("resolveParticipantSummary(%q) missed", withAvatar.ID)
+	}
+	if want := "data:image/png;base64," + tinyPNGBase64; summary.AvatarImage != want {
+		t.Fatalf("summary avatar = %q, want %q", summary.AvatarImage, want)
+	}
+
+	// The avatar rides on the summary cache; a workspace write alone must
+	// not leak through until the cache entry is invalidated (as
+	// participant/save, retire, and roster edits do).
+	if err := removeParticipantAvatarImage(withAvatar.Workspace); err != nil {
+		t.Fatalf("remove avatar: %v", err)
+	}
+	cached, ok := srv.resolveParticipantSummary(withAvatar.ID)
+	if !ok || cached.AvatarImage == "" {
+		t.Fatalf("cached summary should still carry the avatar, got %+v (ok=%v)", cached, ok)
+	}
+	srv.invalidateParticipantSummary(withAvatar.ID)
+	refreshed, ok := srv.resolveParticipantSummary(withAvatar.ID)
+	if !ok || refreshed.AvatarImage != "" {
+		t.Fatalf("after invalidation the removed avatar should be gone, got %q (ok=%v)", refreshed.AvatarImage, ok)
+	}
+
+	oversized := participant.Participant{
+		ID:        participant.NewID(),
+		Kind:      participant.KindNamed,
+		Name:      "Blob",
+		Role:      "reviewer",
+		Workspace: t.TempDir(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := session.UpsertParticipant(rt.SessionDir, oversized); err != nil {
+		t.Fatalf("upsert oversized participant: %v", err)
+	}
+	huge := bytes.Repeat([]byte{0x89}, participantSummaryAvatarMaxBytes+1)
+	if err := writeParticipantAvatarImage(oversized.Workspace, "image/png", huge); err != nil {
+		t.Fatalf("write oversized avatar: %v", err)
+	}
+	capped, ok := srv.resolveParticipantSummary(oversized.ID)
+	if !ok {
+		t.Fatalf("resolveParticipantSummary(%q) missed", oversized.ID)
+	}
+	if capped.AvatarImage != "" {
+		t.Fatalf("avatars above participantSummaryAvatarMaxBytes must be omitted from summaries, got %d bytes", len(capped.AvatarImage))
 	}
 }

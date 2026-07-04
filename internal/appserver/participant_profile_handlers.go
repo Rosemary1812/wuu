@@ -27,6 +27,19 @@ const (
 	// above the upload cap so a file that somehow grew past the limit
 	// is skipped silently rather than blocking the profile read.
 	participantAvatarReadMaxBytes = 1024 * 1024
+	// participantSummaryAvatarMaxBytes caps the avatar bytes embedded
+	// into wire participant summaries (chat bubbles, group member chips,
+	// typing rows — resolveParticipantSummary). Unlike the profile read,
+	// a summary is duplicated into every thread item it attributes, so a
+	// full-size upload (512KB → ~683KB as base64) would multiply into
+	// hundreds of MB on a long group history resume. 64KB raw (~85KB as
+	// base64) comfortably covers a properly sized square avatar (a 256px
+	// png/webp is typically 10-50KB) while keeping even a pathological
+	// resume payload bounded. Larger uploads still render wherever the
+	// full profile is loaded (profile panel, participant/list roster,
+	// and the DM typing row which resolves through that roster) — only
+	// the inline summaries fall back to the initial-letter avatar.
+	participantSummaryAvatarMaxBytes = 64 * 1024
 )
 
 // supportedAvatarMimes lists the image mime types the participant
@@ -490,6 +503,26 @@ func removeParticipantAvatarImage(workspace string) error {
 // participantAvatarReadMaxBytes are treated as corrupt and skipped, since
 // they would exceed the upload limit and inflate profile payloads.
 func readParticipantAvatarDataURL(workspace string) (string, error) {
+	return readParticipantAvatarDataURLCapped(workspace, participantAvatarReadMaxBytes)
+}
+
+// participantSummaryAvatarDataURL is the lenient, wire-summary variant of
+// readParticipantAvatarDataURL: avatars above the summary cap degrade to
+// "" (initial-letter fallback in the UI) and read errors are swallowed —
+// a participant summary must never fail to resolve because its avatar
+// bytes are unreadable.
+func participantSummaryAvatarDataURL(workspace string) string {
+	avatar, err := readParticipantAvatarDataURLCapped(workspace, participantSummaryAvatarMaxBytes)
+	if err != nil {
+		providers.DebugLogf("read summary avatar from %q: %v", workspace, err)
+		return ""
+	}
+	return avatar
+}
+
+// readParticipantAvatarDataURLCapped implements the data-URL read with a
+// caller-chosen size ceiling; files above it read as "no avatar".
+func readParticipantAvatarDataURLCapped(workspace string, maxBytes int64) (string, error) {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return "", nil
@@ -502,7 +535,7 @@ func readParticipantAvatarDataURL(workspace string) (string, error) {
 		}
 		return "", fmt.Errorf("stat avatar image: %w", err)
 	}
-	if info.Size() > participantAvatarReadMaxBytes {
+	if info.Size() > maxBytes {
 		return "", nil
 	}
 	mime := "image/png"
