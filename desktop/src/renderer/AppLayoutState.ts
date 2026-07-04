@@ -23,7 +23,10 @@ const SETTINGS_SIDEBAR_WIDTH_KEY = "wuu.desktop.settingsSidebarWidth";
 export const WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH = 360;
 export const WORKSPACE_RIGHT_PANEL_MIN_WIDTH = 300;
 export const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
-const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
+export const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
+// The narrowest drag range the panel must always keep. Without it, a tight
+// window collapses min === max and the panel can't be dragged at all.
+export const WORKSPACE_RIGHT_PANEL_MIN_DRAG_RANGE = 120;
 const WORKSPACE_RIGHT_PANEL_STEP = 32;
 const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
 // The fork/split view (源会话 | 分叉) is proportional rather than a fixed pixel
@@ -129,14 +132,24 @@ function initialConversationSplitPercent(): number {
   );
 }
 
-function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: number): number {
+// Exported for unit testing: this pure helper is the single gate every
+// right-panel width change (live drag, commit, keyboard, window-resize) passes
+// through, so its clamp range determines whether the panel is draggable at all.
+export function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: number): number {
   const maxForWindow =
     typeof window === "undefined"
       ? WORKSPACE_RIGHT_PANEL_MAX_WIDTH
       : window.innerWidth - sidebarWidth - WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH;
-  const maxWidth = Math.max(
-    WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
-    Math.min(WORKSPACE_RIGHT_PANEL_MAX_WIDTH, maxForWindow)
+  // Always keep the ceiling at least MIN_DRAG_RANGE above the floor. The old
+  // formula was `max(MIN, min(MAX, maxForWindow))`, which on a tight window
+  // (small maxForWindow) collapsed to exactly MIN — min === max — so the
+  // resizer had zero travel and dragging did nothing. Guaranteeing the range
+  // lets the conversation area dip below its *preferred* MAIN_MIN on narrow
+  // windows, which is the correct trade for keeping the panel resizable.
+  const maxWidth = clamp(
+    maxForWindow,
+    WORKSPACE_RIGHT_PANEL_MIN_WIDTH + WORKSPACE_RIGHT_PANEL_MIN_DRAG_RANGE,
+    WORKSPACE_RIGHT_PANEL_MAX_WIDTH
   );
   return clamp(width, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, maxWidth);
 }
