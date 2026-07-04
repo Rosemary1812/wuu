@@ -212,15 +212,20 @@ export function wuuHomePath(): string {
 }
 
 function loadProjectStore(): ProjectStore {
-  const loaded = readProjectStoreFile(projectStorePath());
-  const legacy = readProjectStoreFile(legacyProjectStorePath());
-  const { store, changed } = mergeProjectStores(
-    loaded ?? { projects: [] },
-    legacy,
-  );
-  if (!loaded || changed) {
-    writeProjectStoreFile(projectStorePath(), store);
+  const path = projectStorePath();
+  const loaded = readProjectStoreFile(path);
+  if (loaded) {
+    return loaded;
   }
+
+  // Legacy app-data projects are a one-time import source. Once the
+  // canonical ~/.wuu/projects.json exists, it must be the only source of
+  // truth so explicitly removed workspaces cannot be resurrected by an old
+  // Electron store file.
+  const store = readProjectStoreFile(legacyProjectStorePath()) ?? {
+    projects: [],
+  };
+  writeProjectStoreFile(path, store);
   return store;
 }
 
@@ -246,33 +251,6 @@ function readProjectStoreFile(path: string): ProjectStore | undefined {
   } catch {
     return undefined;
   }
-}
-
-function mergeProjectStores(
-  base: ProjectStore,
-  incoming: ProjectStore | undefined,
-): { store: ProjectStore; changed: boolean } {
-  if (!incoming) {
-    return { store: base, changed: false };
-  }
-
-  let changed = false;
-  const projects = [...base.projects];
-  for (const project of incoming.projects) {
-    if (projects.some((candidate) => candidate.id === project.id)) {
-      continue;
-    }
-    projects.push(project);
-    changed = true;
-  }
-
-  let activeContext = base.active_context;
-  if (!activeContext && incoming.active_context) {
-    activeContext = normalizeRuntimeContext(incoming.active_context, projects);
-    changed = Boolean(activeContext);
-  }
-
-  return { store: { projects, active_context: activeContext }, changed };
 }
 
 function isDesktopProject(value: unknown): value is DesktopProject {
