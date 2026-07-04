@@ -131,7 +131,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		if len(images) > 0 || len(files) > 0 {
 			return s.writeResponse(req.ID, nil, errors.New("compact does not accept attachments"))
 		}
-		return s.startThreadCompactTurn(ctx, req, th)
+		return s.startThreadCompactTurn(ctx, req, th, params.Prompt)
 	}
 	if isGroup {
 		return s.handleGroupTurnStart(req, th, params, images, files)
@@ -208,13 +208,18 @@ func (s *Server) handleThreadCompactStart(ctx context.Context, req Request) erro
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.startThreadCompactTurn(ctx, req, th)
+	return s.startThreadCompactTurn(ctx, req, th, "")
 }
 
-func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *threadState) error {
+func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *threadState, displayPrompt string) error {
 	if th == nil {
 		return s.writeResponse(req.ID, nil, errors.New("thread not found"))
 	}
+	displayPrompt = strings.TrimSpace(displayPrompt)
+	if displayPrompt == "" {
+		displayPrompt = "/" + manualCompactSlashCommandName
+	}
+	displayMsg := providers.ChatMessage{Role: "user", Content: displayPrompt}
 	th.mu.Lock()
 	threadID := th.ID
 	readOnly := th.ReadOnly
@@ -257,7 +262,7 @@ func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *th
 	}
 	history := cloneHistory(th.History)
 	th.cancel = cancel
-	turn := th.startCompactTurnLocked(turnID, now)
+	turn := th.startCompactTurnLocked(turnID, displayMsg, now)
 	turnRuntime := turnRuntimeSnapshotLocked(th)
 	turnRuntime.ForceCompact = true
 	turnRuntime.CompactOnly = true

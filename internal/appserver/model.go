@@ -130,8 +130,14 @@ func (th *threadState) startInternalTurnLocked(turnID string, now time.Time) Tur
 	return th.startInternalTurnWithKindLocked(turnID, TurnKindInternal, now)
 }
 
-func (th *threadState) startCompactTurnLocked(turnID string, now time.Time) Turn {
-	return th.startInternalTurnWithKindLocked(turnID, TurnKindCompact, now)
+func (th *threadState) startCompactTurnLocked(turnID string, displayMsg providers.ChatMessage, now time.Time) Turn {
+	turn := th.startInternalTurnWithKindLocked(turnID, TurnKindCompact, now)
+	if strings.EqualFold(displayMsg.Role, "user") && strings.TrimSpace(chatMessageDisplayContent(displayMsg)) != "" {
+		item := chatMessageItem(th.nextItemIDLocked(turnID), displayMsg)
+		turn.Items = append(turn.Items, item)
+		th.replaceTurnLocked(turn)
+	}
+	return turn
 }
 
 func (th *threadState) startInternalTurnWithKindLocked(turnID string, kind TurnKind, now time.Time) Turn {

@@ -145,6 +145,20 @@ describe("composer slash commands", () => {
     expect(compact?.disabledReason).toBeUndefined();
   });
 
+  it("can disable /compact for surfaces without a compactable model context", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      compactDisabledReason: "群聊暂不支持上下文压缩"
+    });
+
+    const compact = filterComposerSlashCommands(commands, "compact")[0];
+
+    expect(compact?.kind).toBe("action");
+    expect(compact?.disabledReason).toBe("群聊暂不支持上下文压缩");
+  });
+
   it("adds /context as a local action instead of a model prompt", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },

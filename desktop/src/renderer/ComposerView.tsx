@@ -134,6 +134,7 @@ export function Composer({
   projects,
   activeContext,
   activeProject,
+  compactDisabledReason,
   codexModels,
   codexRuntimeMenu,
   codexRuntimeRef,
@@ -209,6 +210,7 @@ export function Composer({
   projects: DesktopProject[];
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
+  compactDisabledReason?: string;
   codexModels: CodexModelLoadState;
   codexRuntimeMenu: CodexRuntimeMenu;
   codexRuntimeRef: RefObject<HTMLDivElement | null>;
@@ -316,8 +318,8 @@ export function Composer({
   const slashSkillCountKey = initialized?.extension_trust?.main_session?.skills?.count ?? 0;
   const slashRuntimeReady = Boolean(activeContext && initialized);
   const slashCommands = useMemo(
-    () => buildComposerSlashCommands({ activeContext, initialized, running, skills: slashSkills }),
-    [activeContext, initialized, running, slashSkills]
+    () => buildComposerSlashCommands({ activeContext, initialized, running, compactDisabledReason, skills: slashSkills }),
+    [activeContext, compactDisabledReason, initialized, running, slashSkills]
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
   const permissionModeHasOverrides = permissionModeHasAdvancedOverrides(initialized?.tool_policy, initialized?.permissions);

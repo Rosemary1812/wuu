@@ -3715,6 +3715,13 @@ export function App(): JSX.Element {
         projects={state.projects}
         activeContext={state.activeContext}
         activeProject={activeProject}
+        compactDisabledReason={
+          !activeThread
+            ? "先打开一个对话"
+            : activeThreadIsGroup
+              ? "群聊暂不支持上下文压缩"
+              : undefined
+        }
         codexModels={codexModels}
         codexRuntimeMenu={codexRuntimeMenu}
         codexRuntimeRef={codexRuntimeRef}

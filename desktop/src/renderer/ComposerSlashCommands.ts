@@ -73,11 +73,13 @@ export function buildComposerSlashCommands({
   activeContext,
   initialized,
   running,
+  compactDisabledReason,
   skills = []
 }: {
   activeContext?: RuntimeContext;
   initialized?: InitializeResult;
   running: boolean;
+  compactDisabledReason?: string;
   skills?: SkillSummary[];
 }): ComposerSlashCommand[] {
   const needsRuntime = activeContext && initialized ? undefined : "先选择工作区";
@@ -253,7 +255,7 @@ export function buildComposerSlashCommands({
       action: "compact",
       aliases: ["compress"],
       keywords: ["compact", "context", "summary", "压缩", "上下文", "摘要", "瘦身"],
-      disabledReason: needsRuntime ?? needsIdleThread
+      disabledReason: needsRuntime ?? needsIdleThread ?? compactDisabledReason
     },
     {
       id: "terminal",

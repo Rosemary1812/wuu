@@ -6521,8 +6521,11 @@ func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
 		t.Fatalf("thread/compact/start: %v", err)
 	}
 	started := remarshal[ThreadCompactStartResult](t, responseByID(t, parseOutput(t, out.String()), "compact-1")["result"])
-	if started.Turn.Kind != TurnKindCompact || started.Turn.Status != TurnStatusInProgress || len(started.Turn.Items) != 0 {
-		t.Fatalf("compact start should return an empty compact turn in progress, got %+v", started.Turn)
+	if started.Turn.Kind != TurnKindCompact || started.Turn.Status != TurnStatusInProgress || len(started.Turn.Items) != 1 {
+		t.Fatalf("compact start should return a compact turn with the user command item, got %+v", started.Turn)
+	}
+	if started.Turn.Items[0].Type != ThreadItemUserMessage || started.Turn.Items[0].Text != "/compact" {
+		t.Fatalf("compact turn should display the triggering slash command, got %+v", started.Turn.Items)
 	}
 
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
@@ -6533,9 +6536,12 @@ func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
 	if completed.Content != "" {
 		t.Fatalf("compact-only turn must not produce a normal assistant response, got %q", completed.Content)
 	}
+	if len(completed.Turn.Items) == 0 || completed.Turn.Items[0].Type != ThreadItemUserMessage || completed.Turn.Items[0].Text != "/compact" {
+		t.Fatalf("completed compact turn should retain user command item, got %+v", completed.Turn.Items)
+	}
 	for _, item := range completed.Turn.Items {
-		if item.Type == ThreadItemUserMessage || item.Type == ThreadItemAgentMessage {
-			t.Fatalf("compact turn must not contain user/assistant chat items, got %+v", completed.Turn.Items)
+		if item.Type == ThreadItemAgentMessage {
+			t.Fatalf("compact turn must not contain assistant chat items, got %+v", completed.Turn.Items)
 		}
 	}
 	assertFakeClientRequestCount(t, client, 1)
@@ -6594,14 +6600,20 @@ func TestServerTurnStartSlashCompactRoutesToCompactOnlyTurn(t *testing.T) {
 		t.Fatalf("turn/start /compact returned error: %+v", resp["error"])
 	}
 	started := remarshal[TurnStartResult](t, resp["result"])
-	if started.Turn.Kind != TurnKindCompact || len(started.Turn.Items) != 0 {
+	if started.Turn.Kind != TurnKindCompact || len(started.Turn.Items) != 1 {
 		t.Fatalf("turn/start /compact should return compact control turn, got %+v", started.Turn)
+	}
+	if started.Turn.Items[0].Type != ThreadItemUserMessage || started.Turn.Items[0].Text != "/compact 后续只保留结论" {
+		t.Fatalf("turn/start /compact should display the user's raw slash command, got %+v", started.Turn.Items)
 	}
 
 	msgs := waitForMethod(t, out, NotificationTurnCompleted)
 	completed := remarshal[TurnCompletedNotification](t, notificationByMethod(t, msgs, NotificationTurnCompleted)["params"])
 	if completed.Turn.Kind != TurnKindCompact || completed.Content != "" {
 		t.Fatalf("slash compact should complete without normal assistant response, got %+v", completed)
+	}
+	if len(completed.Turn.Items) == 0 || completed.Turn.Items[0].Type != ThreadItemUserMessage || completed.Turn.Items[0].Text != "/compact 后续只保留结论" {
+		t.Fatalf("completed slash compact should retain raw command item, got %+v", completed.Turn.Items)
 	}
 	assertFakeClientRequestCount(t, client, 1)
 
@@ -6630,7 +6642,7 @@ func TestServerRejectsSteerForCompactTurn(t *testing.T) {
 		t.Fatal("expected loaded thread")
 	}
 	th.mu.Lock()
-	th.startCompactTurnLocked("compact-running", time.Now().UTC())
+	th.startCompactTurnLocked("compact-running", providers.ChatMessage{Role: "user", Content: "/compact"}, time.Now().UTC())
 	th.mu.Unlock()
 
 	raw, err := json.Marshal(map[string]any{
