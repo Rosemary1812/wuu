@@ -45,6 +45,8 @@ CLAUDE.md
 !/docs/plans/
 /docs/plans/*
 !/docs/plans/2026-07-03-resident-named-agents.md
+!/docs/plans/2026-07-04-memory-redesign.md
+!/docs/plans/2026-07-04-consistency-repair-plan.md
 
 # Worktrees
 .worktrees/
