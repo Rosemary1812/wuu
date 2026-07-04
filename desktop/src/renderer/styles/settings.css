@@ -1121,6 +1121,267 @@
   background: var(--surface-3);
 }
 
+/* --- Memory panel (设置 → 记忆) ------------------------------------------- */
+
+.settings-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-memory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* 「我」/「同事」子 Tab：与用量页的时间范围选择器同一形态。 */
+.settings-memory-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  padding: 3px;
+  width: fit-content;
+}
+
+.settings-memory-tab {
+  height: 30px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 0 14px;
+  transition:
+    background 140ms var(--menu-enter-easing),
+    color 140ms var(--menu-enter-easing);
+}
+
+.settings-memory-tab:hover {
+  color: var(--ink);
+}
+
+.settings-memory-tab.active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px var(--ink-overlay-12);
+}
+
+.settings-memory-agent-select {
+  max-width: 220px;
+}
+
+.settings-memory-raw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.settings-memory-raw-label {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.settings-memory-card {
+  padding: 20px 24px;
+}
+
+.settings-memory-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-memory-meta {
+  color: var(--ink-faint);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+.settings-memory-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* 骨架屏：仓库没有现成 skeleton 组件，这里是记忆面板专用的简洁灰条。 */
+.settings-memory-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.settings-memory-skeleton-bar {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-overlay-8);
+  animation: settings-memory-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes settings-memory-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* 原文视图 */
+.settings-memory-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-memory-file-table-wrap {
+  overflow-x: auto;
+}
+
+.settings-memory-file-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.settings-memory-file-table th,
+.settings-memory-file-table td {
+  border-bottom: 1px solid var(--hairline-soft);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+  font-size: var(--font-sm);
+  color: var(--ink);
+}
+
+.settings-memory-file-table th {
+  color: var(--ink-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.settings-memory-file-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.settings-memory-file-table code {
+  font-size: var(--font-sm);
+}
+
+/* chat 区 */
+.settings-memory-chat-card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  gap: 12px;
+}
+
+.settings-memory-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-memory-chat-hint {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  padding: 4px 0;
+}
+
+.settings-memory-chat-entry {
+  display: flex;
+  min-width: 0;
+}
+
+.settings-memory-chat-entry.user {
+  justify-content: flex-end;
+}
+
+.settings-memory-chat-bubble {
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--ink-overlay-6);
+  color: var(--ink);
+  font-size: var(--font-ui);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.settings-memory-chat-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-memory-chat-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+}
+
+.settings-memory-spinner {
+  animation: settings-memory-spin 0.9s linear infinite;
+}
+
+@keyframes settings-memory-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.settings-memory-changes summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.settings-memory-changes ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-memory-changes li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--font-sm);
+  color: var(--ink);
+}
+
+.settings-memory-change-action {
+  color: var(--ink-faint);
+  font-size: var(--font-xs);
+}
+
+.settings-memory-chat-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-memory-chat-input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* --- Misc ---------------------------------------------------------------- */
 
 .sr-only {
@@ -1171,7 +1432,13 @@
   .settings-switch,
   .settings-switch-thumb,
   .settings-usage-range-button,
+  .settings-memory-tab,
   .settings-cache-heatmap-cell {
     transition: none;
+  }
+
+  .settings-memory-skeleton-bar,
+  .settings-memory-spinner {
+    animation: none;
   }
 }

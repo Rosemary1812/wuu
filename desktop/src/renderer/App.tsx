@@ -7407,6 +7407,7 @@ export function App(): JSX.Element {
         initialPage={settingsInitialPage}
         running={viewContextSwitchPending}
         runningProviderNames={runningProviderNames}
+        participants={participants}
         usage={settingsUsage}
         usageRange={usageRange}
         setUsageRange={setUsageRange}

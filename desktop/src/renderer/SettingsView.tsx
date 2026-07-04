@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   BarChart3,
+  Brain,
   KeyRound,
   Plug,
   PlugZap,
@@ -27,6 +28,7 @@ import type {
   DesktopBuildInfo,
   InitializeResult,
   MCPServerStatus,
+  ParticipantProfile,
   ProviderSummary,
   RuntimeConnectionUpdate,
   SettingsUsageDay,
@@ -34,9 +36,10 @@ import type {
 } from "../shared/protocol";
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
+import { MemoryPanel } from "./MemoryPanel";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 
-export type SettingsPage = "providers" | "advanced" | "general" | "usage";
+export type SettingsPage = "providers" | "general" | "memory" | "advanced" | "usage";
 
 type CopyState = "idle" | "copying" | "copied";
 
@@ -48,6 +51,7 @@ export function SettingsView({
   running,
   usage,
   runningProviderNames,
+  participants,
   showDebugControlsSetting,
   debugControlsEnabled,
   sidebarWidth,
@@ -72,6 +76,9 @@ export function SettingsView({
   running: boolean;
   usage?: SettingsUsageResponse;
   runningProviderNames?: readonly string[];
+  // 记忆页「同事」子 Tab 的数据源：现有 roster 状态（App 的 participants），
+  // 面板内部只保留在职 named agent。
+  participants?: ParticipantProfile[];
   usageRange: SettingsUsageRange;
   setUsageRange: (range: SettingsUsageRange) => void;
   showDebugControlsSetting: boolean;
@@ -420,6 +427,9 @@ export function SettingsView({
           <SettingsNavItem icon={<Settings className="icon-lg" />} active={activePage === "general"} onClick={() => setActivePage("general")}>
             常规
           </SettingsNavItem>
+          <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
+            记忆
+          </SettingsNavItem>
           <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
             高级
           </SettingsNavItem>
@@ -569,6 +579,8 @@ export function SettingsView({
                 copyState={copyState}
                 onCopyVersion={copyVersionInfo}
               />
+            ) : activePage === "memory" ? (
+              <MemoryPanel participants={participants ?? []} />
             ) : (
               <SettingsUsagePage
                 usage={usage}
@@ -1733,6 +1745,11 @@ function settingsPageMeta(
         description: showDebugControlsSetting && debugControlsEnabled
           ? "查看可用工具、MCP 连接和当前版本。"
           : "查看 MCP 连接和当前版本。"
+      };
+    case "memory":
+      return {
+        title: "记忆",
+        description: "查看并修改 Wuu 记住的内容：你的偏好，以及每位同事的经验。"
       };
     case "usage":
       return {
