@@ -574,11 +574,17 @@ func requireGitWriteConfirmation(invocation gitInvocation, allowSensitive bool) 
 
 // runGit executes a git command and returns the standard JSON envelope.
 func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (string, error) {
+	// Worktree-bound threads run git inside the isolated checkout; the
+	// command policy checks above already ran against the ordinary rules.
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return "", err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "git", gitArgs...)
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 
 	var stdout bytes.Buffer
@@ -586,7 +592,7 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	exitCode := 0
 	timedOut := false
 	if err != nil {
@@ -610,7 +616,7 @@ func runGit(env *Env, ctx context.Context, subcmd string, gitArgs []string) (str
 		"exit_code":          exitCode,
 		"output":             trimmed,
 		"timed_out":          timedOut,
-		"workspace_revision": workspaceRevision(ctx, env.RootDir),
+		"workspace_revision": workspaceRevision(ctx, env.RevisionRoot(ctx)),
 		"next_suggestions":   gitNextSuggestions(subcmd, exitCode, timedOut),
 	}
 	if subcmd == "commit" && exitCode == 0 && !timedOut {
@@ -667,10 +673,14 @@ type gitCommitMetadata struct {
 }
 
 func latestCommitMetadata(env *Env, ctx context.Context) (gitCommitMetadata, error) {
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return gitCommitMetadata{}, err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "log", "-1", "--format=%H%x00%s")
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 	out, err := cmd.Output()
 	if err != nil {
@@ -720,11 +730,15 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 		}
 	}
 
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return "", err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "git", gitArgs...)
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 
 	var stdout bytes.Buffer
@@ -732,7 +746,7 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	exitCode := 0
 	timedOut := false
 	if err != nil {
@@ -761,7 +775,7 @@ func gitStatus(env *Env, ctx context.Context, userArgs []string) (string, error)
 		"untracked":          untracked,
 		"output":             trimmed,
 		"timed_out":          timedOut,
-		"workspace_revision": workspaceRevision(ctx, env.RootDir),
+		"workspace_revision": workspaceRevision(ctx, env.RevisionRoot(ctx)),
 		"next_suggestions":   gitStatusNextSuggestions(staged, unstaged, untracked, exitCode, timedOut),
 	}
 	if truncated {
@@ -1134,12 +1148,16 @@ func rejectSensitiveStagePathspecs(env *Env, ctx context.Context, pathspecs []st
 }
 
 func changedPathsForPathspecs(env *Env, ctx context.Context, pathspecs []string) ([]string, error) {
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return nil, err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	args := append([]string{"--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, pathspecs...)
 	cmd := exec.CommandContext(runCtx, "git", args...)
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 	out, err := cmd.Output()
 	if err != nil {
@@ -1177,11 +1195,15 @@ func parseGitPorcelainZPaths(output string) []string {
 }
 
 func gitStatusSnapshot(env *Env, ctx context.Context) (staged, unstaged []fileEntry, untracked []string, err error) {
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "status", "--porcelain")
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 	out, err := cmd.Output()
 	if err != nil {
@@ -1195,11 +1217,15 @@ func rejectSensitiveStagedCommitPaths(env *Env, ctx context.Context) error {
 	if env.BypassToolHardProtections() {
 		return nil
 	}
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "diff", "--cached", "--name-only", "-z")
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 	out, err := cmd.Output()
 	if err != nil {
@@ -1451,10 +1477,14 @@ func normalizePushArgs(env *Env, ctx context.Context, args []string) ([]string, 
 }
 
 func currentBranch(env *Env, ctx context.Context) (string, error) {
+	workDir, err := env.ExecRootDir(ctx)
+	if err != nil {
+		return "", err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, "git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = env.RootDir
+	cmd.Dir = workDir
 	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
 	out, err := cmd.Output()
 	if err != nil {

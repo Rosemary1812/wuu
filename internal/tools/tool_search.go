@@ -126,9 +126,19 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
 
-	searchRoot := t.env.RootDir
+	// Worktree-bound execution: the search root switches to the checkout
+	// after the ordinary sandbox check accepted the workspace path.
+	execRoot, err := t.env.ExecRootDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	searchRoot := execRoot
 	if strings.TrimSpace(args.Path) != "" {
 		resolved, err := t.env.ResolvePath(args.Path)
+		if err != nil {
+			return "", err
+		}
+		resolved, err = t.env.ExecPath(ctx, resolved)
 		if err != nil {
 			return "", err
 		}
@@ -150,14 +160,14 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 
 	switch opts.outputMode {
 	case "files_with_matches":
-		files, err := grepFilesWithMatches(t.env, args.Pattern, searchRoot, args.Include, opts, limit)
+		files, err := grepFilesWithMatches(t.env, execRoot, args.Pattern, searchRoot, args.Include, opts, limit)
 		if err != nil {
 			return "", err
 		}
 		result := map[string]any{
 			"action":             "grep",
 			"pattern":            args.Pattern,
-			"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+			"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 			"total":              len(files),
 			"truncated":          len(files) >= limit,
 			"files":              files,
@@ -166,14 +176,14 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return mustJSON(result)
 
 	case "count":
-		counts, total, err := grepCountMatches(t.env.RootDir, args.Pattern, searchRoot, args.Include, opts, limit)
+		counts, total, err := grepCountMatches(execRoot, args.Pattern, searchRoot, args.Include, opts, limit)
 		if err != nil {
 			return "", err
 		}
 		result := map[string]any{
 			"action":             "grep",
 			"pattern":            args.Pattern,
-			"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+			"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 			"total":              total,
 			"truncated":          len(counts) >= limit,
 			"counts":             counts,
@@ -182,14 +192,14 @@ func (t *GrepTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return mustJSON(result)
 
 	default: // "content"
-		matches, err := grepWithRipgrep(t.env, args.Pattern, searchRoot, args.Include, opts, limit)
+		matches, err := grepWithRipgrep(t.env, execRoot, args.Pattern, searchRoot, args.Include, opts, limit)
 		if err != nil {
-			matches, err = grepWithFallback(t.env, args.Pattern, searchRoot, args.Include, opts, limit)
+			matches, err = grepWithFallback(t.env, execRoot, args.Pattern, searchRoot, args.Include, opts, limit)
 			if err != nil {
 				return "", err
 			}
 		}
-		return grepContentResultJSON(args.Pattern, matches, len(matches) >= limit, workspaceRevision(ctx, t.env.RootDir))
+		return grepContentResultJSON(args.Pattern, matches, len(matches) >= limit, workspaceRevision(ctx, t.env.RevisionRoot(ctx)))
 	}
 }
 
@@ -251,9 +261,19 @@ func (t *GlobTool) Execute(ctx context.Context, argsJSON string) (string, error)
 		return "", errors.New("glob requires pattern")
 	}
 
-	searchRoot := t.env.RootDir
+	// Worktree-bound execution: the search root switches to the checkout
+	// after the ordinary sandbox check accepted the workspace path.
+	execRoot, err := t.env.ExecRootDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	searchRoot := execRoot
 	if strings.TrimSpace(args.Path) != "" {
 		resolved, err := t.env.ResolvePath(args.Path)
+		if err != nil {
+			return "", err
+		}
+		resolved, err = t.env.ExecPath(ctx, resolved)
 		if err != nil {
 			return "", err
 		}
@@ -261,9 +281,9 @@ func (t *GlobTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	}
 
 	const limit = 500
-	matches, err := globWithRipgrep(t.env.RootDir, searchRoot, args.Pattern, limit)
+	matches, err := globWithRipgrep(execRoot, searchRoot, args.Pattern, limit)
 	if err != nil {
-		matches, err = globWithFallback(t.env.RootDir, searchRoot, args.Pattern, limit)
+		matches, err = globWithFallback(execRoot, searchRoot, args.Pattern, limit)
 		if err != nil {
 			return "", err
 		}
@@ -272,7 +292,7 @@ func (t *GlobTool) Execute(ctx context.Context, argsJSON string) (string, error)
 	result := map[string]any{
 		"action":             "glob",
 		"pattern":            args.Pattern,
-		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"total":              len(matches),
 		"truncated":          len(matches) >= limit,
 		"files":              matches,
@@ -355,8 +375,7 @@ func grepContentResultJSON(pattern string, matches []grepMatch, hitLimit bool, r
 // Shared grep/glob implementation (extracted from old Toolkit methods)
 // ---------------------------------------------------------------------------
 
-func grepWithRipgrep(env *Env, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
-	rootDir := env.RootDir
+func grepWithRipgrep(env *Env, rootDir, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
 	relSearchRoot, err := filepath.Rel(rootDir, searchRoot)
 	if err != nil {
 		return nil, err
@@ -417,8 +436,7 @@ func grepWithRipgrep(env *Env, pattern, searchRoot, include string, opts grepOpt
 	return matches, nil
 }
 
-func grepWithFallback(env *Env, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
-	rootDir := env.RootDir
+func grepWithFallback(env *Env, rootDir, pattern, searchRoot, include string, opts grepOptions, limit int) ([]grepMatch, error) {
 	compilePattern := pattern
 	if opts.ignoreCase {
 		compilePattern = "(?i)" + pattern
@@ -574,8 +592,7 @@ func globWithFallback(rootDir, searchRoot, pattern string, limit int) ([]string,
 // grep output_mode: files_with_matches
 // ---------------------------------------------------------------------------
 
-func grepFilesWithMatches(env *Env, pattern, searchRoot, include string, opts grepOptions, limit int) ([]string, error) {
-	rootDir := env.RootDir
+func grepFilesWithMatches(env *Env, rootDir, pattern, searchRoot, include string, opts grepOptions, limit int) ([]string, error) {
 	files, err := grepFilesWithMatchesRG(rootDir, pattern, searchRoot, include, opts, limit)
 	if err != nil {
 		return grepFilesWithMatchesFallback(rootDir, pattern, searchRoot, include, opts, limit)

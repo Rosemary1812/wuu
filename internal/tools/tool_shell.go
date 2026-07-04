@@ -243,7 +243,7 @@ func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, t
 	if env == nil {
 		env = &Env{}
 	}
-	workDir, err := resolveShellWorkingDir(env, cwd)
+	workDir, err := resolveShellWorkingDir(ctx, env, cwd)
 	if err != nil {
 		return shellExecutionResult{}, err
 	}
@@ -299,7 +299,7 @@ func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, t
 		StderrTail:          stderrTail,
 		StdoutBytes:         len(stdoutText),
 		StderrBytes:         len(stderrText),
-		WorkspaceRevision:   workspaceRevision(ctx, env.RootDir),
+		WorkspaceRevision:   workspaceRevision(ctx, env.RevisionRoot(ctx)),
 		StdoutTailTruncated: stdoutTailTruncated,
 		StderrTailTruncated: stderrTailTruncated,
 		NextSuggestions:     shellNextSuggestions(exitCode, timedOut, classification),
@@ -308,7 +308,7 @@ func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, t
 	}, nil
 }
 
-func resolveShellWorkingDir(env *Env, cwd string) (string, error) {
+func resolveShellWorkingDir(ctx context.Context, env *Env, cwd string) (string, error) {
 	if env == nil {
 		env = &Env{}
 	}
@@ -321,6 +321,12 @@ func resolveShellWorkingDir(env *Env, cwd string) (string, error) {
 	workDir, err := env.ResolvePath(cwd)
 	if err != nil {
 		return "", fmt.Errorf("resolve working directory %q: %w", cwd, err)
+	}
+	// Worktree-bound execution: switch the shell CWD onto the checkout only
+	// after the sandbox check above accepted the workspace path.
+	workDir, err = env.ExecPath(ctx, workDir)
+	if err != nil {
+		return "", err
 	}
 	abs, err := filepath.Abs(workDir)
 	if err != nil {

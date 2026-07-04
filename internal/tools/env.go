@@ -17,6 +17,7 @@ import (
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
@@ -575,6 +576,156 @@ func pathWithinRoot(root, path string) bool {
 // NormalizeDisplayPath returns a relative path for display.
 func (e *Env) NormalizeDisplayPath(absPath string) string {
 	return normalizeDisplayPath(e.RootDir, absPath)
+}
+
+// ---------------------------------------------------------------------------
+// Worktree execution root (fork-to-worktree step 5)
+//
+// A thread forked with mode "worktree" persists the checkout path in its
+// session metadata; the turn entry injects it into the tool execution
+// context via toolctx.WithWorktreePath. The helpers below apply that
+// binding STRICTLY AFTER the ordinary sandbox / whitelist checks:
+//
+//   - the sandbox keeps judging the model-visible workspace paths against
+//     RootDir / FileScopeRoots exactly as before (nothing is loosened, and
+//     the checkout — which usually lives under the wuu state directory —
+//     is never fed into those checks where it would look out-of-bounds);
+//   - only a path that already passed is then rebased onto the checkout,
+//     so relative-path resolution, bash cwd, and search roots all switch
+//     consistently to the isolated copy;
+//   - whitelisted roots outside the workspace (the user memory notebook,
+//     the system temp dir) are not mirrored by the checkout and pass
+//     through unchanged.
+//
+// When the toolkit is already rooted at the checkout (the normal thread
+// runtime path), the binding equals RootDir and every helper is a no-op.
+// ---------------------------------------------------------------------------
+
+// worktreeExecRoot returns the ctx-bound worktree checkout when one is
+// bound and differs from RootDir. A bound checkout that is missing on disk
+// is an error — tools must fail loudly instead of silently falling back to
+// the parent repo the user believes is isolated.
+func (e *Env) worktreeExecRoot(ctx context.Context) (string, bool, error) {
+	path, ok := toolctx.WorktreePath(ctx)
+	if !ok {
+		return "", false, nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve worktree checkout %q: %w", path, err)
+	}
+	if ev, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = ev
+	}
+	root := strings.TrimSpace(e.RootDir)
+	if root != "" {
+		evalRoot := root
+		if absRoot, err := filepath.Abs(root); err == nil {
+			evalRoot = absRoot
+		}
+		if ev, err := filepath.EvalSymlinks(evalRoot); err == nil {
+			evalRoot = ev
+		}
+		if filepath.Clean(evalRoot) == filepath.Clean(abs) {
+			return "", false, nil
+		}
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		return "", false, fmt.Errorf("worktree checkout %q is not ready (missing or not a directory); this thread is bound to an isolated worktree and refuses to fall back to the parent repository", path)
+	}
+	return abs, true, nil
+}
+
+// ExecRootDir returns the directory command-style tools (bash cwd, git,
+// search roots) execute in: the bound worktree checkout when present,
+// otherwise RootDir.
+func (e *Env) ExecRootDir(ctx context.Context) (string, error) {
+	wt, ok, err := e.worktreeExecRoot(ctx)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return wt, nil
+	}
+	return e.RootDir, nil
+}
+
+// ExecPath maps a sandbox-approved absolute path onto the bound worktree
+// checkout. Call it only AFTER ResolvePath / ResolveReadPath and the
+// sensitive-path checks have accepted the workspace path. Paths outside
+// RootDir (whitelisted roots such as the user memory notebook or the
+// system temp dir) are returned unchanged.
+func (e *Env) ExecPath(ctx context.Context, resolved string) (string, error) {
+	wt, ok, err := e.worktreeExecRoot(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return resolved, nil
+	}
+	rel, ok := workspaceRelativePath(e.RootDir, resolved)
+	if !ok {
+		return resolved, nil
+	}
+	if rel == "." {
+		return wt, nil
+	}
+	return filepath.Join(wt, rel), nil
+}
+
+// NormalizeDisplayPathExec keeps the existing display convention for
+// execution paths: paths under the bound worktree checkout display
+// relative to the checkout (exactly what the same file would display as in
+// the parent workspace), everything else falls back to NormalizeDisplayPath.
+func (e *Env) NormalizeDisplayPathExec(ctx context.Context, absPath string) string {
+	if wt, ok, err := e.worktreeExecRoot(ctx); err == nil && ok && pathWithinRoot(wt, absPath) {
+		return normalizeDisplayPath(wt, absPath)
+	}
+	return e.NormalizeDisplayPath(absPath)
+}
+
+// RevisionRoot is the directory workspace_revision telemetry should be
+// computed from: the bound worktree checkout when present and ready,
+// otherwise RootDir. Telemetry-only; never errors.
+func (e *Env) RevisionRoot(ctx context.Context) string {
+	if wt, ok, err := e.worktreeExecRoot(ctx); err == nil && ok {
+		return wt
+	}
+	return e.RootDir
+}
+
+// workspaceRelativePath returns path relative to root when path resolves
+// inside root (symlink-tolerant, missing paths allowed), mirroring the
+// pathWithinRoot rules.
+func workspaceRelativePath(root, path string) (string, bool) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", false
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	evalRoot := absRoot
+	if ev, err := filepath.EvalSymlinks(evalRoot); err == nil {
+		evalRoot = ev
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	evalPath := absPath
+	if ev, err := filepath.EvalSymlinks(evalPath); err == nil {
+		evalPath = ev
+	} else if rel, relErr := filepath.Rel(absRoot, absPath); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		evalPath = filepath.Join(evalRoot, rel)
+	}
+	rel, err := filepath.Rel(evalRoot, evalPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }
 
 // ProcessManager returns the process manager, creating a default one

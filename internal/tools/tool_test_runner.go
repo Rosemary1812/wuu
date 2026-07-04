@@ -111,7 +111,13 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 			return "", errors.New("run_test refuses to access sensitive paths (" + reason + "). Use dedicated metadata-safe tools or ask the user for explicit secret handling")
 		}
 	}
-	resolved, err := resolveRunTestCommand(t.env.RootDir, args.Command)
+	// Worktree-bound execution: resolve project-local runners inside the
+	// checkout the command will actually run in.
+	runRoot, err := t.env.ExecRootDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := resolveRunTestCommand(runRoot, args.Command)
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +138,7 @@ func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, err
 		scope = "targeted"
 	}
 
-	revision := workspaceRevision(ctx, t.env.RootDir)
+	revision := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
 	commandHash := sha256Hex([]byte(command))
 	previousFailures := t.env.ConsecutiveTestFailures(commandHash, revision)
 	if revision != "" && previousFailures >= maxRepeatedRunTestFailures {

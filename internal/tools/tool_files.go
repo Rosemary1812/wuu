@@ -140,6 +140,14 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if reason, ok := sensitivePathReason(displayPath); ok && !managedArtifact && !t.env.BypassToolHardProtections() {
 		return "", fmt.Errorf("read_file refuses to read sensitive path %q (%s). Use a safer metadata command or ask the user for explicit secret handling", displayPath, reason)
 	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	if !managedArtifact {
+		resolved, err = t.env.ExecPath(ctx, resolved)
+		if err != nil {
+			return "", err
+		}
+	}
 
 	info, err := os.Stat(resolved)
 	if err != nil {
@@ -236,7 +244,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 					"action":             "read_unchanged",
 					"path":               displayPath,
 					"file_sha":           formatFileSHA(contentHash),
-					"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+					"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 					"range":              readFileRangeMetadata(args.Offset, len(readResult.Lines)),
 					"unchanged":          true,
 					"message":            "File unchanged since last read. Refer to the earlier read result.",
@@ -271,7 +279,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"action":             "read",
 		"path":               displayPath,
 		"file_sha":           formatFileSHA(contentHash),
-		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"content":            buf.String(),
 		"num_lines":          len(readResult.Lines),
 		"start_line":         args.Offset,
@@ -824,6 +832,12 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if err := rejectSensitiveToolPath(t.env, "write_file", "write", resolved); err != nil {
 		return "", err
 	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	resolved, err = t.env.ExecPath(ctx, resolved)
+	if err != nil {
+		return "", err
+	}
 
 	oldContent, readErr := os.ReadFile(resolved)
 	fileExists := readErr == nil
@@ -837,7 +851,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		if err := t.validateExistingWrite(resolved, oldContent, strings.TrimSpace(args.ExpectedOldSHA)); err != nil {
 			return "", err
 		}
-		if err := validateWriteFileOverwriteScope(t.env, resolved, oldContent, args.Content, args.OverwritePolicy); err != nil {
+		if err := validateWriteFileOverwriteScope(ctx, t.env, resolved, oldContent, args.Content, args.OverwritePolicy); err != nil {
 			return "", err
 		}
 	}
@@ -855,10 +869,10 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 
 	result := map[string]any{
 		"action":             "create",
-		"path":               t.env.NormalizeDisplayPath(resolved),
+		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
 		"written_bytes":      len(args.Content),
 		"new_file_sha":       formatFileSHA(sha256Hex([]byte(args.Content))),
-		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 	}
 
 	if fileExists {
@@ -925,7 +939,7 @@ func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte
 	return nil
 }
 
-func validateWriteFileOverwriteScope(env *Env, resolved string, oldContent []byte, newContent, overwritePolicy string) error {
+func validateWriteFileOverwriteScope(ctx context.Context, env *Env, resolved string, oldContent []byte, newContent, overwritePolicy string) error {
 	policy := strings.ToLower(strings.TrimSpace(overwritePolicy))
 	if policy != "" && !oneOf(policy, "small_file", "generated", "explicit_user_requested") {
 		return fmt.Errorf("write_file invalid overwrite_policy %q: use small_file, generated, or explicit_user_requested", overwritePolicy)
@@ -938,7 +952,7 @@ func validateWriteFileOverwriteScope(env *Env, resolved string, oldContent []byt
 	}
 	displayPath := resolved
 	if env != nil {
-		displayPath = env.NormalizeDisplayPath(resolved)
+		displayPath = env.NormalizeDisplayPathExec(ctx, resolved)
 	}
 	switch policy {
 	case "explicit_user_requested":
@@ -1039,6 +1053,12 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	if err := rejectSensitiveToolPath(t.env, "list_files", "list", resolved); err != nil {
 		return "", err
 	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	resolved, err = t.env.ExecPath(ctx, resolved)
+	if err != nil {
+		return "", err
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("stat path: %w", err)
@@ -1058,7 +1078,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 	omittedProtected := 0
 	for _, entry := range entries {
 		entryPath := filepath.Join(resolved, entry.Name())
-		displayPath := t.env.NormalizeDisplayPath(entryPath)
+		displayPath := t.env.NormalizeDisplayPathExec(ctx, entryPath)
 		if _, ok := sensitivePathReason(displayPath); ok && !t.env.BypassToolHardProtections() {
 			omittedProtected++
 			continue
@@ -1083,8 +1103,8 @@ func (t *ListFilesTool) Execute(ctx context.Context, argsJSON string) (string, e
 
 	result := map[string]any{
 		"action":              "list",
-		"path":                t.env.NormalizeDisplayPath(resolved),
-		"workspace_revision":  workspaceRevision(ctx, t.env.RootDir),
+		"path":                t.env.NormalizeDisplayPathExec(ctx, resolved),
+		"workspace_revision":  workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"total":               len(entries),
 		"truncated":           len(entries)-omittedProtected > limit,
 		"omitted_entry_count": max(len(entries)-omittedProtected-limit, 0),
@@ -1209,6 +1229,12 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if err := rejectSensitiveToolPath(t.env, "edit_file", "edit", resolved); err != nil {
 		return "", err
 	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	resolved, err = t.env.ExecPath(ctx, resolved)
+	if err != nil {
+		return "", err
+	}
 
 	info, err := os.Stat(resolved)
 	if err != nil {
@@ -1263,10 +1289,10 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	diff := computeDiff(text, newContent, 3)
 	result := map[string]any{
 		"action":             "edit",
-		"path":               t.env.NormalizeDisplayPath(resolved),
+		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
 		"old_file_sha":       formatFileSHA(oldSHA),
 		"new_file_sha":       formatFileSHA(sha256Hex([]byte(newContent))),
-		"workspace_revision": workspaceRevision(ctx, t.env.RootDir),
+		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"diff":               diff,
 		"next_suggestions":   []string{"run targeted validation with command execution if that capability is exposed, otherwise inspect the resulting diff before finishing"},
 	}

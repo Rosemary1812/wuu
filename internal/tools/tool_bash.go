@@ -285,7 +285,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 	}
 
 	command := strings.TrimSpace(args.Command)
-	runCWD, err := resolveShellWorkingDir(t.env, args.CWD)
+	runCWD, err := resolveShellWorkingDir(ctx, t.env, args.CWD)
 	if err != nil {
 		return "", err
 	}
@@ -307,7 +307,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		timeout = maxShellTimeoutSeconds
 	}
 
-	revision := workspaceRevision(ctx, t.env.RootDir)
+	revision := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
 	commandHash := sha256Hex([]byte(command))
 	if verification && revision != "" {
 		previousFailures := t.env.ConsecutiveTestFailures(commandHash, revision)

@@ -124,13 +124,13 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 
 	dryRun := args.DryRun || args.DryRun2
-	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
+	revisionBefore := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
 
 	files := make([]applyPatchFileResult, 0, len(patch.Hunks))
 	changedFiles := make([]string, 0, len(patch.Hunks))
 	plans := make([]applyPatchHunkPlan, 0, len(patch.Hunks))
 	for _, hunk := range patch.Hunks {
-		plan, err := t.planHunk(hunk)
+		plan, err := t.planHunk(ctx, hunk)
 		if err != nil {
 			return "", fmt.Errorf("apply_patch verification failed: %w", err)
 		}
@@ -153,7 +153,7 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, argsJSON string) (string, 
 		t.recordPatchPlanBaselines(plans)
 		t.notifyPatchPlans(plans)
 	}
-	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
+	revisionAfter := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
 	warnings := []string(nil)
 	riskSummary := summarizeApplyPatchRisk(files, len(patch.Hunks))
 	var journal *applyPatchJournalManifest
@@ -490,25 +490,31 @@ func parseApplyPatchChunks(lines []string, start, end int) ([]applyPatchChunk, i
 	return chunks, i, nil
 }
 
-func (t *ApplyPatchTool) planHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
+func (t *ApplyPatchTool) planHunk(ctx context.Context, hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	switch hunk.Type {
 	case "add":
-		return t.planAddHunk(hunk)
+		return t.planAddHunk(ctx, hunk)
 	case "update":
-		return t.planUpdateHunk(hunk)
+		return t.planUpdateHunk(ctx, hunk)
 	case "delete":
-		return t.planDeleteHunk(hunk)
+		return t.planDeleteHunk(ctx, hunk)
 	default:
 		return applyPatchHunkPlan{}, fmt.Errorf("unknown hunk type %q", hunk.Type)
 	}
 }
 
-func (t *ApplyPatchTool) planAddHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
+func (t *ApplyPatchTool) planAddHunk(ctx context.Context, hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
 		return applyPatchHunkPlan{}, err
 	}
 	if err := t.rejectSensitivePatchPath(resolved, "add"); err != nil {
+		return applyPatchHunkPlan{}, err
+	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	resolved, err = t.env.ExecPath(ctx, resolved)
+	if err != nil {
 		return applyPatchHunkPlan{}, err
 	}
 	if _, err := os.Stat(resolved); err == nil {
@@ -519,7 +525,7 @@ func (t *ApplyPatchTool) planAddHunk(hunk applyPatchHunk) (applyPatchHunkPlan, e
 	content := []byte(joinPatchLines(hunk.Contents))
 	return applyPatchHunkPlan{
 		Result: applyPatchFileResult{
-			Path:       t.env.NormalizeDisplayPath(resolved),
+			Path:       t.env.NormalizeDisplayPathExec(ctx, resolved),
 			Action:     "add",
 			NewFileSHA: formatFileSHA(sha256Hex(content)),
 			Diff: DiffResult{
@@ -535,12 +541,18 @@ func (t *ApplyPatchTool) planAddHunk(hunk applyPatchHunk) (applyPatchHunkPlan, e
 	}, nil
 }
 
-func (t *ApplyPatchTool) planUpdateHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
+func (t *ApplyPatchTool) planUpdateHunk(ctx context.Context, hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
 		return applyPatchHunkPlan{}, err
 	}
 	if err := t.rejectSensitivePatchPath(resolved, "update"); err != nil {
+		return applyPatchHunkPlan{}, err
+	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	resolved, err = t.env.ExecPath(ctx, resolved)
+	if err != nil {
 		return applyPatchHunkPlan{}, err
 	}
 	info, err := os.Stat(resolved)
@@ -576,13 +588,17 @@ func (t *ApplyPatchTool) planUpdateHunk(hunk applyPatchHunk) (applyPatchHunkPlan
 		if err := t.rejectSensitivePatchPath(target, "move to"); err != nil {
 			return applyPatchHunkPlan{}, err
 		}
+		target, err = t.env.ExecPath(ctx, target)
+		if err != nil {
+			return applyPatchHunkPlan{}, err
+		}
 		if _, err := os.Stat(target); err == nil {
 			return applyPatchHunkPlan{}, fmt.Errorf("move target already exists: %s", hunk.MovePath)
 		} else if !os.IsNotExist(err) {
 			return applyPatchHunkPlan{}, fmt.Errorf("stat move target: %w", err)
 		}
 		action = "move"
-		displayMovePath = t.env.NormalizeDisplayPath(target)
+		displayMovePath = t.env.NormalizeDisplayPathExec(ctx, target)
 		removeSource = true
 		notifyPaths = []string{target, resolved}
 	}
@@ -590,7 +606,7 @@ func (t *ApplyPatchTool) planUpdateHunk(hunk applyPatchHunk) (applyPatchHunkPlan
 	newBytes := []byte(newContent)
 	return applyPatchHunkPlan{
 		Result: applyPatchFileResult{
-			Path:       t.env.NormalizeDisplayPath(resolved),
+			Path:       t.env.NormalizeDisplayPathExec(ctx, resolved),
 			MovePath:   displayMovePath,
 			Action:     action,
 			OldFileSHA: formatFileSHA(sha256Hex(oldBytes)),
@@ -607,12 +623,18 @@ func (t *ApplyPatchTool) planUpdateHunk(hunk applyPatchHunk) (applyPatchHunkPlan
 	}, nil
 }
 
-func (t *ApplyPatchTool) planDeleteHunk(hunk applyPatchHunk) (applyPatchHunkPlan, error) {
+func (t *ApplyPatchTool) planDeleteHunk(ctx context.Context, hunk applyPatchHunk) (applyPatchHunkPlan, error) {
 	resolved, err := t.env.ResolvePath(hunk.Path)
 	if err != nil {
 		return applyPatchHunkPlan{}, err
 	}
 	if err := t.rejectSensitivePatchPath(resolved, "delete"); err != nil {
+		return applyPatchHunkPlan{}, err
+	}
+	// Worktree-bound execution: rebase onto the checkout only after the
+	// sandbox and sensitive-path checks above accepted the workspace path.
+	resolved, err = t.env.ExecPath(ctx, resolved)
+	if err != nil {
 		return applyPatchHunkPlan{}, err
 	}
 	info, err := os.Stat(resolved)
@@ -628,7 +650,7 @@ func (t *ApplyPatchTool) planDeleteHunk(hunk applyPatchHunk) (applyPatchHunkPlan
 	}
 	return applyPatchHunkPlan{
 		Result: applyPatchFileResult{
-			Path:       t.env.NormalizeDisplayPath(resolved),
+			Path:       t.env.NormalizeDisplayPathExec(ctx, resolved),
 			Action:     "delete",
 			OldFileSHA: formatFileSHA(sha256Hex(oldBytes)),
 			Diff:       computeDiff(string(oldBytes), "", 3),
