@@ -248,6 +248,44 @@ func TestBuilder_AddWorkflows(t *testing.T) {
 	}
 }
 
+func TestBuilder_AddMemdirWithIndexContent(t *testing.T) {
+	var b Builder
+	b.AddMemdir("# Memory directory\nTeaching text here.", "- [User role](user_role.md) — data scientist")
+	result := b.BuildWithInfo()
+
+	for _, want := range []string{
+		"# Memory directory",
+		"Teaching text here.",
+		"## MEMORY.md",
+		"- [User role](user_role.md) — data scientist",
+	} {
+		if !strings.Contains(result.Content, want) {
+			t.Fatalf("memdir section missing %q:\n%s", want, result.Content)
+		}
+	}
+	if strings.Contains(result.Content, "currently empty") {
+		t.Fatalf("non-empty index must not render the empty note:\n%s", result.Content)
+	}
+	if len(result.Sections) != 1 || result.Sections[0].Key != "memdir" || result.Sections[0].Static {
+		t.Fatalf("memdir must render as one dynamic section: %+v", result.Sections)
+	}
+}
+
+func TestBuilder_AddMemdirEmptyIndexRendersEmptyNote(t *testing.T) {
+	var b Builder
+	b.AddMemdir("# Memory directory\nTeaching.", "  \n ")
+	result := b.Build()
+	if !strings.Contains(result, "The MEMORY.md index is currently empty.") {
+		t.Fatalf("empty index must render the empty note:\n%s", result)
+	}
+
+	var empty Builder
+	empty.AddMemdir("   ", "- [x](x.md)")
+	if got := empty.Build(); got != "" {
+		t.Fatalf("blank teaching must add no section, got:\n%s", got)
+	}
+}
+
 func TestBuilder_AddProfileMemoryGuidanceAndSnapshot(t *testing.T) {
 	entries := []store.Entry{
 		{

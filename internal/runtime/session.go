@@ -23,6 +23,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
+	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/memory"
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
@@ -83,6 +84,10 @@ type Session struct {
 	Workflows                   []workflow.Definition
 	Plugins                     []pluginpkg.Plugin
 	Memory                      []memory.File
+	// MemdirEnabled reports whether the file-directory memory (user
+	// notebook teaching + index injection and file-scope whitelist) is
+	// active for this session. False when Memory.Disable is set.
+	MemdirEnabled               bool
 	ProfileMemoryNudgeInterval  int
 	ProfileMemoryCharLimit      int
 	ProfileUserMemoryCharLimit  int
@@ -204,10 +209,30 @@ func NewSession(opts Options) (*Session, error) {
 		return nil, err
 	}
 
+	// File-directory memory (memory-redesign M1): the user notebook index is
+	// read once here — session creation is one of the two allowed
+	// prompt-prefix change points (contract §4) — and the teaching + index
+	// are injected into the base prompt below. Memory.Disable stays the
+	// escape hatch for a fully memoryless session.
+	memdirEnabled := profileMemoryEnabled && !cfg.Memory.Disable
+	var memdirTeaching, memdirWorkerTeaching, memdirIndex string
+	if memdirEnabled {
+		userNotebook := memdir.UserMemdir(wuuHome)
+		if err := memdir.EnsureDir(userNotebook); err != nil {
+			providers.DebugLogf("ensure user memory notebook: %v", err)
+		}
+		memdirTeaching = memdir.SessionTeaching(userNotebook)
+		memdirWorkerTeaching = memdir.WorkerTeaching(userNotebook)
+		if snap, err := memdir.ReadIndex(userNotebook); err == nil {
+			memdirIndex = snap.Content
+		} else {
+			providers.DebugLogf("read user memory index: %v", err)
+		}
+	}
+
 	var toolExecutor agent.ToolExecutor
 	var toolkit *tools.Toolkit
 	var profileMemoryProvider memstore.Provider
-	var workspaceMemoryProvider memstore.Provider
 	profileMemoryCharLimit := cfg.Memory.ProfileMemoryCharLimit()
 	profileUserMemoryCharLimit := cfg.Memory.ProfileUserCharLimit()
 	toolLoadingPreference := cfg.Agent.ToolLoadingPreference()
@@ -243,8 +268,14 @@ func NewSession(opts Options) (*Session, error) {
 			}
 			if wsProvider, wsErr := newWorkspaceMemoryProvider(workspaceStateDir); wsErr == nil && wsProvider != nil {
 				kit.SetWorkspaceMemory(wsProvider)
-				workspaceMemoryProvider = wsProvider
 			}
+		}
+		if memdirEnabled {
+			// The user notebook joins the session agent's file-tool whitelist
+			// (memory-redesign §3): FileScopeRoots replaces the single-RootDir
+			// confinement with [workspace root, user notebook]. Worker clones
+			// reset this below so subagents keep plain root confinement.
+			kit.SetFileScopeRoots([]string{kit.RootDir(), memdir.UserMemdir(wuuHome)})
 		}
 		kit.SetOnFileChanged(func(absPath string) {
 			_, _ = hookDispatcher.Dispatch(context.Background(), hooks.FileChanged, &hooks.Input{
@@ -258,8 +289,6 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
-	profileMemoryEntries := recallLayeredProfileMemory(context.Background(), profileMemoryProvider, workspaceMemoryProvider)
-	profileMemoryEnabledForPrompt := profileMemoryProvider != nil || workspaceMemoryProvider != nil
 	mainSurface := activeSurface(toolkit)
 	if toolkit != nil {
 		if err := toolkit.ValidateActiveToolSurfaceForProvider(providers.ToolSurfaceValidationTarget{
@@ -275,7 +304,7 @@ func NewSession(opts Options) (*Session, error) {
 		return nil, err
 	}
 	mainSurface.DeferredToolCatalog = deferredToolCatalogPrompt
-	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryEntries, profileMemoryEnabledForPrompt, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
 
@@ -298,7 +327,7 @@ func NewSession(opts Options) (*Session, error) {
 		workerToolProviderName := roleSelections.Worker.RuleProvider
 		workerToolModeModel := roleSelections.Worker.APIModel
 		workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
-		workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryEntries, profileMemoryEnabledForPrompt, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+		workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
@@ -325,13 +354,18 @@ func NewSession(opts Options) (*Session, error) {
 			ReportSink:                     loopSink,
 			WorkerSysPrompt:                workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-				return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+				return buildWorkerBasePrompt(workerRoot, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(toolkit, cfg.Agent.ToolPolicy, permissions), memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := toolkit.CloneForRoot(workerRoot)
 				if werr != nil {
 					return nil, werr
 				}
+				// Reset the inherited file-scope whitelist: an ordinary worker
+				// is confined to its own root (and must not see the user
+				// notebook); the participant branch below installs the
+				// resident whitelist when applicable.
+				wkit.SetFileScopeRoots(nil)
 				workerStateDir := workspaceStateDir
 				if workerRoot != rootDir {
 					if dir, err := statepath.WorkspaceDir(wuuHome, workerRoot); err == nil {
@@ -460,6 +494,7 @@ func NewSession(opts Options) (*Session, error) {
 		Workflows:                   discoveredWorkflows,
 		Plugins:                     discoveredPlugins,
 		Memory:                      memoryFiles,
+		MemdirEnabled:               memdirEnabled,
 		ProfileMemoryNudgeInterval:  profileMemoryNudgeInterval,
 		ProfileMemoryCharLimit:      profileMemoryCharLimit,
 		ProfileUserMemoryCharLimit:  profileUserMemoryCharLimit,
@@ -720,6 +755,12 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	}
 	artifactDir := statepath.SessionArtifactDir(stateDir, id)
 	goalRuntime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(stateDir, id)))
+	wuuHome := strings.TrimSpace(s.WuuHome)
+	if wuuHome == "" {
+		if home, err := statepath.Home(""); err == nil {
+			wuuHome = home
+		}
+	}
 
 	var (
 		kit          *tools.Toolkit
@@ -741,12 +782,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			workerClient = s.StreamRunner.Client
 		}
 		if workerClient != nil {
-			wuuHome := strings.TrimSpace(s.WuuHome)
-			if wuuHome == "" {
-				if home, err := statepath.Home(""); err == nil {
-					wuuHome = home
-				}
-			}
 			var control *agentcontrol.AgentControl
 			loopSink := goalrunner.NewAgentControlFailureSink(nil)
 			workerModel := s.Model
@@ -757,25 +792,18 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			workerToolProviderName := s.ModelRoles.Worker.RuleProvider
 			workerToolModeModel := workerModel
 			workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
-			var workerProfileMemoryEntries []memstore.Entry
-			workerProfileMemoryEnabled := false
-			if s.Toolkit != nil && (s.Toolkit.Memory() != nil || s.Toolkit.WorkspaceMemory() != nil) {
-				workerProfileMemoryEnabled = true
-				workerProfileMemoryEntries = recallLayeredProfileMemory(context.Background(), s.Toolkit.Memory(), s.Toolkit.WorkspaceMemory())
-			}
-			workerBaseSystemPrompt := buildBaseSystemPromptWithToolPolicy(
+			// Thread creation is an allowed prompt-prefix change point, so
+			// the worker base prompt reads the user notebook index fresh.
+			workerBaseSystemPrompt := buildWorkerBasePrompt(
 				threadRoot,
-				config.WorkerSystemPrompt(),
+				wuuHome,
 				s.UserSystemPrompt,
 				workerToolProviderName,
 				workerToolModeModel,
 				workerToolSurface,
 				toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 				s.Memory,
-				workerProfileMemoryEntries,
-				workerProfileMemoryEnabled,
-				s.ProfileMemoryCharLimit,
-				s.ProfileUserMemoryCharLimit,
+				s.MemdirEnabled,
 				s.Skills,
 				s.Workflows,
 			)
@@ -800,7 +828,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				ReportSink:                     loopSink,
 				WorkerSysPrompt:                workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-					return buildProfileWorkerBasePrompt(workerRoot, wuuHome, meta.AgentProfile, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions), s.Memory, s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit, s.Skills, s.Workflows)
+					return buildWorkerBasePrompt(workerRoot, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions), s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					parentKit := kit
@@ -811,6 +839,11 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					if err != nil {
 						return nil, err
 					}
+					// Reset the inherited file-scope whitelist: an ordinary
+					// worker is confined to its own root (and must not see
+					// the user notebook); the participant branch below
+					// installs the resident whitelist when applicable.
+					workerKit.SetFileScopeRoots(nil)
 					workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
 					workerStateDir := stateDir
 					if !sameRuntimeRoot(workerRoot, threadRoot) {
@@ -890,11 +923,20 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetConversationSessionDir(s.SessionDir)
 		kit.SetGoalRuntime(goalRuntime)
 		kit.SetAgentIdentity(id, agentthread.RootPath)
+		if s.MemdirEnabled {
+			// Rebase the file-scope whitelist on the THREAD root (the clone
+			// inherited the parent session's roots): thread root plus the
+			// user notebook (memory-redesign §3).
+			kit.SetFileScopeRoots([]string{kit.RootDir(), memdir.UserMemdir(wuuHome)})
+		}
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", threadRoot)
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
 	runner.SystemPrompt, runner.SystemPromptSections = systemPromptForThreadRoot(runner.SystemPrompt, runner.SystemPromptSections, threadRoot)
+	if s.MemdirEnabled {
+		runner.SystemPrompt, runner.SystemPromptSections = systemPromptWithFreshMemdirIndex(runner.SystemPrompt, runner.SystemPromptSections, wuuHome)
+	}
 	runner.PromptCacheKey = strings.TrimSpace(id)
 	runner.BeforeRequestContext = RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
@@ -1005,17 +1047,47 @@ func systemPromptForThreadRoot(promptText string, sections []agent.SystemPromptS
 }
 
 func updateEnvironmentSectionInfo(sections []agent.SystemPromptSectionInfo, envSection string) []agent.SystemPromptSectionInfo {
+	return updateSectionInfo(sections, "environment", envSection)
+}
+
+func updateSectionInfo(sections []agent.SystemPromptSectionInfo, key, content string) []agent.SystemPromptSectionInfo {
 	out := append([]agent.SystemPromptSectionInfo(nil), sections...)
-	sum := sha256.Sum256([]byte(envSection))
+	sum := sha256.Sum256([]byte(content))
 	hash := hex.EncodeToString(sum[:16])
 	for i := range out {
-		if out[i].Key == "environment" {
-			out[i].Bytes = len([]byte(envSection))
+		if out[i].Key == key {
+			out[i].Bytes = len([]byte(content))
 			out[i].Hash = hash
 			return out
 		}
 	}
 	return out
+}
+
+// systemPromptWithFreshMemdirIndex re-reads the user notebook index and
+// splices an up-to-date memdir section into a thread's system prompt.
+// Thread creation is one of the two allowed prompt-prefix change points
+// (memory-redesign §4), so a conversation started today sees memories saved
+// in earlier conversations without restarting the app. Within the thread
+// the section stays frozen.
+func systemPromptWithFreshMemdirIndex(promptText string, sections []agent.SystemPromptSectionInfo, wuuHome string) (string, []agent.SystemPromptSectionInfo) {
+	userNotebook := memdir.UserMemdir(wuuHome)
+	snap, err := memdir.ReadIndex(userNotebook)
+	if err != nil {
+		return promptText, sections
+	}
+	section := prompt.MemdirSection(memdir.SessionTeaching(userNotebook), snap.Content)
+	const marker = "# Memory directory"
+	start := strings.Index(promptText, marker)
+	if start < 0 || section == "" {
+		return promptText, append([]agent.SystemPromptSectionInfo(nil), sections...)
+	}
+	end := len(promptText)
+	if next := strings.Index(promptText[start+len(marker):], "\n\n# "); next >= 0 {
+		end = start + len(marker) + next
+	}
+	updated := promptText[:start] + section + promptText[end:]
+	return updated, updateSectionInfo(sections, "memdir", section)
 }
 
 func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)) func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult) {
@@ -1717,50 +1789,41 @@ func newWorkspaceMemoryProvider(workspaceStateDir string) (*memstore.FileProvide
 	return memstore.NewFileProvider(statepath.WorkspaceMemoryDir(workspaceStateDir))
 }
 
-// buildProfileWorkerBasePrompt assembles a worker subagent's base system
-// prompt. A worker is only attached to the durable long-term memory store
-// when it was spawned with an explicit, non-default AgentProfile — workers
-// without an explicit profile stay memoryless to preserve the existing
-// worker isolation semantics (a transient worker must not inherit or
-// pollute the parent session's long-term memory).
-//
-// The global memory is now a single directory under
-// statepath.GlobalMemoryDir(wuuHome) shared by every session, so a worker
-// with an explicit profile still shares the same store as the main
-// session that spawned it; the gating here is about whether the worker
-// should be memory-bearing at all, not about which store to use.
-func buildProfileWorkerBasePrompt(rootDir, wuuHome, profileName, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) (string, error) {
-	name := strings.TrimSpace(profileName)
-	var entries []memstore.Entry
-	enabled := name != "" && !strings.EqualFold(name, config.DefaultAgentName)
-	if enabled {
-		provider, err := newProfileMemoryProvider(wuuHome, name)
-		if err != nil {
-			return "", err
+// buildWorkerBasePrompt assembles a worker subagent's base system prompt.
+// Workers get the READ-ONLY user-notebook variant (memory-redesign §3:
+// 临时 worker 只读注入): the user index is injected as orientation — read
+// fresh here because worker/thread creation is a prompt-prefix creation
+// moment under the cache red lines — while the notebook directory stays
+// outside the worker's writable file scope.
+func buildWorkerBasePrompt(rootDir, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	var teaching, index string
+	if memdirEnabled && strings.TrimSpace(wuuHome) != "" {
+		userNotebook := memdir.UserMemdir(wuuHome)
+		teaching = memdir.WorkerTeaching(userNotebook)
+		if snap, err := memdir.ReadIndex(userNotebook); err == nil {
+			index = snap.Content
+		} else {
+			providers.DebugLogf("read user memory index for worker prompt: %v", err)
 		}
-		// Read the worker's workspace memory layer too, derived from the
-		// worker's workspace state directory. A failure to resolve it degrades
-		// to global-only rather than failing the whole prompt build.
-		var workspaceProvider memstore.Provider
-		if workspaceStateDir, wsErr := statepath.WorkspaceDir(wuuHome, rootDir); wsErr == nil {
-			if wsProvider, wsErr := newWorkspaceMemoryProvider(workspaceStateDir); wsErr == nil && wsProvider != nil {
-				workspaceProvider = wsProvider
-			}
-		}
-		entries = recallLayeredProfileMemory(context.Background(), provider, workspaceProvider)
 	}
-	return buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, entries, enabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows), nil
+	return buildBaseSystemPromptWithToolPolicy(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, teaching, index, discoveredSkills, discoveredWorkflows)
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 	if s == nil {
 		return ""
 	}
-	var profileMemoryEntries []memstore.Entry
-	profileMemoryEnabled := false
-	if s.Toolkit != nil && (s.Toolkit.Memory() != nil || s.Toolkit.WorkspaceMemory() != nil) {
-		profileMemoryEnabled = true
-		profileMemoryEntries = recallLayeredProfileMemory(context.Background(), s.Toolkit.Memory(), s.Toolkit.WorkspaceMemory())
+	// Settings changes rebuild the whole prompt anyway, so the user notebook
+	// index is re-read here (an accepted one-time prompt-cache invalidation).
+	var memdirTeaching, memdirIndex string
+	if s.MemdirEnabled {
+		userNotebook := memdir.UserMemdir(s.WuuHome)
+		memdirTeaching = memdir.SessionTeaching(userNotebook)
+		if snap, err := memdir.ReadIndex(userNotebook); err == nil {
+			memdirIndex = snap.Content
+		} else {
+			providers.DebugLogf("read user memory index: %v", err)
+		}
 	}
 	baseSystemPromptResult := buildBaseSystemPromptResult(
 		s.RootDir,
@@ -1771,10 +1834,8 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		activeSurfaceWithDeferredToolCatalog(s.Toolkit, s.DeferredToolCatalogPrompt),
 		toolPolicySystemBlockForToolkit(s.Toolkit, s.ToolPolicy, s.Permissions),
 		s.Memory,
-		profileMemoryEntries,
-		profileMemoryEnabled,
-		s.ProfileMemoryCharLimit,
-		s.ProfileUserMemoryCharLimit,
+		memdirTeaching,
+		memdirIndex,
 		s.Skills,
 		s.Workflows,
 	)
@@ -1801,11 +1862,21 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 	s.ProfileMemoryCharLimit = cfg.Memory.ProfileMemoryCharLimit()
 	s.ProfileUserMemoryCharLimit = cfg.Memory.ProfileUserCharLimit()
 	s.Memory = discoverMemory(s.RootDir, homeDir, cfg.Memory)
+	s.MemdirEnabled = cfg.Agent.ProfileMemoryEnabled() && !cfg.Memory.Disable
 	s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
 	if cfg.Memory.Disable {
 		s.DreamIntervalDays = 0
 	}
 	if s.Toolkit != nil {
+		if s.MemdirEnabled {
+			userNotebook := memdir.UserMemdir(s.WuuHome)
+			if err := memdir.EnsureDir(userNotebook); err != nil {
+				providers.DebugLogf("ensure user memory notebook: %v", err)
+			}
+			s.Toolkit.SetFileScopeRoots([]string{s.Toolkit.RootDir(), userNotebook})
+		} else {
+			s.Toolkit.SetFileScopeRoots(nil)
+		}
 		s.Toolkit.SetMemoryLimits(s.ProfileMemoryCharLimit, s.ProfileUserMemoryCharLimit)
 		if cfg.Agent.ProfileMemoryEnabled() && !cfg.Memory.Disable {
 			if memProvider, err := newProfileMemoryProvider(s.WuuHome, cfg.Agent.ProfileName()); err == nil {
@@ -1832,15 +1903,15 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 	return s.RefreshSystemPrompt(s.ProviderName, apiModel)
 }
 
-func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, wuucontext.Block{}, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows)
+func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	return buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, wuucontext.Block{}, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 }
 
-func buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, profileMemoryEntries, profileMemoryEnabled, profileMemoryCharLimit, profileUserMemoryCharLimit, discoveredSkills, discoveredWorkflows).Content
+func buildBaseSystemPromptWithToolPolicy(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, toolPolicyBlock, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows).Content
 }
 
-func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, profileMemoryEntries []memstore.Entry, profileMemoryEnabled bool, profileMemoryCharLimit, profileUserMemoryCharLimit int, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
+func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, toolPolicyBlock wuucontext.Block, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	pb.AddHarnessAdapter(providerName, model)
@@ -1854,8 +1925,8 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}
 	pb.AddMemory(memoryFiles)
-	if profileMemoryEnabled {
-		pb.AddProfileMemoryWithLimits(profileMemoryEntries, profileMemoryCharLimit, profileUserMemoryCharLimit)
+	if strings.TrimSpace(memdirTeaching) != "" {
+		pb.AddMemdir(memdirTeaching, memdirIndex)
 	}
 	if toolSurface.ProfileName != "" {
 		pb.AddSkills(tools.FilterSkillsForSurface(discoveredSkills, toolSurface))

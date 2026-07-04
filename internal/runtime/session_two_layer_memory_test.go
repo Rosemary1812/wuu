@@ -152,20 +152,20 @@ func TestNewSessionInjectsWorkspaceMemoryLayer(t *testing.T) {
 		t.Fatalf("workspace memory dir = %q, want %q", wsAttached.Dir(), wsDir)
 	}
 
+	// Prompt injection now comes from the user notebook only (memdir M1):
+	// the global store's rendered MEMORY.md is picked up as the notebook
+	// index, while workspace-store content no longer reaches the prompt
+	// (memory-redesign D2: no project notebook in v1).
 	for _, want := range []string{
-		"# Persistent Memory",
-		"Workspace builds with make wuu",
+		"# Memory directory",
 		"User prefers concise Chinese replies",
 	} {
 		if !strings.Contains(rt.BaseSystemPrompt, want) {
 			t.Fatalf("BaseSystemPrompt missing %q:\n%s", want, rt.BaseSystemPrompt)
 		}
 	}
-	// Global entries render ahead of workspace entries.
-	globalIdx := strings.Index(rt.BaseSystemPrompt, "User prefers concise Chinese replies")
-	workspaceIdx := strings.Index(rt.BaseSystemPrompt, "Workspace builds with make wuu")
-	if globalIdx == -1 || workspaceIdx == -1 || globalIdx > workspaceIdx {
-		t.Fatalf("expected global memory before workspace memory (global=%d workspace=%d)", globalIdx, workspaceIdx)
+	if strings.Contains(rt.BaseSystemPrompt, "Workspace builds with make wuu") {
+		t.Fatalf("workspace-store content must not be injected into the prompt:\n%s", rt.BaseSystemPrompt)
 	}
 }
 

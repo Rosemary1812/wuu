@@ -324,8 +324,11 @@ func TestNewSessionDefaultProfileEnablesGlobalMemory(t *testing.T) {
 	if !strings.Contains(rt.BaseSystemPrompt, "[Tool surface:") || !strings.Contains(rt.BaseSystemPrompt, "Terminal work") {
 		t.Fatalf("base system prompt should include compiled tool-surface fragment:\n%s", rt.BaseSystemPrompt)
 	}
-	if !strings.Contains(rt.BaseSystemPrompt, "# Persistent Memory") {
-		t.Fatalf("default profile should inject the global memory snapshot:\n%s", rt.BaseSystemPrompt)
+	if !strings.Contains(rt.BaseSystemPrompt, "# Memory directory") {
+		t.Fatalf("default profile should inject the memdir teaching block:\n%s", rt.BaseSystemPrompt)
+	}
+	if !strings.Contains(rt.BaseSystemPrompt, "## MEMORY.md") {
+		t.Fatalf("memdir section should carry the MEMORY.md index slot:\n%s", rt.BaseSystemPrompt)
 	}
 	if strings.Contains(rt.BaseSystemPrompt, "# Runtime Tool Policy") ||
 		strings.Contains(rt.BaseSystemPrompt, "approval_policy:") {
@@ -1210,10 +1213,16 @@ func TestNewThreadRuntimeAgentProfileSpawnReceivesMemory(t *testing.T) {
 		t.Fatal("profile worker sent no messages")
 	}
 	systemPrompt := req.Messages[0].Content
-	for _, want := range []string{"# Persistent Memory", "QA workflow checks visual regressions"} {
+	// Workers receive the READ-ONLY user-notebook variant: the index content
+	// (here the store-rendered MEMORY.md) is injected, and the teaching
+	// forbids writing.
+	for _, want := range []string{"# User memory (read-only)", "QA workflow checks visual regressions"} {
 		if !strings.Contains(systemPrompt, want) {
 			t.Fatalf("profile worker system prompt missing %q:\n%s", want, systemPrompt)
 		}
+	}
+	if strings.Contains(systemPrompt, "# Memory directory") {
+		t.Fatalf("worker prompt must use the read-only variant, not the session teaching:\n%s", systemPrompt)
 	}
 	if !strings.Contains(systemPrompt, "[Tool surface:") || !strings.Contains(systemPrompt, "Terminal work") {
 		t.Fatalf("profile worker system prompt missing tool-surface fragment:\n%s", systemPrompt)
@@ -1333,8 +1342,11 @@ func TestNewSessionInjectsProfileMemorySnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
+	// The memdir section injects the user notebook's MEMORY.md content —
+	// here the store-rendered document seeded above.
 	for _, want := range []string{
-		"# Persistent Memory",
+		"# Memory directory",
+		"## MEMORY.md",
 		"User prefers concise Chinese replies",
 		"Project uses make install",
 	} {
@@ -2190,10 +2202,8 @@ func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 		"gpt-5.5",
 		capability.Surface{},
 		nil,
-		nil,
-		false,
-		0,
-		0,
+		"",
+		"",
 		[]skills.Skill{{Name: "commit", Description: "Create a commit."}},
 		[]workflow.Definition{{Name: "release", Description: "Release workflow."}},
 	)
@@ -2224,10 +2234,8 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 		"gpt-5-codex",
 		surface,
 		nil,
-		nil,
-		false,
-		0,
-		0,
+		"",
+		"",
 		nil,
 		nil,
 	)
@@ -2257,10 +2265,8 @@ func TestBuildBaseSystemPromptDefersWorkflowCatalogForToolSearchSurface(t *testi
 		"gpt-5-codex",
 		surface,
 		nil,
-		nil,
-		false,
-		0,
-		0,
+		"",
+		"",
 		nil,
 		[]workflow.Definition{{Name: "release", Description: "Release workflow."}},
 	)
@@ -2294,10 +2300,8 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 		"llama-coder",
 		surface,
 		nil,
-		nil,
-		false,
-		0,
-		0,
+		"",
+		"",
 		[]skills.Skill{
 			{
 				Name:         "commit",
@@ -2359,10 +2363,8 @@ func TestBuildBaseSystemPromptFiltersWorkflowsBySurface(t *testing.T) {
 		"llama-coder",
 		surface,
 		nil,
-		nil,
-		false,
-		0,
-		0,
+		"",
+		"",
 		nil,
 		[]workflow.Definition{
 			{
@@ -2402,10 +2404,8 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 		"llama-coder",
 		surface,
 		nil,
-		nil,
-		false,
-		0,
-		0,
+		"",
+		"",
 		nil,
 		nil,
 	)
@@ -2451,7 +2451,7 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"openai",
 		"gpt-5",
 		surface,
-		nil, nil, false, 0, 0, nil, nil,
+		nil, "", "", nil, nil,
 	)
 	workerPrompt := buildBaseSystemPrompt(
 		t.TempDir(),
@@ -2460,7 +2460,7 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"openai",
 		"gpt-5",
 		surface,
-		nil, nil, false, 0, 0, nil, nil,
+		nil, "", "", nil, nil,
 	)
 
 	for _, want := range []string{

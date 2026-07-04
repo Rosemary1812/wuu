@@ -101,6 +101,34 @@ func (b *Builder) AddMemory(files []memory.File) {
 	b.AddSection("memory", strings.TrimRight(sb.String(), "\n"), false)
 }
 
+// MemdirSection renders the file-directory memory block: teaching text plus
+// the notebook's MEMORY.md index snapshot (memory-redesign contract §4/§5).
+// It is exposed as a plain function so thread-creation paths can re-render
+// the section with a fresh index without rebuilding the whole prompt.
+func MemdirSection(teaching, indexContent string) string {
+	teaching = strings.TrimSpace(teaching)
+	if teaching == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(teaching)
+	sb.WriteString("\n\n## MEMORY.md\n\n")
+	if index := strings.TrimSpace(indexContent); index != "" {
+		sb.WriteString(index)
+	} else {
+		sb.WriteString("The MEMORY.md index is currently empty. Index lines will appear here as memories are saved.")
+	}
+	return sb.String()
+}
+
+// AddMemdir adds the file-directory memory section: teaching text (how to
+// save, the four memory types, what not to save) plus a frozen snapshot of
+// the notebook index. Mid-session writes change the files but not this
+// prompt; the next session (or thread creation / compact) sees them.
+func (b *Builder) AddMemdir(teaching, indexContent string) {
+	b.AddSection("memdir", MemdirSection(teaching, indexContent), false)
+}
+
 // AddProfileMemory adds durable, agent-profile-scoped memory guidance and a
 // frozen snapshot of saved entries. Mid-session writes update the store but do
 // not mutate this prompt; a new session receives a fresh snapshot.
