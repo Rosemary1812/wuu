@@ -17,7 +17,6 @@ import {
   MessageSquarePlus,
   Paperclip,
   PieChart,
-  Plus,
   Search,
   Send,
   Settings,
@@ -894,6 +893,11 @@ export function Composer({
                     onChange={onSelectChatFocus}
                   />
                 ) : variant === "hero" ? (
+                  // Hero (empty/unsent) project & 对话 conversations: the
+                  // project pill both shows and edits the workspace/cwd. Once
+                  // the conversation is sent it drops to the dock variant below,
+                  // where the cwd is locked (the backend session.CWD is fixed at
+                  // creation) so no cwd control renders at all.
                   <div className="hero-project-pill-anchor composer-project-control" ref={menuRef}>
                     <button
                       className="hero-project-pill"
@@ -931,16 +935,7 @@ export function Composer({
                       </FloatingMenuPortal>
                     ) : null}
                   </div>
-                ) : (
-                  <button
-                    className="composer-tool-button composer-project-control"
-                    type="button"
-                    aria-label="打开项目"
-                    onClick={onOpenProject}
-                  >
-                    <Plus className="icon-xl" />
-                  </button>
-                )}
+                ) : null}
                 <button
                   className="composer-tool-button composer-attachment-button"
                   type="button"

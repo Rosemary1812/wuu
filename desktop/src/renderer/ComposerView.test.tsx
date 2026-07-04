@@ -640,6 +640,23 @@ describe("Composer send control", () => {
     expect(container.querySelector<HTMLButtonElement>("button[aria-label=\"打开项目\"]")).toBeNull();
   });
 
+  it("hides the cwd control once a project conversation is sent (dock variant)", () => {
+    renderComposer({
+      variant: "dock",
+      prompt: "follow up",
+      activeContext: { kind: "project", project_id: "project-1", cwd: "/repo/wuu" },
+    });
+
+    // A sent conversation locks its cwd (backend session.CWD is immutable),
+    // so neither the hero pill nor the old dock "+" project control renders.
+    expect(container.querySelector(".composer-project-control")).toBeNull();
+    expect(
+      container.querySelector<HTMLButtonElement>("button[aria-label=\"打开项目\"]"),
+    ).toBeNull();
+    // The composer itself still renders — only the workspace/cwd control is gone.
+    expect(container.querySelector(".composer-attachment-button")).not.toBeNull();
+  });
+
   it("uses the active project name in the hero project selector", () => {
     renderComposer({
       variant: "hero",
@@ -676,7 +693,9 @@ describe("Composer send control", () => {
 
     expect(leftGroup).not.toBeNull();
     expect(rightGroup).not.toBeNull();
-    expect(leftGroup?.querySelector(".composer-project-control")).not.toBeNull();
+    // A sent project/对话 conversation (dock variant) locks its cwd, so no
+    // project/cwd control renders in the leading slot anymore.
+    expect(leftGroup?.querySelector(".composer-project-control")).toBeNull();
     expect(leftGroup?.querySelector(".composer-attachment-button")).not.toBeNull();
     expect(leftGroup?.querySelector(".composer-slash-button")).not.toBeNull();
     expect(leftGroup?.querySelector(".permission-menu-anchor")).not.toBeNull();
@@ -1423,9 +1442,12 @@ describe("Composer chat focus chip", () => {
   }
 
   it("does not render at all for non-chat threads (chatFocusValue undefined)", () => {
-    renderComposer({ projects });
+    // Hero variant: a non-chat (project/对话) conversation shows the project
+    // pill, never the focus chip. (In the dock variant the cwd control is gone
+    // entirely once sent — covered by the dock-variant test above.)
+    renderComposer({ projects, variant: "hero" });
     expect(container.querySelector(".chat-focus-chip")).toBeNull();
-    // The regular project control keeps its leading slot untouched.
+    // The regular project control (hero pill) keeps its leading slot untouched.
     expect(
       container.querySelector(".composer-bar-left .composer-project-control"),
     ).not.toBeNull();
