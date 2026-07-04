@@ -38,6 +38,14 @@ func run(args []string) error {
 		return nil
 	}
 
+	// Handle top-level -c and -r flags as shortcuts to wuu exec
+	if args[0] == "-c" || args[0] == "--continue" {
+		return runExec(args)
+	}
+	if args[0] == "-r" || args[0] == "--resume" {
+		return runExec(args)
+	}
+
 	switch args[0] {
 	case "init":
 		return runInit(args[1:])
@@ -367,6 +375,8 @@ func runSession(args []string) error {
 		return runSessionArchive(args[1:])
 	case "delete":
 		return runSessionDelete(args[1:])
+	case "export":
+		return runSessionExport(args[1:])
 	default:
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown session subcommand %q", args[0]))
 	}
@@ -630,6 +640,132 @@ func runSessionDelete(args []string) error {
 		return nil
 	}
 	fmt.Printf("deleted: %s\n", threadID)
+	return nil
+}
+
+func runSessionExport(args []string) error {
+	fs := flag.NewFlagSet("session export", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output metadata as JSON wrapper instead of JSONL")
+	threadFlag := fs.String("thread", "", "thread id; defaults to most recent for this workspace")
+	last := fs.Bool("last", false, "export the most recent session for this workspace")
+	outFile := fs.String("out", "", "output file; defaults to stdout")
+	workdir := fs.String("workdir", "", "workspace directory")
+
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+
+	id := strings.TrimSpace(*threadFlag)
+	if !*last && id == "" && len(fs.Args()) > 0 {
+		id = strings.TrimSpace(fs.Args()[0])
+	}
+
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+
+	rootDir, err := resolveWorkdir(*workdir)
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+
+	// Find the session ID
+	if id == "" {
+		id, err = session.MostRecentForCWD(sessDir, rootDir)
+		if err != nil {
+			return fmt.Errorf("find most recent session: %w", err)
+		}
+		if id == "" {
+			return errors.New("no sessions found")
+		}
+	}
+
+	// Load session metadata and history
+	meta, ok, err := session.Find(sessDir, id)
+	if err != nil {
+		return fmt.Errorf("lookup %q: %w", id, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %q", session.ErrSessionNotFound, id)
+	}
+
+	records, err := session.LoadHistoryRecords(sessDir, id, true)
+	if err != nil {
+		return fmt.Errorf("load history %q: %w", id, err)
+	}
+
+	// Prepare output
+	var output *os.File
+	if *outFile == "" {
+		output = os.Stdout
+	} else {
+		outFile := *outFile
+		f, err := os.Create(outFile)
+		if err != nil {
+			return fmt.Errorf("create output file %q: %w", outFile, err)
+		}
+		defer f.Close()
+		output = f
+	}
+
+	writer := bufio.NewWriter(output)
+	defer writer.Flush()
+
+	if *jsonOutput {
+		// Wrapper format with metadata
+		data := map[string]any{
+			"type":      "session",
+			"thread_id": id,
+			"session":   meta,
+			"history":   records,
+		}
+		jsonBytes, err := json.Marshal(data)
+		if err != nil {
+			return fmt.Errorf("marshal session: %w", err)
+		}
+		if _, err := writer.Write(jsonBytes); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+		if _, err := writer.WriteString("\n"); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+	} else {
+		// JSONL format: one record per line
+
+		// First line: session metadata header
+		sessionHeader := map[string]any{
+			"type":      "session",
+			"thread_id": id,
+			"session":   meta,
+		}
+		headerBytes, err := json.Marshal(sessionHeader)
+		if err != nil {
+			return fmt.Errorf("marshal session header: %w", err)
+		}
+		if _, err := writer.Write(headerBytes); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+		if _, err := writer.WriteString("\n"); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+
+		// Write each history record as a separate JSON line
+		for _, rec := range records {
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				return fmt.Errorf("marshal history record: %w", err)
+			}
+			if _, err := writer.Write(recBytes); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
+			if _, err := writer.WriteString("\n"); err != nil {
+				return fmt.Errorf("write output: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1246,6 +1382,17 @@ func runExec(args []string) error {
 			return runExecFork(args[1:])
 		case "review":
 			return runExecReview(args[1:])
+		case "-c", "--continue":
+			// Alias for resume --last
+			return runExecResume(append([]string{"--last"}, args[1:]...))
+		case "-r", "--resume":
+			// Alias for resume THREAD_ID or show sessions if no ID
+			if len(args) == 1 {
+				// Bare -r: show available sessions
+				return runExecShowSessions()
+			}
+			// -r THREAD_ID or further args
+			return runExecResume(args[1:])
 		}
 	}
 
@@ -1358,6 +1505,34 @@ func runExecReview(args []string) error {
 		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
 	}
 	return runExecWithPrompt(prompt, opts)
+}
+
+func runExecShowSessions() error {
+	sessDir, err := resolveSessionsDir()
+	if err != nil {
+		return err
+	}
+	rootDir, err := resolveWorkdir("")
+	if err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	sessions, err := session.ListForCWD(sessDir, rootDir, 50)
+	if err != nil {
+		return fmt.Errorf("list sessions: %w", err)
+	}
+	sessions = filterArchivedSessions(sessions, false)
+	if len(sessions) == 0 {
+		fmt.Fprintf(os.Stderr, "no sessions found for current workspace\n")
+		fmt.Fprintf(os.Stderr, "usage: wuu exec -r THREAD_ID [prompt...]\n")
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("no sessions found"))
+	}
+	fmt.Fprintf(os.Stderr, "available sessions for current workspace:\n\n")
+	for i, sess := range sessions {
+		title := firstNonEmptyString(sess.Title, sess.Summary, sess.ID)
+		fmt.Fprintf(os.Stderr, "%d. %s\n   %s\t%s\n\n", i+1, sess.ID, sess.UpdatedAt.Format(time.RFC3339), title)
+	}
+	fmt.Fprintf(os.Stderr, "usage: wuu exec -r <THREAD_ID> [prompt...]\n")
+	return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("thread id required"))
 }
 
 func reviewPromptFromFlags(uncommitted bool, base, commit string, extraArgs []string) (string, error) {
@@ -1811,7 +1986,9 @@ func loadOrCreateAppServerConfig(rootDir, homeDir string) (config.Config, string
 
 	configPath = filepath.Join(rootDir, ".wuu.json")
 	if strings.TrimSpace(homeDir) != "" {
-		configPath = filepath.Join(homeDir, ".config", "wuu", "config.json")
+		if p, perr := statepath.ConfigPath(homeDir); perr == nil {
+			configPath = p
+		}
 	}
 	cfg = appServerStarterConfig()
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -1896,10 +2073,15 @@ Usage:
   wuu init [--force]
   wuu models [flags]
   wuu exec [flags] "your coding task"
+  wuu exec -c|--continue [flags] [prompt...]     alias: resume --last
+  wuu exec -r|--resume THREAD_ID [flags] [prompt...]
+                                                  alias: resume THREAD_ID
   wuu exec resume (--last|THREAD_ID) [flags] "continue task"
   wuu exec fork THREAD_ID [flags] "continue from a fork"
   wuu exec review (--uncommitted|--base REF|--commit SHA) [flags]
-  wuu session list|show|trace|search|archive|delete [flags]
+  wuu -c|--continue [flags] [prompt...]          shortcut: exec -c
+  wuu -r|--resume THREAD_ID [flags] [prompt...]  shortcut: exec -r
+  wuu session list|show|trace|search|archive|delete|export [flags]
   wuu debug app-server initialize [flags]
   wuu debug app-server send [flags] METHOD [JSON]
   wuu debug protocol events [flags] THREAD_ID
@@ -1953,18 +2135,20 @@ Exec review:
   --commit SHA      review one commit
 
 Session commands:
-  list --json [--workdir DIR] [--all-workdirs]
+  list [--json] [--workdir DIR] [--all-workdirs]
                    list visible sessions for the workspace
-  show --json [--last|THREAD_ID] [--workdir DIR]
+  show [--json] [--last|THREAD_ID] [--workdir DIR]
                    show session metadata and history
-  trace --json [--last|THREAD_ID] [--workdir DIR]
+  trace [--json] [--last|THREAD_ID] [--workdir DIR]
                    replay a session trace artifact
-  search --json QUERY [--workdir DIR]
+  search [--json] QUERY [--workdir DIR]
                    search session metadata and history
   archive [--json] THREAD_ID
                    hide a session from default lists
   delete [--json] THREAD_ID
                    delete a session and its workspace artifacts
+  export [--json] [--last|THREAD_ID] [--out FILE] [--workdir DIR]
+                   export session history as JSONL format
 
 Debug commands:
   app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]

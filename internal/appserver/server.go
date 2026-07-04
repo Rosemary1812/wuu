@@ -281,6 +281,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadEditMessage(req)
 	case MethodThreadContextComposition:
 		return s.handleThreadContextComposition(req)
+	case MethodInstructionsList:
+		return s.handleInstructionsList(req)
 	case MethodThreadOpenSub:
 		return s.handleThreadOpenSub(req)
 	case MethodThreadListSub:

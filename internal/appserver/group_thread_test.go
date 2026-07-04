@@ -123,6 +123,7 @@ func TestGroupTurnStartCompletesWithoutProviderCallAndMarksMentionedAddressed(t 
 	client := &fakeClient{response: providersResponse("ok")}
 	rt := newTestRuntime(t, client)
 	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 	group := startNamedGroupThreadForTest(t, srv, "release")

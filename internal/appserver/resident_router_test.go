@@ -67,6 +67,7 @@ func TestResidentRouterUserMessageFansOutToThreadMembers(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	out := &lockedBuffer{}
 	srv := New(rt, out)
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 	groupID := startGroupThreadForTest(t, srv)

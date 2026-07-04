@@ -14,24 +14,24 @@ describe("userFacingErrorForMessage", () => {
     );
 
     expect(display.category).toBe("provider");
-    // The chip title now shows the specific provider error identifier, not
-    // the category name, so a screenshot carries enough signal to triage.
-    expect(display.title).toBe("context_length_exceeded");
+    // The chip title translates the known identifier into Chinese; only
+    // codes we can't map stay English (rendered muted next to the title).
+    expect(display.title).toBe("上下文超出窗口");
   });
 
-  it("shows the HTTP status code as the title for network errors", () => {
+  it("shows the HTTP status code with a Chinese phrase as the title for network errors", () => {
     const display = userFacingErrorForMessage(
       "upstream returned 503 service unavailable",
       "turn",
     );
     expect(display.category).toBe("network");
-    expect(display.title).toBe("503 unavailable");
+    expect(display.title).toBe("503 服务不可用");
   });
 
-  it("shows the HTTP status code as the title for auth errors", () => {
+  it("shows the HTTP status code with a Chinese phrase as the title for auth errors", () => {
     const display = userFacingErrorForMessage("401 unauthorized", "turn");
     expect(display.category).toBe("auth");
-    expect(display.title).toBe("401 unauthorized");
+    expect(display.title).toBe("401 未授权");
     // The action label is Provider-specific, not the generic "查看设置".
     const settingsAction = display.recommendedActions.find(
       (a) => a.kind === "openSettings",
@@ -45,7 +45,7 @@ describe("userFacingErrorForMessage", () => {
   it("uses a keyword-based title when no HTTP code is present in the error", () => {
     const display = userFacingErrorForMessage("connection reset by peer", "turn");
     expect(display.category).toBe("network");
-    expect(display.title).toBe("connection reset");
+    expect(display.title).toBe("连接被重置");
   });
 
   it("shows partial Responses stream closes as a specific provider-stream state", () => {
@@ -55,7 +55,10 @@ describe("userFacingErrorForMessage", () => {
     );
 
     expect(display.category).toBe("provider");
-    expect(display.title).toBe("stream_closed_before_response.completed");
+    expect(display.title).toBe("回答未完整返回");
+    // The synthesized stream identifier survives as the muted code so a
+    // screenshot still carries the triage signal.
+    expect(display.code).toBe("stream_closed_before_response.completed");
     expect(display.detail).toContain("response.completed");
     expect(display.detail).toContain("这次回答可能不完整");
   });
@@ -65,7 +68,7 @@ describe("userFacingErrorForMessage", () => {
     expect(display.category).toBe("auth");
     // "login required" matches the auth classifier but no HTTP code or
     // keyword matcher fires, so we fall back to the category name.
-    expect(display.title).toBe("auth error");
+    expect(display.title).toBe("认证失败");
   });
 
   it("uses the internal category title for unrecognized errors", () => {
@@ -141,10 +144,11 @@ describe("userFacingErrorForMessage", () => {
   });
 
   describe("structured TurnError input from the Go core", () => {
-    it("uses the structured `code` as the chip title, beating the message-classifier", () => {
+    it("keeps an untranslatable structured `code` as the muted code next to the Chinese title", () => {
       // The Go core extracts a specific code from the body (e.g.
       // "insufficient_quota") and ships it as the `code` field. The
-      // front-end should display that, not the string-extracted one.
+      // front-end shows a Chinese category title and keeps the raw
+      // identifier as the muted code so triage signal survives.
       const display = userFacingErrorForMessage(
         {
           message: "some raw provider body",
@@ -153,7 +157,8 @@ describe("userFacingErrorForMessage", () => {
         },
         "turn",
       );
-      expect(display.title).toBe("insufficient_quota");
+      expect(display.title).toBe("模型服务异常");
+      expect(display.code).toBe("insufficient_quota");
       expect(display.category).toBe("provider");
     });
 
@@ -168,7 +173,7 @@ describe("userFacingErrorForMessage", () => {
       );
 
       expect(display.category).toBe("provider");
-      expect(display.title).toBe("429 rate limit");
+      expect(display.title).toBe("429 触发限流");
     });
 
     it("maps the 'reauth' action reason to the openSettings / focus=providers kind", () => {
@@ -186,7 +191,10 @@ describe("userFacingErrorForMessage", () => {
         },
         "turn",
       );
-      expect(display.title).toBe("401 unauthorized");
+      expect(display.title).toBe("401 未授权");
+      // The structured code repeats the status number already in the
+      // title, so it is dropped instead of rendered twice.
+      expect(display.code).toBeUndefined();
       expect(display.category).toBe("auth");
       expect(display.tone).toBe("auth");
       expect(display.detail).toBe("请检查 API 密钥");
@@ -293,7 +301,8 @@ describe("userFacingErrorForMessage", () => {
         "turn",
       );
 
-      expect(display.title).toBe("stream_closed_before_response.completed");
+      expect(display.title).toBe("回答未完整返回");
+      expect(display.code).toBe("stream_closed_before_response.completed");
       expect(display.category).toBe("provider");
       expect(display.detail).toContain("这次回答可能不完整");
       expect(display.recommendedActions[0].kind).toBe("copyDebug");
@@ -345,7 +354,8 @@ describe("userFacingErrorForMessage", () => {
         "turn",
       );
       expect(display.category).toBe("provider");
-      expect(display.title).toBe("context_length_exceeded");
+      expect(display.title).toBe("上下文超出窗口");
+      expect(display.code).toBe("context_length_exceeded");
     });
   });
 });
@@ -386,7 +396,8 @@ describe("TurnEvents", () => {
     if (event?.presentation !== "notice") {
       throw new Error("expected notice event");
     }
-    expect(event.notice.title).toBe("stream_closed_before_response.completed");
+    expect(event.notice.title).toBe("回答未完整返回");
+    expect(event.notice.code).toBe("stream_closed_before_response.completed");
     expect(event.notice.detail).toContain("这次回答可能不完整");
     expect(event.notice.detail.match(/已保留已生成内容/g)).toHaveLength(1);
   });

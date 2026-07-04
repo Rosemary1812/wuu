@@ -2,10 +2,41 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ServerEvent,
   SettingsUsageRange,
+  ThemePreference,
   ThreadStartParams,
   WindowResizeState,
   WuuDesktopApi,
 } from "../shared/protocol";
+
+// Read the persisted theme preference synchronously so the very first
+// paint carries the right data-theme — an async round-trip would flash
+// the light theme for dark-mode users on every launch.
+const initialThemePreference = ((): ThemePreference => {
+  try {
+    const value = ipcRenderer.sendSync("wuu:theme-preference-get-sync") as unknown;
+    return value === "light" || value === "dark" || value === "system"
+      ? value
+      : "system";
+  } catch {
+    return "system";
+  }
+})();
+
+function resolveTheme(preference: ThemePreference): "light" | "dark" {
+  if (preference === "system") {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  }
+  return preference;
+}
+
+try {
+  document.documentElement.dataset.theme = resolveTheme(initialThemePreference);
+} catch {
+  // The renderer's theme controller re-applies on boot; losing the
+  // preload stamp only costs a one-frame flash.
+}
 
 const api: WuuDesktopApi = {
   listProjects: () => ipcRenderer.invoke("wuu:project-list"),
@@ -94,6 +125,16 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-edit-message", threadId, turnId, itemId),
   getThreadContextComposition: (threadId: string) =>
     ipcRenderer.invoke("wuu:thread-context-composition", threadId),
+  listInstructionFiles: () => ipcRenderer.invoke("wuu:instructions-list"),
+  getCliInstallStatus: () => ipcRenderer.invoke("wuu:cli-install-status"),
+  installCli: (overwrite?: boolean) =>
+    ipcRenderer.invoke("wuu:cli-install", overwrite),
+  setCliAutoInstallEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke("wuu:cli-auto-install-set", enabled),
+  initialThemePreference,
+  getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
+  setThemePreference: (theme: ThemePreference) =>
+    ipcRenderer.invoke("wuu:theme-preference-set", theme),
   listParticipants: () => ipcRenderer.invoke("wuu:participant-list"),
   saveParticipant: (params) => ipcRenderer.invoke("wuu:participant-save", params),
   sendParticipantFeedback: (participantId, text, taskId, messageId) =>

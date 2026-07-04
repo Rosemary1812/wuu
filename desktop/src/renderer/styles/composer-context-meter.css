@@ -1,13 +1,17 @@
 :root {
+  /* Component color tokens for composer-context-meter.css.
+     Light-theme values; the dark theme overrides these in base.css theme blocks. */
   /* The context ring color is driven inline by the JSX so it can step
      between the token-speed gauge's idle / mid / high tiers as the fill
      crosses 0 and the 0.7 high-water mark. The track stays a single
      neutral gray so the unfilled portion reads as a quiet baseline. */
   --context-meter-track: rgba(138, 142, 145, 0.24);
   --context-meter-text: var(--ink-strong);
-  --context-meter-tooltip-bg: var(--wuu-paper, #fff);
+  --context-meter-tooltip-bg: var(--paper);
   --context-meter-tooltip-border: rgba(15, 17, 21, 0.08);
   --context-meter-tooltip-shadow: 0 6px 22px rgba(15, 17, 21, 0.12);
+  --composer-context-meter-focus-outline: rgba(95, 99, 104, 0.55);
+  --composer-context-meter-tooltip-divider: rgba(15, 17, 21, 0.08);
 }
 
 .composer-context-meter {
@@ -27,7 +31,7 @@
 }
 
 .composer-context-meter:focus-visible {
-  outline: 2px solid rgba(95, 99, 104, 0.55);
+  outline: 2px solid var(--composer-context-meter-focus-outline);
   outline-offset: 2px;
   border-radius: 999px;
 }
@@ -84,7 +88,7 @@
   box-shadow: var(--context-meter-tooltip-shadow);
   font-size: 11px;
   line-height: 1.45;
-  color: var(--ink-base, #1f2328);
+  color: var(--ink);
   pointer-events: none;
 }
 
@@ -110,7 +114,7 @@
 .composer-context-meter-tooltip-divider {
   height: 1px;
   margin: 6px 0 5px;
-  background: rgba(15, 17, 21, 0.08);
+  background: var(--composer-context-meter-tooltip-divider);
 }
 
 .composer-context-meter-tooltip-label {

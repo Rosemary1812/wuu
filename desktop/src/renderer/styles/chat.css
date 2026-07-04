@@ -1,3 +1,9 @@
+:root {
+  /* Component color tokens for chat.css.
+     Light-theme values; the dark theme overrides these in base.css theme blocks. */
+  --chat-user-message-bg: #e8e8e4;
+}
+
 /*
  * Chat-style thread view (DM / group) — docs/plans/
  * 2026-07-03-chat-style-threads-design.md §4. Tokens only: reuses the
@@ -113,8 +119,7 @@
 }
 
 .chat-bubble--user {
-  --user-message-background: #e8e8e4;
-  background: var(--user-message-background);
+  background: var(--chat-user-message-bg);
 }
 
 .chat-decline-line {

@@ -1,3 +1,106 @@
+/* Component color tokens for turns.css. Light-theme values; the dark
+   theme overrides these in base.css theme blocks. */
+:root {
+  --turn-collapsed-focus-ring: rgba(17, 19, 21, 0.18);
+  --user-message-bg-color: #e8e8e4;
+  --user-message-jump-shadow-0: rgba(138, 91, 16, 0);
+  --user-message-jump-flash-bg: #eee7da;
+  --user-message-jump-shadow-18: rgba(138, 91, 16, 0.18);
+  --user-message-jump-shadow-08: rgba(138, 91, 16, 0.08);
+  --user-message-edit-button-primary-hover-bg: #2f3438;
+  --user-message-edit-button-disabled-fg: rgba(255, 255, 255, 0.86);
+  --message-copy-bg: rgba(255, 255, 255, 0.72);
+  --message-file-bg: rgba(255, 255, 255, 0.82);
+  --message-file-fg: #24292f;
+  --instruction-files-error-fallback: #d3524f;
+  --stream-cursor-default-color: #2f4a5f;
+  --reasoning-stream-cursor-color: #8b8f93;
+  --turn-progress-label-color: #777b80;
+  --turn-progress-label-icon-color: #8a8e92;
+  --turn-progress-detail-color: #9ca1a5;
+  --turn-progress-sweep-highlight: #202724;
+  --turn-progress-sweep-base: #7b8580;
+  --turn-progress-scan-glow-08: rgba(47, 125, 104, 0.08);
+  --turn-progress-scan-glow-20: rgba(47, 125, 104, 0.2);
+  --turn-progress-scene-color: #6f8780;
+  --turn-progress-scene-variant1-color: #7c8196;
+  --turn-progress-scene-variant2-color: #7b8c73;
+  --battle-ember-color: #d9a23a;
+  --battle-ember-glow-50: rgba(217, 162, 58, 0.5);
+  --battle-ember-glow-55: rgba(217, 162, 58, 0.55);
+  --battle-ember-glow-62: rgba(217, 162, 58, 0.62);
+  --battle-ember-glow-70: rgba(217, 162, 58, 0.7);
+  --battle-ember-glow-72: rgba(217, 162, 58, 0.72);
+  --battle-ember-glow-74: rgba(217, 162, 58, 0.74);
+  --battle-spark-two-color: #86a89d;
+  --battle-spark-two-glow-42: rgba(134, 168, 157, 0.42);
+  --battle-spark-two-glow-55: rgba(134, 168, 157, 0.55);
+  --battle-fire-ember-shadow: #8e765d;
+  --battle-ground-line-color: rgba(70, 76, 72, 0.2);
+  --battle-dust-color: rgba(151, 133, 105, 0.32);
+  --battle-front-left-glow: rgba(95, 116, 110, 0.68);
+  --battle-front-right-glow: rgba(128, 132, 142, 0.68);
+  --battle-smoke-color-1: rgba(142, 118, 93, 0.42);
+  --battle-smoke-color-2: rgba(151, 133, 105, 0.36);
+  --battle-smoke-color-3: rgba(105, 113, 111, 0.24);
+  --era-ship-sail-color: #b8c3bf;
+  --era-sticks-prop-color: #b8ae9c;
+  --era-swords-weapon-color: #9aa4a8;
+  --era-fortress-prop-highlight: rgba(255, 255, 255, 0.26);
+  --turn-progress-failed-rule-bg: #f2d3cf;
+  --turn-progress-preview-backdrop-bg: rgba(31, 35, 38, 0.18);
+  --turn-progress-preview-border: rgba(64, 70, 68, 0.13);
+  --turn-progress-preview-bg: rgba(253, 254, 251, 0.96);
+  --turn-progress-preview-shadow: rgba(31, 35, 38, 0.16);
+  --turn-progress-preview-inset-highlight: rgba(255, 255, 255, 0.72);
+  --turn-progress-preview-desc-color: #747a7e;
+  --turn-progress-preview-desc-strong-color: #5f746e;
+  --turn-progress-preview-rule-color: #e3e4df;
+  --turn-progress-preview-track-bg: #e8e9e4;
+  --turn-progress-preview-track-fill: #7fa08d;
+  --turn-process-group-color: #8f9498;
+  --turn-process-checkpoint-color: #5a6064;
+  --turn-process-entry-color: #73787c;
+  --turn-process-entry-commentary-marker: #bcc3bc;
+  --turn-process-entry-activity-marker: #d4d7d1;
+  --process-control-color-fallback: #A4A4A5;
+  --activity-toggle-hover-color: #5f6569;
+  --activity-toggle-hover-svg-color: #7b8084;
+  --turn-process-checkpoint-line-border: #e2e4df;
+  --activity-toggle-hover-color-alt: #6a6f74;
+  --activity-detail-color: #767b80;
+  --activity-detail-error-border: #e89088;
+  --diff-insert-color: #12a150;
+  --diff-delete-color: #cf2e2e;
+  --live-gray-shimmer-edge: rgba(255, 255, 255, 0.5);
+  --rich-link-color: #176dc2;
+  --rich-link-hover-color: #0f5da8;
+  --rich-code-surface-bg: #e9eaea;
+  --fork-worktree-copy-bg: rgba(255, 255, 255, 0.84);
+  --fork-worktree-focus-ring: rgba(9, 105, 218, 0.22);
+  --rich-blockquote-color: #596067;
+  --rich-rule-color: #e4e5e1;
+  --pre-text-color: #383d42;
+  --turn-notice-auth-color: #9a3412;
+  --system-line-marker-color: #b4b8bb;
+  --empty-home-action-border: #e5e5e2;
+  --empty-home-action-border-hover: #d8d9d5;
+  --empty-home-action-icon-color: #7c8287;
+  --project-empty-content-color: #697075;
+  --wuu-launch-exit-border: #dedfdb;
+  --project-empty-actions-border: #e0e0dc;
+  --project-empty-actions-hover-bg: #f5f5f2;
+  --diff-insert-bg: rgba(18, 161, 80, 0.08);
+  --diff-insert-text-color: #0a6b34;
+  --diff-delete-bg: rgba(207, 46, 46, 0.08);
+  --diff-delete-text-color: #a82525;
+  --turn-sources-pill-bg-fallback: rgba(127, 127, 127, 0.08);
+  --turn-sources-pill-border-fallback: rgba(127, 127, 127, 0.16);
+  --turn-sources-pill-color-fallback: rgba(127, 127, 127, 0.85);
+  --turn-source-icon-color-fallback: rgba(0, 0, 0, 0.85);
+  --turn-source-icon-hover-shadow: rgba(0, 0, 0, 0.18);
+}
+
 .turn {
   content-visibility: auto;
   contain-intrinsic-size: auto 260px;
@@ -65,7 +168,7 @@
 }
 
 .turn-collapsed-button:focus-visible {
-  outline: 2px solid rgba(17, 19, 21, 0.18);
+  outline: 2px solid var(--turn-collapsed-focus-ring);
   outline-offset: 2px;
 }
 
@@ -352,7 +455,7 @@
                                                               
                                                        
                             
-  --user-message-background: #e8e8e4;
+  --user-message-background: var(--user-message-bg-color);
   background: var(--user-message-background);
   color: var(--ink);
 }
@@ -405,18 +508,18 @@
 
 @keyframes user-message-jump-flash {
   0% {
-    background: var(--user-message-background, #e8e8e4);
-    box-shadow: 0 0 0 0 rgba(138, 91, 16, 0);
+    background: var(--user-message-background, var(--user-message-bg-color));
+    box-shadow: 0 0 0 0 var(--user-message-jump-shadow-0);
   }
   12% {
-    background: #eee7da;
+    background: var(--user-message-jump-flash-bg);
     box-shadow:
-      0 0 0 4px rgba(138, 91, 16, 0.18),
-      0 12px 30px rgba(138, 91, 16, 0.08);
+      0 0 0 4px var(--user-message-jump-shadow-18),
+      0 12px 30px var(--user-message-jump-shadow-08);
   }
   100% {
-    background: var(--user-message-background, #e8e8e4);
-    box-shadow: 0 0 0 0 rgba(138, 91, 16, 0);
+    background: var(--user-message-background, var(--user-message-bg-color));
+    box-shadow: 0 0 0 0 var(--user-message-jump-shadow-0);
   }
 }
 
@@ -424,8 +527,8 @@
   .user-message-block.user-message-jump-flash > .user-message,
   .user-message-block.user-message-jump-flash > .user-message-edit {
     animation: none;
-    background: #eee7da;
-    box-shadow: 0 0 0 4px rgba(138, 91, 16, 0.18);
+    background: var(--user-message-jump-flash-bg);
+    box-shadow: 0 0 0 4px var(--user-message-jump-shadow-18);
     transition: background-color 600ms ease;
   }
 }
@@ -664,7 +767,7 @@
 }
 
 .user-message-edit-button.primary:hover:not(:disabled) {
-  background: #2f3438;
+  background: var(--user-message-edit-button-primary-hover-bg);
 }
 
 .user-message-edit-button:focus-visible {
@@ -675,7 +778,7 @@
 .user-message-edit-button.primary:disabled {
   cursor: default;
   background: var(--surface-4);
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--user-message-edit-button-disabled-fg);
 }
 
 .user-message-edit-button.secondary:disabled {
@@ -760,7 +863,7 @@
   gap: 4px;
   border-radius: var(--radius-pill);
   box-shadow: 0 1px 3px var(--ink-overlay-8);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--message-copy-bg);
   color: var(--ink-tertiary);
   cursor: pointer;
   font-size: var(--font-xs);
@@ -790,7 +893,7 @@
  * visual change after clicking. Earlier this used --success-soft/--success
  * for a celebratory tint, but it read as cheap next to the gray rest. */
 .message-copy-button.copied {
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--message-copy-bg);
   color: var(--ink-tertiary);
 }
 
@@ -857,8 +960,8 @@
   padding: 8px 10px;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.82);
-  color: #24292f;
+  background: var(--message-file-bg);
+  color: var(--message-file-fg);
   font-size: 0.84rem;
   font-weight: 650;
 }
@@ -1088,7 +1191,7 @@
 .context-composition-card .context-category-tag {
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(31, 35, 40, 0.06);
+  background: var(--ink-overlay-6);
   font-size: var(--font-xs);
   color: var(--ink-muted);
   flex-shrink: 0;
@@ -1124,6 +1227,180 @@
    * headline's ratio. Removing it lets the tokens number align to the
    * right edge without the row needing to wrap. */
   .context-category-percent {
+    display: none;
+  }
+}
+
+/* Instruction files card — mirrors the context-composition card surface so
+ * the 指令文件 block reads as a discrete system artifact in the stream. */
+.instruction-files-card {
+  width: 100%;
+  max-width: none;
+  margin: 2px 0 22px;
+}
+
+.instruction-files-card-inner {
+  display: grid;
+  gap: 16px;
+  overflow: hidden;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: 14px;
+  background: var(--surface-1);
+  padding: 18px 22px;
+}
+
+.instruction-files-card .instruction-files-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.instruction-files-card .instruction-files-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.instruction-files-card .instruction-files-header h2 {
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.instruction-files-card .instruction-files-header p {
+  margin-top: 4px;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  color: var(--ink-tertiary);
+}
+
+.instruction-files-card .instruction-files-count {
+  padding-top: 5px;
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.instruction-files-card .instruction-files-dismiss {
+  width: 30px;
+  height: 30px;
+  color: var(--ink-muted);
+}
+
+.instruction-files-card .instruction-files-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-xs);
+  color: var(--ink-tertiary);
+}
+
+.instruction-files-card .instruction-files-state.error {
+  color: var(--danger, var(--instruction-files-error-fallback));
+}
+
+.instruction-files-card .instruction-files-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.instruction-files-card .instruction-files-group-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.instruction-files-card .instruction-files-group-label {
+  font-size: var(--font-sm, 13px);
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.instruction-files-card .instruction-files-group-hint {
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+}
+
+.instruction-files-card .instruction-files-list {
+  display: grid;
+  gap: 6px;
+}
+
+.instruction-files-card .instruction-file-row {
+  border: 1px solid var(--ink-overlay-08, var(--ink-overlay-12));
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.instruction-files-card .instruction-file-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink-primary);
+}
+
+.instruction-files-card .instruction-file-toggle:hover {
+  background: var(--ink-overlay-04, var(--surface-2, transparent));
+}
+
+.instruction-files-card .instruction-file-chevron,
+.instruction-files-card .instruction-file-icon {
+  flex-shrink: 0;
+  color: var(--ink-muted);
+}
+
+.instruction-files-card .instruction-file-name {
+  font-weight: 600;
+  font-size: var(--font-sm, 13px);
+  white-space: nowrap;
+}
+
+.instruction-files-card .instruction-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-size: var(--font-xs);
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.instruction-files-card .instruction-file-size {
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.instruction-files-card .instruction-file-preview {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px solid var(--ink-overlay-08, var(--ink-overlay-12));
+  background: var(--surface-2, var(--surface-1));
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-secondary);
+}
+
+@media (max-width: 760px) {
+  .instruction-files-card {
+    width: 100%;
+  }
+  .instruction-files-card .instruction-file-path {
     display: none;
   }
 }
@@ -1343,7 +1620,7 @@
   color: inherit;
   font: inherit;
   line-height: inherit;
-  --stream-cursor-color: #2f4a5f;
+  --stream-cursor-color: var(--stream-cursor-default-color);
 }
 
                                                                      
@@ -1382,9 +1659,8 @@
   opacity: 0;
 }
 
-                                                         
 .reasoning-stream.streaming-markdown {
-  --stream-cursor-color: #8b8f93;
+  --stream-cursor-color: var(--reasoning-stream-cursor-color);
   color: inherit;
 }
 
@@ -1432,7 +1708,7 @@
   min-width: 0;
   align-items: flex-start;
   gap: 8px;
-  color: #777b80;
+  color: var(--turn-progress-label-color);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
@@ -1440,7 +1716,7 @@
 
 .turn-progress-label svg {
   flex: 0 0 auto;
-  color: #8a8e92;
+  color: var(--turn-progress-label-icon-color);
   margin-top: 1px;
 }
 
@@ -1462,7 +1738,7 @@
 
 .turn-progress-detail {
   overflow-wrap: anywhere;
-  color: #9ca1a5;
+  color: var(--turn-progress-detail-color);
   font-size: var(--font-ui);
   font-weight: 500;
 }
@@ -1471,11 +1747,11 @@
   position: relative;
   height: 1px;
   overflow: hidden;
-  background: #dedfdd;
+  background: var(--rule);
 }
 
 .turn-progress.in_progress .turn-progress-title {
-  background: linear-gradient(100deg, #7b8580 0%, #7b8580 34%, #202724 49%, #7b8580 64%, #7b8580 100%);
+  background: linear-gradient(100deg, var(--turn-progress-sweep-base) 0%, var(--turn-progress-sweep-base) 34%, var(--turn-progress-sweep-highlight) 49%, var(--turn-progress-sweep-base) 64%, var(--turn-progress-sweep-base) 100%);
   background-size: 220% 100%;
   color: transparent;
   animation: turn-text-sweep 2800ms linear infinite;
@@ -1494,7 +1770,7 @@
   right: 0;
   left: 0;
   height: 1px;
-  background: var(--surface-4);
+  background: var(--rule);
   content: "";
 }
 
@@ -1505,7 +1781,7 @@
   width: min(160px, 26%);
   height: 1px;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, rgba(47, 125, 104, 0.08), rgba(47, 125, 104, 0.2), transparent);
+  background: linear-gradient(90deg, transparent, var(--turn-progress-scan-glow-08), var(--turn-progress-scan-glow-20), transparent);
   content: "";
   animation: turn-progress-scan 5600ms ease-in-out infinite;
 }
@@ -1519,7 +1795,7 @@
 }
 
 .turn-progress-scene {
-  color: #6f8780;
+  color: var(--turn-progress-scene-color);
   opacity: var(--scene-opacity, 1);
   filter: blur(var(--scene-blur, 0));
   transform: translate3d(0, var(--scene-y, 0), 0) scale(var(--scene-scale, 1));
@@ -1540,11 +1816,11 @@
 }
 
 .turn-progress-scene.variant-1 {
-  color: #7c8196;
+  color: var(--turn-progress-scene-variant1-color);
 }
 
 .turn-progress-scene.variant-2 {
-  color: #7b8c73;
+  color: var(--turn-progress-scene-variant2-color);
 }
 
 .turn-progress-scene.variant-1 .stickman-a,
@@ -1646,20 +1922,20 @@
   width: 4px;
   height: 4px;
   border-radius: var(--radius-pill);
-  background: #d9a23a;
+  background: var(--battle-ember-color);
   box-shadow:
-    -5px 2px 0 rgba(217, 162, 58, 0.7),
-    5px -2px 0 rgba(217, 162, 58, 0.55);
+    -5px 2px 0 var(--battle-ember-glow-70),
+    5px -2px 0 var(--battle-ember-glow-55);
   opacity: 0;
   transform: translate(-50%, 0) scale(0.6);
 }
 
 .spark-two {
   top: 16px;
-  background: #86a89d;
+  background: var(--battle-spark-two-color);
   box-shadow:
-    -4px -2px 0 rgba(134, 168, 157, 0.55),
-    4px 2px 0 rgba(134, 168, 157, 0.42);
+    -4px -2px 0 var(--battle-spark-two-glow-55),
+    4px 2px 0 var(--battle-spark-two-glow-42);
 }
 
 .civilization-prop,
@@ -1700,10 +1976,10 @@
   width: 10px;
   height: 10px;
   border-radius: 999px 999px 999px 3px;
-  background: #d9a23a;
+  background: var(--battle-ember-color);
   box-shadow:
-    -5px 6px 0 -2px #8e765d,
-    5px 6px 0 -2px #8e765d;
+    -5px 6px 0 -2px var(--battle-fire-ember-shadow),
+    5px 6px 0 -2px var(--battle-fire-ember-shadow);
   transform: rotate(45deg);
   animation: campfire-flicker 1200ms ease-in-out infinite;
 }
@@ -1723,7 +1999,7 @@
   width: 12px;
   height: 8px;
   border-radius: 1px 5px 5px 1px;
-  background: rgba(217, 162, 58, 0.72);
+  background: var(--battle-ember-glow-72);
   content: "";
 }
 
@@ -1732,7 +2008,7 @@
   left: calc(50% - 146px);
   width: 292px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(70, 76, 72, 0.2), transparent);
+  background: linear-gradient(90deg, transparent, var(--battle-ground-line-color), transparent);
   opacity: 0.65;
 }
 
@@ -1741,7 +2017,7 @@
   width: 18px;
   height: 5px;
   border-radius: var(--radius-pill);
-  background: rgba(151, 133, 105, 0.32);
+  background: var(--battle-dust-color);
   opacity: 0;
 }
 
@@ -1763,12 +2039,12 @@
 
 .front-left {
   left: calc(50% - 118px);
-  background: linear-gradient(90deg, transparent, rgba(95, 116, 110, 0.68));
+  background: linear-gradient(90deg, transparent, var(--battle-front-left-glow));
 }
 
 .front-right {
   left: calc(50% + 62px);
-  background: linear-gradient(90deg, rgba(128, 132, 142, 0.68), transparent);
+  background: linear-gradient(90deg, var(--battle-front-right-glow), transparent);
 }
 
 .battle-impact {
@@ -1776,10 +2052,10 @@
   width: 5px;
   height: 5px;
   border-radius: var(--radius-pill);
-  background: #d9a23a;
+  background: var(--battle-ember-color);
   box-shadow:
-    -7px 3px 0 -1px rgba(217, 162, 58, 0.62),
-    7px -3px 0 -1px rgba(217, 162, 58, 0.5);
+    -7px 3px 0 -1px var(--battle-ember-glow-62),
+    7px -3px 0 -1px var(--battle-ember-glow-50);
   opacity: 0;
 }
 
@@ -1796,7 +2072,7 @@
   width: 24px;
   height: 2px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, transparent, #d9a23a, transparent);
+  background: linear-gradient(90deg, transparent, var(--battle-ember-color), transparent);
   opacity: 0;
 }
 
@@ -1830,7 +2106,7 @@
   height: 20px;
   border-radius: var(--radius-pill);
   background: currentColor;
-  box-shadow: 5px 3px 0 -2px #d9a23a;
+  box-shadow: 5px 3px 0 -2px var(--battle-ember-color);
   content: "";
   opacity: 0.72;
 }
@@ -1861,9 +2137,9 @@
   height: 10px;
   border-radius: var(--radius-pill);
   background:
-    radial-gradient(circle at 24% 52%, rgba(142, 118, 93, 0.42) 0 4px, transparent 4.5px),
-    radial-gradient(circle at 58% 38%, rgba(151, 133, 105, 0.36) 0 5px, transparent 5.5px),
-    radial-gradient(circle at 82% 60%, rgba(105, 113, 111, 0.24) 0 4px, transparent 4.5px);
+    radial-gradient(circle at 24% 52%, var(--battle-smoke-color-1) 0 4px, transparent 4.5px),
+    radial-gradient(circle at 58% 38%, var(--battle-smoke-color-2) 0 5px, transparent 5.5px),
+    radial-gradient(circle at 82% 60%, var(--battle-smoke-color-3) 0 4px, transparent 4.5px);
   opacity: 0;
   filter: blur(0.15px);
 }
@@ -1881,7 +2157,7 @@
   width: 18px;
   height: 2px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, transparent, #d9a23a, transparent);
+  background: linear-gradient(90deg, transparent, var(--battle-ember-color), transparent);
   opacity: 0;
 }
 
@@ -1891,7 +2167,7 @@
   width: 3px;
   height: 3px;
   border-radius: var(--radius-pill);
-  background: #d9a23a;
+  background: var(--battle-ember-color);
   content: "";
 }
 
@@ -1966,7 +2242,7 @@
   left: -3px;
   height: 8px;
   border-radius: 8px 8px 2px 2px;
-  background: rgba(217, 162, 58, 0.74);
+  background: var(--battle-ember-glow-74);
   content: "";
   transform: translateY(11px) scaleY(0.75);
   animation: rocket-flame 900ms ease-in-out infinite;
@@ -2011,7 +2287,7 @@
   width: 6px;
   height: 4px;
   border-radius: 999px 999px 0 0;
-  background: #b8c3bf;
+  background: var(--era-ship-sail-color);
   content: "";
 }
 
@@ -2038,7 +2314,7 @@
 
 .era-sticks .stickman-weapon {
   width: 11px;
-  background: #8e765d;
+  background: var(--battle-fire-ember-shadow);
   transform: rotate(9deg);
 }
 
@@ -2049,7 +2325,7 @@
   width: 11px;
   height: 5px;
   border-radius: 999px 999px 3px 3px;
-  background: #b8ae9c;
+  background: var(--era-sticks-prop-color);
 }
 
 .era-sticks .prop-left {
@@ -2131,7 +2407,7 @@
 
 .era-swords .stickman-weapon {
   width: 18px;
-  background: #9aa4a8;
+  background: var(--era-swords-weapon-color);
   transform: rotate(-18deg);
 }
 
@@ -2254,7 +2530,7 @@
   width: 17px;
   height: 22px;
   background:
-    linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, 0.26) 3px 6px, transparent 6px 100%),
+    linear-gradient(90deg, transparent 0 3px, var(--era-fortress-prop-highlight) 3px 6px, transparent 6px 100%),
     currentColor;
 }
 
@@ -2761,7 +3037,7 @@
 .era-rockets .front-left {
   left: calc(50% - 42px);
   width: 64px;
-  background: linear-gradient(90deg, transparent, rgba(217, 162, 58, 0.72), transparent);
+  background: linear-gradient(90deg, transparent, var(--battle-ember-glow-72), transparent);
   animation: launch-front 5200ms ease-in-out infinite;
 }
 
@@ -2909,7 +3185,7 @@
   width: 3px;
   height: 3px;
   border-radius: var(--radius-pill);
-  background: #d9a23a;
+  background: var(--battle-ember-color);
   animation: star-twinkle 1800ms ease-in-out infinite;
 }
 
@@ -3025,7 +3301,7 @@
 }
 
 .turn-progress.failed .turn-progress-rule {
-  background: #f2d3cf;
+  background: var(--turn-progress-failed-rule-bg);
 }
 
 .turn-progress-preview-backdrop {
@@ -3034,7 +3310,7 @@
   z-index: 70;
   display: grid;
   place-items: center;
-  background: rgba(31, 35, 38, 0.18);
+  background: var(--turn-progress-preview-backdrop-bg);
   -webkit-app-region: no-drag;
 }
 
@@ -3042,12 +3318,12 @@
   display: grid;
   width: min(760px, calc(100vw - 56px));
   gap: 16px;
-  border: 1px solid rgba(64, 70, 68, 0.13);
+  border: 1px solid var(--turn-progress-preview-border);
   border-radius: var(--radius-md);
-  background: rgba(253, 254, 251, 0.96);
+  background: var(--turn-progress-preview-bg);
   box-shadow:
-    0 24px 60px rgba(31, 35, 38, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 24px 60px var(--turn-progress-preview-shadow),
+    inset 0 1px 0 var(--turn-progress-preview-inset-highlight);
   padding: 16px 16px 16px;
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
@@ -3071,13 +3347,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #747a7e;
+  color: var(--turn-progress-preview-desc-color);
   font-size: var(--font-ui);
   margin: 0;
 }
 
 .turn-progress-preview-header p span {
-  color: #5f746e;
+  color: var(--turn-progress-preview-desc-strong-color);
   font-weight: var(--weight-semibold);
 }
 
@@ -3104,7 +3380,7 @@
   right: 0;
   left: 0;
   height: 1px;
-  background: #e3e4df;
+  background: var(--turn-progress-preview-rule-color);
   content: "";
 }
 
@@ -3112,14 +3388,14 @@
   height: 3px;
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: #e8e9e4;
+  background: var(--turn-progress-preview-track-bg);
 }
 
 .turn-progress-preview-track span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #7fa08d;
+  background: var(--turn-progress-preview-track-fill);
   transition: width 120ms linear;
 }
 
@@ -3127,7 +3403,7 @@
   display: block;
   width: 100%;
   min-width: 0;
-  color: #8f9498;
+  color: var(--turn-process-group-color);
   font-size: var(--font-ui);
 }
 
@@ -3274,7 +3550,7 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  color: #5a6064;
+  color: var(--turn-process-checkpoint-color);
   font-size: var(--font-ui);
   font-weight: 500;
   line-height: var(--conversation-meta-line-height);
@@ -3436,7 +3712,7 @@
   position: static;
   display: block;
   min-width: 0;
-  color: #73787c;
+  color: var(--turn-process-entry-color);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   /* Reasoning narration is still running text — 1.48 wrapped multi-line
@@ -3457,11 +3733,11 @@
 }
 
 .turn-process-entry-commentary::before {
-  background: #bcc3bc;
+  background: var(--turn-process-entry-commentary-marker);
 }
 
 .turn-process-entry-activity::before {
-  background: #d4d7d1;
+  background: var(--turn-process-entry-activity-marker);
 }
 
 .turn-process-entry .agent-block,
@@ -3501,7 +3777,7 @@
 
 .turn-process-entry .activity-row {
   min-height: 20px;
-  color: var(--conversation-process-control-color, #A4A4A5);
+  color: var(--conversation-process-control-color, var(--process-control-color-fallback));
   font-size: inherit;
   line-height: inherit;
 }
@@ -3512,18 +3788,18 @@
 
 .turn-process-entry .activity-toggle:hover,
 .turn-process-entry .activity-toggle:focus-visible {
-  color: #5f6569;
+  color: var(--activity-toggle-hover-color);
   outline: 0;
 }
 
 .turn-process-entry .activity-toggle:hover svg,
 .turn-process-entry .activity-toggle:focus-visible svg {
-  color: #7b8084;
+  color: var(--activity-toggle-hover-svg-color);
 }
 
 .turn-process-checkpoint-line {
   min-width: 0;
-  border-left: 2px solid #e2e4df;
+  border-left: 2px solid var(--turn-process-checkpoint-line-border);
   color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
@@ -3579,7 +3855,7 @@
   min-height: 0;
   align-items: center;
   gap: 6px;
-  color: var(--conversation-process-control-color, #A4A4A5);
+  color: var(--conversation-process-control-color, var(--process-control-color-fallback));
   /*
    * Tool-call rows are meta information, so they sit one size below the
    * 14px prose. They previously used --font-body, which made the muted
@@ -3608,7 +3884,7 @@
 }
 
 .activity-toggle:hover {
-  color: #6a6f74;
+  color: var(--activity-toggle-hover-color-alt);
 }
 
 .activity-row svg {
@@ -3682,7 +3958,7 @@
   display: block;
   min-width: 0;
   gap: 0;
-  color: #767b80;
+  color: var(--activity-detail-color);
   padding: 0;
 }
 
@@ -3771,7 +4047,7 @@
                                      
   border-radius: 0;
   background: transparent;
-  border-left: 2px solid #e89088;
+  border-left: 2px solid var(--activity-detail-error-border);
   color: var(--danger);
   font-size: var(--font-ui);
   line-height: 1.55;
@@ -3786,11 +4062,11 @@
 }
 
 .activity-add {
-  color: #12a150;
+  color: var(--diff-insert-color);
 }
 
 .activity-delete {
-  color: #cf2e2e;
+  color: var(--diff-delete-color);
 }
 
 @keyframes process-surface-count-jump {
@@ -3899,7 +4175,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--conversation-process-control-color, #A4A4A5);
+  color: var(--conversation-process-control-color, var(--process-control-color-fallback));
   cursor: default;
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
@@ -3988,9 +4264,9 @@
     90deg,
     transparent 0%,
     transparent 40%,
-    rgba(255, 255, 255, 0.5) 47%,
-    #ffffff 50%,
-    rgba(255, 255, 255, 0.5) 53%,
+    var(--live-gray-shimmer-edge) 47%,
+    var(--paper) 50%,
+    var(--live-gray-shimmer-edge) 53%,
     transparent 60%,
     transparent 100%
   );
@@ -4174,7 +4450,7 @@
 }
 
 .rich-link {
-  color: #176dc2;
+  color: var(--rich-link-color);
   text-decoration-line: none;
 }
 
@@ -4243,7 +4519,7 @@
 
 .rich-link:hover,
 .rich-file-link:focus-visible {
-  color: #0f5da8;
+  color: var(--rich-link-hover-color);
 }
 
 .rich-file-link:hover {
@@ -4256,7 +4532,7 @@
 
 .rich-file-link:focus-visible {
   border-radius: 3px;
-  outline: 2px solid color-mix(in srgb, #176dc2 45%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--rich-link-color) 45%, transparent);
   outline-offset: 2px;
 }
 
@@ -4317,7 +4593,7 @@
    * block on a #fff conversation column read as visually muddy;
    * sampling landed it at ≈ #F2F2F2 in the rendered UI).
    */
-  background: #e9eaea;
+  background: var(--rich-code-surface-bg);
   border-radius: var(--radius-sm);
 }
 
@@ -4327,7 +4603,7 @@
 
 .rich-code-block {
   margin: 8px 0;
-  background: #e9eaea;
+  background: var(--rich-code-surface-bg);
   border: 1px solid var(--ink-overlay-6);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -4429,7 +4705,7 @@
 }
 
 .fork-worktree-summary:focus-visible {
-  outline: 2px solid rgba(9, 105, 218, 0.22);
+  outline: 2px solid var(--fork-worktree-focus-ring);
   outline-offset: -2px;
 }
 
@@ -4547,7 +4823,7 @@
   --message-copy-rest-transform: none;
   width: 26px;
   height: 26px;
-  background: rgba(255, 255, 255, 0.84);
+  background: var(--fork-worktree-copy-bg);
   box-shadow: none;
   opacity: 0.72;
   pointer-events: auto;
@@ -4621,7 +4897,7 @@
                                                            
                                                                   
   border-left: 2px solid var(--ink-overlay-18);
-  color: #596067;
+  color: var(--rich-blockquote-color);
   padding: 2px 0 2px 16px;
 }
 
@@ -4629,7 +4905,7 @@
   width: 100%;
   height: 1px;
   border: 0;
-  background: #e4e5e1;
+  background: var(--rich-rule-color);
   margin: 8px 0;
 }
 
@@ -4718,7 +4994,7 @@
   padding: 2px 0;
   cursor: pointer;
   list-style: none;
-  color: var(--conversation-process-control-color, #A4A4A5);
+  color: var(--conversation-process-control-color, var(--process-control-color-fallback));
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: var(--conversation-meta-line-height);
@@ -4862,7 +5138,7 @@ pre {
   padding: 12px 14px;
   border-bottom: 1px solid var(--surface-3);
   background: var(--surface-1);
-  color: #383d42;
+  color: var(--pre-text-color);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: var(--font-sm);
   line-height: 1.5;
@@ -4955,16 +5231,28 @@ pre {
   justify-content: center;
   gap: 14px;
   color: var(--ink-tertiary);
-  width: max-content;
-  max-width: calc(100% - 32px);
+  width: 100%;
+  max-width: min(680px, calc(100% - 32px));
   margin-inline: auto;
 }
 
 .turn-event-notice::before,
 .turn-event-notice::after {
-  /* The status is a filled chip; the side lines are gone in favor of a
-     solid background so the user can read the status at a glance. */
-  display: none;
+  /* System events read as a broken divider: hairlines on both sides,
+     a single quiet line of text in the gap. The lines fade toward the
+     outer edges so the rule never hard-stops against the flow margin. */
+  content: "";
+  flex: 1 1 0;
+  min-width: 24px;
+  height: 1px;
+}
+
+.turn-event-notice::before {
+  background: linear-gradient(to right, transparent, var(--rule) 40%);
+}
+
+.turn-event-notice::after {
+  background: linear-gradient(to left, transparent, var(--rule) 40%);
 }
 
 .turn-event-detail {
@@ -4975,16 +5263,16 @@ pre {
 }
 
 .turn-event-content {
+  /* The text sits bare in the divider gap — no fill, no radius. Tone is
+     carried by text color alone; the side lines stay neutral gray. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: min(520px, 100%);
   text-align: center;
-  background: var(--surface-3);
-  color: var(--ink);
-  border-radius: var(--radius-pill);
-  padding: 4px 14px;
+  color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   line-height: 1.4;
@@ -4998,6 +5286,21 @@ pre {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+.turn-event-code {
+  /* Machine identifier next to the Chinese title. Stays in the same
+     neutral gray family as the divider lines regardless of tone — only
+     the title carries the tone color. The higher flex-shrink makes the
+     code give up space (truncate) before the title does. */
+  flex: 0 3 auto;
+  min-width: 0;
+  margin-left: 8px;
+  color: var(--ink-muted);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .turn-event-content .turn-notice-actions {
@@ -5030,27 +5333,22 @@ pre {
   line-height: 1.45;
 }
 
-/* Tone-aware chip colors. The chip overrides the parent tone color with
-   a soft-tint background and the matching dark text. Reuses the existing
-   design tokens (--danger-soft, --turn-warning-bg, etc.) so the chip
-   reads as the same family as the rest of the app. */
+/* Tone-aware text colors. The divider lines stay neutral in every tone;
+   only the centered text picks up the tone color, so an error reads as a
+   red line of text between gray hairlines rather than a colored badge. */
 .turn-notice.warning .turn-event-content {
-  background: var(--turn-warning-bg);
   color: var(--turn-warning-text);
 }
 
 .turn-notice.auth .turn-event-content {
-  background: color-mix(in srgb, #9a3412 14%, var(--surface-1));
-  color: #9a3412;
+  color: var(--turn-notice-auth-color);
 }
 
 .turn-notice.error .turn-event-content {
-  background: var(--danger-soft);
   color: var(--danger);
 }
 
 .turn-notice.context-compaction-notice .turn-event-content {
-  background: var(--surface-2);
   color: var(--ink-muted);
 }
 
@@ -5059,7 +5357,7 @@ pre {
 }
 
 .turn-notice.auth {
-  color: #9a3412;
+  color: var(--turn-notice-auth-color);
 }
 
 .turn-notice.error {
@@ -5089,7 +5387,7 @@ pre {
 
 .system-line::before {
   content: "—";
-  color: #b4b8bb;
+  color: var(--system-line-marker-color);
   margin-right: 8px;
   user-select: none;
 }
@@ -5164,7 +5462,7 @@ pre {
   min-height: 120px;
   align-content: start;
   gap: 16px;
-  border: 1px solid #e5e5e2;
+  border: 1px solid var(--empty-home-action-border);
   border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
@@ -5173,12 +5471,12 @@ pre {
 }
 
 .empty-home-actions button:hover {
-  border-color: #d8d9d5;
+  border-color: var(--empty-home-action-border-hover);
   background: var(--surface-1);
 }
 
 .empty-home-actions button > svg {
-  color: #7c8287;
+  color: var(--empty-home-action-icon-color);
 }
 
 .empty-home-actions span {
@@ -5229,7 +5527,7 @@ pre {
   width: min(440px, calc(100% - 72px));
   justify-items: center;
   gap: 18px;
-  color: #697075;
+  color: var(--project-empty-content-color);
 }
 
 .project-empty-content h2 {
@@ -5304,7 +5602,7 @@ pre {
 
 .wuu-launch-exit {
   height: 34px;
-  border: 1px solid #dedfdb;
+  border: 1px solid var(--wuu-launch-exit-border);
   border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
@@ -6626,7 +6924,7 @@ pre {
   height: 52px;
   align-items: center;
   gap: 12px;
-  border: 1px solid #e0e0dc;
+  border: 1px solid var(--project-empty-actions-border);
   border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--ink);
@@ -6636,7 +6934,7 @@ pre {
 }
 
 .project-empty-actions button:hover {
-  background: #f5f5f2;
+  background: var(--project-empty-actions-hover-bg);
 }
 
 /*
@@ -7171,19 +7469,19 @@ pre {
 }
 
 .tool-diff-line-insert {
-  background: rgba(18, 161, 80, 0.08);
+  background: var(--diff-insert-bg);
 }
 
 .tool-diff-line-insert .tool-diff-line-content {
-  color: #0a6b34;
+  color: var(--diff-insert-text-color);
 }
 
 .tool-diff-line-delete {
-  background: rgba(207, 46, 46, 0.08);
+  background: var(--diff-delete-bg);
 }
 
 .tool-diff-line-delete .tool-diff-line-content {
-  color: #a82525;
+  color: var(--diff-delete-text-color);
 }
 
 .tool-diff-line-equal {
@@ -7284,11 +7582,11 @@ pre {
 }
 
 .turn-edit-summary-add {
-  color: #12a150;
+  color: var(--diff-insert-color);
 }
 
 .turn-edit-summary-delete {
-  color: #cf2e2e;
+  color: var(--diff-delete-color);
 }
 
 .turn-edit-summary-more {
@@ -7351,11 +7649,11 @@ pre {
   margin-top: 0;
   padding: 4px 10px 4px 6px;
   border-radius: 999px;
-  background: var(--bg-soft, rgba(127, 127, 127, 0.08));
-  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.16));
+  background: var(--bg-soft, var(--turn-sources-pill-bg-fallback));
+  border: 1px solid var(--border-soft, var(--turn-sources-pill-border-fallback));
   font-size: var(--font-sm, 13px);
   line-height: 1;
-  color: var(--ink-muted, rgba(127, 127, 127, 0.85));
+  color: var(--ink-muted, var(--turn-sources-pill-color-fallback));
   flex: 0 0 auto;
   align-self: flex-start;
 }
@@ -7377,8 +7675,8 @@ pre {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  border: 1.5px solid var(--bg-soft, #fff);
-  background: var(--bg, #fff);
+  border: 1.5px solid var(--bg-soft, var(--paper));
+  background: var(--bg, var(--paper));
   padding: 0;
   margin: 0;
   display: inline-flex;
@@ -7388,7 +7686,7 @@ pre {
   overflow: hidden;
   /* Dim the chrome so the favicon dominates; the icon is the
    * affordance, the button border is just legibility. */
-  color: var(--ink-strong, rgba(0, 0, 0, 0.85));
+  color: var(--ink-strong, var(--turn-source-icon-color-fallback));
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
@@ -7399,7 +7697,7 @@ pre {
 .turn-source-icon:hover,
 .turn-source-icon:focus-visible {
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 6px var(--turn-source-icon-hover-shadow);
   z-index: 1;
 }
 
@@ -7416,7 +7714,7 @@ pre {
   font-size: 10px;
   font-weight: var(--weight-semibold, 600);
   line-height: 1;
-  color: var(--ink-strong, rgba(0, 0, 0, 0.85));
+  color: var(--ink-strong, var(--turn-source-icon-color-fallback));
   user-select: none;
 }
 

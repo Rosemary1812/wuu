@@ -120,8 +120,17 @@ export function AssistantTurnShell({
   const defaultCollapsed =
     turn.status === "completed" && answerEntries.length > 0;
 
+  // An in_progress turn always shows the process header, even before the
+  // first server item arrives (the optimistic placeholder right after
+  // send). Without this the shell mounts as an empty box and the user
+  // faces a bare hairline with no label or timer until the first item —
+  // exactly the dead-air moment the optimistic turn exists to fill. The
+  // pre-item label is the neutral "正在处理" (never "正在思考": whether
+  // the model thinks is unknown until a reasoning item actually arrives).
   const hasProcess =
-    processEntries.length > 0 || Boolean(display.latestProcessPreview);
+    processEntries.length > 0 ||
+    Boolean(display.latestProcessPreview) ||
+    turn.status === "in_progress";
   const hasAnswer = answerEntries.length > 0;
 
   const className = [

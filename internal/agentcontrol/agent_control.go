@@ -2085,6 +2085,7 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 			return
 		}
 		if isTerminalHarnessStatus(status) && task.Status == status && task.InputTokens == n.Snapshot.InputTokens && task.OutputTokens == n.Snapshot.OutputTokens && strings.TrimSpace(task.Error) == strings.TrimSpace(errText) {
+			c.recordTerminalHarnessArtifacts(n)
 			return
 		}
 	}
@@ -2118,11 +2119,18 @@ func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
 		})
 	}
 	if isFinalSubAgentStatus(n.Status) {
-		c.recordAgentResultArtifact(n.Snapshot)
-		c.recordWorktreeArtifacts(n.Snapshot)
-		if n.Status == subagent.StatusCompleted {
-			c.synthesizeFinalTextReport(n.Snapshot)
-		}
+		c.recordTerminalHarnessArtifacts(n)
+	}
+}
+
+func (c *AgentControl) recordTerminalHarnessArtifacts(n subagent.Notification) {
+	if c == nil || !isFinalSubAgentStatus(n.Status) {
+		return
+	}
+	c.recordAgentResultArtifact(n.Snapshot)
+	c.recordWorktreeArtifacts(n.Snapshot)
+	if n.Status == subagent.StatusCompleted {
+		c.synthesizeFinalTextReport(n.Snapshot)
 	}
 }
 
@@ -2422,6 +2430,7 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 			return
 		}
 		if isFinalAgentThreadStatus(status) && current.Status == status {
+			c.recordTerminalHarnessArtifacts(n)
 			return
 		}
 	}

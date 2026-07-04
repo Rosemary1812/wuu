@@ -115,8 +115,15 @@ func RunToolLoop(
 		usage.RecordPendingMessages(messages)
 	}
 	threshold := proactiveCompactThreshold(cfg)
-	tryProactiveCompact := func() {
-		if proactiveSuppressed || cfg.Compact == nil || threshold <= 0 || usage.EstimateCurrent() < threshold || !canProactivelyCompact(messages, cfg) {
+	// runCompactPass executes one compact attempt. Non-forced passes are
+	// gated on the proactive fill-rate threshold and suppress further
+	// proactive attempts on failure/no-op; forced passes (user-requested
+	// /compact) bypass the gate and never suppress the proactive path.
+	runCompactPass := func(reason CompactReason, force bool) {
+		if cfg.Compact == nil {
+			return
+		}
+		if !force && (proactiveSuppressed || threshold <= 0 || usage.EstimateCurrent() < threshold || !canProactivelyCompact(messages, cfg)) {
 			return
 		}
 		before := usage.EstimateCurrent()
@@ -124,9 +131,11 @@ func RunToolLoop(
 		compacted, cerr := cfg.Compact(ctx, messages)
 		switch {
 		case cerr != nil:
-			proactiveSuppressed = true
+			if !force {
+				proactiveSuppressed = true
+			}
 			emitCompactAttempt(cfg, CompactAttemptInfo{
-				Reason:         CompactReasonProactive,
+				Reason:         reason,
 				Status:         CompactAttemptFailed,
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
@@ -138,7 +147,7 @@ func RunToolLoop(
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
 			emitCompactAttempt(cfg, CompactAttemptInfo{
-				Reason:         CompactReasonProactive,
+				Reason:         reason,
 				Status:         CompactAttemptSucceeded,
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
@@ -146,16 +155,18 @@ func RunToolLoop(
 			})
 			if cfg.OnCompact != nil {
 				cfg.OnCompact(CompactInfo{
-					Reason:         CompactReasonProactive,
+					Reason:         reason,
 					TokensBefore:   before,
 					MessagesBefore: msgsBefore,
 					MessagesAfter:  len(messages),
 				})
 			}
 		default:
-			proactiveSuppressed = true
+			if !force {
+				proactiveSuppressed = true
+			}
 			emitCompactAttempt(cfg, CompactAttemptInfo{
-				Reason:         CompactReasonProactive,
+				Reason:         reason,
 				Status:         CompactAttemptUnchanged,
 				TokensBefore:   before,
 				MessagesBefore: msgsBefore,
@@ -163,11 +174,16 @@ func RunToolLoop(
 			})
 		}
 	}
+	tryProactiveCompact := func() { runCompactPass(CompactReasonProactive, false) }
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
 		if cfg.OnMessage != nil && !msg.Hidden {
 			cfg.OnMessage(msg)
 		}
+	}
+
+	if cfg.ForceInitialCompact {
+		runCompactPass(CompactReasonManual, true)
 	}
 
 	for stepIdx := 0; cfg.MaxSteps == 0 || stepIdx < cfg.MaxSteps; stepIdx++ {

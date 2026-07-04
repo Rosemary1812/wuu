@@ -67,6 +67,10 @@ type turnRuntimeSnapshot struct {
 	ApprovalPolicy     string
 	ApprovalsReviewer  string
 	PermissionExplicit bool
+	// ForceCompact makes the turn run one compaction pass before its
+	// first model request (the /compact slash command). Rides the
+	// snapshot so it survives turn queueing.
+	ForceCompact bool
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
@@ -133,6 +137,7 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	userMsg := userMessageFromPrompt(params.Prompt, images, files)
 	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
 	snapshot.PermissionExplicit = params.PermissionMode != nil
+	snapshot.ForceCompact = isManualCompactPrompt(params.Prompt)
 	startTurn := s.startThreadUserTurn
 	if isResidentDM {
 		startTurn = s.startResidentTurn
@@ -208,6 +213,7 @@ func (s *Server) handleTurnQueue(req Request) error {
 	msg.ClientID = queueID
 	entry := queuedTurn{id: queueID, msg: msg, snapshot: turnRuntimeSnapshot{}.withPermissions(permissions)}
 	entry.snapshot.PermissionExplicit = params.PermissionMode != nil
+	entry.snapshot.ForceCompact = isManualCompactPrompt(params.Prompt)
 	queued := queuedTurnSummary(params.ThreadID, entry)
 	s.enqueueQueuedUserTurn(params.ThreadID, entry)
 	if err := s.writeResponse(req.ID, TurnQueueResult{Queued: queued}, nil); err != nil {
@@ -870,6 +876,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	}
 	turnPermissions := turnRuntime.permissions()
 	turnRuntime = turnRuntime.withPermissions(turnPermissions)
+	// Assigned unconditionally every turn: the runner is per-thread and
+	// long-lived, so a /compact turn must not leave the force flag armed
+	// for the turns that follow it.
+	runner.ForceInitialCompact = turnRuntime.ForceCompact
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		toolPolicy := config.ToolPolicyConfig{}
 		if !turnRuntime.PermissionExplicit && s != nil && s.rt != nil {
@@ -1629,6 +1639,7 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 		turnRuntime = turnRuntime.withPermissions(snapshot.permissions())
 		turnRuntime.PermissionExplicit = snapshot.PermissionExplicit
 	}
+	turnRuntime.ForceCompact = snapshot.ForceCompact
 	th.mu.Unlock()
 
 	return startedThreadTurn{
@@ -1677,6 +1688,7 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 
 	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
 	snapshot.PermissionExplicit = entry.snapshot.PermissionExplicit
+	snapshot.ForceCompact = entry.snapshot.ForceCompact
 	started, ok, err := s.startThreadUserTurn(ctx, th, entry.msg, snapshot, false, turnReadOnlyFail)
 	if err != nil || !ok {
 		return ok, err

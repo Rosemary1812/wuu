@@ -1,3 +1,15 @@
+/* Component color tokens for responsive-design.css. Light-theme values; the dark
+   theme overrides these in base.css theme blocks. */
+:root {
+  --responsive-secondary-button-bg: #f0f0ed;
+  --responsive-secondary-button-text: #3c4145;
+  --responsive-design-toggle-bg: rgba(31, 35, 40, 0.85);
+  --responsive-design-toggle-hover-bg: rgba(31, 35, 40, 1);
+  --responsive-design-toggle-shadow: rgba(0, 0, 0, 0.18);
+  --responsive-design-toggle-hover-shadow: rgba(0, 0, 0, 0.22);
+  --responsive-design-panel-shadow: rgba(0, 0, 0, 0.08);
+}
+
 @media (max-width: 920px) {
   .conversation-split {
     grid-template-columns: minmax(0, 1fr);
@@ -199,8 +211,8 @@
 }
 
 .secondary-button {
-  background: #f0f0ed;
-  color: #3c4145;
+  background: var(--responsive-secondary-button-bg);
+  color: var(--responsive-secondary-button-text);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -303,10 +315,10 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(31, 35, 40, 0.85);
+  background: var(--responsive-design-toggle-bg);
   color: var(--paper);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 8px var(--responsive-design-toggle-shadow);
   transition:
     background 120ms ease,
     transform 120ms ease,
@@ -315,9 +327,9 @@
 
 .design-tokens-toggle:hover,
 .design-tokens-toggle:focus-visible {
-  background: rgba(31, 35, 40, 1);
+  background: var(--responsive-design-toggle-hover-bg);
   transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 4px 12px var(--responsive-design-toggle-hover-shadow);
   outline: 0;
 }
 
@@ -335,7 +347,7 @@
   flex-direction: column;
   width: 320px;
   background: var(--paper);
-  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.08);
+  box-shadow: -2px 0 16px var(--responsive-design-panel-shadow);
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink);

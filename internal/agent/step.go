@@ -93,6 +93,10 @@ const (
 	// CompactReasonInception means the current agent requested a linear
 	// anchor-based continuation summary after its tool result was recorded.
 	CompactReasonInception CompactReason = "inception"
+	// CompactReasonManual means the user explicitly requested a compact
+	// pass (the /compact slash command); it runs before the first model
+	// request of the turn regardless of the fill-rate threshold.
+	CompactReasonManual CompactReason = "manual"
 )
 
 // CompactAttemptStatus records the outcome of a compact attempt for telemetry.
@@ -231,6 +235,11 @@ type LoopConfig struct {
 	// CompactKeepRecentTokens overrides the default recent raw-history budget
 	// kept after compaction. Zero means use the default.
 	CompactKeepRecentTokens int
+	// ForceInitialCompact runs one compact pass before the first model
+	// request of this Run, bypassing the fill-rate threshold (user-requested
+	// /compact). Requires Compact to be set; a failed or no-op forced pass
+	// does not suppress later proactive passes.
+	ForceInitialCompact bool
 	// ToolPrune enables a lightweight, non-LLM tool-result prune pass that
 	// runs before each provider request. Old tool results beyond the protect
 	// threshold are replaced with compact placeholders in the request only;

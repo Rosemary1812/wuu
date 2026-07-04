@@ -17,18 +17,20 @@ import (
 )
 
 // loadProbeConfig mirrors the app-server config resolution order: try the
-// workspace's .wuu.json, then fall back to ~/.config/wuu/config.json. This
-// is intentionally NOT the same as `wuu app-server`'s "create a starter
-// config if missing" path — the probe must operate on the user's real
-// config, otherwise it would silently target a different provider.
+// workspace's .wuu.json, then fall back to the user-global config in the
+// unified wuu home (~/.wuu/config.json, or WUU_HOME/config.json), and finally
+// the legacy ~/.config/wuu/config.json. This is intentionally NOT the same as
+// `wuu app-server`'s "create a starter config if missing" path — the probe
+// must operate on the user's real config, otherwise it would silently target a
+// different provider.
 func loadProbeConfig(workdir, homeDir string) (config.Config, string, error) {
 	if cfg, path, err := config.LoadFrom(workdir, homeDir); err == nil {
 		return cfg, path, nil
 	} else if !strings.Contains(err.Error(), "not found") {
 		return config.Config{}, "", err
 	}
-	return config.Config{}, "", fmt.Errorf("no wuu config found for workdir %q (looked in %q and %q/.config/wuu/config.json); run `wuu init` or `wuu app-server` once to create one",
-		workdir, workdir, homeDir)
+	return config.Config{}, "", fmt.Errorf("no wuu config found for workdir %q (looked in %q, ~/.wuu/config.json, and the legacy ~/.config/wuu/config.json); run `wuu init` or `wuu app-server` once to create one",
+		workdir, workdir)
 }
 
 // ProbeTitleOptions controls `wuu probe-title`. It mirrors the flags the CLI

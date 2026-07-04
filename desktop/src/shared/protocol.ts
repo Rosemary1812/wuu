@@ -1407,6 +1407,10 @@ export type ComposerGoalSummary = {
   can_clear?: boolean;
 };
 
+// Appearance preference for the desktop shell. "system" follows the OS
+// light/dark setting via prefers-color-scheme.
+export type ThemePreference = "system" | "light" | "dark";
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -1480,6 +1484,15 @@ export type WuuDesktopApi = {
   getCliInstallStatus: () => Promise<CliInstallStatus>;
   installCli: (overwrite?: boolean) => Promise<CliInstallResult>;
   setCliAutoInstallEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
+  // Appearance. The preference persists in desktop-settings.json; the
+  // renderer resolves "system" against prefers-color-scheme and stamps
+  // data-theme on <html>. `initialThemePreference` is read synchronously
+  // in the preload script so the first paint already has the right theme.
+  initialThemePreference?: ThemePreference;
+  getThemePreference: () => Promise<ThemePreference>;
+  setThemePreference: (
+    theme: ThemePreference,
+  ) => Promise<{ ok: boolean; theme: ThemePreference }>;
   listParticipants: () => Promise<ParticipantListResult>;
   saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (

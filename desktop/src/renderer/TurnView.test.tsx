@@ -223,3 +223,25 @@ describe("TurnView", () => {
     expect(view.querySelector(".turn-notice-icon")).toBeNull();
   });
 });
+
+describe("TurnView optimistic placeholder", () => {
+  it("shows the status label and live timer immediately for a just-sent optimistic turn", async () => {
+    const { createOptimisticTurn } = await import("./ComposerMessages");
+    const optimistic = createOptimisticTurn(
+      { id: "queued-1", text: "帮我看看这个测试", images: [], files: [] },
+      Date.now(),
+    );
+    const view = render(optimistic);
+
+    // The user's message is visible right away.
+    expect(view.textContent).toContain("帮我看看这个测试");
+    // The process header mounts in the same frame — the user never faces
+    // a bare hairline: label + elapsed timer are there from the start.
+    expect(view.querySelector(".turn-process-title")?.textContent).toBe(
+      "正在处理",
+    );
+    expect(view.querySelector(".turn-process-meta")?.textContent).toMatch(
+      /^\d+s$/,
+    );
+  });
+});

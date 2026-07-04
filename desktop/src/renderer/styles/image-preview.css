@@ -1,10 +1,26 @@
+/* Component color tokens for image-preview.css. Light-theme values; the dark
+   theme overrides these in base.css theme blocks. */
+:root {
+  --image-preview-overlay-bg: rgba(8, 10, 12, 0.82);
+  --image-preview-toolbar-text: #f3f4f5;
+  --image-preview-title-text: rgba(243, 244, 245, 0.92);
+  --image-preview-toolbar-border: rgba(255, 255, 255, 0.12);
+  --image-preview-toolbar-actions-bg: rgba(20, 24, 28, 0.4);
+  --image-preview-toolbar-button-hover: rgba(255, 255, 255, 0.12);
+  --image-preview-toolbar-button-active: rgba(255, 255, 255, 0.2);
+  --image-preview-zoom-text: rgba(243, 244, 245, 0.88);
+  --image-preview-status-text: rgba(243, 244, 245, 0.78);
+  --image-preview-status-error: rgba(255, 188, 188, 0.9);
+  --image-preview-outline-focus: #5b8def;
+}
+
 .image-preview-overlay {
   position: fixed;
   inset: 0;
   z-index: 2147483000;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 10, 12, 0.82);
+  background: var(--image-preview-overlay-bg);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   animation: image-preview-fade-in 0.16s ease-out;
@@ -25,7 +41,7 @@
   justify-content: flex-end;
   gap: 12px;
   padding: 14px 18px;
-  color: #f3f4f5;
+  color: var(--image-preview-toolbar-text);
   font-size: 13px;
   user-select: none;
 }
@@ -38,7 +54,7 @@
   white-space: nowrap;
   font-weight: 500;
   letter-spacing: 0.01em;
-  color: rgba(243, 244, 245, 0.92);
+  color: var(--image-preview-title-text);
 }
 
 .image-preview-toolbar-actions {
@@ -46,9 +62,9 @@
   align-items: center;
   gap: 6px;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--image-preview-toolbar-border);
   border-radius: 999px;
-  background: rgba(20, 24, 28, 0.4);
+  background: var(--image-preview-toolbar-actions-bg);
 }
 
 .image-preview-toolbar-button {
@@ -66,11 +82,11 @@
 }
 
 .image-preview-toolbar-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--image-preview-toolbar-button-hover);
 }
 
 .image-preview-toolbar-button:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--image-preview-toolbar-button-active);
 }
 
 .image-preview-toolbar-button:disabled {
@@ -88,7 +104,7 @@
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
-  color: rgba(243, 244, 245, 0.88);
+  color: var(--image-preview-zoom-text);
 }
 
 .image-preview-stage {
@@ -122,13 +138,13 @@
   inset: 0;
   display: grid;
   place-items: center;
-  color: rgba(243, 244, 245, 0.78);
+  color: var(--image-preview-status-text);
   font-size: 13px;
   letter-spacing: 0.02em;
 }
 
 .image-preview-status.error {
-  color: rgba(255, 188, 188, 0.9);
+  color: var(--image-preview-status-error);
 }
 
 .rich-image,
@@ -140,7 +156,7 @@
 .rich-image:focus-visible,
 .composer-image-attachment img:focus-visible,
 .message-image:focus-visible {
-  outline: 2px solid var(--accent, #5b8def);
+  outline: 2px solid var(--accent, var(--image-preview-outline-focus));
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }

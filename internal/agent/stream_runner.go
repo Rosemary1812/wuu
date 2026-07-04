@@ -78,6 +78,12 @@ type StreamRunner struct {
 	// The reactive context-overflow recovery still runs. Off by default.
 	DisableAutoCompact bool
 
+	// ForceInitialCompact runs one compact pass before the first model
+	// request of the next Run, bypassing the fill-rate threshold. Set per
+	// turn by the app server when the user sends /compact; it works even
+	// when DisableAutoCompact is on.
+	ForceInitialCompact bool
+
 	// StreamingToolExecution, when true, starts executing read-only tools
 	// during model streaming (before the full response arrives). Off by default
 	// until stabilized.
@@ -235,6 +241,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		OutputReserveTokens:     r.OutputReserveTokens,
 		CompactThresholdPct:     r.CompactThresholdPct,
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
+		ForceInitialCompact:     r.ForceInitialCompact,
 		ToolPrune:               true,
 		BeforeStep:              beforeStep,
 		BeforeRequestContext:    r.BeforeRequestContext,
@@ -749,6 +756,8 @@ func formatCompactNotice(info CompactInfo) string {
 		verb = "HelpMe recovered and compacted"
 	case CompactReasonInception:
 		verb = "Inception rewrote"
+	case CompactReasonManual:
+		verb = "Manually compacted"
 	}
 	if info.TokensBefore > 0 {
 		return fmt.Sprintf("✦ %s history: %d → %d messages (was ~%s)",
@@ -760,10 +769,17 @@ func formatCompactNotice(info CompactInfo) string {
 }
 
 func formatCompactAttemptNotice(info CompactAttemptInfo) (string, bool) {
-	if info.Reason != CompactReasonProactive || info.Status != CompactAttemptFailed {
-		return "", false
+	switch {
+	case info.Reason == CompactReasonProactive && info.Status == CompactAttemptFailed:
+		return "Context compaction failed; continuing without compacting history.", true
+	// A user-requested /compact must report its outcome even when nothing
+	// happened — silence would read as a successful compaction.
+	case info.Reason == CompactReasonManual && info.Status == CompactAttemptFailed:
+		return "Manual context compaction failed; history is unchanged.", true
+	case info.Reason == CompactReasonManual && info.Status == CompactAttemptUnchanged:
+		return "Nothing to compact yet; history is unchanged.", true
 	}
-	return "Context compaction failed; continuing without compacting history.", true
+	return "", false
 }
 
 // formatTokenCount renders a token count in a compact form: 1234 →

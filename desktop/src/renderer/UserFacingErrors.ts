@@ -44,6 +44,13 @@ export type UserFacingErrorDisplay = {
   category: UserFacingErrorCategory;
   tone: UserFacingErrorTone;
   title: string;
+  /**
+   * Raw machine identifier (provider error code, wrapped stream token,
+   * untranslated tool message) kept next to the Chinese title so a
+   * screenshot still carries the triage signal. Rendered muted — same
+   * neutral family as the divider lines, not the tone color.
+   */
+  code?: string;
   detail: string;
   /**
    * Concrete next-step the user can take. The renderer renders these
@@ -65,26 +72,27 @@ export function rawErrorMessage(error: unknown, fallback = ""): string {
 }
 
 // Reason phrases for the HTTP status codes the classifier can extract from
-// a provider error. The phrase is appended to the code ("401 unauthorized")
-// so screenshots carry enough signal to identify the upstream side of the
-// problem. Kept here so the test file does not need to be updated when the
-// vocabulary grows.
+// a provider error. The numeric code stays in the title ("401 未授权") so
+// screenshots carry enough signal to identify the upstream side of the
+// problem, while the phrase itself reads in Chinese like the rest of the
+// notice vocabulary.
 const HTTP_REASON_PHRASES: Record<string, string> = {
-  "400": "bad request",
-  "401": "unauthorized",
-  "403": "forbidden",
-  "404": "not found",
-  "408": "timeout",
-  "413": "payload too large",
-  "429": "rate limit",
-  "500": "server error",
-  "502": "bad gateway",
-  "503": "unavailable",
-  "504": "gateway timeout",
-  "529": "overloaded",
+  "400": "请求无效",
+  "401": "未授权",
+  "403": "无访问权限",
+  "404": "资源不存在",
+  "408": "请求超时",
+  "413": "请求体过大",
+  "429": "触发限流",
+  "500": "服务器错误",
+  "502": "网关错误",
+  "503": "服务不可用",
+  "504": "网关超时",
+  "529": "上游过载",
 };
 
-const RESPONSE_COMPLETED_MISSING_TITLE = "stream_closed_before_response.completed";
+const RESPONSE_COMPLETED_MISSING_CODE = "stream_closed_before_response.completed";
+const RESPONSE_COMPLETED_MISSING_TITLE = "回答未完整返回";
 
 function extractHttpCode(message: string): string | undefined {
   const match = message.match(/\b(400|401|403|404|408|413|429|500|502|503|504|529)\b/);
@@ -103,100 +111,117 @@ function structuredStatusTitle(structured: TurnError | undefined): string | unde
   return httpTitle(String(Math.trunc(statusCode)));
 }
 
+type SpecificDisplay = {
+  /** Readable Chinese title, when the message maps to a known situation. */
+  title?: string;
+  /**
+   * Raw machine identifier worth keeping next to the title (provider
+   * error code, untranslated tool message). Only set when the identifier
+   * itself carries triage signal that the Chinese title alone loses.
+   */
+  code?: string;
+};
+
 /**
- * Pull a specific identifier out of the raw error so the chip is readable
- * at a glance and the screenshot carries enough signal to triage. Returns
- * undefined when no specific identifier can be pulled — the caller then
- * falls back to a category-level title.
+ * Pull a specific situation out of the raw error so the chip is readable
+ * at a glance. Known keywords map to a Chinese title; identifiers we can't
+ * translate reliably (arbitrary provider codes, raw tool messages) are
+ * surfaced through `code` instead, and the caller falls back to the
+ * category-level title.
  *
  * The list is intentionally short: anything renderer-specific belongs to
  * the turn notice, not the error model.
  */
-function extractSpecificTitle(
+function extractSpecificDisplay(
   message: string,
   category: UserFacingErrorCategory,
-): string | undefined {
+): SpecificDisplay {
   const lower = message.toLowerCase();
   switch (category) {
     case "cancelled":
-      return undefined;
+      return {};
     case "network": {
+      if (isResponseCompletedMissingMessage(lower)) {
+        return { title: RESPONSE_COMPLETED_MISSING_TITLE, code: RESPONSE_COMPLETED_MISSING_CODE };
+      }
       // OpenAI/Anthropic-style wrapped errors look like
       // "stream request failed: stream error (previous_response_not_found)".
       // The parenthesized token at the end of the message is the actual
-      // provider error code, which is what the user (and support) need to
-      // see in the chip and in a screenshot.
-      if (isResponseCompletedMissingMessage(lower)) {
-        return RESPONSE_COMPLETED_MISSING_TITLE;
-      }
+      // provider error code — an arbitrary identifier we can't translate,
+      // so it rides along as the muted code.
       const wrapped = message.match(/\(([^()]+)\)\s*$/);
-      if (wrapped) return wrapped[1];
+      if (wrapped) return { code: wrapped[1] };
       const code = extractHttpCode(message);
-      if (code) return httpTitle(code);
-      if (lower.includes("rate limit") || lower.includes("too many requests")) return "rate limit";
-      if (lower.includes("overloaded")) return "overloaded";
-      if (lower.includes("timeout") || lower.includes("deadline exceeded")) return "timeout";
-      if (lower.includes("connection refused")) return "connection refused";
-      if (lower.includes("connection reset")) return "connection reset";
-      if (lower.includes("connection dropped")) return "connection dropped";
-      if (lower.includes("no such host")) return "host not found";
-      if (lower.includes("dns")) return "dns error";
-      if (lower.includes("eof")) return "eof";
-      if (lower.includes("temporarily unavailable")) return "temporarily unavailable";
-      return undefined;
+      if (code) return { title: httpTitle(code) };
+      if (lower.includes("rate limit") || lower.includes("too many requests")) return { title: "触发限流" };
+      if (lower.includes("overloaded")) return { title: "上游过载" };
+      if (lower.includes("timeout") || lower.includes("deadline exceeded")) return { title: "请求超时" };
+      if (lower.includes("connection refused")) return { title: "连接被拒绝" };
+      if (lower.includes("connection reset")) return { title: "连接被重置" };
+      if (lower.includes("connection dropped")) return { title: "连接已断开" };
+      if (lower.includes("no such host")) return { title: "无法解析主机" };
+      if (lower.includes("dns")) return { title: "DNS 解析失败" };
+      if (lower.includes("eof")) return { title: "连接意外中断" };
+      if (lower.includes("temporarily unavailable")) return { title: "服务暂时不可用" };
+      return {};
     }
     case "auth": {
       const code = extractHttpCode(message);
-      if (code) return httpTitle(code);
-      if (lower.includes("api key")) return "invalid api key";
-      if (lower.includes("oauth")) return "oauth failed";
-      if (lower.includes("invalid token") || lower.includes("access token")) return "invalid token";
-      if (lower.includes("permission denied")) return "permission denied";
-      return undefined;
+      if (code) return { title: httpTitle(code) };
+      if (lower.includes("api key")) return { title: "API Key 无效" };
+      if (lower.includes("oauth")) return { title: "OAuth 登录失败" };
+      if (lower.includes("invalid token") || lower.includes("access token")) return { title: "凭据已失效" };
+      if (lower.includes("permission denied")) return { title: "没有访问权限" };
+      return {};
     }
     case "provider": {
       if (isResponseCompletedMissingMessage(lower)) {
-        return RESPONSE_COMPLETED_MISSING_TITLE;
+        return { title: RESPONSE_COMPLETED_MISSING_TITLE, code: RESPONSE_COMPLETED_MISSING_CODE };
       }
       if (
         lower.includes("context_length_exceeded") ||
         lower.includes("context window") ||
         lower.includes("maximum context length")
       ) {
-        return "context_length_exceeded";
+        return { title: "上下文超出窗口" };
       }
-      if (lower.includes("too many tokens")) return "too many tokens";
-      if (lower.includes("content policy") || lower.includes("content_policy")) return "content_policy";
-      if (lower.includes("rate_limit") || lower.includes("rate limit")) return "rate_limit";
-      if (lower.includes("model_not_found")) return "model_not_found";
-      if (lower.includes("model returned")) return "model error";
-      if (lower.includes("empty response") || lower.includes("empty answer")) return "empty response";
-      if (lower.includes("response failed") || lower.includes("response error")) return "response failed";
-      if (lower.includes("invalid_request_error")) return "invalid_request_error";
-      return undefined;
+      if (lower.includes("too many tokens")) return { title: "tokens 超出限制" };
+      if (lower.includes("content policy") || lower.includes("content_policy")) return { title: "触发内容安全策略" };
+      if (lower.includes("rate_limit") || lower.includes("rate limit")) return { title: "触发限流" };
+      if (lower.includes("model_not_found")) return { title: "模型不存在" };
+      if (lower.includes("model returned")) return { title: "模型返回错误" };
+      if (lower.includes("empty response") || lower.includes("empty answer")) return { title: "模型返回为空" };
+      if (lower.includes("response failed") || lower.includes("response error")) return { title: "响应失败" };
+      if (lower.includes("invalid_request_error")) return { title: "请求参数无效" };
+      return {};
     }
     case "tool": {
       const first = message.split(/[.\n]/)[0]?.trim();
-      if (!first) return undefined;
-      return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+      if (!first) return {};
+      const clipped = first.length > 60 ? `${first.slice(0, 57)}…` : first;
+      // A tool error that is already Chinese reads fine as the title; an
+      // English one is an arbitrary message we can't translate, so it
+      // becomes the muted code next to the category title.
+      if (/[一-鿿]/.test(clipped)) return { title: clipped };
+      return { code: clipped };
     }
     case "local": {
-      if (lower.includes("permission denied")) return "permission denied";
-      if (lower.includes("enoent") || lower.includes("no such file")) return "file not found";
-      if (lower.includes("not a directory")) return "not a directory";
-      if (lower.includes("is a directory")) return "is a directory";
+      if (lower.includes("permission denied")) return { title: "权限不足" };
+      if (lower.includes("enoent") || lower.includes("no such file")) return { title: "文件不存在" };
+      if (lower.includes("not a directory")) return { title: "路径不是目录" };
+      if (lower.includes("is a directory")) return { title: "目标是目录" };
       if (
         lower.includes("outside the current workspace") ||
         lower.includes("outside the current git repository")
       ) {
-        return "outside workspace";
+        return { title: "超出工作区范围" };
       }
-      if (lower.includes("command failed") || lower.includes("exit status")) return "command failed";
-      return undefined;
+      if (lower.includes("command failed") || lower.includes("exit status")) return { title: "命令执行失败" };
+      return {};
     }
     case "internal":
     default:
-      return undefined;
+      return {};
   }
 }
 
@@ -223,14 +248,24 @@ export function userFacingErrorForMessage(
     (structured?.category as UserFacingErrorCategory | undefined) ??
     classifyUserFacingError(message, context);
 
-  // Title: prefer the structured code, then keyword extraction from the
-  // raw message, then the category's default Chinese label. The chip's
-  // user-visible label is always the most specific signal available so
-  // a screenshot carries enough info to triage.
-  const specificTitle = extractSpecificTitle(message, category);
+  // Title: always a Chinese label — keyword extraction from the raw
+  // message (or from the structured code, when the code itself is a
+  // known identifier), then the HTTP status phrase, then the category
+  // default. The raw machine identifier is not lost: it rides along in
+  // `code` and renders muted next to the title, so a screenshot still
+  // carries enough info to triage.
+  const structuredCode = structured?.code?.trim() || undefined;
+  const specific = extractSpecificDisplay(message, category);
+  const specificFromCode = structuredCode
+    ? extractSpecificDisplay(structuredCode, category)
+    : {};
   const statusTitle = structuredStatusTitle(structured);
   const title =
-    structured?.code?.trim() || statusTitle || specificTitle || defaultTitleForCategory(category);
+    specific.title ||
+    specificFromCode.title ||
+    statusTitle ||
+    defaultTitleForCategory(category);
+  const code = dedupedCode(structuredCode ?? specific.code, title);
 
   // Detail (hover): prefer the action's longer user-facing message
   // when the Go side provided one, fall back to the category's
@@ -252,9 +287,21 @@ export function userFacingErrorForMessage(
     category,
     tone: toneForCategory(category),
     title,
+    code,
     detail,
     recommendedActions,
   };
+}
+
+// A code that repeats what the title already says (same string, or an
+// HTTP-phrase code whose status number is already in the title) is noise
+// next to the Chinese label — drop it.
+function dedupedCode(code: string | undefined, title: string): string | undefined {
+  if (!code) return undefined;
+  if (title.includes(code)) return undefined;
+  const httpCode = extractHttpCode(code);
+  if (httpCode && title.includes(httpCode)) return undefined;
+  return code;
 }
 
 /**
@@ -299,11 +346,11 @@ function defaultTitleForCategory(category: UserFacingErrorCategory): string {
     case "cancelled":
       return "已停止";
     case "network":
-      return "network error";
+      return "网络异常";
     case "auth":
-      return "auth error";
+      return "认证失败";
     case "provider":
-      return "provider error";
+      return "模型服务异常";
     case "tool":
       return "工具调用失败";
     case "local":
@@ -607,29 +654,50 @@ function isLocalOperationError(message: string): boolean {
 
 export function statusMessageForError(error: unknown, fallback: string): string {
   // The composer status row renders a single-line label between two
-  // dividers, so we return only the classified title. The full detail
-  // is still rendered by the inline turn notice, which has room to
-  // span more than one line when needed.
+  // dividers, so we return the classified title, with the machine code
+  // appended when one exists so the row keeps its triage signal. The
+  // full detail is still rendered by the inline turn notice.
   const display = userFacingErrorForMessage(rawErrorMessage(error, fallback), "status");
-  return display.title;
+  return display.code ? `${display.title} (${display.code})` : display.title;
 }
+
+// Keyword lists mirror the title vocabulary produced above (specific
+// titles, HTTP phrases, category defaults) — extend them together.
+const AUTH_STATUS_KEYWORDS = ["权限", "登录", "认证", "凭据", "未授权", "API Key", "OAuth"];
+const ERROR_STATUS_KEYWORDS = [
+  "失败",
+  "错误",
+  "异常",
+  "不可用",
+  "内部",
+  "超时",
+  "限流",
+  "中断",
+  "断开",
+  "拒绝",
+  "重置",
+  "过载",
+  "过大",
+  "无效",
+  "不存在",
+  "为空",
+  "超出",
+  "无法解析",
+  "内容安全",
+  "未完整",
+  "stream_closed",
+  "response.completed",
+];
 
 export function statusToneClass(status: string): string {
   const trimmed = status.trim();
   if (!trimmed || trimmed === "ready" || trimmed === "connecting" || trimmed === "opening" || trimmed.startsWith("正在")) {
     return "";
   }
-  if (trimmed.includes("权限") || trimmed.includes("登录")) {
+  if (AUTH_STATUS_KEYWORDS.some((keyword) => trimmed.includes(keyword))) {
     return " auth";
   }
-  if (
-    trimmed.includes("失败") ||
-    trimmed.includes("错误") ||
-    trimmed.includes("不可用") ||
-    trimmed.includes("内部") ||
-    trimmed.includes("stream_closed") ||
-    trimmed.includes("response.completed")
-  ) {
+  if (ERROR_STATUS_KEYWORDS.some((keyword) => trimmed.includes(keyword))) {
     return " error";
   }
   return "";

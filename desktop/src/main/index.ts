@@ -22,8 +22,11 @@ import type {
   CoreBuildInfo,
   DesktopBuildInfo,
   InputFile,
+  CliAutoInstallResult,
+  CliInstallStatus,
   InputImage,
   InitializeResult,
+  InstructionsListResult,
   MCPListResult,
   MCPServerActionResult,
   ParticipantFeedbackResult,
@@ -52,6 +55,14 @@ import type {
   Turn,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
+import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
+import {
+  getCliAutoInstallEnabled,
+  getThemePreference,
+  setCliAutoInstallEnabled,
+  setThemePreference,
+  type ThemePreference,
+} from "./desktopSettings";
 import { GitService } from "./gitService";
 import { ProjectManager, wuuHomePath } from "./projects";
 import {
@@ -99,6 +110,10 @@ const DESKTOP_BUILD_INFO: DesktopBuildInfo = {
 let cachedCoreBuildInfo: CoreBuildInfo | undefined;
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
+// Outcome of this session's startup CLI auto-install pass. Surfaced through
+// wuu:cli-install-status so the settings page can show a one-time,
+// non-blocking note when the pass actually installed or repaired the link.
+let lastCliAutoInstall: CliAutoInstallResult | null = null;
 const appServerClientPool = new AppServerClientPool(
   () => projectManager.ensureRuntimeContext(),
   () => projectManager.activeWorkdir(),
@@ -287,6 +302,22 @@ app.whenReady().then(async () => {
   await clearOversizedDevCaches();
   projectManager.load();
   registerRenderableFileProtocol();
+
+  // Startup CLI install pass (default on, toggleable in settings). Runs in
+  // the background so it never delays window creation; autoInstallCli is
+  // idempotent, self-repairs dangling links after an app move/update, and
+  // never overwrites a wuu binary the desktop does not own. Windows returns
+  // "unsupported" without touching the filesystem.
+  if (getCliAutoInstallEnabled()) {
+    void autoInstallCli()
+      .then((result) => {
+        lastCliAutoInstall = result;
+      })
+      .catch(() => {
+        // autoInstallCli reports failures as outcomes; this is a last-resort
+        // guard so startup can never be affected.
+      });
+  }
 
   ipcMain.handle("wuu:project-list", () => projectManager.list());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
@@ -534,6 +565,36 @@ app.whenReady().then(async () => {
       thread_id: threadId,
     }),
   );
+  ipcMain.handle("wuu:instructions-list", () =>
+    appServerClientPool.request<InstructionsListResult>("instructions/list"),
+  );
+  ipcMain.handle(
+    "wuu:cli-install-status",
+    async (): Promise<CliInstallStatus> => ({
+      ...(await getCliInstallStatus()),
+      auto_install_enabled: getCliAutoInstallEnabled(),
+      last_auto_install: lastCliAutoInstall,
+    }),
+  );
+  ipcMain.handle("wuu:cli-install", (_event, overwrite?: boolean) =>
+    installCli({ overwrite: Boolean(overwrite) }),
+  );
+  ipcMain.handle("wuu:cli-auto-install-set", (_event, enabled: boolean) => {
+    setCliAutoInstallEnabled(Boolean(enabled));
+    return { ok: true, enabled: Boolean(enabled) };
+  });
+  ipcMain.handle("wuu:theme-preference-get", () => getThemePreference());
+  // Synchronous variant used by the preload script so the first paint
+  // already carries the persisted theme (no light-mode flash on boot).
+  ipcMain.on("wuu:theme-preference-get-sync", (event) => {
+    event.returnValue = getThemePreference();
+  });
+  ipcMain.handle("wuu:theme-preference-set", (_event, theme: ThemePreference) => {
+    const valid: ThemePreference[] = ["system", "light", "dark"];
+    const next = valid.includes(theme) ? theme : "system";
+    setThemePreference(next);
+    return { ok: true, theme: next };
+  });
   ipcMain.handle("wuu:participant-list", () =>
     appServerClientPool.request<ParticipantListResult>("participant/list"),
   );

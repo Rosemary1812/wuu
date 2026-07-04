@@ -203,7 +203,8 @@ Current implemented flags:
 
 `--config` loads a specific config file. Relative config paths are resolved
 from `--workdir` when it is set, otherwise from the current directory.
-`--ignore-user-config` skips `~/.config/wuu/config.json`. `--strict-config` is
+`--ignore-user-config` skips the user-global config (`~/.wuu/config.json`, or
+`WUU_HOME/config.json`, and the legacy `~/.config/wuu/config.json`). `--strict-config` is
 accepted for automation compatibility; `wuu exec` already fails when no usable
 config can be loaded. `--env KEY=VALUE` is repeatable and applies only to the
 current run. `--max-turns` caps the model/tool loop for the current user turn.
@@ -211,6 +212,30 @@ current run. `--max-turns` caps the model/tool loop for the current user turn.
 JSON, validates the final answer locally, and gives the agent a limited number
 of correction turns when the result does not match the schema. JSONL `result`
 events include `structured_result` after successful validation.
+
+When no `--config` is given, `wuu exec` resolves config with the normal
+project-first order and then deep-merges the project settings layers on top:
+`<workdir>/.wuu/settings.json` (team-shared, checked in) then
+`<workdir>/.wuu/settings.local.json` (machine-local, highest priority). Objects
+merge recursively; scalars and arrays replace. Inline credentials
+(`providers.*.api_key` / `auth_token`) in the shared `settings.json` are ignored
+with a stderr warning — only `settings.local.json` and user-level config are
+trusted for secrets, so use `*_env` indirection in the shared layer. An explicit
+`--config <path>` loads that single file as-is and does not apply the project
+settings layers. Set `WUU_DEBUG` to log which layers were applied.
+
+After layering, `wuu exec` also reads a Claude Code project-level
+`<workdir>/.mcp.json` if present and merges its **approved** servers into
+`mcp_servers`. Parsing is intentionally loose (unknown fields ignored). Servers
+are not loaded until approved via the `mcp_json` section (`enable_all`,
+`enabled`, `disabled`) — recommended in `.wuu/settings.local.json`, mirroring
+Claude Code's `enableAllProjectMcpServers` / `enabledMcpjsonServers` /
+`disabledMcpjsonServers`. Remote entries map `type: "http"` to the streamable
+HTTP transport and `type: "sse"` to legacy SSE, same as Claude Code.
+`${VAR}` / `${VAR:-default}` references are expanded.
+On a native `mcp_servers` name clash the native entry wins; `disabled` wins over
+`enabled`/`enable_all`. Unapproved servers print one aggregated stderr hint
+(de-duplicated across reloads); a missing `.mcp.json` changes nothing.
 
 `--allow-tool` and `--deny-tool` are repeatable one-run tool policy overrides.
 They affect only the current exec run and do not write back to configuration.

@@ -32,9 +32,10 @@ export function TurnNotice({
   // The inline notice is intentionally compact: the full explanation moves
   // to the `title` attribute so it is available on hover without taking a
   // second line, while recommended actions stay visible and clickable.
-  const hoverText = display.detail
-    ? `${display.title} — ${display.detail}`
+  const label = display.code
+    ? `${display.title} (${display.code})`
     : display.title;
+  const hoverText = display.detail ? `${label} — ${display.detail}` : label;
   return (
     <aside
       className={`turn-notice turn-event-notice ${display.tone}`}
@@ -46,6 +47,9 @@ export function TurnNotice({
     >
       <span className="turn-event-content">
         <strong className="turn-event-title">{display.title}</strong>
+        {display.code ? (
+          <span className="turn-event-code">{display.code}</span>
+        ) : null}
         <span className="turn-event-detail">{display.detail}</span>
         {actions.length > 0 ? (
           <span className="turn-notice-actions">

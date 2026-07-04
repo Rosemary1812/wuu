@@ -170,6 +170,8 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		OnPlanUpdated:               t.env.OnPlanUpdated,
 		OnPortsReported:             t.env.OnPortsReported,
 		Memory:                      t.env.Memory,
+		WorkspaceMemory:             t.env.WorkspaceMemory,
+		DefaultMemoryWriteScope:     t.env.DefaultMemoryWriteScope,
 		MemoryCharLimit:             t.env.MemoryCharLimit,
 		UserMemoryCharLimit:         t.env.UserMemoryCharLimit,
 	}
@@ -387,10 +389,21 @@ func (t *Toolkit) Workflows() []workflow.Definition {
 	return t.env.Workflows
 }
 
-// SetMemory attaches the memory store provider. Definitions exposes the
-// memory tools only while a provider is attached.
+// SetMemory attaches the GLOBAL memory store provider (the cross-workspace
+// layer). Definitions exposes the memory tools while either the global or the
+// workspace layer is attached.
 func (t *Toolkit) SetMemory(p store.Provider) {
 	t.env.Memory = p
+}
+
+// SetWorkspaceMemory attaches the WORKSPACE memory store provider (the
+// project-scoped layer). Definitions exposes the memory tools while either the
+// global or the workspace layer is attached.
+func (t *Toolkit) SetWorkspaceMemory(p store.Provider) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.WorkspaceMemory = p
 }
 
 func (t *Toolkit) SetMemoryLimits(memoryLimit, userLimit int) {
@@ -408,12 +421,21 @@ func (t *Toolkit) MemoryLimits() (memoryLimit, userLimit int) {
 	return t.env.MemoryCharLimit, t.env.UserMemoryCharLimit
 }
 
-// Memory returns the currently attached memory store provider, if any.
+// Memory returns the currently attached GLOBAL memory store provider, if any.
 func (t *Toolkit) Memory() store.Provider {
 	if t == nil || t.env == nil {
 		return nil
 	}
 	return t.env.Memory
+}
+
+// WorkspaceMemory returns the currently attached WORKSPACE memory store
+// provider, if any.
+func (t *Toolkit) WorkspaceMemory() store.Provider {
+	if t == nil || t.env == nil {
+		return nil
+	}
+	return t.env.WorkspaceMemory
 }
 
 // SetSessionID sets the current session ID.
@@ -634,7 +656,7 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	tail := make([]providers.ToolDefinition, 0, len(subagentManagementTools))
 	nativeDeferred := t.nativeDeferredToolDiscoveryEnabled()
 	for _, d := range all {
-		if isMemoryToolName(d.Name) && memoryProvider(t.env) == nil {
+		if isMemoryToolName(d.Name) && !hasAnyMemory(t.env) {
 			continue
 		}
 		if t.isToolDisabled(d.Name) {

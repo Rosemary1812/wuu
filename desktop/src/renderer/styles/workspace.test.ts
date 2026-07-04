@@ -30,9 +30,17 @@ describe("workspace file preview layout", () => {
   });
 
   it("adds a restrained syntax palette for highlighted code tokens", () => {
-    expect(cssRuleBody(".workspace-file-code .hljs-keyword")).toMatch(/color:\s*#[0-9a-f]{6};/i);
-    expect(cssRuleBody(".workspace-file-code .hljs-string")).toMatch(/color:\s*#[0-9a-f]{6};/i);
-    expect(cssRuleBody(".workspace-file-code .hljs-number")).toMatch(/color:\s*#[0-9a-f]{6};/i);
-    expect(cssRuleBody(".workspace-file-code .hljs-comment")).toMatch(/color:\s*#[0-9a-f]{6};/i);
+    expect(cssRuleBody(".workspace-file-code .hljs-keyword")).toMatch(
+      /color:\s*var\(--hljs-keyword\);/,
+    );
+    expect(cssRuleBody(".workspace-file-code .hljs-string")).toMatch(
+      /color:\s*var\(--hljs-string\);/,
+    );
+    expect(cssRuleBody(".workspace-file-code .hljs-number")).toMatch(
+      /color:\s*var\(--hljs-number\);/,
+    );
+    expect(cssRuleBody(".workspace-file-code .hljs-comment")).toMatch(
+      /color:\s*var\(--hljs-comment\);/,
+    );
   });
 });

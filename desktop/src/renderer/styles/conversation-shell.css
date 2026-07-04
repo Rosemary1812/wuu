@@ -1,3 +1,33 @@
+/* Component color tokens for conversation-shell.css.
+   Light-theme values; the dark theme overrides these in base.css theme blocks. */
+:root {
+  --shell-process-control-color: #BCBCBD;
+  --shell-session-tab-hover-border: rgba(17, 19, 21, 0.14);
+  --shell-session-tab-active-border: rgba(17, 19, 21, 0.18);
+  --shell-session-tab-main-focus-shadow: rgba(17, 19, 21, 0.18);
+  --shell-session-tab-status-default: rgba(17, 19, 21, 0.22);
+  --shell-session-tab-status-running-notch: rgba(17, 19, 21, 0.18);
+  --shell-session-tab-pending-count-bg: rgba(17, 19, 21, 0.1);
+  --shell-session-tab-active-pending-count-bg: rgba(17, 19, 21, 0.14);
+  --shell-session-tab-drag-overlay-ring: rgba(255, 255, 255, 0.72);
+  --shell-launch-preview-button-hover-bg: #e3e4e0;
+  --shell-run-debug-panel-shadow-1: rgba(20, 24, 28, 0.16);
+  --shell-run-debug-panel-shadow-2: rgba(20, 24, 28, 0.08);
+  --shell-run-debug-phase-running-color: #486f61;
+  --shell-run-debug-empty-border: #e0e1dc;
+  --shell-jump-pill-border: rgba(17, 19, 21, 0.10);
+  --shell-jump-pill-bg: rgba(255, 255, 255, 0.96);
+  --shell-jump-pill-shadow: rgba(20, 24, 28, 0.08);
+  --shell-jump-pill-hover-bg: rgba(255, 255, 255, 1);
+  --shell-jump-pill-hover-border: rgba(17, 19, 21, 0.18);
+  --shell-jump-pill-hover-shadow: rgba(20, 24, 28, 0.12);
+  --shell-jump-pill-focus-shadow-1: rgba(17, 19, 21, 0.18);
+  --shell-jump-pill-focus-shadow-2: rgba(20, 24, 28, 0.12);
+  --shell-jump-progress-step-bg: rgba(17, 19, 21, 0.06);
+  --shell-jump-progress-step-in-progress-bg: rgba(17, 19, 21, 0.08);
+  --shell-turn-rail-bar-bg: rgba(60, 60, 67, 0.4);
+}
+
 .conversation-pane {
   --environment-panel-reserved-width: 372px;
   --environment-panel-width: 328px;
@@ -43,12 +73,12 @@
    */
   --conversation-meta-line-height: 1.6;
   --conversation-control-line-height: 1.7;
-  --conversation-process-control-color: #BCBCBD;
+  --conversation-process-control-color: var(--shell-process-control-color);
   /* Lighten the message-flow process text one tier (was var(--ink-soft)
      = #5b6066). Pulls the body narration, process title, toggle, and
      glyph toward the --ink-tertiary band so the live thinking feed
      recedes relative to the final answer without losing readability. */
-  --wuu-ink-soft: #6f7478;
+  --wuu-ink-soft: var(--ink-tertiary);
   /*
    * Grouping rhythm: tight within a group, loose between groups.
    * 18px separates the muted process fold from the final answer (two
@@ -213,7 +243,7 @@
   pointer-events: none;
   transform: scale(1.025);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    inset 0 0 0 1px var(--shell-session-tab-drag-overlay-ring),
     0 9px 24px var(--ink-overlay-12);
 }
 
@@ -223,17 +253,17 @@
 
 .session-tab:hover,
 .session-tab:focus-within {
-  border-color: rgba(17, 19, 21, 0.14);
+  border-color: var(--shell-session-tab-hover-border);
   background: var(--surface-2);
   color: var(--ink);
 }
 
 .session-tab.active {
-  border-color: rgba(17, 19, 21, 0.18);
+  border-color: var(--shell-session-tab-active-border);
   background: var(--surface-3);
   color: var(--ink);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    inset 0 0 0 1px var(--shell-session-tab-drag-overlay-ring),
     0 2px 7px var(--ink-overlay-4);
 }
 
@@ -260,7 +290,7 @@
 .session-tab-close:focus-visible,
 .session-tab-new:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 2px rgba(17, 19, 21, 0.18);
+  box-shadow: inset 0 0 0 2px var(--shell-session-tab-main-focus-shadow);
 }
 
 .session-tab-status {
@@ -268,7 +298,7 @@
   height: 7px;
   flex: 0 0 auto;
   border-radius: var(--radius-pill);
-  background: rgba(17, 19, 21, 0.22);
+  background: var(--shell-session-tab-status-default);
 }
 
                                                                          
@@ -294,7 +324,7 @@
    * like a spinner rather than a solid dot.
    */
   border: 2px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
-  border-top-color: rgba(17, 19, 21, 0.18);
+  border-top-color: var(--shell-session-tab-status-running-notch);
   box-sizing: border-box;
   animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
@@ -326,7 +356,7 @@
   flex: 0 0 auto;
   padding: 0 5px;
   border-radius: var(--radius-pill);
-  background: rgba(17, 19, 21, 0.1);
+  background: var(--shell-session-tab-pending-count-bg);
   color: var(--ink);
   font-size: 10px;
   font-weight: var(--weight-semibold);
@@ -335,7 +365,7 @@
 }
 
 .session-tab.active .session-tab-pending-count {
-  background: rgba(17, 19, 21, 0.14);
+  background: var(--shell-session-tab-active-pending-count-bg);
 }
 
 .session-tab-close {
@@ -444,7 +474,7 @@
 }
 
 .launch-preview-button:hover:not(:disabled) {
-  background: #e3e4e0;
+  background: var(--shell-launch-preview-button-hover-bg);
   color: var(--ink);
 }
 
@@ -485,8 +515,8 @@
   border-radius: var(--radius-md);
   background: var(--menu-bg);
   box-shadow:
-    0 24px 60px rgba(20, 24, 28, 0.16),
-    0 2px 10px rgba(20, 24, 28, 0.08);
+    0 24px 60px var(--shell-run-debug-panel-shadow-1),
+    0 2px 10px var(--shell-run-debug-panel-shadow-2);
   color: var(--ink);
   text-align: left;
   backdrop-filter: blur(18px);
@@ -544,7 +574,7 @@
 
 .run-debug-phase.running {
   background: var(--success-soft);
-  color: #486f61;
+  color: var(--shell-run-debug-phase-running-color);
 }
 
 .run-debug-phase.success {
@@ -724,7 +754,7 @@
 }
 
 .run-debug-empty {
-  border: 1px dashed #e0e1dc;
+  border: 1px dashed var(--shell-run-debug-empty-border);
   border-radius: var(--radius-sm);
   color: var(--ink-muted);
   font-size: var(--font-ui);
@@ -770,9 +800,9 @@
   gap: 6px;
   height: 38px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(17, 19, 21, 0.10);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 4px 14px rgba(20, 24, 28, 0.08);
+  border: 1px solid var(--shell-jump-pill-border);
+  background: var(--shell-jump-pill-bg);
+  box-shadow: 0 4px 14px var(--shell-jump-pill-shadow);
   backdrop-filter: blur(8px);
 
   color: var(--ink);
@@ -811,16 +841,16 @@
 .jump-to-latest-pill:hover,
 .jump-to-latest-progress:hover,
 .jump-to-latest-progress:focus-within {
-  background: rgba(255, 255, 255, 1);
-  border-color: rgba(17, 19, 21, 0.18);
-  box-shadow: 0 6px 20px rgba(20, 24, 28, 0.12);
+  background: var(--shell-jump-pill-hover-bg);
+  border-color: var(--shell-jump-pill-hover-border);
+  box-shadow: 0 6px 20px var(--shell-jump-pill-hover-shadow);
 }
 
 .jump-to-latest-pill:focus-visible {
   outline: 0;
   box-shadow:
-    0 0 0 2px rgba(17, 19, 21, 0.18),
-    0 6px 20px rgba(20, 24, 28, 0.12);
+    0 0 0 2px var(--shell-jump-pill-focus-shadow-1),
+    0 6px 20px var(--shell-jump-pill-focus-shadow-2);
 }
 
 .jump-to-latest-pill svg {
@@ -854,7 +884,7 @@
   min-width: 0;
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: rgba(17, 19, 21, 0.06);
+  background: var(--shell-jump-progress-step-bg);
   color: var(--ink-muted);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
@@ -865,7 +895,7 @@
 }
 
 .jump-to-latest-progress-step.in_progress {
-  background: rgba(17, 19, 21, 0.08);
+  background: var(--shell-jump-progress-step-in-progress-bg);
   color: var(--ink);
 }
 
@@ -921,7 +951,7 @@
   width: 12px;
   height: 3px;
   border-radius: 1.5px;
-  background: rgba(60, 60, 67, 0.4);
+  background: var(--shell-turn-rail-bar-bg);
   cursor: pointer;
   pointer-events: auto;
   user-select: none;

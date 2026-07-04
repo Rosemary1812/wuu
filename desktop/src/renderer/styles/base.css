@@ -40,9 +40,13 @@
   --surface-3: #ececea;                              
   --surface-4: #e5e5e1;                                          
 
-  --hairline: #e4e4df;                                    
-  --hairline-strong: #d9d9d5;                                          
-  --hairline-soft: var(--ink-overlay-6);                              
+  --hairline: #e4e4df;
+  --hairline-strong: #d9d9d5;
+  --hairline-soft: var(--ink-overlay-6);
+  /* In-flow horizontal rules inside the conversation (turn progress
+     rule, system-event divider). One token so they read as the same
+     line everywhere. */
+  --rule: #dedfdd;                              
 
                                                                     
                                                     

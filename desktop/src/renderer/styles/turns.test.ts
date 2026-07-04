@@ -23,7 +23,8 @@ describe("turns.css user message actions", () => {
 
 describe("turns.css rich links", () => {
   it("keeps inline message links blue without underlines or icon backplates", () => {
-    expect(cssRuleBody(".rich-link")).toMatch(/color:\s*#176dc2;/);
+    expect(cssRuleBody(".rich-link")).toMatch(/color:\s*var\(--rich-link-color\);/);
+    expect(turnsCss).toMatch(/--rich-link-color:\s*#176dc2;/);
     expect(cssRuleBody(".rich-link")).toMatch(/text-decoration-line:\s*none;/);
     expect(cssRuleBody(".rich-link-favicon-frame")).not.toMatch(/\bbackground\s*:/);
     expect(cssRuleBody(".rich-link-favicon")).not.toMatch(/\bbackground\s*:/);
@@ -41,10 +42,26 @@ describe("turns.css rich links", () => {
 });
 
 describe("turns.css turn notice positioning", () => {
-  it("centers compact notice chips like the jump-to-latest pill", () => {
+  it("renders notices as a centered broken divider with side hairlines", () => {
     const body = cssRuleBody(".turn-notice");
-    expect(body).toMatch(/width:\s*max-content;/);
-    expect(body).toMatch(/max-width:\s*calc\(100% - 32px\);/);
+    // Full width so the ::before/::after hairlines have room to stretch.
+    expect(body).toMatch(/width:\s*100%;/);
+    expect(body).toMatch(/max-width:\s*min\(680px,\s*calc\(100% - 32px\)\);/);
     expect(body).toMatch(/margin-inline:\s*auto;/);
+    // The side hairlines exist (not display: none) and flex to fill.
+    const lines = cssRuleBody(".turn-event-notice::before,\n.turn-event-notice::after");
+    expect(lines).toMatch(/content:\s*"";/);
+    expect(lines).toMatch(/flex:\s*1 1 0;/);
+    expect(lines).toMatch(/height:\s*1px;/);
+  });
+
+  it("keeps the notice text bare — tone colors the text, never a fill", () => {
+    const content = cssRuleBody(".turn-event-content");
+    expect(content).not.toMatch(/\bbackground\s*:/);
+    expect(content).not.toMatch(/border-radius/);
+    // Tone variants only recolor text; no tinted chip backgrounds.
+    expect(cssRuleBody(".turn-notice.error .turn-event-content")).not.toMatch(/\bbackground\s*:/);
+    // The machine-code suffix stays in the neutral gray family.
+    expect(cssRuleBody(".turn-event-code")).toMatch(/color:\s*var\(--ink-muted\);/);
   });
 });

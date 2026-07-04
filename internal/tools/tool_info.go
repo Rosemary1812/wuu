@@ -125,7 +125,7 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if isAdvancedCommandToolHidden(name) {
 		return ToolExposureHidden
 	}
-	if isMemoryToolName(name) && memoryProvider(t.env) == nil {
+	if isMemoryToolName(name) && !hasAnyMemory(t.env) {
 		return ToolExposureHidden
 	}
 	if !t.extensionSurfacePolicy.allowsKind(classifyToolKind(name)) {

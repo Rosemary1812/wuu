@@ -489,6 +489,80 @@ func TestRunToolLoop_CompactIgnoresRequestOnlyContext(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_ForceInitialCompactRunsBelowThreshold(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "old request"},
+		{Role: "assistant", Content: "old answer"},
+		{Role: "user", Content: "/compact"},
+	}
+	compactCalls := 0
+	var infos []CompactInfo
+	res, err := RunToolLoop(context.Background(), history, LoopConfig{
+		Model: "m",
+		// No MaxContextTokens: the proactive threshold is zero, so only
+		// the forced pass can trigger compaction.
+		ForceInitialCompact: true,
+		Compact: func(_ context.Context, _ []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			compactCalls++
+			return []providers.ChatMessage{
+				{Role: "system", Content: "sys"},
+				{Role: "system", Content: compact.BuildSummaryContent("older history")},
+				{Role: "user", Content: "/compact"},
+			}, nil
+		},
+		OnCompact: func(info CompactInfo) { infos = append(infos, info) },
+	}, step)
+	if err != nil {
+		t.Fatalf("RunToolLoop: %v", err)
+	}
+	if compactCalls != 1 {
+		t.Fatalf("compact calls = %d, want 1", compactCalls)
+	}
+	if len(infos) != 1 || infos[0].Reason != CompactReasonManual {
+		t.Fatalf("OnCompact infos = %+v, want one manual entry", infos)
+	}
+	if !res.HistoryRewritten {
+		t.Fatal("forced compact should mark history rewritten")
+	}
+	if got := countMessagesContaining(step.calls[0].Messages, "older history"); got != 1 {
+		t.Fatalf("first request should already contain the compact summary, got %d in %+v", got, step.calls[0].Messages)
+	}
+}
+
+func TestRunToolLoop_ForceInitialCompactNoopReportsUnchanged(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	history := []providers.ChatMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "/compact"},
+	}
+	var attempts []CompactAttemptInfo
+	var infos []CompactInfo
+	res, err := RunToolLoop(context.Background(), history, LoopConfig{
+		Model:               "m",
+		ForceInitialCompact: true,
+		Compact: func(_ context.Context, messages []providers.ChatMessage) ([]providers.ChatMessage, error) {
+			// Nothing worth folding: return the input unchanged.
+			return messages, nil
+		},
+		OnCompact:        func(info CompactInfo) { infos = append(infos, info) },
+		OnCompactAttempt: func(info CompactAttemptInfo) { attempts = append(attempts, info) },
+	}, step)
+	if err != nil {
+		t.Fatalf("RunToolLoop: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Fatalf("no-op forced compact must not emit OnCompact, got %+v", infos)
+	}
+	if len(attempts) != 1 || attempts[0].Reason != CompactReasonManual || attempts[0].Status != CompactAttemptUnchanged {
+		t.Fatalf("attempts = %+v, want one manual/unchanged entry", attempts)
+	}
+	if res.HistoryRewritten {
+		t.Fatal("no-op forced compact must not mark history rewritten")
+	}
+}
+
 func TestRequestContextInfoReportsLoadableToolSchemasSeparately(t *testing.T) {
 	assembly := RequestAssembly{
 		Messages: []providers.ChatMessage{

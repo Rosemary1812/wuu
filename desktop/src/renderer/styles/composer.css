@@ -1,3 +1,28 @@
+:root {
+  /* Component color tokens for composer.css.
+     Light-theme values; the dark theme overrides these in base.css theme blocks. */
+  --composer-frame-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
+  --composer-frame-hero-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
+  --composer-expand-button-bg: rgba(255, 255, 255, 0.72);
+  --composer-image-attachment-button-shadow: 0 2px 8px rgba(20, 24, 28, 0.12);
+  --composer-file-attachment-button-hover-bg: #eceee9;
+  --composer-goal-strip-danger-hover-bg: rgba(220, 80, 80, 0.12);
+  --composer-collapsed-prompt-card-shadow: 0 1px 2px rgba(20, 24, 28, 0.05);
+  --composer-textarea-placeholder: #a0a3a5;
+  --composer-textarea-disabled: #6d7471;
+  --composer-send-button-hover-bg: #2f3438;
+  --composer-send-button-disabled-text: rgba(255, 255, 255, 0.86);
+  --composer-slash-menu-bg: rgba(255, 255, 255, 0.96);
+  --composer-slash-menu-shadow: 0 14px 38px rgba(20, 24, 28, 0.08), 0 1px 4px rgba(20, 24, 28, 0.06);
+  --composer-slash-command-title: #202327;
+  --composer-project-search-bg: #f8f8f6;
+  --composer-project-search-placeholder: #9da1a4;
+  --composer-project-menu-icon: #6b7176;
+  --composer-permission-mode-danger-border: rgba(180, 35, 24, 0.16);
+  --composer-permission-mode-danger-bg: #fff1ec;
+  --composer-menu-note-warning-strong: #b45309;
+}
+
 .composer-wrap {
   width: 100%;
   min-width: 0;
@@ -77,7 +102,7 @@
   width: 100%;
   border-radius: var(--session-composer-radius, var(--radius-sm));
   background: var(--paper);
-  box-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
+  box-shadow: var(--composer-frame-shadow);
   contain: layout paint;
   overflow: hidden;
 }
@@ -95,7 +120,7 @@
 .hero-composer-wrap .composer-frame {
   border-radius: var(--session-composer-radius, var(--radius-sm));
   background: var(--paper);
-  box-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
+  box-shadow: var(--composer-frame-hero-shadow);
 }
 
 /* Force the hero composer to the dock composer's dialog width so the
@@ -137,7 +162,7 @@
    */
   color: var(--ink-muted);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--composer-expand-button-bg);
   opacity: 1;
   transition:
     color 140ms ease,
@@ -243,7 +268,7 @@
   border: 1px solid var(--surface-4);
   border-radius: var(--radius-md);
   background: var(--surface-1);
-  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06);
+  box-shadow: var(--shadow-soft);
 }
 
 .composer-image-attachment img {
@@ -266,7 +291,7 @@
   border-radius: var(--radius-pill);
   background: var(--paper);
   color: var(--ink);
-  box-shadow: 0 2px 8px rgba(20, 24, 28, 0.12);
+  box-shadow: var(--composer-image-attachment-button-shadow);
 }
 
 .composer-image-attachment button:hover {
@@ -286,7 +311,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface-1);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.06);
+  box-shadow: var(--shadow-soft);
 }
 
 .composer-file-attachment span {
@@ -313,7 +338,7 @@
 }
 
 .composer-file-attachment button:hover {
-  background: #eceee9;
+  background: var(--composer-file-attachment-button-hover-bg);
   color: var(--ink);
 }
 
@@ -571,7 +596,7 @@
 }
 
 .composer-goal-strip-action.danger:hover:not(:disabled) {
-  background: var(--danger-overlay, rgba(220, 80, 80, 0.12));
+  background: var(--composer-goal-strip-danger-hover-bg);
   color: var(--danger);
 }
 
@@ -668,7 +693,7 @@
   border: 1px solid var(--surface-4);
   border-radius: var(--radius-sm);
   background: var(--paper);
-  box-shadow: 0 1px 2px rgba(20, 24, 28, 0.05);
+  box-shadow: var(--composer-collapsed-prompt-card-shadow);
 }
 
 .hero-composer-wrap .composer-collapsed-prompt-list {
@@ -773,11 +798,11 @@
 }
 
 .composer textarea::placeholder {
-  color: #a0a3a5;
+  color: var(--composer-textarea-placeholder);
 }
 
 .composer textarea:disabled {
-  color: #6d7471;
+  color: var(--composer-textarea-disabled);
   cursor: default;
 }
 
@@ -1067,13 +1092,13 @@
 }
 
 .composer-send-button:hover {
-  background: #2f3438;
+  background: var(--composer-send-button-hover-bg);
 }
 
 .composer-send-button:disabled {
   cursor: default;
   background: var(--surface-4);
-  color: rgba(255, 255, 255, 0.86);
+  color: var(--composer-send-button-disabled-text);
 }
 
 .composer-send-button:disabled:hover {
@@ -1258,10 +1283,8 @@
   overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow:
-    0 14px 38px rgba(20, 24, 28, 0.08),
-    0 1px 4px rgba(20, 24, 28, 0.06);
+  background: var(--composer-slash-menu-bg);
+  box-shadow: var(--composer-slash-menu-shadow);
   padding: 6px;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -1298,7 +1321,7 @@
 
 .slash-command-item:hover:not(:disabled),
 .slash-command-item.selected:not(:disabled) {
-  background: #f2f2f0;
+  background: var(--menu-hover);
 }
 
 .slash-command-item:active:not(:disabled) {
@@ -1327,7 +1350,7 @@
 .slash-command-copy strong {
   min-width: 0;
   overflow: hidden;
-  color: #202327;
+  color: var(--composer-slash-command-title);
   font-size: var(--font-content);
   font-weight: var(--weight-medium);
   line-height: 18px;
@@ -1543,8 +1566,8 @@
 }
 
 .composer-context-menu .permission-mode-option.danger[aria-checked="true"] {
-  border-color: rgba(180, 35, 24, 0.16);
-  background: #fff1ec;
+  border-color: var(--composer-permission-mode-danger-border);
+  background: var(--composer-permission-mode-danger-bg);
 }
 
 .composer-context-menu button svg {
@@ -1569,7 +1592,7 @@
 }
 
 .composer-menu-note.warning strong {
-  color: #b45309;
+  color: var(--composer-menu-note-warning-strong);
 }
 
 .hero-composer-wrap .composer-project-menu {
@@ -1587,7 +1610,7 @@
   gap: 8px;
   border: 1px solid var(--surface-3);
   border-radius: var(--radius-sm);
-  background: #f8f8f6;
+  background: var(--composer-project-search-bg);
   color: var(--ink-muted);
   margin: 0 0 6px;
   padding: 0 9px;
@@ -1609,7 +1632,7 @@
 }
 
 .project-search input::placeholder {
-  color: #9da1a4;
+  color: var(--composer-project-search-placeholder);
 }
 
 .project-picker-list {
@@ -1648,7 +1671,7 @@
 .composer-project-menu svg {
   width: 16px;
   height: 16px;
-  color: #6b7176;
+  color: var(--composer-project-menu-icon);
   flex: 0 0 auto;
 }
 

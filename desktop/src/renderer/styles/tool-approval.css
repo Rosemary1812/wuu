@@ -3,6 +3,14 @@
  * optional raw parameters, and a clear decision row.
  */
 
+/* Component color tokens for tool-approval.css. Light-theme values; the dark
+   theme overrides these in base.css theme blocks. */
+:root {
+  --tool-approval-focus-outline: #1f6f3a;
+  --tool-approval-button-primary-hover: #2a2f33;
+  --tool-approval-danger-button-hover: #951d14;
+}
+
 .tool-approval-card {
   display: flex;
   flex-direction: column;
@@ -135,7 +143,7 @@
 .tool-approval-card-method-badge.GET,
 .tool-approval-card-method-badge.HEAD {
   background: transparent;
-  color: var(--success, #1f9d55);
+  color: var(--success);
 }
 
 .tool-approval-card-rule {
@@ -241,7 +249,7 @@
 }
 
 .tool-approval-card-actions button:focus-visible {
-  outline: 2px solid var(--info, #1f6f3a);
+  outline: 2px solid var(--info, var(--tool-approval-focus-outline));
   outline-offset: 1px;
 }
 
@@ -261,7 +269,7 @@
 }
 
 .tool-approval-card-actions button.primary:hover {
-  background: #2a2f33;
+  background: var(--tool-approval-button-primary-hover);
 }
 
 .tool-approval-card.danger .tool-approval-card-actions button.primary {
@@ -269,7 +277,7 @@
 }
 
 .tool-approval-card.danger .tool-approval-card-actions button.primary:hover {
-  background: #951d14;
+  background: var(--tool-approval-danger-button-hover);
 }
 
 @media (max-width: 520px) {

@@ -263,13 +263,25 @@ type Env struct {
 	// auto-open the in-app browser preview.
 	OnPortsReported func(ports []int)
 
-	// Memory is the optional LLM-writable memory backend. When nil,
-	// read_memory/write_memory report that memory is not configured. The
-	// constructor that builds Env is responsible for wiring a real
-	// Provider (typically a *store.FileProvider rooted under profile state).
-	// Memory tools may be registered internally even when this is nil; they
-	// are hidden from Definitions until a provider is attached.
+	// Memory is the optional LLM-writable GLOBAL memory backend — the
+	// cross-workspace layer of the two-layer long-term memory. When nil,
+	// the "global" write_memory scope is unavailable. The constructor that
+	// builds Env is responsible for wiring a real Provider (typically a
+	// *store.FileProvider rooted at statepath.GlobalMemoryDir). Memory tools
+	// may be registered internally even when this is nil; they are hidden
+	// from Definitions until at least one memory layer is attached.
 	Memory store.Provider
+	// WorkspaceMemory is the optional LLM-writable WORKSPACE memory backend —
+	// the project-scoped layer of the two-layer long-term memory. It is a
+	// *store.FileProvider rooted at statepath.WorkspaceMemoryDir for the
+	// active workspace state directory. When nil, the "workspace" write_memory
+	// scope is unavailable. read_memory reads both layers when both are set.
+	WorkspaceMemory store.Provider
+	// DefaultMemoryWriteScope overrides the scope a scope-less write_memory call
+	// resolves to. Empty means the tool's built-in default (MemoryScopeWorkspace).
+	// The background global-memory reviewer sets it to MemoryScopeGlobal so its
+	// scope-less writes land in the global layer it targets.
+	DefaultMemoryWriteScope string
 	// MemoryCharLimit caps target="memory" entries by character count.
 	// Zero uses the built-in default.
 	MemoryCharLimit int

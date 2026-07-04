@@ -707,7 +707,10 @@ func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {
 		t.Fatalf("loadOrCreateAppServerConfig: %v", err)
 	}
 
-	expectedPath := filepath.Join(home, ".config", "wuu", "config.json")
+	expectedPath, err := statepath.ConfigPath(home)
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
 	if configPath != expectedPath {
 		t.Fatalf("expected config path %q, got %q", expectedPath, configPath)
 	}

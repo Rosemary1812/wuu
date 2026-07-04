@@ -6986,7 +6986,7 @@ func TestToolkit_MemoryTools_SetMemorySwapsProvider(t *testing.T) {
 
 	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_memory",
-		Arguments: `{"content":"prefer tabs over spaces","tags":["go","formatting"]}`,
+		Arguments: `{"scope":"global","content":"prefer tabs over spaces","tags":["go","formatting"]}`,
 	})
 	if err != nil {
 		t.Fatalf("write_memory with provider: %v", err)

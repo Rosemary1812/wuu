@@ -1,4 +1,6 @@
 :root {
+  /* Component color tokens for composer-token-gauge.css.
+     Light-theme values; the dark theme overrides these in base.css theme blocks. */
   --token-gauge-idle: var(--ink-muted);
   --token-gauge-mid: #d48345;
   --token-gauge-high: var(--accent-warm);
