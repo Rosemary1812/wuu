@@ -1,17 +1,23 @@
 package appserver
 
 import (
-	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
-func residentParticipantSystemPrompt(p participant.Participant, memory string, registered []workspaces.Workspace) string {
+// residentParticipantSystemPrompt renders the resident persona prompt.
+// memoryDir is the agent's identity notebook (absolute path; "" hides the
+// notebook line and teaching), memory is the injected identity index
+// content, and userIndex is the read-only user notebook index
+// (memory-redesign §5.3).
+func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memory, userIndex string, registered []workspaces.Workspace) string {
+	memoryDir = strings.TrimSpace(memoryDir)
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %s, a resident named agent in this workspace. You are a\n", strings.TrimSpace(p.Name))
 	b.WriteString("continuous identity: one brain, one ongoing session. Direct messages\n")
@@ -19,7 +25,13 @@ func residentParticipantSystemPrompt(p participant.Participant, memory string, r
 	b.WriteString("same context. You are not a fresh instance per message — your history,\n")
 	b.WriteString("your memory file, and your judgment persist across days and tasks.\n\n")
 	fmt.Fprintf(&b, "Your role: %s. How teammates describe you: %s.\n", strings.TrimSpace(p.Role), strings.TrimSpace(p.Tagline))
-	b.WriteString("Your home directory is your workspace. Keep durable notes in MEMORY.md.\n\n")
+	if memoryDir != "" {
+		// Memory wording revised by docs/plans/2026-07-04-memory-redesign.md
+		// §5.3: point at the identity notebook, not a home MEMORY.md.
+		fmt.Fprintf(&b, "Your home directory is your workspace. Keep durable notes in your\nmemory notebook at `%s`\n(see \"Memory notebook\" below).\n\n", memoryDir)
+	} else {
+		b.WriteString("Your home directory is your workspace.\n\n")
+	}
 	b.WriteString("## How messages reach you\n")
 	b.WriteString("Group messages appear as <incoming_message> blocks. Attributes tell you\n")
 	b.WriteString("the source thread, the sender (the user or another agent), whether you\n")
@@ -56,9 +68,19 @@ func residentParticipantSystemPrompt(p participant.Participant, memory string, r
 	b.WriteString("  silent, and relayed agent-to-agent messages only reach agents who are\n")
 	b.WriteString("  explicitly @mentioned. Do not @mention someone just to be polite; an\n")
 	b.WriteString("  @mention is a request for their time.\n\n")
-	// The two sections below are contractual text from
+	// The three sections below are contractual text from
 	// docs/plans/2026-07-03-resident-named-agents.md §5 (red line 6: that
 	// document is authoritative; edit it before editing this code).
+	b.WriteString("## Wrapping up discussions (only when asked)\n")
+	b.WriteString("- When the user asks you to wrap up or synthesize a discussion, post to\n")
+	b.WriteString("  the source thread with exactly three parts: Conclusion — the decision\n")
+	b.WriteString("  as it stands; Open disagreements — unresolved positions, attributed by\n")
+	b.WriteString("  name, never smoothed over; Suggested next step.\n")
+	b.WriteString("- Never post an unprompted summary: it repeats what others said, which\n")
+	b.WriteString("  the rule against echoing forbids.\n")
+	b.WriteString("- When a discussion you are a member of reaches a decision — whether or\n")
+	b.WriteString("  not you wrote the summary — record the decision and its reasons in\n")
+	b.WriteString("  your MEMORY.md.\n\n")
 	b.WriteString("## Building teams and groups\n")
 	b.WriteString("You can create group threads (create_group) and add named teammates to\n")
 	b.WriteString("groups you belong to (add_group_member). Create a group only for an\n")
@@ -80,10 +102,23 @@ func residentParticipantSystemPrompt(p participant.Participant, memory string, r
 	b.WriteString("  instead of guessing.\n")
 	b.WriteString("- Your context may be compacted over time. Anything worth keeping —\n")
 	b.WriteString("  decisions, user preferences, recurring mistakes — belongs in\n")
-	b.WriteString("  MEMORY.md, which survives compaction and resets.\n")
+	b.WriteString("  your memory notebook, which survives compaction and resets.\n")
+	if memoryDir != "" {
+		b.WriteString("\n")
+		b.WriteString(memdir.ResidentTeaching(memoryDir))
+		b.WriteString("\n")
+	}
 	if memory = strings.TrimSpace(memory); memory != "" {
 		b.WriteString("\n## Memory\n")
 		b.WriteString(memory)
+		b.WriteString("\n")
+	}
+	if userIndex = strings.TrimSpace(userIndex); userIndex != "" {
+		b.WriteString("\n## What you know about the user\n")
+		b.WriteString(memdir.UserIndexNotice())
+		b.WriteString("\n\n")
+		b.WriteString(userIndex)
+		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -104,8 +139,16 @@ func renderWorkspaceManifest(registered []workspaces.Workspace) string {
 }
 
 func namedParticipantPrompt(p participant.Participant, memory, prompt string, registered []workspaces.Workspace) string {
+	// Task runs reuse the resident persona. The identity notebook path is
+	// derived from the participant workspace when known; the user index is
+	// omitted here because spawned runs already receive the read-only user
+	// memory block in their worker base prompt.
+	memoryDir := ""
+	if workspace := strings.TrimSpace(p.Workspace); workspace != "" {
+		memoryDir = filepath.Join(workspace, "memory")
+	}
 	var b strings.Builder
-	b.WriteString(residentParticipantSystemPrompt(p, memory, registered))
+	b.WriteString(strings.TrimRight(residentParticipantSystemPrompt(p, memoryDir, memory, "", registered), "\n"))
 	b.WriteString("\n\n## Request\n")
 	b.WriteString(strings.TrimSpace(prompt))
 	return b.String()
@@ -125,11 +168,35 @@ func ensureResidentSystemPrompt(history []providers.ChatMessage, prompt string) 
 }
 
 func (s *Server) residentPromptForParticipant(p participant.Participant) (string, error) {
+	workspace, err := s.resolvedParticipantWorkspace(p)
+	if err != nil {
+		return "", err
+	}
+	memoryDir := ""
+	if workspace != "" {
+		memoryDir = filepath.Join(workspace, "memory")
+		// The prompt teaches "this directory already exists — write to it
+		// directly", so guarantee it here.
+		if err := memdir.EnsureDir(memoryDir); err != nil {
+			providers.DebugLogf("ensure participant memory notebook: %v", err)
+			memoryDir = ""
+		}
+	}
 	memory, err := s.readParticipantMemory(p)
 	if err != nil {
 		return "", err
 	}
-	return residentParticipantSystemPrompt(p, memory, s.registeredWorkspaces()), nil
+	// User notebook index: read-only knowledge for residents (memory-redesign
+	// §3 — the directory itself stays out of the resident file scope).
+	userIndex := ""
+	if s != nil && s.rt != nil && s.rt.MemdirEnabled {
+		if snap, err := memdir.ReadIndex(memdir.UserMemdir(s.rt.WuuHome)); err == nil {
+			userIndex = snap.Content
+		} else {
+			providers.DebugLogf("read user memory index for resident prompt: %v", err)
+		}
+	}
+	return residentParticipantSystemPrompt(p, memoryDir, memory, userIndex, s.registeredWorkspaces()), nil
 }
 
 // registeredWorkspaces reads the user's workspace roster from the desktop's
@@ -149,25 +216,40 @@ func (s *Server) registeredWorkspaces() []workspaces.Workspace {
 	return list
 }
 
-func (s *Server) readParticipantMemory(p participant.Participant) (string, error) {
+// resolvedParticipantWorkspace returns the participant's workspace directory
+// (~/.wuu/participants/<id>), preferring the stored value.
+func (s *Server) resolvedParticipantWorkspace(p participant.Participant) (string, error) {
 	workspace := strings.TrimSpace(p.Workspace)
 	if workspace == "" && s != nil {
-		var err error
-		workspace, err = s.participantWorkspace(p.ID)
-		if err != nil {
-			return "", err
-		}
+		return s.participantWorkspace(p.ID)
 	}
-	path := participantMemoryPath(workspace)
-	if path == "" {
+	return workspace, nil
+}
+
+// readParticipantMemory returns the injection-ready memory for one resident:
+// the identity notebook index (participants/<id>/memory/MEMORY.md) when it
+// has content, otherwise the legacy flat participants/<id>/MEMORY.md — kept
+// for the migration window (memory-redesign §7). Both paths go through
+// memdir.ReadIndex, so the security scan and the line/byte caps apply to
+// whatever is injected.
+func (s *Server) readParticipantMemory(p participant.Participant) (string, error) {
+	workspace, err := s.resolvedParticipantWorkspace(p)
+	if err != nil {
+		return "", err
+	}
+	if workspace == "" {
 		return "", nil
 	}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		return string(data), nil
+	snap, err := memdir.ReadIndex(filepath.Join(workspace, "memory"))
+	if err != nil {
+		return "", fmt.Errorf("read participant memory: %w", err)
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+	if strings.TrimSpace(snap.Content) != "" {
+		return snap.Content, nil
 	}
-	return "", fmt.Errorf("read participant memory: %w", err)
+	legacy, err := memdir.ReadIndex(workspace)
+	if err != nil {
+		return "", fmt.Errorf("read participant memory: %w", err)
+	}
+	return legacy.Content, nil
 }

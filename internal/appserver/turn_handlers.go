@@ -20,6 +20,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/guardian"
 	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
+	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -507,8 +508,14 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 		// Resident file tools work inside the home + registered workspaces
-		// + temp whitelist (design doc §5.2); reads and writes alike.
-		threadRuntime.Toolkit.SetFileScopeRoots(workspaces.FileScopeRoots(threadCWD, s.rt.WuuHome))
+		// + temp whitelist (design doc §5.2), plus the agent's own identity
+		// memory notebook (memory-redesign §3); reads and writes alike. The
+		// user notebook is deliberately NOT added: residents only see its
+		// index read-only via the prompt.
+		threadRuntime.Toolkit.SetFileScopeRoots(append(
+			workspaces.FileScopeRoots(threadCWD, s.rt.WuuHome),
+			memdir.ParticipantMemdir(s.rt.WuuHome, participantID),
+		))
 		// The declared workspace focus decides where tools work by default
 		// (2026-07-03-workspace-focus.md §5): a workspace focus roots them
 		// at that workspace, "" (all) and "~" (home) keep the agent home.

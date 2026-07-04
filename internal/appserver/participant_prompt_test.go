@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
@@ -17,7 +18,8 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		Role:    "general-purpose",
 		Tagline: "随时开工的常驻搭档",
 	}
-	got := residentParticipantSystemPrompt(p, "remembered: always quote first.\n", []workspaces.Workspace{
+	notebook := "/home/u/.wuu/participants/p-andy/memory"
+	got := residentParticipantSystemPrompt(p, notebook, "- [Quote style](quote.md) — always quote first", "- [User role](user_role.md) — data scientist", []workspaces.Workspace{
 		{Name: "wuu", Root: "/repos/wuu"},
 		{Name: "", Root: "/repos/unnamed"},
 	})
@@ -29,7 +31,9 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"your memory file, and your judgment persist across days and tasks.",
 		"",
 		"Your role: general-purpose. How teammates describe you: 随时开工的常驻搭档.",
-		"Your home directory is your workspace. Keep durable notes in MEMORY.md.",
+		"Your home directory is your workspace. Keep durable notes in your",
+		"memory notebook at `" + notebook + "`",
+		"(see \"Memory notebook\" below).",
 		"",
 		"## How messages reach you",
 		"Group messages appear as <incoming_message> blocks. Attributes tell you",
@@ -70,6 +74,17 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"  explicitly @mentioned. Do not @mention someone just to be polite; an",
 		"  @mention is a request for their time.",
 		"",
+		"## Wrapping up discussions (only when asked)",
+		"- When the user asks you to wrap up or synthesize a discussion, post to",
+		"  the source thread with exactly three parts: Conclusion — the decision",
+		"  as it stands; Open disagreements — unresolved positions, attributed by",
+		"  name, never smoothed over; Suggested next step.",
+		"- Never post an unprompted summary: it repeats what others said, which",
+		"  the rule against echoing forbids.",
+		"- When a discussion you are a member of reaches a decision — whether or",
+		"  not you wrote the summary — record the decision and its reasons in",
+		"  your MEMORY.md.",
+		"",
 		"## Building teams and groups",
 		"You can create group threads (create_group) and add named teammates to",
 		"groups you belong to (add_group_member). Create a group only for an",
@@ -94,21 +109,35 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"  instead of guessing.",
 		"- Your context may be compacted over time. Anything worth keeping —",
 		"  decisions, user preferences, recurring mistakes — belongs in",
-		"  MEMORY.md, which survives compaction and resets.",
+		"  your memory notebook, which survives compaction and resets.",
+		"",
+		memdir.ResidentTeaching(notebook),
 		"",
 		"## Memory",
-		"remembered: always quote first.",
+		"- [Quote style](quote.md) — always quote first",
+		"",
+		"## What you know about the user",
+		memdir.UserIndexNotice(),
+		"",
+		"- [User role](user_role.md) — data scientist",
+		"",
 	}, "\n")
 	if got != want {
 		t.Errorf("prompt mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
 
-func TestResidentParticipantSystemPromptOmitsEmptyMemory(t *testing.T) {
+func TestResidentParticipantSystemPromptOmitsEmptySections(t *testing.T) {
 	p := participant.Participant{Name: "Noel", Role: "reviewer", Tagline: "find regressions"}
-	got := residentParticipantSystemPrompt(p, "   \n  ", nil)
-	if strings.Contains(got, "## Memory") {
+	got := residentParticipantSystemPrompt(p, "", "   \n  ", " ", nil)
+	if strings.Contains(got, "## Memory\n") {
 		t.Errorf("prompt must not include memory section when memory is empty:\n%s", got)
+	}
+	if strings.Contains(got, "## What you know about the user") {
+		t.Errorf("prompt must not include user-index section when index is empty:\n%s", got)
+	}
+	if strings.Contains(got, "## Memory notebook") {
+		t.Errorf("prompt must not include notebook teaching without a notebook dir:\n%s", got)
 	}
 	if !strings.Contains(got, "You are Noel, a resident named agent in this workspace.") {
 		t.Errorf("prompt must include resident identity:\n%s", got)
@@ -118,6 +147,9 @@ func TestResidentParticipantSystemPromptOmitsEmptyMemory(t *testing.T) {
 	}
 	if !strings.Contains(got, "The user's registered workspaces (name — root path):\n(none yet)\n") {
 		t.Errorf("empty workspace roster must render (none yet):\n%s", got)
+	}
+	if !strings.Contains(got, "## Wrapping up discussions (only when asked)") {
+		t.Errorf("wrapping-up section is contractual and must always render:\n%s", got)
 	}
 }
 
@@ -141,6 +173,88 @@ func TestResidentPromptForParticipantReadsProjectsStore(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "- demo — /repos/demo") {
 		t.Errorf("prompt must list the registered workspace:\n%s", prompt)
+	}
+	notebook := memdir.ParticipantMemdir(rt.WuuHome, participantID)
+	if !strings.Contains(prompt, "`"+notebook+"`") {
+		t.Errorf("prompt must point at the identity notebook %q:\n%s", notebook, prompt)
+	}
+	if info, err := os.Stat(notebook); err != nil || !info.IsDir() {
+		t.Errorf("identity notebook dir must be created for the prompt's dir-exists promise: %v", err)
+	}
+}
+
+func TestResidentPromptReadsNotebookIndexAndFallsBackToFlatFile(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = t.TempDir()
+	srv := New(rt, &lockedBuffer{})
+	participantID := saveNamedParticipant(t, rt, "Noel", "reviewer", "")
+	p, err := session.GetParticipant(rt.SessionDir, participantID)
+	if err != nil {
+		t.Fatalf("load participant: %v", err)
+	}
+	workspace := filepath.Join(rt.WuuHome, "participants", participantID)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Legacy flat file only → injected via the fallback path.
+	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("flat legacy note\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := srv.residentPromptForParticipant(p)
+	if err != nil {
+		t.Fatalf("residentPromptForParticipant: %v", err)
+	}
+	if !strings.Contains(prompt, "## Memory\nflat legacy note") {
+		t.Errorf("flat legacy memory must be injected:\n%s", prompt)
+	}
+
+	// Notebook index wins once it has content.
+	notebook := memdir.ParticipantMemdir(rt.WuuHome, participantID)
+	if err := os.MkdirAll(notebook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notebook, "MEMORY.md"), []byte("- [Lesson](l.md) — verify first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prompt, err = srv.residentPromptForParticipant(p)
+	if err != nil {
+		t.Fatalf("residentPromptForParticipant: %v", err)
+	}
+	if !strings.Contains(prompt, "## Memory\n- [Lesson](l.md) — verify first") {
+		t.Errorf("notebook index must be injected:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "flat legacy note") {
+		t.Errorf("flat file must not be injected once the notebook index exists:\n%s", prompt)
+	}
+}
+
+func TestResidentPromptInjectsUserIndexWhenMemdirEnabled(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.WuuHome = t.TempDir()
+	rt.MemdirEnabled = true
+	userNotebook := memdir.UserMemdir(rt.WuuHome)
+	if err := os.MkdirAll(userNotebook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userNotebook, "MEMORY.md"), []byte("- [User role](u.md) — data scientist\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := New(rt, &lockedBuffer{})
+	participantID := saveNamedParticipant(t, rt, "Noel", "reviewer", "")
+	p, err := session.GetParticipant(rt.SessionDir, participantID)
+	if err != nil {
+		t.Fatalf("load participant: %v", err)
+	}
+	prompt, err := srv.residentPromptForParticipant(p)
+	if err != nil {
+		t.Fatalf("residentPromptForParticipant: %v", err)
+	}
+	if !strings.Contains(prompt, "## What you know about the user") || !strings.Contains(prompt, "- [User role](u.md) — data scientist") {
+		t.Errorf("user index section missing:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "read-only") {
+		t.Errorf("user index section must carry the read-only notice:\n%s", prompt)
 	}
 }
 
