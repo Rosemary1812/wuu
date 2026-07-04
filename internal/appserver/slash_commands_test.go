@@ -61,6 +61,51 @@ func TestRenderCommitSlashCommandPromptIsSurfaceNeutral(t *testing.T) {
 	}
 }
 
+func TestRenderCompactSlashCommandPrompt(t *testing.T) {
+	content, display, ok := renderLightweightSlashCommandPrompt("/compact")
+	if !ok {
+		t.Fatal("expected /compact to render")
+	}
+	if display != "/compact" {
+		t.Fatalf("display = %q", display)
+	}
+	for _, want := range []string{"compacted at the user's request", "Briefly confirm", "Do not start new work"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("rendered prompt missing %q:\n%s", want, content)
+		}
+	}
+
+	withArgs, _, ok := renderLightweightSlashCommandPrompt("/compact 后续只关注登录模块")
+	if !ok {
+		t.Fatal("expected /compact with args to render")
+	}
+	if !strings.Contains(withArgs, "后续只关注登录模块") {
+		t.Fatalf("rendered prompt missing user notes:\n%s", withArgs)
+	}
+}
+
+func TestIsManualCompactPrompt(t *testing.T) {
+	cases := []struct {
+		prompt string
+		want   bool
+	}{
+		{"/compact", true},
+		{"/compact 后续只保留结论", true},
+		{"/COMPACT", true},
+		{"/compress", true},
+		{"//compact", false},
+		{"/compaction", false},
+		{"compact", false},
+		{"/debug compact the logs", false},
+		{"  /compact  ", true},
+	}
+	for _, c := range cases {
+		if got := isManualCompactPrompt(c.prompt); got != c.want {
+			t.Errorf("isManualCompactPrompt(%q) = %v, want %v", c.prompt, got, c.want)
+		}
+	}
+}
+
 func TestRenderLightweightSlashCommandPromptKeepsSkillSlashRaw(t *testing.T) {
 	content, display, ok := renderLightweightSlashCommandPrompt("/slides quarterly roadmap")
 	if ok || display != "" || content != "/slides quarterly roadmap" {

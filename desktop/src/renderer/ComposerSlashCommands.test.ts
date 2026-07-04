@@ -114,6 +114,24 @@ describe("composer slash commands", () => {
     expect(filterComposerSlashCommands(commands, "internal-only")).toEqual([]);
   });
 
+  it("adds /compact as a prompt command that sends the raw slash text", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false
+    });
+
+    const compact = filterComposerSlashCommands(commands, "compact")[0];
+
+    expect(compact?.kind).toBe("prompt");
+    expect(compact?.disabledReason).toBeUndefined();
+    // The backend detects the raw "/compact" text (isManualCompactPrompt)
+    // and forces a compaction pass before the turn's first model request,
+    // so the composer must send the slash text through unchanged.
+    expect(composerSlashPrompt(compact!, "")).toBe("/compact ");
+    expect(composerSlashPrompt(compact!, "后续只保留结论")).toBe("/compact 后续只保留结论");
+  });
+
   it("adds /context as a local action instead of a model prompt", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },

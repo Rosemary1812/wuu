@@ -10,6 +10,7 @@ export type ComposerSlashCommandAction =
   | "open-project"
   | "no-project"
   | "context"
+  | "instructions"
   | "model"
   | "fast"
   | "effort"
@@ -173,6 +174,18 @@ export function buildComposerSlashCommands({
       disabledReason: needsRuntime
     },
     {
+      id: "instructions",
+      name: "instructions",
+      title: "查看指令文件",
+      description: "查看已加载的 AGENTS.md / CLAUDE.md 指令文件",
+      tag: "视图",
+      kind: "action",
+      action: "instructions",
+      aliases: ["memory", "agents"],
+      keywords: ["instructions", "memory", "agents", "claude", "指令", "记忆"],
+      disabledReason: needsRuntime
+    },
+    {
       id: "commit",
       name: "commit",
       title: "提交当前改动",
@@ -217,6 +230,17 @@ export function buildComposerSlashCommands({
       aliases: ["clear"],
       keywords: ["conversation", "thread", "新对话"],
       disabledReason: needsWorkspace ?? needsIdleThread
+    },
+    {
+      id: "compact",
+      name: "compact",
+      title: "压缩上下文",
+      description: "把较早的对话折叠成摘要，释放上下文窗口",
+      tag: "会话",
+      kind: "prompt",
+      aliases: ["compress"],
+      keywords: ["compact", "context", "summary", "压缩", "上下文", "摘要", "瘦身"],
+      disabledReason: needsRuntime
     },
     {
       id: "terminal",
