@@ -13,7 +13,6 @@ export function GroupInfoPanel({
   motionState,
   thread,
   members,
-  busyParticipantIDs,
   participants,
   onClose,
   onAddMember,
@@ -23,7 +22,6 @@ export function GroupInfoPanel({
   motionState: EnvironmentPanelMotionState;
   thread: Thread;
   members: ParticipantSummary[];
-  busyParticipantIDs?: ReadonlySet<string>;
   participants: ParticipantProfile[];
   onClose: () => void;
   onAddMember?: (participantID: string) => Promise<void> | void;
@@ -142,10 +140,7 @@ export function GroupInfoPanel({
             ) : (
               members.map((member) => (
                 <div className="group-info-member-row" role="listitem" key={member.id}>
-                  <ParticipantAvatar
-                    participant={member}
-                    busy={busyParticipantIDs?.has(member.id) ?? false}
-                  />
+                  <ParticipantAvatar participant={member} />
                   <span className="group-info-member-text">
                     <strong>{member.name}</strong>
                     {member.role ? <em>{member.role}</em> : null}
@@ -173,29 +168,18 @@ export function GroupInfoPanel({
 
 function ParticipantAvatar({
   participant,
-  busy,
 }: {
   participant: ParticipantSummary | ParticipantProfile;
-  busy?: boolean;
 }): JSX.Element {
   const name = participant.name.trim() || "Agent";
   const image = participant.avatar_image?.trim() ?? "";
-  const status = busy === undefined ? undefined : busy ? "busy" : "online";
   return (
-    <span
-      className="group-info-avatar"
-      role={status ? "img" : undefined}
-      aria-label={status ? `${name} ${busy ? "正在响应" : "在线"}` : undefined}
-      aria-hidden={status ? undefined : true}
-    >
+    <span className="group-info-avatar" aria-hidden="true">
       {image ? (
         <img src={image} alt="" />
       ) : (
         <DefaultAvatarMark seed={participant.id || name} />
       )}
-      {status ? (
-        <span className="group-info-avatar-status" data-status={status} />
-      ) : null}
     </span>
   );
 }

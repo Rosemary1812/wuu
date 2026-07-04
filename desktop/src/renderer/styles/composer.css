@@ -1000,37 +1000,37 @@
   opacity: 0.55;
 }
 
+/*
+ * Members affordance in the group composer bar: a flat button with an
+ * avatar stack and the member count — no pill border/background, no
+ * hover-expanding name list. Details live in the group info panel it
+ * opens.
+ */
 .group-members-capsule {
   appearance: none;
   display: inline-flex;
   height: 32px;
-  max-width: 136px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 7px;
-  overflow: hidden;
-  border: 1px solid var(--border-soft, var(--ink-overlay-8));
+  gap: 6px;
+  border: 0;
   border-radius: var(--radius-pill);
-  background: var(--bg-soft, var(--surface-2));
+  background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
   font-size: var(--font-ui);
   font-weight: var(--weight-semibold);
   line-height: 1;
-  padding: 0 10px 0 6px;
+  padding: 0 8px;
   white-space: nowrap;
   transition:
-    max-width 160ms ease,
     background-color 140ms ease,
-    border-color 140ms ease,
     color 140ms ease;
 }
 
 .group-members-capsule:hover,
 .group-members-capsule:focus-visible {
-  max-width: 260px;
-  border-color: var(--ink-overlay-12);
-  background: var(--surface-2);
+  background: var(--ink-overlay-6);
   color: var(--ink);
   outline: 0;
 }
@@ -1046,13 +1046,13 @@
 .group-members-capsule-empty {
   position: relative;
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  border: 1.5px solid var(--bg-soft, var(--paper));
+  border: 1.5px solid var(--paper);
   border-radius: var(--radius-pill);
   background: var(--bg, var(--paper));
   color: var(--ink);
@@ -1063,7 +1063,7 @@
 
 .group-members-capsule-avatar + .group-members-capsule-avatar,
 .group-members-capsule-more {
-  margin-left: -6px;
+  margin-left: -7px;
 }
 
 .group-members-capsule-avatar img {
@@ -1073,25 +1073,10 @@
   object-fit: cover;
 }
 
-.group-members-capsule-status {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 6px;
-  height: 6px;
-  box-sizing: border-box;
-  border: 1px solid var(--bg-soft, var(--paper));
-  border-radius: var(--radius-pill);
-  background: var(--success);
-}
-
-.group-members-capsule-status[data-status="busy"] {
-  background: color-mix(in srgb, var(--warning) 56%, #ffd166);
-}
-
 .group-members-capsule-more {
   background: var(--surface-3);
   color: var(--ink-muted);
+  font-size: 9px;
 }
 
 .group-members-capsule-empty svg {
@@ -1099,34 +1084,12 @@
   height: 12px;
 }
 
-.group-members-capsule-label,
-.group-members-capsule-detail {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.group-members-capsule-label {
+.group-members-capsule-count {
   flex: 0 0 auto;
 }
 
-.group-members-capsule-detail {
-  max-width: 0;
-  opacity: 0;
-  transition:
-    max-width 160ms ease,
-    opacity 120ms ease;
-}
-
-.group-members-capsule:hover .group-members-capsule-detail,
-.group-members-capsule:focus-visible .group-members-capsule-detail {
-  max-width: 150px;
-  opacity: 1;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .group-members-capsule,
-  .group-members-capsule-detail {
+  .group-members-capsule {
     transition: none;
   }
 }

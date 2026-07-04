@@ -188,7 +188,6 @@ export function Composer({
   chatFocusValue,
   onSelectChatFocus,
   groupMembers,
-  busyParticipantIDs,
   onOpenGroupInfo
 }: {
   variant?: ComposerVariant;
@@ -273,7 +272,6 @@ export function Composer({
   chatFocusValue?: string;
   onSelectChatFocus?: (value: string) => void;
   groupMembers?: ParticipantSummary[];
-  busyParticipantIDs?: ReadonlySet<string>;
   onOpenGroupInfo?: () => void;
 }): JSX.Element {
   const statusText = composerStatusText(status);
@@ -1003,42 +1001,48 @@ export function Composer({
                     </FloatingMenuPortal>
                   ) : null}
                 </div>
-                {groupMembers ? (
-                  <GroupMembersCapsule
-                    members={groupMembers}
-                    busyParticipantIDs={busyParticipantIDs}
-                    onOpen={onOpenGroupInfo}
-                  />
-                ) : null}
               </div>
               <div className="composer-bar-right">
-                <ComposerTokenGauge
-                  running={running}
-                  tokensPerSecond={tokensPerSecond}
-                  sampledAt={tokenSpeedSampledAt}
-                  source={tokenSpeedSource}
-                />
-                <ComposerContextMeter usage={contextUsage ?? undefined} />
-                {initialized ? (
-                  <RuntimePicker
-                    variant={variant}
-                    initialized={initialized}
-                    state={codexModels}
-                    openMenu={codexRuntimeMenu}
-                    anchorRef={codexRuntimeRef}
-                    running={runtimeControlsDisabled}
-                    onToggleMenu={onToggleCodexRuntimeMenu}
-                    onSelectModel={onSelectRuntimeModel}
-                    onSelectEffort={onSelectRuntimeEffort}
+                {groupMembers ? (
+                  // Group threads have no primary agent turn, so the token
+                  // gauge / context meter / model picker are meaningless
+                  // noise there — the members capsule takes their place on
+                  // the right edge of the bar instead.
+                  <GroupMembersCapsule
+                    members={groupMembers}
+                    onOpen={onOpenGroupInfo}
                   />
                 ) : (
                   <>
-                    <button className="provider-pill" type="button" onClick={onOpenSettings}>
-                      provider
-                    </button>
-                    <button className="model-label" type="button" onClick={onOpenSettings}>
-                      model
-                    </button>
+                    <ComposerTokenGauge
+                      running={running}
+                      tokensPerSecond={tokensPerSecond}
+                      sampledAt={tokenSpeedSampledAt}
+                      source={tokenSpeedSource}
+                    />
+                    <ComposerContextMeter usage={contextUsage ?? undefined} />
+                    {initialized ? (
+                      <RuntimePicker
+                        variant={variant}
+                        initialized={initialized}
+                        state={codexModels}
+                        openMenu={codexRuntimeMenu}
+                        anchorRef={codexRuntimeRef}
+                        running={runtimeControlsDisabled}
+                        onToggleMenu={onToggleCodexRuntimeMenu}
+                        onSelectModel={onSelectRuntimeModel}
+                        onSelectEffort={onSelectRuntimeEffort}
+                      />
+                    ) : (
+                      <>
+                        <button className="provider-pill" type="button" onClick={onOpenSettings}>
+                          provider
+                        </button>
+                        <button className="model-label" type="button" onClick={onOpenSettings}>
+                          model
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
                 {statusText ? (

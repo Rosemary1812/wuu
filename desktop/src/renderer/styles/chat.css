@@ -71,24 +71,102 @@
 }
 
 .chat-avatar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
+  flex-shrink: 0;
+}
+
+.chat-avatar-face {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--ink-overlay-6);
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1;
   overflow: hidden;
-  flex-shrink: 0;
 }
 
-.chat-avatar img {
+.chat-avatar-face img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.chat-avatar-status {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius-pill);
+  background: var(--success);
+  z-index: 1;
+}
+
+.chat-avatar-status[data-status="busy"] {
+  background: color-mix(in srgb, var(--warning) 56%, #ffd166);
+}
+
+.chat-avatar-status-card {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 8px);
+  z-index: 20;
+  display: grid;
+  min-width: 96px;
+  max-width: 180px;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(0, -50%) scale(0.98);
+  transform-origin: left center;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.chat-avatar:hover .chat-avatar-status-card {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+}
+
+.chat-avatar-status-card-name,
+.chat-avatar-status-card-state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-avatar-status-card-name {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.chat-avatar-status-card-state {
+  color: var(--ink-muted);
+}
+
+.chat-avatar-status-card-state[data-status="busy"] {
+  color: var(--warning);
 }
 
 .chat-bubble-group {

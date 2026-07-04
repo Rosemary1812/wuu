@@ -80,6 +80,7 @@ export function findScrollParent(start: Element | null): HTMLElement | null {
 export function ChatThreadView({
   turns,
   pendingMessages = [],
+  busyParticipantIDs,
 }: {
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
   /**
@@ -91,6 +92,7 @@ export function ChatThreadView({
    * item/completed with source_id) once the real turn arrives.
    */
   pendingMessages?: ReadonlyArray<QueuedComposerMessage>;
+  busyParticipantIDs?: ReadonlySet<string>;
 }): JSX.Element {
   const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -222,7 +224,11 @@ export function ChatThreadView({
         />
       ) : null}
       {visibleRows.map((row) => (
-        <ChatRow key={row.id} row={row} />
+        <ChatRow
+          key={row.id}
+          row={row}
+          busyParticipantIDs={busyParticipantIDs}
+        />
       ))}
       {pendingMessages.map((message) => (
         <PendingChatRow key={`pending-${message.id}`} message={message} />
@@ -280,7 +286,13 @@ function focusDividerLabel(meta: NonNullable<ChatMessageRow["item"]["focus_meta"
   return "⬒ 全部工作区";
 }
 
-function ChatRow({ row }: { row: ChatMessageRow }): JSX.Element {
+function ChatRow({
+  row,
+  busyParticipantIDs,
+}: {
+  row: ChatMessageRow;
+  busyParticipantIDs?: ReadonlySet<string>;
+}): JSX.Element {
   if (row.kind === "focus") {
     const meta = row.item.focus_meta;
     const label = meta ? focusDividerLabel(meta) : "⬒ 全部工作区";
@@ -316,6 +328,11 @@ function ChatRow({ row }: { row: ChatMessageRow }): JSX.Element {
   const postKind = row.item.post_kind ?? "result";
   const participant = row.item.participant;
   const name = participant?.name?.trim() || "参与者";
+  const participantStatus = participant?.id
+    ? busyParticipantIDs?.has(participant.id)
+      ? "busy"
+      : "online"
+    : undefined;
   if (postKind === "decline") {
     const text = (row.item.text ?? "").trim();
     return (
@@ -328,7 +345,7 @@ function ChatRow({ row }: { row: ChatMessageRow }): JSX.Element {
   }
   return (
     <div className="chat-row chat-row--participant">
-      <ChatAvatar participant={participant} />
+      <ChatAvatar participant={participant} status={participantStatus} />
       <div className="chat-bubble-group">
         <div className="chat-sender-name">{name}</div>
         <div className="chat-bubble">
@@ -341,18 +358,45 @@ function ChatRow({ row }: { row: ChatMessageRow }): JSX.Element {
 
 function ChatAvatar({
   participant,
+  status,
 }: {
   participant: ParticipantSummary | undefined;
+  status?: "online" | "busy";
 }): JSX.Element {
   const avatarImage = participant?.avatar_image?.trim();
   const name = participant?.name?.trim() || "参与者";
+  const statusLabel =
+    status === "busy" ? "正在响应" : status === "online" ? "在线" : "";
   return (
-    <div className="chat-avatar" aria-hidden="true">
-      {avatarImage ? (
-        <img src={avatarImage} alt="" />
-      ) : (
-        <DefaultAvatarMark seed={participant?.id || name} />
-      )}
+    <div
+      className="chat-avatar"
+      role={status ? "img" : undefined}
+      aria-label={
+        status ? `${name} ${status === "busy" ? "正在响应" : "在线"}` : undefined
+      }
+      aria-hidden={status ? undefined : true}
+    >
+      <span className="chat-avatar-face" aria-hidden="true">
+        {avatarImage ? (
+          <img src={avatarImage} alt="" />
+        ) : (
+          <DefaultAvatarMark seed={participant?.id || name} />
+        )}
+      </span>
+      {status ? (
+        <>
+          <span className="chat-avatar-status" data-status={status} />
+          <span className="chat-avatar-status-card" role="tooltip">
+            <span className="chat-avatar-status-card-name">{name}</span>
+            <span
+              className="chat-avatar-status-card-state"
+              data-status={status}
+            >
+              {statusLabel}
+            </span>
+          </span>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -95,20 +95,16 @@ describe("GroupInfoPanel", () => {
     expect(container.textContent).toContain("阿蓝");
   });
 
-  it("shows member avatar status from the busy set", () => {
-    const container = renderPanel({
-      busyParticipantIDs: new Set(["participant-2"]),
-    });
+  it("keeps member-list avatars free of agent status dots", () => {
+    const container = renderPanel();
 
     const dots = container.querySelectorAll(".group-info-avatar-status");
-    expect(dots).toHaveLength(2);
-    expect(dots[0]?.getAttribute("data-status")).toBe("online");
-    expect(dots[1]?.getAttribute("data-status")).toBe("busy");
+    expect(dots).toHaveLength(0);
     expect(
       container
         .querySelectorAll(".group-info-avatar")[1]
         ?.getAttribute("aria-label"),
-    ).toBe("阿蓝 正在响应");
+    ).toBeNull();
   });
 
   it("opens an add-member list and invokes onAddMember for non-members", async () => {

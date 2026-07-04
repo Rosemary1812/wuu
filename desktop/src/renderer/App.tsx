@@ -2073,8 +2073,8 @@ export function App(): JSX.Element {
   //   2. A dispatched task run (child agent) owned by the participant is
   //      running — participant/start task dispatch stays a separate entry
   //      point (§4.8), so those runs keep lighting the busy dot too.
-  // Named participants not in the set render as online; the roster is the
-  // only consumer so we keep the aggregation local to App.tsx.
+  // Named participants not in the set render as online. This drives the
+  // sidebar roster and chat-style message avatars.
   const busyParticipantIDs = useMemo(() => {
     const threads = [state.thread, state.secondaryThread, ...state.threads]
       .filter((thread): thread is Thread => Boolean(thread));
@@ -3787,7 +3787,6 @@ export function App(): JSX.Element {
         groupMembers={
           activeThreadIsGroup ? (activeThread?.members ?? []) : undefined
         }
-        busyParticipantIDs={busyParticipantIDs}
         onOpenGroupInfo={openEnvironmentPanel}
       />
     );
@@ -7965,7 +7964,6 @@ export function App(): JSX.Element {
             )
           }
           participants={participants}
-          busyParticipantIDs={busyParticipantIDs}
           onAddThreadMember={(threadID, participantID) =>
             addThreadMemberByID(threadID, participantID)
           }
@@ -8102,6 +8100,7 @@ export function App(): JSX.Element {
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
+                busyParticipantIDs={busyParticipantIDs}
                 pendingChatMessagesByThread={pendingComposerMessagesByThread}
                 pendingToolApproval={state.pendingToolApproval}
                 turnStreamStatus={state.turnStreamStatus}
@@ -8310,6 +8309,7 @@ type CachedConversationPanesProps = {
   onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
+  busyParticipantIDs: ReadonlySet<string>;
   /**
    * Per-thread composer messages queued while the agent is mid-turn.
    * Chat-style panes render the thread's `queued` entries as in-transcript
@@ -8358,6 +8358,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onNoticeAction,
   onOpenFileDiff,
   turnStreamStatus,
+  busyParticipantIDs,
   pendingChatMessagesByThread,
   pendingToolApproval,
   onResolveToolApproval,
@@ -8436,6 +8437,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   // the eviction/recreate path explicitly.
                   key={threadID}
                   turns={threadTurns}
+                  busyParticipantIDs={busyParticipantIDs}
                   // Sends queued while the agent is mid-turn render as
                   // in-transcript "发送中" bubbles instead of the composer
                   // queue strip (chat send semantics, issue #10).

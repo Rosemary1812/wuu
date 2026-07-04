@@ -56,7 +56,6 @@ export function EnvironmentSideStack({
   onArchiveSubagent,
   onClearSubagentArchiveConfirm,
   participants = [],
-  busyParticipantIDs,
   onAddThreadMember,
   onRemoveThreadMember,
 }: {
@@ -102,7 +101,6 @@ export function EnvironmentSideStack({
   onArchiveSubagent?: (agent: SubagentRowSummary) => void;
   onClearSubagentArchiveConfirm?: (agentID: string) => void;
   participants?: ParticipantProfile[];
-  busyParticipantIDs?: ReadonlySet<string>;
   onAddThreadMember?: (
     threadID: string,
     participantID: string,
@@ -125,7 +123,6 @@ export function EnvironmentSideStack({
           motionState={closing ? "closing" : motionState}
           thread={thread}
           members={thread.members ?? []}
-          busyParticipantIDs={busyParticipantIDs}
           participants={participants}
           onClose={onClose}
           onAddMember={

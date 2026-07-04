@@ -119,6 +119,41 @@ describe("ChatThreadView", () => {
     expect(img?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   });
 
+  it("shows participant status on the message-flow avatar", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        busyParticipantIDs: new Set(["prt-noel"]),
+        turns: turns([
+          {
+            id: "item-1",
+            type: "participant_message",
+            text: "我在处理",
+            post_kind: "result",
+            participant: noel,
+          },
+          {
+            id: "item-2",
+            type: "participant_message",
+            text: "我在线",
+            post_kind: "result",
+            participant: { id: "prt-lee", name: "Lee", kind: "resident" },
+          },
+        ]),
+      }),
+    );
+
+    const dots = container.querySelectorAll(".chat-avatar-status");
+    expect(dots).toHaveLength(2);
+    expect(dots[0]?.getAttribute("data-status")).toBe("busy");
+    expect(dots[1]?.getAttribute("data-status")).toBe("online");
+    expect(container.querySelector(".chat-avatar")?.getAttribute("aria-label")).toBe(
+      "Noel 正在响应",
+    );
+    expect(container.querySelector(".chat-avatar-status-card")?.textContent).toContain(
+      "正在响应",
+    );
+  });
+
   it("renders user rows right-aligned with no avatar", () => {
     const container = mount(
       createElement(ChatThreadView, {

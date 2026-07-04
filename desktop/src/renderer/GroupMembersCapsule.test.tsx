@@ -41,13 +41,19 @@ const members: ParticipantSummary[] = [
 ];
 
 describe("GroupMembersCapsule", () => {
-  it("renders the first three member avatars and an overflow ellipsis", () => {
+  it("renders the first three member avatars, an overflow chip, and the count", () => {
     const container = mount(createElement(GroupMembersCapsule, { members }));
 
     expect(container.querySelectorAll(".group-members-capsule-avatar")).toHaveLength(3);
-    expect(container.querySelector(".group-members-capsule-more")?.textContent).toBe("…");
-    expect(container.querySelector(".group-members-capsule-label")?.textContent).toBe("成员 4");
-    expect(container.querySelector(".group-members-capsule-detail")?.textContent).toContain("小青、阿蓝、小紫、小白");
+    expect(container.querySelector(".group-members-capsule-more")?.textContent).toBe("+1");
+    expect(container.querySelector(".group-members-capsule-count")?.textContent).toBe("4");
+    // Names stay off the button — they live in the aria-label and the
+    // group info panel the button opens.
+    expect(container.querySelector(".group-members-capsule-label")).toBeNull();
+    expect(container.querySelector(".group-members-capsule-detail")).toBeNull();
+    expect(
+      container.querySelector(".group-members-capsule")?.getAttribute("aria-label"),
+    ).toContain("小青、阿蓝、小紫、小白");
   });
 
   it("renders avatar images when summaries carry uploaded avatars", () => {
@@ -67,24 +73,16 @@ describe("GroupMembersCapsule", () => {
     expect(img!.getAttribute("src")).toBe(dataUrl);
   });
 
-  it("marks busy members on avatar status dots", () => {
-    const container = mount(
-      createElement(GroupMembersCapsule, {
-        members,
-        busyParticipantIDs: new Set(["participant-2"]),
-      }),
-    );
+  it("keeps member-entry avatars free of agent status dots", () => {
+    const container = mount(createElement(GroupMembersCapsule, { members }));
 
     const dots = container.querySelectorAll(".group-members-capsule-status");
-    expect(dots).toHaveLength(3);
-    expect(dots[0]?.getAttribute("data-status")).toBe("online");
-    expect(dots[1]?.getAttribute("data-status")).toBe("busy");
-    expect(dots[2]?.getAttribute("data-status")).toBe("online");
+    expect(dots).toHaveLength(0);
     expect(
       container
         .querySelector(".group-members-capsule")
         ?.getAttribute("aria-label"),
-    ).toContain("阿蓝（正在响应）");
+    ).toContain("小青、阿蓝、小紫、小白");
   });
 
   it("opens group info when clicked", () => {
