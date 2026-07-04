@@ -314,15 +314,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:git-create-pr", (_event, params: GitPullRequestParams) =>
     gitService.createPullRequest(params ?? {}),
   );
-  ipcMain.handle("wuu:file-tree-list", () => workspaceFiles.fileTreeList());
-  ipcMain.handle("wuu:file-directory-list", (_event, path?: string) =>
-    workspaceFiles.directoryList(path),
+  ipcMain.handle("wuu:file-tree-list", (_event, root?: string) =>
+    workspaceFiles.fileTreeList(root),
   );
-  ipcMain.handle("wuu:file-read", (_event, path: string) =>
-    workspaceFiles.readFile(path),
+  ipcMain.handle(
+    "wuu:file-directory-list",
+    (_event, path?: string, root?: string) =>
+      workspaceFiles.directoryList(path, root),
   );
-  ipcMain.handle("wuu:file-reference-resolve", (_event, reference: string) =>
-    workspaceFiles.resolveFileReference(reference),
+  ipcMain.handle("wuu:file-read", (_event, path: string, root?: string) =>
+    workspaceFiles.readFile(path, root),
+  );
+  ipcMain.handle(
+    "wuu:file-reference-resolve",
+    (_event, reference: string, root?: string) =>
+      workspaceFiles.resolveFileReference(reference, root),
   );
   ipcMain.handle(
     "wuu:terminal-start",

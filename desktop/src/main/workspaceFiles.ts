@@ -36,24 +36,45 @@ const FILE_TREE_IGNORED_FILES = new Set([".DS_Store"]);
 export class WorkspaceFileService {
   constructor(private readonly getRuntimeContext: () => RuntimeContext) {}
 
-  fileTreeList(): FileTreeListResult {
-    return fileTreeListResult(this.getRuntimeContext());
+  // resolveContext optionally overrides the global runtime context's cwd
+  // with an explicit root. The override is used, for instance, when the
+  // active thread's own cwd (a git worktree) differs from the active
+  // project's cwd — see workspacePanelContext in AppState.ts. The override
+  // originates from the app server (Thread.cwd) so it is trusted, but is
+  // still normalized before use.
+  private resolveContext(root?: string): RuntimeContext {
+    const context = this.getRuntimeContext();
+    if (!root) {
+      return context;
+    }
+    return { ...context, cwd: normalizeWorkspaceRoot(root) };
   }
 
-  directoryList(path?: string): WorkspaceDirectoryListResult {
-    return workspaceDirectoryListResult(this.getRuntimeContext(), path);
+  fileTreeList(root?: string): FileTreeListResult {
+    return fileTreeListResult(this.resolveContext(root));
   }
 
-  readFile(path: string): WorkspaceFileReadResult {
-    return readWorkspaceFileResult(this.getRuntimeContext(), path);
+  directoryList(path?: string, root?: string): WorkspaceDirectoryListResult {
+    return workspaceDirectoryListResult(this.resolveContext(root), path);
   }
 
-  resolveFileReference(reference: string): WorkspaceFileReferenceResolveResult {
+  readFile(path: string, root?: string): WorkspaceFileReadResult {
+    return readWorkspaceFileResult(this.resolveContext(root), path);
+  }
+
+  resolveFileReference(
+    reference: string,
+    root?: string,
+  ): WorkspaceFileReferenceResolveResult {
     return resolveWorkspaceFileReferenceResult(
-      this.getRuntimeContext(),
+      this.resolveContext(root),
       reference,
     );
   }
+}
+
+function normalizeWorkspaceRoot(root: string): string {
+  return resolve(root);
 }
 
 function fileTreeListResult(context: RuntimeContext): FileTreeListResult {

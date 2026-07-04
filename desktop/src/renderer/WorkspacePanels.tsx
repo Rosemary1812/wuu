@@ -27,12 +27,18 @@ export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 export function WorkspaceMainPanel({
   view,
   activeContext,
+  workspaceContext,
   gitStatus,
   selectedFilePath,
   onOpenRightPanel
 }: {
   view: WorkspacePanelView;
+  // activeContext is the pinned project/no_project context — used only by
+  // the diff/review view (see below). workspaceContext follows the active
+  // thread's own cwd (e.g. a worktree fork) when it differs from
+  // activeContext; see workspacePanelContext in AppState.ts.
   activeContext?: RuntimeContext;
+  workspaceContext?: RuntimeContext;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onOpenRightPanel: () => void;
@@ -40,7 +46,7 @@ export function WorkspaceMainPanel({
   if (view === "files") {
     return (
       <WorkspaceFilePreview
-        activeContext={activeContext}
+        activeContext={workspaceContext}
         selectedFilePath={selectedFilePath}
         onOpenRightPanel={onOpenRightPanel}
       />
@@ -48,6 +54,10 @@ export function WorkspaceMainPanel({
   }
 
   if (view === "review") {
+    // Deliberately activeContext, not workspaceContext: gitStatus is fetched
+    // from the app-server bound to activeContext's own workdir, so feeding
+    // this view the thread's cwd would silently show diff data for the
+    // wrong directory.
     return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
   }
 
@@ -71,6 +81,7 @@ export function WorkspaceRightPanel({
   tabs,
   activeTabID,
   activeContext,
+  workspaceContext,
   gitStatus,
   selectedFilePath,
   onSelectTab,
@@ -88,7 +99,13 @@ export function WorkspaceRightPanel({
   present: boolean;
   tabs: WorkspaceViewTab[];
   activeTabID: string | undefined;
+  // activeContext is the pinned project/no_project context — used for the
+  // browser tab (its "current project" hint text, not a filesystem root).
+  // workspaceContext follows the active thread's own cwd (e.g. a worktree
+  // fork) when it differs from activeContext, and roots the file tree and
+  // terminal; see workspacePanelContext in AppState.ts.
   activeContext?: RuntimeContext;
+  workspaceContext?: RuntimeContext;
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onSelectTab: (id: string) => void;
@@ -207,7 +224,7 @@ export function WorkspaceRightPanel({
               />
             ) : activeTab.kind === "files" ? (
               <WorkspaceFileTree
-                activeContext={activeContext}
+                activeContext={workspaceContext}
                 open={open}
                 selectedFilePath={selectedFilePath}
                 onOpenFile={onOpenFile}
@@ -215,7 +232,7 @@ export function WorkspaceRightPanel({
             ) : activeTab.kind === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
             ) : activeTab.kind === "terminal" ? (
-              <WorkspaceTerminalPanel activeContext={activeContext} />
+              <WorkspaceTerminalPanel activeContext={workspaceContext} />
             ) : activeTab.kind === "browser" ? (
               <WorkspaceBrowserPanel
                 open={open}

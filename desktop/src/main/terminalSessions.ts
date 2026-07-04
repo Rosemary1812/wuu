@@ -40,7 +40,7 @@ export class TerminalSessionManager {
 
   start(params: TerminalSessionStartParams = {}): TerminalSessionStartResult {
     const context = this.getRuntimeContext();
-    const cwd = context.cwd;
+    const cwd = resolveTerminalCwd(context, params);
     const id = `term-${this.nextSessionID++}`;
     const startedAt = Date.now();
     const shell = terminalShell();
@@ -148,6 +148,20 @@ export class TerminalSessionManager {
       });
     }
   }
+}
+
+// resolveTerminalCwd picks the pty spawn directory: an explicit override
+// (params.cwd) takes precedence over the global runtime context's cwd. The
+// override is used when the terminal panel is rooted at the active
+// thread's own cwd (e.g. a worktree fork) rather than the active project —
+// see workspacePanelContext in AppState.ts. The override originates from
+// the app server (Thread.cwd) so it is trusted, but is still normalized
+// (resolved to an absolute path) before use.
+export function resolveTerminalCwd(
+  context: RuntimeContext,
+  params: TerminalSessionStartParams,
+): string {
+  return params.cwd ? resolve(params.cwd) : context.cwd;
 }
 
 function normalizeTerminalSize(

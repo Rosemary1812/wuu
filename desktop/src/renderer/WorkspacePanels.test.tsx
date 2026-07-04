@@ -2,11 +2,17 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceRightPanel } from "./WorkspacePanels";
+import type { RuntimeContext } from "../shared/protocol";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import { workspaceDiffViewTab, workspaceToolViewTab, type WorkspaceViewTab } from "./WorkspaceViewTabs";
 
+// Renders the cwd it received so tests can assert which context prop
+// (activeContext vs workspaceContext) actually reached the terminal panel,
+// without pulling in the real xterm/node-pty-backed component.
 vi.mock("./WorkspaceTerminalPanel", () => ({
-  WorkspaceTerminalPanel: () => <div data-testid="terminal-panel" />,
+  WorkspaceTerminalPanel: ({ activeContext }: { activeContext?: RuntimeContext }) => (
+    <div data-testid="terminal-panel" data-cwd={activeContext?.cwd ?? ""} />
+  ),
 }));
 
 let container: HTMLDivElement | null = null;
@@ -183,5 +189,56 @@ describe("WorkspaceRightPanel", () => {
       picker?.querySelectorAll<HTMLButtonElement>(".workspace-tool-menu-item")[1]?.click();
     });
     expect(onOpenTool).toHaveBeenCalledWith("review");
+  });
+});
+
+describe("WorkspaceRightPanel context routing (Bug 3: worktree-fork panel root)", () => {
+  const projectContext: RuntimeContext = {
+    kind: "project",
+    project_id: "project-1",
+    cwd: "/repo/project",
+  };
+
+  it("roots the file tree on workspaceContext, not activeContext", () => {
+    const filesTab = workspaceToolViewTab("files");
+
+    // activeContext is defined but workspaceContext is left undefined: if
+    // the file tree fell back to activeContext it would render the normal
+    // "loading" panel instead of the no-project empty state, since it would
+    // never observe workspaceRoot as absent.
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[filesTab]}
+        activeTabID={filesTab.id}
+        activeContext={projectContext}
+        workspaceContext={undefined}
+      />,
+    );
+
+    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel");
+    expect(panel?.textContent).toContain("没有项目");
+  });
+
+  it("roots the terminal on workspaceContext, not activeContext", () => {
+    const terminalTab = workspaceToolViewTab("terminal");
+    const worktreeContext: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/Users/me/.wuu/worktrees/fork-1/project",
+    };
+
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[terminalTab]}
+        activeTabID={terminalTab.id}
+        activeContext={projectContext}
+        workspaceContext={worktreeContext}
+      />,
+    );
+
+    const terminalPanel = container?.querySelector<HTMLElement>('[data-testid="terminal-panel"]');
+    expect(terminalPanel?.getAttribute("data-cwd")).toBe(worktreeContext.cwd);
   });
 });

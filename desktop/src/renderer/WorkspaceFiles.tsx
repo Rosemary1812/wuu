@@ -74,7 +74,7 @@ export function WorkspaceFileTree({
     }));
 
     void window.wuu
-      .listWorkspaceDirectory(directoryPath)
+      .listWorkspaceDirectory(directoryPath, expectedWorkspaceRoot)
       .then((result: WorkspaceDirectoryListResult) => {
         if (workspaceRootRef.current !== expectedWorkspaceRoot) {
           return;
@@ -573,7 +573,7 @@ export function WorkspaceFilePreview({
     setLoading(true);
     setError(undefined);
     void window.wuu
-      .readWorkspaceFile(selectedWorkspaceFilePath)
+      .readWorkspaceFile(selectedWorkspaceFilePath, activeContext?.cwd)
       .then((result) => {
         if (!cancelled) {
           setFile(result);
@@ -593,7 +593,7 @@ export function WorkspaceFilePreview({
     return () => {
       cancelled = true;
     };
-  }, [selectedWorkspaceFilePath]);
+  }, [activeContext?.cwd, selectedWorkspaceFilePath]);
 
   if (!activeContext) {
     return (

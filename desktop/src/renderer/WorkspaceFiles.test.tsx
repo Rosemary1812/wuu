@@ -111,9 +111,9 @@ describe("WorkspaceFileTree", () => {
 
     await settleDirectoryLoads();
 
-    expect(listWorkspaceDirectory).toHaveBeenCalledWith("");
-    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src");
-    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src/components");
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("", "/repo");
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src", "/repo");
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src/components", "/repo");
 
     const selected = container.querySelector<HTMLButtonElement>(
       ".workspace-file-tree-row.selected",
@@ -124,6 +124,33 @@ describe("WorkspaceFileTree", () => {
       block: "nearest",
       inline: "nearest",
     });
+  });
+
+  it("forwards a worktree root that differs from /repo through to the preload API", async () => {
+    const worktreeContext: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/worktrees/fork-1",
+    };
+    listWorkspaceDirectory.mockResolvedValueOnce({
+      root: "/worktrees/fork-1",
+      path: "",
+      entries: [{ kind: "file", name: "README.md", path: "README.md" }],
+      truncated: false,
+    });
+
+    await render(
+      <WorkspaceFileTree
+        activeContext={worktreeContext}
+        open
+        onOpenFile={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("", "/worktrees/fork-1");
+    expect(listWorkspaceDirectory).not.toHaveBeenCalledWith("", "/repo");
   });
 
   it("reads an absolute selected file path relative to the workspace root", async () => {
@@ -137,7 +164,7 @@ describe("WorkspaceFileTree", () => {
 
     await settleDirectoryLoads();
 
-    expect(readWorkspaceFile).toHaveBeenCalledWith("src/components/Button.tsx");
+    expect(readWorkspaceFile).toHaveBeenCalledWith("src/components/Button.tsx", "/repo");
     expect(container.textContent).toContain("button code");
   });
 

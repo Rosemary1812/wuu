@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeContext, Thread, ThreadItem, Turn } from "../shared/protocol";
+import type {
+  DesktopProject,
+  RuntimeContext,
+  Thread,
+  ThreadItem,
+  Turn,
+} from "../shared/protocol";
 import {
   activePlanUpdateForThread,
   activeTurnTokenSpeed,
@@ -25,7 +31,9 @@ import {
   openForkThreadAsPrimary,
   queryTextsForThread,
   reduceServerEvent,
+  resolveThreadRuntimeContext,
   scratchThreadSummaries,
+  workspacePanelContext,
   sortThreads,
   summarizeThreadsForSidebar,
   threadBelongsToProject,
@@ -293,6 +301,146 @@ describe("summarizeThreadsForSidebar", () => {
     expect(threadProjectPath(summary)).toBe("/repo/project");
     expect(threadBelongsToProject(summary, project)).toBe(true);
     expect(isScratchThread(summary, [project])).toBe(false);
+  });
+});
+
+describe("resolveThreadRuntimeContext", () => {
+  const project: DesktopProject = {
+    id: "project-1",
+    name: "project",
+    path: "/repo/project",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("resolves a project thread to that project's context", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    thread.cwd = project.path;
+    thread.workspace_kind = "project";
+
+    expect(resolveThreadRuntimeContext(thread, [project])).toEqual({
+      kind: "project",
+      project_id: project.id,
+      cwd: project.path,
+    });
+  });
+
+  it("resolves a scratch thread to a no_project context rooted at its own cwd", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    thread.cwd = "/Users/me/.wuu/scratch/2026-07-03";
+    thread.workspace_kind = "scratch";
+
+    expect(resolveThreadRuntimeContext(thread, [project])).toEqual({
+      kind: "no_project",
+      cwd: thread.cwd,
+    });
+  });
+
+  it("resolves a DM thread to a no_project context rooted at its own cwd", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi Andy"]),
+      cwd: "/Users/me/.wuu/agents/andy/home",
+      workspace_kind: "dm",
+      dm_participant_id: "andy",
+    };
+
+    expect(resolveThreadRuntimeContext(thread, [project])).toEqual({
+      kind: "no_project",
+      cwd: thread.cwd,
+    });
+  });
+
+  it("has no registered project to match against and falls back to no_project", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    thread.cwd = "/Users/me/some/random/cwd";
+    thread.workspace_kind = "scratch";
+
+    expect(resolveThreadRuntimeContext(thread, [])).toEqual({
+      kind: "no_project",
+      cwd: thread.cwd,
+    });
+  });
+
+  it("prefers a cwd match against a registered project over a stale workspace_kind label, consistent with isScratchThread", () => {
+    // Same fixture shape as the "groups worktree fork sessions" case above:
+    // cwd belongs to the project, but workspace_kind still says "scratch"
+    // (e.g. a legacy thread from before the project was registered at that
+    // path). isScratchThread treats the cwd match as authoritative and
+    // returns false (not scratch); resolveThreadRuntimeContext must agree
+    // and resolve to the project's context rather than no_project.
+    const thread = threadWithUserTexts(["continue in a worktree"]);
+    thread.cwd = "/Users/me/.wuu/worktrees/fork-1/project";
+    thread.workspace_kind = "scratch";
+    thread.worktree = {
+      path: "/Users/me/.wuu/worktrees/fork-1/project",
+      base_repo: project.path,
+      base_head: "d955824f",
+    };
+
+    expect(isScratchThread(thread, [project])).toBe(false);
+    expect(resolveThreadRuntimeContext(thread, [project])).toEqual({
+      kind: "project",
+      project_id: project.id,
+      cwd: project.path,
+    });
+  });
+});
+
+describe("workspacePanelContext", () => {
+  const projectContext: RuntimeContext = {
+    kind: "project",
+    project_id: "project-1",
+    cwd: "/repo/project",
+  };
+
+  it("returns activeContext unchanged when there is no active thread", () => {
+    expect(workspacePanelContext(projectContext, undefined)).toBe(
+      projectContext,
+    );
+  });
+
+  it("returns the very same activeContext reference when the thread's cwd matches it", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    thread.cwd = projectContext.cwd;
+
+    expect(workspacePanelContext(projectContext, thread)).toBe(projectContext);
+  });
+
+  it("returns activeContext unchanged when the thread has no cwd", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    thread.cwd = "";
+
+    expect(workspacePanelContext(projectContext, thread)).toBe(projectContext);
+  });
+
+  it("overrides cwd to the thread's own cwd when it differs, preserving kind/project_id (worktree fork)", () => {
+    // Mirrors a thread/fork "worktree" thread: resolveThreadRuntimeContext
+    // resolves it to the base project's context (threadProjectPath prefers
+    // worktree.base_repo), but the thread itself runs out of the worktree
+    // directory. The workspace panel should follow the thread.
+    const thread = threadWithUserTexts(["continue in a worktree"]);
+    thread.cwd = "/Users/me/.wuu/worktrees/fork-1/project";
+    thread.worktree = {
+      path: thread.cwd,
+      base_repo: projectContext.cwd,
+      base_head: "d955824f",
+    };
+
+    expect(workspacePanelContext(projectContext, thread)).toEqual({
+      kind: "project",
+      project_id: projectContext.project_id,
+      cwd: thread.cwd,
+    });
+  });
+
+  it("falls back to a no_project context rooted at the thread's cwd when there is no activeContext", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    thread.cwd = "/Users/me/.wuu/scratch/2026-07-03";
+
+    expect(workspacePanelContext(undefined, thread)).toEqual({
+      kind: "no_project",
+      cwd: thread.cwd,
+    });
   });
 });
 

@@ -26,13 +26,14 @@ const api: WuuDesktopApi = {
   commitGitChanges: (params) => ipcRenderer.invoke("wuu:git-commit", params),
   createPullRequest: (params) =>
     ipcRenderer.invoke("wuu:git-create-pr", params),
-  listWorkspaceFiles: () => ipcRenderer.invoke("wuu:file-tree-list"),
-  listWorkspaceDirectory: (path?: string) =>
-    ipcRenderer.invoke("wuu:file-directory-list", path),
-  readWorkspaceFile: (path: string) =>
-    ipcRenderer.invoke("wuu:file-read", path),
-  resolveWorkspaceFileReference: (reference: string) =>
-    ipcRenderer.invoke("wuu:file-reference-resolve", reference),
+  listWorkspaceFiles: (root?: string) =>
+    ipcRenderer.invoke("wuu:file-tree-list", root),
+  listWorkspaceDirectory: (path?: string, root?: string) =>
+    ipcRenderer.invoke("wuu:file-directory-list", path, root),
+  readWorkspaceFile: (path: string, root?: string) =>
+    ipcRenderer.invoke("wuu:file-read", path, root),
+  resolveWorkspaceFileReference: (reference: string, root?: string) =>
+    ipcRenderer.invoke("wuu:file-reference-resolve", reference, root),
   startTerminalSession: (params) =>
     ipcRenderer.invoke("wuu:terminal-start", params),
   writeTerminalSession: (id: string, data: string) =>

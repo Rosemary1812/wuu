@@ -161,7 +161,11 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
     async function startSession(): Promise<void> {
       try {
         fitAndResize();
-        const started = await window.wuu.startTerminalSession({ cols: terminal.cols, rows: terminal.rows });
+        const started = await window.wuu.startTerminalSession({
+          cols: terminal.cols,
+          rows: terminal.rows,
+          cwd: workspaceRoot
+        });
         if (disposed) {
           void window.wuu.stopTerminalSession(started.id);
           return;

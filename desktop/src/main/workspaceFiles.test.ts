@@ -119,3 +119,83 @@ describe("WorkspaceFileService file reference resolution", () => {
     });
   });
 });
+
+// Covers the worktree-fork panel-root gap: a thread's own cwd (e.g. a git
+// worktree) can differ from the active project's runtime context. Callers
+// pass that thread cwd as an explicit `root` override on each call; these
+// tests prove the override actually redirects reads/listing there (and
+// keeps its own containment checks) instead of silently falling back to
+// the constructed context's cwd.
+describe("WorkspaceFileService root override", () => {
+  it("lists a directory rooted at the override, not the constructed context", () => {
+    const defaultRoot = createWorkspace();
+    writeWorkspaceFile(defaultRoot, "default-only.txt");
+    const overrideRoot = createWorkspace();
+    writeWorkspaceFile(overrideRoot, "override-only.txt");
+
+    const service = createService(defaultRoot);
+    const result = service.directoryList(undefined, overrideRoot);
+
+    expect(result.root).toBe(overrideRoot);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["override-only.txt"]);
+  });
+
+  it("reads a file relative to the override root, not the constructed context", () => {
+    const defaultRoot = createWorkspace();
+    const overrideRoot = createWorkspace();
+    writeWorkspaceFile(overrideRoot, "notes.txt");
+
+    const service = createService(defaultRoot);
+    const result = service.readFile("notes.txt", overrideRoot);
+
+    expect(result.root).toBe(overrideRoot);
+    expect(result.absolute_path).toBe(join(overrideRoot, "notes.txt"));
+    expect(result.text).toBe("ok\n");
+  });
+
+  it("rejects a qualified file reference that escapes the override root even though it exists next to the constructed context", () => {
+    const defaultRoot = createWorkspace();
+    writeWorkspaceFile(defaultRoot, "secret.txt");
+    // Nest the override root inside the default root so "../secret.txt"
+    // from the override resolves to a real, readable file one directory
+    // up — proving containment is enforced against the override root
+    // itself, not merely "does the resolved path exist somewhere".
+    const overrideRoot = join(defaultRoot, "worktree");
+    mkdirSync(overrideRoot, { recursive: true });
+
+    const service = createService(defaultRoot);
+
+    expect(service.resolveFileReference("../secret.txt", overrideRoot)).toMatchObject({
+      root: overrideRoot,
+      status: "missing",
+    });
+  });
+
+  it("resolves a file reference relative to the override root, not the constructed context", () => {
+    const defaultRoot = createWorkspace();
+    writeWorkspaceFile(defaultRoot, "shared-name.go");
+    const overrideRoot = createWorkspace();
+    writeWorkspaceFile(overrideRoot, "shared-name.go");
+
+    const service = createService(defaultRoot);
+    const result = service.resolveFileReference("shared-name.go", overrideRoot);
+
+    expect(result).toMatchObject({
+      root: overrideRoot,
+      status: "resolved",
+      path: "shared-name.go",
+      absolute_path: join(overrideRoot, "shared-name.go"),
+    });
+  });
+
+  it("falls back to the constructed context when no override root is given", () => {
+    const defaultRoot = createWorkspace();
+    writeWorkspaceFile(defaultRoot, "default-only.txt");
+
+    const service = createService(defaultRoot);
+    const result = service.directoryList();
+
+    expect(result.root).toBe(defaultRoot);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["default-only.txt"]);
+  });
+});
