@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -104,6 +105,27 @@ func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, res
 	if err != nil {
 		s.finish()
 		return false
+	}
+	// Crash self-heal (repair plan 2026-07-04 item #9): a dream that died
+	// with its process leaves LastStatus=running forever — the state file
+	// lies and, after an earlier completed dream, the interval gate would
+	// sit on the retry. A running state older than the dream lock's stale
+	// window (2× the dream timeout, so no live dream can still hold it) is
+	// reconciled to failed and retried immediately, bypassing both the
+	// failure backoff and the interval gate: the interval had already
+	// elapsed when the interrupted dream was allowed to start. A running
+	// state still inside the stale window may belong to a live dream in
+	// another process, so back off and let the cross-process lock arbitrate.
+	if state.LastStatus == sessionmemory.DreamStatusRunning {
+		if !state.LastStartedAt.IsZero() && now.Sub(state.LastStartedAt) < sessionDreamLockStaleAfter {
+			s.finish()
+			return false
+		}
+		if err := sessionmemory.RecordDreamFailed(s.workspaceStateDir, now, errors.New("interrupted: process exited while a dream was running (stale running state reconciled)")); err != nil {
+			s.finish()
+			return false
+		}
+		return true
 	}
 	if state.LastStatus == sessionmemory.DreamStatusFailed &&
 		!state.LastFinishedAt.IsZero() &&

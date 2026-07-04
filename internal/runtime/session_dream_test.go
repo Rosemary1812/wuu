@@ -73,6 +73,78 @@ func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
 	scheduler.finish()
 }
 
+// TestSessionDreamScheduler_ShouldStartReconcilesStaleRunningState is the
+// crash story for repair item #9: a dream that died with its process leaves
+// LastStatus=running. Once that state is older than 2× the dream timeout it
+// must be reconciled to failed and retried immediately — not blocked by the
+// interval gate of an earlier completed dream, and not left lying forever.
+func TestSessionDreamScheduler_ShouldStartReconcilesStaleRunningState(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	history := makeProfileMemoryReviewHistory(1)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+
+	// Crashed mid-dream: started well past the stale window, never finished.
+	// LastRunAt is recent enough that the interval gate alone would block —
+	// the stale-running reconciliation must win.
+	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{
+		LastRunAt:     now.Add(-24 * time.Hour),
+		LastStartedAt: now.Add(-time.Hour),
+		LastStatus:    sessionmemory.DreamStatusRunning,
+	}); err != nil {
+		t.Fatalf("SaveDreamState stale running: %v", err)
+	}
+	if !scheduler.shouldStart(history, agent.LoopResult{Content: "done"}, now) {
+		t.Fatal("stale running dream state must be reconciled and retried immediately")
+	}
+	scheduler.finish()
+
+	state, err := sessionmemory.LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState: %v", err)
+	}
+	if state.LastStatus != sessionmemory.DreamStatusFailed {
+		t.Fatalf("stale running state should settle as failed, got %q", state.LastStatus)
+	}
+	if !strings.Contains(state.LastError, "interrupted") {
+		t.Fatalf("reconciled state should carry the interruption reason, got %q", state.LastError)
+	}
+	if !state.LastFinishedAt.Equal(now) {
+		t.Fatalf("LastFinishedAt = %v, want %v", state.LastFinishedAt, now)
+	}
+}
+
+// TestSessionDreamScheduler_ShouldStartLeavesFreshRunningState asserts a
+// running state inside the stale window (a dream may genuinely be live in
+// another process) is left alone: the cross-process lock is the arbiter.
+func TestSessionDreamScheduler_ShouldStartLeavesFreshRunningState(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	history := makeProfileMemoryReviewHistory(1)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+
+	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{
+		LastStartedAt: now.Add(-time.Minute),
+		LastStatus:    sessionmemory.DreamStatusRunning,
+	}); err != nil {
+		t.Fatalf("SaveDreamState fresh running: %v", err)
+	}
+	if scheduler.shouldStart(history, agent.LoopResult{Content: "done"}, now) {
+		t.Fatal("a possibly-live running dream must not be reaped inside the stale window")
+	}
+	state, err := sessionmemory.LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState: %v", err)
+	}
+	if state.LastStatus != sessionmemory.DreamStatusRunning {
+		t.Fatalf("fresh running state must stay untouched, got %q", state.LastStatus)
+	}
+}
+
 func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
