@@ -35,24 +35,6 @@ const CONVERSATION_SCROLLBAR_HIDE_DELAY_MS = AUTO_FOLLOW_SCROLLBAR_HIDE_DELAY_MS
 const CONVERSATION_USER_SCROLL_AWAY_INTENT_WINDOW_MS =
   USER_SCROLL_AWAY_INTENT_WINDOW_MS;
 
-// Gap the floating "jump to latest / progress" pill cluster keeps above
-// the dock composer, and that the message flow keeps above the cluster.
-// Must match `.jump-to-latest-cluster`'s
-// `bottom: calc(var(--dock-composer-height) + 12px)` in
-// conversation-shell.css — this constant feeds the combined
-// `--bottom-dock-height` token below so the message flow reserves enough
-// bottom padding to clear the pill cluster whenever it is showing.
-const BOTTOM_DOCK_CLUSTER_GAP_PX = 12;
-
-// Rendered height of the floating "jump to latest / progress" pill cluster
-// (`.jump-to-latest-pill` / `.jump-to-latest-progress { height: 38px }` in
-// conversation-shell.css). Used as the pre-measurement default for the
-// reserved cluster band in `--bottom-dock-height`; the overlay ResizeObserver
-// refines it to the real rendered height once the cluster mounts. See
-// `applyBottomDockHeight` for why the band is reserved constantly and never
-// collapsed once known.
-const JUMP_TO_LATEST_CLUSTER_HEIGHT_PX = 38;
-
 function cssPixelValue(value: string): number {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -130,16 +112,6 @@ export function useConversationScrollState({
   splitPaneRefs: MutableRefObject<Record<ConversationPaneID, HTMLElement | null>>;
   conversationPaneRef: RefObject<HTMLElement | null>;
   dockComposerRef: (node: HTMLElement | null) => void;
-  /**
-   * Attach to the floating "jump to latest / progress" pill cluster
-   * (`.jump-to-latest-cluster`). Its rendered height is measured while the
-   * cluster is mounted and folded — as a constant reservation that persists
-   * after it unmounts — into the `--bottom-dock-height` CSS variable, which the
-   * message flow's bottom padding uses so the cluster never overlaps the last
-   * message's persistent action row and, critically, so that padding does not
-   * change (and jump the content) when the cluster mounts or unmounts.
-   */
-  bottomOverlayRef: (node: HTMLElement | null) => void;
   scheduleStreamScroll: () => void;
   handleConversationScroll: (scrolledNode?: HTMLElement) => void;
   scrollConversationToBottom: (options?: {
@@ -177,17 +149,6 @@ export function useConversationScrollState({
     setDockComposerNode(node);
   }, []);
   const dockComposerHeightRef = useRef(0);
-  const [bottomOverlayNode, setBottomOverlayNode] = useState<HTMLElement | null>(null);
-  const bottomOverlayRef = useCallback((node: HTMLElement | null) => {
-    setBottomOverlayNode(node);
-  }, []);
-  // Seeded with the cluster's default height (not 0) so the reserved band in
-  // `--bottom-dock-height` exists from the first paint and never has to grow
-  // in when the pill first appears. The overlay ResizeObserver overwrites this
-  // with the measured height while the cluster is mounted and — critically —
-  // never resets it back to 0 on unmount, so the reservation stays put when the
-  // pill disappears at the instant the user reaches the bottom.
-  const bottomOverlayHeightRef = useRef(JUMP_TO_LATEST_CLUSTER_HEIGHT_PX);
   const conversationAutoFollowRef = useRef(true);
   // Mirrors the ref for the UI: true when the user has scrolled up out of
   // the bottom band. Drives the "Jump to latest" pill visibility.
@@ -230,37 +191,6 @@ export function useConversationScrollState({
   // callback consumes the height already carried by ResizeObserver entries
   // instead of rereading scroll metrics on every drag frame.
   const liveResizeBaselineClientHeightRef = useRef<number | null>(null);
-
-  // Combines the dock composer height with a constant reservation for the
-  // floating "jump to latest / progress" pill cluster into
-  // `--bottom-dock-height`. Read by both the dock composer and bottom overlay
-  // ResizeObserver effects below, since either one changing can move the total.
-  //
-  // The cluster band is reserved whenever the dock composer is present and does
-  // NOT track the cluster's live mount state. The cluster only mounts while the
-  // user is scrolled away and unmounts the instant they reach the bottom; if
-  // the reserved band collapsed on that frame, the message flow's bottom
-  // padding — and therefore scrollHeight — would shrink by the cluster height
-  // exactly as the user lands at the bottom, and the browser would clamp
-  // scrollTop to the now-shorter content, jumping the whole conversation.
-  // Reserving the band constantly keeps the geometry stable across the
-  // mount/unmount transition; the only cost is a fixed strip of space below the
-  // last message while the user is parked at the bottom.
-  //
-  // With no dock composer (split / skills / empty views) there is no pill
-  // either, so the band is omitted and the token collapses to the composer
-  // height (0), preserving the prior behavior for those views.
-  function applyBottomDockHeight(pane: HTMLElement | null): void {
-    const composerHeight = dockComposerHeightRef.current;
-    const clusterBand =
-      composerHeight > 0
-        ? BOTTOM_DOCK_CLUSTER_GAP_PX + bottomOverlayHeightRef.current
-        : 0;
-    pane?.style.setProperty(
-      "--bottom-dock-height",
-      `${composerHeight + clusterBand}px`,
-    );
-  }
 
   function conversationViewport(): HTMLElement | undefined {
     if (splitConversation) {
@@ -905,7 +835,6 @@ export function useConversationScrollState({
       const visibilityChanged = wasVisible !== isVisible;
       dockComposerHeightRef.current = nextHeight;
       pane?.style.setProperty("--dock-composer-height", nextValue);
-      applyBottomDockHeight(pane);
       // Only re-scroll on a visibility transition (composer hidden → visible
       // or vice versa), not on every continuous resize from typing or focus
       // changes. Continuous resize firing scrollConversationToBottom used to
@@ -950,45 +879,6 @@ export function useConversationScrollState({
     scrollConversationToBottom
   ]);
 
-  // Refines the reserved pill-cluster band for the floating
-  // "jump to latest / progress" cluster. The cluster mounts and unmounts based
-  // on `userScrolledAway` / `activePlanVisible`; this effect measures its real
-  // rendered height while it is mounted and — unlike the dock composer effect —
-  // retains that height when it unmounts, so the reserved band in
-  // `--bottom-dock-height` stays put across the transition (see
-  // `applyBottomDockHeight` for why collapsing it would jump the conversation).
-  useLayoutEffect(() => {
-    const node = bottomOverlayNode;
-    const pane = conversationPaneRef.current;
-    const applyHeight = (nextHeight: number): void => {
-      if (bottomOverlayHeightRef.current === nextHeight) {
-        return;
-      }
-      bottomOverlayHeightRef.current = nextHeight;
-      applyBottomDockHeight(pane);
-    };
-
-    if (!node) {
-      // Cluster unmounted (the user reached the bottom, or the plan finished).
-      // Deliberately keep the last reserved height instead of resetting it to
-      // 0: collapsing the reservation here is exactly what would jump the
-      // content as the user lands at the bottom. The seeded default keeps the
-      // band reserved even before the cluster ever mounts.
-      return undefined;
-    }
-
-    const updateHeight = (): void => {
-      applyHeight(Math.ceil(node.getBoundingClientRect().height));
-    };
-
-    updateHeight();
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(node);
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [bottomOverlayNode]);
-
   useEffect(() => {
     return () => {
       if (streamScrollFrameRef.current !== undefined) {
@@ -1010,7 +900,6 @@ export function useConversationScrollState({
     splitPaneRefs,
     conversationPaneRef,
     dockComposerRef,
-    bottomOverlayRef,
     scheduleStreamScroll,
     handleConversationScroll,
     scrollConversationToBottom,

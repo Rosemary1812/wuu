@@ -94,12 +94,6 @@
   --conversation-visible-inset-left: 0px;
   --conversation-visible-inset-right: 0px;
   --dock-composer-height: 0px;
-  /* Composer height plus the floating "jump to latest / progress" pill
-     cluster's height (when mounted) plus the gap between them. Written by
-     `useConversationScrollState`'s ResizeObserver effects; the message
-     flow's bottom padding (workspace.css) reads it so the cluster never
-     overlaps the last message's persistent action row. */
-  --bottom-dock-height: 0px;
   grid-column: 2;
   grid-row: 1;
   display: grid;

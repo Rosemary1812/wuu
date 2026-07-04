@@ -1813,7 +1813,6 @@ export function App(): JSX.Element {
     splitPaneRefs,
     conversationPaneRef,
     dockComposerRef,
-    bottomOverlayRef,
     scheduleStreamScroll,
     handleConversationScroll,
     scrollConversationToBottom,
@@ -8334,7 +8333,6 @@ export function App(): JSX.Element {
           <div
             className="jump-to-latest-cluster"
             aria-label="当前位置与进度"
-            ref={bottomOverlayRef}
           >
             {userScrolledAway ? (
               <button

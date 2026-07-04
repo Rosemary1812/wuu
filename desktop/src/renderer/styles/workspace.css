@@ -2387,13 +2387,15 @@
 }
 
 .scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width {
-  /* Falls back to --dock-composer-height alone before the ResizeObserver
-     effect in useConversationScrollState has written --bottom-dock-height
-     (or in environments where JS never runs, e.g. static snapshots). Once
-     written, --bottom-dock-height already folds in the pill cluster's
-     height, so the flow reserves enough room to clear both the composer
-     and the cluster. */
-  padding-bottom: calc(var(--bottom-dock-height, var(--dock-composer-height)) + 12px);
+  /* Reserve room for the floating dock composer so the last message's
+     persistent action row scrolls clear of it. The floating "jump to latest /
+     progress" pill cluster is intentionally NOT reserved here: it only mounts
+     while the user is scrolled away and unmounts the instant they reach the
+     bottom, so reserving its height would either jump the content on arrival
+     (reserved dynamically) or leave a permanent strip of empty space below the
+     last message (reserved constantly). The pill floats over the flow instead
+     and may briefly overlap the last action row while it is showing. */
+  padding-bottom: calc(var(--dock-composer-height) + 12px);
 }
 
 .conversation-grid-guides {

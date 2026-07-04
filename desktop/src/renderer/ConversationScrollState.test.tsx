@@ -398,11 +398,7 @@ describe("useConversationScrollState — dock composer height", () => {
     document.body.removeChild(container);
   });
 
-  function DockComposerProbe({
-    overlayVisible,
-  }: {
-    overlayVisible: boolean;
-  }): ReactNode {
+  function DockComposerProbe(): ReactNode {
     const h = useConversationScrollState({
       activeThreadID: "thread-1",
       activePane: "primary",
@@ -439,15 +435,6 @@ describe("useConversationScrollState — dock composer height", () => {
           "data-testid": "composer-frame",
         }),
       ),
-      // Mirrors App.tsx: `.jump-to-latest-cluster` only mounts while the
-      // "跳到最新" pill or the progress chip is showing, so the bottom
-      // overlay probe node is conditionally rendered too.
-      overlayVisible
-        ? createElement("div", {
-            ref: h.bottomOverlayRef,
-            "data-testid": "bottom-overlay",
-          })
-        : null,
     );
   }
 
@@ -458,7 +445,7 @@ describe("useConversationScrollState — dock composer height", () => {
   } {
     act(() => {
       root = createRoot(container);
-      root.render(createElement(DockComposerProbe, { overlayVisible: false }));
+      root.render(createElement(DockComposerProbe));
     });
 
     const pane = container.querySelector<HTMLElement>(
@@ -474,17 +461,6 @@ describe("useConversationScrollState — dock composer height", () => {
       throw new Error("DockComposerProbe did not render");
     }
     return { pane, dockComposer, frame };
-  }
-
-  function setBottomOverlayVisible(visible: boolean): void {
-    if (!root) throw new Error("not mounted");
-    act(() => {
-      root!.render(createElement(DockComposerProbe, { overlayVisible: visible }));
-    });
-  }
-
-  function queryBottomOverlay(): HTMLElement | null {
-    return container.querySelector<HTMLElement>("[data-testid='bottom-overlay']");
   }
 
   function stubRectHeight(node: HTMLElement, height: number): void {
@@ -523,33 +499,6 @@ describe("useConversationScrollState — dock composer height", () => {
     flushResizeObserversFor(frame);
 
     expect(pane.style.getPropertyValue("--dock-composer-height")).toBe("452px");
-  });
-
-  it("reserves the pill cluster band in --bottom-dock-height and keeps it stable across the pill mount/unmount", () => {
-    const { pane, dockComposer } = mountDockComposerProbe();
-    stubRectHeight(dockComposer, 168);
-    flushResizeObserversFor(dockComposer);
-    expect(pane.style.getPropertyValue("--dock-composer-height")).toBe("168px");
-    // No pill cluster mounted yet, but the band is reserved from the seeded
-    // default so the message flow's bottom padding is stable:
-    // 168px composer + 12px gap + 38px reserved pill cluster band.
-    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
-
-    // Pill cluster mounts (the user scrolled away): the ResizeObserver adopts
-    // the real rendered height, still 218px here since it matches the seed.
-    setBottomOverlayVisible(true);
-    const overlay = queryBottomOverlay();
-    if (!overlay) throw new Error("bottom overlay did not mount");
-    stubRectHeight(overlay, 38);
-    flushResizeObserversFor(overlay);
-    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
-
-    // Pill cluster unmounts at the instant the user reaches the bottom. The
-    // reservation must NOT collapse back to the composer height: collapsing it
-    // shrinks the message flow's scrollHeight and jumps the conversation as the
-    // user lands at the bottom. This is the regression this test guards.
-    setBottomOverlayVisible(false);
-    expect(pane.style.getPropertyValue("--bottom-dock-height")).toBe("218px");
   });
 });
 
