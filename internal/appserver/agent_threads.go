@@ -101,9 +101,7 @@ func (s *Server) forwardAgentStreamNotifications(threadID string, control *agent
 			th.mu.Lock()
 			batch := th.applyStreamEventLocked(turn.ID, n.Event, now)
 			th.mu.Unlock()
-			for _, item := range batch {
-				_ = s.writeNotification(item.method, item.params)
-			}
+			s.notifyOutboundBatch(batch)
 			_ = s.writeNotification(NotificationTurnEvent, TurnEventNotification{
 				ThreadID: th.ID,
 				TurnID:   turn.ID,
@@ -199,7 +197,7 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		Item:          item,
 		CompletedAtMS: now.UnixMilli(),
 	})
-	_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+	_ = s.notifyThreadUpdated(thread)
 	s.routeParticipantMessageToResidents(th, msg, name)
 	return nil
 }

@@ -874,11 +874,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	notify := func(method string, params any) {
 		_ = s.writeNotification(method, params)
 	}
-	notifyBatch := func(batch []outboundNotification) {
-		for _, item := range batch {
-			notify(item.method, item.params)
-		}
-	}
+	// Batches built under the threadState lock flush through the server's
+	// group-broadcast outlet so a thread/updated snapshot in the batch is
+	// re-wrapped with group Members (see notifyOutboundBatch).
+	notifyBatch := s.notifyOutboundBatch
 	runner := s.rt.StreamRunner
 	if threadRuntime != nil && threadRuntime.StreamRunner != nil {
 		runner = threadRuntime.StreamRunner

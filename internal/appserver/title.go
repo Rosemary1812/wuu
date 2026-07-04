@@ -305,7 +305,7 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 	res.PreviewAfter = thread.Preview
 
 	if notify {
-		if err := s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread}); err != nil {
+		if err := s.notifyThreadUpdated(thread); err != nil {
 			res.NotificationErr = err
 			providers.DebugLogf("title[%s]: notification failed: %v", threadID, err)
 			return res, err
@@ -475,7 +475,7 @@ func (s *Server) regenerateTitleWithOverride(ctx context.Context, req Request, t
 		if terr != nil {
 			return s.writeResponse(req.ID, ThreadRegenerateTitleResult{TitleGenerationResult: result}, terr)
 		}
-		_ = s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+		_ = s.notifyThreadUpdated(thread)
 		result.PersistedTitle = metadata.Title
 		result.PreviewAfter = thread.Preview
 		result.Notified = true

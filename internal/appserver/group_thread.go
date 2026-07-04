@@ -86,9 +86,7 @@ func (s *Server) ensureAllChannel() (string, error) {
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
-	if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-		Thread: thread,
-	}); err != nil {
+	if err := s.notifyThreadStarted(thread); err != nil {
 		return "", err
 	}
 	return th.ID, nil
@@ -198,6 +196,45 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	}
 	s.routeUserMessageToResidents(th, userMsg, mentioned)
 	return nil
+}
+
+// notifyThreadStarted is the single outlet for thread/started broadcasts.
+// Every send point must route through it instead of calling
+// writeNotification directly: the snapshot is wrapped through
+// threadWithGroupMembers first, so a group thread's first broadcast always
+// carries Members. A bare snapshotLocked() value would render the channel
+// with no member chips until some other wrapped payload happened to arrive
+// (consistency plan 2026-07-04 §1 #15).
+func (s *Server) notifyThreadStarted(thread Thread) error {
+	return s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
+		Thread: s.threadWithGroupMembers(thread),
+	})
+}
+
+// notifyThreadUpdated mirrors notifyThreadStarted for thread/updated. This
+// one guards against the inverse failure: the frontend replaces its cached
+// thread wholesale on thread/updated, so a bare group snapshot would wipe
+// Members the UI already had.
+func (s *Server) notifyThreadUpdated(thread Thread) error {
+	return s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{
+		Thread: s.threadWithGroupMembers(thread),
+	})
+}
+
+// notifyOutboundBatch flushes notifications that were built while holding a
+// threadState lock (applyStreamEventLocked / takePendingSteersLocked).
+// Those builders only have the bare snapshot, so any thread/updated in the
+// batch is re-routed through notifyThreadUpdated here — outside the lock —
+// to keep the "group broadcasts always carry Members" invariant in one
+// place.
+func (s *Server) notifyOutboundBatch(batch []outboundNotification) {
+	for _, item := range batch {
+		if params, ok := item.params.(ThreadUpdatedNotification); ok {
+			_ = s.notifyThreadUpdated(params.Thread)
+			continue
+		}
+		_ = s.writeNotification(item.method, item.params)
+	}
 }
 
 // threadWithGroupMembers populates Thread.Members for group threads (the

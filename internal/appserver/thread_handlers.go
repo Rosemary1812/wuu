@@ -79,9 +79,7 @@ func (s *Server) handleThreadStart(req Request) error {
 		if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
 			return err
 		}
-		if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-			Thread: thread,
-		}); err != nil {
+		if err := s.notifyThreadStarted(thread); err != nil {
 			return err
 		}
 		s.pruneResidentThreads(thread.ID)
@@ -111,9 +109,7 @@ func (s *Server) handleThreadStart(req Request) error {
 		if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
 			return err
 		}
-		if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-			Thread: thread,
-		}); err != nil {
+		if err := s.notifyThreadStarted(thread); err != nil {
 			return err
 		}
 		s.pruneResidentThreads(thread.ID)
@@ -157,9 +153,7 @@ func (s *Server) handleThreadStart(req Request) error {
 	if err := s.writeResponse(req.ID, ThreadStartResult{Thread: thread}, nil); err != nil {
 		return err
 	}
-	if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-		Thread: thread,
-	}); err != nil {
+	if err := s.notifyThreadStarted(thread); err != nil {
 		return err
 	}
 	s.pruneResidentThreads(thread.ID)
@@ -537,9 +531,7 @@ func (s *Server) handleThreadFork(req Request) error {
 	if err := s.writeResponse(req.ID, ThreadForkResult{Thread: thread, Worktree: thread.Worktree}, nil); err != nil {
 		return err
 	}
-	if err := s.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-		Thread: thread,
-	}); err != nil {
+	if err := s.notifyThreadStarted(thread); err != nil {
 		return err
 	}
 	s.pruneResidentThreads(thread.ID, source.thread.ID)
@@ -603,7 +595,7 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 	if err := s.writeResponse(req.ID, ThreadEditMessageResult{Thread: thread, Draft: draft}, nil); err != nil {
 		return err
 	}
-	return s.writeNotification(NotificationThreadUpdated, ThreadUpdatedNotification{Thread: thread})
+	return s.notifyThreadUpdated(thread)
 }
 
 func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThread, error) {

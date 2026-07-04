@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -304,5 +305,76 @@ func TestThreadMembersRemoveRejectsNonMember(t *testing.T) {
 	}
 	if len(members) != 1 || members[0] != ivy {
 		t.Fatalf("membership should be untouched by a failed removal, got %+v", members)
+	}
+}
+
+// The #all channel's first broadcast must already carry the implicit
+// roster as Members: ensureAllChannel used to send a bare snapshot, so the
+// channel appeared with no member chips until some other wrapped payload
+// arrived (consistency plan 2026-07-04 §1 #15).
+func TestEnsureAllChannelBroadcastCarriesMembers(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+	srv := New(rt, &lockedBuffer{})
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+
+	if _, err := srv.ensureAllChannel(); err != nil {
+		t.Fatalf("ensureAllChannel: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	started := remarshal[ThreadStartedNotification](t, notificationByMethod(t, msgs, NotificationThreadStarted)["params"])
+	memberIDs := make(map[string]bool, len(started.Thread.Members))
+	for _, m := range started.Thread.Members {
+		memberIDs[m.ID] = true
+	}
+	if !memberIDs[ivy] || !memberIDs[bea] {
+		t.Fatalf("thread/started for #all must carry the named roster as members, got %+v", started.Thread.Members)
+	}
+}
+
+// A participant message landing in a group thread rebroadcasts the thread
+// via thread/updated. The frontend replaces its cached thread wholesale on
+// that notification, so the snapshot must carry Members — a bare snapshot
+// would wipe the member chips the UI already had (§1 #15).
+func TestGroupParticipantMessageThreadUpdatedCarriesMembers(t *testing.T) {
+	client := &fakeClient{response: providersResponse("ok")}
+	rt := newTestRuntime(t, client)
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	group := startNamedGroupThreadForTest(t, srv, "release")
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+	if err := session.AddThreadMember(rt.SessionDir, group.ID, bea); err != nil {
+		t.Fatalf("AddThreadMember Bea: %v", err)
+	}
+
+	if err := srv.publishParticipantMessage(group.ID, agentcontrol.ParticipantMessage{
+		ParticipantID: ivy,
+		Kind:          "result",
+		Text:          "shipping update",
+	}); err != nil {
+		t.Fatalf("publishParticipantMessage: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	var updated *ThreadUpdatedNotification
+	for _, raw := range notificationsByMethod(msgs, NotificationThreadUpdated) {
+		params := remarshal[ThreadUpdatedNotification](t, raw["params"])
+		if params.Thread.ID == group.ID {
+			updated = &params
+			break
+		}
+	}
+	if updated == nil {
+		t.Fatalf("no thread/updated notification for group thread %q in %+v", group.ID, msgs)
+	}
+	memberIDs := make(map[string]bool, len(updated.Thread.Members))
+	for _, m := range updated.Thread.Members {
+		memberIDs[m.ID] = true
+	}
+	if !memberIDs[ivy] || !memberIDs[bea] {
+		t.Fatalf("thread/updated for a group thread must carry members, got %+v", updated.Thread.Members)
 	}
 }

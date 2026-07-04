@@ -78,10 +78,7 @@ func (m *residentGroupManager) CreateGroup(ctx context.Context, title string) (s
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
-	thread = m.server.threadWithGroupMembers(thread)
-	if err := m.server.writeNotification(NotificationThreadStarted, ThreadStartedNotification{
-		Thread: thread,
-	}); err != nil {
+	if err := m.server.notifyThreadStarted(thread); err != nil {
 		return "", err
 	}
 	return th.ID, nil
