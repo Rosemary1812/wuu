@@ -379,6 +379,17 @@ code,
   user-select: none;
 }
 
+/* An Electron <webview> (the browser tool) — and any <iframe> — renders in a
+   separate hit-test layer that swallows the window-level pointermove/pointerup
+   a drag-resize depends on. Cursor/user-select alone don't help: the moment the
+   pointer crosses the embedded browser mid-drag, the window stops receiving
+   events and the right-panel resize freezes. Making frames transparent to
+   pointer events for the duration of any resize keeps the drag alive. */
+.window-resizing webview,
+.window-resizing iframe {
+  pointer-events: none;
+}
+
 .window-resizing .sidebar {
   box-shadow: none;
   backdrop-filter: none;
