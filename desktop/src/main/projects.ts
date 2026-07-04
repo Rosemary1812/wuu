@@ -1,11 +1,5 @@
 import { app } from "electron";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
@@ -279,27 +273,20 @@ function createNoProjectContext(): RuntimeContext {
   return { kind: "no_project", cwd: allocateNoProjectCwd() };
 }
 
-function allocateNoProjectCwd(): string {
-  const baseDir = join(wuuHomePath(), "scratch");
-  mkdirSync(baseDir, { recursive: true });
-  const prefix = formatLocalDate(new Date());
-  for (let index = 1; index <= 999; index++) {
-    const suffix = index === 1 ? "" : `-${index}`;
-    const candidate = join(baseDir, `${prefix}${suffix}`);
-    if (existsSync(candidate)) {
-      continue;
-    }
-    mkdirSync(candidate, { recursive: true });
-    return candidate;
-  }
-  throw new Error(`failed to allocate no-project workspace under ${baseDir}`);
-}
+// SCRATCH_WORKSPACE_DIRNAME is the single, stable directory backing the "对话"
+// workspace. Every no-project conversation shares this one cwd — one workspace,
+// many sessions — rather than getting its own dated directory. This keeps the
+// "对话" workspace always present (it can never be moved/deleted, so it is never
+// "unavailable"), and lets the draft-tab-per-context dedup collapse repeated
+// "新建对话" clicks onto a single shared draft. Legacy per-date scratch threads
+// keep their own recorded cwd and still list under 对话 via the isScratchThread
+// cwd check.
+const SCRATCH_WORKSPACE_DIRNAME = "default";
 
-function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function allocateNoProjectCwd(): string {
+  const dir = join(wuuHomePath(), "scratch", SCRATCH_WORKSPACE_DIRNAME);
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 function projectID(projectPath: string): string {
