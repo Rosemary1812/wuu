@@ -227,7 +227,7 @@ func harnessStatusFromReportOutcome(outcome string) harness.TaskStatus {
 
 func isTerminalHarnessStatus(status harness.TaskStatus) bool {
 	switch status {
-	case harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled:
+	case harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled, harness.TaskStatusInterrupted:
 		return true
 	default:
 		return false

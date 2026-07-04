@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -100,6 +101,45 @@ func LoadPersistedRun(path string) (PersistedRun, error) {
 		Error:         rec.Error,
 		Messages:      rec.Messages,
 	}, nil
+}
+
+// MarkPersistedRunInterrupted rewrites an on-disk run snapshot whose status
+// is still non-terminal (the writing process died mid-run) to
+// StatusInterrupted so the normal rehydrate/followup path can resume it.
+// Every other field is preserved: the original timestamps stay untouched
+// (CompletedAt is only filled when it was never set) and an existing error
+// message is kept over the reconciliation reason. Snapshots that are already
+// terminal are left alone. Returns whether the file was rewritten.
+func MarkPersistedRunInterrupted(path, reason string, now time.Time) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	var rec historyRecord
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return false, err
+	}
+	if IsTerminal(Status(rec.Status)) {
+		return false, nil
+	}
+	rec.Status = string(StatusInterrupted)
+	if strings.TrimSpace(rec.Error) == "" {
+		rec.Error = reason
+	}
+	if rec.CompletedAt.IsZero() {
+		rec.CompletedAt = now
+	}
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // persistHistory writes the sub-agent's final state to its configured

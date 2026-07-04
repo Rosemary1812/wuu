@@ -15,6 +15,13 @@ const (
 	TaskStatusCompleted TaskStatus = "completed"
 	TaskStatusFailed    TaskStatus = "failed"
 	TaskStatusCancelled TaskStatus = "cancelled"
+	// TaskStatusInterrupted is the terminal status stamped by startup
+	// reconciliation on a task that was still pending/queued/running in the
+	// durable record while no live executor existed for it (the recording
+	// process died mid-run). It preserves the original timestamps and any
+	// recorded error; the run can be revived through a follow-up when a
+	// resumable worker snapshot exists.
+	TaskStatusInterrupted TaskStatus = "interrupted"
 )
 
 // legacyTaskStatusAwaitingReport is the removed lifecycle status that older

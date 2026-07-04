@@ -438,7 +438,7 @@ func applyHarnessTaskToAwaitResult(out *AwaitAgentResult, task harness.Task) {
 
 func shouldPreferHarnessStatus(status harness.TaskStatus) bool {
 	switch status {
-	case harness.TaskStatusQueued, harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled:
+	case harness.TaskStatusQueued, harness.TaskStatusCompleted, harness.TaskStatusFailed, harness.TaskStatusCancelled, harness.TaskStatusInterrupted:
 		return true
 	default:
 		return false

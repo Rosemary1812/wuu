@@ -264,6 +264,7 @@ func New(cfg Config) (*AgentControl, error) {
 		c.consumeWorkerStatus(statusCh)
 	}()
 	_ = c.restoreQueuedSpawns()
+	c.reconcileOrphanedHarnessTasks()
 	go c.maybeStartQueued(context.Background())
 	return c, nil
 }
@@ -336,6 +337,10 @@ func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ..
 		c.setHarnessDir(filepath.Join(filepath.Dir(c.threadDir), "harness"))
 	}
 	c.registerRootThread()
+	// The harness dir may only become known here; reconcile the durable
+	// task graph against the (possibly empty) set of live executors so
+	// crash-orphaned tasks stop reporting running forever.
+	c.reconcileOrphanedHarnessTasks()
 }
 
 func (c *AgentControl) setHarnessDir(dir string) {
@@ -1247,7 +1252,7 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 			return err
 		}
 		if rehydrated == nil {
-			return fmt.Errorf("agent %q not found", id)
+			return c.missingAgentError(id)
 		}
 		sa = rehydrated
 	}
@@ -1289,7 +1294,7 @@ func (c *AgentControl) FollowupTaskFrom(currentPath string, ctx context.Context,
 			return subagent.SubAgentSnapshot{}, err
 		}
 		if rehydrated == nil {
-			return subagent.SubAgentSnapshot{}, fmt.Errorf("agent %q not found", id)
+			return subagent.SubAgentSnapshot{}, c.missingAgentError(id)
 		}
 		sa = rehydrated
 	}
@@ -2710,12 +2715,7 @@ func parentPathForSnapshot(snap subagent.SubAgentSnapshot) string {
 }
 
 func isFinalSubAgentStatus(status subagent.Status) bool {
-	switch status {
-	case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
-		return true
-	default:
-		return false
-	}
+	return subagent.IsTerminal(status)
 }
 
 func isActiveAgentThreadStatus(status agentthread.Status) bool {
@@ -2759,7 +2759,10 @@ func (c *AgentControl) resolveAgentIDFrom(currentPath, target string) string {
 // rehydrateAgent lazily rebuilds a dormant sub-agent from its persisted
 // snapshot so a follow-up can resume it after the live run was lost (e.g.
 // across a process restart). It is only reached when a follow-up addresses
-// an id the live manager no longer tracks — there is no startup scan.
+// an id the live manager no longer tracks; the startup sweep
+// (reconcileOrphanedHarnessTasks) settles crash-orphaned records eagerly and
+// rewrites their snapshots to interrupted, which this path resumes like any
+// other terminal state.
 //
 // Returns (nil, nil) when no snapshot exists, so the caller reports the
 // target as not found. A non-nil error means a snapshot exists but cannot
@@ -2846,6 +2849,152 @@ func (c *AgentControl) reconcileRehydratedHarnessStatus(snap subagent.SubAgentSn
 	c.recordHarnessStatus(subagent.Notification{AgentID: snap.ID, Status: snap.Status, Snapshot: snap})
 }
 
+// reconcileOrphanedHarnessTasks is the startup reconciliation sweep for the
+// durable task graph (self-consistency invariant 2: every background task is
+// observable and recoverable). A worker runs as a detached goroutine, so a
+// crash between recordHarnessTaskStart and the terminal notification leaves
+// its harness task pending/queued/running forever. On every (re)bind of the
+// harness dir this sweep settles non-terminal tasks that have no live
+// executor in this process:
+//
+//   - a task whose manager entry is live is left alone;
+//   - a task whose manager entry (or persisted snapshot) is already
+//     terminal replays the missed terminal recording — the run finished,
+//     only the recording process died first (same reconciliation as the
+//     lazy rehydrate path);
+//   - a queued task whose spawn payload was restored stays queued —
+//     maybeStartQueued still owns it;
+//   - everything else is marked interrupted, preserving the original
+//     timestamps and any recorded error.
+func (c *AgentControl) reconcileOrphanedHarnessTasks() {
+	if c == nil || c.harnessStore == nil || c.harnessStore.Dir() == "" {
+		return
+	}
+	tasks, err := c.harnessStore.ListTasks()
+	if err != nil {
+		return
+	}
+	now := time.Now().UTC()
+	for _, task := range tasks {
+		if isTerminalHarnessStatus(task.Status) {
+			continue
+		}
+		if c.manager != nil {
+			if sa := c.manager.Get(task.ID); sa != nil {
+				snap := sa.Snapshot()
+				if !isFinalSubAgentStatus(snap.Status) {
+					continue // live executor owns this task
+				}
+				// Terminal run, non-terminal record: the terminal
+				// notification was never recorded. Replay it.
+				c.recordHarnessStatus(subagent.Notification{AgentID: snap.ID, Status: snap.Status, Snapshot: snap})
+				continue
+			}
+		}
+		if task.Status == harness.TaskStatusQueued && c.hasQueuedSpawn(task.ID) {
+			continue
+		}
+		if strings.TrimSpace(c.historyDir) != "" {
+			path := filepath.Join(c.historyDir, task.ID+".json")
+			if run, err := subagent.LoadPersistedRun(path); err == nil && isFinalSubAgentStatus(run.Status) {
+				// The worker actually finished — only the recording was
+				// lost. Settle the durable record on the snapshot's
+				// terminal truth (for completed runs this also synthesizes
+				// the final_text report the crash swallowed).
+				c.recordHarnessStatus(subagent.Notification{AgentID: task.ID, Status: run.Status, Snapshot: snapshotFromPersistedRun(run)})
+				continue
+			}
+		}
+		c.markHarnessTaskInterrupted(task, now)
+	}
+}
+
+// snapshotFromPersistedRun projects a persisted run record onto the snapshot
+// shape the recording paths consume.
+func snapshotFromPersistedRun(run subagent.PersistedRun) subagent.SubAgentSnapshot {
+	snap := subagent.SubAgentSnapshot{
+		ID:            run.ID,
+		ParticipantID: run.ParticipantID,
+		Type:          run.Type,
+		TaskName:      run.TaskName,
+		AgentProfile:  run.AgentProfile,
+		AgentPath:     run.AgentPath,
+		ParentID:      run.ParentID,
+		Description:   run.Description,
+		Status:        run.Status,
+		StartedAt:     run.StartedAt,
+		CompletedAt:   run.CompletedAt,
+		Result:        run.Result,
+	}
+	if strings.TrimSpace(run.Error) != "" {
+		snap.Error = errors.New(run.Error)
+	}
+	return snap
+}
+
+// markHarnessTaskInterrupted settles one orphaned task as interrupted. The
+// original CreatedAt/StartedAt/token counts survive; an error already on the
+// record is kept as the reason, otherwise the reconciliation reason is
+// written. The matching worker snapshot (when one was persisted) is rewritten
+// to interrupted too so a follow-up can resume the run from its history.
+func (c *AgentControl) markHarnessTaskInterrupted(task harness.Task, now time.Time) {
+	reason := strings.TrimSpace(task.Error)
+	if reason == "" {
+		reason = fmt.Sprintf("interrupted: no live executor for this task; the previous session exited while it was %s", task.Status)
+	}
+	completedAt := task.CompletedAt
+	if completedAt.IsZero() {
+		completedAt = now
+	}
+	runID := strings.TrimSpace(task.LastRunID)
+	if runID == "" {
+		runID = harnessRunID(task.ID)
+	}
+	_, _ = c.harnessStore.UpdateTaskStatus(task.ID, harness.TaskStatusInterrupted, completedAt, task.InputTokens, task.OutputTokens, reason)
+	_, _ = c.harnessStore.UpdateRunStatus(runID, harness.TaskStatusInterrupted, completedAt, task.InputTokens, task.OutputTokens, reason)
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskStatusChanged,
+		TaskID:    task.ID,
+		RunID:     runID,
+		AgentID:   task.ID,
+		Path:      task.Path,
+		Status:    string(harness.TaskStatusInterrupted),
+		Message:   reason,
+		CreatedAt: now,
+	})
+	if strings.TrimSpace(c.historyDir) != "" {
+		_, _ = subagent.MarkPersistedRunInterrupted(filepath.Join(c.historyDir, task.ID+".json"), reason, now)
+	}
+	if c.threads != nil {
+		if meta, ok := c.threads.UpdateStatus(task.ID, agentthread.StatusFailed, now); ok {
+			_ = c.threadStore.RecordStatus(meta)
+		}
+	}
+}
+
+// hasQueuedSpawn reports whether the in-memory spawn queue still holds a
+// prepared spawn for the given worker id.
+func (c *AgentControl) hasQueuedSpawn(workerID string) bool {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	for _, prepared := range c.queued {
+		if prepared.WorkerID == workerID {
+			return true
+		}
+	}
+	return false
+}
+
+// missingAgentError explains an unresolvable agent id. When the durable task
+// record shows the run was interrupted with nothing resumable on disk, the
+// caller gets that story instead of a bare not-found.
+func (c *AgentControl) missingAgentError(id string) error {
+	if task, ok := c.harnessTask(id); ok && task.Status == harness.TaskStatusInterrupted {
+		return fmt.Errorf("agent %q was interrupted (%s) and left no resumable snapshot; re-spawn the task", id, strings.TrimSpace(task.Error))
+	}
+	return fmt.Errorf("agent %q not found", id)
+}
+
 // rehydratedThreadMeta rebuilds the thread metadata for a resumed run from
 // its persisted snapshot, so the worker toolkit factory and status updates
 // have the same placement the live run had.
@@ -2889,6 +3038,10 @@ func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
 		return agentthread.StatusFailed
 	case subagent.StatusCancelled:
 		return agentthread.StatusCancelled
+	case subagent.StatusInterrupted:
+		// agentthread has no interrupted status; failed is the closest
+		// terminal mapping and keeps thread-side lifecycle checks working.
+		return agentthread.StatusFailed
 	default:
 		return agentthread.Status(status)
 	}
@@ -2908,6 +3061,8 @@ func harnessStatusFromSubAgent(status subagent.Status) harness.TaskStatus {
 		return harness.TaskStatusFailed
 	case subagent.StatusCancelled:
 		return harness.TaskStatusCancelled
+	case subagent.StatusInterrupted:
+		return harness.TaskStatusInterrupted
 	default:
 		return harness.TaskStatus(status)
 	}

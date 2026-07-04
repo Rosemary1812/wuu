@@ -763,6 +763,15 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 	// returns the snapshot immediately until a follow-up starts a turn.
 	doneCh := make(chan struct{})
 	close(doneCh)
+	// A restored run has no goroutine by construction, so it must never be
+	// registered in a non-terminal state: a dead "running" entry would
+	// permanently pollute CountRunning (and with it every max-parallel
+	// gate). A snapshot that still claims to be live was written by a
+	// process that died mid-run — register it as interrupted.
+	status := run.Status
+	if !IsTerminal(status) {
+		status = StatusInterrupted
+	}
 	sa := &SubAgent{
 		ID:              id,
 		ParticipantID:   run.ParticipantID,
@@ -772,7 +781,7 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 		AgentPath:       run.AgentPath,
 		ParentID:        run.ParentID,
 		Description:     run.Description,
-		Status:          run.Status,
+		Status:          status,
 		StartedAt:       run.StartedAt,
 		CompletedAt:     run.CompletedAt,
 		Result:          run.Result,

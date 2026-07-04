@@ -26,7 +26,25 @@ const (
 	StatusCompleted Status = "completed"
 	StatusFailed    Status = "failed"
 	StatusCancelled Status = "cancelled"
+	// StatusInterrupted is the terminal state stamped by startup
+	// reconciliation on a run whose owning process exited while the run
+	// was still live (crash, kill, power loss). No goroutine observed the
+	// end of the run, so unlike failed/cancelled it carries no runtime
+	// error of its own — only the reconciliation reason. Interrupted runs
+	// are resumable through Followup exactly like other terminal states.
+	StatusInterrupted Status = "interrupted"
 )
+
+// IsTerminal reports whether the status is a terminal lifecycle state — the
+// run has no live goroutine and can accept a Followup to start a new turn.
+func IsTerminal(status Status) bool {
+	switch status {
+	case StatusCompleted, StatusFailed, StatusCancelled, StatusInterrupted:
+		return true
+	default:
+		return false
+	}
+}
 
 // SpawnOptions describes a new sub-agent to launch.
 type SpawnOptions struct {
