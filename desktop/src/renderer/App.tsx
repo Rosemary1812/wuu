@@ -194,6 +194,7 @@ import {
   reduceServerEvent,
   removeSessionTab,
   requireThread,
+  resolveThreadRuntimeContext,
   runtimeContextKey,
   sameRuntimeContext,
   serverEventShouldRefreshGit,
@@ -217,6 +218,7 @@ import {
   upsertThread,
   upsertTurn,
   withLoadedRuntimeSessionTab,
+  workspacePanelContext,
   type AppState,
   type ComposerDraftState,
   type ConversationPaneID,
@@ -238,6 +240,10 @@ import {
   ContextCompositionCard,
   type ContextCompositionEntry,
 } from "./ContextCompositionCard";
+import {
+  InstructionFilesCard,
+  type InstructionFilesEntry,
+} from "./InstructionFilesCard";
 import { DesignTokensPanel } from "./DesignTokensPanel";
 import { useAppDebugState } from "./AppDebugState";
 import {
@@ -422,6 +428,10 @@ function createContextCompositionEntryID(): string {
   return `context-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function createInstructionFilesEntryID(): string {
+  return `instructions-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 type TurnProgressContent = {
   label: string;
   detail?: string;
@@ -517,7 +527,6 @@ function participantTemplateEntries(value: unknown): ParticipantSaveParams[] {
     return {
       name,
       role: typeof record.role === "string" ? record.role : undefined,
-      avatar: typeof record.avatar === "string" ? record.avatar : undefined,
       tagline: typeof record.tagline === "string" ? record.tagline : undefined,
       model: typeof record.model === "string" ? record.model : undefined,
       memory: typeof record.memory === "string" ? record.memory : undefined,
@@ -788,6 +797,9 @@ export function App(): JSX.Element {
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
     ContextCompositionEntry[]
   >([]);
+  const [instructionFilesEntries, setInstructionFilesEntries] = useState<
+    InstructionFilesEntry[]
+  >([]);
   const [openSubthreadPanel, setOpenSubthreadPanel] = useState<
     | {
         threadID: string;
@@ -891,9 +903,19 @@ export function App(): JSX.Element {
   // finally block of openParticipantDM regardless of the resolution path.
   const openingDMParticipantIDRef = useRef<string | undefined>(undefined);
   const currentSessionTab = activeSessionTab(state);
+  // Workspace panel (file tree / file preview / terminal) root: follows the
+  // active thread's own cwd when it differs from state.activeContext — the
+  // main remaining case is a worktree-fork thread, whose cwd is a git
+  // worktree directory distinct from the project root activeContext stays
+  // pinned to. The diff/review panel intentionally keeps using
+  // state.activeContext directly (see workspacePanelContext's doc comment).
+  const workspaceContext = useMemo(
+    () => workspacePanelContext(state.activeContext, state.thread),
+    [state.activeContext, state.thread],
+  );
   const activeWorkspaceFile =
     currentSessionTab?.kind === "file" &&
-    sameRuntimeContext(currentSessionTab.context, state.activeContext)
+    sameRuntimeContext(currentSessionTab.context, workspaceContext)
       ? currentSessionTab.path
       : undefined;
   const activeThread = activeThreadForState(state);
@@ -968,7 +990,6 @@ export function App(): JSX.Element {
         name: participant.name,
         kind: participant.kind,
         role: participant.role,
-        avatar: participant.avatar,
         avatar_image: participant.avatar_image,
       });
     }
@@ -1868,6 +1889,9 @@ export function App(): JSX.Element {
       dismissContextCompositionEntry(id);
     },
   );
+  const handleCachedPaneDismissInstructions = useStableCallback((id: string) => {
+    dismissInstructionFilesEntry(id);
+  });
   const handleCachedPaneOpenAgent = useStableCallback((agent: Agent) => {
     void selectChildAgent(agent);
   });
@@ -1890,7 +1914,15 @@ export function App(): JSX.Element {
     },
   );
   const openWorkspaceFile = useStableCallback((path: string): void => {
-    const context = appStateRef.current.activeContext;
+    // Stamp the same derived context the workspace panel's file tree/preview
+    // are rooted at (workspacePanelContext), not the raw activeContext — for
+    // a worktree-fork thread these differ, and activeWorkspaceFile's match
+    // above must be comparing against the same context or the tab silently
+    // stops highlighting/previewing once opened.
+    const context = workspacePanelContext(
+      appStateRef.current.activeContext,
+      appStateRef.current.thread,
+    );
     if (!context) {
       return;
     }
@@ -2199,6 +2231,27 @@ export function App(): JSX.Element {
       setSidebarDrawerPhase("closed");
     }
   }, [clearSidebarDrawerCloseTimer, sidebarCollapsed, sidebarDrawerPhase]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
+      return undefined;
+    }
+    // The drawer normally closes via the sidebar's pointerleave, but Chromium
+    // skips that event when the pointer exits the window fast or focus jumps
+    // to another app, leaving the drawer stranded open. Close it whenever the
+    // pointer leaves the window or the app loses focus.
+    function handleWindowMouseOut(event: MouseEvent): void {
+      if (event.relatedTarget === null) {
+        closeSidebarDrawer();
+      }
+    }
+    window.addEventListener("mouseout", handleWindowMouseOut);
+    window.addEventListener("blur", closeSidebarDrawer);
+    return () => {
+      window.removeEventListener("mouseout", handleWindowMouseOut);
+      window.removeEventListener("blur", closeSidebarDrawer);
+    };
+  }, [closeSidebarDrawer, sidebarCollapsed, sidebarDrawerPhase]);
 
   useEffect(() => {
     if (resizingSidebar) {
@@ -3011,6 +3064,60 @@ export function App(): JSX.Element {
     );
   }
 
+  function dismissInstructionFilesEntry(id: string): void {
+    setInstructionFilesEntries((entries) =>
+      entries.filter((entry) => entry.id !== id),
+    );
+  }
+
+  function openInstructions(): void {
+    if (!activeThread) {
+      setState((current) => ({
+        ...current,
+        status: "没有当前对话",
+      }));
+      return;
+    }
+    const threadID = activeThread.id;
+    const title = activeThread.preview || activeTitle;
+    const entryID = createInstructionFilesEntryID();
+    setInstructionFilesEntries((entries) => [
+      ...entries,
+      {
+        id: entryID,
+        threadID,
+        title,
+        loading: true,
+      },
+    ]);
+    scheduleStreamScroll();
+    void (async () => {
+      try {
+        const result = await window.wuu.listInstructionFiles();
+        setInstructionFilesEntries((entries) =>
+          entries.map((entry) =>
+            entry.id === entryID
+              ? { ...entry, loading: false, result, error: undefined }
+              : entry,
+          ),
+        );
+        scheduleStreamScroll();
+      } catch (error) {
+        setInstructionFilesEntries((entries) =>
+          entries.map((entry) =>
+            entry.id === entryID
+              ? {
+                  ...entry,
+                  loading: false,
+                  error: desktopApiErrorMessage(error, "无法读取指令文件"),
+                }
+              : entry,
+          ),
+        );
+      }
+    })();
+  }
+
   function openContextComposition(): void {
     if (!activeThread) {
       setState((current) => ({
@@ -3411,7 +3518,6 @@ export function App(): JSX.Element {
       participants: participants.map((participant) => ({
         name: participant.name,
         role: participant.role,
-        avatar: participant.avatar,
         tagline: participant.tagline,
         model: participant.model,
         memory: participant.memory,
@@ -3645,6 +3751,7 @@ export function App(): JSX.Element {
         onStartNewThread={() => void startNewThread()}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
+        onOpenInstructions={openInstructions}
         onPasteAttachmentFiles={(files) => void attachComposerAttachmentFiles(files)}
         onRemoveFile={removeComposerFile}
         onRemoveImage={removeComposerImage}
@@ -5176,42 +5283,27 @@ export function App(): JSX.Element {
     }
   }
 
-  async function selectProjectThread(
-    projectID: string,
+  // Shared "switch runtime context, then resume this thread" flow. Used
+  // whenever opening a thread requires activeContext (and therefore the
+  // workspace panel's file tree / terminal / git) to move to a different
+  // project or no_project cwd than the one currently active — e.g. opening
+  // a 对话 (scratch) thread from inside a project, or opening a 置顶/群聊/DM
+  // thread whose own workspace lives elsewhere. The app-server will resume
+  // any persisted session regardless of the active workdir, so the context
+  // switch has to be driven from here rather than relying on the resume
+  // call itself to move it.
+  async function switchContextAndResumeThread(
+    targetContext: RuntimeContext,
     threadID: string,
   ): Promise<void> {
     const currentState = appStateRef.current;
-    if (
-      projectID === currentState.activeProjectId &&
-      currentState.activeContext?.kind === "project"
-    ) {
-      await selectThread(threadID);
-      return;
-    }
-    if (
-      pendingViewSwitch?.kind === "thread" &&
-      pendingViewSwitch.targetID === threadID
-    ) {
-      return;
-    }
-    const project = currentState.projects.find(
-      (candidate) => candidate.id === projectID,
-    );
-    if (!project) {
-      return;
-    }
-    const targetContext: RuntimeContext = {
-      kind: "project",
-      project_id: project.id,
-      cwd: project.path,
-    };
     setArchiveConfirmThreadID(undefined);
     setWorkspaceMode(undefined);
     const outgoingDraft = currentPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, threadID);
     const requestID = beginViewSwitch("thread", threadID);
     try {
-      const projectState = await window.wuu.selectProject(projectID);
+      const projectState = await selectRuntimeContext(targetContext);
       const loadedState = await loadRuntime(projectState, {
         resumeLatestThread: false,
       });
@@ -5254,19 +5346,101 @@ export function App(): JSX.Element {
     }
   }
 
+  // Look up a thread object by id across every cache the sidebar draws
+  // from (对话 scratch threads, every project's own list, and the
+  // currently loaded state.threads). Sidebar click sites only know a
+  // thread's id, not its cwd/workspace_kind, so this is how
+  // resolveThreadRuntimeContext gets something to work with.
+  function findKnownThread(threadID: string): Thread | undefined {
+    return sidebarThreads.find((thread) => thread.id === threadID);
+  }
+
+  async function selectProjectThread(
+    projectID: string,
+    threadID: string,
+  ): Promise<void> {
+    const currentState = appStateRef.current;
+    if (
+      projectID === currentState.activeProjectId &&
+      currentState.activeContext?.kind === "project"
+    ) {
+      await selectThread(threadID);
+      return;
+    }
+    if (
+      pendingViewSwitch?.kind === "thread" &&
+      pendingViewSwitch.targetID === threadID
+    ) {
+      return;
+    }
+    if (projectID === SCRATCH_PSEUDO_PROJECT_ID) {
+      // The 对话 pseudo-project is synthetic and never appears in
+      // state.projects, so it can't be resolved to a {kind:"project"}
+      // context the way real projects are below. Resolve the thread's OWN
+      // context instead — a scratch thread's cwd almost never matches the
+      // currently active context.
+      const thread = findKnownThread(threadID);
+      if (!thread) {
+        return;
+      }
+      const targetContext = resolveThreadRuntimeContext(
+        thread,
+        currentState.projects,
+      );
+      if (sameRuntimeContext(targetContext, currentState.activeContext)) {
+        await selectThread(threadID);
+        return;
+      }
+      await switchContextAndResumeThread(targetContext, threadID);
+      return;
+    }
+    const project = currentState.projects.find(
+      (candidate) => candidate.id === projectID,
+    );
+    if (!project) {
+      return;
+    }
+    const targetContext: RuntimeContext = {
+      kind: "project",
+      project_id: project.id,
+      cwd: project.path,
+    };
+    await switchContextAndResumeThread(targetContext, threadID);
+  }
+
   async function activateThread(threadID: string): Promise<void> {
-    const project = appStateRef.current.projects.find((candidate) =>
+    const currentState = appStateRef.current;
+    const project = currentState.projects.find((candidate) =>
       sidebarProjectThreadsByProjectID[candidate.id]?.some(
         (thread) => thread.id === threadID,
       ),
     );
     if (
       project &&
-      (project.id !== appStateRef.current.activeProjectId ||
-        appStateRef.current.activeContext?.kind !== "project")
+      (project.id !== currentState.activeProjectId ||
+        currentState.activeContext?.kind !== "project")
     ) {
       await selectProjectThread(project.id, threadID);
       return;
+    }
+    if (!project) {
+      // Not in any real project's loaded thread list: a pinned scratch
+      // thread opened via 置顶, a DM, a group thread, or anything else
+      // opened straight from 群聊/the agent roster. selectThread alone
+      // would resume it under the CURRENT activeContext — resolve the
+      // thread's own context first so the workspace panel actually
+      // follows it there.
+      const thread = findKnownThread(threadID);
+      const targetContext = thread
+        ? resolveThreadRuntimeContext(thread, currentState.projects)
+        : undefined;
+      if (
+        targetContext &&
+        !sameRuntimeContext(targetContext, currentState.activeContext)
+      ) {
+        await switchContextAndResumeThread(targetContext, threadID);
+        return;
+      }
     }
     await selectThread(threadID);
   }
@@ -5790,8 +5964,16 @@ export function App(): JSX.Element {
           current.secondaryThread?.id === thread.id
             ? result.thread
             : current.secondaryThread,
+        // Mirror the server's thread/list visibility rule: DM and group
+        // threads are listed for every cwd, so they always live in
+        // state.threads and must be updated there too — otherwise the
+        // stale copy wins the sidebar merge and the pin appears to do
+        // nothing. Context-scoped threads keep the cwd guard so a pin
+        // from 置顶 can't inject a foreign-context thread.
         threads:
-          current.activeContext?.cwd === result.thread.cwd
+          current.activeContext?.cwd === result.thread.cwd ||
+          isDMThread(result.thread) ||
+          isGroupThread(result.thread)
             ? upsertThread(current.threads, result.thread)
             : current.threads,
         status: current.status === "ready" ? "ready" : current.status,
@@ -5926,12 +6108,13 @@ export function App(): JSX.Element {
             fallbackDraft
               ? fallbackDraft.id
               : current.activeSessionTabID,
-          threads:
-            current.activeContext?.cwd === result.thread.cwd
-              ? current.threads.filter(
-                  (candidate) => candidate.id !== result.thread.id,
-                )
-              : current.threads,
+          // Removing by id is a no-op when the thread isn't in the list,
+          // so no cwd guard is needed — and DM/group threads (listed for
+          // every cwd, see thread/list) would otherwise survive here as
+          // stale copies that keep the archived thread in the sidebar.
+          threads: current.threads.filter(
+            (candidate) => candidate.id !== result.thread.id,
+          ),
           running:
             activeThreadIDForState(current) === thread.id
               ? false
@@ -6180,6 +6363,11 @@ export function App(): JSX.Element {
     message: QueuedComposerMessage,
     restoreDraftOnError = false,
   ): Promise<boolean> {
+    // Captured before any await: on a brand-new conversation the thread
+    // itself is created over IPC first, and the optimistic turn's live
+    // timer must count from the user's click, not from when that
+    // round-trip finishes.
+    const sendClickedAtMs = Date.now();
     const currentState = appStateRef.current;
     const targetThread = activeThreadForState(currentState);
     const targetPane: ConversationPaneID =
@@ -6270,7 +6458,7 @@ export function App(): JSX.Element {
       // instead of waiting for the server's first turn notification. The
       // placeholder is replaced (or dropped on error) once the real turn
       // arrives or the request fails.
-      const optimisticTurn = createOptimisticTurn(message, Date.now());
+      const optimisticTurn = createOptimisticTurn(message, sendClickedAtMs);
       optimisticTurnID = optimisticTurn.id;
       optimisticThreadID = thread.id;
       appStateRef.current = updateThreadByID(
@@ -7529,6 +7717,7 @@ export function App(): JSX.Element {
               <WorkspaceMainPanel
                 view={workspaceMode}
                 activeContext={state.activeContext}
+                workspaceContext={workspaceContext}
                 gitStatus={state.gitStatus}
                 selectedFilePath={activeWorkspaceFile}
                 onOpenRightPanel={() => {
@@ -7577,12 +7766,14 @@ export function App(): JSX.Element {
                 activeContextCwd={state.activeContext?.cwd}
                 conversationGridVisible={conversationGridVisible}
                 contextCompositionEntries={contextCompositionEntries}
+                instructionFilesEntries={instructionFilesEntries}
                 historyMessageEdit={historyMessageEdit}
                 onStreamFrame={scheduleStreamScroll}
                 onCollapseComplete={handleTurnCollapseComplete}
                 onDismissContextComposition={
                   handleCachedPaneDismissContextComposition
                 }
+                onDismissInstructions={handleCachedPaneDismissInstructions}
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
                 onOpenFile={openWorkspaceFile}
@@ -7702,6 +7893,7 @@ export function App(): JSX.Element {
         tabs={workspaceViewTabs}
         activeTabID={workspaceActiveViewTabID}
         activeContext={state.activeContext}
+        workspaceContext={workspaceContext}
         gitStatus={state.gitStatus}
         selectedFilePath={activeWorkspaceFile}
         onSelectTab={focusWorkspaceViewTab}
@@ -7776,10 +7968,12 @@ type CachedConversationPanesProps = {
   activeContextCwd?: string;
   conversationGridVisible: boolean;
   contextCompositionEntries: ContextCompositionEntry[];
+  instructionFilesEntries: InstructionFilesEntry[];
   historyMessageEdit?: HistoryMessageEditState;
   onStreamFrame: () => void;
   onCollapseComplete: () => void;
   onDismissContextComposition: (id: string) => void;
+  onDismissInstructions: (id: string) => void;
   canEditThreadMessage: (thread: Thread) => boolean;
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
   onOpenFile?: (path: string) => void;
@@ -7830,10 +8024,12 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   activeContextCwd,
   conversationGridVisible,
   contextCompositionEntries,
+  instructionFilesEntries,
   historyMessageEdit,
   onStreamFrame,
   onCollapseComplete,
   onDismissContextComposition,
+  onDismissInstructions,
   canEditThreadMessage,
   onForkMessage,
   onOpenFile,
@@ -7888,6 +8084,15 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
             onDismiss={onDismissContextComposition}
           />
         );
+        const threadInstructionCards = instructionFilesEntries
+          .filter((entry) => entry.threadID === threadID)
+          .map((entry) => (
+            <InstructionFilesCard
+              entry={entry}
+              key={entry.id}
+              onDismiss={onDismissInstructions}
+            />
+          ));
         const forkWorktreeNotice =
           thread.worktree && thread.forked_from_id ? (
             <ForkWorktreeNotice thread={thread} />
@@ -7939,7 +8144,10 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
               <ConversationTurnList
                 threadID={thread.id}
                 turns={threadTurns}
-                renderBeforeTurns={entriesBeforeTurns.map(renderContextEntry)}
+                renderBeforeTurns={[
+                  ...threadInstructionCards,
+                  ...entriesBeforeTurns.map(renderContextEntry),
+                ]}
                 renderAfterMissingTurn={
                   <>
                     {entriesAfterMissingTurn.map(renderContextEntry)}

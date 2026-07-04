@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	participantMemoryFileName  = "MEMORY.md"
-	participantAvatarFileName  = "avatar"
-	participantAvatarMimeName  = "avatar.mime"
+	participantMemoryFileName = "MEMORY.md"
+	participantAvatarFileName = "avatar"
+	participantAvatarMimeName = "avatar.mime"
 	// participantAvatarMaxBytes caps the decoded avatar image payload.
 	// 512KB is generous for a square avatar while keeping the
 	// workspace from becoming a vector for oversized uploads.
@@ -69,7 +69,6 @@ func (s *Server) handleParticipantSave(req Request) error {
 		Kind:      participant.KindNamed,
 		Name:      name,
 		Role:      strings.TrimSpace(params.Role),
-		Avatar:    strings.TrimSpace(params.Avatar),
 		Tagline:   strings.TrimSpace(params.Tagline),
 		Model:     strings.TrimSpace(params.Model),
 		UpdatedAt: now,
@@ -80,11 +79,11 @@ func (s *Server) handleParticipantSave(req Request) error {
 	} else if existing, err := session.GetParticipant(s.rt.SessionDir, p.ID); err == nil {
 		p.CreatedAt = existing.CreatedAt
 		p.Workspace = existing.Workspace
+		// Legacy emoji avatars stay in the store untouched; the save
+		// path no longer accepts or rewrites them.
+		p.Avatar = existing.Avatar
 	} else if !errors.Is(err, session.ErrParticipantNotFound) {
 		return s.writeResponse(req.ID, nil, err)
-	}
-	if p.Avatar == "" {
-		p.Avatar = participant.DefaultAvatar(p.Role)
 	}
 	if p.Workspace == "" {
 		workspace, err := s.participantWorkspace(p.ID)
@@ -287,7 +286,6 @@ func (s *Server) participantProfile(p participant.Participant) (ParticipantProfi
 		Kind:        string(p.Kind),
 		Name:        p.Name,
 		Role:        p.Role,
-		Avatar:      p.Avatar,
 		AvatarImage: avatarImage,
 		Tagline:     p.Tagline,
 		Workspace:   p.Workspace,

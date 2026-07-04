@@ -1,12 +1,11 @@
 /**
  * Tests for `ParticipantChip`.
  *
- * Contract: with a `ParticipantSummary` the chip renders avatar, name
- * and role spans (skipping avatar/role when empty). Without one it
- * falls back to legacy `Agent` fields: name comes from fallbackTaskName,
- * then fallbackType, then the literal "agent"; no avatar is rendered and
- * the role is the fallbackType (suppressed when it would duplicate the
- * name).
+ * Contract: with a `ParticipantSummary` the chip renders name and role
+ * spans (skipping the role when empty). Without one it falls back to
+ * legacy `Agent` fields: name comes from fallbackTaskName, then
+ * fallbackType, then the literal "agent"; the role is the fallbackType
+ * (suppressed when it would duplicate the name).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
@@ -58,26 +57,24 @@ const reviewer: ParticipantSummary = {
   name: "Reviewer·auth",
   kind: "task_worker",
   role: "reviewer",
-  avatar: "🧐",
 };
 
 describe("ParticipantChip", () => {
-  it("renders avatar, name and role from the participant summary", () => {
+  it("renders name and role from the participant summary", () => {
     mount({ participant: reviewer });
     expect(chip()).not.toBeNull();
-    expect(spanText(".participant-chip-avatar")).toBe("🧐");
+    expect(chip()!.querySelector(".participant-chip-avatar")).toBeNull();
     expect(spanText(".participant-chip-name")).toBe("Reviewer·auth");
     expect(spanText(".participant-chip-role")).toBe("reviewer");
     expect(chip()!.textContent).toContain("Reviewer·auth");
     expect(chip()!.textContent).toContain("reviewer");
   });
 
-  it("omits the avatar and role spans when the summary lacks them", () => {
+  it("omits the role span when the summary lacks it", () => {
     mount({
       participant: { id: "agent-2", name: "Explorer", kind: "task_worker" },
     });
     expect(spanText(".participant-chip-name")).toBe("Explorer");
-    expect(chip()!.querySelector(".participant-chip-avatar")).toBeNull();
     expect(chip()!.querySelector(".participant-chip-role")).toBeNull();
   });
 

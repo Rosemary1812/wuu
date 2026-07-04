@@ -800,11 +800,10 @@ type ParticipantStartResult struct {
 }
 
 type ParticipantProfile struct {
-	ID     string `json:"id"`
-	Kind   string `json:"kind"`
-	Name   string `json:"name"`
-	Role   string `json:"role,omitempty"`
-	Avatar string `json:"avatar,omitempty"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Role string `json:"role,omitempty"`
 	// AvatarImage is the participant's uploaded avatar as a data URL
 	// (e.g. "data:image/png;base64,..."). Populated on the profile read
 	// path when the workspace contains an avatar image; omitted on the
@@ -834,13 +833,11 @@ type ParticipantSaveParams struct {
 	ID      string `json:"id,omitempty"`
 	Name    string `json:"name"`
 	Role    string `json:"role,omitempty"`
-	Avatar  string `json:"avatar,omitempty"`
 	Tagline string `json:"tagline,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Memory  string `json:"memory,omitempty"`
 	// AvatarImage accepts an image data URL
-	// ("data:image/<mime>;base64,...") to upload a custom avatar. The
-	// emoji Avatar field is preserved independently; both can coexist.
+	// ("data:image/<mime>;base64,...") to upload a custom avatar.
 	// Decoded bytes are capped at 512KB; only image/png, image/jpeg,
 	// and image/webp are accepted.
 	AvatarImage string `json:"avatar_image,omitempty"`

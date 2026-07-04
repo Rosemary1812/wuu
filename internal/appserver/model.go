@@ -1191,10 +1191,9 @@ func participantMessageItem(id string, rec persistedMessage, resolve participant
 			}
 		}
 		summary := participant.Summary{
-			ID:     id,
-			Name:   firstNonEmpty(strings.TrimSpace(rec.Name), "Participant"),
-			Kind:   string(participant.KindEphemeral),
-			Avatar: participant.DefaultAvatar(""),
+			ID:   id,
+			Name: firstNonEmpty(strings.TrimSpace(rec.Name), "Participant"),
+			Kind: string(participant.KindEphemeral),
 		}
 		item.Participant = &summary
 	}

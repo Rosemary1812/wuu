@@ -324,11 +324,10 @@ func TestTurnsFromPersistedHistoryRestoresParticipantMessage(t *testing.T) {
 			return participant.Summary{}, false
 		}
 		return participant.Summary{
-			ID:     id,
-			Name:   "Noel",
-			Kind:   string(participant.KindEphemeral),
-			Role:   "reviewer",
-			Avatar: participant.DefaultAvatar("reviewer"),
+			ID:   id,
+			Name: "Noel",
+			Kind: string(participant.KindEphemeral),
+			Role: "reviewer",
 		}, true
 	})
 
@@ -386,11 +385,10 @@ func TestAppendParticipantMessageLockedAddsCurrentTurnItem(t *testing.T) {
 			return participant.Summary{}, false
 		}
 		return participant.Summary{
-			ID:     id,
-			Name:   "Noel",
-			Kind:   string(participant.KindEphemeral),
-			Role:   "reviewer",
-			Avatar: participant.DefaultAvatar("reviewer"),
+			ID:   id,
+			Name: "Noel",
+			Kind: string(participant.KindEphemeral),
+			Role: "reviewer",
 		}, true
 	})
 

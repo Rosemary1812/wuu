@@ -19,7 +19,6 @@ const (
 	// product-facing 团队组建者 identity lives in the tagline and the seeded
 	// persona notes instead.
 	defaultSeedParticipantRole    = "general-purpose"
-	defaultSeedParticipantAvatar  = "🦉"
 	defaultSeedParticipantTagline = "帮你把合适的 agent 拉进合适的房间"
 	// defaultAgentSeededMarkerName is the once-ever install marker written
 	// under the wuu home. Its presence means the default agent was already
@@ -83,7 +82,6 @@ func (s *Server) ensureDefaultParticipant() error {
 		Kind:      participant.KindNamed,
 		Name:      defaultSeedParticipantName,
 		Role:      defaultSeedParticipantRole,
-		Avatar:    defaultSeedParticipantAvatar,
 		Tagline:   defaultSeedParticipantTagline,
 		CreatedAt: now,
 		UpdatedAt: now,

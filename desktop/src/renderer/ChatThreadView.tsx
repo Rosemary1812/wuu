@@ -302,17 +302,10 @@ function ChatAvatar({
   participant: ParticipantSummary | undefined;
 }): JSX.Element {
   const avatarImage = participant?.avatar_image?.trim();
-  const emoji = participant?.avatar?.trim();
   const name = participant?.name?.trim() || "参与者";
   return (
     <div className="chat-avatar" aria-hidden="true">
-      {avatarImage ? (
-        <img src={avatarImage} alt="" />
-      ) : emoji ? (
-        emoji
-      ) : (
-        name.charAt(0)
-      )}
+      {avatarImage ? <img src={avatarImage} alt="" /> : name.charAt(0)}
     </div>
   );
 }

@@ -503,6 +503,11 @@ export type WorkspaceFileReferenceResolveResult = {
 export type TerminalSessionStartParams = {
   cols?: number;
   rows?: number;
+  // Optional absolute directory override to spawn the pty in, instead of
+  // the active runtime context's cwd. Used to root the terminal at the
+  // active thread's own cwd (e.g. a worktree fork) — see
+  // workspacePanelContext in AppState.ts.
+  cwd?: string;
 };
 
 export type TerminalSessionStartResult = {
@@ -572,11 +577,10 @@ export type ParticipantSummary = {
   name: string;
   kind: string;
   role?: string;
-  avatar?: string;
-  // avatar_image is an uploaded image data URL that supersedes the emoji
-  // avatar in the UI (see ParticipantProfile.avatar_image). Optional
-  // because the lightweight wire summary embedded in thread items and
-  // agents does not always carry it.
+  // avatar_image is an uploaded image data URL (see
+  // ParticipantProfile.avatar_image). Optional because the lightweight
+  // wire summary embedded in thread items and agents does not always
+  // carry it.
   avatar_image?: string;
 };
 
@@ -652,11 +656,10 @@ export type ParticipantProfile = {
   kind: string;
   name: string;
   role?: string;
-  avatar?: string;
-  // avatar_image is an uploaded image data URL (e.g. "data:image/png;base64,...")
-  // that supersedes the emoji avatar in the UI. Populated by the profile read
-  // path when the workspace stores an avatar image; absent on the lightweight
-  // wire Summary used in agent and task card attribution.
+  // avatar_image is an uploaded image data URL (e.g. "data:image/png;base64,...").
+  // Populated by the profile read path when the workspace stores an avatar
+  // image; absent on the lightweight wire Summary used in agent and task
+  // card attribution.
   avatar_image?: string;
   tagline?: string;
   workspace?: string;
@@ -675,9 +678,7 @@ export type ParticipantSaveParams = {
   id?: string;
   name: string;
   role?: string;
-  avatar?: string;
-  // avatar_image accepts an image data URL to upload a custom avatar. The
-  // emoji avatar field is preserved independently; both can coexist.
+  // avatar_image accepts an image data URL to upload a custom avatar.
   avatar_image?: string;
   // clear_avatar_image removes any previously uploaded avatar image.
   // Takes precedence over avatar_image when set.
@@ -908,6 +909,82 @@ export type ContextSegmentCountSummary = {
   lifecycle?: Record<string, number>;
   placement?: Record<string, number>;
   cache_policy?: Record<string, number>;
+};
+
+// Two-level origin the desktop shows for an instruction file: "global"
+// (user-level, applies everywhere) or "project" (discovered in the project
+// hierarchy). Mirrors appserver.instructionFileScope.
+export type InstructionFileScope = "global" | "project";
+
+// InstructionFile mirrors appserver.InstructionFile: one AGENTS.md / CLAUDE.md
+// style file that memory.Discover loaded into the base system prompt.
+export type InstructionFile = {
+  path: string;
+  name: string;
+  source: string;
+  scope: InstructionFileScope;
+  bytes: number;
+  content: string;
+};
+
+export type InstructionsListResult = {
+  files: InstructionFile[];
+};
+
+// Filesystem-level status of the "install wuu command" action (symlink into
+// ~/.local/bin). Produced by the pure cliInstall module in the main process.
+export type CliInstallFsStatus = {
+  platform_supported: boolean;
+  platform: string;
+  source_path: string | null;
+  install_dir: string;
+  install_path: string;
+  installed: boolean;
+  linked_to_source: boolean;
+  // install_path is a symlink whose target no longer exists (the app was
+  // moved or updated). Safe for the startup auto-install to rebuild.
+  link_dangling: boolean;
+  // Something else owns install_path: a real binary (go install /
+  // install.sh) or a symlink to another target. The desktop never touches
+  // it automatically; only the manual overwrite flow may replace it.
+  foreign_install: boolean;
+  on_path: boolean;
+};
+
+// Full status shown in settings: filesystem state plus the persisted
+// auto-install preference and the outcome of this session's startup
+// auto-install pass (if any).
+export type CliInstallStatus = CliInstallFsStatus & {
+  auto_install_enabled: boolean;
+  last_auto_install: CliAutoInstallResult | null;
+};
+
+export type CliAutoInstallOutcome =
+  | "installed" // fresh symlink created (nothing was there)
+  | "repaired" // dangling symlink rebuilt after an app move/update
+  | "already-linked" // nothing to do
+  | "skipped-existing" // foreign wuu present — left untouched
+  | "unsupported" // platform without symlink support (Windows)
+  | "no-source" // no wuu binary could be located
+  | "failed"; // filesystem error; never blocks startup
+
+export type CliAutoInstallResult = {
+  outcome: CliAutoInstallOutcome;
+  install_path: string;
+  source_path: string | null;
+  on_path: boolean;
+  message?: string;
+};
+
+export type CliInstallResult = {
+  ok: boolean;
+  // Set when a file already exists at install_path and overwrite was not
+  // requested — the UI prompts before replacing it.
+  needs_overwrite?: boolean;
+  install_path: string;
+  source_path?: string;
+  on_path: boolean;
+  message?: string;
 };
 
 export type Turn = {
@@ -1343,10 +1420,14 @@ export type WuuDesktopApi = {
   createCheckoutGitBranch: (branch: string) => Promise<GitCreateBranchResult>;
   commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;
   createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
-  listWorkspaceFiles: () => Promise<FileTreeListResult>;
-  listWorkspaceDirectory: (path?: string) => Promise<WorkspaceDirectoryListResult>;
-  readWorkspaceFile: (path: string) => Promise<WorkspaceFileReadResult>;
-  resolveWorkspaceFileReference: (reference: string) => Promise<WorkspaceFileReferenceResolveResult>;
+  // root is an optional absolute directory override, used to root the
+  // workspace file tree / preview at the active thread's own cwd (e.g. a
+  // worktree fork) instead of the active project's cwd. See
+  // workspacePanelContext in AppState.ts.
+  listWorkspaceFiles: (root?: string) => Promise<FileTreeListResult>;
+  listWorkspaceDirectory: (path?: string, root?: string) => Promise<WorkspaceDirectoryListResult>;
+  readWorkspaceFile: (path: string, root?: string) => Promise<WorkspaceFileReadResult>;
+  resolveWorkspaceFileReference: (reference: string, root?: string) => Promise<WorkspaceFileReferenceResolveResult>;
   startTerminalSession: (params?: TerminalSessionStartParams) => Promise<TerminalSessionStartResult>;
   writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;
   resizeTerminalSession: (id: string, cols: number, rows: number) => Promise<TerminalSessionActionResult>;
@@ -1388,6 +1469,17 @@ export type WuuDesktopApi = {
   ) => Promise<ThreadForkResult>;
   editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
   getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
+  // Instruction files (AGENTS.md / CLAUDE.md, ...) loaded into the base
+  // system prompt at session start. Read-only; used by the session view's
+  // 指令文件 block to mirror Claude Code's /memory visibility.
+  listInstructionFiles: () => Promise<InstructionsListResult>;
+  // "Install wuu command" action: inspect and create a ~/.local/bin/wuu
+  // symlink, mirroring VS Code's "install 'code' command". Install runs
+  // automatically at startup (self-repairing, never overwriting a foreign
+  // install); the toggle below persists whether that auto pass is enabled.
+  getCliInstallStatus: () => Promise<CliInstallStatus>;
+  installCli: (overwrite?: boolean) => Promise<CliInstallResult>;
+  setCliAutoInstallEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
   listParticipants: () => Promise<ParticipantListResult>;
   saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (

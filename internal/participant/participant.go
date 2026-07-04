@@ -5,7 +5,6 @@ package participant
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"strings"
 	"time"
 )
 
@@ -25,7 +24,7 @@ type Participant struct {
 	Kind      Kind
 	Name      string
 	Role      string // WorkerType name; empty for human/primary
-	Avatar    string // emoji glyph
+	Avatar    string // legacy emoji glyph; no longer written or rendered
 	Tagline   string
 	Workspace string // persistent dir for named agents; empty otherwise
 	Model     string // pinned model; empty = follow global
@@ -36,21 +35,19 @@ type Participant struct {
 
 // Summary is the wire shape embedded in notifications and thread items.
 type Summary struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Kind   string `json:"kind"`
-	Role   string `json:"role,omitempty"`
-	Avatar string `json:"avatar,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Role string `json:"role,omitempty"`
 }
 
 // Summary returns the wire shape for a participant.
 func (p Participant) Summary() Summary {
 	return Summary{
-		ID:     p.ID,
-		Name:   p.Name,
-		Kind:   string(p.Kind),
-		Role:   p.Role,
-		Avatar: p.Avatar,
+		ID:   p.ID,
+		Name: p.Name,
+		Kind: string(p.Kind),
+		Role: p.Role,
 	}
 }
 
@@ -73,33 +70,6 @@ func DeriveEphemeralName(taskName, workerType string) string {
 		name += "·" + taskName
 	}
 	return name
-}
-
-// DefaultAvatar returns the default emoji glyph for a worker role.
-// Role input is normalized (trimmed and lowercased) before matching.
-func DefaultAvatar(role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "general-purpose":
-		return "🧭"
-	case "verification":
-		return "✅"
-	case "planner":
-		return "🗺️"
-	case "researcher":
-		return "🔎"
-	case "worker":
-		return "🔧"
-	case "reviewer":
-		return "🧐"
-	case "qa":
-		return "🧪"
-	case "debugger":
-		return "🐞"
-	case "integrator":
-		return "🧩"
-	default:
-		return "🤖"
-	}
 }
 
 func capitalize(s string) string {

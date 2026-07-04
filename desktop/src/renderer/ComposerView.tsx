@@ -159,6 +159,7 @@ export function Composer({
   onStartNewThread,
   onOpenWorkspaceTool,
   onOpenContextComposition = () => {},
+  onOpenInstructions = () => {},
   onPasteAttachmentFiles,
   onRemoveFile,
   onRemoveImage,
@@ -229,6 +230,7 @@ export function Composer({
   onStartNewThread: () => void;
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
   onOpenContextComposition?: () => void;
+  onOpenInstructions?: () => void;
   onPasteAttachmentFiles: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
   onRemoveImage: (id: string) => void;
@@ -584,6 +586,9 @@ export function Composer({
       case "context":
         onOpenContextComposition();
         break;
+      case "instructions":
+        onOpenInstructions();
+        break;
       case "model":
         onToggleCodexRuntimeMenu("model");
         break;
@@ -750,7 +755,7 @@ export function Composer({
                     onClick={() => applyMentionParticipant(participant)}
                   >
                     <span className="mention-avatar" aria-hidden="true">
-                      {participant.avatar || <AtSign className="icon" />}
+                      <AtSign className="icon" />
                     </span>
                     <span className="mention-copy">
                       <strong>{participant.name}</strong>

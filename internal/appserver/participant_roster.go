@@ -63,7 +63,6 @@ func (r *serverParticipantRoster) List(ctx context.Context, agentID string) ([]a
 			ID:      p.ID,
 			Name:    p.Name,
 			Role:    p.Role,
-			Avatar:  p.Avatar,
 			Tagline: p.Tagline,
 			Model:   p.Model,
 		})
@@ -85,7 +84,6 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 			return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: %w", err)
 		}
 	}
-	avatar := strings.TrimSpace(req.Avatar)
 	tagline := strings.TrimSpace(req.Tagline)
 	model := strings.TrimSpace(req.Model)
 
@@ -99,7 +97,6 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 		Kind:      participant.KindNamed,
 		Name:      name,
 		Role:      role,
-		Avatar:    avatar,
 		Tagline:   tagline,
 		Model:     model,
 		UpdatedAt: now,
@@ -107,9 +104,6 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 	if existing == nil {
 		entry.ID = participant.NewID()
 		entry.CreatedAt = now
-		if entry.Avatar == "" {
-			entry.Avatar = participant.DefaultAvatar(role)
-		}
 		workspace, werr := r.server.participantWorkspace(entry.ID)
 		if werr != nil {
 			return agentcontrol.RosterEntry{}, werr
@@ -119,9 +113,9 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 		entry.ID = existing.ID
 		entry.CreatedAt = existing.CreatedAt
 		entry.Workspace = existing.Workspace
-		if entry.Avatar == "" {
-			entry.Avatar = existing.Avatar
-		}
+		// Legacy emoji avatars are preserved in the store but no longer
+		// settable through this tool.
+		entry.Avatar = existing.Avatar
 		if entry.Role == "" {
 			entry.Role = existing.Role
 		}
@@ -164,7 +158,6 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 		ID:      entry.ID,
 		Name:    entry.Name,
 		Role:    entry.Role,
-		Avatar:  entry.Avatar,
 		Tagline: entry.Tagline,
 		Model:   entry.Model,
 	}, nil
@@ -197,7 +190,6 @@ func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name stri
 		ID:      target.ID,
 		Name:    target.Name,
 		Role:    target.Role,
-		Avatar:  target.Avatar,
 		Tagline: target.Tagline,
 		Model:   target.Model,
 	}, nil

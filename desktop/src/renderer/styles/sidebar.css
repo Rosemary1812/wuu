@@ -163,10 +163,19 @@
 }
 
 .sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content,
-.sidebar-collapsed.sidebar-drawer-closing .sidebar .sidebar-content,
 .sidebar-collapsed:not(.resizing-sidebar) .sidebar:focus-within .sidebar-content {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
+}
+
+/* Closing keeps the drawer mounted as an overlay (position/width above) so
+   there is room for the exit motion, but lets the content fall back to the
+   collapsed values (opacity 0, slide left) and fades the panel chrome with
+   it. When the closing phase ends the overlay rules drop with everything
+   already invisible. */
+.sidebar-collapsed.sidebar-drawer-closing .sidebar {
+  opacity: 0;
+  transition: opacity var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar-resizer {
@@ -371,7 +380,10 @@
   cursor: pointer;
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
-  line-height: 1;
+  /* Row height is pinned to 32px, so the line box can afford real
+   * leading. line-height: 1 clipped descenders (g / y / p) inside the
+   * ellipsized label spans, which need overflow: hidden. */
+  line-height: var(--line-ui);
   padding: 0 var(--sidebar-row-pad-x);
   text-align: left;
   transition:
@@ -995,7 +1007,7 @@
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
-  line-height: 1;
+  line-height: var(--line-ui);
   padding: 0 8px 0 2px;
   text-align: left;
   transition:
@@ -1083,7 +1095,8 @@
   color: inherit;
   font: inherit;
   font-weight: inherit;
-  line-height: 1;
+  /* Inherit the row's line-height (`font: inherit` resets it): a local
+   * line-height: 1 would re-clip descenders in the ellipsized title. */
   padding: 0;
   text-align: left;
 }
@@ -1231,20 +1244,36 @@
  * which on the hover background reads as nearly invisible; bumping to
  * --ink makes pin / archive immediately discoverable the moment the
  * user parks the cursor on the row. */
-.thread-row:hover .thread-row-action {
+.thread-row:hover .thread-row-action,
+.participant-roster-row:hover .thread-row-action {
   color: var(--ink);
 }
 
 .thread-row:hover .thread-row-actions,
-.thread-row:has(.thread-row-action:focus-visible) .thread-row-actions {
+.thread-row:has(.thread-row-action:focus-visible) .thread-row-actions,
+.participant-roster-row:hover .thread-row-actions,
+.participant-roster-row:has(.thread-row-action:focus-visible) .thread-row-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, -50%, 0);
 }
 
+/* DM rows overlay the same pin/archive actions as thread rows; push the
+ * name clear of the icons while they are visible (same 58px clearance
+ * as .thread-row-main > .thread-row-title on hover). */
+.participant-roster-copy {
+  transition: padding-right 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.participant-roster-row:hover:has(.thread-row-actions) .participant-roster-copy,
+.participant-roster-row:has(.thread-row-action:focus-visible) .participant-roster-copy {
+  padding-right: 58px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .thread-row-main > .thread-row-title,
-  .thread-row-actions {
+  .thread-row-actions,
+  .participant-roster-copy {
     transition: none;
   }
 }

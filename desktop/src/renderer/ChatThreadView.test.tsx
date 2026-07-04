@@ -49,7 +49,6 @@ const noel: ParticipantSummary = {
   id: "prt-noel",
   name: "Noel",
   kind: "resident",
-  avatar: "🐧",
 };
 
 function turns(items: Turn["items"]): ReadonlyArray<Pick<Turn, "id" | "items">> {
@@ -57,7 +56,7 @@ function turns(items: Turn["items"]): ReadonlyArray<Pick<Turn, "id" | "items">> 
 }
 
 describe("ChatThreadView", () => {
-  it("renders a participant row with emoji avatar, name, and bubble text", () => {
+  it("renders a participant row with initial avatar, name, and bubble text", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
@@ -74,12 +73,12 @@ describe("ChatThreadView", () => {
     );
     const row = container.querySelector(".chat-row");
     expect(row).not.toBeNull();
-    expect(container.querySelector(".chat-avatar")?.textContent).toBe("🐧");
+    expect(container.querySelector(".chat-avatar")?.textContent).toBe("N");
     expect(container.querySelector(".chat-sender-name")?.textContent).toBe("Noel");
     expect(container.querySelector(".chat-bubble")?.textContent).toContain("早上好");
   });
 
-  it("falls back to the first character of the name when there is no emoji avatar", () => {
+  it("falls back to the first character of the name when there is no avatar image", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([

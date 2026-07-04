@@ -28,11 +28,10 @@ func TestParticipantAvatarImageUpload(t *testing.T) {
 		"id":     "save-with-image",
 		"method": MethodParticipantSave,
 		"params": ParticipantSaveParams{
-			Name:         "Avery",
-			Role:         "reviewer",
-			Avatar:       "🧐",
-			AvatarImage:  dataURL,
-			Tagline:      "Visual reviewer",
+			Name:        "Avery",
+			Role:        "reviewer",
+			AvatarImage: dataURL,
+			Tagline:     "Visual reviewer",
 		},
 	}
 	saveRaw, err := json.Marshal(savePayload)
@@ -49,9 +48,6 @@ func TestParticipantAvatarImageUpload(t *testing.T) {
 	save := remarshal[ParticipantSaveResult](t, resp["result"])
 	if save.Participant.ID == "" {
 		t.Fatalf("expected saved participant id, got %+v", save.Participant)
-	}
-	if save.Participant.Avatar != "🧐" {
-		t.Fatalf("emoji avatar lost: %q", save.Participant.Avatar)
 	}
 	if save.Participant.AvatarImage != dataURL {
 		t.Fatalf("profile should echo avatar image data URL, got %q", save.Participant.AvatarImage)
@@ -109,7 +105,6 @@ func TestParticipantAvatarImageClear(t *testing.T) {
 		"params": ParticipantSaveParams{
 			Name:        "Bea",
 			Role:        "qa",
-			Avatar:      "🧪",
 			AvatarImage: dataURL,
 		},
 	})
@@ -129,7 +124,6 @@ func TestParticipantAvatarImageClear(t *testing.T) {
 			ID:               save1.Participant.ID,
 			Name:             "Bea",
 			Role:             "qa",
-			Avatar:           "🧪",
 			ClearAvatarImage: true,
 		},
 	})

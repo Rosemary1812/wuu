@@ -96,9 +96,11 @@ interface RenderOptions {
   activeDMParticipantID?: string;
   unreadDMParticipantIDs?: Set<string>;
   dmThreadByParticipantID?: Map<string, ThreadSummary>;
+  archiveConfirmThreadID?: string;
   onSelectParticipant?: (participant: ParticipantProfile) => void;
   onEditParticipant?: (participant: ParticipantProfile) => void;
   onTogglePinned?: (thread: ThreadSummary) => void;
+  onArchiveThread?: (thread: ThreadSummary) => void;
   onCreateGroupThread?: (title: string) => void;
   onSelectThread?: (id: string) => void;
   onStartNewThreadForProject?: (id: string) => void;
@@ -120,9 +122,11 @@ function renderSidebar(options: RenderOptions): void {
     activeDMParticipantID,
     unreadDMParticipantIDs = new Set<string>(),
     dmThreadByParticipantID = new Map<string, ThreadSummary>(),
+    archiveConfirmThreadID,
     onSelectParticipant = () => {},
     onEditParticipant = () => {},
     onTogglePinned = () => {},
+    onArchiveThread = () => {},
     onCreateGroupThread = () => {},
     onSelectThread = () => {},
     onStartNewThreadForProject = () => {},
@@ -154,7 +158,7 @@ function renderSidebar(options: RenderOptions): void {
         busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
-        archiveConfirmThreadID={undefined}
+        archiveConfirmThreadID={archiveConfirmThreadID}
         collapsedProjectIDs={collapsedProjectIDs}
         expandedProjectIDs={new Set()}
         collapsingProjectIDs={new Set()}
@@ -179,7 +183,7 @@ function renderSidebar(options: RenderOptions): void {
         onImportParticipants={() => {}}
         onExportParticipants={() => {}}
         onTogglePinned={onTogglePinned}
-        onArchiveThread={() => {}}
+        onArchiveThread={onArchiveThread}
         onClearArchiveConfirm={() => {}}
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
@@ -453,12 +457,12 @@ describe("AppSidebar sections", () => {
       },
     });
 
-    const row = container.querySelector<HTMLButtonElement>(
-      ".participant-roster-row",
+    const main = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row .participant-roster-main",
     );
-    expect(row).not.toBeNull();
+    expect(main).not.toBeNull();
     act(() => {
-      row?.click();
+      main?.click();
     });
     expect(selected?.id).toBe("p-1");
     // Profile editing is now exclusive to the right-click context menu.
@@ -542,6 +546,104 @@ describe("AppSidebar sections", () => {
       items?.[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(toggled?.id).toBe("dm-1");
+  });
+
+  it("shows hover pin/archive actions on DM rows and fires the thread handlers", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    const dmThread = makeThreadSummary("dm-1", "DM with Alpha", {
+      dm_participant_id: "p-1",
+      pinned: false,
+    });
+    let toggled: ThreadSummary | undefined;
+    let archived: ThreadSummary | undefined;
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      dmThreadByParticipantID: new Map([["p-1", dmThread]]),
+      onTogglePinned: (thread) => {
+        toggled = thread;
+      },
+      onArchiveThread: (thread) => {
+        archived = thread;
+      },
+    });
+
+    const row = container.querySelector(".participant-roster-row");
+    const actions = row?.querySelectorAll<HTMLButtonElement>(
+      ".thread-row-actions .thread-row-action",
+    );
+    expect(actions?.length).toBe(2);
+    expect(actions?.[0].getAttribute("aria-label")).toBe("置顶");
+    expect(actions?.[1].getAttribute("aria-label")).toBe("归档");
+    act(() => {
+      actions?.[0].click();
+    });
+    expect(toggled?.id).toBe("dm-1");
+    act(() => {
+      actions?.[1].click();
+    });
+    expect(archived?.id).toBe("dm-1");
+  });
+
+  it("marks the DM archive action as confirming via archiveConfirmThreadID", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    const dmThread = makeThreadSummary("dm-1", "DM with Alpha", {
+      dm_participant_id: "p-1",
+      pinned: false,
+    });
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      dmThreadByParticipantID: new Map([["p-1", dmThread]]),
+      archiveConfirmThreadID: "dm-1",
+    });
+
+    const archive = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row .thread-row-action.archive",
+    );
+    expect(archive?.classList.contains("confirm")).toBe(true);
+    expect(archive?.getAttribute("aria-label")).toBe("确认归档");
+  });
+
+  it("hides the roster row while the participant's DM is pinned", () => {
+    // Pinning MOVES the conversation under 置顶 — same semantics as the
+    // 对话 and 群聊 lists. The pinned thread row represents the agent, so
+    // the roster row disappears; unpinned participants stay visible.
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+      { id: "p-2", kind: "named", name: "Beta", role: "writer" },
+    ];
+    const pinnedDM = makeThreadSummary("dm-1", "Alpha", {
+      dm_participant_id: "p-1",
+      pinned: true,
+    });
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+      dmThreadByParticipantID: new Map([["p-1", pinnedDM]]),
+    });
+
+    const names = Array.from(
+      container.querySelectorAll(".participant-roster-name"),
+    ).map((node) => node.textContent);
+    expect(names).toEqual(["Beta"]);
+  });
+
+  it("renders no hover actions when the participant has no DM thread yet", () => {
+    const participants: ParticipantProfile[] = [
+      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
+    ];
+    renderSidebar({
+      sectionOrder: [SIDEBAR_SECTION_AGENTS],
+      participants,
+    });
+
+    const row = container.querySelector(".participant-roster-row");
+    expect(row?.querySelector(".thread-row-actions")).toBeNull();
   });
 
   it("disables DM pin entry when no DM thread exists yet", () => {
@@ -1173,24 +1275,37 @@ describe("unified DM/thread row spec (S1)", () => {
     // The DM row's status dot and the session row's leading icon must
     // sit on one vertical axis: both leading columns use
     // --sidebar-nav-icon-col (left inset is already shared via the base
-    // row padding), and both row grids use the same column gap token.
+    // row padding), and both grids use the same column gap token. The
+    // identity grid lives on the inner main button (mirroring
+    // .thread-row-main) so the row itself can overlay hover actions.
     expect(sidebarCSS).toMatch(
       /\.thread-row \{[^}]*var\(--sidebar-nav-icon-col\)/,
     );
-    const rosterRowRule = participantsCSS.match(
-      /\.participant-roster-row \{[^}]*\}/,
+    const rosterMainRule = participantsCSS.match(
+      /\.participant-roster-main \{[^}]*\}/,
     )?.[0];
-    expect(rosterRowRule).toBeTruthy();
-    expect(rosterRowRule).toMatch(
+    expect(rosterMainRule).toBeTruthy();
+    expect(rosterMainRule).toMatch(
       /grid-template-columns: var\(--sidebar-nav-icon-col\)/,
     );
-    expect(rosterRowRule).toMatch(
+    expect(rosterMainRule).toMatch(
       /column-gap: var\(--sidebar-nav-column-gap\)/,
     );
     // The dot centers inside that column, mirroring the thread-row
     // ::before dot's justify-self: center.
     expect(participantsCSS).toMatch(
       /\.participant-roster-status \{[^}]*justify-self: center/,
+    );
+  });
+
+  it("DM rows reveal pin/archive actions with the thread-row reveal rules", () => {
+    // The DM row reuses .thread-row-actions; the reveal selectors must
+    // include the roster row family or the buttons stay at opacity 0.
+    expect(sidebarCSS).toMatch(
+      /\.participant-roster-row:hover \.thread-row-actions/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.participant-roster-row:has\(\.thread-row-action:focus-visible\) \.thread-row-actions/,
     );
   });
 });

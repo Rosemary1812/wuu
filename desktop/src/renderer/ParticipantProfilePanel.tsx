@@ -35,7 +35,6 @@ const RETIRE_CONFIRM_TIMEOUT_MS = 5_000;
 type ParticipantProfileForm = {
   name: string;
   role: string;
-  avatar: string;
   tagline: string;
   model: string;
   memory: string;
@@ -51,7 +50,6 @@ function formFromParticipant(
   return {
     name: participant?.name ?? "",
     role: participant?.role ?? "reviewer",
-    avatar: participant?.avatar ?? "",
     tagline: participant?.tagline ?? "",
     model: participant?.model ?? "",
     memory: participant?.memory ?? "",
@@ -263,7 +261,6 @@ export function ParticipantProfilePanel({
       id: participant?.id,
       name: form.name.trim(),
       role: form.role.trim(),
-      avatar: form.avatar.trim(),
       tagline: form.tagline.trim(),
       model: form.model.trim(),
       memory: form.memory,
@@ -368,10 +365,6 @@ export function ParticipantProfilePanel({
                       src={avatarPreview}
                       alt="头像"
                     />
-                  ) : form.avatar ? (
-                    <span className="participant-profile-avatar-emoji">
-                      {form.avatar}
-                    </span>
                   ) : (
                     <Camera
                       className="participant-profile-avatar-placeholder"
@@ -409,18 +402,6 @@ export function ParticipantProfilePanel({
                     </button>
                   ) : null}
                 </div>
-                <label className="participant-profile-avatar-emoji-input">
-                  <span>Emoji</span>
-                  <input
-                    data-field="avatar"
-                    value={form.avatar}
-                    onChange={(event) =>
-                      updateField("avatar", event.currentTarget.value)
-                    }
-                    placeholder="N"
-                    maxLength={4}
-                  />
-                </label>
               </div>
               {avatarError ? (
                 <p className="participant-profile-error" role="alert">

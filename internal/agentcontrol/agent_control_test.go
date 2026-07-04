@@ -2983,8 +2983,8 @@ func TestSpawn_CreatesEphemeralParticipant(t *testing.T) {
 	if p.Role != DefaultSubagentType {
 		t.Fatalf("participant role = %q, want %q", p.Role, DefaultSubagentType)
 	}
-	if p.Avatar != participant.DefaultAvatar(DefaultSubagentType) {
-		t.Fatalf("participant avatar = %q, want %q", p.Avatar, participant.DefaultAvatar(DefaultSubagentType))
+	if p.Avatar != "" {
+		t.Fatalf("participant avatar = %q, want empty (emoji avatars removed)", p.Avatar)
 	}
 	if p.CreatedAt.IsZero() || p.UpdatedAt.IsZero() {
 		t.Fatalf("participant timestamps should be set: %+v", p)

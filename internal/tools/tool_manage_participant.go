@@ -42,10 +42,6 @@ func (t *ManageParticipantTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Worker type role (e.g. reviewer, planner, qa). Optional on save.",
 				},
-				"avatar": map[string]any{
-					"type":        "string",
-					"description": "Emoji glyph. Optional on save.",
-				},
 				"tagline": map[string]any{
 					"type":        "string",
 					"description": "One-line description. Optional on save.",

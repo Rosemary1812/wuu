@@ -827,6 +827,14 @@ export function AppSidebar({
             }
             if (key === SIDEBAR_SECTION_AGENTS) {
               const collapsed = collapsedProjectIDs.has(SIDEBAR_SECTION_AGENTS);
+              // Pinning MOVES a conversation under 置顶 — same semantics as
+              // the 对话 and 群聊 lists. A participant whose DM is pinned is
+              // represented by its pinned thread row, so its roster row is
+              // hidden here; unpinning brings it back.
+              const visibleParticipants = participants.filter(
+                (participant) =>
+                  !dmThreadByParticipantID.get(participant.id)?.pinned,
+              );
               const rosterMenu = rosterContextMenu ? (
                 <ThreadContextMenu
                   x={rosterContextMenu.x}
@@ -972,28 +980,30 @@ export function AppSidebar({
                           <span className="participant-roster-meta">常驻身份</span>
                         </button>
                       ) : (
-                        participants.map((participant) => {
+                        visibleParticipants.map((participant) => {
                           const isBusy = busyParticipantIDs.has(participant.id);
                           const isActiveDM =
                             activeDMParticipantID === participant.id;
                           const isUnread = unreadDMParticipantIDs.has(participant.id);
                           const status = isBusy ? "busy" : "online";
-                          const avatar = (
-                            <span className="participant-roster-avatar" aria-hidden="true">
-                              {participant.avatar_image ? (
-                                <img
-                                  className="participant-roster-avatar-image"
-                                  src={participant.avatar_image}
-                                  alt=""
-                                  loading="lazy"
-                                />
-                              ) : participant.avatar ? (
-                                participant.avatar
-                              ) : (
-                                "•"
-                              )}
-                            </span>
+                          const dm = dmThreadByParticipantID.get(participant.id);
+                          const archiveConfirming = Boolean(
+                            dm && archiveConfirmThreadID === dm.id,
                           );
+                          // No placeholder glyph when the participant has no
+                          // uploaded avatar: the name flows right after the
+                          // status dot, and the avatar column only exists
+                          // when there is an image to fill it.
+                          const avatar = participant.avatar_image ? (
+                            <span className="participant-roster-avatar" aria-hidden="true">
+                              <img
+                                className="participant-roster-avatar-image"
+                                src={participant.avatar_image}
+                                alt=""
+                                loading="lazy"
+                              />
+                            </span>
+                          ) : null;
                           const className = [
                             "participant-roster-row",
                             isActiveDM ? "active" : "",
@@ -1002,11 +1012,14 @@ export function AppSidebar({
                             .filter(Boolean)
                             .join(" ");
                           return (
-                            <button
+                            <div
                               key={participant.id}
-                              type="button"
                               className={className}
-                              onClick={() => onSelectParticipant(participant)}
+                              onMouseLeave={() => {
+                                if (dm) {
+                                  onClearArchiveConfirm(dm.id);
+                                }
+                              }}
                               onContextMenu={(event) => {
                                 event.preventDefault();
                                 setRosterContextMenu({
@@ -1016,21 +1029,55 @@ export function AppSidebar({
                                 });
                               }}
                             >
-                              <span
-                                className="participant-roster-status"
-                                data-status={status}
-                                title={isBusy ? "运行中" : "在线"}
-                              />
-                              {avatar}
-                              <span className="participant-roster-copy">
-                                <span className="participant-roster-name">
-                                  {participant.name}
+                              <button
+                                type="button"
+                                className="participant-roster-main"
+                                onClick={() => onSelectParticipant(participant)}
+                              >
+                                <span
+                                  className="participant-roster-status"
+                                  data-status={status}
+                                  title={isBusy ? "运行中" : "在线"}
+                                />
+                                {avatar}
+                                <span className="participant-roster-copy">
+                                  <span className="participant-roster-name">
+                                    {participant.name}
+                                  </span>
                                 </span>
-                                <span className="participant-roster-meta">
-                                  {participant.tagline || participant.role || "named"}
-                                </span>
-                              </span>
-                            </button>
+                              </button>
+                              {dm ? (
+                                <div
+                                  className="thread-row-actions"
+                                  aria-label="DM 操作"
+                                >
+                                  <button
+                                    className={`sidebar-row-icon-button thread-row-action ${dm.pinned ? "active" : ""}`}
+                                    type="button"
+                                    aria-label={dm.pinned ? "取消置顶" : "置顶"}
+                                    title={dm.pinned ? "取消置顶" : "置顶"}
+                                    onClick={() => onTogglePinned(dm)}
+                                  >
+                                    <Pin className="icon-sm" />
+                                  </button>
+                                  <button
+                                    className={`sidebar-row-icon-button thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                                    type="button"
+                                    aria-label={
+                                      archiveConfirming ? "确认归档" : "归档"
+                                    }
+                                    title={
+                                      archiveConfirming
+                                        ? "再次点击归档"
+                                        : "归档"
+                                    }
+                                    onClick={() => onArchiveThread(dm)}
+                                  >
+                                    <Archive className="icon-sm" />
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
                           );
                         })
                       )}

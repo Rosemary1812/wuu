@@ -438,11 +438,10 @@ func (s *Server) participantSummaryForSnapshot(snap subagent.SubAgentSnapshot) *
 		return &summary
 	}
 	fallback := participant.Summary{
-		ID:     strings.TrimSpace(snap.ParticipantID),
-		Name:   participant.DeriveEphemeralName(snap.TaskName, snap.Type),
-		Kind:   string(participant.KindEphemeral),
-		Role:   snap.Type,
-		Avatar: participant.DefaultAvatar(snap.Type),
+		ID:   strings.TrimSpace(snap.ParticipantID),
+		Name: participant.DeriveEphemeralName(snap.TaskName, snap.Type),
+		Kind: string(participant.KindEphemeral),
+		Role: snap.Type,
 	}
 	return &fallback
 }

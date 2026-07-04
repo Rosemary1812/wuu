@@ -9,12 +9,6 @@
   vertical-align: baseline;
 }
 
-.participant-chip-avatar {
-  flex: 0 0 auto;
-  font-size: var(--icon-size-sm);
-  line-height: 1;
-}
-
 .participant-chip-name {
   min-width: 0;
   overflow: hidden;
@@ -38,10 +32,6 @@
   font-size: var(--font-xs);
   line-height: var(--line-ui);
   white-space: nowrap;
-}
-
-.participant-chip--sm .participant-chip-avatar {
-  font-size: var(--font-ui);
 }
 
 .participant-chip--pill {
@@ -262,16 +252,52 @@
 
 /* Row spec (height / padding / font / hover / focus / active / unread)
  * comes from the shared sidebar row family in sidebar.css
- * (sidebar-groups-andy-workspaces.md §1.1). Only the identity columns
- * differ here: status dot + avatar instead of the thread-row icon. The
- * leading (status-dot) column reuses the thread-row leading-column
- * width and gap tokens so the dot sits on the exact vertical axis of
- * the session rows' leading icon. */
+ * (sidebar-groups-andy-workspaces.md §1.1). The row itself is a single
+ * cell holding the main select button; hover pin/archive actions overlay
+ * on the right, mirroring .thread-row / .thread-row-main. */
 .participant-roster-row {
   min-width: 0;
   border: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Identity columns (status dot + name, plus an avatar column only when
+ * an uploaded avatar exists) live on the main button. The leading
+ * (status-dot) column reuses the thread-row leading-column width and
+ * gap tokens so the dot sits on the exact vertical axis of the session
+ * rows' leading icon. */
+.participant-roster-main {
+  display: grid;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
   column-gap: var(--sidebar-nav-column-gap);
+  grid-template-columns: var(--sidebar-nav-icon-col) minmax(0, 1fr);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  /* Inherit the row's line-height (`font: inherit` resets it) so
+   * descenders in the ellipsized name are not clipped. */
+  padding: 0;
+  text-align: left;
+}
+
+.participant-roster-main:has(.participant-roster-avatar) {
   grid-template-columns: var(--sidebar-nav-icon-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
+}
+
+/* Focus ring lives on the row (same inset ring as the shared sidebar
+ * row family) since the focusable element is now the inner button. */
+.participant-roster-main:focus-visible {
+  outline: 0;
+}
+
+.participant-roster-row:has(.participant-roster-main:focus-visible) {
+  box-shadow: inset 0 0 0 2px rgba(17, 19, 21, 0.18);
 }
 
 .participant-roster-row:disabled {
@@ -508,11 +534,6 @@
   object-fit: cover;
 }
 
-.participant-profile-avatar-emoji {
-  font-size: var(--font-ui);
-  line-height: 1;
-}
-
 .participant-profile-avatar-placeholder {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
@@ -526,23 +547,6 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.participant-profile-avatar-emoji-input {
-  display: flex;
-  flex: 0 0 auto;
-  width: 64px;
-  flex-direction: column;
-  gap: 5px;
-  color: var(--ink-soft);
-  font-size: var(--font-xs);
-  line-height: var(--line-ui);
-}
-
-.participant-profile-avatar-emoji-input input {
-  width: 100%;
-  min-width: 0;
-  text-align: center;
 }
 
 .participant-profile-file-input {

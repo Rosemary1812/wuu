@@ -38,7 +38,6 @@ type RosterEntry struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Role    string `json:"role,omitempty"`
-	Avatar  string `json:"avatar,omitempty"`
 	Tagline string `json:"tagline,omitempty"`
 	Model   string `json:"model,omitempty"`
 }
@@ -49,7 +48,6 @@ type RosterEntry struct {
 type RosterSaveRequest struct {
 	Name       string `json:"name"`
 	Role       string `json:"role,omitempty"`
-	Avatar     string `json:"avatar,omitempty"`
 	Tagline    string `json:"tagline,omitempty"`
 	Model      string `json:"model,omitempty"`
 	MemorySeed string `json:"memory_seed,omitempty"`
@@ -155,7 +153,6 @@ func (c *AgentControl) ManageParticipant(ctx context.Context, agentID, args stri
 		Action     string `json:"action"`
 		Name       string `json:"name,omitempty"`
 		Role       string `json:"role,omitempty"`
-		Avatar     string `json:"avatar,omitempty"`
 		Tagline    string `json:"tagline,omitempty"`
 		Model      string `json:"model,omitempty"`
 		MemorySeed string `json:"memory_seed,omitempty"`
@@ -179,7 +176,6 @@ func (c *AgentControl) ManageParticipant(ctx context.Context, agentID, args stri
 		entry, err := roster.Save(ctx, agentID, RosterSaveRequest{
 			Name:       name,
 			Role:       strings.TrimSpace(payload.Role),
-			Avatar:     strings.TrimSpace(payload.Avatar),
 			Tagline:    strings.TrimSpace(payload.Tagline),
 			Model:      strings.TrimSpace(payload.Model),
 			MemorySeed: payload.MemorySeed,

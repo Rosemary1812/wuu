@@ -796,7 +796,6 @@ func (c *AgentControl) newEphemeralParticipant(taskName string, wt WorkerType) p
 		Kind:      participant.KindEphemeral,
 		Name:      participant.DeriveEphemeralName(taskName, wt.Name),
 		Role:      wt.Name,
-		Avatar:    participant.DefaultAvatar(wt.Name),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

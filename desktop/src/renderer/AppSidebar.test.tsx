@@ -237,15 +237,13 @@ describe("AppSidebar participant roster", () => {
       kind: "named",
       name: "Image Agent",
       role: "writer",
-      avatar: "I",
       avatar_image: "data:image/png;base64,AAA",
     },
     {
-      id: "p-emoji",
+      id: "p-plain",
       kind: "named",
-      name: "Emoji Agent",
+      name: "Plain Agent",
       role: "reader",
-      avatar: "E",
     },
     {
       id: "p-bare",
@@ -318,7 +316,7 @@ describe("AppSidebar participant roster", () => {
     expect(exported).toBe(1);
   });
 
-  it("falls back avatar from image to emoji to bullet", () => {
+  it("renders the avatar column only for uploaded images and shows only the name", () => {
     renderSidebar({ participants });
 
     const rows = Array.from(
@@ -334,23 +332,25 @@ describe("AppSidebar participant roster", () => {
     expect(imageRow?.querySelector("img.participant-roster-avatar-image")).not.toBeNull();
     expect(imageRow?.querySelector(".participant-roster-avatar-image")?.getAttribute("src"))
       .toBe("data:image/png;base64,AAA");
-    expect(imageRow?.textContent).toContain("writer");
 
-    const emojiRow = byName.get("Emoji Agent");
-    expect(emojiRow?.querySelector("img.participant-roster-avatar-image")).toBeNull();
-    expect(emojiRow?.querySelector(".participant-roster-avatar")?.textContent).toBe("E");
-    expect(emojiRow?.textContent).toContain("reader");
+    // Without an uploaded avatar there is no placeholder glyph and no
+    // reserved avatar column — the name flows right after the status dot.
+    const plainRow = byName.get("Plain Agent");
+    expect(plainRow?.querySelector(".participant-roster-avatar")).toBeNull();
 
     const bareRow = byName.get("Bare Agent");
-    expect(bareRow?.querySelector("img.participant-roster-avatar-image")).toBeNull();
-    expect(bareRow?.querySelector(".participant-roster-avatar")?.textContent).toBe("•");
-    expect(bareRow?.querySelector(".participant-roster-meta")?.textContent).toBe("named");
+    expect(bareRow?.querySelector(".participant-roster-avatar")).toBeNull();
+
+    // Rows carry no tagline/role meta line: the roster shows the name only.
+    for (const row of rows) {
+      expect(row.querySelector(".participant-roster-meta")).toBeNull();
+    }
   });
 
   it("marks busy participants with a busy status dot", () => {
     renderSidebar({
       participants,
-      busyParticipantIDs: new Set(["p-emoji"]),
+      busyParticipantIDs: new Set(["p-plain"]),
     });
 
     const rows = Array.from(
@@ -366,7 +366,7 @@ describe("AppSidebar participant roster", () => {
     }
 
     expect(statusByName.get("Image Agent")).toBe("online");
-    expect(statusByName.get("Emoji Agent")).toBe("busy");
+    expect(statusByName.get("Plain Agent")).toBe("busy");
     expect(statusByName.get("Bare Agent")).toBe("online");
   });
 

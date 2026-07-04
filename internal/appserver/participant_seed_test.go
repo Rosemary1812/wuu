@@ -56,9 +56,6 @@ func TestEnsureDefaultParticipantSeedsAndy(t *testing.T) {
 	if andy.Role != "general-purpose" {
 		t.Errorf("role = %q, want %q", andy.Role, "general-purpose")
 	}
-	if andy.Avatar != "🦉" {
-		t.Errorf("avatar = %q, want owl", andy.Avatar)
-	}
 	if andy.Tagline != defaultSeedParticipantTagline {
 		t.Errorf("tagline = %q, want %q", andy.Tagline, defaultSeedParticipantTagline)
 	}

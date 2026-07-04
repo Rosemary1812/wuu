@@ -155,7 +155,6 @@ function participantFixture(overrides: Partial<ParticipantProfile> = {}): Partic
     kind: "named",
     name: "Noel",
     role: "reviewer",
-    avatar: "N",
     avatar_image: undefined,
     tagline: "Find regressions",
     model: "anthropic:claude-sonnet-4-7",

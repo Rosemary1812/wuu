@@ -17,10 +17,10 @@ export type ParticipantChipProps = {
 
 /**
  * Inline identity chip for a conversation participant (subagent).
- * Display-only: avatar + name + role, no interaction. Avatar and role
- * spans are omitted when empty; the role is also suppressed when it
- * would repeat the name verbatim (legacy rows where only `type` is
- * known would otherwise read "explore explore").
+ * Display-only: name + role, no interaction. The role span is omitted
+ * when empty, and also suppressed when it would repeat the name
+ * verbatim (legacy rows where only `type` is known would otherwise
+ * read "explore explore").
  */
 export function ParticipantChip({
   participant,
@@ -33,7 +33,6 @@ export function ParticipantChip({
     fallbackTaskName?.trim() ||
     fallbackType?.trim() ||
     "agent";
-  const avatar = participant?.avatar?.trim() ?? "";
   const roleSource = participant
     ? (participant.role?.trim() ?? "")
     : (fallbackType?.trim() ?? "");
@@ -41,11 +40,6 @@ export function ParticipantChip({
   const className = `participant-chip${size === "sm" ? " participant-chip--sm" : ""}`;
   return (
     <span className={className} title={role ? `${name} · ${role}` : name}>
-      {avatar ? (
-        <span className="participant-chip-avatar" aria-hidden="true">
-          {avatar}
-        </span>
-      ) : null}
       <span className="participant-chip-name">{name}</span>
       {role ? (
         <>

@@ -1491,6 +1491,62 @@ export function isScratchThread(
   return !projects.some((project) => project.path === projectPath);
 }
 
+/**
+ * Resolve the RuntimeContext a thread should open under, independent of
+ * whichever sidebar group the user clicked it from (对话 scratch list, 置顶,
+ * 群聊, or the agent roster's DM tab). Precedence mirrors isScratchThread:
+ * a cwd match against a registered project always wins, even when the
+ * thread's own workspace_kind says otherwise (e.g. a thread created before
+ * a project was registered at that path). Everything else — scratch, dm,
+ * group, or unrecognized — resolves to a no_project context rooted at the
+ * thread's own cwd, which is what makes the workspace panel (file tree /
+ * terminal / git) follow the thread instead of staying on the previously
+ * active project.
+ */
+export function resolveThreadRuntimeContext(
+  thread: Thread,
+  projects: DesktopProject[],
+): RuntimeContext {
+  const project = projects.find((candidate) =>
+    threadBelongsToProject(thread, candidate),
+  );
+  if (project) {
+    return { kind: "project", project_id: project.id, cwd: project.path };
+  }
+  return { kind: "no_project", cwd: thread.cwd };
+}
+
+/**
+ * Derive the RuntimeContext the workspace panel's file tree, file preview,
+ * and terminal should root at. This is ordinarily just the active
+ * RuntimeContext, but a worktree-fork thread's own cwd (Thread.cwd) points
+ * at a git worktree directory distinct from the project root that
+ * resolveThreadRuntimeContext resolves the thread to (threadProjectPath
+ * prefers worktree.base_repo, so the *context* stays pinned to the base
+ * project while the *thread* itself runs out of the worktree). When the
+ * active thread's cwd differs from the active context's cwd, the panel
+ * should follow the thread instead — kind/project_id are preserved so
+ * labels (project name, etc.) stay stable; only cwd moves.
+ *
+ * The diff/review panel deliberately does NOT use this: gitStatus is
+ * fetched from the app-server bound to activeContext's own workdir, so
+ * feeding it the thread's cwd would silently show diff data for the wrong
+ * directory. Callers should keep passing activeContext straight through to
+ * the diff view.
+ */
+export function workspacePanelContext(
+  activeContext: RuntimeContext | undefined,
+  thread: Thread | undefined,
+): RuntimeContext | undefined {
+  if (!thread || !thread.cwd || thread.cwd === activeContext?.cwd) {
+    return activeContext;
+  }
+  if (!activeContext) {
+    return { kind: "no_project", cwd: thread.cwd };
+  }
+  return { ...activeContext, cwd: thread.cwd };
+}
+
 export function scratchThreads(
   threads: Thread[],
   projects: DesktopProject[],
@@ -2623,7 +2679,6 @@ function participantFromRecord(
     name,
     kind: stringValue(record, "kind") ?? "",
     role: stringValue(record, "role"),
-    avatar: stringValue(record, "avatar"),
   };
 }
 
