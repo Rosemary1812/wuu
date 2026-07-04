@@ -44,8 +44,26 @@ func (s *Server) recordEnvelopeReadReceipts(participantID string, envs []Message
 		done[key] = true
 		if err := session.MarkMessageSeen(s.rt.SessionDir, threadID, env.SourceSeq, participantID, status, at); err != nil {
 			providers.DebugLogf("record read receipt (%s) for %q on %s#%d: %v", status, participantID, threadID, env.SourceSeq, err)
+			continue
 		}
+		s.notifyMessageSeen(threadID, env.SourceSeq, participantID, status)
 	}
+}
+
+// recordParticipantReaction persists one participant's reaction on a message
+// and notifies clients. It never routes: a reaction is a terminal event, not a
+// message (2026-07-04-read-receipts-and-reactions.md §3 invariant 1).
+func (s *Server) recordParticipantReaction(threadID string, seq int, participantID, reaction string) error {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	threadID = strings.TrimSpace(threadID)
+	participantID = strings.TrimSpace(participantID)
+	if err := session.SetMessageReaction(s.rt.SessionDir, threadID, seq, participantID, reaction, time.Now().UTC()); err != nil {
+		return err
+	}
+	s.notifyMessageReaction(threadID, seq, participantID, reaction)
+	return nil
 }
 
 const residentEnvelopeBatchLimit = 20

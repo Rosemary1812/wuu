@@ -124,6 +124,34 @@ func (r residentParticipantSpeech) Decline(ctx context.Context, reason, targetTh
 	return r.server.publishParticipantMessage(targetThreadID, msg)
 }
 
+// React stamps a reaction on a specific message (targetThreadID, seq). It is
+// the terminal, non-routing half of participant speech: unlike PostMessage it
+// never generates an envelope or wakes another agent (2026-07-04-read-receipts-
+// and-reactions.md §3 invariant 1) — it only writes the mark and notifies
+// clients.
+func (r residentParticipantSpeech) React(ctx context.Context, targetThreadID string, seq int, reaction string) error {
+	_ = ctx
+	if r.server == nil {
+		return errors.New("react: app server not configured")
+	}
+	participantID := strings.TrimSpace(r.participantID)
+	if participantID == "" {
+		return errors.New("react: participant_id is required")
+	}
+	if seq <= 0 {
+		return errors.New("react: seq is required")
+	}
+	reaction = strings.TrimSpace(reaction)
+	if !tools.IsReactionKey(reaction) {
+		return fmt.Errorf("react: unknown reaction %q", reaction)
+	}
+	targetThreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
+	if err != nil {
+		return err
+	}
+	return r.server.recordParticipantReaction(targetThreadID, seq, participantID, reaction)
+}
+
 func (r residentParticipantSpeech) resolveTargetThread(targetThreadID string) (string, error) {
 	if r.server == nil {
 		return "", errors.New("post_message: app server not configured")

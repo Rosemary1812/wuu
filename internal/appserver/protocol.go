@@ -115,6 +115,11 @@ const (
 	NotificationAgentUpdated        = "agent/updated"
 	NotificationAgentMailbox        = "agent/mailbox"
 	NotificationMCPStatusUpdated    = "mcp/status/updated"
+	// NotificationMessageMark carries one read-receipt or reaction change for
+	// a single message so a live chat view can patch that bubble in place
+	// without reloading the thread (2026-07-04-read-receipts-and-reactions.md
+	// §5).
+	NotificationMessageMark = "message/mark"
 )
 
 type Request struct {

@@ -49,6 +49,11 @@ func (e MessageEnvelope) Prompt() string {
 		e.SourceTitle, e.SourceThreadID, e.SenderKind, e.SenderName,
 		strconv.FormatBool(e.Addressed), strconv.Itoa(e.Hop),
 	)
+	// seq is the message's stable address; the model passes it to the react
+	// tool to stamp a reaction on this exact message. Omitted when unknown.
+	if e.SourceSeq > 0 {
+		attrs += fmt.Sprintf(" seq=%q", strconv.Itoa(e.SourceSeq))
+	}
 	if ws := envelopeWorkspaceAttr(e.Workspace); ws != "" {
 		attrs += fmt.Sprintf(" workspace=%q", ws)
 	}

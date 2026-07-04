@@ -279,6 +279,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewAgentReportTool(e),
 		NewPostMessageTool(e),
 		NewDeclineTool(e),
+		NewReactTool(e),
 		NewManageParticipantTool(e),
 		// Process management
 		NewStartProcessTool(e),
