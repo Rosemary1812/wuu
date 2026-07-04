@@ -92,8 +92,11 @@ func TestResidentRouterUserMessageFansOutToThreadMembers(t *testing.T) {
 	}
 }
 
-func TestResidentRouterParticipantMessageHonorsMentionsAndHopBudget(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
+func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *testing.T) {
+	// Empty provider response so a woken resident produces no final answer,
+	// which keeps the fallback-reply path from cascading extra group posts
+	// and lets the test observe only the two messages it publishes directly.
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})
 	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
@@ -121,6 +124,11 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndHopBudget(t *testing.T
 		t.Fatalf("Bea envelope meta = %+v", beaMeta)
 	}
 
+	// Bea replies without @mentioning anyone, at hop=2. Before the
+	// 2026-07-04 group-fanout amendment this was silently dropped (hop budget);
+	// now a deep agent→agent relay is delivered to every other member as an
+	// ambient (addressed=false) envelope, so a turtle-soup back-and-forth can
+	// continue. Convergence is the model's judgment, not a depth cutoff.
 	err = srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       bea,
 		ParticipantID: bea,
@@ -132,9 +140,10 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndHopBudget(t *testing.T
 	if err != nil {
 		t.Fatalf("publish Bea message: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
-	if _, history := findDMHistoryIfExists(t, srv, ada); len(history) > 0 {
-		t.Fatalf("Ada should not receive unmentioned hop=2 reply, history=%+v", history)
+	_, adaHistory := waitForResidentDMHistory(t, srv, ada, 1)
+	adaMeta := findEnvelopeMetaRecord(t, adaHistory)
+	if adaMeta.SourceThreadID != groupID || adaMeta.Addressed || adaMeta.Hop != 2 || adaMeta.SenderParticipantID != bea {
+		t.Fatalf("Ada should receive Bea's unmentioned hop=2 relay as ambient, meta = %+v", adaMeta)
 	}
 }
 

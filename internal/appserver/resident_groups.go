@@ -19,9 +19,35 @@ const (
 	maxCreateGroupPerTurn    = 1
 	maxAddGroupMemberPerTurn = 8
 	// maxGroupMembers caps explicit members of one group thread
-	// (resident-named-agents.md §6).
+	// (resident-named-agents.md §6). It is the sole structural backstop on
+	// parallel fan-out: one group message wakes every other member, so the
+	// membership count IS the branching factor (2026-07-04 group-fanout
+	// amendment, 增补四).
 	maxGroupMembers = 8
+	// maxNamedParticipants caps the active named-agent roster. Deliberately
+	// the SAME number as maxGroupMembers: the #all channel's membership is
+	// the whole named roster (group_thread.go), so the roster size is #all's
+	// broadcast fan-out — the one "group nobody explicitly built". Capping it
+	// is how the group-size limit reaches #all (增补五).
+	maxNamedParticipants = maxGroupMembers
 )
+
+// ensureNamedParticipantCapacity rejects creating a new named participant
+// once the active roster is at maxNamedParticipants. Retired participants do
+// not count (session.ListParticipants excludes them), so retiring one frees
+// a slot. Both creation entry points — the manage_participant tool
+// (serverParticipantRoster.Save) and the participant/save RPC
+// (handleParticipantSave) — call this before persisting a new row.
+func (s *Server) ensureNamedParticipantCapacity() error {
+	ids, err := s.allNamedParticipantIDs()
+	if err != nil {
+		return fmt.Errorf("check named agent roster capacity: %w", err)
+	}
+	if len(ids) >= maxNamedParticipants {
+		return fmt.Errorf("named agent roster is full (%d of %d); retire an agent before creating another", len(ids), maxNamedParticipants)
+	}
+	return nil
+}
 
 // residentGroupManager implements tools.GroupManager for one resident
 // participant. Like residentSpeechLimiter, a fresh instance is wired per

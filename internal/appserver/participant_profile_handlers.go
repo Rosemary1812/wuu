@@ -110,6 +110,11 @@ func (s *Server) handleParticipantSave(req Request) error {
 	} else {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	if isNew {
+		if err := s.ensureNamedParticipantCapacity(); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+	}
 	if p.Workspace == "" {
 		workspace, err := s.participantWorkspace(p.ID)
 		if err != nil {

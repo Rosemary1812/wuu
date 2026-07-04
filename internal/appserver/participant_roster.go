@@ -103,6 +103,9 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 		UpdatedAt: now,
 	}
 	if existing == nil {
+		if err := r.server.ensureNamedParticipantCapacity(); err != nil {
+			return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: %w", err)
+		}
 		entry.ID = participant.NewID()
 		entry.CreatedAt = now
 		workspace, werr := r.server.participantWorkspace(entry.ID)

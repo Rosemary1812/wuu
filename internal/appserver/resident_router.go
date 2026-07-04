@@ -14,10 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
-const (
-	maxEnvelopeHop             = 2
-	residentEnvelopeBatchLimit = 20
-)
+const residentEnvelopeBatchLimit = 20
 
 type envelopeMetaRecord struct {
 	ID             string `json:"id,omitempty"`
@@ -147,9 +144,15 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 		env := base
 		env.ID = "env-" + session.NewID()
 		env.Addressed = mentioned[participantID]
-		if env.Hop >= maxEnvelopeHop && !env.Addressed {
-			continue
-		}
+		// No hop-based delivery cutoff (2026-07-04 group-fanout amendment,
+		// resident-named-agents.md 增补四): deep agent→agent relays are
+		// delivered like any other ambient message, so a turtle-soup-style
+		// back-and-forth no longer dies the moment neither side @mentions.
+		// Whether to engage is the model's judgment (design principle 10 +
+		// the from="agent" prompt rule), not a depth counter; the only
+		// structural backstop is the parallel fan-out width, bounded by the
+		// group-size / roster cap (maxGroupMembers). Hop rides along as an
+		// advisory signal in the envelope prompt.
 		if env.CreatedAt.IsZero() {
 			env.CreatedAt = time.Now().UTC()
 		}
