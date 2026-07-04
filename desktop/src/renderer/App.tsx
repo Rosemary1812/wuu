@@ -2412,6 +2412,31 @@ export function App(): JSX.Element {
   }
 
   /**
+   * Drop a permanently deleted thread from every sidebar cache. Unlike
+   * archive (which upserts the updated snapshot and lets the archived
+   * filter hide it), delete leaves no server-side thread behind, so the
+   * cached copies must be removed outright from both the scratch cache
+   * and every project's cached list.
+   */
+  function removeCachedSidebarThread(threadID: string): void {
+    setCachedScratchThreads((current) =>
+      current.filter((thread) => thread.id !== threadID),
+    );
+    setProjectThreadsByProjectID((current) => {
+      let changed = false;
+      const next: Record<string, Thread[]> = {};
+      for (const [projectID, threads] of Object.entries(current)) {
+        const filtered = threads.filter((thread) => thread.id !== threadID);
+        if (filtered.length !== threads.length) {
+          changed = true;
+        }
+        next[projectID] = filtered;
+      }
+      return changed ? next : current;
+    });
+  }
+
+  /**
    * Returns a new thread with the matching child agent patched, or the
    * original reference when no match exists. Used by the subagent
    * pin/archive handlers so they can update `child_agents` in state
@@ -6225,6 +6250,91 @@ export function App(): JSX.Element {
   }
 
   /**
+   * Permanently delete a conversation via `thread/delete`. The context
+   * menu item already asked the user to confirm, so no press-again state
+   * is involved here; the server rejects running threads as a backstop.
+   * Removal mirrors the archive tab/state cleanup, but the thread is
+   * also dropped from the sidebar caches because no server-side snapshot
+   * exists anymore.
+   */
+  async function deleteThread(thread: ThreadSummary): Promise<void> {
+    const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
+    if (
+      !state.activeContext ||
+      (!isLocalDemoThread && isThreadRunning(thread))
+    ) {
+      return;
+    }
+    clearThreadPendingComposerMessages(thread.id);
+    const deletedActiveThread = thread.id === activeThreadID;
+    const fallbackDraft = deletedActiveThread
+      ? nextDraftSessionTab(state.activeContext)
+      : undefined;
+    if (deletedActiveThread) {
+      setPrompt("");
+      setComposerImages([]);
+      setComposerFiles([]);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+    }
+    try {
+      if (isLocalDemoThread) {
+        localDemoThreadsRef.current = new Map(
+          [...localDemoThreadsRef.current].filter(
+            ([threadID]) => threadID !== thread.id,
+          ),
+        );
+      } else {
+        await window.wuu.deleteThread(thread.id);
+      }
+      removeCachedSidebarThread(thread.id);
+      setArchiveConfirmThreadID((current) =>
+        current === thread.id ? undefined : current,
+      );
+      setState((current) => {
+        const nextTabs = removeSessionTab(
+          current.sessionTabs,
+          threadSessionTabID(thread.id),
+        );
+        return {
+          ...current,
+          thread: current.thread?.id === thread.id ? undefined : current.thread,
+          secondaryThread:
+            current.secondaryThread?.id === thread.id
+              ? undefined
+              : current.secondaryThread,
+          activePane:
+            current.activePane === "secondary" &&
+            current.secondaryThread?.id === thread.id
+              ? "primary"
+              : current.activePane,
+          sessionTabs: fallbackDraft
+            ? ensureSessionTab(nextTabs, fallbackDraft)
+            : nextTabs,
+          activeSessionTabID:
+            current.activeSessionTabID === threadSessionTabID(thread.id) &&
+            fallbackDraft
+              ? fallbackDraft.id
+              : current.activeSessionTabID,
+          threads: current.threads.filter(
+            (candidate) => candidate.id !== thread.id,
+          ),
+          running:
+            activeThreadIDForState(current) === thread.id
+              ? false
+              : current.running,
+          status: "ready",
+        };
+      });
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "delete thread failed",
+      }));
+    }
+  }
+
+  /**
    * Pin a subagent's own session. Mirrors `toggleThreadPinned` but the
    * API call goes to the underlying session id (the agent id) and the
    * result is patched back into the active thread's `child_agents` list
@@ -7472,6 +7582,7 @@ export function App(): JSX.Element {
         onExportParticipants={exportParticipantTemplate}
         onTogglePinned={(thread) => void toggleThreadPinned(thread)}
         onArchiveThread={(thread) => void archiveThread(thread)}
+        onDeleteThread={(thread) => void deleteThread(thread)}
         onClearArchiveConfirm={(id) =>
           setArchiveConfirmThreadID((current) =>
             current === id ? undefined : current,

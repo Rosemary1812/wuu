@@ -278,6 +278,7 @@ describe("ProjectList", () => {
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
+          onDeleteThread={() => {}}
           onClearArchiveConfirm={() => {}}
         />,
       );
@@ -322,6 +323,7 @@ describe("ProjectList", () => {
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
+          onDeleteThread={() => {}}
           onClearArchiveConfirm={() => {}}
         />,
       );
@@ -364,6 +366,7 @@ describe("ProjectList", () => {
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
+          onDeleteThread={() => {}}
           onClearArchiveConfirm={() => {}}
         />,
       );
@@ -429,6 +432,7 @@ describe("ProjectList", () => {
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
+          onDeleteThread={() => {}}
           onClearArchiveConfirm={() => {}}
         />,
       );
@@ -486,6 +490,7 @@ describe("ProjectList", () => {
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
+          onDeleteThread={() => {}}
           onClearArchiveConfirm={() => {}}
         />,
       );
@@ -532,6 +537,7 @@ describe("ProjectGroup remove workspace", () => {
     onSelectThread: () => {},
     onToggleThreadPinned: () => {},
     onArchiveThread: () => {},
+    onDeleteThread: () => {},
     onClearArchiveConfirm: () => {},
   };
 
@@ -641,6 +647,7 @@ describe("ProjectGroup missing workspace", () => {
     onSelectThread: () => {},
     onToggleThreadPinned: () => {},
     onArchiveThread: () => {},
+    onDeleteThread: () => {},
     onClearArchiveConfirm: () => {},
     onRemoveProject: () => {},
   };

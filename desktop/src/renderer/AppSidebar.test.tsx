@@ -142,6 +142,7 @@ function renderSidebar({
         onExportParticipants={onExportParticipants}
         onTogglePinned={onTogglePinned}
         onArchiveThread={() => {}}
+        onDeleteThread={() => {}}
         onClearArchiveConfirm={() => {}}
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}

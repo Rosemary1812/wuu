@@ -53,6 +53,7 @@ const (
 	MethodThreadArchive            = "thread/archive"
 	MethodThreadRegenerateTitle    = "thread/regenerate-title"
 	MethodThreadRename             = "thread/rename"
+	MethodThreadDelete             = "thread/delete"
 	MethodThreadMembersRemove      = "thread/members/remove"
 	MethodParticipantStart         = "participant/start"
 	MethodParticipantList          = "participant/list"
@@ -968,6 +969,19 @@ type ThreadRenameParams struct {
 
 type ThreadRenameResult struct {
 	Thread Thread `json:"thread"`
+}
+
+// ThreadDeleteParams is the input for the `thread/delete` method: the user
+// permanently removes a conversation. Only archived or otherwise idle (not
+// running) threads are eligible. Deletion removes the session row (chat
+// history cascades via foreign keys), the workspace-scoped session artifact
+// directory, and any fork worktree bound to the thread.
+type ThreadDeleteParams struct {
+	ThreadID string `json:"thread_id"`
+}
+
+type ThreadDeleteResult struct {
+	ThreadID string `json:"thread_id"`
 }
 
 // ThreadMembersRemoveParams is the input for the `thread/members/remove`

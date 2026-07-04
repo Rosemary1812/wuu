@@ -1613,6 +1613,10 @@ export type WuuDesktopApi = {
     participantId: string,
   ) => Promise<{ thread: Thread }>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
+  // Permanently deletes a conversation (history, artifacts, and any fork
+  // worktree). Mirrors the `thread/delete` RPC; running threads are rejected
+  // server-side.
+  deleteThread: (threadId: string) => Promise<{ thread_id: string }>;
   startTurn: (
     threadId: string,
     prompt: string,

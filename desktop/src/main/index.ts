@@ -732,6 +732,11 @@ app.whenReady().then(async () => {
         archived,
       }),
   );
+  ipcMain.handle("wuu:thread-delete", (_event, threadId: string) =>
+    appServerClientPool.request<{ thread_id: string }>("thread/delete", {
+      thread_id: threadId,
+    }),
+  );
   ipcMain.handle(
     "wuu:thread-members-remove",
     (_event, threadId: string, participantId: string) =>

@@ -51,6 +51,7 @@ export function ProjectList({
   onSelectThread,
   onToggleThreadPinned,
   onArchiveThread,
+  onDeleteThread,
   onClearArchiveConfirm
 }: {
   projects: DesktopProject[];
@@ -78,6 +79,7 @@ export function ProjectList({
   onSelectThread: (projectID: string, threadID: string) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
+  onDeleteThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
   return (
@@ -103,6 +105,7 @@ export function ProjectList({
           onSelectThread={onSelectThread}
           onToggleThreadPinned={onToggleThreadPinned}
           onArchiveThread={onArchiveThread}
+          onDeleteThread={onDeleteThread}
           onClearArchiveConfirm={onClearArchiveConfirm}
         />
       ))}
@@ -135,6 +138,7 @@ export function ProjectGroup({
   onSelectThread,
   onToggleThreadPinned,
   onArchiveThread,
+  onDeleteThread,
   onClearArchiveConfirm,
   onRemoveProject,
   onRelocateProject,
@@ -157,6 +161,7 @@ export function ProjectGroup({
   onSelectThread: (projectID: string, threadID: string) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
+  onDeleteThread: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   // Remove a real workspace from the sidebar. Absent for the 对话 scratch
   // pseudo project (and never wired for 群聊 / Agents, which are separate
@@ -273,6 +278,7 @@ export function ProjectGroup({
             onSelect={(threadID) => onSelectThread(project.id, threadID)}
             onTogglePinned={onToggleThreadPinned}
             onArchive={onArchiveThread}
+            onDelete={onDeleteThread}
             onClearArchiveConfirm={onClearArchiveConfirm}
             onShowMore={showMoreProjectThreads}
             onCollapse={collapseProjectThreads}
@@ -353,6 +359,7 @@ function ThreadList({
   onSelect,
   onTogglePinned,
   onArchive,
+  onDelete,
   onClearArchiveConfirm,
   onSidebarThreadHover,
   onShowMore,
@@ -367,6 +374,7 @@ function ThreadList({
   onSelect: (id: string) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
+  onDelete: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   // Forwarded so ThreadRows can report which row is currently hovered; the
   // conversation pane owns the preview render so the card lives in the
@@ -423,6 +431,7 @@ function ThreadList({
         onSelect={onSelect}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
+        onDelete={onDelete}
         onClearArchiveConfirm={onClearArchiveConfirm}
       />
       {showFooter ? (
@@ -520,6 +529,7 @@ function ThreadRows({
   onSelect,
   onTogglePinned,
   onArchive,
+  onDelete,
   onClearArchiveConfirm,
   onSidebarThreadHover,
 }: {
@@ -531,6 +541,7 @@ function ThreadRows({
   onSelect: (id: string) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
+  onDelete: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   // Fires when a row is hovered/unhovered so the conversation pane can
   // render a "what did this thread actually do" preview without the card
@@ -656,6 +667,20 @@ function ThreadRows({
                 void copyToClipboard(contextMenu.thread.id);
               },
             },
+            { separator: true },
+            {
+              label: "删除对话",
+              // A running thread cannot be deleted (the server also rejects
+              // it); disable the entry so the confirm dialog never promises
+              // a deletion that will fail.
+              disabled: threadRunning(contextMenu.thread),
+              onSelect: () => {
+                if (!window.confirm("删除后不可恢复，对话与工件将被清除")) {
+                  return;
+                }
+                onDelete(contextMenu.thread);
+              },
+            },
           ]}
           onClose={() => setContextMenu(null)}
         />
@@ -673,6 +698,7 @@ export function PinnedThreadList({
   onSelect,
   onTogglePinned,
   onArchive,
+  onDelete,
   onClearArchiveConfirm,
 }: {
   threads: ThreadSummary[];
@@ -683,6 +709,7 @@ export function PinnedThreadList({
   onSelect: (id: string) => void;
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchive: (thread: ThreadSummary) => void;
+  onDelete: (thread: ThreadSummary) => void;
   onClearArchiveConfirm: (threadID: string) => void;
 }): JSX.Element {
   return (
@@ -696,6 +723,7 @@ export function PinnedThreadList({
         onSelect={onSelect}
         onTogglePinned={onTogglePinned}
         onArchive={onArchive}
+        onDelete={onDelete}
         onClearArchiveConfirm={onClearArchiveConfirm}
       />
     </div>
