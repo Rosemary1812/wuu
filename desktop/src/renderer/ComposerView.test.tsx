@@ -676,6 +676,18 @@ describe("Composer send control", () => {
     expect(selector?.getAttribute("title")).toBe("/repo/wuu");
   });
 
+  it("labels the hero pill 对话 for the no-project workspace", () => {
+    renderComposer({
+      variant: "hero",
+      activeContext: { kind: "no_project", cwd: "/scratch/default" },
+    });
+
+    const selector = container.querySelector<HTMLButtonElement>(".hero-project-pill");
+    expect(selector).not.toBeNull();
+    // Matches the sidebar group and the session tab, which both read "对话".
+    expect(selector?.textContent).toContain("对话");
+  });
+
   it("does not apply dock Plus icon sizing to the hero project selector", () => {
     expect(composerCSS).toContain(".composer-bar button.composer-project-control > svg");
     expect(composerCSS).not.toContain(".composer-bar .composer-project-control svg");

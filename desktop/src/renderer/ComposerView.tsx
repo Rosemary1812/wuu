@@ -1183,7 +1183,10 @@ function heroProjectPillLabel(activeContext: RuntimeContext | undefined, activeP
     return activeProject?.name ?? "当前项目";
   }
   if (activeContext?.kind === "no_project") {
-    return "无项目";
+    // The no-project workspace is surfaced everywhere else — sidebar group,
+    // session tab — as "对话", so the draft's cwd control matches that name
+    // rather than the older, inconsistent "无项目".
+    return "对话";
   }
   return "选择项目";
 }
