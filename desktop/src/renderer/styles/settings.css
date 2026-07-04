@@ -1197,6 +1197,27 @@
   gap: 12px;
 }
 
+/* 短文/原文/空态在骨架屏之后挂载：轻微淡入 + 2px 上移。子 Tab 或同事
+ * 切换会先回到骨架屏，因此同一动画天然覆盖「切换内容淡入」。 */
+.settings-memory-overview,
+.settings-memory-raw,
+.settings-memory-card .settings-empty,
+.settings-memory-chat-hint {
+  animation: settings-memory-fade-up 200ms var(--menu-enter-easing) both;
+}
+
+@keyframes settings-memory-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .settings-memory-meta {
   color: var(--ink-faint);
   font-size: var(--font-xs);
@@ -1218,22 +1239,28 @@
   padding: 6px 0;
 }
 
+/* shimmer 渐变从左向右扫过灰条；只用主题 overlay token，亮暗自适配。 */
 .settings-memory-skeleton-bar {
   display: block;
   height: 12px;
   border-radius: var(--radius-sm);
-  background: var(--ink-overlay-8);
-  animation: settings-memory-skeleton-pulse 1.4s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    var(--ink-overlay-6) 25%,
+    var(--ink-overlay-12) 50%,
+    var(--ink-overlay-6) 75%
+  );
+  background-size: 200% 100%;
+  animation: settings-memory-skeleton-shimmer 1.4s linear infinite;
 }
 
-@keyframes settings-memory-skeleton-pulse {
-  0%,
-  100% {
-    opacity: 1;
+@keyframes settings-memory-skeleton-shimmer {
+  from {
+    background-position: 200% 0;
   }
 
-  50% {
-    opacity: 0.45;
+  to {
+    background-position: -200% 0;
   }
 }
 
@@ -1300,6 +1327,20 @@
 .settings-memory-chat-entry {
   display: flex;
   min-width: 0;
+  /* 新消息（用户气泡与回复槽位）挂载时轻微滑入。 */
+  animation: settings-memory-chat-in 180ms var(--menu-enter-easing) both;
+}
+
+@keyframes settings-memory-chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .settings-memory-chat-entry.user {
@@ -1356,6 +1397,25 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow: hidden;
+}
+
+/* details 展开时给清单一段高度过渡。max-height 上限按短清单估算；动画
+ * 结束后回到自然高度，超长清单只是提前结束过渡，不影响最终布局。 */
+.settings-memory-changes[open] ul {
+  animation: settings-memory-changes-open 200ms var(--menu-enter-easing);
+}
+
+@keyframes settings-memory-changes-open {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+
+  to {
+    max-height: 240px;
+    opacity: 1;
+  }
 }
 
 .settings-memory-changes li {
@@ -1438,7 +1498,13 @@
   }
 
   .settings-memory-skeleton-bar,
-  .settings-memory-spinner {
+  .settings-memory-spinner,
+  .settings-memory-overview,
+  .settings-memory-raw,
+  .settings-memory-card .settings-empty,
+  .settings-memory-chat-hint,
+  .settings-memory-chat-entry,
+  .settings-memory-changes[open] ul {
     animation: none;
   }
 }

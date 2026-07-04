@@ -607,6 +607,20 @@
   color: var(--ink);
   font-size: var(--font-sm);
   line-height: var(--line-body);
+  /* 加载完成后轻微淡入 + 2px 上移，与记忆面板短文一致。 */
+  animation: participant-profile-fade-up 200ms var(--menu-enter-easing) both;
+}
+
+@keyframes participant-profile-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .participant-profile-feedback-reply {
@@ -751,9 +765,26 @@
   color: var(--danger);
 }
 
+/* 「已归档」回执：归档成功到面板自动关闭之间的短暂状态。 */
+.participant-profile-archived {
+  animation: participant-profile-fade-up 200ms var(--menu-enter-easing) both;
+}
+
+/* 归档确认对话框只有一句话，收窄外壳；进出场沿用 Modal 的 menu-enter。 */
+.participant-archive-dialog {
+  --environment-dialog-max-width: 440px;
+}
+
 .participant-profile-footer {
   display: flex;
   justify-content: flex-end;
   border-top: 1px solid var(--surface-3);
   padding: 12px 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .participant-profile-memory-summary,
+  .participant-profile-archived {
+    animation: none;
+  }
 }
