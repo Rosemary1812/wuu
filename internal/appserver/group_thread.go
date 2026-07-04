@@ -170,10 +170,10 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 		th.mu.Unlock()
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
 	}
-	if th.running {
-		th.mu.Unlock()
-		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", th.ID))
-	}
+	// No th.running rejection here: a group thread has no primary agent and
+	// never runs a model turn, so a chat send must always land immediately
+	// as a completed turn — standard chat semantics, never a queue error
+	// (issue #10). A stale running flag must not make a message bounce.
 	if th.PersistHistory {
 		if err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg); err != nil {
 			th.mu.Unlock()

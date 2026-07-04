@@ -225,6 +225,46 @@ func TestGroupTurnQueueRejected(t *testing.T) {
 	}
 }
 
+// TestGroupTurnStartIgnoresStaleRunningFlag pins the chat-send semantics of
+// issue #10: a group thread has no primary agent, so a user message must
+// always land immediately as a completed turn — even if the in-memory
+// running flag is somehow stuck true, the send must not bounce with a
+// queue-style "already has a running turn" error.
+func TestGroupTurnStartIgnoresStaleRunningFlag(t *testing.T) {
+	client := &fakeClient{response: providersResponse("ok")}
+	rt := newTestRuntime(t, client)
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	group := startNamedGroupThreadForTest(t, srv, "release")
+
+	th := srv.thread(group.ID)
+	if th == nil {
+		t.Fatalf("group thread %q not resident", group.ID)
+	}
+	th.mu.Lock()
+	th.running = true
+	th.mu.Unlock()
+	t.Cleanup(func() {
+		th.mu.Lock()
+		th.running = false
+		th.mu.Unlock()
+	})
+
+	raw := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"second message while busy"}}`, group.ID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	msgs := parseOutput(t, srv.out.(*lockedBuffer).String())
+	resp := responseByID(t, msgs, "turn")
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("group turn/start must not reject while running flag is set, got error: %v", errMsg)
+	}
+	turn := remarshal[TurnStartResult](t, resp["result"]).Turn
+	if turn.Status != TurnStatusCompleted {
+		t.Fatalf("expected group turn to complete synchronously, got status %q", turn.Status)
+	}
+}
+
 // TestGroupTurnStartRoutesThroughAllChannelWithoutExplicitMembership lives in
 // resident_router_test.go: it exercises routeEnvelopes' #all fan-out, which
 // is implemented there alongside the rest of the envelope routing machinery.

@@ -933,6 +933,12 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   const activeThreadIsGroup = Boolean(activeThread && isGroupThread(activeThread));
+  // Chat-style threads (DM + group) follow chat send semantics (issue #10):
+  // the composer never surfaces the worker-thread queue strip or the stop
+  // button; a send always reads as "message sent" in the transcript.
+  const activeThreadIsChatStyle = Boolean(
+    activeThread && (isDMThread(activeThread) || isGroupThread(activeThread)),
+  );
   const composerInitialized = useMemo(
     () =>
       initializedForSelectedPermissionMode(
@@ -3647,10 +3653,17 @@ export function App(): JSX.Element {
         setPrompt={setPrompt}
         files={composerFiles}
         images={composerImages}
-        queuedMessages={queuedMessages}
+        // Chat-style threads (DM/group) never surface the queue strip —
+        // pending sends render as chat bubbles in ChatThreadView instead —
+        // and the send button stays a send button while the agent replies
+        // (chat semantics, issue #10). Work threads keep the queue UI.
+        queuedMessages={activeThreadIsChatStyle ? [] : queuedMessages}
         guideMessages={guideMessages}
         running={
-          (!activeThreadReadOnly && activeThreadIsRunning) || viewContextSwitchPending
+          activeThreadIsChatStyle
+            ? viewContextSwitchPending
+            : (!activeThreadReadOnly && activeThreadIsRunning) ||
+              viewContextSwitchPending
         }
         runtimeControlsDisabled={
           (!activeThreadReadOnly && activeThreadIsRunning) ||
@@ -6511,7 +6524,19 @@ export function App(): JSX.Element {
     // DM threads intentionally share this exact path: a resident named
     // agent's DM is a normal multi-turn thread (turn/start), not a
     // spawn-per-message shell. See docs/plans/2026-07-03-resident-named-agents.md §7.1.
-    if (isStateActiveThreadRunning(currentState)) {
+    //
+    // Chat send semantics (issue #10):
+    // - Group threads never queue. The server records every group send as a
+    //   completed turn with no provider call (and rejects turn/queue for
+    //   groups outright), so a busy-looking state must not divert the
+    //   message into the queue path — send straight away.
+    // - DM threads still reuse turn/queue's reliable delivery while the
+    //   resident is mid-turn, but the pending message renders as a chat
+    //   bubble in ChatThreadView instead of the composer queue strip.
+    if (
+      isStateActiveThreadRunning(currentState) &&
+      !(targetThread && isGroupThread(targetThread))
+    ) {
       const queued = await queueComposerMessage(message, targetThread);
       if (!queued) {
         setPrompt(message.text);
@@ -6657,7 +6682,12 @@ export function App(): JSX.Element {
       !currentState.initialized ||
       targetThread?.read_only ||
       viewSwitchPending ||
-      isStateActiveThreadRunning(currentState)
+      // Group threads accept concurrent sends: each turn/start lands a
+      // completed chat turn server-side, so a transient running state
+      // (a send round-trip still in flight) must not block the next
+      // message (issue #10).
+      (isStateActiveThreadRunning(currentState) &&
+        !(targetThread && isGroupThread(targetThread)))
     ) {
       return false;
     }
@@ -6848,7 +6878,9 @@ export function App(): JSX.Element {
     ) {
       return;
     }
-    if (isThreadRunning(targetThread)) {
+    // Group threads never queue — every send lands as a completed chat
+    // turn server-side (issue #10); see sendPrompt for the full rationale.
+    if (isThreadRunning(targetThread) && !isGroupThread(targetThread)) {
       const queued = await queueComposerMessage(message, targetThread);
       if (queued) {
         setSplitComposerDrafts((current) => ({
@@ -6895,7 +6927,7 @@ export function App(): JSX.Element {
       !currentState.activeContext ||
       !currentState.initialized ||
       viewSwitchPending ||
-      isThreadRunning(targetThread)
+      (isThreadRunning(targetThread) && !isGroupThread(targetThread))
     ) {
       return false;
     }
@@ -7029,7 +7061,7 @@ export function App(): JSX.Element {
       !currentState.activeContext ||
       !currentState.initialized ||
       viewSwitchPending ||
-      isThreadRunning(targetThread)
+      (isThreadRunning(targetThread) && !isGroupThread(targetThread))
     ) {
       return false;
     }
@@ -8070,6 +8102,7 @@ export function App(): JSX.Element {
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
+                pendingChatMessagesByThread={pendingComposerMessagesByThread}
                 pendingToolApproval={state.pendingToolApproval}
                 turnStreamStatus={state.turnStreamStatus}
                 onResolveToolApproval={handleCachedPaneResolveToolApproval}
@@ -8278,6 +8311,13 @@ type CachedConversationPanesProps = {
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
   /**
+   * Per-thread composer messages queued while the agent is mid-turn.
+   * Chat-style panes render the thread's `queued` entries as in-transcript
+   * "发送中" bubbles (chat send semantics, issue #10); work-thread panes
+   * ignore this — their queue renders in the composer strip instead.
+   */
+  pendingChatMessagesByThread: PendingComposerMessagesByThread;
+  /**
    * Tool approval waiting for a decision. The matching turn is found
    * inside this component by `call_id` lookup, so the card only renders
    * next to the tool call it actually gates.
@@ -8318,6 +8358,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onNoticeAction,
   onOpenFileDiff,
   turnStreamStatus,
+  pendingChatMessagesByThread,
   pendingToolApproval,
   onResolveToolApproval,
 }: CachedConversationPanesProps): JSX.Element {
@@ -8395,6 +8436,15 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   // the eviction/recreate path explicitly.
                   key={threadID}
                   turns={threadTurns}
+                  // Sends queued while the agent is mid-turn render as
+                  // in-transcript "发送中" bubbles instead of the composer
+                  // queue strip (chat send semantics, issue #10).
+                  pendingMessages={
+                    pendingComposerMessagesForThread(
+                      pendingChatMessagesByThread,
+                      threadID,
+                    ).queued
+                  }
                 />
               ) : (
               <ConversationTurnList

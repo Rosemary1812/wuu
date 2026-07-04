@@ -289,6 +289,52 @@ describe("ChatThreadView focus divider rows", () => {
     expect(container.querySelector(".chat-row--focus")).not.toBeNull();
     uninstallIntersectionObserverStub();
   });
+
+  it("renders pending sends as dimmed user bubbles with a 发送中 hint (issue #10)", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "你们好" },
+        ]),
+        pendingMessages: [
+          { id: "pending-1", text: "自我介绍", images: [], files: [] },
+        ],
+      }),
+    );
+    const pendingRow = container.querySelector(".chat-row--pending");
+    expect(pendingRow).not.toBeNull();
+    // Reads as a normal outgoing chat bubble, not a queue strip.
+    expect(pendingRow?.classList.contains("chat-row--user")).toBe(true);
+    expect(
+      pendingRow?.querySelector(".chat-bubble--pending")?.textContent,
+    ).toContain("自我介绍");
+    expect(pendingRow?.querySelector(".chat-pending-hint")?.textContent).toBe(
+      "发送中…",
+    );
+    // The already-delivered message renders as a regular row before it.
+    const rows = Array.from(container.querySelectorAll(".chat-row"));
+    expect(rows.length).toBe(2);
+    expect(rows[1]).toBe(pendingRow);
+  });
+
+  it("shows an attachment summary inside a pending bubble", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: [],
+        pendingMessages: [
+          {
+            id: "pending-1",
+            text: "",
+            images: [{ id: "img-1", media_type: "image/png", data: "" }],
+            files: [],
+          },
+        ],
+      }),
+    );
+    expect(
+      container.querySelector(".chat-pending-attachments")?.textContent,
+    ).toBe("1 张图片");
+  });
 });
 
 // --- Chat-view windowing (open on latest, reveal older on scroll-up,
