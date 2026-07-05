@@ -35,6 +35,7 @@ import {
   mentionedParticipantIDsFromText,
   openForkThreadAsPrimary,
   queryTextsForThread,
+  reconcileResumedThreadTurns,
   reduceServerEvent,
   resolveThreadRuntimeContext,
   scratchThreadSummaries,
@@ -2805,5 +2806,68 @@ describe("sessionTabLabel (draft tabs read as their workspace)", () => {
       cwd: "/repo/orphaned-dir",
     });
     expect(sessionTabLabel(tab, state)).toBe("orphaned-dir");
+  });
+});
+
+describe("reconcileResumedThreadTurns", () => {
+  function threadWithTurnIDs(ids: string[]): Thread {
+    return {
+      ...threadWithUserTexts([]),
+      turns: ids.map((id) => ({
+        id,
+        items_view: "full",
+        status: "completed",
+        items: [
+          {
+            id: `${id}-user`,
+            type: "user_message",
+            status: "completed",
+            role: "user",
+            text: `message ${id}`,
+          },
+        ],
+      })),
+    };
+  }
+
+  it("salvages the client tail when the resumed snapshot is a strict prefix (just-sent turn not yet in the snapshot)", () => {
+    // The reported bug: send a message (turn-3 lands only in client state),
+    // switch session tabs, switch back. resumeThread returns [turn-1, turn-2]
+    // — lagging behind — and the wholesale replace would drop turn-3.
+    const resumed = threadWithTurnIDs(["turn-1", "turn-2"]);
+    const local = threadWithTurnIDs(["turn-1", "turn-2", "turn-3"]);
+    const merged = reconcileResumedThreadTurns(resumed, local);
+    expect(merged.turns.map((turn) => turn.id)).toEqual([
+      "turn-1",
+      "turn-2",
+      "turn-3",
+    ]);
+    // The overlapping prefix uses the server's (fresher) turn objects; only
+    // the client's extra tail is carried over verbatim.
+    expect(merged.turns[0]).toBe(resumed.turns[0]);
+    expect(merged.turns[1]).toBe(resumed.turns[1]);
+    expect(merged.turns[2]).toBe(local.turns[2]);
+  });
+
+  it("trusts the resumed snapshot when history diverges (edit/fork truncated the tail)", () => {
+    // An edit/fork replaces turn-2 with a new turn id and truncates what
+    // followed. That is a genuine server-side truncation, not lag, so we must
+    // NOT resurrect the client's stale [turn-2, turn-3].
+    const resumed = threadWithTurnIDs(["turn-1", "turn-2b"]);
+    const local = threadWithTurnIDs(["turn-1", "turn-2", "turn-3"]);
+    const merged = reconcileResumedThreadTurns(resumed, local);
+    expect(merged).toBe(resumed);
+    expect(merged.turns.map((turn) => turn.id)).toEqual(["turn-1", "turn-2b"]);
+  });
+
+  it("trusts the resumed snapshot when it is at least as long as the local copy (server is ahead or equal)", () => {
+    const resumed = threadWithTurnIDs(["turn-1", "turn-2", "turn-3"]);
+    const local = threadWithTurnIDs(["turn-1", "turn-2"]);
+    expect(reconcileResumedThreadTurns(resumed, local)).toBe(resumed);
+  });
+
+  it("returns the resumed thread unchanged when there is no local copy", () => {
+    const resumed = threadWithTurnIDs(["turn-1"]);
+    expect(reconcileResumedThreadTurns(resumed, undefined)).toBe(resumed);
   });
 });

@@ -192,6 +192,7 @@ import {
   scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
+  reconcileResumedThreadTurns,
   removeSessionTab,
   requireThread,
   resolveThreadRuntimeContext,
@@ -5351,19 +5352,27 @@ export function App(): JSX.Element {
       setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
         const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        // The resume snapshot can lag the client when the user just sent a
+        // message and immediately switched tabs and back: the just-sent turn
+        // still lives only in our in-memory copy. Salvage that tail so the
+        // wholesale replace below does not drop it (message-loss-on-tab-switch).
+        const reconciled = reconcileResumedThreadTurns(
+          thread,
+          current.threads.find((item) => item.id === thread.id),
+        );
         return {
           ...withDraft,
-          thread,
+          thread: reconciled,
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
             withDraft.sessionTabs,
-            createThreadSessionTab(thread, sourceContext, targetDraft),
+            createThreadSessionTab(reconciled, sourceContext, targetDraft),
           ),
-          activeSessionTabID: threadSessionTabID(thread.id),
-          threads: upsertThread(current.threads, thread),
-          running: isThreadRunning(thread),
+          activeSessionTabID: threadSessionTabID(reconciled.id),
+          threads: upsertThread(current.threads, reconciled),
+          running: isThreadRunning(reconciled),
           status: "ready",
         };
       });
@@ -5596,19 +5605,27 @@ export function App(): JSX.Element {
       setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
         const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        // The resume snapshot can lag the client when the user just sent a
+        // message and immediately switched tabs and back: the just-sent turn
+        // still lives only in our in-memory copy. Salvage that tail so the
+        // wholesale replace below does not drop it (message-loss-on-tab-switch).
+        const reconciled = reconcileResumedThreadTurns(
+          thread,
+          current.threads.find((item) => item.id === thread.id),
+        );
         return {
           ...withDraft,
-          thread,
+          thread: reconciled,
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
             withDraft.sessionTabs,
-            createThreadSessionTab(thread, sourceContext, targetDraft),
+            createThreadSessionTab(reconciled, sourceContext, targetDraft),
           ),
-          activeSessionTabID: threadSessionTabID(thread.id),
-          threads: upsertThread(current.threads, thread),
-          running: isThreadRunning(thread),
+          activeSessionTabID: threadSessionTabID(reconciled.id),
+          threads: upsertThread(current.threads, reconciled),
+          running: isThreadRunning(reconciled),
           status: "ready",
         };
       });

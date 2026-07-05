@@ -6,6 +6,7 @@ import type {
   ThreadStartParams,
   WindowResizeState,
   WuuDesktopApi,
+  PopOutInitResult,
 } from "../shared/protocol";
 
 // Read the persisted theme preference synchronously so the very first
@@ -255,6 +256,14 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:pop-out-session", params),
   popOutClosed: (params) =>
     ipcRenderer.invoke("wuu:pop-out-closed", params),
+  // Sync bootstrap (Plan §3 commit 5 + §7 risk #7 M1 sync IPC parity).
+  // The popped-out window's renderer blocks its first render until this
+  // returns so it can paint the real thread title and the first turn
+  // without an async flicker. SendSync must be paired with an
+  // ipcMain.on handler that sets `event.returnValue` (the parity test
+  // in `IpcChannelParity.test.ts` enforces both sides).
+  popOutInit: (threadID) =>
+    ipcRenderer.sendSync("wuu:pop-out-init", threadID) as PopOutInitResult,
 };
 
 contextBridge.exposeInMainWorld("wuu", api);

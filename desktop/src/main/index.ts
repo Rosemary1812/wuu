@@ -61,6 +61,7 @@ import type {
   ThreadResolveSubResult,
   ThreadStartParams,
   Turn,
+  PopOutInitResult,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
@@ -228,13 +229,13 @@ function createPopOutWindow(params: { threadID: string }): BrowserWindow {
   );
 
   // Plan §5.2 Q5 default: window title format `wuu · {threadTitle}`.
-  // For commit 3 the app-server side has no "thread/list" endpoint yet
-  // for fetching a single thread's title; we ship a placeholder
-  // (`wuu · {first 8 chars of threadID}`) and refresh in commit 5
-  // alongside the `wuu:pop-out-init` sync bootstrap, which is the
-  // natural place to introduce the server RPC + thread registry
-  // lookup that surfaces the real title. (Plan product-rec input
-  // defaults to option (iii) until commit 5.)
+  // The placeholder `wuu · ${threadID.slice(0, 8)}` shows immediately so
+  // the first paint never reads "Electron" / blank; commit 5 fires an
+  // async `thread/list` lookup after the BrowserWindow is registered
+  // and upgrades the title to the real `wuu · {thread.title}` once the
+  // matching thread is found. If the lookup fails or the thread has
+  // no title, the placeholder stays (silent failure path, no UX
+  // flicker beyond the standard 100–500 ms network round-trip).
   const placeholderTitle = `wuu · ${params.threadID.slice(0, 8)}`;
   const win = new BrowserWindow({
     width: winWidth,
@@ -262,6 +263,36 @@ function createPopOutWindow(params: { threadID: string }): BrowserWindow {
     scheduleWindowResizeEnd();
   });
   windowRegistry.setThreadWindow(params.threadID, win.webContents.id);
+
+  // Async title refresh (commit 5, Plan §3 commit 5 verification).
+  // We use `thread/list` (no side effect — `thread/resume` would mark
+  // the thread active on every pop-out, double-resume conflicts with
+  // the renderer's later hydration) and client-filter for the matching
+  // id. The `event.sender.isDestroyed()` guard handles the race where
+  // the user closes the popped-out window before the response lands;
+  // without it, `win.setTitle(...)` on a destroyed BrowserWindow logs
+  // a benign warning but is good hygiene to skip. (Found in review
+  // seq=375 + seq=397 — Reviewer flagged the same race for the
+  // earlier (b) thread/search attempt; we keep the guard here for the
+  // commit 5 thread/list path too.)
+  void appServerClientPool
+    .request<{ threads: Thread[] }>("thread/list")
+    .then((result) => {
+      if (win.isDestroyed()) return;
+      const threads = Array.isArray(result?.threads) ? result.threads : [];
+      const match = threads.find((t) => t.id === params.threadID);
+      const title = typeof match?.title === "string" ? match.title : "";
+      if (title.length > 0) {
+        win.setTitle(`wuu · ${title}`);
+      }
+      // Failure path: leave the placeholder `wuu · ${threadID.slice(0, 8)}`
+      // showing. We deliberately do not surface an error — the
+      // placeholder is the agreed-on UX when the title fetch fails.
+    })
+    .catch(() => {
+      if (win.isDestroyed()) return;
+      // Same silent-fallback policy: keep the placeholder.
+    });
   return win;
 }
 
@@ -408,6 +439,53 @@ app.whenReady().then(async () => {
       const win = windowRegistry.popOutWindowForThread(params.threadID);
       if (win && !win.isDestroyed()) win.close();
       return { ok: true };
+    },
+  );
+  // Sync bootstrap for popped-out windows (Plan §3 commit 5 verification,
+  // §7 risk #7 M1 sync IPC parity). The popped-out window's preload
+  // fires `ipcRenderer.sendSync("wuu:pop-out-init", threadID)` during
+  // boot and blocks its first render until this returns. We resolve the
+  // thread via `thread/list` (no side effect vs `thread/resume` which
+  // would mark the thread active on every pop-out), client-filter for
+  // the matching id, and return { thread, threads, turns }. Failure
+  // path returns the empty shape so the renderer can paint the
+  // placeholder title without throwing. M1 parity: the parity test in
+  // `IpcChannelParity.test.ts` will be extended (commit 5) to verify
+  // every wuu-prefixed sync handler (e.g. wuu:pop-out-init)
+  // in preload.
+  ipcMain.on(
+    "wuu:pop-out-init",
+    (event, threadID: string) => {
+      const empty: PopOutInitResult = { thread: null, threads: [], turns: [] };
+      if (typeof threadID !== "string" || threadID.length === 0) {
+        event.returnValue = empty;
+        return;
+      }
+      // Fire-and-forget the async lookup. We can't await in a sync
+      // handler, so we kick off the request, capture the eventual
+      // return value via a Promise, and assign it to event.returnValue
+      // once resolved. The renderer blocks on sendSync until that
+      // happens. (If we set `event.returnValue` to a Promise directly,
+      // Electron's IPC layer does pass it back as the renderer's
+      // sendSync return value — but the renderer code uses
+      // `popOutInit(threadID): PopOutInitResult` (non-promise) so we
+      // await ourselves here.)
+      void appServerClientPool
+        .request<{ threads: Thread[] }>("thread/list")
+        .then((result) => {
+          if (event.sender.isDestroyed()) return;
+          const threads = Array.isArray(result?.threads) ? result.threads : [];
+          const match = threads.find((t) => t.id === threadID) ?? null;
+          event.returnValue = {
+            thread: match,
+            threads,
+            turns: Array.isArray(match?.turns) ? match.turns : [],
+          } satisfies PopOutInitResult;
+        })
+        .catch(() => {
+          if (event.sender.isDestroyed()) return;
+          event.returnValue = empty;
+        });
     },
   );
   ipcMain.handle("wuu:project-list", () => projectManager.list());

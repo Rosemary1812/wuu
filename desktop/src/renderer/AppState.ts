@@ -1159,6 +1159,43 @@ function updateThread(
   return { ...state, thread, threads: upsertThread(state.threads, thread) };
 }
 
+/**
+ * Salvage locally-known tail turns when a thread resume returns a snapshot
+ * that lags behind what the client already holds.
+ *
+ * Switching session tabs re-resumes the target thread and would otherwise
+ * replace its turns wholesale with the server snapshot (selectThread in
+ * App.tsx). When the user just sent a message and immediately switched away
+ * and back, that snapshot can still be missing the just-sent turn — it lives
+ * only in client state (an optimistic turn whose turn/start hasn't committed,
+ * or a freshly-committed turn the store snapshot lags on) — so the message
+ * disappears on return.
+ *
+ * We only salvage when the resumed turns are a strict prefix of the turns the
+ * client already holds — the unambiguous "client is ahead" signature. Any
+ * other divergence (an edit/fork that truncated history, or a server snapshot
+ * that is genuinely ahead of the client) breaks the prefix match, and we defer
+ * to the resumed snapshot as authoritative. The overlapping prefix always uses
+ * the server's (fresher) turn objects; only the client's extra tail carries
+ * over.
+ */
+export function reconcileResumedThreadTurns(
+  resumed: Thread,
+  local: Thread | undefined,
+): Thread {
+  const localTurns = local?.turns;
+  if (!localTurns || localTurns.length <= resumed.turns.length) {
+    return resumed;
+  }
+  for (let index = 0; index < resumed.turns.length; index += 1) {
+    if (resumed.turns[index].id !== localTurns[index].id) {
+      return resumed;
+    }
+  }
+  const salvagedTail = localTurns.slice(resumed.turns.length);
+  return { ...resumed, turns: [...resumed.turns, ...salvagedTail] };
+}
+
 function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
   const validThreads = sortThreads(threads);
   if (!isThread(thread)) {

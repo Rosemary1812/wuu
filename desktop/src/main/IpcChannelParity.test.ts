@@ -39,6 +39,70 @@ describe("IPC channel parity", () => {
     expect(preloadChannels).toEqual(mainChannels);
   });
 
+  // M1 sync IPC parity (Plan §7 risk #7 — required by §3 commit 5
+  // verification, §2.2 IPC table row 2 sync bootstrap). Every
+  // `ipcMain.on("wuu:...")` handler in main must have a matching
+  // `ipcRenderer.sendSync("wuu:...")` call in preload. Without this
+  // test the team would be free to add sync IPC channels that nobody
+  // uses (or vice-versa); commit 5 adds `wuu:pop-out-init` as the
+  // first non-theme sync channel.
+  it("matches every sync channel between main and preload (M1)", () => {
+    const mainSyncChannels = extractChannels(
+      source("index.ts"),
+      /ipcMain\.on\(\s*["']([^"']+)["']/gs,
+    );
+    const preloadSyncChannels = extractChannels(
+      source("preload.ts"),
+      /ipcRenderer\.sendSync\(\s*["']([^"']+)["']/gs,
+    );
+    // Both sides must agree on the set of `wuu:` sync channels. We
+    // ignore non-`wuu:` channels (the renderer may sendSync other
+    // channels in the future for third-party integrations) — the
+    // parity guarantee is for desktop-owned IPC only.
+    const wuuSyncMain = mainSyncChannels.filter((c) => c.startsWith("wuu:")).sort();
+    const wuuSyncPreload = preloadSyncChannels.filter((c) => c.startsWith("wuu:")).sort();
+    expect(wuuSyncPreload).toEqual(wuuSyncMain);
+  });
+
+  // Each sync handler must actually set `event.returnValue` so the
+  // renderer's `sendSync` resolves with the right shape (not a
+  // returning undefined). A regression where the handler forgets to
+  // assign `event.returnValue` would silently return undefined to
+  // the renderer; this test catches it by string-searching the source.
+  it("every wuu: sync handler sets event.returnValue", () => {
+    const index = source("index.ts");
+    const syncHandlerMatches = [...index.matchAll(
+      /ipcMain\.on\(\s*["'](wuu:[^"']+)["']/gs,
+    )];
+    for (const match of syncHandlerMatches) {
+      const channel = match[1];
+      const handlerStart = match.index ?? 0;
+      // Find the matching closing `);` for this ipcMain.on(...)
+      // call by tracking paren depth. Conservative: scan ahead 4 KB
+      // for the close, which is far past any real handler.
+      const slice = index.slice(handlerStart, handlerStart + 4096);
+      let depth = 0;
+      let end = -1;
+      for (let i = 0; i < slice.length; i++) {
+        const c = slice[i];
+        if (c === "(") depth++;
+        else if (c === ")") {
+          depth--;
+          if (depth === 0) {
+            end = i;
+            break;
+          }
+        }
+      }
+      expect(end, `could not find close of ipcMain.on for ${channel}`).toBeGreaterThan(0);
+      const handler = slice.slice(0, end);
+      expect(
+        handler,
+        `${channel} handler must set event.returnValue`,
+      ).toMatch(/event\.returnValue\s*=/);
+    }
+  });
+
   it("does not duplicate invoke or handler channels", () => {
     const rawMainChannels = [...source("index.ts").matchAll(/ipcMain\.handle\(\s*["']([^"']+)["']/gs)].map(
       (match) => match[1],
