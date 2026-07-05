@@ -38,7 +38,7 @@ func (t *PostMessageTool) Definition() providers.ToolDefinition {
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
-					"description": "Target conversation thread id. Resident named agents may post to threads they belong to or their own DM thread.",
+					"description": "Target conversation thread id. Resident named agents may post to threads they belong to or their own DM thread. Pass a reply subthread id (cth-…) to fold the message into that reply thread instead of the main group stream.",
 				},
 			},
 			"required": []string{"kind", "text"},

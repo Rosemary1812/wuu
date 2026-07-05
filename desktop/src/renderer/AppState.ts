@@ -1801,7 +1801,21 @@ export type ChatMessageRow =
   | { kind: "user"; id: string; turnID: string; item: ThreadItem }
   | { kind: "envelope"; id: string; turnID: string; items: ThreadItem[] }
   | { kind: "participant"; id: string; turnID: string; item: ThreadItem }
+  | { kind: "task"; id: string; turnID: string; item: ThreadItem }
   | { kind: "focus"; id: string; turnID: string; item: ThreadItem };
+
+/**
+ * Reply-count badge token with a hard cap: any count above 99 renders as
+ * "99+" so a runaway reply thread never blows out the badge width
+ * (群聊 reply 徽标封顶 99)。返回纯数字 token,调用方自行拼接单位("条回复")。
+ * 负数被夹到 0,防御脏数据。
+ */
+export function replyCountBadge(count: number): string {
+  if (count > 99) {
+    return "99+";
+  }
+  return String(Math.max(0, Math.trunc(count)));
+}
 
 /**
  * Flatten a thread's turns into the chat-view message stream. Whitelist
@@ -1816,6 +1830,11 @@ export type ChatMessageRow =
  * envelope_meta rides on a user_message), so any item carrying it
  * becomes a "focus" row regardless of what type the backend tags it
  * with.
+ *
+ * task_card items (spawned subagent 折叠卡 / 升级后的 task 活动卡) are now
+ * whitelisted too: they collapse into a single "task" row rendered by the
+ * shared TaskCardItem (进行中显示活动状态,完成后显示 result 摘要)。此前它们
+ * 被 chat 白名单静默丢弃,导致群聊里看不到 task 折叠。
  */
 export function chatMessagesFromTurns(
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>,
@@ -1849,6 +1868,8 @@ export function chatMessagesFromTurns(
         }
       } else if (item.type === "participant_message") {
         rows.push({ kind: "participant", id, turnID: turn.id, item });
+      } else if (item.type === "task_card") {
+        rows.push({ kind: "task", id, turnID: turn.id, item });
       }
     }
   }

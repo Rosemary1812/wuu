@@ -31,6 +31,18 @@ export function reactionGlyph(key: string): string {
   return REACTION_EMOJI[key] ?? "•";
 }
 
+// The reaction keys a human may stamp from the chat UI, in display order. Kept
+// in lockstep with the backend vocabulary (reactionKeys in tool_participant_react.go)
+// so the picker never offers a key the server would reject.
+export const REACTION_KEYS = [
+  "eyes",
+  "nice",
+  "shrug",
+  "sideeye",
+  "smug",
+  "whoa",
+] as const;
+
 // Per-message aggregation of who saw it (by lifecycle status) and who reacted.
 export interface SeenAggregate {
   completed: string[]; // participant ids whose turn finished — the real "seen"

@@ -42,7 +42,7 @@ func (t *FetchThreadMessagesTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"thread_id": map[string]any{
 					"type":        "string",
-					"description": "Conversation thread id to read. The resident named agent must be a member of this thread or the bound participant of its DM thread.",
+					"description": "Conversation thread id to read. The resident named agent must be a member of this thread or the bound participant of its DM thread. A reply subthread id (cth-…) is also accepted: it returns only that reply thread's messages and is readable by any member of the parent group, even one that is not a participant of the reply.",
 				},
 				"limit": map[string]any{
 					"type":        "integer",
@@ -80,14 +80,33 @@ func (t *FetchThreadMessagesTool) Execute(ctx context.Context, args string) (str
 	if err != nil {
 		return "", err
 	}
-	if err := requireFetchThreadMembership(sessDir, threadID, participantID); err != nil {
+	// A reply subthread (cth-*) is stored inside its parent thread's history
+	// tagged with thread_id=cth. Pull access is deliberately open to the whole
+	// group (pull=全群) — non-participants of a reply are not pushed its traffic
+	// but may still fetch it — so membership is checked against the parent
+	// group thread, and only the cth-tagged records are returned.
+	loadThreadID := threadID
+	subthreadFilter := ""
+	if strings.HasPrefix(threadID, "cth-") {
+		cth, err := session.FindConversationThreadByID(sessDir, threadID)
+		if err != nil {
+			return "", fmt.Errorf("fetch_thread_messages: %w", err)
+		}
+		parentThreadID := strings.TrimSpace(cth.SessionID)
+		if parentThreadID == "" {
+			return "", fmt.Errorf("fetch_thread_messages: subthread %q has no parent thread", threadID)
+		}
+		loadThreadID = parentThreadID
+		subthreadFilter = strings.TrimSpace(cth.ID)
+	}
+	if err := requireFetchThreadMembership(sessDir, loadThreadID, participantID); err != nil {
 		return "", err
 	}
-	records, err := session.LoadHistoryRecords(sessDir, threadID, false)
+	records, err := session.LoadHistoryRecords(sessDir, loadThreadID, false)
 	if err != nil {
 		return "", fmt.Errorf("fetch_thread_messages: load history: %w", err)
 	}
-	messages := visibleFetchedThreadMessages(records)
+	messages := visibleFetchedThreadMessages(records, subthreadFilter)
 	truncated := false
 	if len(messages) > limit {
 		truncated = true
@@ -184,10 +203,25 @@ func requireFetchThreadMembership(sessDir, threadID, participantID string) error
 	return fmt.Errorf("fetch_thread_messages: participant %q is not a member of thread %q", participantID, threadID)
 }
 
-func visibleFetchedThreadMessages(records []session.HistoryRecord) []fetchedThreadMessage {
+// visibleFetchedThreadMessages projects history records to the fetchable
+// subset, scoped by subthreadFilter. When subthreadFilter is empty the fetch is
+// a plain top-level pull and reply-subthread records (thread_id=cth) are
+// excluded — a reply line must not leak into an ambient fetch of the main
+// stream. When subthreadFilter is a cth id only that subthread's records are
+// returned (the parent-thread pull path for a specific reply).
+func visibleFetchedThreadMessages(records []session.HistoryRecord, subthreadFilter string) []fetchedThreadMessage {
+	subthreadFilter = strings.TrimSpace(subthreadFilter)
 	out := make([]fetchedThreadMessage, 0, len(records))
 	for _, rec := range records {
 		if rec.Hidden {
+			continue
+		}
+		recThread := strings.TrimSpace(rec.ThreadID)
+		if subthreadFilter == "" {
+			if recThread != "" {
+				continue
+			}
+		} else if recThread != subthreadFilter {
 			continue
 		}
 		role := strings.ToLower(strings.TrimSpace(rec.Role))

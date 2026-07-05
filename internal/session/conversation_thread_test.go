@@ -62,6 +62,118 @@ func TestConversationThreadCRUD(t *testing.T) {
 	}
 }
 
+func TestFindConversationThreadByID(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := CreateConversationThread(dir, ConversationThread{
+		SessionID:    "thread-1",
+		AnchorItemID: "seq-7",
+		Title:        "Discuss retry",
+		CreatedBy:    "prt-author",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FindConversationThreadByID(dir, " "+created.ID+" ")
+	if err != nil {
+		t.Fatalf("FindConversationThreadByID() error = %v", err)
+	}
+	if got.ID != created.ID || got.SessionID != "thread-1" || got.AnchorItemID != "seq-7" {
+		t.Fatalf("unexpected thread: %+v", got)
+	}
+	if got.Title != "Discuss retry" || got.CreatedBy != "prt-author" || got.Status != ConversationThreadOpen {
+		t.Fatalf("thread fields not loaded: %+v", got)
+	}
+
+	if _, err := FindConversationThreadByID(dir, "cth-missing"); !errors.Is(err, ErrConversationThreadNotFound) {
+		t.Fatalf("FindConversationThreadByID(missing) error = %v, want ErrConversationThreadNotFound", err)
+	}
+	if _, err := FindConversationThreadByID(dir, "   "); !errors.Is(err, ErrConversationThreadNotFound) {
+		t.Fatalf("FindConversationThreadByID(blank) error = %v, want ErrConversationThreadNotFound", err)
+	}
+}
+
+func TestEscalateConversationThread(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := CreateConversationThread(dir, ConversationThread{
+		SessionID:    "thread-1",
+		AnchorItemID: "seq-3",
+		Title:        "discuss",
+		CreatedBy:    "prt-opener",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	escalated, err := EscalateConversationThread(dir, created.ID, " prt-lead ", " Ship the fix ")
+	if err != nil {
+		t.Fatalf("EscalateConversationThread: %v", err)
+	}
+	if escalated.Status != ConversationThreadTask {
+		t.Fatalf("status = %q, want task", escalated.Status)
+	}
+	if escalated.EscalatedBy != "prt-lead" {
+		t.Fatalf("escalated_by = %q, want prt-lead", escalated.EscalatedBy)
+	}
+	if escalated.Title != "Ship the fix" {
+		t.Fatalf("title = %q, want Ship the fix", escalated.Title)
+	}
+	if escalated.EscalatedAt.IsZero() {
+		t.Fatal("escalated_at must be set on escalation")
+	}
+	firstAt := escalated.EscalatedAt
+
+	// Idempotent: re-escalating pins escalated_at to the first escalation and
+	// does not regress an empty title/escalatedBy over the stored ones.
+	again, err := EscalateConversationThread(dir, created.ID, "", "")
+	if err != nil {
+		t.Fatalf("EscalateConversationThread (idempotent): %v", err)
+	}
+	if !again.EscalatedAt.Equal(firstAt) {
+		t.Fatalf("escalated_at drifted: %v -> %v", firstAt, again.EscalatedAt)
+	}
+	if again.EscalatedBy != "prt-lead" || again.Title != "Ship the fix" {
+		t.Fatalf("idempotent escalate clobbered fields: %+v", again)
+	}
+
+	// escalated_at survives resolve so a resolved task still reads as a task.
+	if err := SetConversationThreadSummary(dir, created.ID, " done "); err != nil {
+		t.Fatalf("SetConversationThreadSummary: %v", err)
+	}
+	if err := UpdateConversationThreadStatus(dir, created.ID, ConversationThreadResolved); err != nil {
+		t.Fatal(err)
+	}
+	got, err := FindConversationThreadByID(dir, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != ConversationThreadResolved {
+		t.Fatalf("status = %q, want resolved", got.Status)
+	}
+	if got.EscalatedAt.IsZero() {
+		t.Fatal("escalated_at must survive resolve")
+	}
+	if got.Summary != "done" {
+		t.Fatalf("summary = %q, want done", got.Summary)
+	}
+}
+
+func TestEscalateConversationThreadMissing(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := EscalateConversationThread(dir, "cth-missing", "", ""); !errors.Is(err, ErrConversationThreadNotFound) {
+		t.Fatalf("EscalateConversationThread(missing) = %v, want ErrConversationThreadNotFound", err)
+	}
+	if err := SetConversationThreadSummary(dir, "cth-missing", "x"); !errors.Is(err, ErrConversationThreadNotFound) {
+		t.Fatalf("SetConversationThreadSummary(missing) = %v, want ErrConversationThreadNotFound", err)
+	}
+}
+
 func TestCreateConversationThreadRequiresExistingSession(t *testing.T) {
 	dir := t.TempDir()
 	_, err := CreateConversationThread(dir, ConversationThread{

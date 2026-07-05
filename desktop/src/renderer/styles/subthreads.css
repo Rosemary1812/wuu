@@ -7,14 +7,14 @@
   display: grid;
   width: var(--environment-panel-reserved-width);
   max-width: min(420px, 100vw - 48px);
-  grid-template-rows: 56px minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr) auto;
   border-left: 1px solid var(--hairline-strong);
   background: var(--paper);
   color: var(--ink);
 }
 
 .conversation-pane.session-tabs-visible .conversation-subthread-panel {
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr) auto;
 }
 
 .conversation-subthread-header {
@@ -58,6 +58,30 @@
   gap: 4px;
 }
 
+.conversation-subthread-escalate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+  cursor: pointer;
+}
+
+.conversation-subthread-escalate:hover {
+  background: var(--surface-3);
+}
+
+.conversation-subthread-escalate svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
 .conversation-subthread-icon {
   width: 30px;
   height: 30px;
@@ -77,6 +101,24 @@
 
 .conversation-subthread-body .conversation-width {
   width: 100%;
+}
+
+/* "完成 Task" 结论表单:粘在滚动消息区顶部,人写一句结论冒泡回主流并收尾。 */
+.conversation-subthread-finalize {
+  position: sticky;
+  top: -18px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -18px -16px 16px;
+  border-bottom: 1px solid var(--surface-3);
+  padding: 14px 16px;
+  background: var(--surface-1);
+}
+
+.conversation-subthread-finalize .conversation-subthread-escalate {
+  align-self: flex-end;
 }
 
 .conversation-subthread-body .turn {
@@ -102,6 +144,50 @@
 
 .conversation-subthread-state.error {
   color: var(--danger);
+}
+
+.conversation-subthread-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--surface-3);
+  padding: 10px 14px;
+}
+
+.conversation-subthread-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 120px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+  resize: none;
+}
+
+.conversation-subthread-input:focus {
+  border-color: var(--focus-ring, var(--accent));
+  outline: none;
+}
+
+.conversation-subthread-send {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+}
+
+.conversation-subthread-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.conversation-subthread-send svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 @keyframes conversation-subthread-spin {

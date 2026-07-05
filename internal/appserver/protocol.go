@@ -47,6 +47,8 @@ const (
 	MethodThreadOpenSub            = "thread/openSub"
 	MethodThreadListSub            = "thread/listSub"
 	MethodThreadResolveSub         = "thread/resolveSub"
+	MethodThreadEscalateSub        = "thread/escalateSub"
+	MethodThreadBubbleSub          = "thread/bubbleSub"
 	MethodThreadList               = "thread/list"
 	MethodThreadSearch             = "thread/search"
 	MethodThreadPin                = "thread/pin"
@@ -58,6 +60,8 @@ const (
 	MethodThreadMembersAdd         = "thread/members/add"
 	MethodThreadMembersRemove      = "thread/members/remove"
 	MethodThreadMarks              = "thread/marks"
+	MethodMessageReact             = "message/react"
+	MethodMessagePostSubthread     = "message/postSubthread"
 	MethodWorkspaceStateCleanup    = "workspace/state/cleanup"
 	MethodParticipantStart         = "participant/start"
 	MethodParticipantList          = "participant/list"
@@ -753,7 +757,23 @@ type ConversationSubthread struct {
 	CreatedBy    string    `json:"created_by,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	ReplyCount   int       `json:"reply_count"`
-	Turns        []Turn    `json:"turns,omitempty"`
+	// Participants is the weak-isolation member subset for a reply subthread:
+	// only these participants are pushed reply/task traffic into their context.
+	// Empty means the subthread has no explicit member subset yet (e.g. a
+	// task_card subthread, or before the weak-isolation router seeds it).
+	// Populated by the subthread member store; the field is the shared contract
+	// the group-chat frontend reads to render who is in a reply.
+	Participants []string `json:"participants,omitempty"`
+	// Task is populated once the reply has been escalated to a task (human
+	// click). The group-chat main stream renders it as an activity card while the
+	// task runs and as a resolved result summary once it wraps up. Nil for a
+	// plain (never-escalated) reply. Summary carries the one-line conclusion
+	// bubbled back to the main stream on wrap-up; EscalatedBy records who promoted
+	// it (provenance for the human-only escalation gate).
+	Task        *TaskCard `json:"task,omitempty"`
+	Summary     string    `json:"summary,omitempty"`
+	EscalatedBy string    `json:"escalated_by,omitempty"`
+	Turns       []Turn    `json:"turns,omitempty"`
 }
 
 type ThreadOpenSubParams struct {
@@ -762,6 +782,11 @@ type ThreadOpenSubParams struct {
 	AnchorItemID string `json:"anchor_item_id,omitempty"`
 	Title        string `json:"title,omitempty"`
 	CreatedBy    string `json:"created_by,omitempty"`
+	// Participants seeds the reply subthread's weak-isolation member subset on
+	// create (the opener plus anyone the frontend @mentioned when opening the
+	// reply). Optional; the subset also grows as agents post in or get
+	// @mentioned. Ignored when the subthread already exists (create-or-find).
+	Participants []string `json:"participants,omitempty"`
 }
 
 type ThreadOpenSubResult struct {
@@ -782,7 +807,61 @@ type ThreadResolveSubParams struct {
 	Resolved    bool   `json:"resolved"`
 }
 
+// MessagePostSubthreadParams posts a human-authored message into a reply
+// subthread (群中群) from the split reply panel. The message folds into the cth
+// (thread_id-tagged, kept out of the main stream, fanned out only to the cth's
+// participant subset) via publishParticipantMessage's short-circuit. Agents
+// never reach this RPC (they only have tools); like escalate/bubble it is a
+// human-only affordance.
+type MessagePostSubthreadParams struct {
+	ThreadID    string `json:"thread_id"`
+	SubthreadID string `json:"subthread_id"`
+	Text        string `json:"text"`
+}
+
+// MessagePostSubthreadResult returns the refreshed subthread view (including the
+// just-posted message) so the split reply panel updates immediately — cth
+// messages carry no item/thread notification of their own.
+type MessagePostSubthreadResult struct {
+	Subthread ConversationSubthread `json:"subthread"`
+}
+
 type ThreadResolveSubResult struct {
+	Subthread ConversationSubthread `json:"subthread"`
+}
+
+// ThreadEscalateSubParams promotes a reply subthread to a task. This is a
+// client (human-click) RPC: agents have no tool that reaches it, so escalation
+// stays human-gated — an agent can only propose via post_message and wait for a
+// person to confirm. Idempotent (open -> task, or refresh an existing task).
+type ThreadEscalateSubParams struct {
+	ThreadID    string `json:"thread_id"`
+	SubthreadID string `json:"subthread_id"`
+	// Title optionally (re)names the task; CreatedBy records who escalated.
+	Title     string `json:"title,omitempty"`
+	CreatedBy string `json:"created_by,omitempty"`
+}
+
+type ThreadEscalateSubResult struct {
+	Subthread ConversationSubthread `json:"subthread"`
+}
+
+// ThreadBubbleSubParams wraps a reply/task up: it bubbles a one-line conclusion
+// back to the main stream as a participant_message (main stream = full-roster
+// visible again) and marks the subthread resolved with that summary. Used at
+// reply wrap-up or when a task completes (task_card -> resolved + summary).
+type ThreadBubbleSubParams struct {
+	ThreadID    string `json:"thread_id"`
+	SubthreadID string `json:"subthread_id"`
+	// Summary is the one line bubbled to the main stream and stored on the
+	// subthread as its conclusion.
+	Summary string `json:"summary"`
+	// ParticipantID attributes the bubbled main-stream message to a participant
+	// (the lead who summarized). Optional; falls back to the escalator/opener.
+	ParticipantID string `json:"participant_id,omitempty"`
+}
+
+type ThreadBubbleSubResult struct {
 	Subthread ConversationSubthread `json:"subthread"`
 }
 

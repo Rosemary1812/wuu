@@ -69,8 +69,9 @@ func (s *Server) recordParticipantReaction(threadID string, seq int, participant
 const residentEnvelopeBatchLimit = 20
 
 type envelopeMetaRecord struct {
-	ID             string `json:"id,omitempty"`
-	SourceThreadID string `json:"source_thread_id"`
+	ID                string `json:"id,omitempty"`
+	SourceThreadID    string `json:"source_thread_id"`
+	SourceSubthreadID string `json:"source_subthread_id,omitempty"`
 	// SourceThreadTitle snapshots the source thread's title at write time so
 	// DM/group chat rows can name the source without a reverse lookup at
 	// render time (the source thread may since have been renamed or
@@ -186,9 +187,24 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 		providers.DebugLogf("list thread members for resident routing %q: %v", sourceThreadID, err)
 		return
 	}
+	s.deliverEnvelopeToMembers(members, base, mentioned)
+}
+
+// deliverEnvelopeToMembers fans a base envelope out to a member set: it skips
+// the sender and retired participants, stamps each copy with a fresh id and the
+// per-member addressed flag, enqueues it, and kicks the resident to drain. Both
+// the group-wide path (routeEnvelopes, members = thread_members) and the reply
+// subthread path (routeSubthreadParticipantMessage, members = the cth's
+// weak-isolation subset) go through here so the two share exactly one delivery
+// mechanism — only the member source differs.
+func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope, mentioned map[string]bool) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	senderID := strings.TrimSpace(base.SenderParticipantID)
 	for _, participantID := range members {
 		participantID = strings.TrimSpace(participantID)
-		if participantID == "" || participantID == strings.TrimSpace(base.SenderParticipantID) {
+		if participantID == "" || participantID == senderID {
 			continue
 		}
 		// Membership queries already exclude retired participants; this
@@ -207,8 +223,9 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 		// Whether to engage is the model's judgment (design principle 10 +
 		// the from="agent" prompt rule), not a depth counter; the only
 		// structural backstop is the parallel fan-out width, bounded by the
-		// group-size / roster cap (maxGroupMembers). Hop rides along as an
-		// advisory signal in the envelope prompt.
+		// group-size / roster cap (maxGroupMembers) for the main stream, and by
+		// the reply subthread's participant subset for weak-isolation traffic.
+		// Hop rides along as an advisory signal in the envelope prompt.
 		if env.CreatedAt.IsZero() {
 			env.CreatedAt = time.Now().UTC()
 		}
@@ -228,6 +245,110 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 		}
 		s.kickResidentAgent(participantID)
 	}
+}
+
+// routeSubthreadParticipantMessage is the weak-isolation fan-out for a reply
+// subthread (cth-*) message. Where routeParticipantMessageToResidents pushes a
+// main-stream post to every thread member, this pushes a cth post ONLY to that
+// subthread's participant subset (conversation_thread_members) — non-participants
+// are never woken and never take the message into context. It runs off the
+// publishParticipantMessage short-circuit (the message is already stored in the
+// parent thread's history, tagged with thread_id=cth); this adds the routing the
+// short-circuit used to drop on the floor.
+//
+// Two membership side effects keep the subset current: the sender auto-joins
+// (an agent that speaks in a reply is a participant of it), and @mentioned group
+// members are pulled in (被@者加入). Pull access (fetch_thread_messages) stays
+// open to the whole group and is unaffected by this subset.
+func (s *Server) routeSubthreadParticipantMessage(parentThreadID, subthreadID string, msg agentcontrol.ParticipantMessage, displayName string, sourceSeq int) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	parentThreadID = strings.TrimSpace(parentThreadID)
+	subthreadID = strings.TrimSpace(subthreadID)
+	if parentThreadID == "" || subthreadID == "" {
+		return
+	}
+	text := strings.TrimSpace(msg.Text)
+	if text == "" || strings.EqualFold(strings.TrimSpace(msg.Kind), "decline") {
+		return
+	}
+	senderID := strings.TrimSpace(msg.ParticipantID)
+	if senderID != "" {
+		// Best-effort: a non-named sender (e.g. a worker/subagent posting a
+		// task_card update) fails requireActiveNamedParticipant and is simply
+		// not added — its cth then has no member subset and wakes no one, which
+		// preserves the existing task_card folding behaviour.
+		if err := session.AddConversationThreadMember(s.rt.SessionDir, subthreadID, senderID); err != nil {
+			providers.DebugLogf("auto-join sender %q into subthread %q: %v", senderID, subthreadID, err)
+		}
+	}
+	mentioned := s.mentionSubthreadMembers(parentThreadID, subthreadID, text)
+	title, workspace := parentThreadID, ""
+	if th := s.thread(parentThreadID); th != nil {
+		th.mu.Lock()
+		title = residentEnvelopeSourceTitleLocked(th)
+		workspace = th.FocusWorkspace
+		th.mu.Unlock()
+	}
+	hop := msg.Hop
+	if hop <= 0 {
+		hop = 1
+	}
+	base := MessageEnvelope{
+		SourceThreadID:      parentThreadID,
+		SourceSubthreadID:   subthreadID,
+		SourceTitle:         title,
+		SenderKind:          "participant",
+		SenderName:          firstNonEmpty(displayName, msg.TaskName, msg.AgentType, msg.AgentID, "Participant"),
+		SenderParticipantID: senderID,
+		Hop:                 hop,
+		SourceSeq:           sourceSeq,
+		Text:                text,
+		CreatedAt:           firstNonZeroTime(msg.CreatedAt, time.Now().UTC()),
+		Workspace:           workspace,
+	}
+	members, err := session.ListConversationThreadMembers(s.rt.SessionDir, subthreadID)
+	if err != nil {
+		providers.DebugLogf("list subthread members for %q: %v", subthreadID, err)
+		return
+	}
+	s.deliverEnvelopeToMembers(members, base, mentioned)
+}
+
+// mentionSubthreadMembers resolves @mentions in a reply-subthread message to
+// group members and pulls each matched member into the subthread's subset
+// (被@者加入), returning the set to mark as addressed. Mentions are matched
+// against the parent group's roster (a reply can @ anyone in the group), but the
+// membership side effect lands on the cth, not the group — the whole point of
+// weak isolation is that being @'d in a reply joins the reply, not the room.
+func (s *Server) mentionSubthreadMembers(parentThreadID, subthreadID, text string) map[string]bool {
+	out := make(map[string]bool)
+	if s == nil || s.rt == nil || strings.TrimSpace(text) == "" {
+		return out
+	}
+	members, err := session.ListThreadMembers(s.rt.SessionDir, parentThreadID)
+	if err != nil {
+		return out
+	}
+	for _, participantID := range members {
+		participantID = strings.TrimSpace(participantID)
+		if participantID == "" {
+			continue
+		}
+		summary, ok := s.resolveParticipantSummary(participantID)
+		if !ok || strings.TrimSpace(summary.Name) == "" {
+			continue
+		}
+		if !textMentionsName(text, summary.Name) {
+			continue
+		}
+		out[participantID] = true
+		if err := session.AddConversationThreadMember(s.rt.SessionDir, subthreadID, participantID); err != nil {
+			providers.DebugLogf("pull mentioned member %q into subthread %q: %v", participantID, subthreadID, err)
+		}
+	}
+	return out
 }
 
 func (s *Server) kickResidentAgent(participantID string) {
@@ -428,6 +549,7 @@ func envelopeMetaJSON(envs []MessageEnvelope) json.RawMessage {
 		records = append(records, envelopeMetaRecord{
 			ID:                  env.ID,
 			SourceThreadID:      env.SourceThreadID,
+			SourceSubthreadID:   env.SourceSubthreadID,
 			SourceThreadTitle:   env.SourceTitle,
 			Addressed:           env.Addressed,
 			Hop:                 env.Hop,
@@ -554,7 +676,7 @@ func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID s
 	if !isOwnDM {
 		return
 	}
-	targetThreadID, ok := fallbackReplyTargetThreadID(threadID, envs)
+	targetThreadID, targetSubthreadID, ok := fallbackReplyTargetThreadID(threadID, envs)
 	if !ok {
 		return
 	}
@@ -580,7 +702,11 @@ func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID s
 		Kind:          "result",
 		Hop:           residentSpeechHopsByThread(envs)[targetThreadID],
 		Text:          finalAnswer,
-		CreatedAt:     completedAt,
+		// ThreadID folds the fallback reply back into the same reply subthread
+		// the addressed envelopes came from (weak isolation): empty for a
+		// main-stream reply, so publishParticipantMessage behaves as before.
+		ThreadID:  targetSubthreadID,
+		CreatedAt: completedAt,
 	}
 	if err := s.publishParticipantMessage(targetThreadID, msg); err != nil {
 		providers.DebugLogf("fallback DM reply for %s: %v", participantID, err)
@@ -604,9 +730,15 @@ func (s *Server) fallbackDMReplyFromFinalAnswer(th *threadState, participantID s
 // leak private reasoning (e.g. "(no reply needed, staying silent)") into the
 // channel. So un-addressed batches get no plain-text fallback at all — only the
 // tool channel (post_message) can speak for them.
-func fallbackReplyTargetThreadID(ownDMThreadID string, envs []MessageEnvelope) (string, bool) {
+//
+// The returned subthreadID is the reply subthread (cth-*) the reply must fold
+// back into: non-empty only when every addressed envelope shares one subthread,
+// empty for a main-stream reply. If addressed envelopes disagree on subthread
+// (some main-stream, some cth, or two different cths) the target is ambiguous
+// and nothing is sent — same rule as a disagreeing source thread.
+func fallbackReplyTargetThreadID(ownDMThreadID string, envs []MessageEnvelope) (threadID, subthreadID string, ok bool) {
 	if len(envs) == 0 {
-		return ownDMThreadID, true
+		return ownDMThreadID, "", true
 	}
 	candidates := make([]MessageEnvelope, 0, len(envs))
 	for _, env := range envs {
@@ -615,23 +747,28 @@ func fallbackReplyTargetThreadID(ownDMThreadID string, envs []MessageEnvelope) (
 		}
 	}
 	if len(candidates) == 0 {
-		return "", false
+		return "", "", false
 	}
 	sourceThreadIDs := make(map[string]bool, len(candidates))
+	sourceSubthreadIDs := make(map[string]bool, len(candidates))
 	for _, env := range candidates {
 		id := strings.TrimSpace(env.SourceThreadID)
 		if id == "" {
 			continue
 		}
 		sourceThreadIDs[id] = true
+		sourceSubthreadIDs[strings.TrimSpace(env.SourceSubthreadID)] = true
 	}
-	if len(sourceThreadIDs) != 1 {
-		return "", false
+	if len(sourceThreadIDs) != 1 || len(sourceSubthreadIDs) != 1 {
+		return "", "", false
 	}
 	for id := range sourceThreadIDs {
-		return id, true
+		threadID = id
 	}
-	return "", false
+	for sub := range sourceSubthreadIDs {
+		subthreadID = sub
+	}
+	return threadID, subthreadID, true
 }
 
 func (s *Server) recordUnansweredAddressedEnvelopes(th *threadState, participantID string, envs []MessageEnvelope, turn Turn, completedAt time.Time) {

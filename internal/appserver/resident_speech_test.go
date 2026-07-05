@@ -120,6 +120,112 @@ func TestResidentPostMessageToMemberThreadPersistsSignedCard(t *testing.T) {
 	}
 }
 
+func TestResidentPostMessageToSubthreadFoldsIntoReplyThread(t *testing.T) {
+	srv, rt := newResidentSpeechTestServer(t)
+	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
+	dmID := startResidentDMForTest(t, srv, participantID)
+	groupID := startGroupThreadForTest(t, srv)
+	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
+		t.Fatalf("AddThreadMember: %v", err)
+	}
+	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
+		SessionID:    groupID,
+		AnchorItemID: "seq-3",
+		CreatedBy:    participantID,
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+
+	group := srv.thread(groupID)
+	group.mu.Lock()
+	turnsBefore := len(group.Turns)
+	group.mu.Unlock()
+
+	kit := residentToolkitForTest(t, srv, dmID)
+	out, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"update","text":"Looking into it.","thread_id":%q}`, cth.ID),
+	})
+	if err != nil {
+		t.Fatalf("post_message to subthread: %v", err)
+	}
+	var posted struct {
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal([]byte(out), &posted); err != nil {
+		t.Fatalf("unmarshal post_message result: %v", err)
+	}
+	if posted.ThreadID != cth.ID {
+		t.Fatalf("post_message result thread_id = %q, want subthread %q", posted.ThreadID, cth.ID)
+	}
+
+	history, err := session.LoadHistoryRecords(rt.sessionDir, groupID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	var tagged *session.HistoryRecord
+	for i := range history {
+		if history[i].Role == "participant" && strings.TrimSpace(history[i].ThreadID) == cth.ID {
+			tagged = &history[i]
+			break
+		}
+	}
+	if tagged == nil {
+		t.Fatalf("subthread message not persisted under parent history tagged with cth: %+v", history)
+	}
+	if tagged.Content != "Looking into it." || tagged.ParticipantID != participantID {
+		t.Fatalf("unexpected subthread record: %+v", *tagged)
+	}
+
+	// Weak isolation: the subthread post must not append a visible item to the
+	// main group stream (publishParticipantMessage short-circuits on thread_id).
+	group.mu.Lock()
+	turnsAfter := len(group.Turns)
+	group.mu.Unlock()
+	if turnsAfter != turnsBefore {
+		t.Fatalf("subthread post leaked into main stream: turns %d -> %d", turnsBefore, turnsAfter)
+	}
+}
+
+func TestResidentPostMessageToSubthreadRejectsNonMember(t *testing.T) {
+	srv, _ := newResidentSpeechTestServer(t)
+	participantID := saveNamedParticipant(t, srv.rt, "Jules", "reviewer", "")
+	dmID := startResidentDMForTest(t, srv, participantID)
+	groupID := startGroupThreadForTest(t, srv)
+	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
+		SessionID:    groupID,
+		AnchorItemID: "seq-3",
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+
+	kit := residentToolkitForTest(t, srv, dmID)
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"update","text":"nope","thread_id":%q}`, cth.ID),
+	})
+	if err == nil || !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("post_message to subthread should reject non-member of parent group, got %v", err)
+	}
+}
+
+func TestResidentPostMessageToUnknownSubthreadFails(t *testing.T) {
+	srv, _ := newResidentSpeechTestServer(t)
+	participantID := saveNamedParticipant(t, srv.rt, "Kira", "reviewer", "")
+	dmID := startResidentDMForTest(t, srv, participantID)
+
+	kit := residentToolkitForTest(t, srv, dmID)
+	_, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: `{"kind":"update","text":"nope","thread_id":"cth-does-not-exist"}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "conversation thread not found") {
+		t.Fatalf("post_message to unknown subthread should fail, got %v", err)
+	}
+}
+
 func TestResidentPostMessageRejectsNonMemberThread(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
 	participantID := saveNamedParticipant(t, srv.rt, "Jules", "reviewer", "")

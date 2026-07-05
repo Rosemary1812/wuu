@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -63,5 +64,72 @@ func TestReactWritesReactionWithoutRouting(t *testing.T) {
 	// An unknown reaction key is rejected.
 	if err := reactor.React(context.Background(), groupID, seq, "kaboom"); err == nil {
 		t.Fatal("expected unknown reaction to be rejected")
+	}
+}
+
+// The human message/react RPC records a reaction under the human identity,
+// validates the key, and — like the tool path — never routes or wakes an agent.
+func TestHandleMessageReact(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	andy := saveNamedParticipant(t, rt, "Andy", "reviewer", "")
+	le := saveNamedParticipant(t, rt, "le", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, p := range []string{andy, le} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, p); err != nil {
+			t.Fatalf("AddThreadMember: %v", err)
+		}
+	}
+	seq := routeUserMessageAndSourceSeq(t, srv, groupID, andy)
+	waitForResidentQuiesce(t, srv)
+
+	raw := fmt.Sprintf(
+		`{"id":"react","method":"message/react","params":{"thread_id":%q,"seq":%d,"reaction":"nice"}}`,
+		groupID, seq,
+	)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("message/react: %v", err)
+	}
+
+	marks, err := session.ListMessageMarks(rt.SessionDir, groupID)
+	if err != nil {
+		t.Fatalf("list marks: %v", err)
+	}
+	found := false
+	for _, m := range marks {
+		if m.Kind == session.MessageMarkKindReaction && m.ParticipantID == humanReactionParticipantID && m.Seq == seq && m.Payload == "nice" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("human reaction not written, marks=%+v", marks)
+	}
+
+	// Terminal: a human reaction must not enqueue an envelope for anyone.
+	pending, err := session.PendingResidentEnvelopes(rt.SessionDir, le, 10)
+	if err != nil {
+		t.Fatalf("pending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("react must not route, but le has %d pending envelope(s)", len(pending))
+	}
+
+	// An unknown reaction key is rejected and writes nothing new.
+	rawBad := fmt.Sprintf(
+		`{"id":"react-bad","method":"message/react","params":{"thread_id":%q,"seq":%d,"reaction":"kaboom"}}`,
+		groupID, seq,
+	)
+	if err := srv.handleLine(context.Background(), []byte(rawBad)); err != nil {
+		t.Fatalf("message/react (bad): %v", err)
+	}
+	marks, err = session.ListMessageMarks(rt.SessionDir, groupID)
+	if err != nil {
+		t.Fatalf("list marks after bad: %v", err)
+	}
+	for _, m := range marks {
+		if m.Kind == session.MessageMarkKindReaction && m.Payload == "kaboom" {
+			t.Fatalf("unknown reaction key must not be recorded, marks=%+v", marks)
+		}
 	}
 }

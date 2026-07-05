@@ -333,3 +333,71 @@
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Reply folding affordance under a chat bubble (群中群). A plain reply hangs a
+   small "N 条回复" badge; an escalated reply swaps it for the shared task card
+   (task-cards.css). The badge is a button when a click handler opens the reply
+   panel, and a static chip otherwise. */
+.chat-reply-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-4);
+  border: 1px solid var(--hairline);
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+  font-variant-numeric: tabular-nums;
+}
+.chat-row--user .chat-reply-badge {
+  align-self: flex-end;
+}
+.chat-reply-badge--button {
+  cursor: pointer;
+}
+.chat-reply-badge--button:hover {
+  background: var(--ink-overlay-6);
+  color: var(--ink);
+}
+.chat-reply-task {
+  align-self: stretch;
+  min-width: 0;
+}
+.chat-row--task {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Emoji reaction picker opened from a chat bubble's right-click menu (贴 emoji).
+   A compact floating row of the shared reaction emojis; reuses the same fixed
+   positioning + surface tokens as the thread context menu. */
+.message-reaction-picker {
+  position: fixed;
+  z-index: 2147482001;
+  display: flex;
+  gap: 2px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-pill);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  padding: 4px;
+  backdrop-filter: blur(16px);
+}
+.message-reaction-picker-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.message-reaction-picker-item:hover {
+  background: var(--menu-hover);
+}

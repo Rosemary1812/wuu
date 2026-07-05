@@ -1,4 +1,5 @@
 import {
+  type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -7,19 +8,31 @@ import {
   useState,
 } from "react";
 import type {
+  ConversationSubthread,
   EnvelopeMeta,
   FocusMeta,
   ParticipantSummary,
+  ThreadItem,
   Turn,
 } from "../shared/protocol";
-import { chatMessagesFromTurns, type ChatMessageRow } from "./AppState";
+import {
+  chatMessagesFromTurns,
+  replyCountBadge,
+  type ChatMessageRow,
+} from "./AppState";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { EnvelopeNotice } from "./EnvelopeNotice";
 import { MessageReactions } from "./MessageReactions";
+import { MessageReactionPicker } from "./MessageReactionPicker";
 import { ringModel, type MessageMarksView } from "./MessageMarks";
+import {
+  ThreadContextMenu,
+  type ThreadContextMenuItem,
+} from "./ThreadContextMenu";
 import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
+import { TaskCardItem } from "./ThreadItemView";
 
 // Distance (px) from the bottom of the scroll container within which the
 // view still counts as "at the bottom" and should auto-follow new rows.
@@ -92,6 +105,9 @@ export function ChatThreadView({
   marksBySeq,
   readerCount = 0,
   resolveParticipantName,
+  subthreadsByAnchor,
+  onOpenSubthread,
+  onReact,
 }: {
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
   /**
@@ -114,8 +130,64 @@ export function ChatThreadView({
   /** How many members a message is broadcast to — the ring's denominator. */
   readerCount?: number;
   resolveParticipantName?: (id: string) => string;
+  /**
+   * Reply subthreads (群中群) anchored on this thread's messages, keyed by
+   * anchor_item_id (== the anchored ThreadItem.id). A message with an entry
+   * gets a reply affordance under its bubble: a "N 条回复" badge for a plain
+   * discussion reply, or the shared task 活动卡/result 摘要 once the reply has
+   * been (人点击)升级为 task。Absent = subthreads not loaded / not a group thread.
+   */
+  subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
+  /**
+   * Open the reply/subthread panel for a message. Wired to the same
+   * create-or-find-by-anchor path the agent-brain transcript uses. Optional:
+   * when absent the reply badge / task card renders read-only (无点击入口)。
+   */
+  onOpenSubthread?: (item: ThreadItem) => void;
+  /**
+   * Stamp an emoji reaction on a message (人点击, from the bubble's right-click
+   * menu). Wired to the message/react RPC. Optional: when absent the "贴 emoji"
+   * entry is omitted from the context menu.
+   */
+  onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
+  // Right-click affordances (回复分屏 / 贴 emoji) live at the view's top level,
+  // not inside ChatRow: ChatRow is rendered inside the windowed .map, so its
+  // open/close state must be hoisted here to a single instance. `menu` holds the
+  // context menu; `reactionPicker` holds the emoji picker opened from it. Both
+  // carry the anchored message + the click coords.
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    item: ThreadItem;
+  } | null>(null);
+  const [reactionPicker, setReactionPicker] = useState<{
+    x: number;
+    y: number;
+    item: ThreadItem;
+  } | null>(null);
+
+  // A message can be replied to only when a reply handler is wired. The main
+  // stream passes one; a reply panel that reuses this view omits it, which is
+  // how "一层不嵌套" — no reply on a message already inside a cth — is enforced
+  // at the view level (the reply-panel caller never offers the entry).
+  const canReply = Boolean(onOpenSubthread);
+  const canReact = Boolean(onReact);
+
+  const handleBubbleContextMenu = useCallback(
+    (event: ReactMouseEvent, item: ThreadItem) => {
+      if (!canReply && !canReact) {
+        return;
+      }
+      event.preventDefault();
+      setReactionPicker(null);
+      setMenu({ x: event.clientX, y: event.clientY, item });
+    },
+    [canReply, canReact],
+  );
+
+  const onBubbleContextMenu = canReply || canReact ? handleBubbleContextMenu : undefined;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const rowCount = rows.length + pendingMessages.length;
@@ -256,13 +328,80 @@ export function ChatThreadView({
           }
           readerCount={readerCount}
           resolveParticipantName={resolveParticipantName}
+          subthread={
+            row.kind === "user" || row.kind === "participant"
+              ? subthreadsByAnchor?.get(row.item.id)
+              : undefined
+          }
+          onOpenSubthread={onOpenSubthread}
+          onContextMenu={onBubbleContextMenu}
         />
       ))}
       {pendingMessages.map((message) => (
         <PendingChatRow key={`pending-${message.id}`} message={message} />
       ))}
+      {menu ? (
+        <ThreadContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={buildMessageMenuItems({
+            item: menu.item,
+            x: menu.x,
+            y: menu.y,
+            canReply,
+            canReact,
+            onReply: onOpenSubthread,
+            openReactionPicker: setReactionPicker,
+          })}
+        />
+      ) : null}
+      {reactionPicker ? (
+        <MessageReactionPicker
+          x={reactionPicker.x}
+          y={reactionPicker.y}
+          onPick={(reaction) => onReact?.(reactionPicker.item, reaction)}
+          onClose={() => setReactionPicker(null)}
+        />
+      ) : null}
     </div>
   );
+}
+
+// buildMessageMenuItems assembles the right-click menu for a chat bubble:
+// "回复(分屏)" (only when replies are allowed — omitted inside a cth to keep
+// 一层不嵌套) and "贴 emoji" (opens the reaction picker at the same coords).
+function buildMessageMenuItems({
+  item,
+  x,
+  y,
+  canReply,
+  canReact,
+  onReply,
+  openReactionPicker,
+}: {
+  item: ThreadItem;
+  x: number;
+  y: number;
+  canReply: boolean;
+  canReact: boolean;
+  onReply?: (item: ThreadItem) => void;
+  openReactionPicker: (state: { x: number; y: number; item: ThreadItem }) => void;
+}): ThreadContextMenuItem[] {
+  const items: ThreadContextMenuItem[] = [];
+  if (canReply) {
+    items.push({
+      label: "回复(分屏)",
+      onSelect: () => onReply?.(item),
+    });
+  }
+  if (canReact) {
+    items.push({
+      label: "贴 emoji",
+      onSelect: () => openReactionPicker({ x, y, item }),
+    });
+  }
+  return items;
 }
 
 /**
@@ -320,13 +459,39 @@ function ChatRow({
   marks,
   readerCount = 0,
   resolveParticipantName,
+  subthread,
+  onOpenSubthread,
+  onContextMenu,
 }: {
   row: ChatMessageRow;
   busyParticipantIDs?: ReadonlySet<string>;
   marks?: MessageMarksView;
   readerCount?: number;
   resolveParticipantName?: (id: string) => string;
+  subthread?: ConversationSubthread;
+  onOpenSubthread?: (item: ThreadItem) => void;
+  /**
+   * Open the bubble's right-click menu (回复分屏 / 贴 emoji). Attached to the
+   * user/participant bubbles only. Absent = no menu (e.g. no actions wired).
+   */
+  onContextMenu?: (event: ReactMouseEvent, item: ThreadItem) => void;
 }): JSX.Element {
+  if (row.kind === "task") {
+    // task_card 折叠卡:复用 agent-brain 转录里的 TaskCardItem(进行中显示活动
+    // 状态,完成后显示 result 摘要)。「查看过程」仅在 task 绑了 subthread 时可点。
+    return (
+      <div className="chat-row chat-row--task">
+        <TaskCardItem
+          item={row.item}
+          onOpenSubthread={
+            row.item.task?.subthread_id
+              ? () => onOpenSubthread?.(row.item)
+              : undefined
+          }
+        />
+      </div>
+    );
+  }
   if (row.kind === "focus") {
     const meta = row.item.focus_meta;
     const label = meta ? focusDividerLabel(meta) : "⬒ 全部工作区";
@@ -357,7 +522,14 @@ function ChatRow({
     return (
       <div className="chat-row chat-row--user">
         <div className="chat-bubble-group">
-          <div className="chat-bubble chat-bubble--user">
+          <div
+            className="chat-bubble chat-bubble--user"
+            onContextMenu={
+              onContextMenu
+                ? (event) => onContextMenu(event, row.item)
+                : undefined
+            }
+          >
             {row.item.text ? (
               <RichContent text={row.item.text} />
             ) : null}
@@ -375,6 +547,11 @@ function ChatRow({
               />
             </div>
           ) : null}
+          <ReplyAffordance
+            subthread={subthread}
+            item={row.item}
+            onOpenSubthread={onOpenSubthread}
+          />
         </div>
       </div>
     );
@@ -403,7 +580,14 @@ function ChatRow({
       <ChatAvatar participant={participant} status={participantStatus} />
       <div className="chat-bubble-group">
         <div className="chat-sender-name">{name}</div>
-        <div className="chat-bubble">
+        <div
+          className="chat-bubble"
+          onContextMenu={
+            onContextMenu
+              ? (event) => onContextMenu(event, row.item)
+              : undefined
+          }
+        >
           {row.item.text ? <RichContent text={row.item.text} /> : null}
         </div>
         {marks && marks.reactions.length > 0 ? (
@@ -414,8 +598,64 @@ function ChatRow({
             />
           </div>
         ) : null}
+        <ReplyAffordance
+          subthread={subthread}
+          item={row.item}
+          onOpenSubthread={onOpenSubthread}
+        />
       </div>
     </div>
+  );
+}
+
+/**
+ * Reply affordance hanging under a chat bubble (群中群折叠). Nothing renders
+ * unless the message actually anchors a reply subthread. A plain discussion
+ * reply shows a "N 条回复" badge (封顶 99 → 99+); once the reply is
+ * (人点击)升级为 task, the same slot shows the shared task 活动卡/result 摘要
+ * via TaskCardItem — 进行中显示活动状态,完成后显示 result 摘要。Both open the
+ * reply panel on click via the message's anchor when onOpenSubthread is wired.
+ */
+function ReplyAffordance({
+  subthread,
+  item,
+  onOpenSubthread,
+}: {
+  subthread?: ConversationSubthread;
+  item: ThreadItem;
+  onOpenSubthread?: (item: ThreadItem) => void;
+}): JSX.Element | null {
+  if (!subthread) {
+    return null;
+  }
+  const open = onOpenSubthread ? () => onOpenSubthread(item) : undefined;
+  if (subthread.task) {
+    // 升级为 task 后的活动卡/摘要:把 subthread.task 包成一个合成 task_card item
+    // 复用 TaskCardItem 呈现,与 agent-brain 转录里的 task 卡完全一致。
+    const taskItem: ThreadItem = {
+      id: subthread.anchor_item_id,
+      type: "task_card",
+      task: subthread.task,
+      participant: subthread.task.participant,
+    };
+    return (
+      <div className="chat-reply-task">
+        <TaskCardItem item={taskItem} onOpenSubthread={open} />
+      </div>
+    );
+  }
+  const label = `${replyCountBadge(subthread.reply_count)} 条回复`;
+  if (!open) {
+    return <span className="chat-reply-badge">{label}</span>;
+  }
+  return (
+    <button
+      type="button"
+      className="chat-reply-badge chat-reply-badge--button"
+      onClick={open}
+    >
+      {label}
+    </button>
   );
 }
 

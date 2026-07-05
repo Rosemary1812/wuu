@@ -166,6 +166,20 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-open-sub", threadId, options),
   resolveConversationSubthread: (threadId: string, subthreadId: string, resolved: boolean) =>
     ipcRenderer.invoke("wuu:thread-resolve-sub", threadId, subthreadId, resolved),
+  escalateConversationSubthread: (threadId: string, subthreadId: string, options) =>
+    ipcRenderer.invoke("wuu:thread-escalate-sub", threadId, subthreadId, options),
+  bubbleConversationSubthread: (
+    threadId: string,
+    subthreadId: string,
+    summary: string,
+    options,
+  ) => ipcRenderer.invoke("wuu:thread-bubble-sub", threadId, subthreadId, summary, options),
+  postSubthreadMessage: (
+    threadId: string,
+    subthreadId: string,
+    text: string,
+  ): Promise<import("../shared/protocol").MessagePostSubthreadResult> =>
+    ipcRenderer.invoke("wuu:message-post-subthread", threadId, subthreadId, text),
   listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),
@@ -179,6 +193,12 @@ const api: WuuDesktopApi = {
     threadId: string,
   ): Promise<import("../shared/protocol").ThreadMarksResult> =>
     ipcRenderer.invoke("wuu:thread-marks", threadId),
+  reactToMessage: (
+    threadId: string,
+    seq: number,
+    reaction: string,
+  ): Promise<import("../shared/protocol").MessageReactResult> =>
+    ipcRenderer.invoke("wuu:message-react", threadId, seq, reaction),
   archiveThread: (threadId: string, archived: boolean) =>
     ipcRenderer.invoke("wuu:thread-archive", threadId, archived),
   deleteThread: (threadId: string) =>

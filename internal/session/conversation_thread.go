@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ type ConversationThreadStatus string
 
 const (
 	ConversationThreadOpen     ConversationThreadStatus = "open"
+	ConversationThreadTask     ConversationThreadStatus = "task"
 	ConversationThreadResolved ConversationThreadStatus = "resolved"
 )
 
@@ -26,6 +28,14 @@ type ConversationThread struct {
 	Status       ConversationThreadStatus `json:"status"`
 	CreatedBy    string                   `json:"created_by,omitempty"`
 	CreatedAt    time.Time                `json:"created_at"`
+	// EscalatedAt / EscalatedBy mark that this reply subthread was promoted to a
+	// task by a human (open -> task). EscalatedAt stays set even after the task
+	// resolves (status -> resolved), so a resolved cth still carries "this was a
+	// task" — a plain reply resolve leaves EscalatedAt zero. Summary is the
+	// one-line conclusion bubbled back to the main stream when the task wraps up.
+	EscalatedAt time.Time `json:"escalated_at,omitempty"`
+	EscalatedBy string    `json:"escalated_by,omitempty"`
+	Summary     string    `json:"summary,omitempty"`
 }
 
 func NewConversationThreadID() string {
@@ -105,7 +115,7 @@ func ListConversationThreads(sessDir, sessionID string) ([]ConversationThread, e
 	}
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary
 FROM conversation_threads
 WHERE session_id = ?
 ORDER BY created_at ASC, id ASC`, sessionID)
@@ -126,6 +136,36 @@ ORDER BY created_at ASC, id ASC`, sessionID)
 		return nil, fmt.Errorf("scan conversation threads: %w", err)
 	}
 	return threads, nil
+}
+
+// FindConversationThreadByID loads a single conversation subthread by its id
+// (cth-*). It returns ErrConversationThreadNotFound when no row matches. Unlike
+// findConversationSubthread (which scans a parent session's threads by anchor),
+// this resolves a subthread id directly to its record — including SessionID, the
+// parent (group) thread the subthread hangs off of.
+func FindConversationThreadByID(sessDir, id string) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+
+	row := db.QueryRow(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary
+FROM conversation_threads
+WHERE id = ?`, id)
+	thread, err := scanConversationThread(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+		}
+		return ConversationThread{}, fmt.Errorf("find conversation thread: %w", err)
+	}
+	return thread, nil
 }
 
 func UpdateConversationThreadStatus(sessDir, id string, status ConversationThreadStatus) error {
@@ -177,6 +217,8 @@ func normalizeConversationThreadStatus(status ConversationThreadStatus) Conversa
 		return ConversationThreadOpen
 	case ConversationThreadOpen:
 		return ConversationThreadOpen
+	case ConversationThreadTask:
+		return ConversationThreadTask
 	case ConversationThreadResolved:
 		return ConversationThreadResolved
 	default:
@@ -186,24 +228,129 @@ func normalizeConversationThreadStatus(status ConversationThreadStatus) Conversa
 
 func validateConversationThreadStatus(status ConversationThreadStatus) error {
 	switch status {
-	case ConversationThreadOpen, ConversationThreadResolved:
+	case ConversationThreadOpen, ConversationThreadTask, ConversationThreadResolved:
 		return nil
 	default:
 		return fmt.Errorf("invalid conversation thread status %q", status)
 	}
 }
 
+// EscalateConversationThread promotes a reply subthread to a task: it advances
+// the status from the discussion state (open) to the execution state (task) and
+// records who escalated it plus the escalation time. It is idempotent — calling
+// it on an already-escalated (task) thread just refreshes escalated_by/title and
+// leaves escalated_at pinned to the first escalation. A resolved thread is
+// re-opened into the task state so the human can re-run it. The escalation entry
+// is a client RPC (human click); agents have no tool that reaches this.
+func EscalateConversationThread(sessDir, id, escalatedBy, title string) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	escalatedBy = strings.TrimSpace(escalatedBy)
+	title = strings.TrimSpace(title)
+	if id == "" {
+		return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("begin conversation thread escalate: %w", err)
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRow(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary
+FROM conversation_threads
+WHERE id = ?`, id)
+	thread, err := scanConversationThread(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+		}
+		return ConversationThread{}, fmt.Errorf("find conversation thread: %w", err)
+	}
+
+	thread.Status = ConversationThreadTask
+	if thread.EscalatedAt.IsZero() {
+		thread.EscalatedAt = time.Now().UTC()
+	}
+	if escalatedBy != "" {
+		thread.EscalatedBy = escalatedBy
+	}
+	if title != "" {
+		thread.Title = title
+	}
+
+	if _, err := tx.Exec(`
+UPDATE conversation_threads
+SET status = ?, title = ?, escalated_at = ?, escalated_by = ?
+WHERE id = ?`,
+		string(thread.Status), thread.Title, timeText(thread.EscalatedAt), thread.EscalatedBy, id,
+	); err != nil {
+		return ConversationThread{}, fmt.Errorf("escalate conversation thread: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return ConversationThread{}, fmt.Errorf("commit conversation thread escalate: %w", err)
+	}
+	return thread, nil
+}
+
+// SetConversationThreadSummary stores the one-line conclusion for a subthread
+// (the same text bubbled back to the main stream). It only writes the summary
+// column; status transitions go through UpdateConversationThreadStatus so the
+// two concerns stay composable (resolve = set summary + set status resolved).
+func SetConversationThreadSummary(sessDir, id, summary string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET summary = ?
+WHERE id = ?`, strings.TrimSpace(summary), id)
+	if err != nil {
+		return fmt.Errorf("update conversation thread summary: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update conversation thread summary: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	return nil
+}
+
 func scanConversationThread(scanner interface {
 	Scan(dest ...any) error
 }) (ConversationThread, error) {
 	var thread ConversationThread
-	var status, createdAt string
+	var status, createdAt, escalatedAt string
 	if err := scanner.Scan(
 		&thread.ID, &thread.SessionID, &thread.AnchorItemID, &thread.Title, &status, &thread.CreatedBy, &createdAt,
+		&escalatedAt, &thread.EscalatedBy, &thread.Summary,
 	); err != nil {
 		return ConversationThread{}, err
 	}
 	thread.Status = ConversationThreadStatus(status)
 	thread.CreatedAt = parseTime(createdAt)
+	thread.EscalatedAt = parseTime(escalatedAt)
 	return thread, nil
 }

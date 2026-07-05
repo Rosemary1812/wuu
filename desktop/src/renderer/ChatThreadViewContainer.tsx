@@ -1,5 +1,9 @@
 import type { JSX } from "react";
-import type { Turn } from "../shared/protocol";
+import type {
+  ConversationSubthread,
+  ThreadItem,
+  Turn,
+} from "../shared/protocol";
 import { ChatThreadView } from "./ChatThreadView";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { useThreadMarks } from "./useThreadMarks";
@@ -15,6 +19,9 @@ export function ChatThreadViewContainer({
   busyParticipantIDs,
   readerCount,
   resolveParticipantName,
+  subthreadsByAnchor,
+  onOpenSubthread,
+  onReact,
 }: {
   threadID: string;
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
@@ -22,6 +29,9 @@ export function ChatThreadViewContainer({
   busyParticipantIDs?: ReadonlySet<string>;
   readerCount?: number;
   resolveParticipantName?: (id: string) => string;
+  subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
+  onOpenSubthread?: (item: ThreadItem) => void;
+  onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const marksBySeq = useThreadMarks(threadID, true);
   return (
@@ -32,6 +42,9 @@ export function ChatThreadViewContainer({
       marksBySeq={marksBySeq}
       readerCount={readerCount}
       resolveParticipantName={resolveParticipantName}
+      subthreadsByAnchor={subthreadsByAnchor}
+      onOpenSubthread={onOpenSubthread}
+      onReact={onReact}
     />
   );
 }

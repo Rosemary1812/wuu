@@ -11,14 +11,20 @@ import (
 // context. One envelope carries exactly one new message -- never room
 // history. Agents pull surrounding context with fetch_thread_messages.
 type MessageEnvelope struct {
-	ID                  string    `json:"id"`
-	SourceThreadID      string    `json:"source_thread_id"`
-	SourceTitle         string    `json:"source_title"`
-	SenderKind          string    `json:"sender_kind"`
-	SenderName          string    `json:"sender_name"`
-	SenderParticipantID string    `json:"sender_participant_id,omitempty"`
-	Addressed           bool      `json:"addressed"`
-	Hop                 int       `json:"hop"`
+	ID             string `json:"id"`
+	SourceThreadID string `json:"source_thread_id"`
+	// SourceSubthreadID names the reply subthread (cth-*) this message belongs
+	// to when it was routed through a subthread's weak-isolation subset rather
+	// than the group's full roster. Empty for ordinary main-stream group/DM
+	// traffic. Carried so the resident replies back into the same reply thread
+	// (post_message thread_id=cth-…) instead of leaking into the main stream.
+	SourceSubthreadID   string `json:"source_subthread_id,omitempty"`
+	SourceTitle         string `json:"source_title"`
+	SenderKind          string `json:"sender_kind"`
+	SenderName          string `json:"sender_name"`
+	SenderParticipantID string `json:"sender_participant_id,omitempty"`
+	Addressed           bool   `json:"addressed"`
+	Hop                 int    `json:"hop"`
 	// SourceSeq is the seq of the source message in SourceThreadID — its
 	// stable per-thread address. Carried so a resident's read receipt (turn
 	// completed/failed on this message) and its optional reaction can point
@@ -49,6 +55,13 @@ func (e MessageEnvelope) Prompt() string {
 		e.SourceTitle, e.SourceThreadID, e.SenderKind, e.SenderName,
 		strconv.FormatBool(e.Addressed), strconv.Itoa(e.Hop),
 	)
+	// subthread_id marks a reply-thread message: the model replies back into
+	// this same reply thread by passing it as post_message's thread_id, keeping
+	// the exchange out of the main stream (weak isolation). Omitted for
+	// main-stream traffic.
+	if sub := strings.TrimSpace(e.SourceSubthreadID); sub != "" {
+		attrs += fmt.Sprintf(" subthread_id=%q", sub)
+	}
 	// seq is the message's stable address; the model passes it to the react
 	// tool to stamp a reaction on this exact message. Omitted when unknown.
 	if e.SourceSeq > 0 {

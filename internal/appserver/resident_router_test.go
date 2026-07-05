@@ -583,8 +583,8 @@ func TestChatMessageItemCarriesEnvelopeMeta(t *testing.T) {
 func TestFallbackReplyTargetThreadIDHonorsSilenceForUnaddressed(t *testing.T) {
 	// Plain user DM turn (no envelopes): a plain-text answer belongs in the
 	// resident's own DM.
-	if id, ok := fallbackReplyTargetThreadID("dm-1", nil); !ok || id != "dm-1" {
-		t.Fatalf("plain DM turn: got (%q,%v), want (dm-1,true)", id, ok)
+	if id, sub, ok := fallbackReplyTargetThreadID("dm-1", nil); !ok || id != "dm-1" || sub != "" {
+		t.Fatalf("plain DM turn: got (%q,%q,%v), want (dm-1,\"\",true)", id, sub, ok)
 	}
 
 	// UN-addressed group message: silence is valid and plain text is private, so
@@ -592,7 +592,7 @@ func TestFallbackReplyTargetThreadIDHonorsSilenceForUnaddressed(t *testing.T) {
 	unaddressed := []MessageEnvelope{
 		{SourceThreadID: "group-all", Addressed: false, Text: "你们好"},
 	}
-	if id, ok := fallbackReplyTargetThreadID("dm-1", unaddressed); ok {
+	if id, _, ok := fallbackReplyTargetThreadID("dm-1", unaddressed); ok {
 		t.Fatalf("un-addressed batch should send nothing; got target %q", id)
 	}
 
@@ -603,8 +603,17 @@ func TestFallbackReplyTargetThreadIDHonorsSilenceForUnaddressed(t *testing.T) {
 		{SourceThreadID: "group-all", Addressed: true, Text: "@Bea 在吗"},
 		{SourceThreadID: "group-all", Addressed: false, Text: "ambient"},
 	}
-	if id, ok := fallbackReplyTargetThreadID("dm-1", addressed); !ok || id != "group-all" {
-		t.Fatalf("addressed batch: got (%q,%v), want (group-all,true)", id, ok)
+	if id, sub, ok := fallbackReplyTargetThreadID("dm-1", addressed); !ok || id != "group-all" || sub != "" {
+		t.Fatalf("addressed batch: got (%q,%q,%v), want (group-all,\"\",true)", id, sub, ok)
+	}
+
+	// Addressed reply-subthread (cth) envelope: the fallback folds back into the
+	// same subthread (weak isolation), returning the parent thread + cth id.
+	subthreaded := []MessageEnvelope{
+		{SourceThreadID: "group-all", SourceSubthreadID: "cth-1", Addressed: true, Text: "@Bea 在吗"},
+	}
+	if id, sub, ok := fallbackReplyTargetThreadID("dm-1", subthreaded); !ok || id != "group-all" || sub != "cth-1" {
+		t.Fatalf("subthread batch: got (%q,%q,%v), want (group-all,cth-1,true)", id, sub, ok)
 	}
 
 	// Addressed envelopes disagreeing on source thread → ambiguous → nothing.
@@ -612,7 +621,160 @@ func TestFallbackReplyTargetThreadIDHonorsSilenceForUnaddressed(t *testing.T) {
 		{SourceThreadID: "group-a", Addressed: true, Text: "@X"},
 		{SourceThreadID: "group-b", Addressed: true, Text: "@X"},
 	}
-	if _, ok := fallbackReplyTargetThreadID("dm-1", ambiguous); ok {
+	if _, _, ok := fallbackReplyTargetThreadID("dm-1", ambiguous); ok {
 		t.Fatalf("ambiguous addressed sources should send nothing")
 	}
+
+	// Addressed envelopes disagreeing on subthread (one main-stream, one cth) →
+	// ambiguous → nothing (must not leak a reply into the main stream).
+	mixedSub := []MessageEnvelope{
+		{SourceThreadID: "group-all", SourceSubthreadID: "", Addressed: true, Text: "@X"},
+		{SourceThreadID: "group-all", SourceSubthreadID: "cth-1", Addressed: true, Text: "@X"},
+	}
+	if _, _, ok := fallbackReplyTargetThreadID("dm-1", mixedSub); ok {
+		t.Fatalf("mixed main-stream/subthread addressed sources should send nothing")
+	}
+}
+
+func TestRouteSubthreadFansOutToParticipantSubsetOnly(t *testing.T) {
+	// Empty provider response: a woken resident produces no final answer, so no
+	// fallback reply cascades and the test observes only the routing it triggers.
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	cid := saveNamedParticipant(t, rt, "Cid", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, participantID := range []string{ada, bea, cid} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
+			t.Fatalf("AddThreadMember %s: %v", participantID, err)
+		}
+	}
+	// Reply subthread whose weak-isolation subset is only Bea (Cid is a group
+	// member but deliberately NOT a participant of this reply).
+	cth, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
+		SessionID:    groupID,
+		AnchorItemID: "seq-3",
+		CreatedBy:    ada,
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+	if err := session.AddConversationThreadMember(rt.SessionDir, cth.ID, bea); err != nil {
+		t.Fatalf("seed cth member Bea: %v", err)
+	}
+
+	// Ada posts into the reply subthread (thread_id=cth). This hits the
+	// publishParticipantMessage short-circuit and routes only to the cth subset.
+	if err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
+		AgentID:       ada,
+		ParticipantID: ada,
+		Kind:          "update",
+		Hop:           1,
+		Text:          "Digging into the failing test.",
+		ThreadID:      cth.ID,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("publish Ada subthread message: %v", err)
+	}
+
+	// Bea (a reply participant) is pushed the message, tagged with the subthread.
+	_, beaHistory := waitForResidentDMHistory(t, srv, bea, 1)
+	beaMeta := findEnvelopeMetaRecord(t, beaHistory)
+	if beaMeta.SourceThreadID != groupID || beaMeta.SourceSubthreadID != cth.ID {
+		t.Fatalf("Bea envelope meta = %+v, want source=%s subthread=%s", beaMeta, groupID, cth.ID)
+	}
+	if beaMeta.SenderParticipantID != ada || beaMeta.Addressed {
+		t.Fatalf("Bea envelope meta sender/addressed = %+v", beaMeta)
+	}
+
+	// Cid (a group member but NOT a reply participant) is never woken: routing
+	// enqueues synchronously inside publishParticipantMessage, so by now Cid's
+	// inbox is provably empty and no DM turn was ever started for it.
+	pending, err := session.PendingResidentEnvelopes(rt.SessionDir, cid, 0)
+	if err != nil {
+		t.Fatalf("PendingResidentEnvelopes Cid: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("non-participant Cid was woken by a reply message: %d pending envelopes", len(pending))
+	}
+	if _, cidHistory := findDMHistoryIfExists(t, srv, cid); len(cidHistory) != 0 {
+		t.Fatalf("non-participant Cid got a DM turn from a reply message: %+v", cidHistory)
+	}
+
+	// The sender auto-joins the reply subthread; the non-participant does not.
+	members, err := session.ListConversationThreadMembers(rt.SessionDir, cth.ID)
+	if err != nil {
+		t.Fatalf("ListConversationThreadMembers: %v", err)
+	}
+	if len(members) != 2 || !containsMember(members, ada) || !containsMember(members, bea) {
+		t.Fatalf("cth members = %v, want Ada (auto-joined) and Bea", members)
+	}
+	if containsMember(members, cid) {
+		t.Fatalf("non-participant Cid must not be in cth members: %v", members)
+	}
+}
+
+func TestRouteSubthreadMentionPullsGroupMemberIntoReply(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	cid := saveNamedParticipant(t, rt, "Cid", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, participantID := range []string{ada, bea, cid} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
+			t.Fatalf("AddThreadMember %s: %v", participantID, err)
+		}
+	}
+	cth, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
+		SessionID:    groupID,
+		AnchorItemID: "seq-5",
+		CreatedBy:    ada,
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+	if err := session.AddConversationThreadMember(rt.SessionDir, cth.ID, bea); err != nil {
+		t.Fatalf("seed cth member Bea: %v", err)
+	}
+
+	// Ada @mentions Cid inside the reply: being @'d in a reply joins the reply
+	// (被@者加入), not the room. Cid is pulled into the cth subset and addressed.
+	if err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
+		AgentID:       ada,
+		ParticipantID: ada,
+		Kind:          "update",
+		Hop:           1,
+		Text:          "@Cid can you confirm the fix?",
+		ThreadID:      cth.ID,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("publish Ada subthread mention: %v", err)
+	}
+
+	_, cidHistory := waitForResidentDMHistory(t, srv, cid, 1)
+	cidMeta := findEnvelopeMetaRecord(t, cidHistory)
+	if cidMeta.SourceSubthreadID != cth.ID || !cidMeta.Addressed {
+		t.Fatalf("mentioned Cid envelope meta = %+v, want subthread=%s addressed=true", cidMeta, cth.ID)
+	}
+
+	members, err := session.ListConversationThreadMembers(rt.SessionDir, cth.ID)
+	if err != nil {
+		t.Fatalf("ListConversationThreadMembers: %v", err)
+	}
+	if !containsMember(members, cid) {
+		t.Fatalf("mentioned Cid should have joined the cth: %v", members)
+	}
+}
+
+func containsMember(members []string, want string) bool {
+	for _, m := range members {
+		if strings.TrimSpace(m) == want {
+			return true
+		}
+	}
+	return false
 }

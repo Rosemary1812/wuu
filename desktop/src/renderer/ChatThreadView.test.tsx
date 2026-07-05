@@ -9,7 +9,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
-import type { ParticipantSummary, Turn } from "../shared/protocol";
+import type {
+  ConversationSubthread,
+  ParticipantSummary,
+  ThreadItem,
+  Turn,
+} from "../shared/protocol";
 import {
   CHAT_WINDOW_ROW_BATCH,
   ChatThreadView,
@@ -340,6 +345,291 @@ describe("ChatThreadView", () => {
       }),
     );
     expect(container.textContent).not.toContain("SECRET-TRANSCRIPT-TEXT");
+  });
+});
+
+// --- Reply folding cards + task activity cards + reply badges ----------
+
+describe("ChatThreadView reply / task affordances", () => {
+  function subthread(over: Partial<ConversationSubthread>): ConversationSubthread {
+    return {
+      id: "cth-1",
+      thread_id: "thread-1",
+      anchor_item_id: "item-1",
+      status: "open",
+      created_at: "",
+      reply_count: 0,
+      ...over,
+    };
+  }
+
+  it("renders an in-stream task_card as a task card (进行中/条数)", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "task_card",
+            task: {
+              id: "task-1",
+              name: "跑测试",
+              status: "running",
+              reply_count: 3,
+            },
+          },
+        ]),
+      }),
+    );
+    const card = container.querySelector(".chat-row--task .task-card");
+    expect(card).not.toBeNull();
+    expect(container.querySelector(".task-card-title")?.textContent).toBe("跑测试");
+    expect(container.textContent).toContain("进行中");
+    expect(container.textContent).toContain("3 条回复");
+  });
+
+  it("hangs a 'N 条回复' badge under a message that anchors a plain reply", () => {
+    const map = new Map<string, ConversationSubthread>([
+      ["item-1", subthread({ reply_count: 4 })],
+    ]);
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "改这里" },
+        ]),
+        subthreadsByAnchor: map,
+      }),
+    );
+    const badge = container.querySelector(".chat-reply-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toBe("4 条回复");
+  });
+
+  it("caps the reply badge at 99+", () => {
+    const map = new Map<string, ConversationSubthread>([
+      ["item-1", subthread({ reply_count: 250 })],
+    ]);
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "participant_message",
+            text: "刷屏",
+            post_kind: "result",
+            participant: noel,
+          },
+        ]),
+        subthreadsByAnchor: map,
+      }),
+    );
+    expect(container.querySelector(".chat-reply-badge")?.textContent).toBe(
+      "99+ 条回复",
+    );
+  });
+
+  it("opens the reply on badge click via onOpenSubthread", () => {
+    const opened: ThreadItem[] = [];
+    const map = new Map<string, ConversationSubthread>([
+      ["item-1", subthread({ reply_count: 2 })],
+    ]);
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "改这里" },
+        ]),
+        subthreadsByAnchor: map,
+        onOpenSubthread: (item: ThreadItem) => opened.push(item),
+      }),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      ".chat-reply-badge--button",
+    );
+    expect(button).not.toBeNull();
+    act(() => {
+      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.id).toBe("item-1");
+  });
+
+  it("renders a task activity card instead of a badge once the reply is escalated", () => {
+    const map = new Map<string, ConversationSubthread>([
+      [
+        "item-1",
+        subthread({
+          status: "task",
+          reply_count: 6,
+          task: {
+            id: "task-9",
+            name: "重构路由",
+            status: "completed",
+            description: "已合并到主流",
+          },
+        }),
+      ],
+    ]);
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "起个任务" },
+        ]),
+        subthreadsByAnchor: map,
+      }),
+    );
+    // The escalated reply shows the shared task card (result summary), not the
+    // plain "N 条回复" badge.
+    expect(container.querySelector(".chat-reply-badge")).toBeNull();
+    const card = container.querySelector(".chat-reply-task .task-card");
+    expect(card).not.toBeNull();
+    expect(container.querySelector(".task-card-title")?.textContent).toBe(
+      "重构路由",
+    );
+    expect(container.textContent).toContain("已完成");
+    expect(container.textContent).toContain("已合并到主流");
+  });
+
+  it("renders no reply affordance for a message without a subthread", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "普通消息" },
+        ]),
+        subthreadsByAnchor: new Map(),
+      }),
+    );
+    expect(container.querySelector(".chat-reply-badge")).toBeNull();
+    expect(container.querySelector(".chat-reply-task")).toBeNull();
+  });
+});
+
+describe("ChatThreadView message right-click menu", () => {
+  function openMenu(bubble: Element): void {
+    act(() => {
+      bubble.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 12,
+          clientY: 34,
+        }),
+      );
+    });
+  }
+
+  function menuItems(): HTMLButtonElement[] {
+    const menu = document.querySelector(
+      '[data-testid="thread-row-context-menu"]',
+    );
+    return menu
+      ? Array.from(menu.querySelectorAll<HTMLButtonElement>(".thread-row-context-menu-item"))
+      : [];
+  }
+
+  function itemByLabel(label: string): HTMLButtonElement | undefined {
+    return menuItems().find((el) => el.textContent === label);
+  }
+
+  it("opens 回复(分屏) + 贴 emoji on a user bubble right-click", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", type: "user_message", text: "改这里" }]),
+        onOpenSubthread: () => {},
+        onReact: () => {},
+      }),
+    );
+    openMenu(container.querySelector(".chat-bubble--user")!);
+    const labels = menuItems().map((el) => el.textContent);
+    expect(labels).toEqual(["回复(分屏)", "贴 emoji"]);
+  });
+
+  it("reply entry opens the subthread via onOpenSubthread on the clicked message", () => {
+    const opened: ThreadItem[] = [];
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-9",
+            type: "participant_message",
+            text: "看这里",
+            post_kind: "result",
+            participant: noel,
+          },
+        ]),
+        onOpenSubthread: (item: ThreadItem) => opened.push(item),
+        onReact: () => {},
+      }),
+    );
+    openMenu(container.querySelector(".chat-row--participant .chat-bubble")!);
+    act(() => {
+      itemByLabel("回复(分屏)")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.id).toBe("item-9");
+    // Menu closes after selection.
+    expect(
+      document.querySelector('[data-testid="thread-row-context-menu"]'),
+    ).toBeNull();
+  });
+
+  it("贴 emoji opens the reaction picker and picking calls onReact with the key", () => {
+    const reacted: Array<{ id?: string; reaction: string }> = [];
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", seq: 5, type: "user_message", text: "改这里" }]),
+        onOpenSubthread: () => {},
+        onReact: (item: ThreadItem, reaction: string) =>
+          reacted.push({ id: item.id, reaction }),
+      }),
+    );
+    openMenu(container.querySelector(".chat-bubble--user")!);
+    act(() => {
+      itemByLabel("贴 emoji")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    const picker = document.querySelector(
+      '[data-testid="message-reaction-picker"]',
+    );
+    expect(picker).not.toBeNull();
+    const nice = picker!.querySelector<HTMLButtonElement>(
+      '.message-reaction-picker-item[data-reaction="nice"]',
+    );
+    expect(nice).not.toBeNull();
+    act(() => {
+      nice!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(reacted).toEqual([{ id: "item-1", reaction: "nice" }]);
+    // Picker closes after picking.
+    expect(
+      document.querySelector('[data-testid="message-reaction-picker"]'),
+    ).toBeNull();
+  });
+
+  it("omits 回复(分屏) when replies are disabled (一层不嵌套: inside a cth)", () => {
+    // A reply-panel reuse of this view passes no onOpenSubthread, so a message
+    // already inside a cth offers only 贴 emoji — never a nested reply.
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", type: "user_message", text: "回复线内" }]),
+        onReact: () => {},
+      }),
+    );
+    openMenu(container.querySelector(".chat-bubble--user")!);
+    const labels = menuItems().map((el) => el.textContent);
+    expect(labels).toEqual(["贴 emoji"]);
+  });
+
+  it("opens no menu when neither reply nor react is wired", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", type: "user_message", text: "只读" }]),
+      }),
+    );
+    openMenu(container.querySelector(".chat-bubble--user")!);
+    expect(
+      document.querySelector('[data-testid="thread-row-context-menu"]'),
+    ).toBeNull();
   });
 });
 

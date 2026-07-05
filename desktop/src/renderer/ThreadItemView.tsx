@@ -10,6 +10,7 @@ import {
 import { ChevronDown, ChevronUp, PanelRightOpen, Paperclip, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
 import { agentHandoffDisplay } from "./AgentHandoff";
+import { replyCountBadge } from "./AppState";
 import {
   clipboardAttachmentFiles,
   composerFileFromFile,
@@ -314,7 +315,7 @@ export function ThreadItemView({
   }
 }
 
-function TaskCardItem({
+export function TaskCardItem({
   item,
   onOpenSubthread,
 }: {
@@ -349,7 +350,7 @@ function TaskCardItem({
       <footer className="task-card-footer">
         {task.role ? <span className="task-card-meta">{task.role}</span> : null}
         {replyCount > 0 ? (
-          <span className="task-card-meta">{replyCount} 条回复</span>
+          <span className="task-card-meta">{replyCountBadge(replyCount)} 条回复</span>
         ) : null}
         {onOpenSubthread ? (
           <button

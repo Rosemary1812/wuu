@@ -281,6 +281,9 @@ func CountParticipantsByKind(sessDir string, kind participant.Kind) (int, error)
 //     it was a member of. The CASCADE FK on thread_members only fires on
 //     participant DELETE; retire is an UPDATE, so the rows are removed here
 //     explicitly.
+//   - conversation_thread_members: same rationale — the participant leaves the
+//     weak-isolation subset of every reply subthread it was in, so it is no
+//     longer pushed that subthread's traffic.
 //   - resident_inbox: unconsumed envelopes are dropped — a retired resident
 //     never drains its inbox again, so pending envelopes would sit forever.
 //     Consumed envelopes are kept as delivery history.
@@ -323,6 +326,9 @@ WHERE id = ?`, timeText(now), timeText(now), id)
 	}
 	if _, err := tx.Exec(`DELETE FROM thread_members WHERE participant_id = ?`, id); err != nil {
 		return fmt.Errorf("retire participant: remove thread members: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM conversation_thread_members WHERE participant_id = ?`, id); err != nil {
+		return fmt.Errorf("retire participant: remove conversation thread members: %w", err)
 	}
 	if _, err := tx.Exec(`DELETE FROM resident_inbox WHERE participant_id = ? AND consumed_at IS NULL`, id); err != nil {
 		return fmt.Errorf("retire participant: drop pending envelopes: %w", err)

@@ -26,6 +26,26 @@ func TestMessageEnvelopePromptRendersCompactAttributes(t *testing.T) {
 	}
 }
 
+func TestMessageEnvelopePromptRendersSubthreadID(t *testing.T) {
+	env := MessageEnvelope{
+		SourceThreadID:    "thread-1",
+		SourceSubthreadID: "cth-abc",
+		SenderKind:        "participant",
+		SenderName:        "Bea",
+		Text:              "in the reply",
+	}
+	got := env.Prompt()
+	if !strings.Contains(got, `subthread_id="cth-abc"`) {
+		t.Fatalf("Prompt() = %q, want it to carry subthread_id", got)
+	}
+
+	// Main-stream messages carry no subthread_id attribute at all.
+	env.SourceSubthreadID = ""
+	if got := env.Prompt(); strings.Contains(got, "subthread_id=") {
+		t.Fatalf("main-stream Prompt() = %q, must not carry subthread_id", got)
+	}
+}
+
 func TestCoalesceEnvelopesAddsBusyBatchHeader(t *testing.T) {
 	envs := []MessageEnvelope{
 		{SourceThreadID: "thread-a", SourceTitle: "A", SenderKind: "user", SenderName: "User", Text: "first"},

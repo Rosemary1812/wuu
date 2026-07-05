@@ -32,13 +32,13 @@ var (
 
 // Session represents one conversation session.
 type Session struct {
-	ID               string     `json:"id"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at,omitempty"`
-	Title            string     `json:"title,omitempty"`
-	Summary          string     `json:"summary,omitempty"`
-	Entries          int        `json:"entries"`
-	CWD              string     `json:"cwd,omitempty"`
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	Title     string    `json:"title,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	Entries   int       `json:"entries"`
+	CWD       string    `json:"cwd,omitempty"`
 	// WorkspaceID is the stable, location-independent identity of the workspace
 	// this session belongs to (the desktop's registered-project id). Sessions
 	// of a workspace with an id are listed by that id, so they follow the
@@ -89,36 +89,36 @@ type HistoryRecord struct {
 	// Seq is the record's per-session sequence (session_messages.seq), its
 	// stable address within the thread. Output-only: populated by the load
 	// path, ignored on write (insertHistoryRecordTx assigns seq itself).
-	Seq                 int             `json:"seq,omitempty"`
-	Role                string          `json:"role"`
-	Content             string          `json:"content"`
-	DisplayContent      string          `json:"display_content,omitempty"`
-	Phase               string          `json:"phase,omitempty"`
-	ProviderItemID      string          `json:"provider_item_id,omitempty"`
-	ProviderItemModel   string          `json:"provider_item_model,omitempty"`
-	ClientID            string          `json:"client_id,omitempty"`
-	Hidden              bool            `json:"hidden,omitempty"`
-	Steered             bool            `json:"steered,omitempty"`
-	ReasoningContent    string          `json:"reasoning_content,omitempty"`
-	ReasoningBlocks     json.RawMessage `json:"reasoning_blocks,omitempty"`
-	Images              json.RawMessage `json:"images,omitempty"`
-	Files               json.RawMessage `json:"files,omitempty"`
-	ToolCalls           json.RawMessage `json:"tool_calls,omitempty"`
-	DiscoveredTools     json.RawMessage `json:"discovered_tools,omitempty"`
-	ToolCallID          string          `json:"tool_call_id,omitempty"`
-	ToolResultKind      string          `json:"tool_result_kind,omitempty"`
-	FinishReason        string          `json:"finish_reason,omitempty"`
-	StopReason          string          `json:"stop_reason,omitempty"`
-	Truncated           bool            `json:"truncated,omitempty"`
-	Name                string          `json:"name,omitempty"`
-	ParticipantID       string          `json:"participant_id,omitempty"`
-	PostKind            string          `json:"post_kind,omitempty"`
-	ThreadID            string          `json:"thread_id,omitempty"`
-	EnvelopeMeta        json.RawMessage `json:"envelope_meta,omitempty"`
+	Seq               int             `json:"seq,omitempty"`
+	Role              string          `json:"role"`
+	Content           string          `json:"content"`
+	DisplayContent    string          `json:"display_content,omitempty"`
+	Phase             string          `json:"phase,omitempty"`
+	ProviderItemID    string          `json:"provider_item_id,omitempty"`
+	ProviderItemModel string          `json:"provider_item_model,omitempty"`
+	ClientID          string          `json:"client_id,omitempty"`
+	Hidden            bool            `json:"hidden,omitempty"`
+	Steered           bool            `json:"steered,omitempty"`
+	ReasoningContent  string          `json:"reasoning_content,omitempty"`
+	ReasoningBlocks   json.RawMessage `json:"reasoning_blocks,omitempty"`
+	Images            json.RawMessage `json:"images,omitempty"`
+	Files             json.RawMessage `json:"files,omitempty"`
+	ToolCalls         json.RawMessage `json:"tool_calls,omitempty"`
+	DiscoveredTools   json.RawMessage `json:"discovered_tools,omitempty"`
+	ToolCallID        string          `json:"tool_call_id,omitempty"`
+	ToolResultKind    string          `json:"tool_result_kind,omitempty"`
+	FinishReason      string          `json:"finish_reason,omitempty"`
+	StopReason        string          `json:"stop_reason,omitempty"`
+	Truncated         bool            `json:"truncated,omitempty"`
+	Name              string          `json:"name,omitempty"`
+	ParticipantID     string          `json:"participant_id,omitempty"`
+	PostKind          string          `json:"post_kind,omitempty"`
+	ThreadID          string          `json:"thread_id,omitempty"`
+	EnvelopeMeta      json.RawMessage `json:"envelope_meta,omitempty"`
 	// FocusMeta is the structured {kind,name,root} metadata for a
 	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
-	FocusMeta json.RawMessage `json:"focus_meta,omitempty"`
-	At        time.Time       `json:"at,omitempty"`
+	FocusMeta           json.RawMessage `json:"focus_meta,omitempty"`
+	At                  time.Time       `json:"at,omitempty"`
 	InputTokens         int             `json:"input_tokens,omitempty"`
 	OutputTokens        int             `json:"output_tokens,omitempty"`
 	ContextTokens       int             `json:"context_tokens,omitempty"`
@@ -815,6 +815,20 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
+		// conversation_thread_members is the weak-isolation participant subset of
+		// a reply subthread (cth-*). Keyed on conversation_thread_id (not
+		// session_id) because a cth is a conversation_threads row, not a session;
+		// the FK cascades membership away when the subthread or participant is
+		// deleted. Retire is an UPDATE, not a DELETE, so RetireParticipant clears
+		// these rows explicitly (mirrors thread_members).
+		`CREATE TABLE IF NOT EXISTS conversation_thread_members (
+			conversation_thread_id TEXT NOT NULL,
+			participant_id         TEXT NOT NULL,
+			joined_at              INTEGER NOT NULL,
+			PRIMARY KEY (conversation_thread_id, participant_id),
+			FOREIGN KEY(conversation_thread_id) REFERENCES conversation_threads(id) ON DELETE CASCADE,
+			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS resident_inbox (
 			id             TEXT PRIMARY KEY,
 			participant_id TEXT NOT NULL,
@@ -925,6 +939,18 @@ func migrateSchema(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id)`); err != nil {
 		return fmt.Errorf("migrate sessions database: %w", err)
+	}
+	// Task-escalation columns on conversation_threads: escalated_at/escalated_by
+	// mark a reply promoted to a task (survives resolve); summary holds the
+	// one-line conclusion bubbled back to the main stream on wrap-up.
+	if err := addColumnIfMissing(db, "conversation_threads", "escalated_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "conversation_threads", "escalated_by", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "conversation_threads", "summary", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
 	}
 	return nil
 }

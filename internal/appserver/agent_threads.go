@@ -170,7 +170,15 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 			_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
 		}
 	}
-	if strings.TrimSpace(rec.ThreadID) != "" {
+	if subthreadID := strings.TrimSpace(rec.ThreadID); subthreadID != "" {
+		// Reply-subthread (cth-*) message: stored in the parent thread's history
+		// tagged with thread_id=cth, kept OUT of the main stream (no turn append,
+		// no thread notification, no full-roster fan-out). Weak isolation routes
+		// it only to the subthread's participant subset — non-participants are
+		// never woken and never take it into context; they can still pull it via
+		// fetch_thread_messages. This replaces the old bare `return nil` that
+		// dropped all subthread routing on the floor.
+		s.routeSubthreadParticipantMessage(threadID, subthreadID, msg, name, sourceSeq)
 		return nil
 	}
 

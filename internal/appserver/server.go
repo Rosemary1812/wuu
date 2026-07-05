@@ -283,6 +283,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadListSub(req)
 	case MethodThreadResolveSub:
 		return s.handleThreadResolveSub(req)
+	case MethodThreadEscalateSub:
+		return s.handleThreadEscalateSub(req)
+	case MethodThreadBubbleSub:
+		return s.handleThreadBubbleSub(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
 	case MethodThreadSearch:
@@ -305,6 +309,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadMembersRemove(req)
 	case MethodThreadMarks:
 		return s.handleThreadMarks(req)
+	case MethodMessageReact:
+		return s.handleMessageReact(req)
+	case MethodMessagePostSubthread:
+		return s.handleMessagePostSubthread(req)
 	case MethodThreadRegenerateTitle:
 		return s.handleThreadRegenerateTitle(ctx, req)
 	case MethodParticipantStart:

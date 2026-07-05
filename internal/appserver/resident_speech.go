@@ -70,7 +70,7 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	if text == "" {
 		return tools.PostedMessage{}, errors.New("post_message: text is required")
 	}
-	targetThreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
+	targetThreadID, subthreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
 	if err != nil {
 		return tools.PostedMessage{}, err
 	}
@@ -84,16 +84,24 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		Kind:          kind,
 		Hop:           r.messageHop(targetThreadID),
 		Text:          text,
-		CreatedAt:     now,
+		// ThreadID tags the message with the reply subthread (cth-*) so
+		// publishParticipantMessage folds it into that thread instead of the main
+		// stream; empty for ordinary top-level/DM posts.
+		ThreadID:  subthreadID,
+		CreatedAt: now,
 	}
 	if err := r.server.publishParticipantMessage(targetThreadID, msg); err != nil {
 		return tools.PostedMessage{}, err
+	}
+	reportThreadID := targetThreadID
+	if subthreadID != "" {
+		reportThreadID = subthreadID
 	}
 	return tools.PostedMessage{
 		AgentID:       participantID,
 		ParticipantID: participantID,
 		Kind:          kind,
-		ThreadID:      targetThreadID,
+		ThreadID:      reportThreadID,
 		Text:          text,
 		CreatedAt:     now,
 	}, nil
@@ -108,7 +116,7 @@ func (r residentParticipantSpeech) Decline(ctx context.Context, reason, targetTh
 	if reason == "" {
 		return errors.New("decline: reason is required")
 	}
-	targetThreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
+	targetThreadID, subthreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
 	if err != nil {
 		return err
 	}
@@ -119,6 +127,7 @@ func (r residentParticipantSpeech) Decline(ctx context.Context, reason, targetTh
 		Kind:          "decline",
 		Hop:           r.messageHop(targetThreadID),
 		Text:          reason,
+		ThreadID:      subthreadID,
 		CreatedAt:     now,
 	}
 	return r.server.publishParticipantMessage(targetThreadID, msg)
@@ -145,50 +154,98 @@ func (r residentParticipantSpeech) React(ctx context.Context, targetThreadID str
 	if !tools.IsReactionKey(reaction) {
 		return fmt.Errorf("react: unknown reaction %q", reaction)
 	}
-	targetThreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
+	// A cth-* target resolves to its parent thread; the reacted-to message's seq
+	// lives in that parent thread's history (subthread messages are stored there
+	// tagged with thread_id=cth), so React always stamps against the parent.
+	targetThreadID, _, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
 	if err != nil {
 		return err
 	}
 	return r.server.recordParticipantReaction(targetThreadID, seq, participantID, reaction)
 }
 
-func (r residentParticipantSpeech) resolveTargetThread(targetThreadID string) (string, error) {
+// resolveTargetThread resolves a post/decline/react target to the top-level
+// thread to publish under, plus an optional reply-subthread id (cth-*) to tag
+// the message with. A cth-* target resolves to its parent (group) thread for
+// routing/storage while returning the subthread id so publishParticipantMessage
+// folds the message into the reply thread instead of the main stream. For
+// ordinary top-level/DM targets the returned subthreadID is empty.
+func (r residentParticipantSpeech) resolveTargetThread(targetThreadID string) (parentThreadID, subthreadID string, err error) {
 	if r.server == nil {
-		return "", errors.New("post_message: app server not configured")
+		return "", "", errors.New("post_message: app server not configured")
 	}
 	participantID := strings.TrimSpace(r.participantID)
 	if participantID == "" {
-		return "", errors.New("participant_id is required")
+		return "", "", errors.New("participant_id is required")
 	}
 	if targetThreadID == "" {
 		th, err := r.server.ensureResidentDMThread(participantID)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		return th.ID, nil
+		return th.ID, "", nil
+	}
+	if strings.HasPrefix(targetThreadID, "cth-") {
+		return r.resolveSubthreadTarget(participantID, targetThreadID)
 	}
 	th, err := r.server.ensureResidentThread(targetThreadID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	th.mu.Lock()
 	isOwnDM := strings.TrimSpace(th.DMParticipantID) == participantID
 	th.mu.Unlock()
 	if isOwnDM {
-		return th.ID, nil
+		return th.ID, "", nil
 	}
 	// #all no longer bypasses the membership check — non-members must
 	// add_group_member first (chat-style-threads-design.md §3.2).
 	members, err := session.ListThreadMembers(r.server.rt.SessionDir, th.ID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	for _, memberID := range members {
 		if strings.TrimSpace(memberID) == participantID {
-			return th.ID, nil
+			return th.ID, "", nil
 		}
 	}
-	return "", fmt.Errorf("post_message: participant %q is not a member of thread %q; ask the user to add you to the group first", participantID, th.ID)
+	return "", "", fmt.Errorf("post_message: participant %q is not a member of thread %q; ask the user to add you to the group first", participantID, th.ID)
+}
+
+// resolveSubthreadTarget resolves a reply subthread id (cth-*) to its parent
+// group thread. Membership is checked against the parent group thread's members
+// (the weak-isolation participant subset stored per-cth is seeded/enforced by
+// the subthread router in a later change; a group member may post into any of
+// that group's reply subthreads today).
+func (r residentParticipantSpeech) resolveSubthreadTarget(participantID, subthreadID string) (string, string, error) {
+	cth, err := session.FindConversationThreadByID(r.server.rt.SessionDir, subthreadID)
+	if err != nil {
+		return "", "", fmt.Errorf("post_message: %w", err)
+	}
+	parentThreadID := strings.TrimSpace(cth.SessionID)
+	if parentThreadID == "" {
+		return "", "", fmt.Errorf("post_message: subthread %q has no parent thread", subthreadID)
+	}
+	th, err := r.server.ensureResidentThread(parentThreadID)
+	if err != nil {
+		return "", "", err
+	}
+	th.mu.Lock()
+	isOwnDM := strings.TrimSpace(th.DMParticipantID) == participantID
+	th.mu.Unlock()
+	if isOwnDM {
+		return th.ID, cth.ID, nil
+	}
+	members, err := session.ListThreadMembers(r.server.rt.SessionDir, th.ID)
+	if err != nil {
+		return "", "", err
+	}
+	for _, memberID := range members {
+		if strings.TrimSpace(memberID) == participantID {
+			return th.ID, cth.ID, nil
+		}
+	}
+	return "", "", fmt.Errorf("post_message: participant %q is not a member of thread %q; ask the user to add you to the group first", participantID, th.ID)
 }
 
 func (r residentParticipantSpeech) reservePost(targetThreadID string) error {

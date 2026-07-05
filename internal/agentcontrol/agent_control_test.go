@@ -577,7 +577,11 @@ func TestSpawn_RecordsHarnessCompletedWhenWorkerSkipsReport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListTasks: %v", err)
 		}
-		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusCompleted {
+		// Lifecycle status flips to completed before the synthesized
+		// final_text report is written (status is a runtime fact; the
+		// report is a subsequent settlement step), so wait for the report
+		// path too rather than snapshotting the task mid-settlement.
+		if len(tasks) == 1 && tasks[0].Status == harness.TaskStatusCompleted && tasks[0].ReportPath != "" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

@@ -773,6 +773,16 @@ export function App(): JSX.Element {
       }
     | undefined
   >(undefined);
+  // Reply subthreads (群中群) for the active chat thread, keyed by
+  // anchor_item_id, feeding the chat view's reply badges / task 活动卡. Loaded
+  // per active chat thread (see effect below); non-active panes never need it.
+  const [chatSubthreads, setChatSubthreads] = useState<{
+    threadID: string;
+    byAnchor: Map<string, ConversationSubthread>;
+  } | null>(null);
+  // Bump to force a reload of the active thread's subthreads (e.g. right after
+  // opening a reply create-or-finds a new subthread, so its badge appears).
+  const [chatSubthreadsNonce, setChatSubthreadsNonce] = useState(0);
   const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
   const [participantPanel, setParticipantPanel] = useState<
     ParticipantPanelState | undefined
@@ -890,6 +900,11 @@ export function App(): JSX.Element {
   const activeThreadIsChatStyle = Boolean(
     activeThread && (isDMThread(activeThread) || isGroupThread(activeThread)),
   );
+  // Reload trigger for subthread badges: new main-stream messages can anchor
+  // new replies. (cth reply traffic itself is short-circuited off the main
+  // turns, so this misses live reply-count growth — acceptable until a
+  // subthread-scoped notification lands; opening a reply bumps the nonce.)
+  const activeThreadTurnCount = activeThread?.turns?.length ?? 0;
   const composerInitialized = useMemo(
     () =>
       initializedForSelectedPermissionMode(
@@ -1851,6 +1866,21 @@ export function App(): JSX.Element {
       openConversationSubthread(thread, item);
     },
   );
+  const handleCachedPaneReact = useStableCallback(
+    (thread: Thread, item: ThreadItem, reaction: string) => {
+      // Reactions address a message by its seq; skip items that never got one
+      // (e.g. a not-yet-persisted live snapshot). The chip lands on the bubble
+      // via the message/mark notification the RPC triggers, so no optimistic
+      // patch is needed here.
+      const seq = item.seq;
+      if (typeof seq !== "number" || seq <= 0) {
+        return;
+      }
+      void window.wuu.reactToMessage(thread.id, seq, reaction).catch((error) => {
+        console.error("react to message failed", error);
+      });
+    },
+  );
   const handleCachedPaneOpenFileDiff = useStableCallback(
     (thread: Thread, selection: TurnFileDiffSelection) => {
       openTurnFileDiffPanel(thread.id, selection);
@@ -2040,7 +2070,11 @@ export function App(): JSX.Element {
         byID.set(participant.id, participant.name?.trim() || participant.id);
       }
     }
-    return (id: string): string => byID.get(id) ?? id;
+    // The human has no roster row (rosters list only named agents), but its
+    // emoji reactions are attributed to the stable "human" identity by
+    // message/react; resolve it to "你" so the reaction chip hover reads right.
+    return (id: string): string =>
+      byID.get(id) ?? (id === "human" ? "你" : id);
   }, [participants]);
   const chatReaderCount = participants.length;
   // The active thread's dm_participant_id (when set) drives the highlight
@@ -2280,6 +2314,54 @@ export function App(): JSX.Element {
       setOpenSubthreadPanel(undefined);
     }
   }, [activeThreadID, openSubthreadPanel]);
+
+  // Load the active chat thread's reply subthreads for the chat view's reply
+  // badges / task 活动卡. Best-effort and decorative: any failure leaves the
+  // last-known map untouched and never disrupts the message stream. Subagent
+  // task-card subthreads are also returned here but anchor on synthetic
+  // task-card-<id> ids that no chat message matches, so they render nothing.
+  useEffect(() => {
+    if (!activeThreadID || !activeThreadIsChatStyle) {
+      setChatSubthreads(null);
+      return;
+    }
+    const listSub = window.wuu?.listConversationSubthreads;
+    if (typeof listSub !== "function") {
+      return;
+    }
+    let cancelled = false;
+    const threadID = activeThreadID;
+    void (async () => {
+      try {
+        const result = await listSub(threadID);
+        if (cancelled) {
+          return;
+        }
+        const byAnchor = new Map<string, ConversationSubthread>();
+        for (const sub of result.subthreads ?? []) {
+          if (sub.anchor_item_id) {
+            byAnchor.set(sub.anchor_item_id, sub);
+          }
+        }
+        setChatSubthreads({ threadID, byAnchor });
+      } catch {
+        // Decorative badges — keep the previous map rather than clearing it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeThreadID,
+    activeThreadIsChatStyle,
+    activeThreadTurnCount,
+    chatSubthreadsNonce,
+  ]);
+
+  const activeChatSubthreadsByAnchor =
+    chatSubthreads && chatSubthreads.threadID === activeThreadID
+      ? chatSubthreads.byAnchor
+      : undefined;
 
   const handleCloseFilePreview = useCallback((): void => {
     setRightPanelFilePath(undefined);
@@ -3537,6 +3619,9 @@ export function App(): JSX.Element {
           subthread: result.subthread,
           loading: false,
         });
+        // A create-or-find may have just materialized this reply subthread;
+        // refresh the badge map so its "N 条回复" affordance appears.
+        setChatSubthreadsNonce((nonce) => nonce + 1);
       } catch (error) {
         setOpenSubthreadPanel({
           threadID: thread.id,
@@ -3567,6 +3652,7 @@ export function App(): JSX.Element {
           subthread: result.subthread,
           loading: false,
         });
+        setChatSubthreadsNonce((nonce) => nonce + 1);
       } catch (error) {
         setOpenSubthreadPanel({
           ...current,
@@ -3575,6 +3661,143 @@ export function App(): JSX.Element {
         });
       }
     })();
+  }
+
+  // Post a human message into the open reply subthread's cth (split panel
+  // composer). The message folds into the cth server-side (thread_id=cth
+  // participant_message, weak-isolation subset routing); the RPC returns the
+  // refreshed subthread view so the just-sent message shows immediately —
+  // cth messages carry no item/thread notification of their own.
+  function sendOpenConversationSubthreadMessage(text: string): void {
+    const current = openSubthreadPanel;
+    if (!current?.subthread) {
+      return;
+    }
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+    const threadID = current.threadID;
+    const subthreadID = current.subthread.id;
+    void (async () => {
+      try {
+        const result = await window.wuu.postSubthreadMessage(
+          threadID,
+          subthreadID,
+          trimmed,
+        );
+        setOpenSubthreadPanel((prev) =>
+          prev &&
+          prev.threadID === threadID &&
+          prev.subthread?.id === subthreadID
+            ? { ...prev, subthread: result.subthread, error: undefined }
+            : prev,
+        );
+        setChatSubthreadsNonce((nonce) => nonce + 1);
+      } catch (error) {
+        setOpenSubthreadPanel((prev) =>
+          prev && prev.threadID === threadID
+            ? { ...prev, error: desktopApiErrorMessage(error, "无法发送回复") }
+            : prev,
+        );
+      }
+    })();
+  }
+
+  // Promote the open reply to a task (人点击 gate). Escalation is a client RPC
+  // only — agents can propose but never self-escalate. The refreshed view then
+  // renders the task_card in both the panel header and the main-stream badge.
+  function escalateOpenConversationSubthread(): void {
+    const current = openSubthreadPanel;
+    if (!current?.subthread) {
+      return;
+    }
+    const threadID = current.threadID;
+    const subthreadID = current.subthread.id;
+    const title = current.subthread.title;
+    setOpenSubthreadPanel({ ...current, loading: true });
+    void (async () => {
+      try {
+        const result = await window.wuu.escalateConversationSubthread(
+          threadID,
+          subthreadID,
+          { title },
+        );
+        setOpenSubthreadPanel({
+          threadID,
+          subthread: result.subthread,
+          loading: false,
+        });
+        setChatSubthreadsNonce((nonce) => nonce + 1);
+      } catch (error) {
+        setOpenSubthreadPanel({
+          ...current,
+          loading: false,
+          error: desktopApiErrorMessage(error, "无法升级为 Task"),
+        });
+      }
+    })();
+  }
+
+  // 完成 Task(人点击 gate):把一句结论冒泡回主流一条 participant_message(全员
+  // 可见),该 cth 变 resolved,其 task_card 转 completed 并带上这句摘要。冒泡是
+  // client RPC —— agent 只能提议,收尾必须人点。刷新后主流的 task 活动卡切成
+  // result 摘要卡,故一并 bump 徽标数据源。
+  function bubbleOpenConversationSubthread(summary: string): void {
+    const current = openSubthreadPanel;
+    if (!current?.subthread) {
+      return;
+    }
+    const trimmed = summary.trim();
+    if (!trimmed) {
+      return;
+    }
+    const threadID = current.threadID;
+    const subthreadID = current.subthread.id;
+    setOpenSubthreadPanel({ ...current, loading: true });
+    void (async () => {
+      try {
+        const result = await window.wuu.bubbleConversationSubthread(
+          threadID,
+          subthreadID,
+          trimmed,
+        );
+        setOpenSubthreadPanel({
+          threadID,
+          subthread: result.subthread,
+          loading: false,
+        });
+        setChatSubthreadsNonce((nonce) => nonce + 1);
+      } catch (error) {
+        setOpenSubthreadPanel({
+          ...current,
+          loading: false,
+          error: desktopApiErrorMessage(error, "无法完成 Task"),
+        });
+      }
+    })();
+  }
+
+  // React to a message inside the reply panel (贴 emoji, right-click). cth
+  // messages carry their seq in the parent group thread's history, so the
+  // reaction is addressed against the parent thread id.
+  function reactToOpenConversationSubthreadMessage(
+    item: ThreadItem,
+    reaction: string,
+  ): void {
+    const current = openSubthreadPanel;
+    if (!current) {
+      return;
+    }
+    const seq = item.seq;
+    if (typeof seq !== "number" || seq <= 0) {
+      return;
+    }
+    void window.wuu
+      .reactToMessage(current.threadID, seq, reaction)
+      .catch((error) => {
+        console.error("react to subthread message failed", error);
+      });
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {
@@ -8151,22 +8374,19 @@ export function App(): JSX.Element {
 
         {openSubthreadPanel ? (
           <ConversationSubthreadPanel
+            threadID={openSubthreadPanel.threadID}
             subthread={openSubthreadPanel.subthread}
             loading={openSubthreadPanel.loading}
             error={openSubthreadPanel.error}
-            cwd={activeThread?.cwd ?? state.activeContext?.cwd}
             onClose={() => setOpenSubthreadPanel(undefined)}
             onResolve={resolveOpenConversationSubthread}
-            onOpenFile={openWorkspaceFile}
-            onOpenAgent={(agentID) => {
-              const agent = activeThread?.child_agents?.find(
-                (candidate) => candidate.id === agentID,
-              );
-              if (agent) {
-                void selectChildAgent(agent);
-              }
-            }}
-            onNoticeAction={handleCachedPaneNoticeAction}
+            onEscalate={escalateOpenConversationSubthread}
+            onBubble={bubbleOpenConversationSubthread}
+            onSend={sendOpenConversationSubthreadMessage}
+            onReact={reactToOpenConversationSubthreadMessage}
+            resolveParticipantName={resolveParticipantName}
+            busyParticipantIDs={busyParticipantIDs}
+            readerCount={chatReaderCount}
           />
         ) : null}
 
@@ -8286,6 +8506,7 @@ export function App(): JSX.Element {
                 onOpenFile={openWorkspaceFile}
                 onOpenAgent={handleCachedPaneOpenAgent}
                 onOpenSubthread={handleCachedPaneOpenSubthread}
+                onReact={handleCachedPaneReact}
                 onEditMessage={handleCachedPaneEditMessage}
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
@@ -8293,6 +8514,8 @@ export function App(): JSX.Element {
                 busyParticipantIDs={busyParticipantIDs}
                 resolveParticipantName={resolveParticipantName}
                 chatReaderCount={chatReaderCount}
+                subthreadsByAnchor={activeChatSubthreadsByAnchor}
+                subthreadsThreadID={activeThreadID}
                 pendingChatMessagesByThread={pendingComposerMessagesByThread}
                 turnStreamStatus={state.turnStreamStatus}
                 onOpenFileDiff={handleCachedPaneOpenFileDiff}
@@ -8487,6 +8710,7 @@ type CachedConversationPanesProps = {
   onOpenFile?: (path: string) => void;
   onOpenAgent: (agent: Agent) => void;
   onOpenSubthread: (thread: Thread, item: ThreadItem) => void;
+  onReact: (thread: Thread, item: ThreadItem, reaction: string) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
   onCancelEditMessage: () => void;
   onSubmitEditMessage: (
@@ -8503,6 +8727,14 @@ type CachedConversationPanesProps = {
   busyParticipantIDs: ReadonlySet<string>;
   resolveParticipantName: (id: string) => string;
   chatReaderCount: number;
+  /**
+   * Reply subthreads (群中群) for the active chat thread, keyed by
+   * anchor_item_id. Only the pane whose threadID === subthreadsThreadID
+   * receives it (inactive panes are display:none, so we avoid loading and
+   * threading a map for every cached thread).
+   */
+  subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
+  subthreadsThreadID?: string;
   /**
    * Per-thread composer messages queued while the agent is mid-turn.
    * Chat-style panes render the thread's `queued` entries as in-transcript
@@ -8530,6 +8762,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onOpenFile,
   onOpenAgent,
   onOpenSubthread,
+  onReact,
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
@@ -8539,6 +8772,8 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   busyParticipantIDs,
   resolveParticipantName,
   chatReaderCount,
+  subthreadsByAnchor,
+  subthreadsThreadID,
   pendingChatMessagesByThread,
 }: CachedConversationPanesProps): JSX.Element {
   return (
@@ -8615,6 +8850,13 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   busyParticipantIDs={busyParticipantIDs}
                   resolveParticipantName={resolveParticipantName}
                   readerCount={chatReaderCount}
+                  subthreadsByAnchor={
+                    threadID === subthreadsThreadID
+                      ? subthreadsByAnchor
+                      : undefined
+                  }
+                  onOpenSubthread={(item) => onOpenSubthread(thread, item)}
+                  onReact={(item, reaction) => onReact(thread, item, reaction)}
                   // Sends queued while the agent is mid-turn render as
                   // in-transcript "发送中" bubbles instead of the composer
                   // queue strip (chat send semantics, issue #10).

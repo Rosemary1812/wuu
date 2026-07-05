@@ -37,6 +37,7 @@ import {
   queryTextsForThread,
   reconcileResumedThreadTurns,
   reduceServerEvent,
+  replyCountBadge,
   resolveThreadRuntimeContext,
   scratchThreadSummaries,
   shouldResetToNoProjectForNewThread,
@@ -2269,12 +2270,23 @@ describe("chatMessagesFromTurns", () => {
       { id: "item-1", type: "agent_message", text: "final answer" },
       { id: "item-2", type: "tool_call", name: "bash" },
       { id: "item-3", type: "reasoning", text: "thinking..." },
-      { id: "item-4", type: "task_card" },
       { id: "item-5", type: "context_compaction" },
       { id: "item-6", type: "error" },
     ];
     const rows = chatMessagesFromTurns([turn("turn-1", items)]);
     expect(rows).toEqual([]);
+  });
+
+  it("maps a task_card to a task row (subagent / 升级后的 task 折叠卡)", () => {
+    const item: ThreadItem = {
+      id: "item-1",
+      type: "task_card",
+      task: { id: "task-1", name: "跑测试", status: "running", reply_count: 3 },
+    };
+    const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
+    expect(rows).toEqual([
+      { kind: "task", id: "turn-1:item-1", turnID: "turn-1", item },
+    ]);
   });
 
   it("uses stable `${turn.id}:${item.id}` row ids across multiple turns", () => {
@@ -2308,6 +2320,25 @@ describe("chatMessagesFromTurns", () => {
     expect(rows).toEqual([
       { kind: "focus", id: "turn-1:item-1", turnID: "turn-1", item },
     ]);
+  });
+});
+
+describe("replyCountBadge", () => {
+  it("renders small counts verbatim", () => {
+    expect(replyCountBadge(0)).toBe("0");
+    expect(replyCountBadge(1)).toBe("1");
+    expect(replyCountBadge(42)).toBe("42");
+    expect(replyCountBadge(99)).toBe("99");
+  });
+
+  it("caps counts above 99 at '99+'", () => {
+    expect(replyCountBadge(100)).toBe("99+");
+    expect(replyCountBadge(1000)).toBe("99+");
+  });
+
+  it("clamps negative / fractional garbage defensively", () => {
+    expect(replyCountBadge(-5)).toBe("0");
+    expect(replyCountBadge(3.9)).toBe("3");
   });
 });
 

@@ -932,7 +932,9 @@ export type ThreadContextCompositionResult = {
   segment_counts?: ContextSegmentCountSummary;
 };
 
-export type ConversationSubthreadStatus = "open" | "resolved";
+// "task" 是 reply 升级为 task 后的执行态(讨论态 open -> 执行态 task -> 收尾
+// resolved)。
+export type ConversationSubthreadStatus = "open" | "task" | "resolved";
 
 export type ConversationSubthread = {
   id: string;
@@ -943,6 +945,16 @@ export type ConversationSubthread = {
   created_by?: string;
   created_at: string;
   reply_count: number;
+  // 弱隔离 participant subset for a reply subthread: only these participants are
+  // pushed reply/task traffic. Empty/undefined means no explicit member subset
+  // yet. Populated by the backend weak-isolation router.
+  participants?: string[];
+  // 该 reply 被(人点击)升级为 task 后由后端下发的 task_card:执行中显示活动卡、
+  // 收尾后显示 result 摘要。未升级的普通 reply 为 undefined。
+  task?: TaskCard;
+  // 收尾冒泡回主流的一句结论(同时写在 task_card 上);escalated_by 记录升级人。
+  summary?: string;
+  escalated_by?: string;
   turns?: Turn[];
 };
 
@@ -954,7 +966,22 @@ export type ThreadListSubResult = {
   subthreads: ConversationSubthread[];
 };
 
+export type ThreadEscalateSubResult = {
+  subthread: ConversationSubthread;
+};
+
+export type ThreadBubbleSubResult = {
+  subthread: ConversationSubthread;
+};
+
 export type ThreadResolveSubResult = {
+  subthread: ConversationSubthread;
+};
+
+// message/postSubthread result: the refreshed reply subthread view including the
+// just-posted human message, so the split reply panel updates immediately (cth
+// messages carry no item/thread notification of their own).
+export type MessagePostSubthreadResult = {
   subthread: ConversationSubthread;
 };
 
@@ -1314,6 +1341,12 @@ export type MessageMarkNotification = MessageMarkWire & {
   thread_id: string;
 };
 
+// message/react result: acknowledges a human-stamped reaction. The reaction
+// itself lands back on the bubble via a "message/mark" notification.
+export type MessageReactResult = {
+  ok: boolean;
+};
+
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
 
 export type PlanStep = {
@@ -1591,13 +1624,39 @@ export type WuuDesktopApi = {
   listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
   openConversationSubthread: (
     threadId: string,
-    options: { subthreadId?: string; anchorItemId?: string; title?: string; createdBy?: string }
+    options: {
+      subthreadId?: string;
+      anchorItemId?: string;
+      title?: string;
+      createdBy?: string;
+      participants?: string[];
+    }
   ) => Promise<ThreadOpenSubResult>;
   resolveConversationSubthread: (
     threadId: string,
     subthreadId: string,
     resolved: boolean
   ) => Promise<ThreadResolveSubResult>;
+  // 把一条 reply 升级为 task(人点击):在 cth 上挂 task_card + 推进到执行态。
+  escalateConversationSubthread: (
+    threadId: string,
+    subthreadId: string,
+    options?: { title?: string; createdBy?: string }
+  ) => Promise<ThreadEscalateSubResult>;
+  // 收尾:把一句结论冒泡回主流一条 participant_message + 该 cth 变 resolved+摘要。
+  bubbleConversationSubthread: (
+    threadId: string,
+    subthreadId: string,
+    summary: string,
+    options?: { participantId?: string }
+  ) => Promise<ThreadBubbleSubResult>;
+  // 在分屏 reply 面板里以「你」的身份往 cth 发一条消息:折进 cth(thread_id=cth,
+  // 不进主流,只推 cth 参与者子集),回执带刷新后的 subthread 视图。
+  postSubthreadMessage: (
+    threadId: string,
+    subthreadId: string,
+    text: string
+  ) => Promise<MessagePostSubthreadResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
@@ -1612,6 +1671,14 @@ export type WuuDesktopApi = {
   // Read receipts + reactions for a chat thread, keyed by message seq. Live
   // changes arrive via onServerEvent as "message/mark" notifications.
   getThreadMarks: (threadId: string) => Promise<ThreadMarksResult>;
+  // Stamp a human reaction (an emoji from the shared reaction vocabulary) on a
+  // message, addressed by its seq. Terminal like the agent react tool: it never
+  // routes or wakes an agent. The chip appears via the "message/mark" event.
+  reactToMessage: (
+    threadId: string,
+    seq: number,
+    reaction: string,
+  ) => Promise<MessageReactResult>;
   archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   // Permanently deletes a conversation (history, artifacts, and any fork
   // worktree). Mirrors the `thread/delete` RPC; running threads are rejected
