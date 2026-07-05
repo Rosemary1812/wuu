@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { RuntimeContext, Thread, Turn } from "../shared/protocol";
+import type { Agent, RuntimeContext, Thread, Turn } from "../shared/protocol";
 import {
   busyDMParticipantIDs,
+  computeBusyParticipantIDs,
   findDMThread,
   isDMThread,
   scratchThreadSummaries,
@@ -389,6 +390,102 @@ describe("busyDMParticipantIDs", () => {
     expect(busyDMParticipantIDs([first, second, other])).toEqual(
       new Set(["participant-1", "participant-2"]),
     );
+  });
+});
+
+function makeChildAgent(overrides: Partial<Agent> = {}): Agent {
+  return {
+    id: "agent-1",
+    status: "idle",
+    participant: { id: "dispatcher-1", name: "Dispatcher", kind: "agent" },
+    ...overrides,
+  };
+}
+
+describe("computeBusyParticipantIDs", () => {
+  it("lights a child agent's participant when the agent status is running", () => {
+    const thread = makeThread({
+      child_agents: [makeChildAgent({ status: "running" })],
+    });
+    expect(computeBusyParticipantIDs({ threads: [thread] })).toEqual(
+      new Set(["dispatcher-1"]),
+    );
+  });
+
+  it("lights a child agent's participant when it has running nested descendants", () => {
+    const thread = makeThread({
+      child_agents: [
+        makeChildAgent({ status: "completed", nested_running_count: 2 }),
+      ],
+    });
+    expect(computeBusyParticipantIDs({ threads: [thread] })).toEqual(
+      new Set(["dispatcher-1"]),
+    );
+  });
+
+  it("ignores child agents that are idle with no running descendants", () => {
+    const thread = makeThread({
+      child_agents: [
+        makeChildAgent({ status: "completed", nested_running_count: 0 }),
+      ],
+    });
+    expect(computeBusyParticipantIDs({ threads: [thread] }).size).toBe(0);
+  });
+
+  it("ignores a running child agent that carries no participant id", () => {
+    const thread = makeThread({
+      child_agents: [
+        makeChildAgent({ status: "running", participant: undefined }),
+      ],
+    });
+    expect(computeBusyParticipantIDs({ threads: [thread] }).size).toBe(0);
+  });
+
+  it("unions running DM participants with running child-agent dispatchers", () => {
+    const dm = makeThread({
+      id: "dm-running",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      status: "in_progress",
+    });
+    const workspaceThread = makeThread({
+      id: "workspace",
+      child_agents: [makeChildAgent({ status: "running" })],
+    });
+    expect(
+      computeBusyParticipantIDs({ threads: [dm, workspaceThread] }),
+    ).toEqual(new Set(["participant-1", "dispatcher-1"]));
+  });
+
+  it("counts a participant once when busy via both a DM and a child agent", () => {
+    const dm = makeThread({
+      id: "dm-running",
+      workspace_kind: "dm",
+      dm_participant_id: "dispatcher-1",
+      status: "in_progress",
+    });
+    const workspaceThread = makeThread({
+      id: "workspace",
+      child_agents: [makeChildAgent({ status: "running" })],
+    });
+    expect(
+      computeBusyParticipantIDs({ threads: [dm, workspaceThread] }),
+    ).toEqual(new Set(["dispatcher-1"]));
+  });
+
+  it("returns an empty set when no thread is busy", () => {
+    const dm = makeThread({
+      id: "dm-idle",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+    });
+    const workspaceThread = makeThread({
+      id: "workspace",
+      child_agents: [makeChildAgent({ status: "completed" })],
+    });
+    expect(
+      computeBusyParticipantIDs({ threads: [dm, workspaceThread] }).size,
+    ).toBe(0);
   });
 });
 

@@ -1,4 +1,5 @@
 import type {
+  Agent,
   AppServerNotification,
   DesktopProject,
   GitStatusResult,
@@ -1718,6 +1719,42 @@ export function busyDMParticipantIDs(
     if (thread.workspace_kind !== "dm") continue;
     if (isThreadRunning(thread)) {
       ids.add(thread.dm_participant_id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Aggregate participant IDs whose busy dot should be lit. selection-agnostic:
+ * busy set depends only on workspace-scope threads, not on state.thread or
+ * state.secondaryThread.
+ *
+ * Two sources union:
+ *   1. busyDMParticipantIDs — resident DM threads that are running.
+ *   2. Any thread's running child_agent adds its participant.id (the
+ *      dispatcher, per protocol §7.2) to the busy set.
+ *
+ * Source 2 behavior is "coincidentally correct via implicit contract" — the
+ * `Agent.participant` field is set to dispatcher.id at dispatch wire-up.
+ * Strict ownership filtering (only the dispatcher's dot lights up) is
+ * deferred to an Agent-protocol follow-up issue.
+ *
+ * selection-agnostic: busy set depends only on workspace-scope threads,
+ * not on state.thread or state.secondaryThread.
+ */
+export function computeBusyParticipantIDs(input: {
+  threads: readonly Thread[];
+}): ReadonlySet<string> {
+  const ids = new Set<string>(busyDMParticipantIDs(input.threads));
+  for (const thread of input.threads) {
+    for (const agent of thread.child_agents ?? []) {
+      if (
+        agent.status === "running" ||
+        (agent.nested_running_count ?? 0) > 0
+      ) {
+        const id = agent.participant?.id;
+        if (id) ids.add(id);
+      }
     }
   }
   return ids;

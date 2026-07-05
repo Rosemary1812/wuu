@@ -150,7 +150,7 @@ import {
   applyLoadedRuntimeWithDraftCarry,
   appendStreamingTokenSample,
   bindActiveSessionTabToThread,
-  busyDMParticipantIDs,
+  computeBusyParticipantIDs,
   chatFocusValueForThread,
   cloneSessionTabDraft,
   cloneComposerDraft,
@@ -2004,29 +2004,10 @@ export function App(): JSX.Element {
   //      point (§4.8), so those runs keep lighting the busy dot too.
   // Named participants not in the set render as online. This drives the
   // sidebar roster and chat-style message avatars.
-  const busyParticipantIDs = useMemo(() => {
-    const threads = [state.thread, state.secondaryThread, ...state.threads]
-      .filter((thread): thread is Thread => Boolean(thread));
-    const ids = busyDMParticipantIDs(threads);
-    const collect = (agent: Agent | undefined): void => {
-      if (!agent) return;
-      if (
-        agent.status === "running" ||
-        (agent.nested_running_count ?? 0) > 0
-      ) {
-        const id = agent.participant?.id;
-        if (id) {
-          ids.add(id);
-        }
-      }
-    };
-    for (const thread of threads) {
-      for (const agent of thread.child_agents ?? []) {
-        collect(agent);
-      }
-    }
-    return ids;
-  }, [state.thread, state.secondaryThread, state.threads]);
+  const busyParticipantIDs = useMemo(
+    () => computeBusyParticipantIDs({ threads: state.threads }),
+    [state.threads],
+  );
   // Chat read receipts + reactions render participant ids; resolve them to
   // names for the ring/chip hovers. chatReaderCount is the ring denominator —
   // the named roster (exact for #all; a slight overestimate for sub-groups,
