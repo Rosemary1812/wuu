@@ -91,6 +91,7 @@ func (s *Server) prepareThreadMentions(th *threadState, mentions []string) (map[
 	th.mu.Lock()
 	threadID := th.ID
 	isDM := strings.TrimSpace(th.DMParticipantID) != ""
+	isAllChannel := isAllChannelThread(th.Group, th.Title)
 	th.mu.Unlock()
 	if isDM {
 		return mentioned, nil
@@ -101,6 +102,13 @@ func (s *Server) prepareThreadMentions(th *threadState, mentions []string) (map[
 			continue
 		}
 		if mentioned[id] {
+			continue
+		}
+		if isAllChannel {
+			// #all membership changes only through the explicit member
+			// tools. A mention can address an existing member, but it must
+			// not silently subscribe a named agent to the public room.
+			mentioned[id] = true
 			continue
 		}
 		if err := session.AddThreadMember(s.rt.SessionDir, threadID, id); err != nil {
@@ -166,21 +174,14 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 	}
 	source.mu.Lock()
 	sourceThreadID := strings.TrimSpace(source.ID)
-	isAllChannel := isAllChannelThread(source.Group, source.Title)
 	source.mu.Unlock()
 	if sourceThreadID == "" {
 		return
 	}
-	// #all's membership is implicit (the entire named-participant roster);
-	// every other group/conversation thread routes to its explicit
-	// thread_members rows (chat-style-threads-design.md §3.2).
-	var members []string
-	var err error
-	if isAllChannel {
-		members, err = s.allNamedParticipantIDs()
-	} else {
-		members, err = session.ListThreadMembers(s.rt.SessionDir, sourceThreadID)
-	}
+	// Members come from explicit thread_members rows for every thread
+	// (including #all now that its membership is explicit rather than
+	// mirroring the named roster — chat-style-threads-design.md §3.2).
+	members, err := session.ListThreadMembers(s.rt.SessionDir, sourceThreadID)
 	if err != nil {
 		providers.DebugLogf("list thread members for resident routing %q: %v", sourceThreadID, err)
 		return
@@ -467,15 +468,11 @@ func (s *Server) mentionedMembersByName(source *threadState, text string) map[st
 	}
 	source.mu.Lock()
 	threadID := strings.TrimSpace(source.ID)
-	isAllChannel := isAllChannelThread(source.Group, source.Title)
 	source.mu.Unlock()
-	var members []string
-	var err error
-	if isAllChannel {
-		members, err = s.allNamedParticipantIDs()
-	} else {
-		members, err = session.ListThreadMembers(s.rt.SessionDir, threadID)
-	}
+	// Members come from explicit thread_members rows for every thread
+	// (including #all now that its membership is explicit rather than
+	// mirroring the named roster — chat-style-threads-design.md §3.2).
+	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
 	if err != nil {
 		return out
 	}

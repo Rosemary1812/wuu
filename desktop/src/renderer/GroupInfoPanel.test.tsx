@@ -146,16 +146,39 @@ describe("GroupInfoPanel", () => {
     expect(onRemoveMember).toHaveBeenCalledWith("participant-2");
   });
 
-  it("keeps the all channel read-only", () => {
+  it("allows explicit all-channel membership edits", async () => {
+    const onAddMember = vi.fn().mockResolvedValue(undefined);
+    const onRemoveMember = vi.fn();
     const container = renderPanel({
       thread: groupThread({ title: "all" }),
-      onAddMember: vi.fn(),
-      onRemoveMember: vi.fn(),
+      onAddMember,
+      onRemoveMember,
     });
 
     expect(container.textContent).toContain("all");
     expect(container.textContent).not.toContain("#all");
-    expect(container.querySelector(".group-info-add-button")).toBeNull();
-    expect(container.querySelector(".group-info-remove-button")).toBeNull();
+    const addButton = container.querySelector<HTMLButtonElement>(
+      ".group-info-add-button",
+    );
+    expect(addButton).not.toBeNull();
+    act(() => {
+      addButton?.click();
+    });
+    const addRow = container.querySelector<HTMLButtonElement>(
+      ".group-info-add-row",
+    );
+    await act(async () => {
+      addRow?.click();
+      await Promise.resolve();
+    });
+    expect(onAddMember).toHaveBeenCalledWith("participant-3");
+
+    const removeButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"将 阿蓝 移出群聊\"]",
+    );
+    act(() => {
+      removeButton?.click();
+    });
+    expect(onRemoveMember).toHaveBeenCalledWith("participant-2");
   });
 });

@@ -1,7 +1,6 @@
 package appserver
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,8 +13,8 @@ import (
 
 // allChannelTitle is the reserved title of the default group channel that
 // the server keeps present at all times (chat-style-threads-design.md §3.2).
-// Its membership is implicit: every named participant in the roster, no
-// thread_members rows required.
+// Its membership is stored in thread_members like any other group; creating a
+// named participant does not subscribe it to #all.
 const allChannelTitle = "all"
 
 // isAllChannelThread reports whether a group thread is the #all channel by
@@ -25,8 +24,7 @@ func isAllChannelThread(group bool, title string) bool {
 	return group && strings.EqualFold(strings.TrimSpace(title), allChannelTitle)
 }
 
-// allNamedParticipantIDs returns every active named participant's ID — the
-// implicit membership roster for the #all channel.
+// allNamedParticipantIDs returns every active named participant's ID.
 func (s *Server) allNamedParticipantIDs() ([]string, error) {
 	if s == nil || s.rt == nil {
 		return nil, nil
@@ -40,6 +38,15 @@ func (s *Server) allNamedParticipantIDs() ([]string, error) {
 		ids = append(ids, p.ID)
 	}
 	return ids, nil
+}
+
+func initialAllChannelMemberIDs(roster []participant.Participant) []string {
+	for _, p := range roster {
+		if strings.EqualFold(strings.TrimSpace(p.Name), defaultSeedParticipantName) {
+			return []string{p.ID}
+		}
+	}
+	return nil
 }
 
 // ensureAllChannel idempotently creates the "#all" group thread on demand.
@@ -81,6 +88,15 @@ func (s *Server) ensureAllChannel() (string, error) {
 	th, err := s.createGroupThreadState(session.NewID(), allChannelTitle, time.Now().UTC())
 	if err != nil {
 		return "", err
+	}
+	// First-time bootstrap: when #all is just created and Andy exists, seat
+	// him as the initial member. No fallback, no re-seed — if Andy retires and
+	// #all drains, ensureAllChannel returns the existing empty thread
+	// (chat-style-threads-design.md §3.2 + 增补七).
+	for _, memberID := range initialAllChannelMemberIDs(roster) {
+		if err := session.AddThreadMember(s.rt.SessionDir, th.ID, memberID); err != nil {
+			return "", fmt.Errorf("seed all channel member %q: %w", memberID, err)
+		}
 	}
 	th = s.addResidentThread(th)
 
@@ -232,65 +248,6 @@ func (s *Server) notifyThreadUpdated(thread Thread) error {
 	})
 }
 
-func (s *Server) notifyGroupMemberAdded(thread Thread, participantID string) error {
-	if err := s.notifyThreadUpdated(thread); err != nil {
-		return err
-	}
-	if err := s.enqueueGroupMemberWelcomeEnvelope(thread, participantID); err != nil {
-		providers.DebugLogf("enqueue group welcome for %q in %q: %v", participantID, thread.ID, err)
-	}
-	return nil
-}
-
-func (s *Server) enqueueGroupMemberWelcomeEnvelope(thread Thread, participantID string) error {
-	participantID = strings.TrimSpace(participantID)
-	if s == nil || s.rt == nil || participantID == "" {
-		return nil
-	}
-	if s.participantRetired(participantID) {
-		return nil
-	}
-	title := groupWelcomeTitle(thread)
-	now := time.Now().UTC()
-	env := MessageEnvelope{
-		ID:             "env-" + session.NewID(),
-		SourceThreadID: thread.ID,
-		SourceTitle:    title,
-		SenderKind:     "system",
-		SenderName:     "Wuu",
-		Addressed:      true,
-		Hop:            0,
-		Text:           fmt.Sprintf("你已加入「%s」群聊。请在群里发一条简短招呼，告诉大家你能帮什么。", title),
-		CreatedAt:      now,
-		Workspace:      thread.FocusWorkspace,
-	}
-	data, err := json.Marshal(env)
-	if err != nil {
-		return fmt.Errorf("marshal group welcome envelope: %w", err)
-	}
-	if _, err := session.EnqueueResidentEnvelope(s.rt.SessionDir, session.ResidentEnvelope{
-		ID:            env.ID,
-		ParticipantID: participantID,
-		EnvelopeJSON:  data,
-		CreatedAt:     now,
-	}); err != nil {
-		return err
-	}
-	s.kickResidentAgent(participantID)
-	return nil
-}
-
-func groupWelcomeTitle(thread Thread) string {
-	title := strings.TrimSpace(thread.Title)
-	if title == "" {
-		title = strings.TrimSpace(thread.Preview)
-	}
-	if title == "" {
-		title = "群聊"
-	}
-	return strings.TrimPrefix(title, "#")
-}
-
 // notifyOutboundBatch flushes notifications that were built while holding a
 // threadState lock (applyStreamEventLocked / takePendingSteersLocked).
 // Those builders only have the bare snapshot, so any thread/updated in the
@@ -308,9 +265,8 @@ func (s *Server) notifyOutboundBatch(batch []outboundNotification) {
 }
 
 // threadWithGroupMembers populates Thread.Members for group threads (the
-// frontend chips UI and chat avatars). For the #all channel, members mirror
-// the entire named-participant roster rather than explicit thread_members
-// rows. Non-group threads are returned unchanged.
+// frontend chips UI and chat avatars) from explicit thread_members rows.
+// Non-group threads are returned unchanged.
 func (s *Server) threadWithGroupMembers(thread Thread) Thread {
 	if !thread.Group {
 		return thread
@@ -331,22 +287,19 @@ func (s *Server) threadWithGroupMembers(thread Thread) Thread {
 }
 
 // threadMemberIDsForGroup resolves the member participant IDs for a group
-// thread: the full named roster for #all, explicit thread_members rows
-// otherwise.
+// thread: explicit thread_members rows. #all uses the same path now
+// that its membership is explicit rather than mirroring the named
+// roster (chat-style-threads-design.md §3.2).
 func (s *Server) threadMemberIDsForGroup(threadID string, group bool, title string) ([]string, error) {
-	if isAllChannelThread(group, title) {
-		return s.allNamedParticipantIDs()
-	}
 	return session.ListThreadMembers(s.rt.SessionDir, threadID)
 }
 
 // handleThreadMembersAdd implements `thread/members/add`: the user adds a
-// named participant to a group thread's explicit roster. The #all channel is
-// rejected because its membership is implicit — the entire named roster,
-// with no thread_members rows to add. The result thread is wrapped through
-// threadWithGroupMembers (via threadAfterMetadataUpdate →
-// threadWithChildAgents) so the frontend member list updates from the
-// response instead of going stale.
+// named participant to a group thread's explicit roster. #all uses the same
+// explicit membership model as any other group. The result thread is wrapped
+// through threadWithGroupMembers (via threadAfterMetadataUpdate →
+// threadWithChildAgents) so the frontend member list updates from the response
+// instead of going stale.
 func (s *Server) handleThreadMembersAdd(req Request) error {
 	var params ThreadMembersMutationParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -369,9 +322,6 @@ func (s *Server) handleThreadMembersAdd(req Request) error {
 	}
 	if !meta.Group {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q is not a group thread", threadID))
-	}
-	if isAllChannelThread(meta.Group, meta.Title) {
-		return s.writeResponse(req.ID, nil, errors.New("the all channel includes every named agent; members cannot be added"))
 	}
 	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
 	if err != nil {
@@ -399,16 +349,15 @@ func (s *Server) handleThreadMembersAdd(req Request) error {
 	if err := s.writeResponse(req.ID, ThreadMembersAddResult{Thread: thread}, nil); err != nil {
 		return err
 	}
-	return s.notifyGroupMemberAdded(thread, participantID)
+	return s.notifyThreadUpdated(thread)
 }
 
 // handleThreadMembersRemove implements `thread/members/remove`: the user
-// removes a named participant from a group thread's explicit roster. The
-// #all channel is rejected because its membership is implicit — the entire
-// named roster, with no thread_members rows to delete. The result thread is
+// removes a named participant from a group thread's explicit roster. #all uses
+// the same explicit membership model as any other group. The result thread is
 // wrapped through threadWithGroupMembers (via threadAfterMetadataUpdate →
-// threadWithChildAgents) so the frontend member chips update from the
-// response instead of going stale.
+// threadWithChildAgents) so the frontend member chips update from the response
+// instead of going stale.
 func (s *Server) handleThreadMembersRemove(req Request) error {
 	var params ThreadMembersMutationParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -432,9 +381,6 @@ func (s *Server) handleThreadMembersRemove(req Request) error {
 	if !meta.Group {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q is not a group thread", threadID))
 	}
-	if isAllChannelThread(meta.Group, meta.Title) {
-		return s.writeResponse(req.ID, nil, errors.New("the all channel includes every named agent; members cannot be removed"))
-	}
 	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -456,7 +402,10 @@ func (s *Server) handleThreadMembersRemove(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, ThreadMembersRemoveResult{Thread: thread}, nil)
+	if err := s.writeResponse(req.ID, ThreadMembersRemoveResult{Thread: thread}, nil); err != nil {
+		return err
+	}
+	return s.notifyThreadUpdated(thread)
 }
 
 // rejectAllChannelMutation guards the system-guaranteed #all channel:

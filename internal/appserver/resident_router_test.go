@@ -104,6 +104,7 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	// and lets the test observe only the two messages it publishes directly.
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 	groupID := startGroupThreadForTest(t, srv)
@@ -221,15 +222,19 @@ func providersResponse(content string) providers.ChatResponse {
 	return providers.ChatResponse{Content: content}
 }
 
-func TestGroupTurnStartRoutesThroughAllChannelWithoutExplicitMembership(t *testing.T) {
+func TestGroupTurnStartRoutesThroughExplicitAllChannelMembership(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 
 	allID, err := srv.ensureAllChannel()
 	if err != nil {
 		t.Fatalf("ensureAllChannel: %v", err)
+	}
+	if err := session.AddThreadMember(rt.SessionDir, allID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
 	}
 
 	raw := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"Heads up, everyone."}}`, allID)
@@ -242,16 +247,53 @@ func TestGroupTurnStartRoutesThroughAllChannelWithoutExplicitMembership(t *testi
 		t.Fatalf("turn/start returned error: %v", errMsg)
 	}
 
-	// Ivy was never added to thread_members, yet #all's implicit roster
-	// membership still routes her an envelope.
 	_, ivyHistory := waitForResidentDMHistory(t, srv, ivy, 1)
 	ivyMeta := findEnvelopeMetaRecord(t, ivyHistory)
 	if ivyMeta.SourceThreadID != allID {
 		t.Fatalf("expected envelope sourced from #all, got %+v", ivyMeta)
 	}
+	if _, beaHistory := findDMHistoryIfExists(t, srv, bea); len(beaHistory) != 0 {
+		t.Fatalf("non-member Bea must not receive #all traffic, got %+v", beaHistory)
+	}
 }
 
-func TestResidentPostMessageToAllChannelWithoutExplicitMembership(t *testing.T) {
+func TestAllChannelMentionDoesNotAutoAddMember(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+
+	allID, err := srv.ensureAllChannel()
+	if err != nil {
+		t.Fatalf("ensureAllChannel: %v", err)
+	}
+	if err := session.AddThreadMember(rt.SessionDir, allID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
+	}
+
+	raw := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"Heads up, @Bea.","mentions":[%q]}}`, allID, bea)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "turn")
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("turn/start returned error: %v", errMsg)
+	}
+
+	members, err := session.ListThreadMembers(rt.SessionDir, allID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers: %v", err)
+	}
+	if len(members) != 1 || members[0] != ivy {
+		t.Fatalf("#all mention must not auto-add Bea; members=%+v", members)
+	}
+	if _, beaHistory := findDMHistoryIfExists(t, srv, bea); len(beaHistory) != 0 {
+		t.Fatalf("non-member Bea must not receive #all mention traffic, got %+v", beaHistory)
+	}
+}
+
+func TestResidentPostMessageToAllChannelRequiresExplicitMembership(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
 	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
 	dmID := startResidentDMForTest(t, srv, participantID)
@@ -265,8 +307,19 @@ func TestResidentPostMessageToAllChannelWithoutExplicitMembership(t *testing.T) 
 		Name:      "post_message",
 		Arguments: fmt.Sprintf(`{"kind":"result","text":"Heads up.","thread_id":%q}`, allID),
 	})
+	if err == nil || !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("post_message to #all without explicit membership should fail, got %v", err)
+	}
+
+	if err := session.AddThreadMember(srv.rt.SessionDir, allID, participantID); err != nil {
+		t.Fatalf("AddThreadMember Iris: %v", err)
+	}
+	_, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"result","text":"Heads up.","thread_id":%q}`, allID),
+	})
 	if err != nil {
-		t.Fatalf("post_message to #all without explicit membership: %v", err)
+		t.Fatalf("post_message to #all with explicit membership should succeed: %v", err)
 	}
 }
 

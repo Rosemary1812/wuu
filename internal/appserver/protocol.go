@@ -1008,10 +1008,8 @@ type WorkspaceStateCleanupResult struct {
 }
 
 // ThreadMembersMutationParams is the input for the user-owned
-// `thread/members/add` and `thread/members/remove` methods. Only group
-// threads with explicit thread_members rows are eligible — the #all
-// channel's membership is implicit (every named participant) and is
-// rejected.
+// `thread/members/add` and `thread/members/remove` methods. Group threads,
+// including #all, use explicit thread_members rows.
 type ThreadMembersMutationParams struct {
 	ThreadID      string `json:"thread_id"`
 	ParticipantID string `json:"participant_id"`
@@ -1450,10 +1448,8 @@ type Thread struct {
 	// agent (chat-style-threads-design.md §3). Set once at thread creation.
 	Group bool `json:"group,omitempty"`
 	// Members lists the named participants belonging to this group thread
-	// (chips UI, chat avatars). Populated only for group threads; DM threads
-	// and work sessions leave this empty. For the "all" channel, members
-	// mirror the entire named-participant roster rather than explicit
-	// thread_members rows.
+	// (chips UI, chat avatars). Populated only for group threads from explicit
+	// thread_members rows; DM threads and work sessions leave this empty.
 	Members []participant.Summary `json:"members,omitempty"`
 	// ListeningPorts is the latest deduped, sorted list of localhost
 	// ports the agent asked the desktop to surface (via

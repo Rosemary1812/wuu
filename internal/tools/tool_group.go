@@ -106,7 +106,7 @@ func (t *AddGroupMemberTool) Name() string { return addGroupMemberToolName }
 func (t *AddGroupMemberTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        addGroupMemberToolName,
-		Description: "Add a named teammate to a group thread you belong to. The target must be a group thread; the participant must be an active named agent. Do not add members just in case — an invitation is a request for their time.",
+		Description: "Add a named teammate to a group thread you belong to, including #all. The target must be a group thread; the participant must be an active named agent. Do not add members just in case — an invitation is a request for their time.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,

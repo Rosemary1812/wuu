@@ -50,10 +50,9 @@ describe("greetingFor", () => {
       expect(greetingFor(8, ctx)).toBe("早上好，Alice 在，有事直接喊。");
     });
 
-    it("returns group greeting even when members are empty (implicit all channel)", () => {
-      // The `all` channel is a group thread with implicit membership —
-      // the backend never writes thread_members for it, so the roster is
-      // empty. The greeting must still read as a group space.
+    it("returns group greeting even when members are empty", () => {
+      // A group may be new or explicitly empty. The greeting must still read
+      // as a group space.
       const ctx: GreetingContext = {
         kind: "group",
         title: "all",

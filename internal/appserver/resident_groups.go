@@ -24,12 +24,10 @@ const (
 	// membership count IS the branching factor (2026-07-04 group-fanout
 	// amendment, 增补四).
 	maxGroupMembers = 8
-	// maxNamedParticipants caps the active named-agent roster. Deliberately
-	// the SAME number as maxGroupMembers: the #all channel's membership is
-	// the whole named roster (group_thread.go), so the roster size is #all's
-	// broadcast fan-out — the one "group nobody explicitly built". Capping it
-	// is how the group-size limit reaches #all (增补五).
-	maxNamedParticipants = maxGroupMembers
+	// maxNamedParticipants caps the active named-agent roster. Independent
+	// of maxGroupMembers now that #all uses explicit thread_members rows
+	// (chat-style-threads-design.md §3.2), not roster-wide broadcast.
+	maxNamedParticipants = 8
 )
 
 // ensureNamedParticipantCapacity rejects creating a new named participant
@@ -138,9 +136,6 @@ func (m *residentGroupManager) AddGroupMember(ctx context.Context, threadID, par
 	if !meta.Group {
 		return fmt.Errorf("add_group_member: thread %q is not a group thread", threadID)
 	}
-	if isAllChannelThread(meta.Group, meta.Title) {
-		return errors.New("add_group_member: the all channel already includes every named agent; no members can be added")
-	}
 	members, err := session.ListThreadMembers(sessionDir, threadID)
 	if err != nil {
 		return fmt.Errorf("add_group_member: list thread members: %w", err)
@@ -177,7 +172,7 @@ func (m *residentGroupManager) AddGroupMember(ctx context.Context, threadID, par
 	if err != nil {
 		return fmt.Errorf("add_group_member: reload thread: %w", err)
 	}
-	if err := m.server.notifyGroupMemberAdded(thread, participantID); err != nil {
+	if err := m.server.notifyThreadUpdated(thread); err != nil {
 		return fmt.Errorf("add_group_member: notify thread updated: %w", err)
 	}
 	return nil

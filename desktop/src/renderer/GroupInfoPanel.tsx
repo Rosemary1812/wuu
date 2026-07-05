@@ -41,10 +41,9 @@ export function GroupInfoPanel({
       ),
     [memberIDs, participants],
   );
-  const allChannel = isAllChannelThread(thread);
   const groupName = groupDisplayName(thread);
   const canAddMember =
-    !allChannel && Boolean(onAddMember) && availableParticipants.length > 0;
+    Boolean(onAddMember) && availableParticipants.length > 0;
 
   async function addMember(participantID: string): Promise<void> {
     if (!onAddMember) {
@@ -145,7 +144,7 @@ export function GroupInfoPanel({
                     <strong>{member.name}</strong>
                     {member.role ? <em>{member.role}</em> : null}
                   </span>
-                  {!allChannel && onRemoveMember ? (
+                  {onRemoveMember ? (
                     <button
                       className="group-info-remove-button"
                       type="button"
@@ -187,9 +186,4 @@ function ParticipantAvatar({
 function groupDisplayName(thread: Thread): string {
   const title = thread.title?.trim() || thread.preview.trim() || "未命名群聊";
   return title.replace(/^#/, "");
-}
-
-function isAllChannelThread(thread: Thread): boolean {
-  const title = thread.title?.trim().replace(/^#/, "").toLowerCase();
-  return thread.group === true && title === "all";
 }

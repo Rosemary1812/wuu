@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
-	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -66,10 +64,10 @@ func TestThreadStartGroupRejectsDMParticipant(t *testing.T) {
 	}
 }
 
-func TestEnsureAllChannelIdempotentAndMirrorsRoster(t *testing.T) {
+func TestEnsureAllChannelIdempotentAndSeedsAndyOnly(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
-	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	andy := saveNamedParticipant(t, rt, defaultSeedParticipantName, "general-purpose", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 
 	firstID, err := srv.ensureAllChannel()
@@ -102,24 +100,23 @@ func TestEnsureAllChannelIdempotentAndMirrorsRoster(t *testing.T) {
 	if th == nil {
 		t.Fatalf("#all thread %q not resident", firstID)
 	}
+	cleo := saveNamedParticipant(t, rt, "Cleo", "reviewer", "")
 	th.mu.Lock()
 	thread := th.snapshotLocked()
 	th.mu.Unlock()
 	thread = srv.threadWithGroupMembers(thread)
-	memberIDs := make(map[string]bool, len(thread.Members))
-	for _, m := range thread.Members {
-		memberIDs[m.ID] = true
+	if len(thread.Members) != 1 || thread.Members[0].ID != andy {
+		t.Fatalf("expected #all to seed only Andy, got %+v", thread.Members)
 	}
-	if !memberIDs[ivy] || !memberIDs[bea] {
-		t.Fatalf("expected #all members to mirror the named roster, got %+v", thread.Members)
+	if thread.Members[0].ID == bea || thread.Members[0].ID == cleo {
+		t.Fatalf("non-default participants must not auto-join #all, got %+v", thread.Members)
 	}
-	// No explicit thread_members rows were ever written for #all.
 	members, err := session.ListThreadMembers(rt.SessionDir, firstID)
 	if err != nil {
 		t.Fatalf("ListThreadMembers: %v", err)
 	}
-	if len(members) != 0 {
-		t.Fatalf("expected no explicit thread_members rows for #all, got %+v", members)
+	if len(members) != 1 || members[0] != andy {
+		t.Fatalf("expected explicit #all row for Andy only, got %+v", members)
 	}
 }
 
@@ -317,16 +314,10 @@ func TestThreadMembersAddAddsGroupMember(t *testing.T) {
 	}
 }
 
-func TestThreadMembersAddBroadcastsAndWelcomesMember(t *testing.T) {
-	client := &fakeClient{
-		responses: []providers.ChatResponse{
-			providersResponse("大家好，我是 Bea。"),
-			providersResponse(""),
-		},
-	}
+func TestThreadMembersAddBroadcastsWithoutWelcomingMember(t *testing.T) {
+	client := &fakeClient{response: providersResponse("unexpected")}
 	rt := newTestRuntime(t, client)
 	srv := New(rt, &lockedBuffer{})
-	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 	group := startNamedGroupThreadForTest(t, srv, "release")
@@ -357,42 +348,19 @@ func TestThreadMembersAddBroadcastsAndWelcomesMember(t *testing.T) {
 	if !memberIDs[ivy] || !memberIDs[bea] {
 		t.Fatalf("thread/updated should carry the new group member, got %+v", updated.Thread.Members)
 	}
-	waitForGroupParticipantMessage(t, srv, group.ID, bea, "大家好")
-}
-
-func waitForGroupParticipantMessage(t *testing.T, srv *Server, threadID, participantID, text string) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if groupParticipantMessageExists(srv, threadID, participantID, text) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	pending, err := session.PendingResidentEnvelopes(rt.SessionDir, bea, 10)
+	if err != nil {
+		t.Fatalf("PendingResidentEnvelopes: %v", err)
 	}
-	t.Fatalf("timed out waiting for participant %q message containing %q in group %q", participantID, text, threadID)
-}
-
-func groupParticipantMessageExists(srv *Server, threadID, participantID, text string) bool {
-	th := srv.thread(threadID)
-	if th == nil {
-		return false
+	if len(pending) != 0 {
+		t.Fatalf("adding a group member must not enqueue a welcome envelope, got %+v", pending)
 	}
-	th.mu.Lock()
-	defer th.mu.Unlock()
-	for _, turn := range th.Turns {
-		for _, item := range turn.Items {
-			if item.Type != ThreadItemParticipantMsg {
-				continue
-			}
-			if item.Participant == nil || item.Participant.ID != participantID {
-				continue
-			}
-			if strings.Contains(item.Text, text) {
-				return true
-			}
-		}
+	client.mu.Lock()
+	callCount := len(client.requests)
+	client.mu.Unlock()
+	if callCount != 0 {
+		t.Fatalf("adding a group member must not start a provider turn, got %d calls", callCount)
 	}
-	return false
 }
 
 func TestThreadMembersAddIsIdempotent(t *testing.T) {
@@ -414,7 +382,7 @@ func TestThreadMembersAddIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestThreadMembersAddRejectsAllChannel(t *testing.T) {
+func TestThreadMembersAddAllowsAllChannel(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
@@ -425,13 +393,19 @@ func TestThreadMembersAddRejectsAllChannel(t *testing.T) {
 	}
 
 	resp := addThreadMemberForTest(t, srv, "add-all", allID, ivy)
-	errMsg, ok := resp["error"]
-	if !ok {
-		t.Fatalf("expected error adding a member to #all, got: %+v", resp)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("adding a member to #all should succeed, got: %v", errMsg)
 	}
-	errStr := fmt.Sprint(errMsg)
-	if !strings.Contains(errStr, "all channel") {
-		t.Fatalf("error should mention the all channel, got %q", errStr)
+	thread := remarshal[ThreadMembersAddResult](t, resp["result"]).Thread
+	if len(thread.Members) != 1 || thread.Members[0].ID != ivy {
+		t.Fatalf("expected #all members to include Ivy, got %+v", thread.Members)
+	}
+	members, err := session.ListThreadMembers(rt.SessionDir, allID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers: %v", err)
+	}
+	if len(members) != 1 || members[0] != ivy {
+		t.Fatalf("expected explicit #all membership row for Ivy, got %+v", members)
 	}
 }
 
@@ -488,7 +462,7 @@ func TestThreadMembersRemoveRemovesGroupMember(t *testing.T) {
 	}
 }
 
-func TestThreadMembersRemoveRejectsAllChannel(t *testing.T) {
+func TestThreadMembersRemoveAllowsAllChannel(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
 	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
@@ -498,14 +472,24 @@ func TestThreadMembersRemoveRejectsAllChannel(t *testing.T) {
 		t.Fatalf("ensureAllChannel: %v", err)
 	}
 
-	resp := removeThreadMemberForTest(t, srv, "remove-all", allID, ivy)
-	errMsg, ok := resp["error"]
-	if !ok {
-		t.Fatalf("expected error removing a member from #all, got: %+v", resp)
+	if err := session.AddThreadMember(rt.SessionDir, allID, ivy); err != nil {
+		t.Fatalf("AddThreadMember Ivy: %v", err)
 	}
-	errStr := fmt.Sprint(errMsg)
-	if !strings.Contains(errStr, "all channel") {
-		t.Fatalf("error should mention the all channel, got %q", errStr)
+
+	resp := removeThreadMemberForTest(t, srv, "remove-all", allID, ivy)
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("removing a member from #all should succeed, got: %v", errMsg)
+	}
+	thread := remarshal[ThreadMembersRemoveResult](t, resp["result"]).Thread
+	if len(thread.Members) != 0 {
+		t.Fatalf("expected #all to be empty after removing Ivy, got %+v", thread.Members)
+	}
+	members, err := session.ListThreadMembers(rt.SessionDir, allID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("expected no explicit #all members after removal, got %+v", members)
 	}
 }
 
@@ -564,14 +548,14 @@ func TestThreadMembersRemoveRejectsNonMember(t *testing.T) {
 	}
 }
 
-// The #all channel's first broadcast must already carry the implicit
-// roster as Members: ensureAllChannel used to send a bare snapshot, so the
+// The #all channel's first broadcast must already carry its explicit seed
+// member as Members: ensureAllChannel used to send a bare snapshot, so the
 // channel appeared with no member chips until some other wrapped payload
 // arrived (consistency plan 2026-07-04 §1 #15).
 func TestEnsureAllChannelBroadcastCarriesMembers(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv := New(rt, &lockedBuffer{})
-	ivy := saveNamedParticipant(t, rt, "Ivy", "reviewer", "")
+	andy := saveNamedParticipant(t, rt, defaultSeedParticipantName, "general-purpose", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
 
 	if _, err := srv.ensureAllChannel(); err != nil {
@@ -583,8 +567,8 @@ func TestEnsureAllChannelBroadcastCarriesMembers(t *testing.T) {
 	for _, m := range started.Thread.Members {
 		memberIDs[m.ID] = true
 	}
-	if !memberIDs[ivy] || !memberIDs[bea] {
-		t.Fatalf("thread/started for #all must carry the named roster as members, got %+v", started.Thread.Members)
+	if !memberIDs[andy] || memberIDs[bea] {
+		t.Fatalf("thread/started for #all must carry only Andy as the seed member, got %+v", started.Thread.Members)
 	}
 }
 

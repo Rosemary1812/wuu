@@ -277,6 +277,7 @@ func TestDMTurnStartUsesResidentConversationHistory(t *testing.T) {
 	rt := newTestRuntime(t, client)
 	out := &lockedBuffer{}
 	srv := New(rt, out)
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	participantID := saveNamedParticipant(t, rt, "Hana", "general-purpose", "")
 
 	raw := fmt.Sprintf(`{"id":"start","method":"thread/start","params":{"dm_participant_id":%q}}`, participantID)

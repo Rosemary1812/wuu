@@ -37,8 +37,8 @@ export function resolveGreetingContext(input: {
   const { activeThread, participants, activeContextKind, activeProjectName } =
     input;
   // Group chats greet with the collaboration framing. The `group` flag is
-  // the discriminant — the `all` channel has implicit membership, so
-  // members may be empty even for a group thread.
+  // the discriminant; a newly created or explicitly emptied group can still
+  // have no members in its current snapshot.
   if (activeThread?.group) {
     return {
       kind: "group",
@@ -107,8 +107,8 @@ export function greetingFor(hour: number, ctx: GreetingContext): string {
 // Group threads greet like a room you toss work into — one short line,
 // same register as the base greetings above. The tab and header already
 // name the group, so the copy deliberately doesn't repeat ctx.title. The
-// `all` channel has implicit membership (members may be empty), so every
-// branch must read well without a roster too.
+// member snapshot can be empty, so every branch must read well without a
+// roster too.
 function groupGreeting(
   hour: number,
   ctx: Extract<GreetingContext, { kind: "group" }>,
@@ -164,9 +164,9 @@ function dmGreeting(
 }
 
 // Renders the member snapshot as a short roster string, or null when the
-// snapshot is empty (e.g. the implicit-membership `all` channel). Lists
-// at most three names; larger groups list three and close with the total
-// headcount ("等 N 位成员" reads as the group total, names included).
+// snapshot is empty. Lists at most three names; larger groups list three and
+// close with the total headcount ("等 N 位成员" reads as the group total, names
+// included).
 function formatRoster(memberNames: string[]): string | null {
   if (memberNames.length === 0) {
     return null;

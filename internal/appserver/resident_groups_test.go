@@ -127,13 +127,24 @@ func TestResidentAddGroupMemberSemantics(t *testing.T) {
 		t.Fatalf("adding into a non-group thread should fail, got err=%v", err)
 	}
 
-	// #all rejects explicit membership.
+	// #all uses explicit membership too. The caller must already belong to it
+	// before adding another member, just like any other group.
 	allID, err := srv.ensureAllChannel()
 	if err != nil {
 		t.Fatalf("ensureAllChannel: %v", err)
 	}
-	if _, err := executeGroupTool(t, kit, "add_group_member", fmt.Sprintf(`{"thread_id":%q,"participant_id":%q}`, allID, bea)); err == nil || !strings.Contains(err.Error(), "all channel") {
-		t.Fatalf("adding into #all should fail, got err=%v", err)
+	if err := session.AddThreadMember(srv.rt.SessionDir, allID, iris); err != nil {
+		t.Fatalf("AddThreadMember Iris to #all: %v", err)
+	}
+	if _, err := executeGroupTool(t, kit, "add_group_member", fmt.Sprintf(`{"thread_id":%q,"participant_id":%q}`, allID, bea)); err != nil {
+		t.Fatalf("adding into #all should succeed for an existing member, got err=%v", err)
+	}
+	allMembers, err := session.ListThreadMembers(srv.rt.SessionDir, allID)
+	if err != nil {
+		t.Fatalf("ListThreadMembers #all: %v", err)
+	}
+	if len(allMembers) != 2 || allMembers[0] != iris || allMembers[1] != bea {
+		t.Fatalf("expected #all members Iris and Bea, got %+v", allMembers)
 	}
 
 	// A caller who is not a member of the target group is rejected.

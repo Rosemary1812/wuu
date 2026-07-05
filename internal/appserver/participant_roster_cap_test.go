@@ -11,11 +11,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
-// TestParticipantSaveEnforcesRosterCap covers the 2026-07-04 group-fanout
-// amendment (增补五): because the #all channel's membership is the whole
-// named roster, the roster size is #all's broadcast fan-out, so creating a
-// new named agent is rejected once the active roster is at
-// maxNamedParticipants. Retired participants free a slot.
+// TestParticipantSaveEnforcesRosterCap covers the active named-agent roster
+// cap. #all no longer mirrors this roster, but the product still keeps the
+// named roster bounded while the team UI and resident runtime are tuned
+// around small groups. Retired participants free a slot.
 func TestParticipantSaveEnforcesRosterCap(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})
